@@ -1,0 +1,12 @@
+{
+  "name": "agent-runner",
+  "version": "0.1.0",
+  "main": "server.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

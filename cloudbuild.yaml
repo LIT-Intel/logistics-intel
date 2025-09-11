@@ -1,0 +1,21 @@
+steps:
+  - name: 'gcr.io/cloud-builders/npm'
+    dir: 'frontend'
+    args: ['ci']
+
+  - name: 'gcr.io/cloud-builders/npm'
+    dir: 'frontend'
+    args: ['run','build']
+
+  - name: 'gcr.io/cloud-builders/npm'
+    dir: 'frontend'
+    entrypoint: 'bash'
+    args:
+      - -lc
+      - |
+        npm i -g firebase-tools
+        firebase deploy --project ${PROJECT_ID} --only hosting,functions --non-interactive
+substitutions:
+  _FRONTEND_DIR: 'frontend'
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,8 @@
+{
+  "name": "widgets-quote",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "dependencies": { "express": "^4.19.2" },
+  "scripts": { "start": "node index.js" }
+}

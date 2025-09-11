@@ -1,0 +1,33 @@
+swagger: "2.0"
+info:
+  title: lit-caller-api (minimal widgets test)
+  version: v19
+schemes: ["https"]
+
+paths:
+  /public/getFilterOptions:
+    post:
+      operationId: publicGetFilterOptions
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200": { description: OK }
+
+  /public/widgets/tariff/calc:
+    post:
+      operationId: widgetsTariffCalc
+      x-google-backend:
+        address: https://widgets-tariff-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200": { description: OK }
+
+  /public/widgets/quote/generate:
+    post:
+      operationId: widgetsQuoteGenerate
+      x-google-backend:
+        address: https://widgets-quote-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200": { description: OK }
