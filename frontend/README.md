@@ -11,6 +11,12 @@ npm install
 npm run dev
 ```
 
+Environment:
+
+```
+VITE_API_BASE=https://<gateway>/
+```
+
 ## Building the app
 
 ```bash

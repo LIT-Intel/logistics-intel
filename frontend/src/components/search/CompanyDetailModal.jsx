@@ -19,8 +19,10 @@ import ShipmentsTab from './detail_tabs/ShipmentsTab';
 import ContactsTab from './detail_tabs/ContactsTab';
 import EnrichmentTab from './detail_tabs/EnrichmentTab';
 import NotesTab from './detail_tabs/NotesTab';
+import { useFeatureFlags } from '@/store/featureFlags';
 
 export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user }) {
+  const { companyDrawerPremium } = useFeatureFlags();
   const [currentCompanyDetails, setCurrentCompanyDetails] = useState(null);
   const [shipments, setShipments] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -206,7 +208,9 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                 <TabsList>
                   <TabsTrigger value="overview">Overview</TabsTrigger>
                   <TabsTrigger value="shipments">Shipments ({shipments.length})</TabsTrigger>
-                  <TabsTrigger value="contacts">{!isSavedByUser && <Lock className="w-3 h-3 mr-1.5" />}Contacts</TabsTrigger>
+                  {companyDrawerPremium ? (
+                    <TabsTrigger value="contacts">{!isSavedByUser && <Lock className="w-3 h-3 mr-1.5" />}Contacts</TabsTrigger>
+                  ) : null}
                   <TabsTrigger value="ai_insights">
                     <Sparkles className="w-3 h-3 mr-1.5" />AI Insights
                   </TabsTrigger>
