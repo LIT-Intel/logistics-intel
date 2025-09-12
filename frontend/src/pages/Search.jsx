@@ -14,6 +14,7 @@ import UpgradePrompt from "../components/common/UpgradePrompt";
 
 import { searchCompanies } from "@/lib/api";
 import { saveCompany } from "@/api/functions";
+import { createCompany } from "@/lib/crm";
 
 const ITEMS_PER_PAGE = 25;
 
@@ -135,16 +136,8 @@ export default function Search() {
     setSavedCompanyIds(optimisticNewIds);
 
     try {
-      const response = await saveCompany({ 
-        company_id: companyId, 
-        company_name: company.name,
-      });
-
-      if (response.data?.ok) {
-        console.log("Company saved successfully");
-      } else {
-        throw new Error(response.data?.error || "Failed to save company");
-      }
+      // Save to CRM via Gateway
+      await createCompany({ name: company.name, website: company.website || undefined, external_ref: String(companyId) });
     } catch (error) {
       console.error("Failed to save company:", error);
       setSavedCompanyIds(originalSavedIds);
