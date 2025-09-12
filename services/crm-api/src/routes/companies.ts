@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getPool } from '../db.js';
+import { getPool, audit } from '../db.js';
 
 const r = Router();
 
@@ -29,7 +29,9 @@ r.post('/crm/companies', async (req, res, next) => {
       );
       return ins;
     });
-    res.json({ id: upsert.rows[0].id });
+    const id = upsert.rows[0].id;
+    await audit(null, 'create_company', { id, ...body });
+    res.json({ id });
   } catch (err) { next(err); }
 });
 

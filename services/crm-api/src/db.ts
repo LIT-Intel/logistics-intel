@@ -85,3 +85,8 @@ export async function initSchema(): Promise<void> {
     );
   `);
 }
+
+export async function audit(actor: string | null, action: string, details: any) {
+  const p = await getPool();
+  await p.query(`INSERT INTO audit_logs(actor, action, details) VALUES($1,$2,$3)` , [actor, action, details ?? null]);
+}

@@ -1,129 +1,134 @@
 swagger: "2.0"
 info:
   title: lit-caller-api
-  version: v8
+  version: v9
 schemes: ["https"]
 
-# NOTE: Host is managed by API Gateway; do not hardcode it in 'host:'.
-# We set per-path backends below.
-
 paths:
-  /searchCompanies:
-    post:
-      operationId: searchCompanies
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app/searchCompanies
-      responses:
-        "200":
-          description: OK
-      security:
-        - litProxyHeader: []   # secured route (keeps your header check)
-
-  /getFilterOptions:
-    post:
-      operationId: getFilterOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app/getFilterOptions
-      responses:
-        "200":
-          description: OK
-      security:
-        - litProxyHeader: []   # secured route (keeps your header check)
-
-  # Public browser-safe route — no security block
   /public/getFilterOptions:
-    post:
+    options:
+      operationId: corsPublicGetFilterOptions
+      x-google-backend:
+        address: https://search-unified-<hash>-uc.a.run.app
+        jwt_audience: https://search-unified-<hash>-uc.a.run.app
+      responses:
+        "204": { description: No Content }
+    get:
       operationId: publicGetFilterOptions
       x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app/getFilterOptions
+        address: https://search-unified-<hash>-uc.a.run.app
+        jwt_audience: https://search-unified-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
+        "200": { description: OK }
 
-  # ==== NEW PUBLIC ROUTES (browser-safe; no security block) ====
-
-  # CRM — outreach history (Campaigns service)
-  /public/crm/outreach-history:
-    post:
-      operationId: crmOutreachHistory
+  /public/searchCompanies:
+    options:
+      operationId: corsPublicSearchCompanies
       x-google-backend:
-        address: https://campaigns-187580267283.us-central1.run.app/public/crm/outreach-history
+        address: https://search-unified-<hash>-uc.a.run.app
+        jwt_audience: https://search-unified-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
-
-  # CRM — persona generate (CRM Contacts service)
-  /public/crm/persona/generate:
+        "204": { description: No Content }
     post:
-      operationId: crmPersonaGenerate
+      operationId: publicSearchCompanies
       x-google-backend:
-        address: https://crm-contacts-187580267283.us-central1.run.app/public/crm/persona/generate
+        address: https://search-unified-<hash>-uc.a.run.app
+        jwt_audience: https://search-unified-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
+        "200": { description: OK }
 
-  # CRM — schedule followups (Campaigns service)
-  /public/crm/followups/schedule:
+  /crm/companies:
+    options:
+      operationId: corsCrmCompanies
+      x-google-backend:
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
+      responses:
+        "204": { description: No Content }
     post:
-      operationId: crmFollowupsSchedule
+      operationId: crmCompaniesCreate
       x-google-backend:
-        address: https://campaigns-187580267283.us-central1.run.app/public/crm/followups/schedule
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
+        "200": { description: OK }
 
-  # Admin — import jobs (Admin Functions service)
-  /public/admin/import-jobs:
+  /crm/companies/{id}:
+    options:
+      operationId: corsCrmCompanyGet
+      x-google-backend:
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
+      responses:
+        "204": { description: No Content }
     get:
-      operationId: adminImportJobs
+      operationId: crmCompaniesGet
       x-google-backend:
-        address: https://admin-functions-187580267283.us-central1.run.app/public/admin/import-jobs
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
+        "200": { description: OK }
 
-  # Admin — audit logs (Admin Functions service)
-  /public/admin/audit-logs:
-    get:
-      operationId: adminAuditLogs
+  /crm/contacts:
+    options:
+      operationId: corsCrmContacts
       x-google-backend:
-        address: https://admin-functions-187580267283.us-central1.run.app/public/admin/audit-logs
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
-
-  # Admin — feature flags (Admin Functions service)
-  /public/admin/feature-flags:
-    get:
-      operationId: adminFeatureFlags
-      x-google-backend:
-        address: https://admin-functions-187580267283.us-central1.run.app/public/admin/feature-flags
-      responses:
-        "200":
-          description: OK
-
-  # Widgets — Tariff Calculator (Widgets Tariff service)
-  /public/widgets/tariff/calc:
+        "204": { description: No Content }
     post:
-      operationId: widgetsTariffCalc
+      operationId: crmContactsCreate
       x-google-backend:
-        address: https://widgets-tariff-187580267283.us-central1.run.app/public/widgets/tariff/calc
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
+        "200": { description: OK }
 
-  # Widgets — Quote Generator (Widgets Quote service)
-  /public/widgets/quote/generate:
+  /crm/outreach:
+    options:
+      operationId: corsCrmOutreach
+      x-google-backend:
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
+      responses:
+        "204": { description: No Content }
     post:
-      operationId: widgetsQuoteGenerate
+      operationId: crmOutreachCreate
       x-google-backend:
-        address: https://widgets-quote-187580267283.us-central1.run.app/public/widgets/quote/generate
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
       responses:
-        "200":
-          description: OK
+        "200": { description: OK }
 
-securityDefinitions:
-  litProxyHeader:
-    type: apiKey
-    in: header
-    name: x-lit-proxy-token
+  /crm/feature-flags:
+    options:
+      operationId: corsCrmFeatureFlags
+      x-google-backend:
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
+      responses:
+        "204": { description: No Content }
+    get:
+      operationId: crmFeatureFlags
+      x-google-backend:
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
+      responses:
+        "200": { description: OK }
+
+  /admin/audit:
+    options:
+      operationId: corsAdminAudit
+      x-google-backend:
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
+      responses:
+        "204": { description: No Content }
+    get:
+      operationId: adminAudit
+      x-google-backend:
+        address: https://crm-api-<hash>-uc.a.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
+      responses:
+        "200": { description: OK }

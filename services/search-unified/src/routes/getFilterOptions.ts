@@ -1,10 +1,16 @@
 import { Router } from "express";
 import { bq, table, lookbackWhere } from "../bq";
 
+let cached: { ts: number; payload: any } | null = null;
+const TTL_MS = 60_000;
+
 const r = Router();
 
 r.get("/public/getFilterOptions", async (req, res, next) => {
   try {
+    if (cached && Date.now() - cached.ts < TTL_MS) {
+      return res.json(cached.payload);
+    }
     const days = Number(req.query.days || 180);
     const where = lookbackWhere("snapshot_date", days);
     const t = table("shipments_daily_part");
@@ -54,7 +60,9 @@ r.get("/public/getFilterOptions", async (req, res, next) => {
       location: "US",
     });
 
-    res.json({ modes, hs, origins, dests, carriers });
+    const payload = { modes, hs, origins, dests, carriers };
+    cached = { ts: Date.now(), payload };
+    res.json(payload);
   } catch (err) {
     try {
       // Fallback if shipments_daily_part is empty: use company_overview_daily_part
@@ -84,7 +92,9 @@ r.get("/public/getFilterOptions", async (req, res, next) => {
         `,
         location: "US",
       });
-      res.json({ modes: modes2, hs: [], origins: origins2, dests: dests2, carriers: [] });
+      const payload = { modes: modes2, hs: [], origins: origins2, dests: dests2, carriers: [] };
+      cached = { ts: Date.now(), payload };
+      res.json(payload);
     } catch (fallbackErr) {
       console.error(fallbackErr);
       next(fallbackErr);

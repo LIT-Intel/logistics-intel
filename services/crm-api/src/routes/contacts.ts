@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getPool } from '../db.js';
+import { getPool, audit } from '../db.js';
 
 const r = Router();
 
@@ -22,7 +22,9 @@ r.post('/crm/contacts', async (req, res, next) => {
                  VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`;
     const args = [body.companyId, body.fullName, body.title ?? null, body.email ?? null, body.linkedin ?? null, body.phone ?? null, body.source ?? null];
     const ins = await p.query(sql, args);
-    res.json({ id: ins.rows[0].id });
+    const id = ins.rows[0].id;
+    await audit(null, 'create_contact', { id, ...body });
+    res.json({ id });
   } catch (err) { next(err); }
 });
 

@@ -2,12 +2,21 @@ export type FeatureFlags = {
   companyDrawerPremium: boolean;
 };
 
-const defaultFlags: FeatureFlags = {
-  companyDrawerPremium: true, // TODO: read from backend flag in future
-};
+import { useEffect, useState } from 'react';
+import { getFeatureFlags } from '@/lib/crm';
 
 export function useFeatureFlags(): FeatureFlags {
-  // simple static hook for now; could be Zustand/Context later
-  return defaultFlags;
+  const [flags, setFlags] = useState<FeatureFlags>({ companyDrawerPremium: true });
+  useEffect(() => {
+    let cancelled = false;
+    getFeatureFlags().then((res) => {
+      if (cancelled) return;
+      const map: Record<string, boolean> = {};
+      for (const row of res.flags || []) map[row.key] = !!row.enabled;
+      setFlags({ companyDrawerPremium: map.companyDrawerPremium ?? true });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return flags;
 }
 
