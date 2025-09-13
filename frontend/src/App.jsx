@@ -20,6 +20,7 @@ const LeadProspecting= lazy(() => import("@/pages/LeadProspecting"));
 const CMSManager     = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent     = lazy(() => import("@/pages/AdminAgent"));
+const SearchPanel    = lazy(() => import("@/pages/SearchPanel"));
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -154,6 +155,16 @@ export default function App() {
           element={
             <RequireAuth>
               <Layout currentPageName="AdminAgent"><AdminAgent /></Layout>
+            </RequireAuth>
+          }
+        />
+
+        {/* Dev/Search JSON Panel */}
+        <Route
+          path="/dev/search-panel"
+          element={
+            <RequireAuth>
+              <Layout currentPageName="SearchPanel"><SearchPanel /></Layout>
             </RequireAuth>
           }
         />

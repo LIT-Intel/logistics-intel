@@ -1,6 +1,6 @@
 const BASE = (import.meta.env as any).VITE_PROXY_BASE || "/api/public";
 
-export async function getFilterOptions(input: any = {}, signal?: AbortSignal) {
+export async function getFilterOptions(input: object = {}, signal?: AbortSignal) {
   const res = await fetch(`${BASE}/getFilterOptions`, {
     method: "POST",
     headers: { "content-type":"application/json", "accept":"application/json" },
@@ -11,9 +11,9 @@ export async function getFilterOptions(input: any = {}, signal?: AbortSignal) {
   return res.json();
 }
 
-export type SearchCompaniesBody = { q?: string; mode?: "air"|"ocean"; hs?: string[]; origin?: string[]; dest?: string[]; carrier?: string[]; startDate?: string; endDate?: string; limit?: number; offset?: number; };
+export type SearchCompaniesInput = { q?: string; mode?: "all"|"ocean"|"air"; pagination?: { limit?: number; offset?: number } };
 
-export async function searchCompanies(body: SearchCompaniesBody, signal?: AbortSignal) {
+export async function searchCompanies(body: SearchCompaniesInput, signal?: AbortSignal) {
   const res = await fetch(`${BASE}/searchCompanies`, {
     method:"POST",
     headers:{ "content-type":"application/json", "accept":"application/json" },
