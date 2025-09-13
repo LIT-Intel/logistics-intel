@@ -77,3 +77,7 @@ export async function initSchema() {
     );
   `);
 }
+export async function audit(actor, action, details) {
+    const p = await getPool();
+    await p.query(`INSERT INTO audit_logs(actor, action, details) VALUES($1,$2,$3)`, [actor, action, details ?? null]);
+}

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getPool } from '../db.js';
+import { getPool, audit } from '../db.js';
 const r = Router();
 const CreateCompany = z.object({
     name: z.string().min(1),
@@ -20,7 +20,9 @@ r.post('/crm/companies', async (req, res, next) => {
             const ins = await p.query(`INSERT INTO companies(name, website, plan, external_ref) VALUES($1,$2,COALESCE($3,'Free'),$4) RETURNING id`, [body.name, body.website ?? null, body.plan ?? null, body.external_ref ?? null]);
             return ins;
         });
-        res.json({ id: upsert.rows[0].id });
+        const id = upsert.rows[0].id;
+        await audit(null, 'create_company', { id, ...body });
+        res.json({ id });
     }
     catch (err) {
         next(err);

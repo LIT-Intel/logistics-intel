@@ -1,4 +1,6 @@
 import express from 'express';
+import bodyParser from 'body-parser';
+import publicRouter from './routes/public.js';
 import health from './routes/health.js';
 import companies from './routes/companies.js';
 import contacts from './routes/contacts.js';
@@ -8,7 +10,16 @@ import admin from './routes/admin.js';
 import { initSchema } from './db.js';
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '2mb' }));
+app.use(bodyParser.json({ limit: '1mb' }));
+// CORS for Gateway/browser
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS')
+        return res.status(204).end();
+    next();
+});
 // Optional API key gate
 const API_KEY = process.env.API_KEY;
 if (API_KEY) {
@@ -25,6 +36,8 @@ app.use(contacts);
 app.use(outreach);
 app.use(featureFlags);
 app.use(admin);
+// Public proxy routes (to Gateway)
+app.use('/api/public', publicRouter);
 app.use((err, _req, res, _next) => {
     console.error(err);
     res.status(500).json({ error: 'internal_error', detail: String(err?.message || err) });

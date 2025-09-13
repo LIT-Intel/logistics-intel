@@ -1,7 +1,12 @@
-export const API_BASE = import.meta.env.VITE_API_BASE ?? "https://lit-caller-gw-2e68g4k3.uc.gateway.dev";
+const BASE = (import.meta.env as any).VITE_PROXY_BASE || "/api/public";
 
-export async function getFilterOptions(signal?: AbortSignal) {
-  const res = await fetch(`${API_BASE}/public/getFilterOptions`, { signal, headers:{ "accept":"application/json" }});
+export async function getFilterOptions(input: any = {}, signal?: AbortSignal) {
+  const res = await fetch(`${BASE}/getFilterOptions`, {
+    method: "POST",
+    headers: { "content-type":"application/json", "accept":"application/json" },
+    body: JSON.stringify(input),
+    signal
+  });
   if (!res.ok) throw new Error(`getFilterOptions ${res.status}`);
   return res.json();
 }
@@ -9,7 +14,7 @@ export async function getFilterOptions(signal?: AbortSignal) {
 export type SearchCompaniesBody = { q?: string; mode?: "air"|"ocean"; hs?: string[]; origin?: string[]; dest?: string[]; carrier?: string[]; startDate?: string; endDate?: string; limit?: number; offset?: number; };
 
 export async function searchCompanies(body: SearchCompaniesBody, signal?: AbortSignal) {
-  const res = await fetch(`${API_BASE}/public/searchCompanies`, {
+  const res = await fetch(`${BASE}/searchCompanies`, {
     method:"POST",
     headers:{ "content-type":"application/json", "accept":"application/json" },
     body: JSON.stringify(body),
