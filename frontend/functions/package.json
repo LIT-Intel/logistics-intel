@@ -15,12 +15,15 @@
   "main": "index.js",
   "dependencies": {
     "firebase-admin": "^12.7.0",
-    "firebase-functions": "^5.1.1"
+    "firebase-functions": "^5.1.1",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "eslint": "^8.15.0",
     "eslint-config-google": "^0.14.0",
-    "firebase-functions-test": "^3.1.0"
+    "firebase-functions-test": "^3.1.0",
+    "vitest": "^2.0.5"
   },
+  "test": "vitest run",
   "private": true
 }
