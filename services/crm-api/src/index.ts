@@ -1,4 +1,6 @@
 import express from 'express';
+import bodyParser from 'body-parser';
+import publicRouter from './routes/public.js';
 import health from './routes/health.js';
 import companies from './routes/companies.js';
 import contacts from './routes/contacts.js';
@@ -9,7 +11,7 @@ import { initSchema } from './db.js';
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '2mb' }));
+app.use(bodyParser.json({ limit: '1mb' }));
 
 // CORS for Gateway/browser
 app.use((req: any, res: any, next: any) => {
@@ -36,6 +38,9 @@ app.use(contacts);
 app.use(outreach);
 app.use(featureFlags);
 app.use(admin);
+
+// Public proxy routes (to Gateway)
+app.use('/api/public', publicRouter);
 
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err);
