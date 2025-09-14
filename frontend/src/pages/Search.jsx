@@ -90,24 +90,27 @@ export default function Search() {
       const offset = (p - 1) * ITEMS_PER_PAGE;
       const payload = {
         q: searchQuery || undefined,
-        origin: filters.origin ? [filters.origin] : undefined,
-        dest: filters.destination ? [filters.destination] : undefined,
-        mode: filters.mode || undefined,
-        startDate: filters.date_start || undefined,
-        endDate: filters.date_end || undefined,
-        limit: ITEMS_PER_PAGE,
-        offset
+        mode: filters.mode || "all",
+        filters: {
+          origin: filters.origin ? [filters.origin] : undefined,
+          destination: filters.destination ? [filters.destination] : undefined,
+        },
+        dateRange: {
+          from: filters.date_start || undefined,
+          to: filters.date_end || undefined,
+        },
+        pagination: { limit: ITEMS_PER_PAGE, offset }
       };
 
       const resp = await searchCompanies(payload);
-      const results = Array.isArray(resp?.results) ? resp.results : (resp?.data?.items || []);
+      const results = Array.isArray(resp?.results) ? resp.results : (resp?.data?.items || resp?.data?.results || []);
       const total = typeof resp?.total === 'number' ? resp.total : (resp?.data?.total || 0);
 
       setSearchResults(results);
       setTotalResults(total);
     } catch (error) {
       console.error("Search error:", error);
-      setSearchError("Search failed: " + (error?.message || "Unknown error"));
+      setSearchError((error?.message && String(error.message)) || "Search failed. Please try again.");
       setSearchResults([]);
       setTotalResults(0);
     } finally {
