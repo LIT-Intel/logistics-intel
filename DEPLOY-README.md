@@ -2,16 +2,15 @@
 
 This repo deploys automatically on merge to `main` via GitHub Actions.
 
-## One-time setup (GitHub Secrets)
-Add these in GitHub → Settings → Secrets and variables → Actions:
+## One-time setup (GitHub OIDC / WIF)
+Configure Workload Identity Federation for GitHub Actions to impersonate the deployer service account.
 
-- `FIREBASE_SERVICE_ACCOUNT`: JSON for a GCP service account with roles:
-  - Firebase Admin
-  - Firebase Hosting Admin
-  - Cloud Functions Admin
-  - Cloud Run Admin
-  - Service Account User
-  - IAM Service Account Token Creator
+- Workload identity provider:
+  `projects/187580267283/locations/global/workloadIdentityPools/github/providers/github`
+- Deployer service account:
+  `github-actions-deployer@logistics-intel.iam.gserviceaccount.com`
+
+Add this repository secret:
 - `PROXY_URL`: The Cloud Run URL of your private api-proxy service (e.g., `https://api-proxy-XXXXXXXX-uc.a.run.app`).
 
 ## What happens on merge
