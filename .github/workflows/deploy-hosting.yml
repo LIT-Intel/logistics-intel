@@ -37,4 +37,5 @@ jobs:
           export_default_credentials: true
 
       - name: Deploy to Firebase Hosting
-        run: npx --yes firebase-tools deploy --only hosting --project logistics-intel --config frontend/firebase.json --non-interactive --force
+        working-directory: frontend
+        run: npx --yes firebase-tools deploy --only hosting --project logistics-intel --config firebase.json --non-interactive --force
