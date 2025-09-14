@@ -1,0 +1,45 @@
+swagger: "2.0"
+info:
+  title: Logistic Intel Public API
+  version: v2
+schemes: ["https"]
+paths:
+  /public/getFilterOptions:
+    options:
+      operationId: corsPublicGetFilterOptions
+      x-google-backend:
+        address: https://search-unified-<hash>-uc.a.run.app
+        jwt_audience: https://search-unified-<hash>-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "204": { description: No Content }
+    post:
+      operationId: publicGetFilterOptions
+      x-google-backend:
+        address: https://search-unified-<hash>-uc.a.run.app
+        jwt_audience: https://search-unified-<hash>-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200": { description: OK }
+  /public/searchCompanies:
+    options:
+      operationId: corsPublicSearchCompanies
+      x-google-backend:
+        address: https://searchcompanies-index-<hash>-uc.a.run.app
+        jwt_audience: https://searchcompanies-index-<hash>-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "204": { description: No Content }
+    post:
+      operationId: publicSearchCompanies
+      x-google-backend:
+        address: https://searchcompanies-index-<hash>-uc.a.run.app
+        jwt_audience: https://searchcompanies-index-<hash>-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200": { description: OK }
+securityDefinitions: {}
+definitions: {}
+externalDocs:
+  description: "Browser must call a proxy at /api/public/*; the proxy injects x-lit-proxy-token."
+  url: "https://lit-caller-gw-2e68g4k3.uc.gateway.dev"

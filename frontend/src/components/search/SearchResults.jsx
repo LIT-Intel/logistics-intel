@@ -32,12 +32,10 @@ export default function SearchResults({
       {/* Header with View Toggle and Pagination */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-gray-800">
-            Search Results
-          </h2>
+          <h2 className="text-xl font-semibold text-gray-800">Search Results</h2>
           {!isLoading && (
             <p className="text-gray-500 text-sm mt-1">
-              Found {totalResults.toLocaleString()} companies • Showing {searchResults?.length || 0} on this page
+              Found {Number(totalResults || 0).toLocaleString()} companies • Showing {searchResults?.length || 0} on this page
             </p>
           )}
         </div>

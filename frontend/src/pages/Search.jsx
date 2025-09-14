@@ -12,8 +12,9 @@ import CompanyDetailModal from "../components/search/CompanyDetailModal";
 import SearchResults from "../components/search/SearchResults";
 import UpgradePrompt from "../components/common/UpgradePrompt";
 
-import { searchCompanies } from "@/api/functions/searchCompanies";
+import { searchCompanies } from "@/lib/api";
 import { saveCompany } from "@/api/functions";
+import { createCompany } from "@/lib/crm";
 
 const ITEMS_PER_PAGE = 25;
 
@@ -32,6 +33,7 @@ export default function Search() {
 
   const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
@@ -47,6 +49,18 @@ export default function Search() {
   const [viewMode, setViewMode] = useState("grid");
   
   const [hasSearched, setHasSearched] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    // Auto search on filter changes or debounced query changes, starting from page 1
+    if (hasSearched) {
+      handleSearch(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery, filters]);
 
   const totalPages = useMemo(() => {
     return Math.max(1, Math.ceil((totalResults || 0) / ITEMS_PER_PAGE));
@@ -73,27 +87,24 @@ export default function Search() {
     setHasSearched(true);
 
     try {
+      const offset = (p - 1) * ITEMS_PER_PAGE;
       const payload = {
-        q: searchQuery || null,
-        origin: filters.origin || null,
-        destination: filters.destination || null,
-        mode: filters.mode || null,
-        date_start: filters.date_start || null,
-        date_end: filters.date_end || null,
-        page: p,
-        page_size: ITEMS_PER_PAGE
+        q: searchQuery || undefined,
+        origin: filters.origin ? [filters.origin] : undefined,
+        dest: filters.destination ? [filters.destination] : undefined,
+        mode: filters.mode || undefined,
+        startDate: filters.date_start || undefined,
+        endDate: filters.date_end || undefined,
+        limit: ITEMS_PER_PAGE,
+        offset
       };
 
       const resp = await searchCompanies(payload);
-      
-      if (resp.data?.ok && resp.data?.items) {
-        setSearchResults(Array.isArray(resp.data.items) ? resp.data.items : []);
-        setTotalResults(resp.data.total || 0);
-      } else {
-        setSearchResults([]);
-        setTotalResults(0);
-        setSearchError(resp.data?.error || "Search failed");
-      }
+      const results = Array.isArray(resp?.results) ? resp.results : (resp?.data?.items || []);
+      const total = typeof resp?.total === 'number' ? resp.total : (resp?.data?.total || 0);
+
+      setSearchResults(results);
+      setTotalResults(total);
     } catch (error) {
       console.error("Search error:", error);
       setSearchError("Search failed: " + (error?.message || "Unknown error"));
@@ -125,16 +136,8 @@ export default function Search() {
     setSavedCompanyIds(optimisticNewIds);
 
     try {
-      const response = await saveCompany({ 
-        company_id: companyId, 
-        company_name: company.name,
-      });
-
-      if (response.data?.ok) {
-        console.log("Company saved successfully");
-      } else {
-        throw new Error(response.data?.error || "Failed to save company");
-      }
+      // Save to CRM via Gateway
+      await createCompany({ name: company.name, website: company.website || undefined, external_ref: String(companyId) });
     } catch (error) {
       console.error("Failed to save company:", error);
       setSavedCompanyIds(originalSavedIds);

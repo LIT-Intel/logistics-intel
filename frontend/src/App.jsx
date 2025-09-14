@@ -20,6 +20,7 @@ const LeadProspecting= lazy(() => import("@/pages/LeadProspecting"));
 const CMSManager     = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent     = lazy(() => import("@/pages/AdminAgent"));
+const SearchPanel    = lazy(() => import("@/pages/SearchPanel"));
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -39,6 +40,13 @@ export default function App() {
             <Layout currentPageName="Landing">
               <Landing />
             </Layout>
+          }
+        />
+        {/* Public demo page */}
+        <Route
+          path="/demo"
+          element={
+            <Layout currentPageName="Demo"><SearchPanel /></Layout>
           }
         />
         <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
@@ -157,6 +165,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
 
         {/* Fallbacks */}
         <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />

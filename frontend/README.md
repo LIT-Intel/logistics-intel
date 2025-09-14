@@ -11,6 +11,17 @@ npm install
 npm run dev
 ```
 
+Environment:
+
+```
+VITE_PROXY_BASE=/api/public
+```
+
+Notes:
+- The browser calls `/api/public/*` only.
+- Firebase Hosting rewrites `/api/**` to the private Cloud Run `api-proxy` service in `us-central1`, which injects the required header to API Gateway.
+- No secrets are present in client code.
+
 ## Building the app
 
 ```bash
