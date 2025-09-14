@@ -8,6 +8,7 @@ import { useAuth } from "@/auth/AuthProvider";
 const Landing        = lazy(() => import("@/pages/Landing"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
 const Search         = lazy(() => import("@/pages/Search"));
+const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
 const Companies      = lazy(() => import("@/pages/Companies"));
 const Campaigns      = lazy(() => import("@/pages/Campaigns"));
 const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));
@@ -39,6 +40,22 @@ export default function App() {
           element={
             <Layout currentPageName="Landing">
               <Landing />
+            </Layout>
+          }
+        />
+        {/* Public Search routes (Base44 UI on GCP) */}
+        <Route
+          path="/search"
+          element={
+            <Layout currentPageName="Search"><Search /></Layout>
+          }
+        />
+        <Route
+          path="/company/:id"
+          element={
+            <Layout currentPageName="Company">
+              {/* Drawer-style page if navigated directly */}
+              <CompanyDetailModal isOpen={true} onClose={() => window.history.back()} />
             </Layout>
           }
         />
