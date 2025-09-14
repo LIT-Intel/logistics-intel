@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { bq, table, lookbackWhere } from "../bq";
+import { bq, table, lookbackWhere } from "../bq.js";
 let cached = null;
 const TTL_MS = 60_000;
 const r = Router();
@@ -12,7 +12,7 @@ r.options('/public/getFilterOptions', (req, res) => {
     });
     return res.status(204).end();
 });
-r.get("/public/getFilterOptions", async (req, res, next) => {
+async function handleGet(req, res, next) {
     try {
         res.set({
             'Access-Control-Allow-Origin': '*',
@@ -131,5 +131,7 @@ r.get("/public/getFilterOptions", async (req, res, next) => {
             return res.status(200).json(payload);
         }
     }
-});
+}
+r.get("/public/getFilterOptions", handleGet);
+r.post("/public/getFilterOptions", handleGet);
 export default r;
