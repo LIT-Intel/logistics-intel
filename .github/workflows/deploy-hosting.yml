@@ -1,4 +1,4 @@
-name: Deploy Hosting
+name: Deploy Hosting (frontend/firebase.json)
 on:
   push:
     branches: [ main ]
@@ -13,26 +13,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'pnpm'
+          cache: 'npm'
 
       - name: Install deps
         working-directory: frontend
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Build
         working-directory: frontend
         env:
           VITE_PROXY_BASE: /api/public
-        run: pnpm build
+        run: npm run build
 
       - name: Authenticate to Google Cloud (OIDC)
         uses: google-github-actions/auth@v2
@@ -41,9 +36,5 @@ jobs:
           service_account: github-actions-deployer@logistics-intel.iam.gserviceaccount.com
           export_default_credentials: true
 
-      - name: Install Firebase CLI
-        run: npm i -g firebase-tools
-
       - name: Deploy to Firebase Hosting
-        working-directory: frontend
-        run: firebase deploy --only hosting --project logistics-intel --non-interactive --force
+        run: npx --yes firebase-tools deploy --only hosting --project logistics-intel --config frontend/firebase.json --non-interactive --force

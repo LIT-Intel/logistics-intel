@@ -1,7 +1,7 @@
 name: Smoke Tests
 on:
   workflow_run:
-    workflows: ["Deploy Hosting", "Deploy Functions"]
+    workflows: ["Deploy Hosting (frontend/firebase.json)", "Deploy Functions"]
     types: [completed]
 
 jobs:
@@ -48,3 +48,15 @@ jobs:
           code=$(curl -s -o resp2.json -w "%{http_code}" -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -d '{"q":"acme","pagination":{"limit":1,"offset":0}}' "$URL/public/searchCompanies")
           test "$code" = "200"
           cat resp2.json | jq -e '.' > /dev/null
+
+      - name: Smoke Hosting healthz
+        env:
+          HOSTING_URL: ${{ secrets.HOSTING_URL }}
+        run: |
+          set -e
+          test -n "$HOSTING_URL"
+          code=$(curl -s -o health.txt -w "%{http_code}" "$HOSTING_URL/healthz.html")
+          test "$code" = "200"
+          tr -d '\r\n' < health.txt > health_stripped.txt
+          echo -n ok > expected.txt
+          diff -u expected.txt health_stripped.txt
