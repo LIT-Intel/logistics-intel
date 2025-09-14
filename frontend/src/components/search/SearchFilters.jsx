@@ -16,6 +16,7 @@ function parseFilterOptions(response) {
 
 export default function SearchFilters({ onChange }) {
   const [options, setOptions] = useState({ origins: [], destinations: [], modes: [] });
+  const [showRaw, setShowRaw] = useState(false);
   const [filters, setFilters] = useState({
     origin: "",
     destination: "",
@@ -25,7 +26,7 @@ export default function SearchFilters({ onChange }) {
   });
   const { data, isLoading, error } = useQuery({
     queryKey: ["filter-options"],
-    queryFn: () => getFilterOptions(),
+    queryFn: () => getFilterOptions({}),
     staleTime: 1000 * 60 * 10,
   });
 
@@ -83,6 +84,16 @@ export default function SearchFilters({ onChange }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+      <div className="md:col-span-5 flex items-center justify-between">
+        <div />
+        <button
+          type="button"
+          className="text-xs text-blue-600 underline"
+          onClick={() => setShowRaw(v => !v)}
+        >
+          {showRaw ? "Hide" : "Load"} Filters JSON
+        </button>
+      </div>
       {/* Origin Country */}
       <div>
         <label htmlFor="origin" className="block text-sm font-medium text-gray-700 mb-1">Origin Country</label>
@@ -151,6 +162,12 @@ export default function SearchFilters({ onChange }) {
           className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
         />
       </div>
+
+      {showRaw && (
+        <pre className="md:col-span-5 mt-2 text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-64">
+{JSON.stringify(data, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }
