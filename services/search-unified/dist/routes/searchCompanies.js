@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { bq, table, lookbackWhere } from "../bq";
+import { bq, table, lookbackWhere } from "../bq.js";
 const r = Router();
 const Body = z.object({
     q: z.string().trim().max(120).optional(),
