@@ -1,10 +1,15 @@
-const BASE = (import.meta.env as any).VITE_PROXY_BASE || "/api/public";
+const BASE = (() => {
+  const base = (import.meta.env as any).VITE_API_BASE || (import.meta.env as any).VITE_PROXY_BASE || "/api/public";
+  if (base.endsWith("/public")) return base;
+  if (base.endsWith("/public/")) return base.slice(0, -1);
+  if (base === "/api/public") return base;
+  return base.replace(/\/$/, "") + "/public";
+})();
 
 export async function getFilterOptions(input: object = {}, signal?: AbortSignal) {
   const res = await fetch(`${BASE}/getFilterOptions`, {
-    method: "POST",
+    method: "GET",
     headers: { "content-type": "application/json", "accept": "application/json" },
-    body: JSON.stringify({ data: {} }),
     signal,
   });
   if (res.status === 422) {
