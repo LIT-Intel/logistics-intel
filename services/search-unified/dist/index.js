@@ -23,5 +23,6 @@ app.use((err, _req, res, _next) => {
     console.error(err);
     res.status(500).json({ error: "internal_error", detail: String(err?.message || err) });
 });
-const port = process.env.PORT || 8080;
-app.listen(port, () => console.log(`search-unified listening on :${port}`));
+const port = Number(process.env.PORT) || 8080;
+app.listen(port, '0.0.0.0', () => console.log(`search-unified listening on :${port}`));
+export default app;
