@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@base44/sdk':
+      
         specifier: ^0.1.2
         version: 0.1.2(typescript@5.9.2)
       '@hookform/resolvers':
@@ -313,7 +313,7 @@ packages:
     resolution: {integrity: sha512-bkFqkLhh3pMBUQQkpVgWDWq/lqzc2678eUyDlTBhRqhCHFguYYGM0Efga7tYk4TogG/3x0EEl66/OQ+WGbWB/Q==}
     engines: {node: '>=6.9.0'}
 
-  '@base44/sdk@0.1.2':
+  
     resolution: {integrity: sha512-8hExlLSujXy5jurpgO+ahCiTdQfiGHzywpvsFQoVbQQpKgtlQaYY8+heV7Hjj9p4/ib2dM6jJLqBqLUbbTzIqQ==}
     peerDependencies:
       typescript: '>=4.0.0'
@@ -3918,7 +3918,7 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.27.1
 
-  '@base44/sdk@0.1.2(typescript@5.9.2)':
+  
     dependencies:
       axios: 1.12.0
       typescript: 5.9.2
