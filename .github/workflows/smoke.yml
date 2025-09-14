@@ -1,0 +1,50 @@
+name: Smoke Tests
+on:
+  workflow_run:
+    workflows: ["Deploy Hosting", "Deploy Functions"]
+    types: [completed]
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to Google (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/187580267283/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-actions-deployer@logistics-intel.iam.gserviceaccount.com
+          export_default_credentials: true
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get ID token
+        id: token
+        run: echo "token=$(gcloud auth print-identity-token --audiences=${{ secrets.PROXY_URL }})" >> $GITHUB_OUTPUT
+
+      - name: Smoke getFilterOptions
+        env:
+          URL: ${{ secrets.PROXY_URL }}
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -e
+          code=$(curl -s -o resp.json -w "%{http_code}" -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -d '{}' "$URL/public/getFilterOptions")
+          test "$code" = "200"
+          cat resp.json | jq -e '.modes' > /dev/null
+
+      - name: Smoke searchCompanies
+        env:
+          URL: ${{ secrets.PROXY_URL }}
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -e
+          code=$(curl -s -o resp2.json -w "%{http_code}" -H "authorization: Bearer $TOKEN" -H "content-type: application/json" -d '{"q":"acme","pagination":{"limit":1,"offset":0}}' "$URL/public/searchCompanies")
+          test "$code" = "200"
+          cat resp2.json | jq -e '.' > /dev/null

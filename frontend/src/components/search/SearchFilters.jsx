@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { getFilterOptions } from "@/api/functions/getFilterOptions";
+import { getFilterOptions } from "@/lib/api";
 import { AlertCircle } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useQuery } from "@tanstack/react-query";
 
 function parseFilterOptions(response) {
   if (!response) return {};
@@ -21,34 +23,22 @@ export default function SearchFilters({ onChange }) {
     date_start: "",
     date_end: "",
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["filter-options"],
+    queryFn: () => getFilterOptions(),
+    staleTime: 1000 * 60 * 10,
+  });
 
-  const fetchOptions = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await getFilterOptions({});
-      if (response && (response.status === 404 || response.ok === false)) {
-         throw new Error(response.error || "Function not found (404).");
-      }
-      const parsed = parseFilterOptions(response);
+  useEffect(() => {
+    if (data) {
+      const parsed = parseFilterOptions(data);
       setOptions({
         origins: parsed.origin_countries.sort(),
         destinations: parsed.destination_countries.sort(),
         modes: parsed.modes.sort(),
       });
-    } catch (err) {
-      console.error("SearchFilters: Error loading filter options:", err);
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    fetchOptions();
-  }, [fetchOptions]);
+  }, [data]);
   
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -70,10 +60,23 @@ export default function SearchFilters({ onChange }) {
           </div>
           <div className="ml-3">
             <p className="text-sm text-red-700">
-              Could not load search filters. Please try again later. ({error})
+              Could not load search filters. Please try again later. ({error.message || String(error)})
             </p>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ))}
       </div>
     );
   }

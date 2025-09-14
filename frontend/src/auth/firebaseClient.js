@@ -16,19 +16,41 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+const hasFirebaseConfig = !!(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
+
+let authInstance = null;
+try {
+  if (hasFirebaseConfig) {
+    const app = initializeApp(firebaseConfig);
+    authInstance = getAuth(app);
+  } else {
+    if (import.meta.env.PROD) {
+      console.warn("Firebase config missing; auth disabled in this environment.");
+    }
+  }
+} catch (e) {
+  console.error("Failed to initialize Firebase:", e);
+}
+
+export const auth = authInstance;
 
 export async function signInWithGoogle() {
+  if (!auth) throw new Error("Auth not configured");
   const provider = new GoogleAuthProvider();
   return signInWithPopup(auth, provider);
 }
 
 export function listenToAuth(callback) {
+  if (!auth) {
+    // Degrade gracefully: no auth → treat as signed out
+    const t = setTimeout(() => callback(null), 0);
+    return () => clearTimeout(t);
+  }
   return onAuthStateChanged(auth, callback);
 }
 
 export function logout() {
+  if (!auth) return Promise.resolve();
   return signOut(auth);
 }
 
@@ -37,8 +59,8 @@ export { signInWithGoogle as loginWithGoogle };
 
 // ✅ NEW: Microsoft sign-in
 export async function signInWithMicrosoft() {
+  if (!auth) throw new Error("Auth not configured");
   const provider = new OAuthProvider("microsoft.com");
-  // optional but helps avoid stale sessions and ensures email scope
   provider.setCustomParameters({ prompt: "consent" });
   return signInWithPopup(auth, provider);
 }
