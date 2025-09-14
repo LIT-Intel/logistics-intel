@@ -42,6 +42,13 @@ export default function App() {
             </Layout>
           }
         />
+        {/* Public demo page */}
+        <Route
+          path="/demo"
+          element={
+            <Layout currentPageName="Demo"><SearchPanel /></Layout>
+          }
+        />
         <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
         {/* App (protected) */}
         <Route
@@ -159,15 +166,6 @@ export default function App() {
           }
         />
 
-        {/* Dev/Search JSON Panel */}
-        <Route
-          path="/dev/search-panel"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="SearchPanel"><SearchPanel /></Layout>
-            </RequireAuth>
-          }
-        />
 
         {/* Fallbacks */}
         <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />

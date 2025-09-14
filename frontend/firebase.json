@@ -3,7 +3,7 @@
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
-      { "source": "/api/**", "run": { "serviceId": "crm-api", "region": "us-central1" } },
+      { "source": "/api/**", "run": { "serviceId": "api-proxy", "region": "us-central1" } },
       { "source": "**", "destination": "/index.html" }
     ]
   },
