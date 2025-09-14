@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "logistics-intel",
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
