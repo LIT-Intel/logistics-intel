@@ -7,16 +7,18 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
 
-// CORS for Gateway/browser
+// CORS for Gateway/browser (permissive; tighten later)
 app.use((req: any, res: any, next: any) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'content-type, x-api-key, authorization');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
 
 app.use(health);
+// Back-compat healthz endpoint for Cloud Run checks
+app.get('/healthz', (_req: any, res: any) => res.status(200).json({ status: 'OK' }));
 app.use(getFilterOptions);
 app.use(searchCompanies);
 
