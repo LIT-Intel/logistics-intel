@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { RFPQuote, Company, Contact } from '@/api/entities';
 import { User } from '@/api/entities';
