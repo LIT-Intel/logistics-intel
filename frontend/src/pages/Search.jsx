@@ -199,4 +199,68 @@ export default function Search() {
             <Button
               onClick={() => handleSearch(1)}
               disabled={isLoading}
-              className="px-6 md
+              className="px-6 md:px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl"
+            >
+              {isLoading ? "Searching..." : "Search"}
+            </Button>
+          </div>
+        </div>
+
+        <SearchFilters onChange={setFilters} />
+
+        {searchError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+            <div className="flex items-center gap-2 text-red-800">
+              <span className="font-semibold">Search Error:</span>
+              <span>{searchError}</span>
+            </div>
+          </div>
+        )}
+
+        {hasSearched ? (
+          <SearchResults
+            searchResults={searchResults}
+            totalResults={totalResults}
+            isLoading={isLoading}
+            onCompanySelect={handleCompanySelect}
+            onSave={handleSaveCompany}
+            onStartOutreach={handleStartOutreach}
+            onDraftRFP={handleDraftRFP}
+            user={user}
+            newShipperEvents={[]}
+            savedCompanyIds={savedCompanyIds}
+            savingCompanyId={savingCompanyId}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+          />
+        ) : (
+          <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-300">
+            <SearchIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Search</h3>
+            <p className="text-sm text-gray-500 max-w-sm mx-auto">
+              Enter a company name or use the filters above to search for trade intelligence data.
+            </p>
+          </div>
+        )}
+
+        <UpgradePrompt
+          isOpen={showUpgradePrompt}
+          onClose={() => setShowUpgradePrompt(false)}
+          feature={upgradeFeature}
+          currentPlan={user?.plan}
+        />
+
+        <CompanyDetailModal
+          company={selectedCompany}
+          isOpen={showDetailModal}
+          onClose={() => setShowDetailModal(false)}
+          onSave={handleSaveCompany}
+          user={user}
+        />
+      </div>
+    </div>
+  );
+}
