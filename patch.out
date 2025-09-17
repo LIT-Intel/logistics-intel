@@ -1,0 +1,85 @@
+<<<PATCH
+--- src/auth/PostAuthBounce.tsx
++++ src/auth/PostAuthBounce.tsx
+@@
++import React, { useEffect } from 'react';
++import { useNavigate, useLocation } from 'react-router-dom';
++import { useAuth } from './useAuth';
++
++export default function PostAuthBounce() {
++  const { user, loading } = useAuth();
++  const navigate = useNavigate();
++  const { search } = useLocation();
++
++  useEffect(() => {
++    if (!loading) {
++      const params = new URLSearchParams(search);
++      const next = params.get('next');
++      if (user) {
++        navigate(next || '/app/dashboard', { replace: true });
++      } else {
++        navigate(`/login${ next ? `?next=${encodeURIComponent(next)}` : ''}`, { replace: true });
++      }
++    }
++  }, [user, loading, navigate, search]);
++
++  return (
++    <div class="min-h-[50vh] flex items-center justify-center">
++      <div class="animate-spin h-6 w-6 rounded-full border-2 border-t-transparent" />
++    </div>
++  );
++}
+PATCH
+<<<PATCH
+--- src/auth/AuthRedirectGate.tsx
++++ src/auth/AuthRedirectGate.tsx
+@@
++import React, { useEffect } from 'react';
++import { useNavigate, useLocation } from 'react-router-dom';
++import { useAuth } from './useAuth';
++
++type Props = { children: React.ReactNode };
++
++export default function AuthRedirectGate({ children }: Props) {
++  const { user, loading } = useAuth();
++  const navigate = useNavigate();
++  const { search } = useLocation();
++
++  useEffect(() => {
++    if (!loading && user) {
++      const params = new URLSearchParams(search);
++      const next = params.get('next');
++      navigate(next || '/app/dashboard', { replace: true });
++    }
++  }, [user, loading, navigate, search]);
++
++  // Let children render during hydration (no blank page)
++  return <>{children}</>;
++}
+PATCH
+<<<PATCH
+--- src/auth/ProtectedRoute.tsx
++++ src/auth/ProtectedRoute.tsx
+@@
++import React from 'react';
++import { Navigate, useLocation } from 'react-router-dom';
++import { useAuth } from './useAuth';
++
++export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
++  const { user, loading } = useAuth();
++  const location = useLocation();
++
++  if (loading) {
++    return (
++      <div class="min-h-[50vh] flex items-center justify-center">
++        <div class="animate-spin h-6 w-6 rounded-full border-2 border-t-transparent" />
++      </div>
++    );
++  }
++  if (!user) {
++    const next = encodeURIComponent(location.pathname + location.search);
++    return <Navigate to={`/login?next=${next}`} replace />;
++  }
++  return <>{children}</>;
++}
+PATCH
