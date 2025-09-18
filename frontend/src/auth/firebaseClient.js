@@ -3,8 +3,9 @@ import { initializeApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
-  OAuthProvider,            // ⬅️ add this
+  OAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   onAuthStateChanged,
   signOut,
 } from "firebase/auth";
@@ -37,7 +38,13 @@ export const auth = authInstance;
 export async function signInWithGoogle() {
   if (!auth) throw new Error("Auth not configured");
   const provider = new GoogleAuthProvider();
-  return signInWithPopup(auth, provider);
+  try {
+    return await signInWithPopup(auth, provider);
+  } catch (e) {
+    // Fallback to redirect for popup/cookie/ITP issues or domain errors
+    await signInWithRedirect(auth, provider);
+    return { ok: true, redirect: true };
+  }
 }
 
 export function listenToAuth(callback) {
@@ -62,7 +69,12 @@ export async function signInWithMicrosoft() {
   if (!auth) throw new Error("Auth not configured");
   const provider = new OAuthProvider("microsoft.com");
   provider.setCustomParameters({ prompt: "consent" });
-  return signInWithPopup(auth, provider);
+  try {
+    return await signInWithPopup(auth, provider);
+  } catch (e) {
+    await signInWithRedirect(auth, provider);
+    return { ok: true, redirect: true };
+  }
 }
 
 // Alias to match our UI naming
