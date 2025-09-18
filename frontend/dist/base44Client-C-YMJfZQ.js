@@ -1,1 +1,0 @@
-const r={entities:{},auth:{},integrations:{Core:{}},functions:new Proxy({},{get:(e,t)=>async()=>t==="getCompanyOverview"?{kpis:{companies:0,shipments:0,outreachToday:0},charts:[],recent:[]}:t==="searchShipments"?{items:[],total:0}:t==="getOutreachHistory"?[]:null})};export{r as b};
