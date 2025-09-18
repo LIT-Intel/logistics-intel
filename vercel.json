@@ -4,6 +4,10 @@
   "installCommand": "pnpm install --no-frozen-lockfile",
   "env": {
     "VITE_API_BASE": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev"
-  }
+  },
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }
 
