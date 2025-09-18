@@ -47,12 +47,7 @@ export default function App() {
           }
         />
         {/* Public Search routes (Base44 UI on GCP) */}
-        <Route
-          path="/search"
-          element={
-            <Layout currentPageName="Search"><Search /></Layout>
-          }
-        />
+        {/* Remove public search to avoid opening outside shell */}
         <Route
           path="/company/:id"
           element={
