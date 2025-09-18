@@ -66,6 +66,16 @@ export default function Company() {
     }
   };
 
+  if (!company && !isLoading) {
+    return (
+      <div className="text-center py-16">
+        <h2 className="text-xl font-semibold text-gray-800 mb-2">Company not found</h2>
+        <p className="text-gray-600">This company may not be saved yet. Go back to Search to discover and save companies.</p>
+        <div className="mt-4"><Button variant="outline" onClick={() => window.location.href = '/app/search'}>Back to Search</Button></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
