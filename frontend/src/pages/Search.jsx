@@ -150,7 +150,7 @@ export default function Search() {
   }, []);
 
   const handleSaveCompany = async (company) => {
-    if (!user || savingCompanyId) return;
+    if (savingCompanyId) return;
 
     const companyId = company.id;
     setSavingCompanyId(companyId);
@@ -166,7 +166,9 @@ export default function Search() {
 
     try {
       // Save to CRM via Gateway
-      await createCompany({ name: company.name, website: company.website || undefined, external_ref: String(companyId) });
+      const res = await createCompany({ name: company.name, website: company.website || undefined, external_ref: String(companyId) });
+      // Treat as saved if backend returns an id or ok
+      if (!res || (!res.id && !res.ok)) throw new Error('Save failed');
     } catch (error) {
       console.error("Failed to save company:", error);
       setSavedCompanyIds(originalSavedIds);

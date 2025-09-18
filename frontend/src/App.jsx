@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import CustomLoginPage from "@/components/layout/CustomLoginPage";
 import { useAuth } from "@/auth/AuthProvider";
@@ -53,15 +53,7 @@ export default function App() {
         />
         {/* Public Search routes (Base44 UI on GCP) */}
         {/* Remove public search to avoid opening outside shell */}
-        <Route
-          path="/company/:id"
-          element={
-            <Layout currentPageName="Company">
-              {/* Drawer-style page if navigated directly */}
-              <CompanyDetailModal isOpen={true} onClose={() => window.history.back()} />
-            </Layout>
-          }
-        />
+        <Route path="/company/:id" element={<CompanyDrawerRoute />} />
         {/* Public demo page */}
         <Route
           path="/demo"
@@ -225,5 +217,21 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+  );
+}
+
+function CompanyDrawerRoute() {
+  const { id } = useParams();
+  const company = id ? { id } : null;
+  return (
+    <Layout currentPageName="Company">
+      <CompanyDetailModal
+        isOpen={true}
+        company={company}
+        user={null}
+        onSave={() => {}}
+        onClose={() => window.history.back()}
+      />
+    </Layout>
   );
 }

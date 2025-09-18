@@ -40,85 +40,32 @@ export default function CompanySearchListItem({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="p-4 hover:bg-gray-50/80 transition-all duration-200 cursor-pointer border-b border-gray-100 last:border-b-0"
+      className="p-4 hover:bg-gray-50 transition-all duration-200 cursor-pointer border-b border-gray-100 last:border-b-0"
       onClick={() => onSelect(company)}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0 pr-4">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-1">
             <h3 className="font-semibold text-gray-900 truncate">{company.name}</h3>
-            {isNew && (
-              <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs">
-                New
-              </Badge>
-            )}
+            {isNew && <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs">New</Badge>}
           </div>
-          
-          <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-            <div className="flex items-center gap-1">
-              <Building2 className="w-3 h-3" />
-              <span>ID: {company.id}</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <div>
-              <div className="flex items-center gap-1 text-blue-600 font-medium">
-                <TrendingUp className="w-3 h-3" />
-                <span>Shipments (12M):</span>
-              </div>
-              <span className="font-bold text-blue-900">
-                {formatShipments(company.shipments_12m)}
-              </span>
-            </div>
-            <div>
-              <div className="flex items-center gap-1 text-purple-600 font-medium">
-                <Calendar className="w-3 h-3" />
-                <span>Last Activity:</span>
-              </div>
-              <span className="font-bold text-purple-900">
-                {company.last_seen ? format(new Date(company.last_seen), 'MMM d') : 'N/A'}
-              </span>
-            </div>
-            <div className="md:col-span-2">
-              <div className="flex items-center gap-1 text-gray-500 font-medium">
-                <Ship className="w-3 h-3" />
-                <span>Top Route:</span>
-              </div>
-              <span className="font-medium text-gray-900 truncate">
-                {company.top_route || 'Various routes'}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mt-2">
-            <div>
-              <span className="text-gray-500">Top Carrier:</span>
-              <span className="ml-1 font-medium text-gray-900 truncate">
-                {company.top_carrier || 'Multiple carriers'}
-              </span>
-            </div>
+          <p className="text-xs text-gray-600 mb-2">ID: {company.id}</p>
+          <p className="text-sm text-gray-700 line-clamp-2 mb-2">
+            {(company.summary || company.description || `Top route ${company.top_route || 'various'}; top carrier ${company.top_carrier || 'various'}.`).toString()}
+          </p>
+          <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+            <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Shipments (12M): <b className="text-gray-900 ml-1">{formatShipments(company.shipments_12m)}</b></span>
+            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{company.last_seen ? format(new Date(company.last_seen), 'MMM d') : 'N/A'}</b></span>
+            <span className="hidden md:flex items-center gap-1"><Ship className="w-3 h-3" /> Route: <b className="text-gray-900 ml-1 truncate max-w-[220px]">{company.top_route || 'Various'}</b></span>
           </div>
         </div>
-
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onSave(company)}
-            disabled={isCurrentlySaving || isSaved}
-            className="hidden sm:inline-flex"
-          >
+          <Button size="sm" variant="outline" onClick={() => onSave(company)} disabled={isCurrentlySaving || isSaved}>
             {isCurrentlySaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
             {isSaved ? <BookmarkCheck className="w-3 h-3 mr-1 text-blue-600" /> : <Bookmark className="w-3 h-3 mr-1" />}
             {isSaved ? 'Saved' : 'Save'}
           </Button>
-          
-          <Button
-            size="sm"
-            onClick={() => { window.location.href = `/app/companies/${company.id || company.company_id}`; }}
-            className="bg-blue-600 hover:bg-blue-700 text-white hidden sm:inline-flex"
-          >
+          <Button size="sm" onClick={() => { window.location.href = `/app/companies/${company.id || company.company_id}`; }} className="bg-blue-600 hover:bg-blue-700 text-white">
             View
           </Button>
         </div>
