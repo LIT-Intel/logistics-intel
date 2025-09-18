@@ -73,7 +73,7 @@ export default function OverviewTab({ company, isLoading }) {
               <span className="text-sm text-gray-200">Domain:</span>
               <p className="font-medium text-white">
                 {company.domain ? (
-                  <a href={`http://${company.domain}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-300 hover:underline">
+                  <a href={`https://${String(company.domain).replace(/^https?:\/\//, '')}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-300 hover:underline">
                     {company.domain}
                   </a>
                 ) : 'Not specified'}
