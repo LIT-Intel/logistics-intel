@@ -25,22 +25,18 @@ export type SearchCompaniesInput = { q?: string; mode?: "all"|"ocean"|"air"; fil
 
 export async function searchCompanies(body: SearchCompaniesInput, signal?: AbortSignal) {
   const normalized = {
-    data: {
-      search: {
-        q: body.q ?? "",
-        mode: body.mode ?? "all",
-      },
-      filters: body.filters ?? {},
-      dateRange: {
-        from: body.dateRange?.from ?? undefined,
-        to: body.dateRange?.to ?? undefined,
-      },
-      pagination: {
-        limit: body.pagination?.limit ?? 10,
-        offset: body.pagination?.offset ?? 0,
-      },
+    q: body.q ?? "",
+    mode: body.mode ?? "all",
+    filters: body.filters ?? {},
+    dateRange: {
+      from: body.dateRange?.from ?? undefined,
+      to: body.dateRange?.to ?? undefined,
     },
-  };
+    pagination: {
+      limit: body.pagination?.limit ?? 10,
+      offset: body.pagination?.offset ?? 0,
+    },
+  } as const;
   const res = await fetch(`${BASE}/searchCompanies`, {
     method: "POST",
     headers: { "content-type": "application/json", "accept": "application/json" },
