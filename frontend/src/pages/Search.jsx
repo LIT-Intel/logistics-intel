@@ -23,11 +23,11 @@ export default function Search() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState({
-    mode: "",
+    mode: [],
     origin: "",
     destination: "",
     carrier: "",
-    hs: "",
+    hs: [],
     date_start: null,
     date_end: null
   });
@@ -91,12 +91,12 @@ export default function Search() {
       const offset = (p - 1) * ITEMS_PER_PAGE;
       const payload = {
         q: searchQuery || undefined,
-        mode: filters.mode || "all",
+        mode: Array.isArray(filters.mode) && filters.mode.length === 1 ? filters.mode[0] : "all",
         filters: {
           origin: filters.origin ? [filters.origin] : undefined,
           destination: filters.destination ? [filters.destination] : undefined,
           carrier: filters.carrier ? [filters.carrier] : undefined,
-          hs: filters.hs ? [filters.hs] : undefined,
+          hs: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
         },
         dateRange: {
           from: filters.date_start || undefined,
