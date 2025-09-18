@@ -46,10 +46,10 @@ export default function DashboardKPICards({ stats }) {
       {kpis.map((kpi) => (
         <div key={kpi.title} className="col-span-12 md:col-span-6 lg:col-span-3">
            <Link to={createPageUrl(kpi.page)} className="block h-full">
-            <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60 h-full hover:border-blue-500 transition-colors">
+            <Card className="rounded-lg bg-white shadow-md border border-gray-200 h-full hover:shadow-lg hover:border-blue-500 transition-all duration-200 transform hover:scale-[1.01]">
               <CardContent className="p-5">
                 <div className="flex items-start justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-600">{kpi.title}</p>
+                  <p className="text-sm font-medium bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">{kpi.title}</p>
                   <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100">
                     <kpi.Icon className="w-4 h-4 text-gray-500" />
                   </div>

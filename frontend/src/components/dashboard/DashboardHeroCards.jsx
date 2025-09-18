@@ -48,7 +48,7 @@ export default function DashboardHeroCards() {
             transition={{ duration: 0.5, delay: index * 0.1 }}
           >
             <Card 
-              className="relative overflow-hidden bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] cursor-pointer group h-full"
+              className="relative overflow-hidden rounded-lg bg-white shadow-md border border-gray-200 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] cursor-pointer group h-full"
               onClick={() => navigate(createPageUrl(card.path))}
             >
               <CardHeader className="pb-2">
