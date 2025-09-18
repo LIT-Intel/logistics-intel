@@ -116,11 +116,10 @@ export default function CompanySearchListItem({
           
           <Button
             size="sm"
-            onClick={() => onStartOutreach(company)}
+            onClick={() => { window.location.href = `/app/companies/${company.id || company.company_id}`; }}
             className="bg-blue-600 hover:bg-blue-700 text-white hidden sm:inline-flex"
           >
-            <Mail className="w-3 h-3 mr-1" />
-            Contact
+            View
           </Button>
         </div>
       </div>
