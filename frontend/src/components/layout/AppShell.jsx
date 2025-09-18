@@ -1,5 +1,5 @@
 // frontend/src/components/layout/AppShell.jsx
-import React from "react";
+import React, { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Home, BarChart3, Search, Building2, Mail, Activity, FileText, Package, Settings, CreditCard, Users2, Shield, TrendingUp, Database, Bug } from "lucide-react";
 
@@ -22,6 +22,7 @@ function SideLink({ to, icon: Icon, label }) {
 }
 
 export default function AppShell({ currentPageName, children }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="flex min-h-screen">
@@ -68,12 +69,46 @@ export default function AppShell({ currentPageName, children }) {
         </aside>
         <main className="flex-1 min-w-0 flex flex-col">
           <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 h-14 flex items-center justify-between px-4">
-            <div className="font-medium text-gray-700">{currentPageName}</div>
+            <div className="flex items-center gap-3">
+              <button className="md:hidden p-2 rounded-lg border text-gray-600" onClick={() => setMobileOpen(true)} aria-label="Open menu">
+                ☰
+              </button>
+              <div className="font-medium text-gray-700">{currentPageName}</div>
+            </div>
             <div className="text-sm text-gray-600">Live</div>
           </header>
           <div className="p-4 md:p-6 flex-1 overflow-y-auto min-w-0">{children}</div>
         </main>
       </div>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-40">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
+          <div className="absolute top-0 left-0 h-full w-72 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl p-4 text-white">
+            <div className="flex items-center justify-between mb-4">
+              <span className="font-semibold">Menu</span>
+              <button className="p-2 rounded-lg border border-white/20" onClick={() => setMobileOpen(false)} aria-label="Close menu">✕</button>
+            </div>
+            <nav className="space-y-1">
+              <SideLink to="/app/dashboard" icon={BarChart3} label="Analytics" />
+              <SideLink to="/app/search" icon={Search} label="Search" />
+              <SideLink to="/app/companies" icon={Building2} label="Companies" />
+              <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
+              <SideLink to="/app/transactions" icon={Activity} label="Transactions" />
+              <SideLink to="/app/rfp-studio" icon={FileText} label="RFP Studio" />
+              <SideLink to="/app/widgets" icon={Package} label="Widgets" />
+              <SideLink to="/app/settings" icon={Settings} label="Settings" />
+              <SideLink to="/app/billing" icon={CreditCard} label="Billing" />
+              <SideLink to="/app/affiliate" icon={Users2} label="Affiliate" />
+              <SideLink to="/app/admin" icon={Shield} label="Admin Dashboard" />
+              <SideLink to="/app/prospecting" icon={TrendingUp} label="Lead Prospecting" />
+              <SideLink to="/app/cms" icon={Database} label="CMS" />
+              <SideLink to="/app/diagnostic" icon={Bug} label="Debug Agent" />
+            </nav>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
