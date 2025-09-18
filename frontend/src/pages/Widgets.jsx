@@ -12,12 +12,14 @@ export default function Widgets() {
         {[
           { title: 'Tariff Calculator', desc: 'Calculate duties & taxes', color: 'green' },
           { title: 'Quote Generator', desc: 'Professional freight quotes', color: 'blue' },
-          { title: 'Pre-Call Briefing', desc: 'AI-powered insights for calls', color: 'purple' }
+          { title: 'Pre-Call Briefing', desc: 'AI-powered insights for calls', color: 'purple', href: '/app/pre-call' }
         ].map((w) => (
           <div key={w.title} className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">{w.title}</h3>
             <p className="text-sm text-gray-600 mb-4">{w.desc}</p>
-            <button className={`w-full bg-${w.color}-600 text-white py-2 px-4 rounded-lg hover:bg-${w.color}-700`}>Open</button>
+            <button className={`w-full bg-${w.color}-600 text-white py-2 px-4 rounded-lg hover:bg-${w.color}-700`} onClick={() => { if (w.href) window.location.href = w.href; }}>
+              Open
+            </button>
           </div>
         ))}
       </div>
