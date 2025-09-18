@@ -22,6 +22,7 @@ const CMSManager     = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent     = lazy(() => import("@/pages/AdminAgent"));
 const SearchPanel    = lazy(() => import("@/pages/SearchPanel"));
+const Signup         = lazy(() => import("@/pages/signup/Signup"));
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -32,7 +33,7 @@ function RequireAuth({ children }) {
 
 export default function App() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading…</div>}>
       {/* Marketing / public */}
       <Routes>
         <Route
@@ -67,6 +68,7 @@ export default function App() {
           }
         />
         <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
+        <Route path="/signup" element={<Layout currentPageName="Signup"><Signup /></Layout>} />
         {/* App (protected) */}
         <Route
           path="/app/dashboard"
