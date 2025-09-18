@@ -25,7 +25,7 @@ export default function AppShell({ currentPageName, children }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="flex min-h-screen">
-        <aside className="w-64 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl hidden md:flex md:flex-col">
+        <aside className="w-64 shrink-0 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl hidden md:flex md:flex-col">
           <div className="flex items-center px-6 py-6 border-b border-white/10">
             <div className="w-8 h-8 bg-gradient-to-r from-red-500 to-orange-500 rounded-lg flex items-center justify-center mr-3">
               <span className="text-white font-bold text-sm">LIT</span>
@@ -66,12 +66,12 @@ export default function AppShell({ currentPageName, children }) {
             <SideLink to="/app/diagnostic" icon={Bug} label="Debug Agent" />
           </nav>
         </aside>
-        <main className="flex-1 flex flex-col">
+        <main className="flex-1 min-w-0 flex flex-col">
           <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 h-14 flex items-center justify-between px-4">
             <div className="font-medium text-gray-700">{currentPageName}</div>
             <div className="text-sm text-gray-600">Live</div>
           </header>
-          <div className="p-6 flex-1 overflow-y-auto">{children}</div>
+          <div className="p-4 md:p-6 flex-1 overflow-y-auto min-w-0">{children}</div>
         </main>
       </div>
     </div>

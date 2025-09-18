@@ -6,8 +6,9 @@ import AppShell from '@/components/layout/AppShell';
  * Replace with your real layout whenever you’re ready.
  */
 export default function Layout({ children, currentPageName }) {
-  // If currentPageName starts with "App:", render inside AppShell
-  if (currentPageName && currentPageName !== 'Landing' && currentPageName !== 'Search' && currentPageName !== 'Company' && currentPageName !== 'Demo' && currentPageName !== 'Signup') {
+  // Public pages render without AppShell, everything else inside AppShell
+  const isPublic = currentPageName === 'Landing' || currentPageName === 'Demo' || currentPageName === 'Signup';
+  if (!isPublic) {
     return (
       <AppShell currentPageName={currentPageName}>
         {children ?? <Outlet />}
