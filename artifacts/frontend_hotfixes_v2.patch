@@ -1,0 +1,29 @@
+*** Begin Patch
+*** Add File: frontend/src/lib/featureFlags.ts
++export type FeatureFlags = {
++  gates: Record<string, boolean>;
++  killSwitches: Record<string, boolean>;
++  variants: Record<string, unknown>;
++  _source?: string;
++};
++
++/**
++ * Temporary shim while API Gateway CORS is fixed.
++ * - Tries to fetch real flags
++ * - If CORS/404/network error occurs, returns safe defaults
++ */
++export async function fetchFeatureFlags(apiBase: string): Promise<FeatureFlags> {
++  try {
++    const res = await fetch(`${apiBase}/crm/feature-flags`, { credentials: "omit" });
++    if (!res.ok) throw new Error(`feature-flags ${res.status}`);
++    return (await res.json()) as FeatureFlags;
++  } catch {
++    return {
++      gates: { pro: false, enterprise: false },
++      killSwitches: {},
++      variants: {},
++      _source: "local-fallback",
++    };
++  }
++}
+*** End Patch
