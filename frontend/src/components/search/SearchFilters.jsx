@@ -21,6 +21,7 @@ function parseFilterOptions(response) {
 export default function SearchFilters({ onChange }) {
   const [options, setOptions] = useState({ origins: [], destinations: [], modes: [], carriers: [], hs: [] });
   const [showRaw, setShowRaw] = useState(false);
+  const [openMobile, setOpenMobile] = useState(false);
   const [filters, setFilters] = useState({
     origin: "",
     destination: "",
@@ -93,9 +94,16 @@ export default function SearchFilters({ onChange }) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
-      <div className="md:col-span-5 flex items-center justify-between">
-        <div />
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          className="md:hidden inline-flex items-center px-3 py-2 text-sm rounded-lg border bg-white"
+          onClick={() => setOpenMobile(v => !v)}
+        >
+          {openMobile ? 'Hide Filters' : 'Show Filters'}
+        </button>
+        <div className="hidden md:block" />
         <button
           type="button"
           className="text-xs text-blue-600 underline"
@@ -104,6 +112,8 @@ export default function SearchFilters({ onChange }) {
           {showRaw ? "Hide" : "Load"} Filters JSON
         </button>
       </div>
+
+      <div className={`${openMobile ? 'grid' : 'hidden'} md:grid grid-cols-1 md:grid-cols-6 gap-4`}>
       {/* Origin Country */}
       <div>
         <label htmlFor="origin" className="block text-sm font-medium text-gray-700 mb-1">Origin Country</label>
@@ -232,6 +242,7 @@ export default function SearchFilters({ onChange }) {
 {JSON.stringify(data, null, 2)}
         </pre>
       )}
+      </div>
     </div>
   );
 }
