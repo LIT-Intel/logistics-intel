@@ -9,6 +9,13 @@ import {
 import { format } from 'date-fns';
 
 export default function OverviewTab({ company, isLoading }) {
+  if (!isLoading && !company) {
+    return (
+      <div className="text-center py-8 text-gray-600">
+        No overview data available for this company.
+      </div>
+    );
+  }
   // Helper function for formatting weight
   const formatWeight = (weightKg) => {
     if (!weightKg) return 'N/A';
