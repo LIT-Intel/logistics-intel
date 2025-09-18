@@ -168,7 +168,7 @@ export default function ShipmentsTab({ shipments, isLoading }) {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredAndSortedShipments.slice(0, 50).map((shipment, index) => (
-                <tr key={shipment.id || index} className="hover:bg-gray-50">
+                <tr key={shipment.id || index} className={`${index % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100`}>
                   <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
                     {shipment.date ? format(new Date(shipment.date), 'MMM d, yyyy') : 'N/A'}
                   </td>

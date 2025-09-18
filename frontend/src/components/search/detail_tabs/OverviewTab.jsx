@@ -51,29 +51,29 @@ export default function OverviewTab({ company, isLoading }) {
     <div className="space-y-6">
       {/* Company Basic Info */}
       <div className="grid md:grid-cols-2 gap-6">
-        <Card>
+        <Card className="bg-gradient-to-br from-slate-800 to-slate-900 text-white">
           <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Building2 className="w-5 h-5" />
+            <CardTitle className="text-lg flex items-center gap-2 text-white">
+              <Building2 className="w-5 h-5 text-white" />
               Company Details
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <span className="text-sm text-gray-600">Industry:</span>
-              <p className="font-medium">{company.industry || 'Not specified'}</p>
+              <span className="text-sm text-gray-200">Industry:</span>
+              <p className="font-medium text-white">{company.industry || 'Not specified'}</p>
             </div>
             <div>
-              <span className="text-sm text-gray-600">Headquarters:</span>
-              <p className="font-medium">
+              <span className="text-sm text-gray-200">Headquarters:</span>
+              <p className="font-medium text-white">
                 {[company.hq_city, company.hq_country].filter(Boolean).join(', ') || 'Not specified'}
               </p>
             </div>
             <div>
-              <span className="text-sm text-gray-600">Domain:</span>
-              <p className="font-medium">
+              <span className="text-sm text-gray-200">Domain:</span>
+              <p className="font-medium text-white">
                 {company.domain ? (
-                  <a href={`http://${company.domain}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-600 hover:underline">
+                  <a href={`http://${company.domain}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-300 hover:underline">
                     {company.domain}
                   </a>
                 ) : 'Not specified'}
@@ -81,8 +81,8 @@ export default function OverviewTab({ company, isLoading }) {
             </div>
             {company.employee_count && (
               <div>
-                <span className="text-sm text-gray-600">Employees:</span>
-                <p className="font-medium">{company.employee_count.toLocaleString()}</p>
+                <span className="text-sm text-gray-200">Employees:</span>
+                <p className="font-medium text-white">{company.employee_count.toLocaleString()}</p>
               </div>
             )}
           </CardContent>
