@@ -1,6 +1,6 @@
 // frontend/src/components/layout/AppShell.jsx
-import React, { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { Home, BarChart3, Search, Building2, Mail, Activity, FileText, Package, Settings, CreditCard, Users2, Shield, TrendingUp, Database, Bug } from "lucide-react";
 
 function SideLink({ to, icon: Icon, label }) {
@@ -23,6 +23,19 @@ function SideLink({ to, icon: Icon, label }) {
 
 export default function AppShell({ currentPageName, children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+  const breadcrumbs = useMemo(() => {
+    const path = location.pathname.replace(/^\/+|\/+$/g, "");
+    const parts = path.split("/").filter(Boolean);
+    const nice = (s) => s.replace(/-/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+    const items = [];
+    let acc = "";
+    for (let i = 0; i < parts.length; i++) {
+      acc += "/" + parts[i];
+      items.push({ label: nice(parts[i]), href: acc });
+    }
+    return items;
+  }, [location.pathname]);
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="flex min-h-screen">
@@ -68,12 +81,21 @@ export default function AppShell({ currentPageName, children }) {
           </nav>
         </aside>
         <main className="flex-1 min-w-0 flex flex-col">
-          <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 h-14 flex items-center justify-between px-4">
-            <div className="flex items-center gap-3">
+          <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 h-14 flex items-center justify-between px-4">
+            <div className="flex items-center gap-3 min-w-0">
               <button className="md:hidden p-2 rounded-lg border text-gray-600" onClick={() => setMobileOpen(true)} aria-label="Open menu">
                 ☰
               </button>
-              <div className="font-medium text-gray-700">{currentPageName}</div>
+              <nav className="hidden sm:flex items-center gap-2 text-sm text-gray-600 truncate">
+                {breadcrumbs.slice(0, 1).map((b, idx) => (
+                  <span key={idx} className="truncate">{b.label}</span>
+                ))}
+                {breadcrumbs.length > 1 && <span className="text-gray-400">›</span>}
+                {breadcrumbs.slice(1).map((b, idx) => (
+                  <span key={idx} className={`truncate ${idx === breadcrumbs.length - 2 ? "font-medium text-gray-900" : ""}`}>{b.label}</span>
+                ))}
+              </nav>
+              <div className="sm:hidden font-medium text-gray-700 truncate">{currentPageName}</div>
             </div>
             <div className="text-sm text-gray-600">Live</div>
           </header>
