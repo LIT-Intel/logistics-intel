@@ -8,6 +8,10 @@ import {
   signInWithRedirect,
   onAuthStateChanged,
   signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  updateProfile,
 } from "firebase/auth";
 
 const firebaseConfig = {
@@ -79,3 +83,23 @@ export async function signInWithMicrosoft() {
 
 // Alias to match our UI naming
 export { signInWithMicrosoft as loginWithMicrosoft };
+
+// Email/password login
+export async function loginWithEmailPassword(email, password) {
+  if (!auth) throw new Error("Auth not configured");
+  if (!email || !password) throw new Error("Email and password required");
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred?.user || null;
+}
+
+// Email/password registration with verification
+export async function registerWithEmailPassword({ fullName, email, password }) {
+  if (!auth) throw new Error("Auth not configured");
+  if (!email || !password) throw new Error("Email and password required");
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  if (fullName) {
+    try { await updateProfile(cred.user, { displayName: fullName }); } catch {}
+  }
+  try { await sendEmailVerification(cred.user); } catch {}
+  return cred?.user || null;
+}

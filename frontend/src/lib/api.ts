@@ -24,23 +24,25 @@ export async function getFilterOptions(input: object = {}, signal?: AbortSignal)
 export type SearchCompaniesInput = { q?: string; mode?: "all"|"ocean"|"air"; filters?: Record<string, any>; dateRange?: { from?: string; to?: string }; pagination?: { limit?: number; offset?: number } };
 
 export async function searchCompanies(body: SearchCompaniesInput, signal?: AbortSignal) {
-  const normalized = {
+  // Map UI shape to backend expected fields
+  const limit = body.pagination?.limit ?? 10;
+  const offset = body.pagination?.offset ?? 0;
+  const payload = {
     q: body.q ?? "",
-    mode: body.mode ?? "all",
-    filters: body.filters ?? {},
-    dateRange: {
-      from: body.dateRange?.from ?? undefined,
-      to: body.dateRange?.to ?? undefined,
-    },
-    pagination: {
-      limit: body.pagination?.limit ?? 10,
-      offset: body.pagination?.offset ?? 0,
-    },
+    mode: (body.mode && body.mode !== "all") ? body.mode : undefined,
+    hs: Array.isArray(body.filters?.hs) ? body.filters?.hs : undefined,
+    origin: Array.isArray(body.filters?.origin) ? body.filters?.origin : (body.filters?.origin ? [body.filters.origin] : undefined),
+    dest: Array.isArray(body.filters?.destination) ? body.filters?.destination : (body.filters?.destination ? [body.filters.destination] : undefined),
+    carrier: Array.isArray(body.filters?.carrier) ? body.filters?.carrier : (body.filters?.carrier ? [body.filters.carrier] : undefined),
+    startDate: body.dateRange?.from ?? undefined,
+    endDate: body.dateRange?.to ?? undefined,
+    limit,
+    offset,
   } as const;
   const res = await fetch(`${BASE}/searchCompanies`, {
     method: "POST",
     headers: { "content-type": "application/json", "accept": "application/json" },
-    body: JSON.stringify(normalized),
+    body: JSON.stringify(payload),
     signal,
   });
   if (res.status === 422 || res.status === 400) {

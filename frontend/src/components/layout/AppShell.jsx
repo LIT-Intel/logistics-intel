@@ -41,12 +41,12 @@ export default function AppShell({ currentPageName, children }) {
       <div className="flex min-h-screen">
         <aside className="w-64 shrink-0 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl hidden md:flex md:flex-col">
           <div className="flex items-center px-6 py-6 border-b border-white/10">
-            <div className="w-8 h-8 bg-gradient-to-r from-red-500 to-orange-500 rounded-lg flex items-center justify-center mr-3">
+            <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center mr-3">
               <span className="text-white font-bold text-sm">LIT</span>
             </div>
             <div>
-              <div className="text-white font-bold text-lg">Lahomes</div>
-              <div className="text-gray-300 text-xs">LIVING LIFE</div>
+              <div className="text-white font-bold text-lg">Trade Intelligence</div>
+              <div className="text-gray-300 text-xs">Logistic Intel</div>
             </div>
           </div>
 

@@ -26,6 +26,8 @@ export default function Search() {
     mode: "",
     origin: "",
     destination: "",
+    carrier: "",
+    hs: "",
     date_start: null,
     date_end: null
   });
@@ -93,6 +95,8 @@ export default function Search() {
         filters: {
           origin: filters.origin ? [filters.origin] : undefined,
           destination: filters.destination ? [filters.destination] : undefined,
+          carrier: filters.carrier ? [filters.carrier] : undefined,
+          hs: filters.hs ? [filters.hs] : undefined,
         },
         dateRange: {
           from: filters.date_start || undefined,

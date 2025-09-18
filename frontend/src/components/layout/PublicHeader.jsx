@@ -21,7 +21,7 @@ export default function PublicHeader() {
               alt="LIT"
               className="w-8 h-8"
             />
-            <span className="font-semibold tracking-tight">Logistic Intel</span>
+            <span className="font-semibold tracking-tight">LIT — Trade Intelligence</span>
           </Link>
         </div>
 
