@@ -20,6 +20,8 @@ export default function PreCallBriefing() {
   const [error, setError] = useState("");
   const [overview, setOverview] = useState(null);
   const [shipments, setShipments] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
 
   async function loadBriefing() {
     if (!companyId) {
@@ -44,6 +46,38 @@ export default function PreCallBriefing() {
       setLoading(false);
     }
   }
+  function toHtml() {
+    const title = `Pre-Call Briefing — ${overview?.name || companyId}`;
+    const recent = shipments.slice(0,6).map(s => `${s.origin || s.origin_country || '—'} → ${s.destination || s.dest_country || '—'} (${s.mode || s.transport_mode || '—'})`).join('<br/>');
+    return `<!doctype html><meta charset="utf-8"><title>${title}</title><style>body{font-family:Inter,system-ui,-apple-system,sans-serif;padding:24px;color:#111}h1{margin:0 0 8px}h2{margin:20px 0 8px}</style><h1>${title}</h1><h2>Overview</h2><div>Name: <b>${overview?.name || overview?.company_name || companyId}</b></div><div>Recent Activity: ${overview?.last_seen ?? 'N/A'}</div><div>Modes: ${(overview?.mode_breakdown||[]).map(m=>m.mode).join(', ')}</div><div>Top Lanes: ${(overview?.top_lanes||[]).slice(0,3).map(l=>l.route).join(' · ')}</div><h2>Recent Shipments</h2><div>${recent || 'No recent shipments'}</div>`;
+  }
+
+  async function downloadHtml() {
+    const html = toHtml();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `briefing-${companyId}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function sendEmail() {
+    try {
+      setEmailSending(true);
+      const html = toHtml();
+      // Use existing sendEmail callable stub
+      const { sendEmail } = await import("@/api/functions");
+      await sendEmail({ subject: `Pre-Call Briefing: ${overview?.name || companyId}`, html, to: [] });
+      alert('Email sent (if email service configured).');
+    } catch (e) {
+      console.error(e);
+      alert('Failed to send email.');
+    } finally {
+      setEmailSending(false);
+    }
+  }
 
   useEffect(() => {
     if (initialId) loadBriefing();
@@ -59,6 +93,8 @@ export default function PreCallBriefing() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => navigate(-1)}>Back</Button>
+        <Button onClick={downloadHtml} disabled={!overview || exporting} className="bg-blue-600 text-white hover:bg-blue-700">Download HTML</Button>
+        <Button onClick={sendEmail} disabled={!overview || emailSending} className="bg-purple-600 text-white hover:bg-purple-700">Email Briefing</Button>
         </div>
       </div>
 

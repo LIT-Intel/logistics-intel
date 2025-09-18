@@ -2,6 +2,7 @@
 import React, { useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { Home, BarChart3, Search, Building2, Mail, Activity, FileText, Package, Settings, CreditCard, Users2, Shield, TrendingUp, Database, Bug } from "lucide-react";
+import { logout } from "@/auth/firebaseClient";
 
 function SideLink({ to, icon: Icon, label }) {
   return (
@@ -97,7 +98,23 @@ export default function AppShell({ currentPageName, children }) {
               </nav>
               <div className="sm:hidden font-medium text-gray-700 truncate">{currentPageName}</div>
             </div>
-            <div className="text-sm text-gray-600">Live</div>
+            <div className="flex items-center gap-3">
+              <button
+                className="hidden sm:inline-flex items-center px-3 py-1.5 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                onClick={() => window.location.href = "/app/settings"}
+              >
+                Profile
+              </button>
+              <button
+                className="inline-flex items-center px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                onClick={async () => { try { await logout(); } finally { window.location.href = "/login"; } }}
+              >
+                Logout
+              </button>
+              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white flex items-center justify-center text-xs font-bold">
+                U
+              </div>
+            </div>
           </header>
           <div className="p-4 md:p-6 flex-1 overflow-y-auto min-w-0">{children}</div>
         </main>

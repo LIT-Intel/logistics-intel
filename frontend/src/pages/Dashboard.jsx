@@ -41,7 +41,7 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto">
+    <div className="px-5 md:px-6 lg:px-8 max-w-7xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Dashboard</h1>
         <p className="text-gray-600 mt-2">Overview of your recent activity and search performance.</p>
@@ -51,14 +51,17 @@ export default function Dashboard() {
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-gray-600">Loading dashboard…</div>
       ) : (
         <>
-          <div className="grid grid-cols-12 gap-4 mb-6">
+          {/* KPI Cards: 20px spacing via gap-5 (approx) */}
+          <div className="grid grid-cols-12 gap-5 mb-6">
             <DashboardKPICards stats={{ activeUsers: 0, searches: data.recentSearches7d, shipments: data.shipments90d, companies: data.savedCompanies }} />
           </div>
 
+          {/* CTA Hero Cards */}
           <div className="mb-8">
             <DashboardHeroCards />
           </div>
 
+          {/* Recent Companies with empty state handled internally */}
           <RecentCompanies companies={[]} onNavigate={(url) => (window.location.href = url)} />
         </>
       )}
