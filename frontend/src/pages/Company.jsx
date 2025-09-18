@@ -72,6 +72,9 @@ export default function Company() {
           <p className="text-sm text-gray-600">ID: {companyId}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => { window.location.href = `/app/pre-call?company_id=${companyId}`; }}>
+            Pre-Call Briefing
+          </Button>
           <Button size="sm" onClick={handleEnrich} disabled={isEnriching} className="bg-purple-600 hover:bg-purple-700 text-white">
             {isEnriching ? 'Enriching…' : 'Enrich Now'}
           </Button>
