@@ -48,13 +48,10 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
         contactPromise,
         notesPromise
       ]);
-
-      if (overviewRes.data?.ok) {
-        setCurrentCompanyDetails(overviewRes.data.result);
-      }
-      if (shipmentsRes.data?.ok) {
-        setShipments(shipmentsRes.data.results);
-      }
+      const ov = overviewRes?.data?.result ?? overviewRes?.result ?? overviewRes?.data ?? overviewRes ?? null;
+      if (ov) setCurrentCompanyDetails(ov);
+      const shp = shipmentsRes?.data?.results ?? shipmentsRes?.results ?? shipmentsRes?.rows ?? [];
+      setShipments(Array.isArray(shp) ? shp : []);
       setContacts(contactData);
       setNotes(noteData);
 

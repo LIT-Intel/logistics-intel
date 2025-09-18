@@ -31,8 +31,10 @@ export default function Company() {
         Contact.filter({ company_id: companyId }, '-created_date', 50),
         Note.filter({ company_id: companyId }, '-created_date', 50),
       ]);
-      if (overviewRes?.data?.ok) setCompany(overviewRes.data.result);
-      if (shipmentsRes?.data?.ok) setShipments(shipmentsRes.data.results);
+      const ov = overviewRes?.data?.result ?? overviewRes?.result ?? overviewRes?.data ?? overviewRes ?? null;
+      if (ov) setCompany(ov);
+      const shp = shipmentsRes?.data?.results ?? shipmentsRes?.results ?? shipmentsRes?.rows ?? [];
+      setShipments(Array.isArray(shp) ? shp : []);
       setContacts(contactsRes || []);
       setNotes(notesRes || []);
     } catch (e) {
