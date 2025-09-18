@@ -1,6 +1,5 @@
 const BASE = (() => {
-  const defaultGateway = "https://lit-caller-gw-2e68g4k3.uc.gateway.dev/public";
-  const base = (import.meta.env as any).VITE_API_BASE || (import.meta.env as any).VITE_PROXY_BASE || defaultGateway;
+  const base = (import.meta.env as any).VITE_API_BASE || (import.meta.env as any).VITE_PROXY_BASE || "/api/public";
   if (base.endsWith("/public")) return base;
   if (base.endsWith("/public/")) return base.slice(0, -1);
   if (base === "/api/public") return base;
