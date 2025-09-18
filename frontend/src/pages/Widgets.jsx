@@ -12,7 +12,7 @@ export default function Widgets() {
         {[
           { title: 'Tariff Calculator', desc: 'Calculate duties & taxes', color: 'green' },
           { title: 'Quote Generator', desc: 'Professional freight quotes', color: 'blue' },
-          { title: 'Pre-Call Briefing', desc: 'AI-powered insights', color: 'purple' }
+          { title: 'Pre-Call Briefing', desc: 'AI-powered insights for calls', color: 'purple' }
         ].map((w) => (
           <div key={w.title} className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">{w.title}</h3>
