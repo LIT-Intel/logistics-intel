@@ -115,11 +115,10 @@ export default function CompanySearchCard({
         </Button>
         <Button
           size="sm"
-          onClick={() => onStartOutreach(company)}
+          onClick={(e) => { e.stopPropagation(); window.location.href = `/app/companies/${company.id || company.company_id}`; }}
           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
         >
-          <Mail className="w-3 h-3 mr-1" />
-          Contact
+          View
         </Button>
       </div>
     </motion.div>
