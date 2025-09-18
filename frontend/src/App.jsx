@@ -22,6 +22,8 @@ const CMSManager     = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent     = lazy(() => import("@/pages/AdminAgent"));
 const SearchPanel    = lazy(() => import("@/pages/SearchPanel"));
+const Transactions   = lazy(() => import("@/pages/Transactions"));
+const Widgets        = lazy(() => import("@/pages/Widgets"));
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -89,6 +91,22 @@ export default function App() {
           element={
             <RequireAuth>
               <Layout currentPageName="Companies"><Companies /></Layout>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/transactions"
+          element={
+            <RequireAuth>
+              <Layout currentPageName="Transactions"><Transactions /></Layout>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/widgets"
+          element={
+            <RequireAuth>
+              <Layout currentPageName="Widgets"><Widgets /></Layout>
             </RequireAuth>
           }
         />
