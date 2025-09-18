@@ -26,6 +26,7 @@ const Signup         = lazy(() => import("@/pages/signup/Signup"));
 const Transactions   = lazy(() => import("@/pages/Transactions"));
 const Widgets        = lazy(() => import("@/pages/Widgets"));
 const Company        = lazy(() => import("@/pages/Company"));
+const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -145,6 +146,14 @@ export default function App() {
           element={
             <RequireAuth>
               <Layout currentPageName="Widgets"><Widgets /></Layout>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/pre-call"
+          element={
+            <RequireAuth>
+              <Layout currentPageName="Pre-Call Briefing"><PreCallBriefing /></Layout>
             </RequireAuth>
           }
         />
