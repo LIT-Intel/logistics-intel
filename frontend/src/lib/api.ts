@@ -54,3 +54,26 @@ export async function searchCompanies(body: SearchCompaniesInput, signal?: Abort
   return res.json();
 }
 
+// Widgets
+export async function calcTariff(input: { hsCode?: string; origin?: string; destination?: string; valueUsd?: number }, signal?: AbortSignal) {
+  const res = await fetch(`${BASE}/widgets/tariff/calc`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify(input || {}),
+    signal,
+  });
+  if (!res.ok) throw new Error(`calcTariff ${res.status}`);
+  return res.json();
+}
+
+export async function generateQuote(input: { companyId?: string|number; lanes: Array<{ origin: string; destination: string; mode: string }>; notes?: string }, signal?: AbortSignal) {
+  const res = await fetch(`${BASE}/widgets/quote/generate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify(input || {}),
+    signal,
+  });
+  if (!res.ok) throw new Error(`generateQuote ${res.status}`);
+  return res.json();
+}
+
