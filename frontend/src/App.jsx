@@ -28,8 +28,11 @@ const Widgets        = lazy(() => import("@/pages/Widgets"));
 const Company        = lazy(() => import("@/pages/Company"));
 const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
 
+const DEMO_MODE = !import.meta.env.VITE_FIREBASE_API_KEY;
+
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
+  if (DEMO_MODE) return children;      // allow viewing protected pages in demo builds
   if (loading) return null;            // keep it simple: no flicker
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
   return children;
