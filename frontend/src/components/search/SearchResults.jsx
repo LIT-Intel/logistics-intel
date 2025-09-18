@@ -147,6 +147,12 @@ export default function SearchResults({
               );
             })}
           </AnimatePresence>
+          {/* Load More */}
+          {currentPage < totalPages && (
+            <div className="col-span-full flex justify-center mt-2">
+              <Button variant="outline" onClick={() => onPageChange(currentPage + 1)} disabled={isLoading}>Load More</Button>
+            </div>
+          )}
         </div>
       ) : (
         <motion.div 
