@@ -1,7 +1,5 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { User } from "@/api/entities";
-import { Company, Shipment, SearchQuery } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,97 +37,37 @@ import ProjectSummaryPanel from "../components/dashboard/ProjectSummaryPanel";
 import CompletionRatePanel from "../components/dashboard/CompletionRatePanel";
 
 export default function Dashboard() {
-  const navigate = useNavigate(); // Initialize useNavigate hook
-  const [user, setUser] = useState(null);
-  const [stats, setStats] = useState({ companies: 0, shipments: 0, searches: 0, activeUsers: 0 });
-  const [recentCompanies, setRecentCompanies] = useState([]);
-  const [allShipments, setAllShipments] = useState([]);
-  const [searches, setSearches] = useState([]);
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [savedCompaniesCount, setSavedCompaniesCount] = useState(0); // New state for saved companies count
+  const [stats, setStats] = useState({ companies: 0, shipments: 0, searches: 0, activeUsers: 0 });
+  const [allShipments, setAllShipments] = useState([]);
 
-
-  const loadDashboardData = useCallback(async () => {
+  const loadSummary = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
     try {
+      const apiBase = (import.meta.env && import.meta.env.VITE_API_BASE) || "/api";
+      const res = await fetch(`${String(apiBase).replace(/\/$/, '')}/public/dashboard/summary`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`summary ${res.status}`);
+      const data = await res.json();
+      const companies = Number(data?.savedCompanies ?? 0);
+      const shipments = Number(data?.shipments90d ?? 0);
+      const searches = Number(data?.recentSearches7d ?? 0);
+      const activeUsers = 0; // optional from API in future
+      setStats({ companies, shipments, searches, activeUsers });
+      setAllShipments([]);
+    } catch (e) {
+      // Safe fallback: zeros, still render UI
+      setStats({ companies: 0, shipments: 0, searches: 0, activeUsers: 0 });
+      setAllShipments([]);
       setError(null);
-      const userData = await User.me();
-      setUser(userData);
-
-      // Load data with proper error handling
-      let companiesData = [];
-      let shipmentsData = [];
-      let searchesData = [];
-      let savedCount = 0; // Temporary variable to hold the count
-
-      try {
-        // Fetch count of companies saved by the current user
-        const savedCompaniesResponse = await Company.filter({ saved_by_users: { op: 'cs', value: [userData.email] } }, "-created_date", 1000, 0, true);
-        savedCount = savedCompaniesResponse.count || 0;
-        setSavedCompaniesCount(savedCount);
-      } catch (err) {
-        console.error("Error loading saved companies count:", err);
-        setSavedCompaniesCount(0);
-      }
-      
-      try {
-        // Fetch a small list of recent companies (not user-specific for recent display)
-        const companiesResponse = await Company.filter({}, "-created_date", 5);
-        companiesData = (companiesResponse && Array.isArray(companiesResponse.data)) ? companiesResponse.data : (Array.isArray(companiesResponse) ? companiesResponse : []);
-      } catch (err) {
-        console.error("Error loading companies for recent display:", err);
-        companiesData = [];
-      }
-
-      try {
-        const shipmentsResponse = await Shipment.list("-date", 1000);
-        shipmentsData = Array.isArray(shipmentsResponse) ? shipmentsResponse : [];
-      } catch (err) {
-        console.error("Error loading shipments:", err);
-        shipmentsData = [];
-      }
-
-      try {
-        const searchesResponse = await SearchQuery.list("-created_date", 1000);
-        searchesData = Array.isArray(searchesResponse) ? searchesResponse : [];
-      } catch (err) {
-        console.error("Error loading searches:", err);
-        searchesData = [];
-      }
-
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      
-      const recentSearches = searchesData.filter(s => {
-        try {
-          return s && s.created_date && new Date(s.created_date) >= sevenDaysAgo;
-        } catch {
-          return false;
-        }
-      });
-      
-      const activeUsersSet = new Set(recentSearches.map(s => s.user_email).filter(Boolean));
-
-      setStats({
-        companies: savedCount, // Use the fetched savedCount for user's companies stat
-        shipments: shipmentsData.length,
-        searches: recentSearches.length,
-        activeUsers: activeUsersSet.size,
-      });
-      
-      setRecentCompanies(companiesData); // companiesData now directly contains 5 items
-      setAllShipments(shipmentsData);
-      setSearches(searchesData);
-    } catch (error) {
-      console.error("Error loading dashboard data:", error);
-      setError("Failed to load dashboard data. Please try refreshing the page.");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
 
   if (isLoading) {
     return (
@@ -139,24 +77,7 @@ export default function Dashboard() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="p-6 bg-[#F6F8FB] min-h-screen">
-        <Card className="bg-red-50 border-red-200 max-w-2xl mx-auto mt-20">
-          <CardContent className="p-6">
-            <h2 className="text-red-800 font-semibold mb-2">Dashboard Error</h2>
-            <p className="text-red-600">{error}</p>
-            <Button 
-              onClick={loadDashboardData} 
-              className="mt-4 bg-red-600 hover:bg-red-700"
-            >
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Never hard-error: show zeros instead
 
   return (
     <div className="p-6 bg-[#F6F8FB] min-h-screen">

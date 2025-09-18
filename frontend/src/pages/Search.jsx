@@ -101,11 +101,35 @@ export default function Search() {
         pagination: { limit: ITEMS_PER_PAGE, offset }
       };
 
-      const resp = await searchCompanies(payload);
-      const results = Array.isArray(resp?.results) ? resp.results : (resp?.data?.items || resp?.data?.results || []);
-      const total = typeof resp?.total === 'number' ? resp.total : (resp?.data?.total || 0);
+      // Prefer direct fetch to align with API shape; fallback to SDK
+      let data;
+      try {
+        const apiBase = (import.meta.env && import.meta.env.VITE_API_BASE) || "/api";
+        const res = await fetch(`${apiBase.replace(/\/$/, '')}/public/searchCompanies`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            q: payload.q || '',
+            page: p,
+            pageSize: ITEMS_PER_PAGE,
+            filters: {
+              mode: payload.mode && payload.mode !== 'all' ? [payload.mode] : undefined,
+              origin: payload.filters.origin,
+              destination: payload.filters.destination,
+            },
+          }),
+        });
+        data = await res.json();
+      } catch {
+        data = await searchCompanies(payload);
+      }
 
-      setSearchResults(results);
+      const items = Array.isArray(data?.items)
+        ? data.items
+        : (Array.isArray(data?.results) ? data.results : (Array.isArray(data?.companies) ? data.companies : (data?.data?.items || data?.data?.results || [])));
+      const total = Number(data?.total ?? (items ? items.length : 0));
+
+      setSearchResults(items || []);
       setTotalResults(total);
     } catch (error) {
       console.error("Search error:", error);

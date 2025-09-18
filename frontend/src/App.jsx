@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import CustomLoginPage from "@/components/layout/CustomLoginPage";
 import { useAuth } from "@/auth/AuthProvider";
@@ -25,6 +25,40 @@ const SearchPanel    = lazy(() => import("@/pages/SearchPanel"));
 const Transactions   = lazy(() => import("@/pages/Transactions"));
 const Widgets        = lazy(() => import("@/pages/Widgets"));
 
+function ProtectedRoute() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  if (!user) {
+    const next = encodeURIComponent(location.pathname + (location.search || ""));
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+  return <Outlet />;
+}
+
+function AuthRedirectGate() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  const publicPaths = ["/", "/login", "/signin", "/auth/callback"]; 
+  if (user && publicPaths.includes(location.pathname)) {
+    return <Navigate to="/app/dashboard" replace />;
+  }
+  return <Outlet />;
+}
+
+function PostAuthBounce() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const next = params.get("next");
+  if (!loading) {
+    if (user) return <Navigate to={next || "/app/dashboard"} replace />;
+    return <Navigate to="/login" replace />;
+  }
+  return null;
+}
+
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
   if (loading) return null;            // keep it simple: no flicker
@@ -35,175 +69,42 @@ function RequireAuth({ children }) {
 export default function App() {
   return (
     <Suspense fallback={null}>
-      {/* Marketing / public */}
       <Routes>
-        <Route
-          path="/"
-          element={
-            <Layout currentPageName="Landing">
-              <Landing />
-            </Layout>
-          }
-        />
-        {/* Public Search routes (Base44 UI on GCP) */}
-        <Route
-          path="/search"
-          element={
-            <Layout currentPageName="Search"><Search /></Layout>
-          }
-        />
-        <Route
-          path="/company/:id"
-          element={
-            <Layout currentPageName="Company">
-              {/* Drawer-style page if navigated directly */}
-              <CompanyDetailModal isOpen={true} onClose={() => window.history.back()} />
-            </Layout>
-          }
-        />
-        {/* Public demo page */}
-        <Route
-          path="/demo"
-          element={
-            <Layout currentPageName="Demo"><SearchPanel /></Layout>
-          }
-        />
-        <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
-        {/* App (protected) */}
-        <Route
-          path="/app/dashboard"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Dashboard"><Dashboard /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/search"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Search"><Search /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/companies"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Companies"><Companies /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/transactions"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Transactions"><Transactions /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/widgets"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Widgets"><Widgets /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/campaigns"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Campaigns"><Campaigns /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/email"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="EmailCenter"><EmailCenter /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/rfp"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="RFPStudio"><RFPStudio /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/settings"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Settings"><Settings /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/billing"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Billing"><Billing /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/affiliate"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="AffiliateDashboard"><AffiliateDash /></Layout>
-            </RequireAuth>
-          }
-        />
+        {/* Public (auth redirect gate) */}
+        <Route element={<AuthRedirectGate />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
+          <Route path="/signin" element={<CustomLoginPage onClose={() => {}} />} />
+          <Route path="/auth/callback" element={<PostAuthBounce />} />
+          <Route path="/search" element={<Search />} />
+          <Route path="/company/:id" element={<CompanyDetailModal isOpen={true} onClose={() => window.history.back()} />} />
+          <Route path="/demo" element={<SearchPanel />} />
+        </Route>
 
-        {/* Admin */}
-        <Route
-          path="/app/admin"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="AdminDashboard"><AdminDashboard /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/prospecting"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="LeadProspecting"><LeadProspecting /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/cms"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="CMSManager"><CMSManager /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/diagnostic"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Diagnostic"><Diagnostic /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/agent"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="AdminAgent"><AdminAgent /></Layout>
-            </RequireAuth>
-          }
-        />
+        {/* Private (protect + app layout) */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<Layout />}>
+            <Route path="/app/dashboard" element={<Dashboard />} />
+            <Route path="/app/search" element={<Search />} />
+            <Route path="/app/companies" element={<Companies />} />
+            <Route path="/app/transactions" element={<Transactions />} />
+            <Route path="/app/widgets" element={<Widgets />} />
+            <Route path="/app/campaigns" element={<Campaigns />} />
+            <Route path="/app/email" element={<EmailCenter />} />
+            <Route path="/app/rfp" element={<RFPStudio />} />
+            <Route path="/app/settings" element={<Settings />} />
+            <Route path="/app/billing" element={<Billing />} />
+            <Route path="/app/affiliate" element={<AffiliateDash />} />
+            <Route path="/app/admin" element={<AdminDashboard />} />
+            <Route path="/app/prospecting" element={<LeadProspecting />} />
+            <Route path="/app/cms" element={<CMSManager />} />
+            <Route path="/app/diagnostic" element={<Diagnostic />} />
+            <Route path="/app/agent" element={<AdminAgent />} />
+            <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
+          </Route>
+        </Route>
 
-
-        {/* Fallbacks */}
-        <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
+        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
