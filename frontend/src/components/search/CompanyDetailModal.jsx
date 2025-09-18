@@ -21,7 +21,7 @@ import EnrichmentTab from './detail_tabs/EnrichmentTab';
 import NotesTab from './detail_tabs/NotesTab';
 import { useFeatureFlags } from '@/store/featureFlags';
 
-export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user }) {
+export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user, isSaved = false }) {
   const { companyDrawerPremium } = useFeatureFlags();
   const [currentCompanyDetails, setCurrentCompanyDetails] = useState(null);
   const [shipments, setShipments] = useState([]);
@@ -154,7 +154,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
 
   if (!isOpen || !company) return null;
 
-  const isSavedByUser = false;
+  const isSavedByUser = !!isSaved;
   const modeIcons = getModeIcons(currentCompanyDetails?.mode_breakdown);
   const displayCompany = currentCompanyDetails || company;
 
@@ -206,12 +206,12 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   <TabsTrigger value="overview">Overview</TabsTrigger>
                   <TabsTrigger value="shipments">Shipments ({shipments.length})</TabsTrigger>
                   {companyDrawerPremium ? (
-                    <TabsTrigger value="contacts">{!isSavedByUser && <Lock className="w-3 h-3 mr-1.5" />}Contacts</TabsTrigger>
+                    <TabsTrigger value="contacts" disabled={!isSavedByUser}>{!isSavedByUser && <Lock className="w-3 h-3 mr-1.5" />}Contacts</TabsTrigger>
                   ) : null}
                   <TabsTrigger value="ai_insights">
                     <Sparkles className="w-3 h-3 mr-1.5" />AI Insights
                   </TabsTrigger>
-                  <TabsTrigger value="notes">Notes ({notes.length})</TabsTrigger>
+                  <TabsTrigger value="notes" disabled={!isSavedByUser}>Notes ({notes.length})</TabsTrigger>
                 </TabsList>
               </div>
               <div className="flex-grow overflow-auto">
@@ -222,15 +222,24 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   <ShipmentsTab shipments={shipments} isLoading={isLoading} />
                 </TabsContent>
                 <TabsContent value="contacts" className="p-6">
-                  <ContactsTab 
-                    contacts={contacts} 
-                    companyId={companyId} 
-                    company={displayCompany}
-                    onAddContact={handleAddContact} 
-                    isGated={!isSavedByUser} 
-                    onUnlock={handleSave} 
-                    isLoading={isSaving} 
-                  />
+                  {isSavedByUser ? (
+                    <ContactsTab 
+                      contacts={contacts} 
+                      companyId={companyId} 
+                      company={displayCompany}
+                      onAddContact={handleAddContact} 
+                      isGated={false}
+                      onUnlock={handleSave} 
+                      isLoading={isSaving} 
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-600">
+                      Save this company to manage contacts.
+                      <div className="mt-3">
+                        <Button size="sm" variant="outline" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save Company'}</Button>
+                      </div>
+                    </div>
+                  )}
                 </TabsContent>
                 <TabsContent value="ai_insights" className="p-6">
                   <EnrichmentTab 
@@ -245,7 +254,16 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   />
                 </TabsContent>
                 <TabsContent value="notes" className="p-6">
-                  <NotesTab notes={notes} onAddNote={handleAddNote} isLoading={isLoading} />
+                  {isSavedByUser ? (
+                    <NotesTab notes={notes} onAddNote={handleAddNote} isLoading={isLoading} />
+                  ) : (
+                    <div className="text-sm text-gray-600">
+                      Save this company to add and view notes.
+                      <div className="mt-3">
+                        <Button size="sm" variant="outline" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save Company'}</Button>
+                      </div>
+                    </div>
+                  )}
                 </TabsContent>
               </div>
             </Tabs>

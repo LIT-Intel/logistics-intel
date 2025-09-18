@@ -288,6 +288,7 @@ export default function Search() {
           onClose={() => setShowDetailModal(false)}
           onSave={handleSaveCompany}
           user={user}
+          isSaved={savedCompanyIds.has(selectedCompany?.id)}
         />
       </div>
     </div>
