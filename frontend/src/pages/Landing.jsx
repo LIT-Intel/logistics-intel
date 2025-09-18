@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { createPageUrl } from '@/utils';
 import { Briefcase, TrendingUp, CheckCircle, Zap, BarChart, Users } from 'lucide-react';
 import { User } from '@/api/entities';
+import PublicHeader from '@/components/layout/PublicHeader';
+import { useNavigate } from 'react-router-dom';
 
 const AIFeatures = () => (
   <section className="py-20 bg-white">
@@ -151,8 +153,10 @@ const RoleCard = ({ icon, title, description, color }) => {
 
 
 export default function Landing() {
+  const navigate = useNavigate();
   return (
     <div className="bg-gray-50">
+      <PublicHeader />
       <section className="relative bg-gradient-to-br from-blue-50/50 via-white to-purple-50/50 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
@@ -167,6 +171,14 @@ export default function Landing() {
               <p className="text-xl text-gray-600 leading-relaxed">
                 Advanced B2B SaaS Intelligence Platform that transforms how companies discover, analyze, and engage with global trade opportunities through AI-powered data enrichment and automation.
               </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button className="bg-gray-900 hover:bg-black" onClick={() => navigate('/signup')}>
+                  Start 14-day free trial
+                </Button>
+                <Button variant="outline" onClick={() => navigate('/login')}>
+                  Sign in
+                </Button>
+              </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <RoleCard icon={Briefcase} title="Procurement Teams" description="Supplier discovery & risk assessment" color="blue" />
                 <RoleCard icon={TrendingUp} title="Sales Teams" description="Target international markets with precision" color="green" />

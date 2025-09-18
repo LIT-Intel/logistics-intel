@@ -25,6 +25,7 @@ import { AuthProvider } from './auth/AuthProvider';  // Auth context provider
 import ProtectedRoute from './auth/ProtectedRoute';  // Protecting routes
 import AuthRedirectGate from './auth/AuthRedirectGate'; // Gate for public routes
 import PostAuthBounce from './auth/PostAuthBounce';  // Handling external auth redirect
+import Signup from './signup/Signup';
 
 const PAGES = {
     Landing,
@@ -74,6 +75,7 @@ function PagesContent() {
                 <Route path="/Landing" element={<AuthRedirectGate><Landing /></AuthRedirectGate>} />
                 <Route path="/login" element={<AuthRedirectGate><Landing /></AuthRedirectGate>} />
                 <Route path="/signin" element={<AuthRedirectGate><Landing /></AuthRedirectGate>} />
+                <Route path="/signup" element={<AuthRedirectGate><Signup /></AuthRedirectGate>} />
                 
                 {/* Authenticated Routes - ProtectedRoute ensures authentication */}
                 <Route path="/app/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
