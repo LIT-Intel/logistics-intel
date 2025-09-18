@@ -11,11 +11,13 @@ function parseFilterOptions(response) {
     origin_countries: Array.isArray(data.origin_countries) ? data.origin_countries : [],
     destination_countries: Array.isArray(data.destination_countries) ? data.destination_countries : [],
     modes: Array.isArray(data.modes) ? data.modes : [],
+    carriers: Array.isArray(data.carriers) ? data.carriers : [],
+    hs_prefixes: Array.isArray(data.hs_prefixes) ? data.hs_prefixes : [],
   };
 }
 
 export default function SearchFilters({ onChange }) {
-  const [options, setOptions] = useState({ origins: [], destinations: [], modes: [] });
+  const [options, setOptions] = useState({ origins: [], destinations: [], modes: [], carriers: [], hs: [] });
   const [showRaw, setShowRaw] = useState(false);
   const [filters, setFilters] = useState({
     origin: "",
@@ -23,6 +25,8 @@ export default function SearchFilters({ onChange }) {
     mode: "",
     date_start: "",
     date_end: "",
+    carrier: "",
+    hs: "",
   });
   const { data, isLoading, error } = useQuery({
     queryKey: ["filter-options"],
@@ -37,6 +41,8 @@ export default function SearchFilters({ onChange }) {
         origins: parsed.origin_countries.sort(),
         destinations: parsed.destination_countries.sort(),
         modes: parsed.modes.sort(),
+        carriers: parsed.carriers.sort(),
+        hs: parsed.hs_prefixes.sort(),
       });
     }
   }, [data]);
@@ -83,7 +89,7 @@ export default function SearchFilters({ onChange }) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
       <div className="md:col-span-5 flex items-center justify-between">
         <div />
         <button
@@ -139,6 +145,36 @@ export default function SearchFilters({ onChange }) {
         </select>
       </div>
 
+      {/* Carrier */}
+      <div>
+        <label htmlFor="carrier" className="block text-sm font-medium text-gray-700 mb-1">Carrier</label>
+        <select
+          id="carrier"
+          value={filters.carrier}
+          onChange={(e) => handleFilterChange('carrier', e.target.value)}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+        >
+          <option value="">Any Carrier</option>
+          {options.carriers.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
+      {/* HS Code (prefix) */}
+      <div>
+        <label htmlFor="hs" className="block text-sm font-medium text-gray-700 mb-1">HS Code (prefix)</label>
+        <select
+          id="hs"
+          value={filters.hs}
+          onChange={(e) => handleFilterChange('hs', e.target.value)}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+        >
+          <option value="">Any HS Prefix</option>
+          {options.hs.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
+      </div>
+
       {/* Date Start */}
       <div>
         <label htmlFor="date_start" className="block text-sm font-medium text-gray-700 mb-1">Date Start</label>
@@ -164,7 +200,7 @@ export default function SearchFilters({ onChange }) {
       </div>
 
       {showRaw && (
-        <pre className="md:col-span-5 mt-2 text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-64">
+        <pre className="md:col-span-6 mt-2 text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-64">
 {JSON.stringify(data, null, 2)}
         </pre>
       )}

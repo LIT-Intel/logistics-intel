@@ -3,11 +3,15 @@ import PublicHeader from "@/components/layout/PublicHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { loginWithGoogle, loginWithMicrosoft } from "@/auth/firebaseClient";
+import { loginWithGoogle, loginWithMicrosoft, registerWithEmailPassword } from "@/auth/firebaseClient";
 
 export default function Signup() {
   const navigate = useNavigate();
   const [err, setErr] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   useEffect(() => { document.title = "Start your 14‑day trial — Logistic Intel"; }, []);
 
   return (
@@ -37,11 +41,27 @@ export default function Signup() {
                   <span>Continue with Microsoft</span>
                 </Button>
               </div>
-              <form className="grid grid-cols-1 gap-4">
-                <input className="border rounded px-3 py-2" type="text" placeholder="Full name" required />
-                <input className="border rounded px-3 py-2" type="email" placeholder="Work email" required />
-                <input className="border rounded px-3 py-2" type="password" placeholder="Password" required />
-                <Button type="submit" className="bg-gray-900 hover:bg-black">Start 14‑day free trial</Button>
+              <form
+                className="grid grid-cols-1 gap-4"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  try {
+                    setErr("");
+                    setSubmitting(true);
+                    await registerWithEmailPassword({ fullName, email, password });
+                    alert("Check your inbox to verify your email. After verification, you can sign in.");
+                    navigate('/login');
+                  } catch (e) {
+                    setErr(e?.message || 'Sign-up failed');
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+              >
+                <input className="border rounded px-3 py-2" type="text" placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                <input className="border rounded px-3 py-2" type="email" placeholder="Work email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <input className="border rounded px-3 py-2" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                <Button type="submit" disabled={submitting} className="bg-gray-900 hover:bg-black">{submitting ? 'Creating account…' : 'Start 14‑day free trial'}</Button>
                 <Button type="button" variant="outline" onClick={() => navigate('/login')}>Sign in instead</Button>
               </form>
             </CardContent>
