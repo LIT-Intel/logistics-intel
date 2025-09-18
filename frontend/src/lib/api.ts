@@ -43,10 +43,10 @@ export async function searchCompanies(body: SearchCompaniesInput, signal?: Abort
     body: JSON.stringify(normalized),
     signal,
   });
-  if (res.status === 422) {
+  if (res.status === 422 || res.status === 400) {
     const err = await res.json().catch(() => ({ message: "Validation error" }));
-    console.error("searchCompanies validation error", err?.fieldErrors || err);
-    throw new Error("Your search has invalid parameters. Please review filters.");
+    console.error("searchCompanies validation error", err);
+    throw new Error(err?.message || "Invalid search parameters");
   }
   if (!res.ok) throw new Error(`searchCompanies ${res.status}`);
   return res.json();

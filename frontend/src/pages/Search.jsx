@@ -102,7 +102,11 @@ export default function Search() {
       };
 
       const resp = await searchCompanies(payload);
-      const raw = Array.isArray(resp?.results) ? resp.results : (resp?.data?.items || resp?.data?.results || []);
+      const raw = (resp?.items)
+        || (Array.isArray(resp?.results) ? resp.results : undefined)
+        || (resp?.data?.items)
+        || (resp?.data?.results)
+        || [];
       const total = typeof resp?.total === 'number' ? resp.total : (resp?.data?.total || 0);
 
       // Normalize gateway results to UI shape
