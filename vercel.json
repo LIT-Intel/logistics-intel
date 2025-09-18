@@ -1,10 +1,17 @@
 {
   "version": 2,
-  "buildCommand": "pnpm -w -r build",
+  "buildCommand": "pnpm --filter ./frontend build",
   "installCommand": "pnpm install --no-frozen-lockfile",
   "env": {
     "VITE_API_BASE": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev"
   },
+  "builds": [
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "frontend/dist" }
+    }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
