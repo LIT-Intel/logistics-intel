@@ -102,8 +102,27 @@ export default function Search() {
       };
 
       const resp = await searchCompanies(payload);
-      const results = Array.isArray(resp?.results) ? resp.results : (resp?.data?.items || resp?.data?.results || []);
+      const raw = Array.isArray(resp?.results) ? resp.results : (resp?.data?.items || resp?.data?.results || []);
       const total = typeof resp?.total === 'number' ? resp.total : (resp?.data?.total || 0);
+
+      // Normalize gateway results to UI shape
+      const results = (raw || []).map((item) => {
+        const name = item.name || item.company || item.company_name || "Unknown";
+        const id = item.id || item.company_id || (name ? name.toLowerCase().replace(/[^a-z0-9]+/g,'-') : undefined);
+        const shipments12m = item.shipments_12m || item.shipments || 0;
+        const lastSeen = item.last_seen || item.lastShipmentDate || item.last_ship_date || null;
+        const topCarrier = item.top_carrier || (Array.isArray(item.carriersTop) && item.carriersTop[0]?.v) || undefined;
+        const topRoute = item.top_route || ((Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || 'Origin'} → ${item.destsTop[0]?.v || 'Dest'}` : undefined);
+        return {
+          ...item,
+          id,
+          name,
+          shipments_12m: shipments12m,
+          last_seen: lastSeen,
+          top_carrier: topCarrier,
+          top_route: topRoute,
+        };
+      });
 
       setSearchResults(results);
       setTotalResults(total);
