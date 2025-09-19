@@ -3,17 +3,33 @@
 // Uses BigQuery for search + filter options
 
 const express = require('express');
+const cors = require('cors');
 const { BigQuery } = require('@google-cloud/bigquery');
 
 const app = express();
 app.use(express.json());
+app.use(cors());
 
 const bq = new BigQuery();
 const BQ_LOCATION = process.env.BQ_LOCATION || 'US';
 
-// Basic health
+// Basic health & index listing
+app.get('/healthz', (_req, res) => res.status(200).json({ ok: true, service: 'search-unified' }));
 app.get('/', (_req, res) => {
-  res.status(200).json({ ok: true, service: 'search-unified' });
+  res.status(200).json({
+    ok: true,
+    service: 'search-unified',
+    routes: [
+      'POST /search',
+      'POST /public/getFilterOptions',
+      'GET  /public/getCompanyDetails',
+      'GET  /public/getCompanyShipments',
+      'POST /crm/saveCompany',
+      'GET  /crm/savedCompanies',
+      'GET  /campaigns',
+      'GET  /healthz'
+    ]
+  });
 });
 
 // CORS (lenient; Gateway usually fronts this, but safe to include)
@@ -150,6 +166,86 @@ app.post('/searchShipments', async (req, res) => {
     res.status(200).json({ items: [], total: 0 });
   } catch (e) {
     console.error('searchShipments error:', e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// New unified search endpoint returning { meta, rows }
+app.post('/search', async (req, res) => {
+  try {
+    const page = Number(req.body?.page || 1);
+    const page_size = Number(req.body?.page_size || 24);
+    res.status(200).json({ meta: { total: 0, page, page_size }, rows: [] });
+  } catch (e) {
+    console.error('search error:', e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Company details per spec
+app.get('/public/getCompanyDetails', async (req, res) => {
+  try {
+    const company_id = String(req.query?.company_id || '');
+    if (!company_id) return res.status(400).json({ error: 'missing company_id' });
+    res.status(200).json({
+      company_id,
+      name: 'Sample Inc',
+      website: null,
+      hq_city: null, hq_state: null, hq_country: null,
+      kpis: { shipments_12m: 0, last_activity: null, top_route: null, top_carrier: null },
+      plan_gates: { contacts: 'pro', notes: 'pro' },
+    });
+  } catch (e) {
+    console.error('getCompanyDetails error:', e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Company shipments per spec
+app.get('/public/getCompanyShipments', async (req, res) => {
+  try {
+    const company_id = String(req.query?.company_id || '');
+    if (!company_id) return res.status(400).json({ error: 'missing company_id' });
+    res.status(200).json({ company_id, rows: [], source: 'primary' });
+  } catch (e) {
+    console.error('getCompanyShipments error:', e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// CRM endpoints
+app.post('/crm/saveCompany', async (req, res) => {
+  try {
+    const { company_id, stage = 'prospect' } = req.body || {};
+    const user_id = req.headers['x-user-id'] || req.user_id || 'user';
+    if (!user_id || !company_id) return res.status(400).json({ error: 'missing user_id or company_id' });
+    res.status(200).json({ saved_id: 'placeholder', company_id, stage });
+  } catch (e) {
+    console.error('saveCompany error:', e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.get('/crm/savedCompanies', async (req, res) => {
+  try {
+    const stage = String(req.query?.stage || 'prospect');
+    const user_id = req.headers['x-user-id'] || req.user_id || 'user';
+    if (!user_id) return res.status(400).json({ error: 'missing user_id' });
+    res.status(200).json({ rows: [] });
+  } catch (e) {
+    console.error('savedCompanies error:', e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Campaigns list
+app.get('/campaigns', async (req, res) => {
+  try {
+    const user_id = req.headers['x-user-id'] || req.user_id || 'user';
+    if (!user_id) return res.status(400).json({ error: 'missing user_id' });
+    res.status(200).json([]);
+  } catch (e) {
+    console.error('campaigns error:', e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
