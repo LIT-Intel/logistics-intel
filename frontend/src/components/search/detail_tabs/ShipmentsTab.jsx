@@ -24,7 +24,7 @@ export default function ShipmentsTab({ shipments, isLoading }) {
     let filtered = shipments;
 
     if (filterMode !== 'all') {
-      filtered = shipments.filter(s => s.mode?.toLowerCase() === filterMode);
+      filtered = shipments.filter(s => (s.mode || s.transport_mode || '').toLowerCase() === filterMode);
     }
 
     // Ensure filtered is an array before sorting
@@ -41,11 +41,14 @@ export default function ShipmentsTab({ shipments, isLoading }) {
       if (bVal === undefined || bVal === null) bVal = '';
 
       if (sortField === 'date') {
-        aVal = aVal ? new Date(aVal) : new Date(0); // Use epoch for missing dates
-        bVal = bVal ? new Date(bVal) : new Date(0);
+        const ad = a.shipped_on || a.date || a.snapshot_date || a.shipment_date;
+        const bd = b.shipped_on || b.date || b.snapshot_date || b.shipment_date;
+        aVal = ad ? new Date(ad) : new Date(0);
+        bVal = bd ? new Date(bd) : new Date(0);
       } else if (sortField === 'gross_weight_kg') {
-        aVal = aVal || 0; // Treat null/undefined weight as 0
-        bVal = bVal || 0;
+        const aw = a.gross_weight_kg ?? a.weight_kg ?? 0;
+        const bw = b.gross_weight_kg ?? b.weight_kg ?? 0;
+        aVal = aw; bVal = bw;
       }
 
       if (sortDirection === 'asc') {
@@ -156,52 +159,50 @@ export default function ShipmentsTab({ shipments, isLoading }) {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 text-xs md:text-sm">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Mode</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Route</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Weight</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Carrier</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Commodity</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Date</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Mode</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Route</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Weight</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Carrier</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Value</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white divide-y divide-gray-200 text-xs md:text-sm">
               {filteredAndSortedShipments.slice(0, 50).map((shipment, index) => (
                 <tr key={shipment.id || index} className={`${index % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100`}>
                   <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
-                    {shipment.date ? format(new Date(shipment.date), 'MMM d, yyyy') : 'N/A'}
+                    {(() => { const d = shipment.shipped_on || shipment.date || shipment.snapshot_date || shipment.shipment_date; return d ? format(new Date(d), 'MMM d, yyyy') : 'N/A'; })()}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 whitespace-nowrap">
-                      {getModeIcon(shipment.mode)}
+                      {getModeIcon(shipment.mode || shipment.transport_mode)}
                       <Badge className={`text-xs ${getModeColor(shipment.mode)}`}>
-                        {shipment.mode || 'Unknown'}
+                        {(shipment.mode || shipment.transport_mode || 'Unknown')}
                       </Badge>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-900">
                     <div className="max-w-xs overflow-hidden">
                       <div className="font-medium truncate">
-                        {shipment.origin_country || shipment.origin_port || 'Unknown'}
+                        {shipment.origin || shipment.origin_country || shipment.origin_port || 'Unknown'}
                       </div>
                       <div className="text-gray-500 text-xs truncate">
-                        → {shipment.dest_country || shipment.dest_port || 'Unknown'}
+                        → {shipment.destination || shipment.dest_country || shipment.dest_port || 'Unknown'}
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-blue-700 whitespace-nowrap">
-                    {formatWeight(shipment.gross_weight_kg)}
+                    {formatWeight(shipment.gross_weight_kg ?? shipment.weight_kg)}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-900">
                     <div className="max-w-xs truncate">
                       {shipment.carrier_name || shipment.carrier || 'Unknown'}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    <div className="max-w-xs truncate">
-                      {shipment.commodity_description || shipment.hs_code || 'N/A'}
-                    </div>
+                  <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                    {typeof shipment.value_usd === 'number' ? `$${shipment.value_usd.toLocaleString()}` : '—'}
                   </td>
                 </tr>
               ))}
