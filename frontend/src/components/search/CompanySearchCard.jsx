@@ -115,7 +115,7 @@ export default function CompanySearchCard({
         </Button>
         <Button
           size="sm"
-          onClick={(e) => { e.stopPropagation(); window.location.href = `/app/companies/${company.id || company.company_id}`; }}
+          onClick={(e) => { e.stopPropagation(); if (isSaved) { window.location.href = `/app/companies/${company.id || company.company_id}`; } else { onSelect(company); } }}
           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
         >
           View

@@ -65,7 +65,7 @@ export default function CompanySearchListItem({
             {isSaved ? <BookmarkCheck className="w-3 h-3 mr-1 text-blue-600" /> : <Bookmark className="w-3 h-3 mr-1" />}
             {isSaved ? 'Saved' : 'Save'}
           </Button>
-          <Button size="sm" onClick={() => { window.location.href = `/app/companies/${company.id || company.company_id}`; }} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <Button size="sm" onClick={() => { isSaved ? (window.location.href = `/app/companies/${company.id || company.company_id}`) : onSelect(company); }} className="bg-blue-600 hover:bg-blue-700 text-white">
             View
           </Button>
         </div>
