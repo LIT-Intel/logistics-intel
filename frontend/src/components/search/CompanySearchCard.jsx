@@ -89,7 +89,7 @@ export default function CompanySearchCard({
           <Ship className="w-3 h-3 text-gray-500" />
           <span className="text-gray-600">Top Route:</span>
           <span className="font-medium text-gray-900 truncate flex-1">
-            {company.top_route || 'Various routes'}
+            {company.top_route || (company.origin && company.destination ? `${company.origin} → ${company.destination}` : 'Various routes')}
           </span>
         </div>
         <div className="flex items-center gap-2">

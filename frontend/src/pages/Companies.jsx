@@ -32,9 +32,10 @@ export default function Companies() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [appUser, setAppUser] = useState(null);
-  const [viewMode, setViewMode] = useState("cards");
+  const [viewMode, setViewMode] = useState("board"); // board | cards | list
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [splitView, setSplitView] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [hasAccess, setHasAccess] = useState(null); // null: checking, true: granted, false: denied
@@ -167,14 +168,13 @@ export default function Companies() {
   };
 
   const handleViewCompany = (company) => {
-    // Gating: Check feature access before showing company details
     if (!checkFeatureAccess(appUser, 'company_details')) {
-      console.log("🚫 User does not have access to 'company_details'. Showing upgrade prompt.");
-      setShowUpgradePrompt(true); // Show upgrade prompt if access is denied
+      setShowUpgradePrompt(true);
       return;
     }
     setSelectedCompany(company);
-    setIsDetailModalOpen(true);
+    // Use split view embedded detail instead of modal
+    setSplitView(true);
   };
 
   const handleStartOutreach = (company) => {
@@ -290,47 +290,67 @@ export default function Companies() {
           </p>
           <div className="flex items-center space-x-2">
             <div className="flex items-center bg-gray-100 rounded-lg p-1">
-              <Button
-                variant={viewMode === "cards" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("cards")}
-                className="h-8 px-3"
-              >
-                <Grid3X3 className="w-4 h-4 mr-1" />
-                Cards
-              </Button>
-              <Button
-                variant={viewMode === "list" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("list")}
-                className="h-8 px-3"
-              >
-                <List className="w-4 h-4 mr-1" />
-                List
-              </Button>
+              <Button variant={viewMode === "board" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("board")} className="h-8 px-3">Board</Button>
+              <Button variant={viewMode === "cards" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("cards")} className="h-8 px-3">Cards</Button>
+              <Button variant={viewMode === "list" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("list")} className="h-8 px-3">List</Button>
             </div>
           </div>
         </div>
 
+        {/* Split View: left list + right detail */}
+        {splitView ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Left: company list */}
+            <div className="lg:col-span-1 bg-white/80 rounded-2xl shadow border border-gray-200/60 p-3">
+              <div className="mb-2 font-medium text-gray-700">Companies</div>
+              <div className="space-y-1 max-h-[70vh] overflow-auto">
+                {companies.map((c) => (
+                  <button key={c.id} className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 ${selectedCompany?.id===c.id?'bg-gray-100':''}`} onClick={() => setSelectedCompany(c)}>
+                    <div className="font-medium truncate">{c.name}</div>
+                    <div className="text-xs text-gray-500 truncate">{[c.hq_city, c.hq_country].filter(Boolean).join(', ') || '—'}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Right: detail tabs (reuse components) */}
+            <div className="lg:col-span-2 bg-white rounded-2xl shadow border p-0">
+              <CompanyDetailModal
+                isOpen={true}
+                onClose={() => setSplitView(false)}
+                company={selectedCompany}
+                user={appUser}
+                onSave={handleSaveCompanyInModal}
+                isSaved={true}
+              />
+            </div>
+          </div>
+        ) : (
         <AnimatePresence mode="wait">
           {isLoading && hasAccess !== false ? ( // This spinner handles loading state *after* access is granted (or while checking before denying)
             <div className="flex justify-center items-center py-10">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             </div>
           ) : companies.length > 0 ? (
-            <motion.div
-              key={viewMode}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className={
-                viewMode === "cards"
-                  ? "max-w-[1440px] mx-auto px-5 grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                  : "bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/60 overflow-hidden"
-              }
-            >
-              {companies.map((company, index) =>
+            <motion.div key={viewMode} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className={viewMode === "cards" ? "max-w-[1440px] mx-auto px-5 grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : viewMode === 'board' ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4" : "bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/60 overflow-hidden"}>
+              {viewMode === 'board' ? (
+                ['prospect','outreach','negotiation','won','lost'].map((stage) => (
+                  <div key={stage} className="rounded-2xl border bg-white p-3">
+                    <div className="flex items-center justify-between mb-2"><div className="font-medium capitalize">{stage}</div><span className="text-xs text-gray-500">{companies.filter(c => (c.stage||'prospect')===stage).length}</span></div>
+                    <div className="space-y-2">
+                      {companies.filter(c => (c.stage||'prospect')===stage).map((c) => (
+                        <div key={c.id} className="rounded-xl border p-3 hover:shadow-sm cursor-pointer" onClick={() => handleViewCompany(c)}>
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium truncate">{c.name}</div>
+                            {stage === 'prospect' && <Button size="sm" onClick={(e)=>{e.stopPropagation(); /* TODO: move to outreach */}}>Add to Campaign</Button>}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">{[c.hq_city, c.hq_country].filter(Boolean).join(', ') || '—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+              companies.map((company, index) =>
                 viewMode === "cards" ? (
                   <CompanyCard
                     key={company.id}
@@ -348,7 +368,7 @@ export default function Companies() {
                     onDelete={() => handleDeleteCompany(company.id)}
                     index={index}
                   />
-                )
+                ))
               )}
             </motion.div>
           ) : (
@@ -369,14 +389,17 @@ export default function Companies() {
             </div>
           )}
         </AnimatePresence>
+        )}
 
-        <CompanyDetailModal
-          isOpen={isDetailModalOpen}
-          onClose={() => setIsDetailModalOpen(false)}
-          company={selectedCompany}
-          user={appUser} // Pass the current appUser to the modal
-          onSave={handleSaveCompanyInModal}
-        />
+        {!splitView && (
+          <CompanyDetailModal
+            isOpen={isDetailModalOpen}
+            onClose={() => setIsDetailModalOpen(false)}
+            company={selectedCompany}
+            user={appUser}
+            onSave={handleSaveCompanyInModal}
+          />
+        )}
 
         <UpgradePrompt
           isOpen={showUpgradePrompt}
