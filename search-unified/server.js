@@ -44,7 +44,7 @@ app.use((req, res, next) => {
   return next();
 });
 // Public route for the SPA (no gateway token on the client)
-app.post('/public/getFilterOptions', async (req, res) => {
+async function handleGetFilterOptions(_req, res) {
   // Directly reuse the internal logic by calling the same queries again
   try {
     const where = `WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)`;
@@ -90,7 +90,9 @@ app.post('/public/getFilterOptions', async (req, res) => {
     console.error('public/getFilterOptions error:', e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
-});
+}
+app.post('/public/getFilterOptions', handleGetFilterOptions);
+app.get('/public/getFilterOptions', handleGetFilterOptions);
 
 // ───────────────────────────────────────────────────────────────
 // GET FILTER OPTIONS  (Required by search page)
