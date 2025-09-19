@@ -47,7 +47,7 @@ export default function CustomLoginPage({ onClose }) {
   }
 
   return (
-    <div className="flex w-full max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-xl border bg-white">
+    <div className="flex w-full max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-xl border bg-white min-h-[480px]">
       <div className="hidden md:flex w-1/2 bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900 text-white p-8 items-end relative">
         <div className="absolute top-6 left-6 flex items-center gap-2">
           <img
@@ -62,8 +62,8 @@ export default function CustomLoginPage({ onClose }) {
           <p className="text-white/80 text-sm">Search companies by trade activity, track shipments, and automate outreach.</p>
         </div>
       </div>
-      <div className="w-full md:w-1/2">
-        <Card className="rounded-none border-0">
+      <div className="w-full md:w-1/2 flex items-center">
+        <Card className="rounded-none border-0 w-full">
           <CardHeader className="pb-2">
             <CardTitle className="text-xl">Sign in to LIT</CardTitle>
             {err && <p className="text-red-600 text-sm mt-1">{err}</p>}
