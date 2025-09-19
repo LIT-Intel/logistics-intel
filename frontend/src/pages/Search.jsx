@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import type { SearchResponse } from '@/types/api';
+import CompanyDrawer from '@/components/company/CompanyDrawer';
 import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +52,8 @@ export default function Search() {
   const [savingCompanyId, setSavingCompanyId] = useState(null);
   const [searchError, setSearchError] = useState(null);
   const [viewMode, setViewMode] = useState("grid");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerId, setDrawerId] = useState("");
   
   const [hasSearched, setHasSearched] = useState(false);
   useEffect(() => {
@@ -143,6 +149,23 @@ export default function Search() {
       setIsLoading(false);
     }
   }, [searchQuery, filters]);
+
+  const payload = useMemo(() => ({
+    ...(filters.mode && filters.mode !== 'any' ? { mode: filters.mode } : {}),
+    ...(filters.hs?.length ? { hs_codes: filters.hs } : {}),
+    ...(filters.origin ? { origins: [filters.origin] } : {}),
+    ...(filters.destination ? { destinations: [filters.destination] } : {}),
+    ...(filters.carrier ? { carriers: [filters.carrier] } : {}),
+    page: currentPage,
+    page_size: ITEMS_PER_PAGE,
+    ...(filters.date_start || filters.date_end ? { date_range: { from: filters.date_start || undefined, to: filters.date_end || undefined } } : {}),
+  }), [filters, currentPage]);
+
+  const resultsQuery = useQuery({
+    queryKey: ['search', payload],
+    queryFn: () => api.post<SearchResponse>('/search', payload),
+    keepPreviousData: true,
+  });
 
   const handleCompanySelect = useCallback((company) => {
     setSelectedCompany(company);
@@ -248,9 +271,9 @@ export default function Search() {
 
         {hasSearched ? (
           <SearchResults
-            searchResults={searchResults}
-            totalResults={totalResults}
-            isLoading={isLoading}
+            searchResults={resultsQuery.data?.rows || searchResults}
+            totalResults={resultsQuery.data?.meta?.total || totalResults}
+            isLoading={isLoading || resultsQuery.isLoading}
             onCompanySelect={handleCompanySelect}
             onSave={handleSaveCompany}
             onStartOutreach={handleStartOutreach}
@@ -262,7 +285,7 @@ export default function Search() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             currentPage={currentPage}
-            totalPages={totalPages}
+            totalPages={Math.max(1, Math.ceil(((resultsQuery.data?.meta?.total || totalResults) / ITEMS_PER_PAGE) || 1))}
             onPageChange={handlePageChange}
           />
         ) : (
@@ -291,6 +314,7 @@ export default function Search() {
           isSaved={savedCompanyIds.has(selectedCompany?.id)}
         />
       </div>
+      <CompanyDrawer id={drawerId} open={drawerOpen} onOpenChange={setDrawerOpen} />
     </div>
   );
 }
