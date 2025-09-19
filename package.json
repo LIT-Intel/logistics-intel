@@ -2,12 +2,11 @@
   "dependencies": {
     "react-router-dom": "^7.8.2"
   },
-  "packageManager": "pnpm@9.12.3",
   "engines": {
     "node": "22.x"
   },
   "scripts": {
-    "build": "pnpm -w -r build",
-    "lint": "pnpm -w -r lint"
+    "build": "npm run build --prefix frontend",
+    "lint": "npm run lint --prefix frontend"
   }
 }
