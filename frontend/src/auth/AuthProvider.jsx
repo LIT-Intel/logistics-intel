@@ -10,6 +10,11 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsub = listenToAuth((u) => {
+      // Elevate admin for specific email
+      if (u && u.email === 'vraymond@sparkfusiondigital.com') {
+        u.role = 'admin';
+        u.plan = 'enterprise';
+      }
       setUser(u ?? null);
       setLoading(false);
     });
