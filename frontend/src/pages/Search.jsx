@@ -23,7 +23,7 @@ export default function Search() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState({
-    mode: [],
+    mode: "any",
     origin: "",
     destination: "",
     carrier: "",
@@ -91,7 +91,7 @@ export default function Search() {
       const offset = (p - 1) * ITEMS_PER_PAGE;
       const payload = {
         q: searchQuery || undefined,
-        mode: Array.isArray(filters.mode) && filters.mode.length === 1 ? filters.mode[0] : "all",
+        mode: (filters.mode && filters.mode !== 'any') ? filters.mode : 'all',
         filters: {
           origin: filters.origin ? [filters.origin] : undefined,
           destination: filters.destination ? [filters.destination] : undefined,

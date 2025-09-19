@@ -20,12 +20,11 @@ function parseFilterOptions(response) {
 
 export default function SearchFilters({ onChange }) {
   const [options, setOptions] = useState({ origins: [], destinations: [], modes: [], carriers: [], hs: [] });
-  const [showRaw, setShowRaw] = useState(false);
   const [openMobile, setOpenMobile] = useState(false);
   const [filters, setFilters] = useState({
     origin: "",
     destination: "",
-    mode: [], // multi-select
+    mode: "any", // radio: any | air | ocean
     date_start: "",
     date_end: "",
     carrier: "",
@@ -103,14 +102,7 @@ export default function SearchFilters({ onChange }) {
         >
           {openMobile ? 'Hide Filters' : 'Show Filters'}
         </button>
-        <div className="hidden md:block" />
-        <button
-          type="button"
-          className="text-xs text-blue-600 underline"
-          onClick={() => setShowRaw(v => !v)}
-        >
-          {showRaw ? "Hide" : "Load"} Filters JSON
-        </button>
+        <div />
       </div>
 
       <div className={`${openMobile ? 'grid' : 'hidden'} md:grid grid-cols-1 md:grid-cols-6 gap-4`}>
@@ -144,20 +136,13 @@ export default function SearchFilters({ onChange }) {
         </select>
       </div>
 
-      {/* Mode (multi) */}
+      {/* Mode (radio) */}
       <div>
         <div className="block text-sm font-medium text-gray-700 mb-1">Mode</div>
-        <div className="flex flex-wrap gap-3">
-          {options.modes.map(m => (
-            <label key={m} className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={filters.mode.includes(m)}
-                onCheckedChange={(v) => {
-                  const next = new Set(filters.mode);
-                  if (v) next.add(m); else next.delete(m);
-                  handleFilterChange('mode', Array.from(next));
-                }}
-              />
+        <div className="flex items-center gap-4 text-sm">
+          {['any','air','ocean'].map(m => (
+            <label key={m} className="inline-flex items-center gap-2">
+              <input type="radio" name="mode" value={m} checked={filters.mode === m} onChange={(e) => handleFilterChange('mode', e.target.value)} />
               <span className="capitalize">{m}</span>
             </label>
           ))}
@@ -237,11 +222,6 @@ export default function SearchFilters({ onChange }) {
         />
       </div>
 
-      {showRaw && (
-        <pre className="md:col-span-6 mt-2 text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-64">
-{JSON.stringify(data, null, 2)}
-        </pre>
-      )}
       </div>
     </div>
   );
