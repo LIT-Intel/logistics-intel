@@ -241,25 +241,18 @@ export default function Companies() {
         {/* Header */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">
-              Saved Companies
-            </h1>
-            <p className="text-gray-600 mt-2 text-sm md:text-base">
-              All companies you've saved from your search results.
-            </p>
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">Companies — Prospecting & Outreach</h1>
+            <p className="text-gray-600 mt-2 text-sm md:text-base">Saving from Search adds to Prospecting. Add to Campaign to move to Outreach.</p>
             {appUser && (
               <p className="text-sm text-gray-500 mt-1">
                 User: {appUser.email} | Plan: {appUser.plan || 'free'}
               </p>
             )}
           </div>
-          <Button
-            onClick={() => navigate(createPageUrl("Search"))}
-            className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg flex items-center gap-2 w-full sm:w-auto"
-          >
-            <Search className="w-4 h-4 mr-2" />
-            Find Companies to Save
-          </Button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button variant="secondary" className="w-full sm:w-auto"><Search className="w-4 h-4 mr-2"/>Filters</Button>
+            <Button className="w-full sm:w-auto">Add Company</Button>
+          </div>
         </div>
 
         {/* Search */}
@@ -333,7 +326,7 @@ export default function Companies() {
               transition={{ duration: 0.2 }}
               className={
                 viewMode === "cards"
-                  ? "grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6"
+                  ? "max-w-[1440px] mx-auto px-5 grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                   : "bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/60 overflow-hidden"
               }
             >
