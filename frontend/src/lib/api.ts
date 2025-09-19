@@ -1,3 +1,4 @@
+// Backwards-compatible base for legacy helper functions that expect /public
 const BASE = (() => {
   const base = (import.meta.env as any).VITE_API_BASE || (import.meta.env as any).VITE_PROXY_BASE || "/api/public";
   if (base.endsWith("/public")) return base;
@@ -5,6 +6,34 @@ const BASE = (() => {
   if (base === "/api/public") return base;
   return base.replace(/\/$/, "") + "/public";
 })();
+
+// New generic API client per spec (expects BASE_ORIGIN without /public)
+const BASE_ORIGIN: string = (import.meta as any).env?.VITE_API_BASE || "";
+
+async function j<T>(r: Response): Promise<T> {
+  if (!r.ok) {
+    const text = await r.text().catch(() => String(r.status));
+    throw new Error(text || String(r.status));
+  }
+  return r.json() as Promise<T>;
+}
+
+export const api = {
+  get<T>(path: string, init?: RequestInit) {
+    const url = `${BASE_ORIGIN}${path}`;
+    return j<T>(fetch(url, { ...(init || {}), credentials: 'include' }));
+  },
+  post<T>(path: string, body: unknown, init?: RequestInit) {
+    const url = `${BASE_ORIGIN}${path}`;
+    return j<T>(fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      body: JSON.stringify(body ?? {}),
+      credentials: 'include',
+      ...init,
+    }));
+  },
+};
 
 export async function getFilterOptions(input: object = {}, signal?: AbortSignal) {
   const res = await fetch(`${BASE}/getFilterOptions`, {
