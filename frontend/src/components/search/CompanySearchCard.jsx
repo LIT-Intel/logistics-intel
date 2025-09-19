@@ -40,7 +40,7 @@ export default function CompanySearchCard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2 }}
-      className="bg-white/90 backdrop-blur-sm rounded-2xl p-5 shadow-lg border border-gray-200/60 hover:shadow-xl transition-all duration-300 cursor-pointer"
+      className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 md:p-5 shadow-lg border border-gray-200/60 hover:shadow-xl transition-all duration-300 cursor-pointer"
       onClick={() => onSelect(company)}
     >
       {isNew && (
@@ -101,7 +101,7 @@ export default function CompanySearchCard({
         </div>
       </div>
 
-      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex gap-2 mt-1" onClick={(e) => e.stopPropagation()}>
         <Button
           size="sm"
           variant="outline"
