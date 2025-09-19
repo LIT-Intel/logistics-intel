@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { SearchResponse } from '@/types/api';
 import CompanyDrawer from '@/components/company/CompanyDrawer';
 import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
@@ -163,7 +162,7 @@ export default function Search() {
 
   const resultsQuery = useQuery({
     queryKey: ['search', payload],
-    queryFn: () => api.post<SearchResponse>('/search', payload),
+    queryFn: () => api.post('/search', payload),
     keepPreviousData: true,
   });
 
