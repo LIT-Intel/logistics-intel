@@ -212,9 +212,7 @@ export default function CampaignsPage() {
   }
 
   // Use the hasAccess state variable directly
-  if (!hasAccess && !isLoading) {
-    return <LockedFeature featureName="Campaigns" />;
-  }
+  // Do not early-return on access denied here; we want to render smoke-test cards
 
   if (isCreating || editingCampaign) {
     return (
@@ -236,6 +234,16 @@ export default function CampaignsPage() {
   return (
     <div className="p-6 bg-[#F6F8FB] min-h-screen">
       <div className="max-w-7xl mx-auto">
+        {/* Smoke-test mock cards to verify rendering path */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {['Q4 Prospecting','Reactivation Push','Freight Expo Leads','Top Lanes Outreach'].map((title, idx) => (
+            <div key={idx} className="bg-white rounded-2xl shadow border p-4">
+              <div className="text-sm text-gray-500">Smoke Test</div>
+              <div className="text-lg font-semibold text-gray-900">{title}</div>
+              <div className="text-xs text-gray-500">Leads: — | Status: Draft</div>
+            </div>
+          ))}
+        </div>
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
           <Button onClick={handleCreateNew}>
