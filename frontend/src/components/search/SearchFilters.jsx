@@ -10,11 +10,11 @@ function parseFilterOptions(response) {
   if (!response) return {};
   const data = response.data ? response.data : response;
   return {
-    origin_countries: Array.isArray(data.origin_countries) ? data.origin_countries : [],
-    destination_countries: Array.isArray(data.destination_countries) ? data.destination_countries : [],
+    origin_countries: Array.isArray(data.origin_countries) ? data.origin_countries : (Array.isArray(data.origins) ? data.origins : []),
+    destination_countries: Array.isArray(data.destination_countries) ? data.destination_countries : (Array.isArray(data.destinations) ? data.destinations : []),
     modes: Array.isArray(data.modes) ? data.modes : [],
     carriers: Array.isArray(data.carriers) ? data.carriers : [],
-    hs_prefixes: Array.isArray(data.hs_prefixes) ? data.hs_prefixes : [],
+    hs_prefixes: Array.isArray(data.hs_prefixes) ? data.hs_prefixes : (Array.isArray(data.hs_codes) ? data.hs_codes : []),
   };
 }
 
