@@ -2,6 +2,11 @@ import React, { useEffect, useState } from "react";
 import DashboardKPICards from "@/components/dashboard/DashboardKPICards";
 import DashboardHeroCards from "@/components/dashboard/DashboardHeroCards";
 import RecentCompanies from "@/components/dashboard/RecentCompanies";
+import DashboardKPICardsSkeleton from "@/components/dashboard/DashboardKPICards.skeleton";
+import DashboardHeroCardsSkeleton from "@/components/dashboard/DashboardHeroCards.skeleton";
+import RecentCompaniesSkeleton from "@/components/dashboard/RecentCompanies.skeleton";
+import { Button } from "@/components/ui/button";
+import { createPageUrl } from "@/utils";
 
 const safeSummary = {
   shipments90d: 0,
@@ -48,7 +53,11 @@ export default function Dashboard() {
       </div>
 
       {loading ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 text-gray-600">Loading dashboard…</div>
+        <div className="space-y-6">
+          <DashboardKPICardsSkeleton />
+          <DashboardHeroCardsSkeleton />
+          <RecentCompaniesSkeleton />
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-12 gap-4 mb-6">
@@ -59,11 +68,9 @@ export default function Dashboard() {
             <DashboardHeroCards />
           </div>
 
-          <RecentCompanies companies={[]} onNavigate={(url) => (window.location.href = url)} />
+          <RecentCompanies companies={data.recent_companies} onNavigate={(url) => (window.location.href = url)} />
         </>
       )}
     </div>
   );
 }
-
-// StatCard not used; DashboardKPICards provides spec-matching tiles
