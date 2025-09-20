@@ -21,7 +21,7 @@ async function j<T>(r: Response): Promise<T> {
 export const api = {
   get<T>(path: string, init?: RequestInit) {
     const url = `${BASE_ORIGIN}${path}`;
-    return j<T>(fetch(url, { ...(init || {}), credentials: 'include' }));
+    return j<T>(fetch(url, { ...(init || {}), credentials: 'omit' }));
   },
   post<T>(path: string, body: unknown, init?: RequestInit) {
     const url = `${BASE_ORIGIN}${path}`;
@@ -29,7 +29,7 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
       body: JSON.stringify(body ?? {}),
-      credentials: 'include',
+      credentials: 'omit',
       ...init,
     }));
   },
