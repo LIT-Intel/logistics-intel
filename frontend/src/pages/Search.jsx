@@ -168,7 +168,8 @@ export default function Search() {
 
   const handleCompanySelect = useCallback((company) => {
     setSelectedCompany(company);
-    setShowDetailModal(true);
+    setDrawerId(String(company?.id || company?.company_id || ''));
+    setDrawerOpen(true);
   }, []);
 
   const handleSaveCompany = async (company) => {
