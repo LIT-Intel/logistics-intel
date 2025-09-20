@@ -53,34 +53,24 @@ export async function getFilterOptions(input: object = {}, signal?: AbortSignal)
 export type SearchCompaniesInput = { q?: string; mode?: "all"|"ocean"|"air"; filters?: Record<string, any>; dateRange?: { from?: string; to?: string }; pagination?: { limit?: number; offset?: number } };
 
 export async function searchCompanies(body: SearchCompaniesInput, signal?: AbortSignal) {
-  // Map UI shape to backend expected fields
+  // Map UI shape to unified /search API
   const limit = body.pagination?.limit ?? 10;
   const offset = body.pagination?.offset ?? 0;
   const payload = {
     q: body.q ?? "",
-    mode: (body.mode && body.mode !== "all") ? body.mode : undefined,
+    mode: body.mode && body.mode !== "all" ? body.mode : undefined,
     hs: Array.isArray(body.filters?.hs) ? body.filters?.hs : undefined,
-    origin: Array.isArray(body.filters?.origin) ? body.filters?.origin : (body.filters?.origin ? [body.filters.origin] : undefined),
-    dest: Array.isArray(body.filters?.destination) ? body.filters?.destination : (body.filters?.destination ? [body.filters.destination] : undefined),
-    carrier: Array.isArray(body.filters?.carrier) ? body.filters?.carrier : (body.filters?.carrier ? [body.filters.carrier] : undefined),
-    startDate: body.dateRange?.from ?? undefined,
-    endDate: body.dateRange?.to ?? undefined,
-    limit,
+    origins: body.filters?.origin ? [body.filters.origin] : undefined,
+    destinations: body.filters?.destination ? [body.filters.destination] : undefined,
+    carriers: body.filters?.carrier ? [body.filters.carrier] : undefined,
+    startDate: body.dateRange?.from || undefined,
+    endDate: body.dateRange?.to || undefined,
+    page: Math.floor((body.pagination?.offset ?? 0) / (body.pagination?.limit ?? limit)) + 1,
+    page_size: limit,
+    limit, // keep back-compat in case backend accepts limit/offset
     offset,
   } as const;
-  const res = await fetch(`${BASE}/searchCompanies`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "accept": "application/json" },
-    body: JSON.stringify(payload),
-    signal,
-  });
-  if (res.status === 422 || res.status === 400) {
-    const err = await res.json().catch(() => ({ message: "Validation error" }));
-    console.error("searchCompanies validation error", err);
-    throw new Error(err?.message || "Invalid search parameters");
-  }
-  if (!res.ok) throw new Error(`searchCompanies ${res.status}`);
-  return res.json();
+  return api.post('/search', payload, { signal });
 }
 
 // Widgets
