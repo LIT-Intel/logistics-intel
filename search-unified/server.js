@@ -150,24 +150,63 @@ app.post('/getFilterOptions', async (_req, res) => {
 });
 // ───────────────────────────────────────────────────────────────
 
-// (Existing) Company search endpoint (kept minimal; extend later)
-app.post('/searchCompanies', async (req, res) => {
+app.post('/search', async (req, res) => {
   try {
-    // Minimal no-op response preserves 200 contract until full query wired.
-    // Frontend expects { items: [], total: number }
-    res.status(200).json({ items: [], total: 0 });
-  } catch (e) {
-    console.error('searchCompanies error:', e);
-    res.status(500).json({ ok: false, error: String(e?.message || e) });
-  }
-});
+    const { page = 1, page_size = 24, q } = req.body;
+    const offset = (page - 1) * page_size;
 
-// (Existing) Shipments search endpoint (stub)
-app.post('/searchShipments', async (req, res) => {
-  try {
-    res.status(200).json({ items: [], total: 0 });
+    const whereClauses = [];
+    const params = {};
+
+    if (q) {
+      whereClauses.push(`ov.company_name LIKE @q`);
+      params.q = `%${q}%`;
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const query = `
+      SELECT
+        (SELECT COUNT(*) FROM 
+          logistics-intel.lit.v_company_overview_latest ov ${whereSql}) as total,
+        ARRAY(
+          SELECT AS STRUCT
+            ov.company_id,
+            ov.company_name as name,
+            STRUCT(
+              ov.shipments_12m,
+              ov.last_activity_date as last_activity,
+              ov.top_route,
+              ov.top_carrier
+            ) as kpis
+          FROM 
+            logistics-intel.lit.v_company_overview_latest ov
+          ${whereSql}
+          ORDER BY ov.shipments_12m DESC
+          LIMIT @page_size
+          OFFSET @offset
+        ) as rows
+    `;
+
+    const [job] = await bq.createQueryJob({
+      query,
+      params: { ...params, page_size, offset },
+      location: BQ_LOCATION,
+    });
+    const [rows] = await job.getQueryResults();
+
+    const result = rows[0];
+
+    res.status(200).json({
+      meta: {
+        total: result.total,
+        page: page,
+        page_size: page_size,
+      },
+      rows: result.rows,
+    });
   } catch (e) {
-    console.error('searchShipments error:', e);
+    console.error('/search error:', e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
