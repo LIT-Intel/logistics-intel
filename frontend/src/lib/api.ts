@@ -8,9 +8,14 @@ const BASE = (() => {
 })();
 
 // New generic API client per spec (expects BASE_ORIGIN without /public)
-const BASE_ORIGIN: string = (import.meta as any).env?.VITE_API_BASE || "";
+const BASE_ORIGIN: string = (() => {
+  const raw = (import.meta as any).env?.VITE_API_BASE || "";
+  if (!raw) return BASE.replace(/\/public$/, "");
+  return raw.replace(/\/public\/?$/, "");
+})();
 
-async function j<T>(r: Response): Promise<T> {
+async function j<T>(p: Promise<Response>): Promise<T> {
+  const r = await p;
   if (!r.ok) {
     const text = await r.text().catch(() => String(r.status));
     throw new Error(text || String(r.status));
@@ -35,19 +40,8 @@ export const api = {
   },
 };
 
-export async function getFilterOptions(input: object = {}, signal?: AbortSignal) {
-  const res = await fetch(`${BASE}/getFilterOptions`, {
-    method: "GET",
-    headers: { "content-type": "application/json", "accept": "application/json" },
-    signal,
-  });
-  if (res.status === 422) {
-    const err = await res.json().catch(() => ({ message: "Validation error" }));
-    console.error("getFilterOptions validation error", err?.fieldErrors || err);
-    throw new Error("Invalid filters request. Please adjust and retry.");
-  }
-  if (!res.ok) throw new Error(`getFilterOptions ${res.status}`);
-  return res.json();
+export async function getFilterOptions(_input: object = {}, signal?: AbortSignal) {
+  return api.get('/public/getFilterOptions', { signal });
 }
 
 export type SearchCompaniesInput = { q?: string; mode?: "all"|"ocean"|"air"; filters?: Record<string, any>; dateRange?: { from?: string; to?: string }; pagination?: { limit?: number; offset?: number } };
