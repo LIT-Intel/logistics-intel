@@ -70,7 +70,7 @@ export default function CompanySearchCard({
             Shipments (12M)
           </div>
           <div className="text-lg font-bold text-blue-900">
-            {formatShipments(company.shipments_12m)}
+            {formatShipments(company.shipments_12m || company?.kpis?.shipments_12m)}
           </div>
         </div>
         <div className="bg-purple-50 rounded-lg p-3">
