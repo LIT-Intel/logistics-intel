@@ -1,10 +1,12 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Building2, MapPin, ArrowRight } from 'lucide-react';
+import { Building2, MapPin, ArrowRight, Search } from 'lucide-react';
 import { createPageUrl } from '@/utils';
+import { useNavigate } from 'react-router-dom';
 
 export default function RecentCompanies({ companies = [], onNavigate }) {
+  const navigate = useNavigate();
   // Ensure companies is always an array
   const companiesArray = Array.isArray(companies) ? companies : [];
   
@@ -39,7 +41,15 @@ export default function RecentCompanies({ companies = [], onNavigate }) {
             </div>
           ))}
           {companiesArray.length === 0 && (
-            <div className="text-center py-8 text-gray-500">No companies saved yet.</div>
+            <div className="text-center py-8 text-gray-500 flex flex-col items-center">
+              <Building2 className="w-12 h-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-semibold text-gray-800">No Saved Companies</h3>
+              <p className="text-sm text-gray-600 mb-6">Start searching to find and save companies.</p>
+              <Button onClick={() => navigate(createPageUrl("Search"))}>
+                <Search className="w-4 h-4 mr-2" />
+                Search for Companies
+              </Button>
+            </div>
           )}
         </div>
       </CardContent>
