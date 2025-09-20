@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "pnpm --filter ./frontend build",
-  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "npm ci --prefix frontend",
+  "installCommand": "pnpm --filter ./frontend build",
   "env": {
     "VITE_API_BASE": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev"
   },
