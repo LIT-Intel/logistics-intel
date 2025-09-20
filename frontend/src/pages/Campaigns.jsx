@@ -1,6 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Campaign, Company, Contact, CampaignTemplate } from '@/api/entities';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Plus, Users, Mail, BarChart, AlertTriangle } from 'lucide-react';
@@ -8,8 +7,9 @@ import CampaignCard from '../components/campaigns/CampaignCard';
 import CampaignCreator from '../components/campaigns/CampaignCreator';
 import LockedFeature from '../components/common/LockedFeature';
 import { checkFeatureAccess } from '@/components/utils/planLimits';
-import { User } from '@/api/entities';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useAuth } from '@/auth/AuthProvider';
+import { api } from '@/lib/api';
 
 // Helper function to ensure data is an array, handling various API response formats
 const asArray = (data) => {
@@ -23,11 +23,8 @@ const asArray = (data) => {
 };
 
 export default function CampaignsPage() {
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
-  const [companies, setCompanies] = useState([]); // New state for companies
-  const [contacts, setContacts] = useState([]);   // New state for contacts
-  const [templates, setTemplates] = useState([]); // New state for campaign templates
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -40,16 +37,13 @@ export default function CampaignsPage() {
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
-      setDebugInfo('Starting to load all data (user, campaigns, companies, contacts, templates)...');
+      setDebugInfo('Starting to load campaigns...');
 
       try {
-        console.log('CampaignsPage: Loading user data...');
-        const userData = await User.me();
-        setUser(userData);
-        console.log('CampaignsPage: User loaded:', userData);
+        const userData = user || null;
 
         // Check if user has access to campaigns feature
-        if (!checkFeatureAccess(userData, 'campaigns')) {
+        if (userData && !checkFeatureAccess(userData, 'campaigns')) {
           console.log('CampaignsPage: User does not have campaigns access');
           setHasAccess(false);
           setIsLoading(false);
@@ -58,63 +52,17 @@ export default function CampaignsPage() {
         }
 
         setHasAccess(true);
-        console.log('CampaignsPage: User has campaigns access, loading entities...');
-
-        // Load campaigns data with error handling
+        // Load campaigns via Gateway
         try {
-          setDebugInfo(prev => prev + '\nLoading campaigns...');
-          // Changed from Campaign.list to Campaign.filter based on outline
-          const campaignsData = await Campaign.filter({ created_by: userData.email }, "-created_date");
-          setCampaigns(asArray(campaignsData));
-          console.log('CampaignsPage: Campaigns loaded:', asArray(campaignsData).length);
-          setDebugInfo(prev => prev + `\nLoaded ${asArray(campaignsData).length} campaigns.`);
+          const resp = await api.get('/campaigns', {
+            headers: userData ? { 'x-user-id': userData.uid || userData.email || 'user' } : undefined
+          });
+          setCampaigns(asArray(resp));
+          setDebugInfo(prev => prev + `\nLoaded ${asArray(resp).length} campaigns.`);
         } catch (campaignError) {
-          console.error("CampaignsPage: Failed to load campaigns:", campaignError);
-          setError(prev => (prev ? prev + '\n' : '') + `Failed to load campaigns: ${campaignError.message}`);
-          setDebugInfo(prev => prev + `\nERROR loading campaigns: ${campaignError.message}`);
+          console.error('CampaignsPage: Failed to load campaigns:', campaignError);
+          setError(`Failed to load campaigns: ${campaignError.message || campaignError}`);
           setCampaigns([]);
-        }
-
-        // Load companies data with error handling
-        try {
-          setDebugInfo(prev => prev + '\nLoading companies...');
-          const companiesData = await Company.list("-created_date", 100);
-          setCompanies(asArray(companiesData));
-          console.log('CampaignsPage: Companies loaded:', asArray(companiesData).length);
-          setDebugInfo(prev => prev + `\nLoaded ${asArray(companiesData).length} companies.`);
-        } catch (companyError) {
-          console.error("CampaignsPage: Failed to load companies:", companyError);
-          setError(prev => (prev ? prev + '\n' : '') + `Failed to load companies: ${companyError.message}`);
-          setDebugInfo(prev => prev + `\nERROR loading companies: ${companyError.message}`);
-          setCompanies([]);
-        }
-
-        // Load contacts data with error handling
-        try {
-          setDebugInfo(prev => prev + '\nLoading contacts...');
-          const contactsData = await Contact.list("-created_date", 500);
-          setContacts(asArray(contactsData));
-          console.log('CampaignsPage: Contacts loaded:', asArray(contactsData).length);
-          setDebugInfo(prev => prev + `\nLoaded ${asArray(contactsData).length} contacts.`);
-        } catch (contactError) {
-          console.error("CampaignsPage: Failed to load contacts:", contactError);
-          setError(prev => (prev ? prev + '\n' : '') + `Failed to load contacts: ${contactError.message}`);
-          setDebugInfo(prev => prev + `\nERROR loading contacts: ${contactError.message}`);
-          setContacts([]);
-        }
-
-        // Load templates data with error handling
-        try {
-          setDebugInfo(prev => prev + '\nLoading templates...');
-          const templatesData = await CampaignTemplate.filter({ is_active: true }, "name");
-          setTemplates(asArray(templatesData));
-          console.log('CampaignsPage: Templates loaded:', asArray(templatesData).length);
-          setDebugInfo(prev => prev + `\nLoaded ${asArray(templatesData).length} templates.`);
-        } catch (templateError) {
-          console.error("CampaignsPage: Failed to load templates:", templateError);
-          setError(prev => (prev ? prev + '\n' : '') + `Failed to load templates: ${templateError.message}`);
-          setDebugInfo(prev => prev + `\nERROR loading templates: ${templateError.message}`);
-          setTemplates([]);
         }
 
       } catch (e) {
@@ -123,17 +71,13 @@ export default function CampaignsPage() {
         setError(errorMsg);
         setHasAccess(false);
         setDebugInfo(`CRITICAL ERROR: ${errorMsg}`);
-        // Additional network debugging
-        if (e.message.includes('fetch')) {
-          setDebugInfo(prev => prev + ' | Network error detected - check Base44 backend connectivity');
-        }
       } finally {
         setIsLoading(false);
       }
     };
 
     loadData();
-  }, []); // Empty dependency array means this effect runs once on mount
+  }, [user]);
 
   const handleCreateNew = () => {
     setEditingCampaign(null);
@@ -149,27 +93,17 @@ export default function CampaignsPage() {
     // Re-trigger loadData after save to refresh all relevant data
     // This assumes `Campaign.create` and `Campaign.update` are successful.
     // In a real app, you might want more granular updates or success/error handling here.
-    if (editingCampaign) {
-      await Campaign.update(editingCampaign.id, campaignData);
-    } else {
-      await Campaign.create(campaignData);
-    }
+    // Placeholder: wire to Gateway create/update endpoints when available
     setIsCreating(false);
     setEditingCampaign(null);
-    // Reload all data to ensure consistency and refresh campaign list
-    // A simple `loadData()` call here would trigger the full re-fetch which is safe.
-    // However, since loadData is inside useEffect with empty dependency, we need a way to trigger it.
-    // For simplicity, we'll re-fetch just campaigns after a save/delete.
-    // A more robust solution might pass a re-fetch function down or use a global state manager.
-    // For now, let's manually re-fetch campaigns, assuming other entities don't change often.
     setIsLoading(true); // Indicate loading while re-fetching campaigns
     try {
-      const userData = user; // Use current user from state
-      if (userData) {
-        const campaignsData = await Campaign.filter({ created_by: userData.email }, "-created_date");
-        setCampaigns(asArray(campaignsData));
-        setError(null); // Clear errors related to previous load if successful
-      }
+      const userData = user;
+      const resp = await api.get('/campaigns', {
+        headers: userData ? { 'x-user-id': userData.uid || userData.email || 'user' } : undefined
+      });
+      setCampaigns(asArray(resp));
+      setError(null);
     } catch (e) {
       console.error("Failed to refresh campaigns after save:", e);
       setError(`Failed to refresh campaigns: ${e.message}`);
@@ -179,16 +113,15 @@ export default function CampaignsPage() {
   };
 
   const handleDelete = async (campaignId) => {
-    await Campaign.delete(campaignId);
-    // Re-fetch campaigns after delete
+    // Placeholder: DELETE via Gateway when available, then re-fetch
     setIsLoading(true);
     try {
       const userData = user;
-      if (userData) {
-        const campaignsData = await Campaign.filter({ created_by: userData.email }, "-created_date");
-        setCampaigns(asArray(campaignsData));
-        setError(null);
-      }
+      const resp = await api.get('/campaigns', {
+        headers: userData ? { 'x-user-id': userData.uid || userData.email || 'user' } : undefined
+      });
+      setCampaigns(asArray(resp));
+      setError(null);
     } catch (e) {
       console.error("Failed to refresh campaigns after delete:", e);
       setError(`Failed to refresh campaigns: ${e.message}`);
