@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import DashboardKPICards from "@/components/dashboard/DashboardKPICards";
 import DashboardHeroCards from "@/components/dashboard/DashboardHeroCards";
 import RecentCompanies from "@/components/dashboard/RecentCompanies";
+import DashboardLayout from "@/components/layout/DashboardLayout";
 
 const safeSummary = {
   shipments90d: 0,
@@ -41,7 +42,7 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto">
+    <DashboardLayout>
       <div className="mb-6">
         <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Dashboard</h1>
         <p className="text-gray-600 mt-2">Overview of your recent activity and search performance.</p>
@@ -62,7 +63,7 @@ export default function Dashboard() {
           <RecentCompanies companies={[]} onNavigate={(url) => (window.location.href = url)} />
         </>
       )}
-    </div>
+    </DashboardLayout>
   );
 }
 
