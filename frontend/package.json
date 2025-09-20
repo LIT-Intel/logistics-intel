@@ -1,12 +1,11 @@
 {
-  "name": "base44-app",
+  "name": "Lit-App",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "engines": {
     "node": "22.x"
   },
-  "packageManager": "pnpm@9.12.3",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
