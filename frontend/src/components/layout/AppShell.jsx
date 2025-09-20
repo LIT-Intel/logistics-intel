@@ -2,6 +2,8 @@
 import React, { useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { Home, BarChart3, Search, Building2, Mail, Activity, FileText, Package, Settings, CreditCard, Users2, Shield, TrendingUp, Database, Bug } from "lucide-react";
+import { useAuth } from "@/auth/AuthProvider";
+import { checkFeatureAccess } from "@/components/utils/planLimits";
 import { logout } from "@/auth/firebaseClient";
 
 function SideLink({ to, icon: Icon, label }) {
@@ -23,6 +25,9 @@ function SideLink({ to, icon: Icon, label }) {
 }
 
 export default function AppShell({ currentPageName, children }) {
+  const { user } = useAuth();
+  const isAdmin = !!(user && (user.role === 'admin' || user.email === 'vraymond@sparkfusiondigital.com'));
+  const canViewPro = isAdmin || checkFeatureAccess(user?.plan, 'pro');
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const breadcrumbs = useMemo(() => {
@@ -55,8 +60,8 @@ export default function AppShell({ currentPageName, children }) {
           <nav className="mb-4">
             <SideLink to="/app/dashboard" icon={BarChart3} label="Analytics" />
             <SideLink to="/app/search" icon={Search} label="Search" />
-            <SideLink to="/app/companies" icon={Building2} label="Companies" />
-            <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
+            {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Companies" />}
+            {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
             <SideLink to="/app/transactions" icon={Activity} label="Transactions" />
           </nav>
 
@@ -132,8 +137,8 @@ export default function AppShell({ currentPageName, children }) {
             <nav className="space-y-1">
               <SideLink to="/app/dashboard" icon={BarChart3} label="Analytics" />
               <SideLink to="/app/search" icon={Search} label="Search" />
-              <SideLink to="/app/companies" icon={Building2} label="Companies" />
-              <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
+              {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Companies" />}
+              {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
               <SideLink to="/app/transactions" icon={Activity} label="Transactions" />
               <SideLink to="/app/rfp-studio" icon={FileText} label="RFP Studio" />
               <SideLink to="/app/widgets" icon={Package} label="Widgets" />
