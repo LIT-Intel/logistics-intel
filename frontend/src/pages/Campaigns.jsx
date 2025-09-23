@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, Users, Mail, BarChart, AlertTriangle } from 'lucide-react';
+import { Plus, Users, AlertTriangle } from 'lucide-react';
 import CampaignCard from '../components/campaigns/CampaignCard';
 import CampaignCreator from '../components/campaigns/CampaignCreator';
+import CampaignAnalytics from '../components/campaigns/CampaignAnalytics';
 import LockedFeature from '../components/common/LockedFeature';
 import { checkFeatureAccess } from '@/components/utils/planLimits';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,12 +14,10 @@ import { api } from '@/lib/api';
 
 // Helper function to ensure data is an array, handling various API response formats
 const asArray = (data) => {
-  if (Array.isArray(data)) {
-    return data;
-  }
-  if (data && typeof data === 'object' && Array.isArray(data.data)) {
-    return data.data;
-  }
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.rows)) return data.rows;
+  if (Array.isArray(data?.data)) return data.data;
   return [];
 };
 
@@ -31,6 +30,7 @@ export default function CampaignsPage() {
   const [editingCampaign, setEditingCampaign] = useState(null);
   const [debugInfo, setDebugInfo] = useState('');
   const [hasAccess, setHasAccess] = useState(false); // hasAccess is now a state variable
+  const [selectedCampaign, setSelectedCampaign] = useState(null);
 
   // This useEffect now handles all initial data loading and access checks
   useEffect(() => {
@@ -54,9 +54,7 @@ export default function CampaignsPage() {
         setHasAccess(true);
         // Load campaigns via Gateway
         try {
-          const resp = await api.get('/campaigns', {
-            headers: userData ? { 'x-user-id': userData.uid || userData.email || 'user' } : undefined
-          });
+          const resp = await api.get('/crm/campaigns');
           setCampaigns(asArray(resp));
           setDebugInfo(prev => prev + `\nLoaded ${asArray(resp).length} campaigns.`);
         } catch (campaignError) {
@@ -89,7 +87,7 @@ export default function CampaignsPage() {
     setIsCreating(true);
   };
 
-  const handleSave = async (campaignData) => {
+  const handleSave = async (_campaignData) => {
     // Re-trigger loadData after save to refresh all relevant data
     // This assumes `Campaign.create` and `Campaign.update` are successful.
     // In a real app, you might want more granular updates or success/error handling here.
@@ -98,10 +96,7 @@ export default function CampaignsPage() {
     setEditingCampaign(null);
     setIsLoading(true); // Indicate loading while re-fetching campaigns
     try {
-      const userData = user;
-      const resp = await api.get('/campaigns', {
-        headers: userData ? { 'x-user-id': userData.uid || userData.email || 'user' } : undefined
-      });
+      const resp = await api.get('/crm/campaigns');
       setCampaigns(asArray(resp));
       setError(null);
     } catch (e) {
@@ -116,10 +111,7 @@ export default function CampaignsPage() {
     // Placeholder: DELETE via Gateway when available, then re-fetch
     setIsLoading(true);
     try {
-      const userData = user;
-      const resp = await api.get('/campaigns', {
-        headers: userData ? { 'x-user-id': userData.uid || userData.email || 'user' } : undefined
-      });
+      const resp = await api.get('/crm/campaigns');
       setCampaigns(asArray(resp));
       setError(null);
     } catch (e) {
@@ -127,6 +119,21 @@ export default function CampaignsPage() {
       setError(`Failed to refresh campaigns: ${e.message}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleToggle = async (campaignId, status) => {
+    try {
+      if (status === 'active') {
+        await api.post(`/crm/campaigns/${campaignId}/pause`, {});
+      } else {
+        await api.post(`/crm/campaigns/${campaignId}/launch`, {});
+      }
+      const resp = await api.get('/crm/campaigns');
+      setCampaigns(asArray(resp));
+    } catch (e) {
+      console.error('Failed to toggle campaign:', e);
+      setError(`Failed to toggle campaign: ${e.message}`);
     }
   };
 
@@ -228,13 +235,22 @@ export default function CampaignsPage() {
               <CampaignCard
                 key={campaign.id}
                 campaign={campaign}
+                onToggle={handleToggle}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onClick={(c) => setSelectedCampaign(c)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {selectedCampaign && (
+        <CampaignAnalytics
+          campaign={selectedCampaign}
+          onClose={() => setSelectedCampaign(null)}
+        />
+      )}
     </div>
   );
 }
