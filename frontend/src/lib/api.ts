@@ -1,6 +1,8 @@
 // Backwards-compatible base for legacy helper functions that expect /public
+import { auth } from '@/auth/firebaseClient';
 const BASE = (() => {
-  const base = (import.meta.env as any).VITE_API_BASE || (import.meta.env as any).VITE_PROXY_BASE || "/api/public";
+  const envAny = (import.meta as any)?.env || {};
+  const base = envAny.VITE_API_BASE || envAny.VITE_PROXY_BASE || "/api/public";
   if (base.endsWith("/public")) return base;
   if (base.endsWith("/public/")) return base.slice(0, -1);
   if (base === "/api/public") return base;
@@ -24,17 +26,31 @@ async function j<T>(p: Promise<Response>): Promise<T> {
 }
 
 export const api = {
-  get<T>(path: string, init?: RequestInit) {
+  async get<T>(path: string, init?: RequestInit) {
     const url = `${BASE_ORIGIN}${path}`;
-    return j<T>(fetch(url, { ...(init || {}), credentials: 'omit' }));
+    const token = await auth?.currentUser?.getIdToken?.().catch(() => null);
+    const headers = {
+      'accept': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers || {}),
+    } as Record<string, string>;
+    return j<T>(fetch(url, { ...(init || {}), headers, credentials: 'omit', cache: 'no-store' }));
   },
-  post<T>(path: string, body: unknown, init?: RequestInit) {
+  async post<T>(path: string, body: unknown, init?: RequestInit) {
     const url = `${BASE_ORIGIN}${path}`;
+    const token = await auth?.currentUser?.getIdToken?.().catch(() => null);
+    const headers = {
+      'content-type': 'application/json',
+      'accept': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers || {}),
+    } as Record<string, string>;
     return j<T>(fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      headers,
       body: JSON.stringify(body ?? {}),
       credentials: 'omit',
+      cache: 'no-store',
       ...init,
     }));
   },
