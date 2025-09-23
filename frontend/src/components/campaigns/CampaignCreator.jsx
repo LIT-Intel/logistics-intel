@@ -4,12 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Campaign } from '@/api/entities';
 import { User } from '@/api/entities';
 import { X, Plus, FileText, Trash2, Mail, UserPlus, MessageSquare } from 'lucide-react';
 import TemplateSelector from './TemplateSelector';
+import { api } from '@/lib/api';
 
-export default function CampaignCreator({ campaign, onClose }) {
+export default function CampaignCreator({ campaign, onClose, onSave }) {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -46,8 +46,9 @@ export default function CampaignCreator({ campaign, onClose }) {
     const loadContacts = async () => {
       setIsLoading(true);
       try {
-        const contacts = await User.all(); // Assuming User.all() returns all users/contacts
-        setAvailableContacts(contacts);
+        const res = await api.get('/crm/leads?limit=100');
+        const rows = Array.isArray(res?.rows) ? res.rows : (Array.isArray(res) ? res : []);
+        setAvailableContacts(rows.map(l => ({ email: l.email, full_name: l.contact_name })));
       } catch (error) {
         console.error('Failed to load available contacts:', error);
       } finally {
@@ -60,19 +61,30 @@ export default function CampaignCreator({ campaign, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const user = await User.me();
-      const campaignData = {
-        ...formData,
-        created_by: user.email,
-        // target_companies and target_contacts are already arrays from formData
+      const user = await User.me().catch(() => null);
+      const payload = {
+        name: formData.name,
+        type: formData.campaign_type,
+        status: formData.status,
+        steps: (formData.sequence_steps || []).map(s => ({
+          type: s.type,
+          wait_days: s.wait_days,
+          subject: s.subject,
+          template: s.template,
+        })),
+        audience: {
+          emails: formData.target_contacts,
+          companies: formData.target_companies,
+        },
+        subject_line: formData.subject_line,
+        email_template: formData.email_template,
+        linkedin_template: formData.linkedin_template,
+        created_by: user?.email || undefined,
       };
 
-      if (campaign) {
-        await Campaign.update(campaign.id, campaignData);
-      } else {
-        await Campaign.create(campaignData);
-      }
-      onClose();
+      await api.post('/crm/campaigns', payload);
+      onSave && onSave(payload);
+      onClose && onClose();
     } catch (error) {
       console.error('Error saving campaign:', error);
       alert('Failed to save campaign. Please try again.');

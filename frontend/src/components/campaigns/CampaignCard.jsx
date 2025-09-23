@@ -63,7 +63,10 @@ export default function CampaignCard({ campaign, onToggle, onEdit, onDelete, onC
         </div>
 
         <div className="text-sm text-gray-600 mt-2">
-          Created {format(new Date(campaign.created_date), 'MMM dd, yyyy')}
+          {(() => {
+            const createdAt = campaign.created_at || campaign.created_date || campaign.createdOn || Date.now();
+            try { return `Created ${format(new Date(createdAt), 'MMM dd, yyyy')}`; } catch { return '' }
+          })()}
         </div>
       </CardHeader>
 
