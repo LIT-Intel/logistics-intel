@@ -56,6 +56,52 @@ export const api = {
   },
 };
 
+// Typed helpers for unified search and shipments
+export type CompanySummary = {
+  company_id: string;
+  company_name: string;
+  shipments_12m: number;
+  last_activity: string | null;
+  top_routes: string[];
+  top_carriers: string[];
+};
+
+export type CompanyShipment = {
+  date: string;
+  origin_country: string;
+  dest_country: string;
+  mode: 'AIR'|'OCEAN';
+  hs_code: string | null;
+  value_usd: number | null;
+  gross_weight_kg: number | null;
+  carrier: string | null;
+};
+
+export async function postSearchCompanies(body: {
+  origin_country?: string;
+  dest_country?: string;
+  mode?: 'ANY'|'AIR'|'OCEAN';
+  carrier?: string;
+  hs_codes?: string[];
+  date_start?: string;
+  date_end?: string;
+  limit: number;
+  offset: number;
+  company_id?: string;
+}, signal?: AbortSignal): Promise<{ data: CompanySummary[]; total: number }> {
+  return api.post<{ data: CompanySummary[]; total: number }>(
+    '/public/searchCompanies',
+    body,
+    { signal }
+  );
+}
+
+export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }, signal?: AbortSignal): Promise<{ data: CompanyShipment[]; total: number }> {
+  const { company_id, limit = 50, offset = 0 } = params;
+  const searchParams = new URLSearchParams({ company_id, limit: String(limit), offset: String(offset) });
+  return api.get<{ data: CompanyShipment[]; total: number }>(`/public/getCompanyShipments?${searchParams.toString()}`, { signal });
+}
+
 export async function getFilterOptions(_input: object = {}, signal?: AbortSignal) {
   return api.get('/public/getFilterOptions', { signal });
 }
