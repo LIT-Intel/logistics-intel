@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, postSearchCompanies } from '@/lib/api';
 import CompanyDrawer from '@/components/company/CompanyDrawer';
 import { User } from "@/api/entities";
 import { Button } from "@/components/ui/button";
@@ -94,46 +94,36 @@ export default function Search() {
 
     try {
       const offset = (p - 1) * ITEMS_PER_PAGE;
-      const payload = {
-        q: searchQuery || undefined,
-        mode: (filters.mode && filters.mode !== 'any') ? filters.mode : 'all',
-        filters: {
-          origin: filters.origin ? [filters.origin] : undefined,
-          destination: filters.destination ? [filters.destination] : undefined,
-          carrier: filters.carrier ? [filters.carrier] : undefined,
-          hs: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
-        },
-        dateRange: {
-          from: filters.date_start || undefined,
-          to: filters.date_end || undefined,
-        },
-        pagination: { limit: ITEMS_PER_PAGE, offset }
-      };
+      const body = {
+        origin_country: filters.origin || undefined,
+        dest_country: filters.destination || undefined,
+        mode: (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : 'ANY',
+        carrier: filters.carrier || undefined,
+        hs_codes: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
+        date_start: filters.date_start || undefined,
+        date_end: filters.date_end || undefined,
+        limit: ITEMS_PER_PAGE,
+        offset,
+      } as const;
 
-      const resp = await searchCompanies(payload);
-      const raw = (resp?.items)
-        || (Array.isArray(resp?.results) ? resp.results : undefined)
-        || (resp?.data?.items)
-        || (resp?.data?.results)
-        || [];
-      const total = typeof resp?.total === 'number' ? resp.total : (resp?.data?.total || 0);
+      const resp = await postSearchCompanies(body);
+      const raw = Array.isArray(resp?.data) ? resp.data : [];
+      const total = typeof resp?.total === 'number' ? resp.total : 0;
 
-      // Normalize gateway results to UI shape
-      const results = (raw || []).map((item) => {
-        const name = item.name || item.company || item.company_name || "Unknown";
-        const id = item.id || item.company_id || (name ? name.toLowerCase().replace(/[^a-z0-9]+/g,'-') : undefined);
-        const shipments12m = item.shipments_12m || item.shipments || 0;
-        const lastSeen = item.last_seen || item.lastShipmentDate || item.last_ship_date || null;
-        const topCarrier = item.top_carrier || (Array.isArray(item.carriersTop) && item.carriersTop[0]?.v) || undefined;
-        const topRoute = item.top_route || ((Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || 'Origin'} → ${item.destsTop[0]?.v || 'Dest'}` : undefined);
+      // Normalize to UI shape expected by cards/list items
+      const results = raw.map((item) => {
+        const id = item.company_id;
+        const name = item.company_name || 'Unknown';
+        const topRoute = Array.isArray(item.top_routes) && item.top_routes.length ? item.top_routes[0] : undefined;
+        const topCarrier = Array.isArray(item.top_carriers) && item.top_carriers.length ? item.top_carriers[0] : undefined;
         return {
-          ...item,
           id,
+          company_id: id,
           name,
-          shipments_12m: shipments12m,
-          last_seen: lastSeen,
-          top_carrier: topCarrier,
+          shipments_12m: item.shipments_12m || 0,
+          last_seen: item.last_activity || null,
           top_route: topRoute,
+          top_carrier: topCarrier,
         };
       });
 
@@ -150,19 +140,33 @@ export default function Search() {
   }, [searchQuery, filters]);
 
   const payload = useMemo(() => ({
-    ...(filters.mode && filters.mode !== 'any' ? { mode: filters.mode } : {}),
-    ...(filters.hs?.length ? { hs_codes: filters.hs } : {}),
-    ...(filters.origin ? { origins: [filters.origin] } : {}),
-    ...(filters.destination ? { destinations: [filters.destination] } : {}),
-    ...(filters.carrier ? { carriers: [filters.carrier] } : {}),
-    page: currentPage,
-    page_size: ITEMS_PER_PAGE,
-    ...(filters.date_start || filters.date_end ? { date_range: { from: filters.date_start || undefined, to: filters.date_end || undefined } } : {}),
+    origin_country: filters.origin || undefined,
+    dest_country: filters.destination || undefined,
+    mode: (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : 'ANY',
+    carrier: filters.carrier || undefined,
+    hs_codes: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
+    date_start: filters.date_start || undefined,
+    date_end: filters.date_end || undefined,
+    limit: ITEMS_PER_PAGE,
+    offset: (currentPage - 1) * ITEMS_PER_PAGE,
   }), [filters, currentPage]);
 
   const resultsQuery = useQuery({
-    queryKey: ['search', payload],
-    queryFn: () => api.post('/search', payload),
+    queryKey: ['searchCompanies', payload],
+    queryFn: async () => {
+      const resp = await postSearchCompanies(payload);
+      const raw = Array.isArray(resp?.data) ? resp.data : [];
+      const rows = raw.map((item) => ({
+        id: item.company_id,
+        company_id: item.company_id,
+        name: item.company_name || 'Unknown',
+        shipments_12m: item.shipments_12m || 0,
+        last_seen: item.last_activity || null,
+        top_route: Array.isArray(item.top_routes) && item.top_routes.length ? item.top_routes[0] : undefined,
+        top_carrier: Array.isArray(item.top_carriers) && item.top_carriers.length ? item.top_carriers[0] : undefined,
+      }));
+      return { rows, meta: { total: resp.total, page: currentPage, page_size: ITEMS_PER_PAGE } };
+    },
     keepPreviousData: true,
   });
 
