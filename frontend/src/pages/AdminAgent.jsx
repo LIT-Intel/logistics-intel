@@ -9,12 +9,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import ReactMarkdown from "react-markdown";
 
+const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE || "";
+function redactHeaders(headers) {
+  const out = {};
+  Object.entries(headers || {}).forEach(([k, v]) => {
+    if (/authorization/i.test(k)) return;
+    out[k] = String(v ?? "");
+  });
+  return out;
+}
+
 export default function AdminAgentPage() {
   const [conversationId, setConversationId] = useState(undefined);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [diagLog, setDiagLog] = useState({});
+  const [searchBody, setSearchBody] = useState('{' + '\n  "limit": 1,' + '\n  "offset": 0\n}');
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
 
@@ -41,6 +53,29 @@ export default function AdminAgentPage() {
     };
     checkAdmin();
   }, [navigate]);
+
+  async function hit(path, init, bodyObj) {
+    const url = `${API_BASE}${path}`;
+    const headers = { 'content-type': 'application/json' };
+    const reqSnap = {
+      url,
+      method: (init && init.method) || 'GET',
+      headers: redactHeaders(headers),
+      body: bodyObj ? JSON.stringify(bodyObj) : undefined,
+    };
+    try {
+      const res = await fetch(url, {
+        method: (init && init.method) || 'GET',
+        headers,
+        body: bodyObj ? JSON.stringify(bodyObj) : undefined,
+      });
+      let body;
+      try { body = await res.clone().json(); } catch { body = await res.clone().text(); }
+      setDiagLog({ req: reqSnap, res: { status: res.status, ok: res.ok, body } });
+    } catch (e) {
+      setDiagLog({ req: reqSnap, res: { status: 0, ok: false, body: String((e && e.message) || e) } });
+    }
+  }
 
   const send = async () => {
     if (!input.trim()) return;
@@ -83,6 +118,52 @@ export default function AdminAgentPage() {
         <h1 className="text-2xl font-bold text-gray-900">Debug Agent</h1>
         <p className="text-sm text-gray-500">Admin-only interface for debugging the platform.</p>
       </header>
+
+      {/* System Diagnostic */}
+      <div className="space-y-4 mb-6">
+        <div className="rounded-xl border p-4 space-y-3 bg-white">
+          <h2 className="text-lg font-medium">Initial Check: User Status</h2>
+          {isAdmin ? (
+            <div className="text-green-600">User loaded.</div>
+          ) : (
+            <div className="text-gray-500">Checking…</div>
+          )}
+        </div>
+
+        <div className="rounded-xl border p-4 space-y-3 bg-white">
+          <h2 className="text-lg font-medium">LIT Gateway Connection Test</h2>
+          <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={() => hit('/public/status')}>Run LIT Gateway Test</button>
+        </div>
+
+        <div className="rounded-xl border p-4 space-y-3 bg-white">
+          <h2 className="text-lg font-medium">Filter Options</h2>
+          <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={() => hit('/public/getFilterOptions')}>Get Filter Options</button>
+        </div>
+
+        <div className="rounded-xl border p-4 space-y-3 bg-white">
+          <h2 className="text-lg font-medium">Search Companies (editable body)</h2>
+          <textarea className="w-full h-40 rounded-md border p-2 font-mono text-sm" value={searchBody} onChange={(e) => setSearchBody(e.target.value)} />
+          <div className="flex gap-2">
+            <button
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white"
+              onClick={() => {
+                let body = {};
+                try { body = JSON.parse(searchBody); } catch { body = { limit:1, offset:0 }; }
+                hit('/public/searchCompanies', { method: 'POST' }, body);
+              }}
+            >Run Search</button>
+            <button
+              className="px-3 py-2 rounded-lg border"
+              onClick={() => setSearchBody(JSON.stringify({ limit: 1, offset: 0 }, null, 2))}
+            >Reset Body</button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border p-4 space-y-3 bg-white">
+          <h2 className="text-lg font-medium">Last Request / Response</h2>
+          <pre className="text-xs bg-gray-50 rounded-md p-3 overflow-auto max-h-[50vh]">{JSON.stringify(diagLog, null, 2)}</pre>
+        </div>
+      </div>
       
       <div className="border rounded-lg p-4 h-[60vh] overflow-y-auto bg-white shadow-sm space-y-6 mb-4">
         {messages.map((m, i) => (
