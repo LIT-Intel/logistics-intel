@@ -77,7 +77,7 @@ export type CompanyShipment = {
   carrier: string | null;
 };
 
-export async function postSearchCompanies(body: {
+type SearchCompaniesBodySingular = {
   origin_country?: string;
   dest_country?: string;
   mode?: 'ANY'|'AIR'|'OCEAN';
@@ -88,7 +88,22 @@ export async function postSearchCompanies(body: {
   limit: number;
   offset: number;
   company_id?: string;
-}, signal?: AbortSignal): Promise<{ data: CompanySummary[]; total: number }> {
+};
+
+type SearchCompaniesBodyPlural = {
+  modes?: Array<'ANY'|'AIR'|'OCEAN'>;
+  origins?: string[];
+  destinations?: string[];
+  carriers?: string[];
+  hs_codes?: string[];
+  date_start?: string;
+  date_end?: string;
+  limit: number;
+  offset: number;
+  company_id?: string;
+};
+
+export async function postSearchCompanies(body: SearchCompaniesBodySingular | SearchCompaniesBodyPlural, signal?: AbortSignal): Promise<{ data: CompanySummary[]; total: number }> {
   return api.post<{ data: CompanySummary[]; total: number }>(
     '/public/searchCompanies',
     body,

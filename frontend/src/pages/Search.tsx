@@ -95,10 +95,10 @@ export default function Search() {
     try {
       const offset = (p - 1) * ITEMS_PER_PAGE;
       const body = {
-        origin_country: filters.origin || undefined,
-        dest_country: filters.destination || undefined,
-        mode: (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : 'ANY',
-        carrier: filters.carrier || undefined,
+        modes: (filters.mode && filters.mode !== 'any') ? [filters.mode === 'air' ? 'AIR' : 'OCEAN'] : undefined,
+        origins: filters.origin ? [filters.origin] : undefined,
+        destinations: filters.destination ? [filters.destination] : undefined,
+        carriers: filters.carrier ? [filters.carrier] : undefined,
         hs_codes: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
         date_start: filters.date_start || undefined,
         date_end: filters.date_end || undefined,
@@ -140,10 +140,10 @@ export default function Search() {
   }, [searchQuery, filters]);
 
   const payload = useMemo(() => ({
-    origin_country: filters.origin || undefined,
-    dest_country: filters.destination || undefined,
-    mode: (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : 'ANY',
-    carrier: filters.carrier || undefined,
+    modes: (filters.mode && filters.mode !== 'any') ? [filters.mode === 'air' ? 'AIR' : 'OCEAN'] : undefined,
+    origins: filters.origin ? [filters.origin] : undefined,
+    destinations: filters.destination ? [filters.destination] : undefined,
+    carriers: filters.carrier ? [filters.carrier] : undefined,
     hs_codes: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
     date_start: filters.date_start || undefined,
     date_end: filters.date_end || undefined,
