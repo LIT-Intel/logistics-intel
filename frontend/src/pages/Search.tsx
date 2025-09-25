@@ -94,14 +94,18 @@ export default function Search() {
 
     try {
       const offset = (p - 1) * ITEMS_PER_PAGE;
+      const hsSanitized = Array.isArray(filters.hs)
+        ? filters.hs.map((s) => String(s).trim()).filter(Boolean)
+        : undefined;
+      const modeScalar = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : undefined;
       const body = {
-        modes: (filters.mode && filters.mode !== 'any') ? [filters.mode === 'air' ? 'AIR' : 'OCEAN'] : undefined,
-        origins: filters.origin ? [filters.origin] : undefined,
-        destinations: filters.destination ? [filters.destination] : undefined,
-        carriers: filters.carrier ? [filters.carrier] : undefined,
-        hs_codes: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
-        date_start: filters.date_start || undefined,
-        date_end: filters.date_end || undefined,
+        ...(filters.origin ? { origin_country: filters.origin } : {}),
+        ...(filters.destination ? { dest_country: filters.destination } : {}),
+        ...(modeScalar ? { mode: modeScalar } : {}),
+        ...(filters.carrier ? { carrier: filters.carrier } : {}),
+        ...(hsSanitized && hsSanitized.length ? { hs_codes: hsSanitized } : {}),
+        ...(filters.date_start ? { date_start: filters.date_start, start_date: filters.date_start } : {}),
+        ...(filters.date_end ? { date_end: filters.date_end, end_date: filters.date_end } : {}),
         limit: ITEMS_PER_PAGE,
         offset,
       } as const;
@@ -139,17 +143,23 @@ export default function Search() {
     }
   }, [searchQuery, filters]);
 
-  const payload = useMemo(() => ({
-    modes: (filters.mode && filters.mode !== 'any') ? [filters.mode === 'air' ? 'AIR' : 'OCEAN'] : undefined,
-    origins: filters.origin ? [filters.origin] : undefined,
-    destinations: filters.destination ? [filters.destination] : undefined,
-    carriers: filters.carrier ? [filters.carrier] : undefined,
-    hs_codes: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
-    date_start: filters.date_start || undefined,
-    date_end: filters.date_end || undefined,
-    limit: ITEMS_PER_PAGE,
-    offset: (currentPage - 1) * ITEMS_PER_PAGE,
-  }), [filters, currentPage]);
+  const payload = useMemo(() => {
+    const hsSanitized = Array.isArray(filters.hs)
+      ? filters.hs.map((s) => String(s).trim()).filter(Boolean)
+      : undefined;
+    const modeScalar = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : undefined;
+    return {
+      ...(filters.origin ? { origin_country: filters.origin } : {}),
+      ...(filters.destination ? { dest_country: filters.destination } : {}),
+      ...(modeScalar ? { mode: modeScalar } : {}),
+      ...(filters.carrier ? { carrier: filters.carrier } : {}),
+      ...(hsSanitized && hsSanitized.length ? { hs_codes: hsSanitized } : {}),
+      ...(filters.date_start ? { date_start: filters.date_start, start_date: filters.date_start } : {}),
+      ...(filters.date_end ? { date_end: filters.date_end, end_date: filters.date_end } : {}),
+      limit: ITEMS_PER_PAGE,
+      offset: (currentPage - 1) * ITEMS_PER_PAGE,
+    } as const;
+  }, [filters, currentPage]);
 
   const resultsQuery = useQuery({
     queryKey: ['searchCompanies', payload],
