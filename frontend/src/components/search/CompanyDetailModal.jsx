@@ -230,7 +230,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   <OverviewTab company={currentCompanyDetails} shipments={shipments} isLoading={isLoading} />
                 </TabsContent>
                 <TabsContent value="shipments" className="p-6">
-                  <ShipmentsTab shipments={shipments} isLoading={isLoading} />
+                  <ShipmentsTab
+                    shipments={shipments}
+                    isLoading={isLoading}
+                    onRowClick={(row) => alert(JSON.stringify(row, null, 2))}
+                  />
                 </TabsContent>
                 <TabsContent value="contacts" className="p-6">
                   {isSavedByUser ? (
