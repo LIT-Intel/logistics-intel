@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from '@tanstack/react-query';
 import { api, postSearchCompanies } from '@/lib/api';
 import CompanyDrawer from '@/components/company/CompanyDrawer';
-import { User } from "@/api/entities";
+import { useAuth } from "@/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon } from "lucide-react";
@@ -22,7 +22,7 @@ const ITEMS_PER_PAGE = 25;
 
 export default function Search() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState({
@@ -72,18 +72,7 @@ export default function Search() {
     return Math.max(1, Math.ceil((totalResults || 0) / ITEMS_PER_PAGE));
   }, [totalResults]);
 
-  const loadUser = useCallback(async () => {
-    try {
-      const userData = await User.me();
-      setUser(userData);
-    } catch (error) {
-      console.error("Error loading user:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadUser();
-  }, [loadUser]);
+  // user is provided by AuthProvider; no additional load needed
 
   const handleSearch = useCallback(async (page) => {
     const p = page || 1;
@@ -110,7 +99,23 @@ export default function Search() {
         offset,
       } as const;
 
-      const resp = await postSearchCompanies(body as any);
+      let resp;
+      try {
+        resp = await postSearchCompanies(body as any);
+      } catch (e) {
+        // Fallback to legacy /search endpoint
+        const legacy = {
+          q: searchQuery || "",
+          mode: filters.mode && filters.mode !== 'any' ? filters.mode : 'all',
+          filters: {
+            origin: filters.origin || undefined,
+            destination: filters.destination || undefined,
+            hs: (hs_codes && hs_codes.length) ? hs_codes : undefined,
+          },
+          pagination: { limit: ITEMS_PER_PAGE, offset },
+        } as const;
+        resp = await api.post('/search', legacy as any);
+      }
       const raw = Array.isArray(resp?.data) ? resp.data : [];
       const total = typeof resp?.total === 'number' ? resp.total : 0;
 
@@ -163,7 +168,37 @@ export default function Search() {
   const resultsQuery = useQuery({
     queryKey: ['searchCompanies', payload],
     queryFn: async () => {
-      const resp = await postSearchCompanies(payload as any);
+      let resp;
+      try {
+        resp = await postSearchCompanies(payload as any);
+      } catch (e) {
+        const legacy = {
+          q: searchQuery || "",
+          mode: filters.mode && filters.mode !== 'any' ? filters.mode : 'all',
+          filters: {
+            origin: filters.origin || undefined,
+            destination: filters.destination || undefined,
+            hs: (payload as any)?.hs_codes || undefined,
+          },
+          pagination: { limit: ITEMS_PER_PAGE, offset: (currentPage - 1) * ITEMS_PER_PAGE },
+        } as const;
+        resp = await api.post('/search', legacy as any);
+        // Normalize legacy response to shape { data, total }
+        const items = (resp?.items) || (Array.isArray(resp?.results) ? resp.results : []) || [];
+        const total = typeof resp?.total === 'number' ? resp.total : 0;
+        return {
+          rows: items.map((item: any) => ({
+            id: item.id || item.company_id || item.company || 'n/a',
+            company_id: item.company_id || item.id,
+            name: item.name || item.company || 'Unknown',
+            shipments_12m: item.shipments_12m || item.shipments || 0,
+            last_seen: item.last_seen || item.last_ship_date || null,
+            top_route: item.top_route,
+            top_carrier: item.top_carrier,
+          })),
+          meta: { total, page: currentPage, page_size: ITEMS_PER_PAGE },
+        };
+      }
       const raw = Array.isArray(resp?.data) ? resp.data : [];
       const rows = raw.map((item) => ({
         id: item.company_id,
