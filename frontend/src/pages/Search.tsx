@@ -218,6 +218,7 @@ export default function Search() {
       return { rows, meta: { total: resp.total, page: currentPage, page_size: ITEMS_PER_PAGE } };
     },
     keepPreviousData: true,
+    enabled: hasSearched,
   });
 
   const handleCompanySelect = useCallback((company) => {
@@ -325,8 +326,8 @@ export default function Search() {
 
         {hasSearched ? (
           <SearchResults
-            searchResults={resultsQuery.data?.rows || searchResults}
-            totalResults={resultsQuery.data?.meta?.total || totalResults}
+            searchResults={(resultsQuery.data?.rows && resultsQuery.data.rows.length > 0) ? resultsQuery.data.rows : searchResults}
+            totalResults={(resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0) ? resultsQuery.data.meta.total : totalResults}
             isLoading={isLoading || resultsQuery.isLoading}
             onCompanySelect={handleCompanySelect}
             onSave={handleSaveCompany}
@@ -339,7 +340,7 @@ export default function Search() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             currentPage={currentPage}
-            totalPages={Math.max(1, Math.ceil(((resultsQuery.data?.meta?.total || totalResults) / ITEMS_PER_PAGE) || 1))}
+            totalPages={Math.max(1, Math.ceil((((resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0) ? resultsQuery.data.meta.total : totalResults) / ITEMS_PER_PAGE) || 1))}
             onPageChange={handlePageChange}
           />
         ) : (
