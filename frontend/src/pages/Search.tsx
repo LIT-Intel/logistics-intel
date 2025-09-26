@@ -94,13 +94,20 @@ export default function Search() {
 
     try {
       const offset = (p - 1) * ITEMS_PER_PAGE;
+      const hsText = (filters.hs_text || '').split(',').map(s => s.trim()).filter(Boolean);
       const hsSanitized = Array.isArray(filters.hs)
-        ? filters.hs.map((s) => String(s).trim()).filter(Boolean)
-        : undefined;
+        ? Array.from(new Set([...filters.hs.map((s) => String(s).trim()), ...hsText])).filter(Boolean)
+        : (hsText.length ? hsText : undefined);
       const modeScalar = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : undefined;
       const body = {
         ...(filters.origin ? { origin_country: filters.origin } : {}),
         ...(filters.destination ? { dest_country: filters.destination } : {}),
+        ...(filters.origin_city ? { origin_city: filters.origin_city } : {}),
+        ...(filters.origin_state ? { origin_state: filters.origin_state } : {}),
+        ...(filters.origin_zip ? { origin_postal: filters.origin_zip } : {}),
+        ...(filters.dest_city ? { dest_city: filters.dest_city } : {}),
+        ...(filters.dest_state ? { dest_state: filters.dest_state } : {}),
+        ...(filters.dest_zip ? { dest_postal: filters.dest_zip } : {}),
         ...(modeScalar ? { mode: modeScalar } : {}),
         ...(filters.carrier ? { carrier: filters.carrier } : {}),
         ...(hsSanitized && hsSanitized.length ? { hs_codes: hsSanitized } : {}),
@@ -144,13 +151,20 @@ export default function Search() {
   }, [searchQuery, filters]);
 
   const payload = useMemo(() => {
+    const hsText = (filters.hs_text || '').split(',').map(s => s.trim()).filter(Boolean);
     const hsSanitized = Array.isArray(filters.hs)
-      ? filters.hs.map((s) => String(s).trim()).filter(Boolean)
-      : undefined;
+      ? Array.from(new Set([...filters.hs.map((s) => String(s).trim()), ...hsText])).filter(Boolean)
+      : (hsText.length ? hsText : undefined);
     const modeScalar = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : undefined;
     return {
       ...(filters.origin ? { origin_country: filters.origin } : {}),
       ...(filters.destination ? { dest_country: filters.destination } : {}),
+      ...(filters.origin_city ? { origin_city: filters.origin_city } : {}),
+      ...(filters.origin_state ? { origin_state: filters.origin_state } : {}),
+      ...(filters.origin_zip ? { origin_postal: filters.origin_zip } : {}),
+      ...(filters.dest_city ? { dest_city: filters.dest_city } : {}),
+      ...(filters.dest_state ? { dest_state: filters.dest_state } : {}),
+      ...(filters.dest_zip ? { dest_postal: filters.dest_zip } : {}),
       ...(modeScalar ? { mode: modeScalar } : {}),
       ...(filters.carrier ? { carrier: filters.carrier } : {}),
       ...(hsSanitized && hsSanitized.length ? { hs_codes: hsSanitized } : {}),
