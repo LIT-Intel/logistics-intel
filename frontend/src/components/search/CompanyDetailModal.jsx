@@ -9,9 +9,7 @@ import {
 
 import { Contact, Note } from '@/api/entities';
 import { createPageUrl } from '@/utils';
-
-import { getCompanyOverview } from '@/api/functions';
-import { getCompanyShipments } from '@/api/functions';
+import { postSearchCompanies, getCompanyShipments } from '@/lib/api';
 import { enrichCompany } from '@/api/functions';
 
 import OverviewTab from './detail_tabs/OverviewTab';
@@ -37,8 +35,8 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
     if (!companyId) return;
     setIsLoading(true);
     try {
-      const overviewPromise = getCompanyOverview({ company_id: companyId });
-      const shipmentsPromise = getCompanyShipments({ company_id: companyId, limit: 50 });
+      const overviewPromise = postSearchCompanies({ company_id: String(companyId), limit: 1, offset: 0 });
+      const shipmentsPromise = getCompanyShipments({ company_id: String(companyId), limit: 50, offset: 0 });
       const contactPromise = Contact.filter({ company_id: companyId }, '-created_date', 50);
       const notesPromise = Note.filter({ company_id: companyId }, '-created_date', 50);
 
@@ -48,9 +46,22 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
         contactPromise,
         notesPromise
       ]);
-      const ov = overviewRes?.data?.result ?? overviewRes?.result ?? overviewRes?.data ?? overviewRes ?? null;
-      if (ov) setCurrentCompanyDetails(ov);
-      const shp = shipmentsRes?.data?.results ?? shipmentsRes?.results ?? shipmentsRes?.rows ?? [];
+      const ovRaw = Array.isArray(overviewRes?.data) && overviewRes.data.length ? overviewRes.data[0] : null;
+      if (ovRaw) {
+        const mapped = {
+          id: ovRaw.company_id,
+          name: ovRaw.company_name || 'Unknown',
+          shipments_12m: ovRaw.shipments_12m || 0,
+          last_seen: ovRaw.last_activity || null,
+          top_route: Array.isArray(ovRaw.top_routes) && ovRaw.top_routes.length
+            ? (typeof ovRaw.top_routes[0] === 'string' ? ovRaw.top_routes[0] : `${ovRaw.top_routes[0]?.o || ''} → ${ovRaw.top_routes[0]?.d || ''}`)
+            : undefined,
+          top_carriers: Array.isArray(ovRaw.top_carriers) ? ovRaw.top_carriers : [],
+          mode_breakdown: Array.isArray(ovRaw.mode_breakdown) ? ovRaw.mode_breakdown : [],
+        };
+        setCurrentCompanyDetails(mapped);
+      }
+      const shp = Array.isArray(shipmentsRes?.data) ? shipmentsRes.data : (shipmentsRes?.results || shipmentsRes?.rows || []);
       setShipments(Array.isArray(shp) ? shp : []);
       setContacts(contactData);
       setNotes(noteData);
@@ -160,8 +171,8 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0">
+      <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose?.(); }}>
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 md:rounded-2xl rounded-none md:inset-auto inset-0">
           <DialogHeader className="p-6 border-b">
             <div className="flex justify-between items-start gap-4">
               <div>
@@ -219,7 +230,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   <OverviewTab company={currentCompanyDetails} shipments={shipments} isLoading={isLoading} />
                 </TabsContent>
                 <TabsContent value="shipments" className="p-6">
-                  <ShipmentsTab shipments={shipments} isLoading={isLoading} />
+                  <ShipmentsTab
+                    shipments={shipments}
+                    isLoading={isLoading}
+                    onRowClick={(row) => alert(JSON.stringify(row, null, 2))}
+                  />
                 </TabsContent>
                 <TabsContent value="contacts" className="p-6">
                   {isSavedByUser ? (

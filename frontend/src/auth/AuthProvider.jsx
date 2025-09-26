@@ -10,8 +10,9 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsub = listenToAuth((u) => {
-      // Elevate admin for specific email
-      if (u && u.email === 'vraymond@sparkfusiondigital.com') {
+      // Elevate admin for specific emails (temporary until roles are persisted server-side)
+      const adminEmails = new Set(['vraymond@sparkfusiondigital.com','support@logisticintel.com']);
+      if (u && adminEmails.has(u.email)) {
         u.role = 'admin';
         u.plan = 'enterprise';
       }

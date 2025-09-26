@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
+import DebugOverlay from '@/components/DebugOverlay';
 
 /**
  * Minimal layout to satisfy "@/pages/Layout" import.
@@ -12,8 +13,15 @@ export default function Layout({ children, currentPageName }) {
     return (
       <AppShell currentPageName={currentPageName}>
         {children ?? <Outlet />}
+        {/* Debug overlay shows only when ?debug=1 or localStorage flag is set */}
+        <DebugOverlay />
       </AppShell>
     );
   }
-  return children ?? <Outlet />;
+  return (
+    <>
+      {children ?? <Outlet />}
+      <DebugOverlay />
+    </>
+  );
 }
