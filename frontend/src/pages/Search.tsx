@@ -116,21 +116,27 @@ export default function Search() {
         } as const;
         resp = await api.post('/search', legacy as any);
       }
-      const raw = Array.isArray(resp?.data) ? resp.data : [];
-      const total = typeof resp?.total === 'number' ? resp.total : 0;
+      const raw = (Array.isArray((resp as any)?.data) && (resp as any).data)
+        || (Array.isArray((resp as any)?.results) && (resp as any).results)
+        || (Array.isArray((resp as any)?.items) && (resp as any).items)
+        || (Array.isArray((resp as any)?.rows) && (resp as any).rows)
+        || [];
+      const total = typeof (resp as any)?.total === 'number'
+        ? (resp as any).total
+        : (typeof (resp as any)?.meta?.total === 'number' ? (resp as any).meta.total : (raw as any[]).length);
 
       // Normalize to UI shape expected by cards/list items
-      const results = raw.map((item) => {
-        const id = item.company_id;
-        const name = item.company_name || 'Unknown';
-        const topRoute = Array.isArray(item.top_routes) && item.top_routes.length ? item.top_routes[0] : undefined;
-        const topCarrier = Array.isArray(item.top_carriers) && item.top_carriers.length ? item.top_carriers[0] : undefined;
+      const results = (raw as any[]).map((item: any) => {
+        const id = item.company_id || item.id || (item.company_name || item.name || '').toLowerCase?.().replace?.(/[^a-z0-9]+/g, '-') || undefined;
+        const name = item.company_name || item.name || 'Unknown';
+        const topRoute = Array.isArray(item.top_routes) && item.top_routes.length ? item.top_routes[0] : (item.top_route || undefined);
+        const topCarrier = Array.isArray(item.top_carriers) && item.top_carriers.length ? item.top_carriers[0] : (item.top_carrier || undefined);
         return {
           id,
           company_id: id,
           name,
-          shipments_12m: item.shipments_12m || 0,
-          last_seen: item.last_activity || null,
+          shipments_12m: item.shipments_12m || item.shipments || 0,
+          last_seen: item.last_activity || item.last_seen || item.last_ship_date || null,
           top_route: topRoute,
           top_carrier: topCarrier,
         };
