@@ -99,7 +99,26 @@ export default function Search() {
         ? Array.from(new Set([...filters.hs.map((s) => String(s).trim()), ...hsText])).filter(Boolean)
         : (hsText.length ? hsText : undefined);
       const modeScalar = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : undefined;
-      const body = {
+      // Build three shapes to maximize compatibility with backend variations
+      const bodyArray = {
+        ...(filters.origin ? { origins: [filters.origin] } : {}),
+        ...(filters.destination ? { destinations: [filters.destination] } : {}),
+        ...(filters.origin_city ? { origin_cities: [filters.origin_city] } : {}),
+        ...(filters.origin_state ? { origin_states: [filters.origin_state] } : {}),
+        ...(filters.origin_zip ? { origin_postals: [filters.origin_zip] } : {}),
+        ...(filters.dest_city ? { dest_cities: [filters.dest_city] } : {}),
+        ...(filters.dest_state ? { dest_states: [filters.dest_state] } : {}),
+        ...(filters.dest_zip ? { dest_postals: [filters.dest_zip] } : {}),
+        ...(modeScalar ? { modes: [modeScalar] } : {}),
+        ...(filters.carrier ? { carriers: [filters.carrier] } : {}),
+        ...(hsSanitized && hsSanitized.length ? { hs_codes: hsSanitized } : {}),
+        ...(filters.date_start ? { date_start: filters.date_start } : {}),
+        ...(filters.date_end ? { date_end: filters.date_end } : {}),
+        limit: ITEMS_PER_PAGE,
+        offset,
+      } as const;
+
+      const bodySingular = {
         ...(filters.origin ? { origin_country: filters.origin } : {}),
         ...(filters.destination ? { dest_country: filters.destination } : {}),
         ...(filters.origin_city ? { origin_city: filters.origin_city } : {}),
@@ -111,13 +130,23 @@ export default function Search() {
         ...(modeScalar ? { mode: modeScalar } : {}),
         ...(filters.carrier ? { carrier: filters.carrier } : {}),
         ...(hsSanitized && hsSanitized.length ? { hs_codes: hsSanitized } : {}),
-        ...(filters.date_start ? { date_start: filters.date_start, start_date: filters.date_start } : {}),
-        ...(filters.date_end ? { date_end: filters.date_end, end_date: filters.date_end } : {}),
+        ...(filters.date_start ? { start_date: filters.date_start } : {}),
+        ...(filters.date_end ? { end_date: filters.date_end } : {}),
         limit: ITEMS_PER_PAGE,
         offset,
       } as const;
 
-      const resp = await postSearchCompanies(body);
+      let resp;
+      try {
+        resp = await postSearchCompanies(bodyArray as any);
+      } catch (e) {
+        try {
+          resp = await postSearchCompanies(bodySingular as any);
+        } catch (e2) {
+          // Final fallback: no filters, just paging
+          resp = await postSearchCompanies({ limit: ITEMS_PER_PAGE, offset } as any);
+        }
+      }
       const raw = Array.isArray(resp?.data) ? resp.data : [];
       const total = typeof resp?.total === 'number' ? resp.total : 0;
 
@@ -178,7 +207,24 @@ export default function Search() {
   const resultsQuery = useQuery({
     queryKey: ['searchCompanies', payload],
     queryFn: async () => {
-      const resp = await postSearchCompanies(payload);
+      let resp;
+      try {
+        // Try array-first
+        const bodyArray = { ...payload } as any;
+        // Map singular -> arrays when appropriate for the query cache call
+        if ((payload as any).origin_country) bodyArray.origins = [(payload as any).origin_country];
+        if ((payload as any).dest_country) bodyArray.destinations = [(payload as any).dest_country];
+        if ((payload as any).mode) bodyArray.modes = [(payload as any).mode];
+        if ((payload as any).carrier) bodyArray.carriers = [(payload as any).carrier];
+        delete bodyArray.origin_country; delete bodyArray.dest_country; delete bodyArray.mode; delete bodyArray.carrier;
+        resp = await postSearchCompanies(bodyArray);
+      } catch (e) {
+        try {
+          resp = await postSearchCompanies(payload as any);
+        } catch (e2) {
+          resp = await postSearchCompanies({ limit: ITEMS_PER_PAGE, offset: (currentPage - 1) * ITEMS_PER_PAGE } as any);
+        }
+      }
       const raw = Array.isArray(resp?.data) ? resp.data : [];
       const rows = raw.map((item) => ({
         id: item.company_id,
