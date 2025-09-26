@@ -129,8 +129,10 @@ export default function Search() {
       const results = (raw as any[]).map((item: any) => {
         const id = item.company_id || item.id || (item.company_name || item.name || '').toLowerCase?.().replace?.(/[^a-z0-9]+/g, '-') || undefined;
         const name = item.company_name || item.name || 'Unknown';
-        const topRoute = Array.isArray(item.top_routes) && item.top_routes.length ? item.top_routes[0] : (item.top_route || undefined);
-        const topCarrier = Array.isArray(item.top_carriers) && item.top_carriers.length ? item.top_carriers[0] : (item.top_carrier || undefined);
+        const firstRoute = (Array.isArray(item.top_routes) && item.top_routes.length) ? item.top_routes[0] : (item.top_route || undefined);
+        const topRoute = firstRoute && typeof firstRoute === 'object' ? `${firstRoute.o || ''} → ${firstRoute.d || ''}`.trim() : firstRoute;
+        const firstCarrier = (Array.isArray(item.top_carriers) && item.top_carriers.length) ? item.top_carriers[0] : (item.top_carrier || undefined);
+        const topCarrier = firstCarrier && typeof firstCarrier === 'object' ? (firstCarrier.carrier || firstCarrier.name || '') : firstCarrier;
         return {
           id,
           company_id: id,
