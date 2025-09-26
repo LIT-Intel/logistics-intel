@@ -31,12 +31,17 @@ export default function Company() {
     setIsLoading(true);
     try {
       const [summaryRes, shipmentsRes, contactsRes, notesRes] = await Promise.all([
-        postSearchCompanies({ company_id: companyId, limit: 1, offset: 0 }),
+        postSearchCompanies({ company_ids: [String(companyId)], limit: 1, offset: 0 }),
         getCompanyShipments({ company_id: companyId, limit: SHIP_PAGE_SIZE, offset: (shipmentsPage - 1) * SHIP_PAGE_SIZE }),
         Contact.filter({ company_id: companyId }, '-created_date', 50),
         Note.filter({ company_id: companyId }, '-created_date', 50),
       ]);
-      const sum = Array.isArray(summaryRes?.data) && summaryRes.data.length ? summaryRes.data[0] : null;
+      let sum = Array.isArray(summaryRes?.data) && summaryRes.data.length ? summaryRes.data[0] : null;
+      if (!sum) {
+        // fallback to singular param
+        const fallback = await postSearchCompanies({ company_id: String(companyId), limit: 1, offset: 0 });
+        sum = Array.isArray(fallback?.data) && fallback.data.length ? fallback.data[0] : null;
+      }
       if (sum) {
         setSummary(sum);
         setCompany({
