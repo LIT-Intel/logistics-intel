@@ -5,7 +5,7 @@ import { Ship, Plane, Truck, Train, Filter } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 
-export default function ShipmentsTab({ shipments, isLoading }) {
+export default function ShipmentsTab({ shipments, isLoading, onRowClick }) {
   const [sortField, setSortField] = useState('date');
   const [sortDirection, setSortDirection] = useState('desc');
   const [filterMode, setFilterMode] = useState('all');
@@ -174,7 +174,11 @@ export default function ShipmentsTab({ shipments, isLoading }) {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200 text-xs md:text-sm">
               {filteredAndSortedShipments.slice(0, 50).map((shipment, index) => (
-                <tr key={shipment.id || index} className={`${index % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100`}>
+                <tr
+                  key={shipment.id || index}
+                  className={`${index % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100 ${onRowClick ? 'cursor-pointer' : ''}`}
+                  onClick={() => { if (onRowClick) onRowClick(shipment); }}
+                >
                   <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
                     {(() => { const d = shipment.shipped_on || shipment.date || shipment.snapshot_date || shipment.shipment_date; return d ? dfmt.format(new Date(d)) : 'N/A'; })()}
                   </td>
