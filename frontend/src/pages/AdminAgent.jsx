@@ -1,8 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { User } from "@/api/entities";
-import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
+import { useAuth } from "@/auth/AuthProvider";
 import { debugAgent } from "@/api/functions";
 import { Send, Bot, User as UserIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,14 +19,14 @@ function redactHeaders(headers) {
 }
 
 export default function AdminAgentPage() {
+  const { user, loading } = useAuth();
   const [conversationId, setConversationId] = useState(undefined);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const isAdmin = !!(user && (user.role === 'admin' || user.email === 'vraymond@sparkfusiondigital.com' || user.email === 'support@logisticintel.com'));
   const [diagLog, setDiagLog] = useState({});
   const [searchBody, setSearchBody] = useState('{' + '\n  "limit": 1,' + '\n  "offset": 0\n}');
-  const navigate = useNavigate();
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -39,21 +37,7 @@ export default function AdminAgentPage() {
     scrollToBottom();
   }, [messages, isLoading]);
 
-  useEffect(() => {
-    const checkAdmin = async () => {
-      try {
-        const user = await User.me();
-        if (user && user.role === 'admin') {
-          setIsAdmin(true);
-        } else {
-          navigate(createPageUrl('Dashboard'));
-        }
-      } catch (e) {
-        navigate(createPageUrl('Dashboard'));
-      }
-    };
-    checkAdmin();
-  }, [navigate]);
+// Client-side auth gate only; no backend call needed
 
   async function hit(path, init, bodyObj) {
     const url = `${API_BASE}${path}`;
@@ -105,13 +89,22 @@ export default function AdminAgentPage() {
     }
   };
 
-  if (!isAdmin) {
+if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
       </div>
     );
   }
+
+if (!isAdmin) {
+  return (
+    <div className="p-6 text-center">
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Restricted</h1>
+      <p className="text-gray-600">You need admin privileges to access the Debug Agent.</p>
+    </div>
+  );
+}
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6 lg:p-8">
