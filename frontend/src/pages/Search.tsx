@@ -86,15 +86,15 @@ export default function Search() {
       const hsText = (filters.hs_text || '').split(',').map(s => s.trim()).filter(Boolean);
       const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
       const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
-      const modes = (filters.mode && filters.mode !== 'any') ? [filters.mode === 'air' ? 'AIR' : 'OCEAN'] : undefined;
-      const origins = filters.origin ? [filters.origin] : undefined;
-      const destinations = filters.destination ? [filters.destination] : undefined;
+      const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
+      const origin = filters.origin ? [filters.origin] : undefined;
+      const dest = filters.destination ? [filters.destination] : undefined;
 
       const body = {
-        ...(modes ? { modes } : {}),
-        ...(origins ? { origins } : {}),
-        ...(destinations ? { destinations } : {}),
-        ...(hs_codes.length ? { hs_codes } : {}),
+        ...(mode ? { mode } : {}),
+        ...(origin ? { origin } : {}),
+        ...(dest ? { dest } : {}),
+        ...(hs_codes.length ? { hs: hs_codes } : {}),
         limit: ITEMS_PER_PAGE,
         offset,
       } as const;
@@ -116,29 +116,21 @@ export default function Search() {
         } as const;
         resp = await api.post('/search', legacy as any);
       }
-      const raw = (Array.isArray((resp as any)?.data) && (resp as any).data)
-        || (Array.isArray((resp as any)?.results) && (resp as any).results)
-        || (Array.isArray((resp as any)?.items) && (resp as any).items)
-        || (Array.isArray((resp as any)?.rows) && (resp as any).rows)
-        || [];
-      const total = typeof (resp as any)?.total === 'number'
-        ? (resp as any).total
-        : (typeof (resp as any)?.meta?.total === 'number' ? (resp as any).meta.total : (raw as any[]).length);
+      const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
+      const total = typeof (resp as any)?.total === 'number' ? (resp as any).total : (raw as any[]).length;
 
       // Normalize to UI shape expected by cards/list items
       const results = (raw as any[]).map((item: any) => {
-        const id = item.company_id || item.id || (item.company_name || item.name || '').toLowerCase?.().replace?.(/[^a-z0-9]+/g, '-') || undefined;
-        const name = item.company_name || item.name || 'Unknown';
-        const firstRoute = (Array.isArray(item.top_routes) && item.top_routes.length) ? item.top_routes[0] : (item.top_route || undefined);
-        const topRoute = firstRoute && typeof firstRoute === 'object' ? `${firstRoute.o || ''} → ${firstRoute.d || ''}`.trim() : firstRoute;
-        const firstCarrier = (Array.isArray(item.top_carriers) && item.top_carriers.length) ? item.top_carriers[0] : (item.top_carrier || undefined);
-        const topCarrier = firstCarrier && typeof firstCarrier === 'object' ? (firstCarrier.carrier || firstCarrier.name || '') : firstCarrier;
+        const id = item.company_id || item.id || (item.company_name || '').toLowerCase?.().replace?.(/[^a-z0-9]+/g, '-') || undefined;
+        const name = item.company_name || 'Unknown';
+        const topRoute = (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined;
+        const topCarrier = Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined;
         return {
           id,
           company_id: id,
           name,
-          shipments_12m: item.shipments_12m || item.shipments || 0,
-          last_seen: item.last_activity || item.last_seen || item.last_ship_date || null,
+          shipments_12m: item.shipments || 0,
+          last_seen: item.lastShipmentDate || null,
           top_route: topRoute,
           top_carrier: topCarrier,
         };
@@ -160,14 +152,14 @@ export default function Search() {
     const hsText = (filters.hs_text || '').split(',').map(s => s.trim()).filter(Boolean);
     const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
     const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
-    const modes = (filters.mode && filters.mode !== 'any') ? [filters.mode === 'air' ? 'AIR' : 'OCEAN'] : undefined;
-    const origins = filters.origin ? [filters.origin] : undefined;
-    const destinations = filters.destination ? [filters.destination] : undefined;
+    const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
+    const origin = filters.origin ? [filters.origin] : undefined;
+    const dest = filters.destination ? [filters.destination] : undefined;
     return {
-      ...(modes ? { modes } : {}),
-      ...(origins ? { origins } : {}),
-      ...(destinations ? { destinations } : {}),
-      ...(hs_codes.length ? { hs_codes } : {}),
+      ...(mode ? { mode } : {}),
+      ...(origin ? { origin } : {}),
+      ...(dest ? { dest } : {}),
+      ...(hs_codes.length ? { hs: hs_codes } : {}),
       limit: ITEMS_PER_PAGE,
       offset: (currentPage - 1) * ITEMS_PER_PAGE,
     } as const;
@@ -176,48 +168,18 @@ export default function Search() {
   const resultsQuery = useQuery({
     queryKey: ['searchCompanies', payload],
     queryFn: async () => {
-      let resp;
-      try {
-        resp = await postSearchCompanies(payload as any);
-      } catch (e) {
-        const legacy = {
-          q: searchQuery || "",
-          mode: filters.mode && filters.mode !== 'any' ? filters.mode : 'all',
-          filters: {
-            origin: filters.origin || undefined,
-            destination: filters.destination || undefined,
-            hs: (payload as any)?.hs_codes || undefined,
-          },
-          pagination: { limit: ITEMS_PER_PAGE, offset: (currentPage - 1) * ITEMS_PER_PAGE },
-        } as const;
-        resp = await api.post('/search', legacy as any);
-        // Normalize legacy response to shape { data, total }
-        const items = (resp?.items) || (Array.isArray(resp?.results) ? resp.results : []) || [];
-        const total = typeof resp?.total === 'number' ? resp.total : 0;
-        return {
-          rows: items.map((item: any) => ({
-            id: item.id || item.company_id || item.company || 'n/a',
-            company_id: item.company_id || item.id,
-            name: item.name || item.company || 'Unknown',
-            shipments_12m: item.shipments_12m || item.shipments || 0,
-            last_seen: item.last_seen || item.last_ship_date || null,
-            top_route: item.top_route,
-            top_carrier: item.top_carrier,
-          })),
-          meta: { total, page: currentPage, page_size: ITEMS_PER_PAGE },
-        };
-      }
-      const raw = Array.isArray(resp?.data) ? resp.data : [];
+      const resp = await postSearchCompanies(payload as any);
+      const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
       const rows = raw.map((item) => ({
-        id: item.company_id,
+        id: item.company_id || (item.company_name || '').toLowerCase().replace(/[^a-z0-9]+/g,'-'),
         company_id: item.company_id,
         name: item.company_name || 'Unknown',
-        shipments_12m: item.shipments_12m || 0,
-        last_seen: item.last_activity || null,
-        top_route: Array.isArray(item.top_routes) && item.top_routes.length ? item.top_routes[0] : undefined,
-        top_carrier: Array.isArray(item.top_carriers) && item.top_carriers.length ? item.top_carriers[0] : undefined,
+        shipments_12m: item.shipments || 0,
+        last_seen: item.lastShipmentDate || null,
+        top_route: (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined,
+        top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
       }));
-      return { rows, meta: { total: resp.total, page: currentPage, page_size: ITEMS_PER_PAGE } };
+      return { rows, meta: { total: (resp as any).total || rows.length, page: currentPage, page_size: ITEMS_PER_PAGE } };
     },
     keepPreviousData: true,
     enabled: hasSearched,

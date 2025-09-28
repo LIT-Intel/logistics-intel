@@ -57,64 +57,55 @@ export const api = {
 };
 
 // Typed helpers for unified search and shipments
-export type CompanySummary = {
-  company_id: string;
+export type CompanySearchItem = {
+  company_id: string | null;
   company_name: string;
-  shipments_12m: number;
-  last_activity: string | null;
-  top_routes: string[];
-  top_carriers: string[];
+  shipments: number;
+  lastShipmentDate: string | null;
+  modes?: string[];
+  hsTop?: Array<{ v: string; c: number }>;
+  originsTop?: Array<{ v: string; c: number }>;
+  destsTop?: Array<{ v: string; c: number }>;
+  carriersTop?: Array<{ v: string; c: number }>;
 };
 
-export type CompanyShipment = {
-  date: string;
-  origin_country: string;
-  dest_country: string;
-  mode: 'AIR'|'OCEAN';
-  hs_code: string | null;
-  value_usd: number | null;
-  gross_weight_kg: number | null;
+export type ShipmentRow = {
+  shipped_on: string;
+  mode: 'ocean'|'air';
+  origin: string;
+  destination: string;
   carrier: string | null;
+  value_usd: string | number | null;
+  weight_kg: string | number | null;
 };
 
-type SearchCompaniesBodySingular = {
-  origin_country?: string;
-  dest_country?: string;
-  mode?: 'ANY'|'AIR'|'OCEAN';
-  carrier?: string;
-  hs_codes?: string[];
-  date_start?: string;
-  date_end?: string;
+export type SearchCompaniesBody = {
+  q?: string;
+  mode?: 'air'|'ocean';
+  hs?: string[];
+  origin?: string[];
+  dest?: string[];
+  carrier?: string[];
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
   limit: number;
   offset: number;
-  company_id?: string;
+  company_id?: string;       // accepted for summary lookup
+  company_ids?: string[];    // accepted for summary lookup
 };
 
-type SearchCompaniesBodyPlural = {
-  modes?: Array<'ANY'|'AIR'|'OCEAN'>;
-  origins?: string[];
-  destinations?: string[];
-  carriers?: string[];
-  hs_codes?: string[];
-  date_start?: string;
-  date_end?: string;
-  limit: number;
-  offset: number;
-  company_id?: string;
-};
-
-export async function postSearchCompanies(body: SearchCompaniesBodySingular | SearchCompaniesBodyPlural, signal?: AbortSignal): Promise<{ data: CompanySummary[]; total: number }> {
-  return api.post<{ data: CompanySummary[]; total: number }>(
+export async function postSearchCompanies(body: SearchCompaniesBody, signal?: AbortSignal): Promise<{ total: number; items: CompanySearchItem[] }> {
+  return api.post<{ total: number; items: CompanySearchItem[] }>(
     '/public/searchCompanies',
     body,
     { signal }
   );
 }
 
-export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }, signal?: AbortSignal): Promise<{ data: CompanyShipment[]; total: number }> {
+export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }, signal?: AbortSignal): Promise<{ rows: ShipmentRow[]; total?: number }> {
   const { company_id, limit = 50, offset = 0 } = params;
   const searchParams = new URLSearchParams({ company_id, limit: String(limit), offset: String(offset) });
-  return api.get<{ data: CompanyShipment[]; total: number }>(`/public/getCompanyShipments?${searchParams.toString()}`, { signal });
+  return api.get<{ rows: ShipmentRow[]; total?: number }>(`/public/getCompanyShipments?${searchParams.toString()}`, { signal });
 }
 
 export async function getFilterOptions(_input: object = {}, signal?: AbortSignal) {
