@@ -275,30 +275,16 @@ export default function SearchFilters({ onChange }) {
         </select>
       </div>
 
-      {/* HS Code (multi prefixes) */}
+      {/* HS Codes (free text only) */}
       <div>
-        <div className="block text-sm font-medium text-gray-700 mb-1">HS Codes</div>
-        <div className="flex flex-wrap gap-3">
-          {options.hs.slice(0, 12).map(h => (
-            <label key={h} className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={filters.hs.includes(h)}
-                onCheckedChange={(v) => {
-                  const next = new Set(filters.hs);
-                  if (v) next.add(h); else next.delete(h);
-                  handleFilterChange('hs', Array.from(next));
-                }}
-              />
-              <span>{h}</span>
-            </label>
-          ))}
-        </div>
+        <label htmlFor="hs_text" className="block text-sm font-medium text-gray-700 mb-1">HS Codes</label>
         <input
+          id="hs_text"
           type="text"
           value={filters.hs_text}
           onChange={(e) => handleFilterChange('hs_text', e.target.value)}
-          placeholder="Comma-separated HS codes (e.g., 8471, 9403)"
-          className="mt-2 block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          placeholder="Enter HS codes (comma-separated), e.g., 8471, 8517, 9403"
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
         />
       </div>
 
