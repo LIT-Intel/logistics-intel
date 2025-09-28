@@ -46,22 +46,22 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
         contactPromise,
         notesPromise
       ]);
-      const ovRaw = Array.isArray(overviewRes?.data) && overviewRes.data.length ? overviewRes.data[0] : null;
+      const ovRaw = Array.isArray(overviewRes?.items) && overviewRes.items.length ? overviewRes.items[0] : null;
       if (ovRaw) {
         const mapped = {
           id: ovRaw.company_id,
           name: ovRaw.company_name || 'Unknown',
-          shipments_12m: ovRaw.shipments_12m || 0,
-          last_seen: ovRaw.last_activity || null,
-          top_route: Array.isArray(ovRaw.top_routes) && ovRaw.top_routes.length
-            ? (typeof ovRaw.top_routes[0] === 'string' ? ovRaw.top_routes[0] : `${ovRaw.top_routes[0]?.o || ''} → ${ovRaw.top_routes[0]?.d || ''}`)
+          shipments_12m: ovRaw.shipments || 0,
+          last_seen: ovRaw.lastShipmentDate || null,
+          top_route: (Array.isArray(ovRaw.originsTop) && Array.isArray(ovRaw.destsTop))
+            ? `${ovRaw.originsTop[0]?.v || ''} → ${ovRaw.destsTop[0]?.v || ''}`
             : undefined,
-          top_carriers: Array.isArray(ovRaw.top_carriers) ? ovRaw.top_carriers : [],
-          mode_breakdown: Array.isArray(ovRaw.mode_breakdown) ? ovRaw.mode_breakdown : [],
+          top_carriers: Array.isArray(ovRaw.carriersTop) ? ovRaw.carriersTop.map(c => c.v) : [],
+          mode_breakdown: Array.isArray(ovRaw.modes) ? ovRaw.modes.map(m => ({ mode: String(m).toLowerCase(), cnt: 0 })) : [],
         };
         setCurrentCompanyDetails(mapped);
       }
-      const shp = Array.isArray(shipmentsRes?.data) ? shipmentsRes.data : (shipmentsRes?.results || shipmentsRes?.rows || []);
+      const shp = Array.isArray(shipmentsRes?.rows) ? shipmentsRes.rows : [];
       setShipments(Array.isArray(shp) ? shp : []);
       setContacts(contactData);
       setNotes(noteData);
