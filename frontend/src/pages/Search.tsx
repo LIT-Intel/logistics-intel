@@ -14,7 +14,7 @@ import CompanyDetailModal from "../components/search/CompanyDetailModal";
 import SearchResults from "../components/search/SearchResults";
 import UpgradePrompt from "../components/common/UpgradePrompt";
 
-import { searchCompanies } from "@/lib/api";
+// legacy searchCompanies removed; using postSearchCompanies only
 import { saveCompany } from "@/api/functions";
 import { createCompany } from "@/lib/crm";
 
