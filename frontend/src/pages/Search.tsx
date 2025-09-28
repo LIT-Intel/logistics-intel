@@ -18,7 +18,7 @@ import { searchCompanies } from "@/lib/api";
 import { saveCompany } from "@/api/functions";
 import { createCompany } from "@/lib/crm";
 
-const ITEMS_PER_PAGE = 25;
+const ITEMS_PER_PAGE = 50;
 
 export default function Search() {
   const navigate = useNavigate();
@@ -91,6 +91,7 @@ export default function Search() {
       const dest = filters.destination ? [filters.destination] : undefined;
 
       const body = {
+        ...(searchQuery ? { q: searchQuery } : {}),
         ...(mode ? { mode } : {}),
         ...(origin ? { origin } : {}),
         ...(dest ? { dest } : {}),
@@ -120,14 +121,14 @@ export default function Search() {
       const total = typeof (resp as any)?.total === 'number' ? (resp as any).total : (raw as any[]).length;
 
       // Normalize to UI shape expected by cards/list items
-      const results = (raw as any[]).map((item: any) => {
+      const mapped = (raw as any[]).map((item: any) => {
         const id = item.company_id || item.id || (item.company_name || '').toLowerCase?.().replace?.(/[^a-z0-9]+/g, '-') || undefined;
         const name = item.company_name || 'Unknown';
         const topRoute = (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined;
         const topCarrier = Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined;
         return {
           id,
-          company_id: id,
+          company_id: item.company_id || null,
           name,
           shipments_12m: item.shipments || 0,
           last_seen: item.lastShipmentDate || null,
@@ -135,6 +136,16 @@ export default function Search() {
           top_carrier: topCarrier,
         };
       });
+      // Dedupe by company_id (fallback name) and cap to ITEMS_PER_PAGE
+      const seen = new Set<string>();
+      const results: any[] = [];
+      for (const row of mapped) {
+        const key = row.company_id || `name:${row.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.push(row);
+        if (results.length >= ITEMS_PER_PAGE) break;
+      }
 
       setSearchResults(results);
       setTotalResults(total);
@@ -156,6 +167,7 @@ export default function Search() {
     const origin = filters.origin ? [filters.origin] : undefined;
     const dest = filters.destination ? [filters.destination] : undefined;
     return {
+      ...(searchQuery ? { q: searchQuery } : {}),
       ...(mode ? { mode } : {}),
       ...(origin ? { origin } : {}),
       ...(dest ? { dest } : {}),
@@ -163,22 +175,31 @@ export default function Search() {
       limit: ITEMS_PER_PAGE,
       offset: (currentPage - 1) * ITEMS_PER_PAGE,
     } as const;
-  }, [filters, currentPage]);
+  }, [filters, currentPage, searchQuery]);
 
   const resultsQuery = useQuery({
     queryKey: ['searchCompanies', payload],
     queryFn: async () => {
       const resp = await postSearchCompanies(payload as any);
       const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
-      const rows = raw.map((item) => ({
+      const mapped = raw.map((item) => ({
         id: item.company_id || (item.company_name || '').toLowerCase().replace(/[^a-z0-9]+/g,'-'),
-        company_id: item.company_id,
+        company_id: item.company_id || null,
         name: item.company_name || 'Unknown',
         shipments_12m: item.shipments || 0,
         last_seen: item.lastShipmentDate || null,
         top_route: (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined,
         top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
       }));
+      const seen = new Set<string>();
+      const rows: any[] = [];
+      for (const row of mapped) {
+        const key = row.company_id || `name:${row.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(row);
+        if (rows.length >= ITEMS_PER_PAGE) break;
+      }
       return { rows, meta: { total: (resp as any).total || rows.length, page: currentPage, page_size: ITEMS_PER_PAGE } };
     },
     keepPreviousData: true,
