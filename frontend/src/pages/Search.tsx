@@ -90,8 +90,9 @@ export default function Search() {
       const origin = filters.origin ? [filters.origin] : undefined;
       const dest = filters.destination ? [filters.destination] : undefined;
 
+      const qSanitized = (searchQuery || '').replace(/["']/g, '').trim();
       const body = {
-        ...(searchQuery ? { q: searchQuery } : {}),
+        ...(qSanitized ? { q: qSanitized } : {}),
         ...(mode ? { mode } : {}),
         ...(origin ? { origin } : {}),
         ...(dest ? { dest } : {}),
@@ -150,8 +151,9 @@ export default function Search() {
     const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
     const origin = filters.origin ? [filters.origin] : undefined;
     const dest = filters.destination ? [filters.destination] : undefined;
+    const qSanitized = (searchQuery || '').replace(/["']/g, '').trim();
     return {
-      ...(searchQuery ? { q: searchQuery } : {}),
+      ...(qSanitized ? { q: qSanitized } : {}),
       ...(mode ? { mode } : {}),
       ...(origin ? { origin } : {}),
       ...(dest ? { dest } : {}),
