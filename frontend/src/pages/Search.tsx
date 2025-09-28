@@ -100,23 +100,7 @@ export default function Search() {
         offset,
       } as const;
 
-      let resp;
-      try {
-        resp = await postSearchCompanies(body as any);
-      } catch (e) {
-        // Fallback to legacy /search endpoint
-        const legacy = {
-          q: searchQuery || "",
-          mode: filters.mode && filters.mode !== 'any' ? filters.mode : 'all',
-          filters: {
-            origin: filters.origin || undefined,
-            destination: filters.destination || undefined,
-            hs: (hs_codes && hs_codes.length) ? hs_codes : undefined,
-          },
-          pagination: { limit: ITEMS_PER_PAGE, offset },
-        } as const;
-        resp = await api.post('/search', legacy as any);
-      }
+      const resp = await postSearchCompanies(body as any);
       const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
       const total = typeof (resp as any)?.total === 'number' ? (resp as any).total : (raw as any[]).length;
 
