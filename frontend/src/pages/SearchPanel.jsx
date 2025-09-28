@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getFilterOptions, searchCompanies } from '@/lib/api';
+import { getFilterOptions, postSearchCompanies } from '@/lib/api';
 
 export default function SearchPanel() {
   const [q, setQ] = useState("");
@@ -24,8 +24,14 @@ export default function SearchPanel() {
   async function onSearch() {
     try {
       setError(null); setLoading(true);
-      const data = await searchCompanies({ q, mode, pagination: { limit: 10, offset: 0 } });
-      setResults(data);
+      const body = {
+        ...(q ? { q } : {}),
+        ...(mode && mode !== 'all' ? { mode } : {}),
+        limit: 10,
+        offset: 0,
+      };
+      const data = await postSearchCompanies(body);
+      setResults(data?.items || []);
     } catch (e) {
       setError(e?.message || 'Search failed');
     } finally {
