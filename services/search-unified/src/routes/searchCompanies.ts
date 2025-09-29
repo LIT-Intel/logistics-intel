@@ -89,9 +89,13 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       offset,
     };
 
-            const types = {
+    const types = {
       q: 'STRING',
       mode: 'STRING',
+      origin: { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      dest: { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      hs4: { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      hs: { type: 'ARRAY', arrayType: { type: 'STRING' } }
     };
     const [rows] = await bq.query({ query: sql, params, types });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
@@ -100,16 +104,6 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       company_id: r.company_id,
       company_name: r.company_name,
       shipments_12m: Number(r.shipments_12m ?? 0),
-      last_activity: r.last_activity,
-      top_routes: r.top_routes ?? [],
-      top_carriers: r.top_carriers ?? [],
-    }));
-
-    res.json({ total, items });
-  } catch (err) { next(err); }
-});
-
-export default r;nts_12m: Number(r.shipments_12m ?? 0),
       last_activity: r.last_activity,
       top_routes: r.top_routes ?? [],
       top_carriers: r.top_carriers ?? [],
