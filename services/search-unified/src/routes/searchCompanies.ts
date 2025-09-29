@@ -29,7 +29,8 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     // mode/origin/dest normalization
     const modeNorm: string | null = body.mode ? String(body.mode).toUpperCase() : null;
     const originNorm: string[] = Array.isArray(body.origin)
-: body.origin ? [String(body.origin).toUpperCase()] : [];
+      ? body.origin.map((c: unknown) => String(c ?? '').toUpperCase()).filter(Boolean)
+      : body.origin ? [String(body.origin).toUpperCase()] : [];
     const destNorm: string[] = Array.isArray(body.dest)
       ? body.dest.map((c: unknown) => String(c ?? '').toUpperCase()).filter(Boolean)
       : body.dest ? [String(body.dest).toUpperCase()] : [];
