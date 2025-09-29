@@ -97,8 +97,7 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       hs4: { type: 'ARRAY', arrayType: { type: 'STRING' } },
       hs: { type: 'ARRAY', arrayType: { type: 'STRING' } }
     };
-        console.log({ params, types });
-    const [rows] = await bq.query({ query: sql, params, types });
+        const [rows] = await bq.query({ query: sql, params, types });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
     const items = rows.map((r: any) => ({
