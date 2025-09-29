@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, postSearchCompanies } from '@/lib/api';
 import CompanyDrawer from '@/components/company/CompanyDrawer';
-import { User } from "@/api/entities";
+import { useAuth } from "@/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon } from "lucide-react";
@@ -14,15 +14,15 @@ import CompanyDetailModal from "../components/search/CompanyDetailModal";
 import SearchResults from "../components/search/SearchResults";
 import UpgradePrompt from "../components/common/UpgradePrompt";
 
-import { searchCompanies } from "@/lib/api";
+// legacy searchCompanies removed; using postSearchCompanies only
 import { saveCompany } from "@/api/functions";
 import { createCompany } from "@/lib/crm";
 
-const ITEMS_PER_PAGE = 25;
+const ITEMS_PER_PAGE = 50;
 
 export default function Search() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState({
@@ -72,18 +72,7 @@ export default function Search() {
     return Math.max(1, Math.ceil((totalResults || 0) / ITEMS_PER_PAGE));
   }, [totalResults]);
 
-  const loadUser = useCallback(async () => {
-    try {
-      const userData = await User.me();
-      setUser(userData);
-    } catch (error) {
-      console.error("Error loading user:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadUser();
-  }, [loadUser]);
+  // user is provided by AuthProvider; no additional load needed
 
   const handleSearch = useCallback(async (page) => {
     const p = page || 1;
@@ -94,48 +83,55 @@ export default function Search() {
 
     try {
       const offset = (p - 1) * ITEMS_PER_PAGE;
-      const payload = {
-        q: searchQuery || undefined,
-        mode: (filters.mode && filters.mode !== 'any') ? filters.mode : 'all',
-        filters: {
-          origin: filters.origin ? [filters.origin] : undefined,
-          destination: filters.destination ? [filters.destination] : undefined,
-          carrier: filters.carrier ? [filters.carrier] : undefined,
-          hs: Array.isArray(filters.hs) && filters.hs.length ? filters.hs : undefined,
-        },
-        dateRange: {
-          from: filters.date_start || undefined,
-          to: filters.date_end || undefined,
-        },
-        pagination: { limit: ITEMS_PER_PAGE, offset }
-      };
+      const sanitize = (s: string) => String(s).replace(/["']/g, '').trim();
+      const hsText = (filters.hs_text || '').split(',').map(sanitize).filter(Boolean);
+      const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
+      const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
+      const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
+      const origin = filters.origin ? [sanitize(filters.origin)] : undefined;
+      const dest = filters.destination ? [sanitize(filters.destination)] : undefined;
 
-      const resp = await searchCompanies(payload);
-      const raw = (resp?.items)
-        || (Array.isArray(resp?.results) ? resp.results : undefined)
-        || (resp?.data?.items)
-        || (resp?.data?.results)
-        || [];
-      const total = typeof resp?.total === 'number' ? resp.total : (resp?.data?.total || 0);
+      const qSanitized = sanitize(searchQuery || '');
+      const body = {
+        ...(qSanitized ? { q: qSanitized } : {}),
+        ...(mode ? { mode } : {}),
+        ...(origin ? { origin } : {}),
+        ...(dest ? { dest } : {}),
+        ...(hs_codes.length ? { hs: hs_codes } : {}),
+        limit: ITEMS_PER_PAGE,
+        offset,
+      } as const;
 
-      // Normalize gateway results to UI shape
-      const results = (raw || []).map((item) => {
-        const name = item.name || item.company || item.company_name || "Unknown";
-        const id = item.id || item.company_id || (name ? name.toLowerCase().replace(/[^a-z0-9]+/g,'-') : undefined);
-        const shipments12m = item.shipments_12m || item.shipments || 0;
-        const lastSeen = item.last_seen || item.lastShipmentDate || item.last_ship_date || null;
-        const topCarrier = item.top_carrier || (Array.isArray(item.carriersTop) && item.carriersTop[0]?.v) || undefined;
-        const topRoute = item.top_route || ((Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || 'Origin'} → ${item.destsTop[0]?.v || 'Dest'}` : undefined);
+      const resp = await postSearchCompanies(body as any);
+      const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
+      const total = typeof (resp as any)?.total === 'number' ? (resp as any).total : (raw as any[]).length;
+
+      // Normalize to UI shape expected by cards/list items
+      const mapped = (raw as any[]).map((item: any) => {
+        const id = item.company_id || item.id || (item.company_name || '').toLowerCase?.().replace?.(/[^a-z0-9]+/g, '-') || undefined;
+        const name = item.company_name || 'Unknown';
+        const topRoute = (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined;
+        const topCarrier = Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined;
         return {
-          ...item,
           id,
+          company_id: item.company_id || null,
           name,
-          shipments_12m: shipments12m,
-          last_seen: lastSeen,
-          top_carrier: topCarrier,
+          shipments_12m: item.shipments || 0,
+          last_seen: item.lastShipmentDate || null,
           top_route: topRoute,
+          top_carrier: topCarrier,
         };
       });
+      // Dedupe by company_id (fallback name) and cap to ITEMS_PER_PAGE
+      const seen = new Set<string>();
+      const results: any[] = [];
+      for (const row of mapped) {
+        const key = row.company_id || `name:${row.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.push(row);
+        if (results.length >= ITEMS_PER_PAGE) break;
+      }
 
       setSearchResults(results);
       setTotalResults(total);
@@ -149,21 +145,53 @@ export default function Search() {
     }
   }, [searchQuery, filters]);
 
-  const payload = useMemo(() => ({
-    ...(filters.mode && filters.mode !== 'any' ? { mode: filters.mode } : {}),
-    ...(filters.hs?.length ? { hs_codes: filters.hs } : {}),
-    ...(filters.origin ? { origins: [filters.origin] } : {}),
-    ...(filters.destination ? { destinations: [filters.destination] } : {}),
-    ...(filters.carrier ? { carriers: [filters.carrier] } : {}),
-    page: currentPage,
-    page_size: ITEMS_PER_PAGE,
-    ...(filters.date_start || filters.date_end ? { date_range: { from: filters.date_start || undefined, to: filters.date_end || undefined } } : {}),
-  }), [filters, currentPage]);
+  const payload = useMemo(() => {
+    const sanitize = (s: string) => String(s).replace(/["']/g, '').trim();
+    const hsText = (filters.hs_text || '').split(',').map(sanitize).filter(Boolean);
+    const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
+    const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
+    const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
+    const origin = filters.origin ? [sanitize(filters.origin)] : undefined;
+    const dest = filters.destination ? [sanitize(filters.destination)] : undefined;
+    const qSanitized = sanitize(searchQuery || '');
+    return {
+      ...(qSanitized ? { q: qSanitized } : {}),
+      ...(mode ? { mode } : {}),
+      ...(origin ? { origin } : {}),
+      ...(dest ? { dest } : {}),
+      ...(hs_codes.length ? { hs: hs_codes } : {}),
+      limit: ITEMS_PER_PAGE,
+      offset: (currentPage - 1) * ITEMS_PER_PAGE,
+    } as const;
+  }, [filters, currentPage, searchQuery]);
 
   const resultsQuery = useQuery({
-    queryKey: ['search', payload],
-    queryFn: () => api.post('/search', payload),
+    queryKey: ['searchCompanies', payload],
+    queryFn: async () => {
+      const resp = await postSearchCompanies(payload as any);
+      const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
+      const mapped = raw.map((item) => ({
+        id: item.company_id || (item.company_name || '').toLowerCase().replace(/[^a-z0-9]+/g,'-'),
+        company_id: item.company_id || null,
+        name: item.company_name || 'Unknown',
+        shipments_12m: item.shipments || 0,
+        last_seen: item.lastShipmentDate || null,
+        top_route: (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined,
+        top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
+      }));
+      const seen = new Set<string>();
+      const rows: any[] = [];
+      for (const row of mapped) {
+        const key = row.company_id || `name:${row.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(row);
+        if (rows.length >= ITEMS_PER_PAGE) break;
+      }
+      return { rows, meta: { total: (resp as any).total || rows.length, page: currentPage, page_size: ITEMS_PER_PAGE } };
+    },
     keepPreviousData: true,
+    enabled: hasSearched,
   });
 
   const handleCompanySelect = useCallback((company) => {
@@ -271,8 +299,8 @@ export default function Search() {
 
         {hasSearched ? (
           <SearchResults
-            searchResults={resultsQuery.data?.rows || searchResults}
-            totalResults={resultsQuery.data?.meta?.total || totalResults}
+            searchResults={(resultsQuery.data?.rows && resultsQuery.data.rows.length > 0) ? resultsQuery.data.rows : searchResults}
+            totalResults={(resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0) ? resultsQuery.data.meta.total : totalResults}
             isLoading={isLoading || resultsQuery.isLoading}
             onCompanySelect={handleCompanySelect}
             onSave={handleSaveCompany}
@@ -285,7 +313,7 @@ export default function Search() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             currentPage={currentPage}
-            totalPages={Math.max(1, Math.ceil(((resultsQuery.data?.meta?.total || totalResults) / ITEMS_PER_PAGE) || 1))}
+            totalPages={Math.max(1, Math.ceil((((resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0) ? resultsQuery.data.meta.total : totalResults) / ITEMS_PER_PAGE) || 1))}
             onPageChange={handlePageChange}
           />
         ) : (

@@ -12,8 +12,8 @@ export default function CompanyDrawer({ id, open, onOpenChange }) {
   });
 
   const shipments = useQuery({
-    queryKey: ['companyShipments', id, '12m'],
-    queryFn: () => api.get(`/public/getCompanyShipments?company_id=${id}&range=12m`),
+    queryKey: ['companyShipments', id],
+    queryFn: () => api.get(`/public/getCompanyShipments?company_id=${id}&limit=25&offset=0`),
     enabled: open && !!id,
   });
 
@@ -53,12 +53,12 @@ export default function CompanyDrawer({ id, open, onOpenChange }) {
                     {shipments.data?.rows?.map((r, i) => (
                       <tr key={i} className="border-t">
                         <td>{r.shipped_on}</td>
-                        <td className="capitalize">{r.mode}</td>
+                        <td className="capitalize">{String(r.mode || '').toLowerCase()}</td>
                         <td>{r.origin}</td>
                         <td>{r.destination}</td>
                         <td>{r.carrier || '—'}</td>
-                        <td>{typeof r.value_usd === 'number' ? r.value_usd.toLocaleString() : '—'}</td>
-                        <td>{typeof r.weight_kg === 'number' ? r.weight_kg.toLocaleString() : '—'}</td>
+                        <td>{(typeof r.value_usd === 'number' || (typeof r.value_usd === 'string' && r.value_usd)) ? Number(r.value_usd).toLocaleString() : '—'}</td>
+                        <td>{(typeof r.weight_kg === 'number' || (typeof r.weight_kg === 'string' && r.weight_kg)) ? Number(r.weight_kg).toLocaleString() : '—'}</td>
                       </tr>
                     ))}
                     {!shipments.data?.rows?.length && (

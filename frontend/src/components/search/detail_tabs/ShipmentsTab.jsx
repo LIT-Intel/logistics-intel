@@ -2,11 +2,10 @@
 import React, { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Ship, Plane, Truck, Train, Filter } from 'lucide-react';
-import { format } from 'date-fns';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 
-export default function ShipmentsTab({ shipments, isLoading }) {
+export default function ShipmentsTab({ shipments, isLoading, onRowClick }) {
   const [sortField, setSortField] = useState('date');
   const [sortDirection, setSortDirection] = useState('desc');
   const [filterMode, setFilterMode] = useState('all');
@@ -87,6 +86,9 @@ export default function ShipmentsTab({ shipments, isLoading }) {
     return colors[mode?.toLowerCase()] || 'bg-gray-100 text-gray-800';
   };
 
+  const dfmt = useMemo(() => new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }), []);
+  const usd = useMemo(() => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), []);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -166,14 +168,19 @@ export default function ShipmentsTab({ shipments, isLoading }) {
                 <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Route</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Weight</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Carrier</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">HS Code</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Value</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200 text-xs md:text-sm">
               {filteredAndSortedShipments.slice(0, 50).map((shipment, index) => (
-                <tr key={shipment.id || index} className={`${index % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100`}>
+                <tr
+                  key={shipment.id || index}
+                  className={`${index % 2 === 1 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100 ${onRowClick ? 'cursor-pointer' : ''}`}
+                  onClick={() => { if (onRowClick) onRowClick(shipment); }}
+                >
                   <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
-                    {(() => { const d = shipment.shipped_on || shipment.date || shipment.snapshot_date || shipment.shipment_date; return d ? format(new Date(d), 'MMM d, yyyy') : 'N/A'; })()}
+                    {(() => { const d = shipment.shipped_on || shipment.date || shipment.snapshot_date || shipment.shipment_date; return d ? dfmt.format(new Date(d)) : 'N/A'; })()}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 whitespace-nowrap">
@@ -202,7 +209,10 @@ export default function ShipmentsTab({ shipments, isLoading }) {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                    {typeof shipment.value_usd === 'number' ? `$${shipment.value_usd.toLocaleString()}` : '—'}
+                    {shipment.hs_code || '—'}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                    {typeof shipment.value_usd === 'number' ? usd.format(shipment.value_usd) : '—'}
                   </td>
                 </tr>
               ))}

@@ -26,7 +26,7 @@ function SideLink({ to, icon: Icon, label }) {
 
 export default function AppShell({ currentPageName, children }) {
   const { user } = useAuth();
-  const isAdmin = !!(user && (user.role === 'admin' || user.email === 'vraymond@sparkfusiondigital.com'));
+  const isAdmin = !!(user && (user.role === 'admin' || user.email === 'vraymond@sparkfusiondigital.com' || user.email === 'support@logisticintel.com'));
   const canViewPro = isAdmin || checkFeatureAccess(user?.plan, 'pro');
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
