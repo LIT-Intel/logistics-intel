@@ -83,14 +83,15 @@ export default function Search() {
 
     try {
       const offset = (p - 1) * ITEMS_PER_PAGE;
-      const hsText = (filters.hs_text || '').split(',').map(s => s.trim()).filter(Boolean);
+      const sanitize = (s: string) => String(s).replace(/["']/g, '').trim();
+      const hsText = (filters.hs_text || '').split(',').map(sanitize).filter(Boolean);
       const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
       const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
       const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
-      const origin = filters.origin ? [filters.origin] : undefined;
-      const dest = filters.destination ? [filters.destination] : undefined;
+      const origin = filters.origin ? [sanitize(filters.origin)] : undefined;
+      const dest = filters.destination ? [sanitize(filters.destination)] : undefined;
 
-      const qSanitized = (searchQuery || '').replace(/["']/g, '').trim();
+      const qSanitized = sanitize(searchQuery || '');
       const body = {
         ...(qSanitized ? { q: qSanitized } : {}),
         ...(mode ? { mode } : {}),
@@ -145,13 +146,14 @@ export default function Search() {
   }, [searchQuery, filters]);
 
   const payload = useMemo(() => {
-    const hsText = (filters.hs_text || '').split(',').map(s => s.trim()).filter(Boolean);
+    const sanitize = (s: string) => String(s).replace(/["']/g, '').trim();
+    const hsText = (filters.hs_text || '').split(',').map(sanitize).filter(Boolean);
     const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
     const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
     const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
-    const origin = filters.origin ? [filters.origin] : undefined;
-    const dest = filters.destination ? [filters.destination] : undefined;
-    const qSanitized = (searchQuery || '').replace(/["']/g, '').trim();
+    const origin = filters.origin ? [sanitize(filters.origin)] : undefined;
+    const dest = filters.destination ? [sanitize(filters.destination)] : undefined;
+    const qSanitized = sanitize(searchQuery || '');
     return {
       ...(qSanitized ? { q: qSanitized } : {}),
       ...(mode ? { mode } : {}),
