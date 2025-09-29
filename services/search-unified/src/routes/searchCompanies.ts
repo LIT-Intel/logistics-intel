@@ -67,7 +67,7 @@ r.post("/public/searchCompanies", async (req, res, next) => {
         OR
         (ARRAY_LENGTH( @hs)=0 OR hs_code IN UNNEST( @hs))
       )
-      ${q ? 'AND SAFE_CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
+      ${q ? 'AND contains_substr(LOWER(company_name), LOWER( @q))' : ''}
     GROUP BY company_id, company_name
   )
   SELECT
@@ -100,6 +100,16 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       company_id: r.company_id,
       company_name: r.company_name,
       shipments_12m: Number(r.shipments_12m ?? 0),
+      last_activity: r.last_activity,
+      top_routes: r.top_routes ?? [],
+      top_carriers: r.top_carriers ?? [],
+    }));
+
+    res.json({ total, items });
+  } catch (err) { next(err); }
+});
+
+export default r;nts_12m: Number(r.shipments_12m ?? 0),
       last_activity: r.last_activity,
       top_routes: r.top_routes ?? [],
       top_carriers: r.top_carriers ?? [],
