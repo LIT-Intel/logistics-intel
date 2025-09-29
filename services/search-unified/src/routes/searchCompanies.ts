@@ -1,101 +1,117 @@
 import { Router } from "express";
 import { z } from "zod";
-import { bq, table, lookbackWhere } from "../bq.js";
+import { bq } from "../bq.js";
 
 const r = Router();
 
 const Body = z.object({
   q: z.string().trim().max(120).optional(),
   mode: z.enum(["air","ocean"]).optional(),
-  hs: z.array(z.string()).optional(),
+  hs: z.array(z.string()).optional(),          // optional
   origin: z.array(z.string()).optional(),
   dest: z.array(z.string()).optional(),
   carrier: z.array(z.string()).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
   offset: z.number().int().min(0).optional(),
 });
 
 r.post("/public/searchCompanies", async (req, res, next) => {
   try {
     const body = Body.parse(req.body ?? {});
-    const limit = body.limit ?? 25;
-    const offset = body.offset ?? 0;
 
-    const t = table("shipments_daily_part");
-    const dateWhere = body.startDate && body.endDate
-      ? `snapshot_date BETWEEN DATE('${body.startDate}') AND DATE('${body.endDate}')`
-      : lookbackWhere("snapshot_date", 180);
+    // --- PRD normalization (HS + case) ---
+    const q = body.q ?? null;
+    const limit = Math.min(Number(body.limit ?? 10), 50);
+    const offset = Number(body.offset ?? 0);
 
-    const filters: string[] = [dateWhere];
-    if (body.mode) filters.push(`mode = '${body.mode}'`);
-    if (body.hs?.length) filters.push(`hs_code IN (${body.hs.map(h => `'${h}'`).join(",")})`);
-    if (body.origin?.length) filters.push(`origin_country IN (${body.origin.map(o => `'${o}'`).join(",")})`);
-    if (body.dest?.length) filters.push(`dest_country IN (${body.dest.map(d => `'${d}'`).join(",")})`);
-    if (body.carrier?.length) filters.push(`carrier IN (${body.carrier.map(c => `'${c}'`).join(",")})`);
-    if (body.q) {
-      const q = body.q.replace(/'/g,"\\'");
-      filters.push(`(LOWER(shipper_name) LIKE LOWER('%${q}%') OR LOWER(consignee_name) LIKE LOWER('%${q}%'))`);
-    }
+    // mode/origin/dest normalization
+    const modeNorm: string | null = body.mode ? String(body.mode).toUpperCase() : null;
+    const originNorm: string[] = Array.isArray(body.origin)
+      ? body.origin.map((c: unknown) => String(c ?? '').toUpperCase()).filter(Boolean)
+      : body.dest ? [String(body.dest).toUpperCase()] : [];
+    const destNorm: string[] = Array.isArray(body.dest)
+      ? body.dest.map((c: unknown) => String(c ?? '').toUpperCase()).filter(Boolean)
+      : body.dest ? [String(body.dest).toUpperCase()] : [];
 
-    const where = filters.join(" AND ");
+    // HS normalization: accept string or array; digits only
+    const hsInput: string[] = Array.isArray(body.hs)
+      ? body.hs
+      : (typeof body.hs === 'string' && body.hs.length ? [body.hs] : []);
+    const hsDigits = hsInput.map((s) => String(s).replace(/\D/g, ''));
+
+    // 4-digit prefixes and 6–10 exacts (both optional)
+    const hs4: string[] = hsDigits.map((s) => s.slice(0, 4)).filter((s) => s.length === 4);
+    const hsExact: string[] = hsDigits.filter((s) => s.length >= 6 && s.length <= 10);
 
     const sql = `
-      WITH base AS (
-        SELECT
-          snapshot_date,
-          mode,
-          hs_code,
-          origin_country,
-          dest_country,
-          carrier,
-          shipper_name,
-          consignee_name
-        FROM ${t}
-        WHERE ${where}
-      ),
-      unioned AS (
-        SELECT shipper_name AS company, 'shipper' AS role, * EXCEPT(shipper_name, consignee_name) FROM base WHERE shipper_name IS NOT NULL
-        UNION ALL
-        SELECT consignee_name AS company, 'consignee' AS role, * EXCEPT(shipper_name, consignee_name) FROM base WHERE consignee_name IS NOT NULL
-      ),
-      agg AS (
-        SELECT
-          company, role,
-          COUNT(*) AS shipments,
-          MAX(snapshot_date) AS lastShipmentDate,
-          ARRAY_AGG(DISTINCT mode IGNORE NULLS) AS modes,
-          (SELECT ARRAY_AGG(x ORDER BY x.c DESC LIMIT 5) FROM (
-            SELECT hs_code AS v, COUNT(*) c FROM unioned WHERE hs_code IS NOT NULL GROUP BY v
-          ) AS x) AS hsTop,
-          (SELECT ARRAY_AGG(x ORDER BY x.c DESC LIMIT 5) FROM (
-            SELECT origin_country AS v, COUNT(*) c FROM unioned WHERE origin_country IS NOT NULL GROUP BY v
-          ) AS x) AS originsTop,
-          (SELECT ARRAY_AGG(x ORDER BY x.c DESC LIMIT 5) FROM (
-            SELECT dest_country AS v, COUNT(*) c FROM unioned WHERE dest_country IS NOT NULL GROUP BY v
-          ) AS x) AS destsTop,
-          (SELECT ARRAY_AGG(x ORDER BY x.c DESC LIMIT 5) FROM (
-            SELECT carrier AS v, COUNT(*) c FROM unioned WHERE carrier IS NOT NULL GROUP BY v
-          ) AS x) AS carriersTop
-        FROM unioned
-        GROUP BY company, role
-      ),
-      counted AS (
-        SELECT COUNT(*) AS total FROM agg
+  WITH companies AS (
+    SELECT
+      company_id,
+      company_name,
+      ANY_VALUE(mode) AS any_mode,
+      COUNT(*) AS shipments_12m,
+      MAX(date) AS last_activity,
+      ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 5) AS top_routes,
+      ARRAY_AGG(STRUCT(carrier) ORDER BY date DESC LIMIT 5) AS top_carriers
+    FROM 
+      lit.shipments_daily_part
+    WHERE 1=1
+      AND ( @mode IS NULL OR UPPER(mode) = @mode)
+      AND (ARRAY_LENGTH( @origin)=0 OR UPPER(origin_country) IN UNNEST( @origin))
+      AND (ARRAY_LENGTH( @dest)=0 OR UPPER(dest_country) IN UNNEST( @dest))
+      /* HS guard — optional, short-circuited; prefix OR exact */
+      AND (
+        (ARRAY_LENGTH( @hs4)=0 OR SUBSTR(hs_code,1,4) IN UNNEST( @hs4))
+        OR
+        (ARRAY_LENGTH( @hs)=0 OR hs_code IN UNNEST( @hs))
       )
-      SELECT
-        (SELECT total FROM counted) AS total,
-        TO_JSON_STRING(ARRAY(
-          SELECT AS STRUCT * FROM agg
-          ORDER BY shipments DESC, lastShipmentDate DESC
-          LIMIT ${limit} OFFSET ${offset}
-        )) AS items_json
-    `;
+      ${q ? 'AND SAFE_CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
+    GROUP BY company_id, company_name
+  )
+  SELECT
+    *,
+    COUNT(*) OVER() AS total_rows
+  FROM companies
+  ORDER BY shipments_12m DESC
+  LIMIT @limit OFFSET @offset
+`;
 
-    const [rows] = await bq.query({ query: sql, location: "US" });
-    const total = Number((rows as any)?.[0]?.total ?? 0);
-    const items = (rows as any)?.[0]?.items_json ? JSON.parse((rows as any)[0].items_json) : [];
+    const params = {
+      q,
+      mode: modeNorm,          // STRING or NULL
+      origin: originNorm,      // ARRAY<STRING>
+      dest: destNorm,          // ARRAY<STRING>
+      hs4: hs4,                // ARRAY<STRING> (4-digit prefixes)
+      hs: hsExact,             // ARRAY<STRING> (6–10 digit exacts)
+      limit,
+      offset,
+    };
+
+    const types = {
+      q: 'STRING',
+      mode: 'STRING',
+      origin: 'ARRAY<STRING>',
+      dest: 'ARRAY<STRING>',
+      hs4: 'ARRAY<STRING>',
+      hs: 'ARRAY<STRING>',
+      limit: 'INT64',
+      offset: 'INT64',
+    } as const;
+
+    const [rows] = await bq.query({ query: sql, params, types });
+    const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
+
+    const items = rows.map((r: any) => ({
+      company_id: r.company_id,
+      company_name: r.company_name,
+      shipments_12m: Number(r.shipments_12m ?? 0),
+      last_activity: r.last_activity,
+      top_routes: r.top_routes ?? [],
+      top_carriers: r.top_carriers ?? [],
+    }));
+
     res.json({ total, items });
   } catch (err) { next(err); }
 });
