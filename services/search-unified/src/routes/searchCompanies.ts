@@ -7,7 +7,7 @@ const r = Router();
 const Body = z.object({
   q: z.string().trim().max(120).optional(),
   mode: z.enum(["air","ocean"]).optional(),
-  hs: z.array(z.string()).optional(),          // optional
+  hs: z.union([z.string(), z.array(z.string())]).optional(),
   origin: z.array(z.string()).optional(),
   dest: z.array(z.string()).optional(),
   carrier: z.array(z.string()).optional(),
