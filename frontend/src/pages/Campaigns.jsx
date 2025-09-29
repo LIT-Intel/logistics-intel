@@ -54,7 +54,7 @@ export default function CampaignsPage() {
         setHasAccess(true);
         // Load campaigns via Gateway
         try {
-          const resp = await api.get('/crm/campaigns');
+          const resp = await api.get('/public/campaigns');
           setCampaigns(asArray(resp));
           setDebugInfo(prev => prev + `\nLoaded ${asArray(resp).length} campaigns.`);
         } catch (campaignError) {
@@ -96,7 +96,7 @@ export default function CampaignsPage() {
     setEditingCampaign(null);
     setIsLoading(true); // Indicate loading while re-fetching campaigns
     try {
-      const resp = await api.get('/crm/campaigns');
+      const resp = await api.get('/public/campaigns');
       setCampaigns(asArray(resp));
       setError(null);
     } catch (e) {
@@ -123,18 +123,8 @@ export default function CampaignsPage() {
   };
 
   const handleToggle = async (campaignId, status) => {
-    try {
-      if (status === 'active') {
-        await api.post(`/crm/campaigns/${campaignId}/pause`, {});
-      } else {
-        await api.post(`/crm/campaigns/${campaignId}/launch`, {});
-      }
-      const resp = await api.get('/crm/campaigns');
-      setCampaigns(asArray(resp));
-    } catch (e) {
-      console.error('Failed to toggle campaign:', e);
-      setError(`Failed to toggle campaign: ${e.message}`);
-    }
+    // Writes may not be available; disable toggle for now to avoid errors
+    console.warn('Toggle action is disabled until write API is available');
   };
 
   if (isLoading) {

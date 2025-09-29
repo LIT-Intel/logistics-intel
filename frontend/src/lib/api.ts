@@ -56,32 +56,65 @@ export const api = {
   },
 };
 
+// Typed helpers for unified search and shipments
+export type CompanySearchItem = {
+  company_id: string | null;
+  company_name: string;
+  shipments: number;
+  lastShipmentDate: string | null;
+  modes?: string[];
+  hsTop?: Array<{ v: string; c: number }>;
+  originsTop?: Array<{ v: string; c: number }>;
+  destsTop?: Array<{ v: string; c: number }>;
+  carriersTop?: Array<{ v: string; c: number }>;
+};
+
+export type ShipmentRow = {
+  shipped_on: string;
+  mode: 'ocean'|'air';
+  origin: string;
+  destination: string;
+  carrier: string | null;
+  value_usd: string | number | null;
+  weight_kg: string | number | null;
+};
+
+export type SearchCompaniesBody = {
+  q?: string;
+  mode?: 'air'|'ocean';
+  hs?: string[];
+  origin?: string[];
+  dest?: string[];
+  carrier?: string[];
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
+  limit: number;
+  offset: number;
+  company_id?: string;       // accepted for summary lookup
+  company_ids?: string[];    // accepted for summary lookup
+};
+
+export async function postSearchCompanies(body: SearchCompaniesBody, signal?: AbortSignal): Promise<{ total: number; items: CompanySearchItem[] }> {
+  return api.post<{ total: number; items: CompanySearchItem[] }>(
+    '/public/searchCompanies',
+    body,
+    { signal }
+  );
+}
+
+export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }, signal?: AbortSignal): Promise<{ rows: ShipmentRow[]; total?: number }> {
+  const { company_id, limit = 50, offset = 0 } = params;
+  const searchParams = new URLSearchParams({ company_id, limit: String(limit), offset: String(offset) });
+  return api.get<{ rows: ShipmentRow[]; total?: number }>(`/public/getCompanyShipments?${searchParams.toString()}`, { signal });
+}
+
 export async function getFilterOptions(_input: object = {}, signal?: AbortSignal) {
   return api.get('/public/getFilterOptions', { signal });
 }
 
 export type SearchCompaniesInput = { q?: string; mode?: "all"|"ocean"|"air"; filters?: Record<string, any>; dateRange?: { from?: string; to?: string }; pagination?: { limit?: number; offset?: number } };
 
-export async function searchCompanies(body: SearchCompaniesInput, signal?: AbortSignal) {
-  // Map UI shape to unified /search API
-  const limit = body.pagination?.limit ?? 10;
-  const offset = body.pagination?.offset ?? 0;
-  const payload = {
-    q: body.q ?? "",
-    mode: body.mode && body.mode !== "all" ? body.mode : undefined,
-    hs: Array.isArray(body.filters?.hs) ? body.filters?.hs : undefined,
-    origins: body.filters?.origin ? [body.filters.origin] : undefined,
-    destinations: body.filters?.destination ? [body.filters.destination] : undefined,
-    carriers: body.filters?.carrier ? [body.filters.carrier] : undefined,
-    startDate: body.dateRange?.from || undefined,
-    endDate: body.dateRange?.to || undefined,
-    page: Math.floor((body.pagination?.offset ?? 0) / (body.pagination?.limit ?? limit)) + 1,
-    page_size: limit,
-    limit, // keep back-compat in case backend accepts limit/offset
-    offset,
-  } as const;
-  return api.post('/search', payload, { signal });
-}
+// Removed legacy searchCompanies helper that posted to /search (no longer used)
 
 // Widgets
 export async function calcTariff(input: { hsCode?: string; origin?: string; destination?: string; valueUsd?: number }, signal?: AbortSignal) {

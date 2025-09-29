@@ -29,6 +29,13 @@ export default function SearchFilters({ onChange }) {
     date_end: "",
     carrier: "",
     hs: [],  // multi-select (prefixes)
+    hs_text: "",
+    origin_city: "",
+    origin_state: "",
+    origin_zip: "",
+    dest_city: "",
+    dest_state: "",
+    dest_zip: "",
     value_min: 0,
     value_max: 0,
   });
@@ -59,6 +66,22 @@ export default function SearchFilters({ onChange }) {
   }, [filters, onChange]);
 
   const handleFilterChange = (key, value) => {
+    // Smart parsing for location inputs: try to infer state/ZIP
+    if (key === 'origin_city' || key === 'dest_city') {
+      setFilters(prev => ({ ...prev, [key]: value }));
+      return;
+    }
+    if (key === 'origin_state' || key === 'dest_state') {
+      const v = (value || '').toUpperCase().slice(0, 2);
+      setFilters(prev => ({ ...prev, [key]: v }));
+      return;
+    }
+    if (key === 'origin_zip' || key === 'dest_zip') {
+      const v = String(value || '').replace(/[^0-9]/g, '').slice(0, 10);
+      setFilters(prev => ({ ...prev, [key]: v }));
+      return;
+    }
+    // General case
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
@@ -136,6 +159,94 @@ export default function SearchFilters({ onChange }) {
         </select>
       </div>
 
+      {/* Origin City */}
+      <div>
+        <label htmlFor="origin_city" className="block text-sm font-medium text-gray-700 mb-1">Origin City</label>
+        <input
+          id="origin_city"
+          type="text"
+          value={filters.origin_city}
+          onChange={(e) => handleFilterChange('origin_city', e.target.value)}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          placeholder="e.g., Los Angeles"
+        />
+      </div>
+
+      {/* Origin State */}
+      <div>
+        <label htmlFor="origin_state" className="block text-sm font-medium text-gray-700 mb-1">Origin State</label>
+        <input
+          id="origin_state"
+          type="text"
+          value={filters.origin_state}
+          onChange={(e) => handleFilterChange('origin_state', e.target.value.toUpperCase().slice(0, 2))}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          placeholder="e.g., CA"
+        />
+      </div>
+
+      {/* Origin ZIP */}
+      <div>
+        <label htmlFor="origin_zip" className="block text-sm font-medium text-gray-700 mb-1">Origin ZIP</label>
+        <input
+          id="origin_zip"
+          type="text"
+          inputMode="numeric"
+          pattern="\\d*"
+          value={filters.origin_zip}
+          onChange={(e) => handleFilterChange('origin_zip', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          placeholder="e.g., 90001"
+        />
+      </div>
+
+      {/* Destination City */}
+      <div>
+        <label htmlFor="dest_city" className="block text-sm font-medium text-gray-700 mb-1">Destination City</label>
+        <input
+          id="dest_city"
+          type="text"
+          value={filters.dest_city}
+          onChange={(e) => handleFilterChange('dest_city', e.target.value)}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          placeholder="e.g., Shanghai"
+        />
+      </div>
+
+      {/* Destination State */}
+      <div>
+        <label htmlFor="dest_state" className="block text-sm font-medium text-gray-700 mb-1">Destination State</label>
+        <input
+          id="dest_state"
+          type="text"
+          value={filters.dest_state}
+          onChange={(e) => handleFilterChange('dest_state', e.target.value.toUpperCase().slice(0, 2))}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          placeholder="e.g., NY"
+        />
+      </div>
+
+      {/* Destination ZIP */}
+      <div>
+        <label htmlFor="dest_zip" className="block text-sm font-medium text-gray-700 mb-1">Destination ZIP</label>
+        <input
+          id="dest_zip"
+          type="text"
+          inputMode="numeric"
+          pattern="\\d*"
+          value={filters.dest_zip}
+          onChange={(e) => handleFilterChange('dest_zip', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+          disabled={isLoading}
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+          placeholder="e.g., 10001"
+        />
+      </div>
+
       {/* Mode (radio) */}
       <div>
         <div className="block text-sm font-medium text-gray-700 mb-1">Mode</div>
@@ -164,24 +275,17 @@ export default function SearchFilters({ onChange }) {
         </select>
       </div>
 
-      {/* HS Code (multi prefixes) */}
+      {/* HS Codes (free text only) */}
       <div>
-        <div className="block text-sm font-medium text-gray-700 mb-1">HS Codes</div>
-        <div className="flex flex-wrap gap-3">
-          {options.hs.slice(0, 12).map(h => (
-            <label key={h} className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={filters.hs.includes(h)}
-                onCheckedChange={(v) => {
-                  const next = new Set(filters.hs);
-                  if (v) next.add(h); else next.delete(h);
-                  handleFilterChange('hs', Array.from(next));
-                }}
-              />
-              <span>{h}</span>
-            </label>
-          ))}
-        </div>
+        <label htmlFor="hs_text" className="block text-sm font-medium text-gray-700 mb-1">HS Codes</label>
+        <input
+          id="hs_text"
+          type="text"
+          value={filters.hs_text}
+          onChange={(e) => handleFilterChange('hs_text', e.target.value)}
+          placeholder="Enter HS codes (comma-separated), e.g., 8471, 8517, 9403"
+          className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+        />
       </div>
 
       {/* Shipment Value (slider) */}
