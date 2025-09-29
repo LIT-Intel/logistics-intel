@@ -45,6 +45,12 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const hs4: string[] = hsDigits.map((s) => s.slice(0, 4)).filter((s) => s.length === 4);
     const hsExact: string[] = hsDigits.filter((s) => s.length >= 6 && s.length <= 10);
 
+    const hasMode  = !!modeNorm;
+    const hasOrigin = Array.isArray(originNorm) && originNorm.length > 0;
+    const hasDest   = Array.isArray(destNorm)   && destNorm.length   > 0;
+    const hasHS4    = Array.isArray(hs4)        && hs4.length        > 0;
+    const hasHS     = Array.isArray(hsExact)    && hsExact.length    > 0;
+
     const sql = `
   WITH companies AS (
     SELECT
@@ -55,19 +61,21 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       MAX(date) AS last_activity,
       ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 5) AS top_routes,
       ARRAY_AGG(STRUCT(carrier) ORDER BY date DESC LIMIT 5) AS top_carriers
-    FROM 
-      lit.shipments_daily_part
+    FROM `lit.shipments_daily_part`
     WHERE 1=1
-      AND ( @mode IS NULL OR UPPER(mode) = @mode)
-      AND (ARRAY_LENGTH( @origin)=0 OR UPPER(origin_country) IN UNNEST( @origin))
-      AND (ARRAY_LENGTH( @dest)=0 OR UPPER(dest_country) IN UNNEST( @dest))
+      AND ( @has_mode = FALSE OR UPPER(mode) = @mode)
+
+      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST( @origin))
+      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST( @dest))
+
       /* HS guard — optional, short-circuited; prefix OR exact */
       AND (
-        (ARRAY_LENGTH( @hs4)=0 OR SUBSTR(hs_code,1,4) IN UNNEST( @hs4))
+        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST( @hs4))
         OR
-        (ARRAY_LENGTH( @hs)=0 OR hs_code IN UNNEST( @hs))
+        ( @has_hs  = FALSE OR hs_code IN UNNEST( @hs))
       )
-      ${q ? 'AND contains_substr(LOWER(company_name), LOWER( @q))' : ''}
+
+      ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
     GROUP BY company_id, company_name
   )
   SELECT
@@ -80,24 +88,47 @@ r.post("/public/searchCompanies", async (req, res, next) => {
 
     const params = {
       q,
-      mode: modeNorm,          // STRING or NULL
-      origin: originNorm,      // ARRAY<STRING>
-      dest: destNorm,          // ARRAY<STRING>
-      hs4: hs4,                // ARRAY<STRING> (4-digit prefixes)
-      hs: hsExact,             // ARRAY<STRING> (6–10 digit exacts)
+      mode: modeNorm ?? '',       // never null; gate with has_mode
+      has_mode: hasMode,          // BOOL
+
+      origin: originNorm ?? [],   // always array
+      has_origin: hasOrigin,      // BOOL
+
+      dest: destNorm ?? [],       // always array
+      has_dest: hasDest,          // BOOL
+
+      hs4: hs4 ?? [],             // always array
+      has_hs4: hasHS4,            // BOOL
+
+      hs: hsExact ?? [],          // always array
+      has_hs: hasHS,              // BOOL
+
       limit,
       offset,
     };
 
     const types = {
-      q: 'STRING',
-      mode: 'STRING',
-      origin: { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      dest: { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      hs4: { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      hs: { type: 'ARRAY', arrayType: { type: 'STRING' } }
-    };
-        const [rows] = await bq.query({ query: sql, params, types });
+      q:        { type: 'STRING' },
+      mode:     { type: 'STRING' },
+      has_mode: { type: 'BOOL' },
+
+      origin:     { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_origin: { type: 'BOOL' },
+
+      dest:       { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_dest:   { type: 'BOOL' },
+
+      hs4:        { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_hs4:    { type: 'BOOL' },
+
+      hs:         { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_hs:     { type: 'BOOL' },
+
+      limit:    { type: 'INT64' },
+      offset:   { type: 'INT64' },
+    } as const;
+
+    const [rows] = await bq.query({ query: sql, params, types });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
     const items = rows.map((r: any) => ({
