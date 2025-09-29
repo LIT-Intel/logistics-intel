@@ -92,13 +92,25 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const types = {
       q: 'STRING',
       mode: 'STRING',
-      origin: 'ARRAY<STRING>',
-      dest: 'ARRAY<STRING>',
-      hs4: 'ARRAY<STRING>',
-      hs: 'ARRAY<STRING>',
+      origin: {
+        type: 'ARRAY',
+        arrayType: { type: 'STRING' }
+      },
+      dest: {
+        type: 'ARRAY',
+        arrayType: { type: 'STRING' }
+      },
+      hs4: {
+        type: 'ARRAY',
+        arrayType: { type: 'STRING' }
+      },
+      hs: {
+        type: 'ARRAY',
+        arrayType: { type: 'STRING' }
+      },
       limit: 'INT64',
       offset: 'INT64',
-    } as const;
+    };
 
     const [rows] = await bq.query({ query: sql, params, types });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
