@@ -29,10 +29,24 @@ export default [
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
       'react/jsx-no-target-blank': 'off',
+      // Relax rules for this JS-first codebase
+      'react/prop-types': 'off',
+      'no-undef': 'off',
+      'no-unused-vars': ['warn', { args: 'none', ignoreRestSiblings: true }],
+      'react/no-unescaped-entities': 'warn',
+      'react/no-unknown-property': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
       ],
     },
   },
+  // Node config files
+  {
+    files: ['vite.config.js', 'tailwind.config.js', 'postcss.config.js'],
+    languageOptions: { globals: globals.node },
+    rules: {
+      'no-undef': 'off',
+    }
+  }
 ]

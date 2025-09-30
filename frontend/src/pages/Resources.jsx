@@ -180,4 +180,4 @@ export default function Resources() {
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Hand-picked insights from industry experts and our team of trade intelligence specialists
-           
+            </p>

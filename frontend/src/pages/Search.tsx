@@ -15,8 +15,7 @@ import SearchResults from "../components/search/SearchResults";
 import UpgradePrompt from "../components/common/UpgradePrompt";
 
 // legacy searchCompanies removed; using postSearchCompanies only
-import { saveCompany } from "@/api/functions";
-import { createCompany } from "@/lib/crm";
+import { saveCompanyToCrm } from "@/lib/api";
 
 const ITEMS_PER_PAGE = 50;
 
@@ -216,10 +215,15 @@ export default function Search() {
     setSavedCompanyIds(optimisticNewIds);
 
     try {
-      // Save to CRM via Gateway
-      const res = await createCompany({ name: company.name, website: company.website || undefined, external_ref: String(companyId) });
-      // Treat as saved if backend returns an id or ok
-      if (!res || (!res.id && !res.ok)) throw new Error('Save failed');
+      // Save to CRM via API Gateway
+      const res = await saveCompanyToCrm({
+        company_id: String(company.company_id || company.id || ''),
+        company_name: String(company.name || company.company_name || 'Unknown'),
+        source: 'search'
+      });
+      if (!res || !(res.status === 'created' || res.status === 'exists')) {
+        throw new Error('Save failed');
+      }
     } catch (error) {
       console.error("Failed to save company:", error);
       setSavedCompanyIds(originalSavedIds);

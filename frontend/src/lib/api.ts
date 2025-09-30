@@ -211,3 +211,58 @@ export async function generateQuote(input: { companyId?: string|number; lanes: A
   return res.json();
 }
 
+// ------------------------ CRM / Enrich / Recall / Campaigns ------------------------
+
+export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string|null; source?: string }) {
+  const res = await fetch(`${API_BASE}/crm/saveCompany`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify({ ...payload, source: payload.source ?? 'search' })
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`saveCompany ${res.status}:${t.slice(0,200)}`);
+  }
+  return res.json();
+}
+
+export async function enrichCompany(payload: { company_id: string }) {
+  const res = await fetch(`${API_BASE}/crm/enrich`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`enrich ${res.status}:${t.slice(0,200)}`);
+  }
+  return res.json();
+}
+
+export async function recallCompany(payload: { company_id: string; questions?: string[] }) {
+  const vendor = (process.env.NEXT_PUBLIC_AI_VENDOR || (import.meta as any)?.env?.VITE_AI_VENDOR || 'gemini');
+  const res = await fetch(`${API_BASE}/ai/recall`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json', 'x-ai-vendor': String(vendor) },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`recall ${res.status}:${t.slice(0,200)}`);
+  }
+  return res.json();
+}
+
+export async function saveCampaign(payload: { name: string; company_ids: string[]; channel: 'email'|'linkedin'; persona?: string; template_id?: string; }) {
+  const res = await fetch(`${API_BASE}/crm/campaigns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`saveCampaign ${res.status}:${t.slice(0,200)}`);
+  }
+  return res.json();
+}
+
