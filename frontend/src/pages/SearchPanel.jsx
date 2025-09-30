@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { getFilterOptions, postSearchCompanies } from '@/lib/api';
+import React, { useState, useMemo } from 'react';
+import { getFilterOptions, postSearchCompanies, searchCompanies } from '@/lib/api';
 
 export default function SearchPanel() {
   const [q, setQ] = useState("");
@@ -8,6 +8,15 @@ export default function SearchPanel() {
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState(null);
   const [results, setResults] = useState(null);
+  const [hsRaw, setHsRaw] = useState("");
+
+  const hsArray = useMemo(() => {
+    if (!hsRaw) return [] as string[];
+    return hsRaw
+      .split(/[, \n\t]+/)
+      .map(s => s.replace(/\D/g, ""))
+      .filter(s => s.length >= 2);
+  }, [hsRaw]);
 
   async function onLoadFilters() {
     try {
@@ -24,9 +33,10 @@ export default function SearchPanel() {
   async function onSearch() {
     try {
       setError(null); setLoading(true);
-      const body = {
+      const body: any = {
         ...(q ? { q } : {}),
-        ...(mode && mode !== 'all' ? { mode } : {}),
+        ...(mode && mode !== 'all' ? { mode: mode === 'air' ? 'AIR' : 'OCEAN' } : {}),
+        ...(hsArray.length ? { hs: hsArray } : {}),
         limit: 10,
         offset: 0,
       };
@@ -55,6 +65,19 @@ export default function SearchPanel() {
         </select>
         <button className="px-4 py-2 rounded bg-black text-white" onClick={onSearch} disabled={loading}>Search</button>
         <button className="px-4 py-2 rounded border" onClick={onLoadFilters} disabled={loading}>Load Filters</button>
+      </div>
+
+      <div className="flex flex-col gap-1 max-w-xl">
+        <label className="text-sm font-medium">HS Codes (comma or space separated)</label>
+        <input
+          className="border rounded-md px-3 py-2"
+          placeholder="e.g. 8471, 847130"
+          value={hsRaw}
+          onChange={(e) => setHsRaw(e.target.value)}
+        />
+        {hsArray.length > 0 && (
+          <div className="text-xs opacity-70">Sending {hsArray.length} code(s): {hsArray.join(", ")}</div>
+        )}
       </div>
 
       {error && <div className="text-red-600 text-sm">{error}</div>}

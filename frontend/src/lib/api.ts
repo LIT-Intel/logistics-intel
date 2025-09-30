@@ -79,6 +79,36 @@ export type ShipmentRow = {
   weight_kg: string | number | null;
 };
 
+// New: searchCompanies params (array-based payload)
+export type SearchCompaniesParams = {
+  q?: string | null;
+  mode?: 'AIR' | 'OCEAN' | '' | null;
+  origin?: string[];   // ISO2
+  dest?: string[];     // ISO2
+  hs?: string[];       // array of strings (digit-only recommended)
+  limit?: number;
+  offset?: number;
+};
+
+export async function searchCompanies(params: SearchCompaniesParams) {
+  const safeArray = (v?: string[]) => (Array.isArray(v) ? v : []);
+  const limit = Math.min(params?.limit ?? 50, 50);
+  const offset = params?.offset ?? 0;
+  const body = {
+    q: params?.q ?? null,
+    mode: params?.mode ?? null,
+    origin: safeArray(params?.origin),
+    dest: safeArray(params?.dest),
+    hs: safeArray(params?.hs),
+    limit,
+    offset,
+  } as const;
+  return api.post<{ total: number; items: CompanySearchItem[] }>(
+    '/public/searchCompanies',
+    body
+  );
+}
+
 export type SearchCompaniesBody = {
   q?: string;
   mode?: 'air'|'ocean';
