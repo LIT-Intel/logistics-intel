@@ -60,13 +60,7 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const hsCsv     = hasHS     ? hsExact.join(',')    : '';   // e.g., "847130,850440"
 
 
-    const hasMode  = !!modeNorm;
-    const hasOrigin = Array.isArray(originNorm) && originNorm.length > 0;
-    const hasDest   = Array.isArray(destNorm)   && destNorm.length   > 0;
-    const hasHS4    = Array.isArray(hs4)        && hs4.length        > 0;
-    const hasHS     = Array.isArray(hsExact)    && hsExact.length    > 0;
-
-    const sql = `
+    const params = {
   WITH companies AS (
     SELECT
       company_id,
