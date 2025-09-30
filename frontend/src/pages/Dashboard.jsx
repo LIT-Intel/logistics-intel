@@ -27,23 +27,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     let alive = true;
+    // Temporarily disable remote fetch to avoid 404/CORS noise. Fall back to safe defaults.
     (async () => {
-      try {
-        const url = `${import.meta.env.VITE_API_BASE}/public/dashboard/summary`;
-        const resp = await fetch(url, { credentials: "omit" });
-        if (!resp.ok) throw new Error(`dashboard ${resp.status}`);
-        const body = await resp.json();
-        if (alive) setData(body || safeSummary);
-      } catch (err) {
-        console.error("Error loading dashboard data:", err);
-        if (alive) setData(safeSummary);
-      } finally {
-        if (alive) setLoading(false);
-      }
+      if (alive) setData(safeSummary);
+      if (alive) setLoading(false);
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
   return (

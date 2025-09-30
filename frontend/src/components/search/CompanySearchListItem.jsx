@@ -13,6 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { kpiFrom } from '@/lib/api';
 
 export default function CompanySearchListItem({
   company,
@@ -34,6 +35,22 @@ export default function CompanySearchListItem({
   };
 
   const isCurrentlySaving = savingCompanyId === company.id;
+  const { shipments12m, lastActivity, originsTop, carriersTop } = kpiFrom({
+    company_id: company.company_id || company.id || null,
+    company_name: company.company_name || company.name || 'Unknown',
+    shipments_12m: company.shipments_12m,
+    shipments12m: company.shipments_12m,
+    shipments: company.shipments,
+    last_activity: company.last_seen,
+    lastActivity: company.last_seen,
+    lastShipmentDate: company.last_seen,
+    origins_top: company.origins_top,
+    originsTop: company.originsTop,
+    dests_top: company.dests_top,
+    destsTop: company.destsTop,
+    carriers_top: company.carriers_top,
+    carriersTop: company.carriersTop,
+  });
 
   return (
     <motion.div
@@ -46,17 +63,17 @@ export default function CompanySearchListItem({
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0 pr-4">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-gray-900 truncate">{company.name}</h3>
+            <h3 className="font-semibold text-gray-900 truncate">{company.company_name || company.name}</h3>
             {isNew && <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs">New</Badge>}
           </div>
-          <p className="text-xs text-gray-600 mb-2">ID: {company.id}</p>
+          <p className="text-xs text-gray-600 mb-2">ID: {company.company_id || company.id}</p>
           <p className="text-sm text-gray-700 line-clamp-2 mb-2">
             {(company.summary || company.description || `Top route ${company.top_route || 'various'}; top carrier ${company.top_carrier || 'various'}.`).toString()}
           </p>
           <div className="flex flex-wrap gap-4 text-xs text-gray-600">
-            <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Shipments (12M): <b className="text-gray-900 ml-1">{formatShipments(company.shipments_12m)}</b></span>
-            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{company.last_seen ? format(new Date(company.last_seen), 'MMM d') : 'N/A'}</b></span>
-            <span className="hidden md:flex items-center gap-1"><Ship className="w-3 h-3" /> Route: <b className="text-gray-900 ml-1 truncate max-w-[220px]">{company.top_route || 'Various'}</b></span>
+            <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Shipments (12M): <b className="text-gray-900 ml-1">{formatShipments(shipments12m)}</b></span>
+            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{lastActivity ? format(new Date(lastActivity), 'MMM d') : 'N/A'}</b></span>
+            <span className="hidden md:flex items-center gap-1"><Ship className="w-3 h-3" /> Route: <b className="text-gray-900 ml-1 truncate max-w-[220px]">{originsTop?.[0] || company.top_route || 'Various'}</b></span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
