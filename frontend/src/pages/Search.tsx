@@ -87,17 +87,17 @@ export default function Search() {
       const hsText = (filters.hs_text || '').split(',').map(sanitize).filter(Boolean);
       const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
       const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
-      const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : undefined;
-      const origin = filters.origin ? [sanitize(filters.origin)] : undefined;
-      const dest = filters.destination ? [sanitize(filters.destination)] : undefined;
+      const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
+      const originArr = filters.origin ? [sanitize(filters.origin)] : [];
+      const destArr = filters.destination ? [sanitize(filters.destination)] : [];
 
       const qSanitized = sanitize(searchQuery || '');
       const body = {
         ...(qSanitized ? { q: qSanitized } : {}),
         ...(mode ? { mode } : {}),
-        ...(origin ? { origin } : {}),
-        ...(dest ? { dest } : {}),
-        ...(hs_codes.length ? { hs: hs_codes } : {}),
+        origin: originArr,
+        dest: destArr,
+        hs: hs_codes,
         limit: ITEMS_PER_PAGE,
         offset,
       } as const;
