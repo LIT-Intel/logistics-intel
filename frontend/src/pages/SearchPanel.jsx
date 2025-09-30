@@ -11,7 +11,7 @@ export default function SearchPanel() {
   const [hsRaw, setHsRaw] = useState("");
 
   const hsArray = useMemo(() => {
-    if (!hsRaw) return [] as string[];
+    if (!hsRaw) return [];
     return hsRaw
       .split(/[, \n\t]+/)
       .map(s => s.replace(/\D/g, ""))
@@ -33,7 +33,7 @@ export default function SearchPanel() {
   async function onSearch() {
     try {
       setError(null); setLoading(true);
-      const body: any = {
+      const body = {
         ...(q ? { q } : {}),
         ...(mode && mode !== 'all' ? { mode: mode === 'air' ? 'AIR' : 'OCEAN' } : {}),
         ...(hsArray.length ? { hs: hsArray } : {}),
