@@ -59,8 +59,7 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const hs4Csv    = hasHS4    ? hs4.join(',')        : '';   // e.g., "8471,8504"
     const hsCsv     = hasHS     ? hsExact.join(',')    : '';   // e.g., "847130,850440"
 
-
-    const params = {
+    const sql = `
   WITH companies AS (
     SELECT
       company_id,
@@ -84,7 +83,7 @@ r.post("/public/searchCompanies", async (req, res, next) => {
         ( @has_hs  = FALSE OR hs_code             IN UNNEST(SPLIT( @hs_csv,  ',')))
       )
 
-      ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
+      ${q ? `AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))` : ''}
     GROUP BY company_id, company_name
   )
   SELECT
