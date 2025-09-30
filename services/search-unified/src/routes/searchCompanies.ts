@@ -1,6 +1,5 @@
 import { Router } from "express";
 import * as fs from 'fs';
-import * as fs from 'fs';
 import { z } from "zod";
 import { bq } from "../bq.js";
 
