@@ -46,6 +46,20 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const hs4: string[] = hsDigits.map((s) => s.slice(0, 4)).filter((s) => s.length === 4);
     const hsExact: string[] = hsDigits.filter((s) => s.length >= 6 && s.length <= 10);
 
+    // Flags
+    const hasMode  = !!modeNorm;
+    const hasOrigin = Array.isArray(originNorm) && originNorm.length > 0;
+    const hasDest   = Array.isArray(destNorm)   && destNorm.length   > 0;
+    const hasHS4    = Array.isArray(hs4)        && hs4.length > 0;
+    const hasHS     = Array.isArray(hsExact)    && hsExact.length > 0;
+
+    // CSVs (avoid ARRAY param typing issues in BigQuery)
+    const originCsv = hasOrigin ? originNorm.join(',') : '';   // e.g., "CN,TR"
+    const destCsv   = hasDest   ? destNorm.join(',')   : '';   // e.g., "US,CA"
+    const hs4Csv    = hasHS4    ? hs4.join(',')        : '';   // e.g., "8471,8504"
+    const hsCsv     = hasHS     ? hsExact.join(',')    : '';   // e.g., "847130,850440"
+
+
     const hasMode  = !!modeNorm;
     const hasOrigin = Array.isArray(originNorm) && originNorm.length > 0;
     const hasDest   = Array.isArray(destNorm)   && destNorm.length   > 0;
@@ -62,18 +76,18 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       MAX(date) AS last_activity,
       ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 5) AS top_routes,
       ARRAY_AGG(STRUCT(carrier) ORDER BY date DESC LIMIT 5) AS top_carriers
-    FROM 
-lit.shipments_daily_part
+    FROM `lit.shipments_daily_part`
     WHERE 1=1
-      AND ( @has_mode = FALSE OR UPPER(mode) = @mode)
+      AND ( @has_mode  = FALSE OR UPPER(mode) = @mode)
 
-      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST( @origin))
-      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST( @dest))
+      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST(SPLIT( @origin_csv, ',')))
+      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST(SPLIT( @dest_csv,   ',')))
 
+      /* HS guard — optional, short-circuited; prefix OR exact */
       AND (
-        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST( @hs4))
+        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST(SPLIT( @hs4_csv, ',')))
         OR
-        ( @has_hs  = FALSE OR hs_code             IN UNNEST( @hs))
+        ( @has_hs  = FALSE OR hs_code             IN UNNEST(SPLIT( @hs_csv,  ',')))
       )
 
       ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
@@ -91,25 +105,24 @@ lit.shipments_daily_part
       q: q ?? '',
       mode: modeNorm ?? '',
       has_mode: hasMode,
-      origin: Array.isArray(originNorm) ? originNorm : [],
-      has_origin: hasOrigin,
-      dest: Array.isArray(destNorm) ? destNorm : [],
-      has_dest: hasDest,
-      hs4: Array.isArray(hs4) ? hs4 : [],
-      has_hs4: hasHS4,
-      hs: Array.isArray(hsExact) ? hsExact : [],
-      has_hs: hasHS,
+
+      origin_csv: originCsv,  // STRING
+      has_origin: hasOrigin,  // BOOL
+
+      dest_csv: destCsv,      // STRING
+      has_dest: hasDest,      // BOOL
+
+      hs4_csv: hs4Csv,        // STRING
+      has_hs4: hasHS4,        // BOOL
+
+      hs_csv: hsCsv,          // STRING
+      has_hs: hasHS,          // BOOL
+
       limit,
       offset,
     };
 
-    const types = {
-      origin: { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      dest:   { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      hs4:    { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      hs:     { type: 'ARRAY', arrayType: { type: 'STRING' } },
-    };
-    const [rows] = await bq.query({ query: sql, params, types });
+    const [rows] = await bq.query({ query: sql, params });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
     const items = rows.map((r: any) => ({
