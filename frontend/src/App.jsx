@@ -11,6 +11,7 @@ const Search         = lazy(() => import("@/pages/Search"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
 const Companies      = lazy(() => import("@/pages/Companies"));
 const Campaigns      = lazy(() => import("@/pages/Campaigns"));
+const CampaignBuilder= lazy(() => import("@/pages/CampaignBuilder"));
 const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));
 const RFPStudio      = lazy(() => import("@/pages/RFPStudio"));
 const Settings       = lazy(() => import("@/pages/Settings"));
@@ -101,6 +102,14 @@ export default function App() {
           element={
             <RequireAuth>
               <Layout currentPageName="Campaigns"><Campaigns /></Layout>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/campaigns/new"
+          element={
+            <RequireAuth>
+              <Layout currentPageName="New Campaign"><CampaignBuilder /></Layout>
             </RequireAuth>
           }
         />

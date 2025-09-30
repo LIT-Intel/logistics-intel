@@ -52,9 +52,9 @@ function buildNormalizer() {
 
   function normalize(input) {
     let s3=null,s2=null,s1=null;
-    try { s3 = Shape3.parse(input);} catch{}
-    if (!s3) try { s2 = Shape2.parse(input);} catch{}
-    if (!s3 && !s2) try { s1 = Shape1.parse(input);} catch{}
+    try { s3 = Shape3.parse(input);} catch(_e){ void 0; }
+    if (!s3) try { s2 = Shape2.parse(input);} catch(_e){ void 0; }
+    if (!s3 && !s2) try { s1 = Shape1.parse(input);} catch(_e){ void 0; }
     let q="", mode="all", filters={}, dateRange, limit=25, offset=0;
     if (s3) { const d=s3.data||{}; q=d.search?.q??""; mode=d.search?.mode??"all"; filters=d.filters??{}; dateRange=d.dateRange; limit=d.pagination?.limit??25; offset=d.pagination?.offset??0; }
     else if (s2) { q=s2.search?.q??""; mode=s2.search?.mode??"all"; filters=s2.filters??{}; dateRange=s2.dateRange; limit=s2.pagination?.limit??25; offset=s2.pagination?.offset??0; }

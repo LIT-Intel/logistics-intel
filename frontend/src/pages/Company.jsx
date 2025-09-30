@@ -8,8 +8,7 @@ import ContactsTab from "@/components/search/detail_tabs/ContactsTab";
 import EnrichmentTab from "@/components/search/detail_tabs/EnrichmentTab";
 import NotesTab from "@/components/search/detail_tabs/NotesTab";
 import { Contact, Note } from "@/api/entities";
-import { enrichCompany } from "@/api/functions";
-import { postSearchCompanies, getCompanyShipments } from "@/lib/api";
+import { postSearchCompanies, getCompanyShipments, enrichCompany, recallCompany } from "@/lib/api";
 
 export default function Company() {
   const { id } = useParams();
@@ -25,6 +24,7 @@ export default function Company() {
   const [notes, setNotes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [recall, setRecall] = useState(null);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -81,12 +81,24 @@ export default function Company() {
   const handleEnrich = async () => {
     setIsEnriching(true);
     try {
-      await enrichCompany({ company_id: companyId });
+      await enrichCompany({ company_id: String(companyId) });
       await load();
     } catch (e) {
       console.error('Enrich error', e);
     } finally {
       setIsEnriching(false);
+    }
+  };
+
+  const handleRecall = async () => {
+    if (!companyId) return;
+    try {
+      const r = await recallCompany({ company_id: String(companyId) });
+      setRecall({ summary: r?.summary || '', bullets: Array.isArray(r?.bullets) ? r.bullets : [] });
+    } catch (e) {
+      console.error('Recall error', e);
+      setRecall({ summary: '', bullets: [] });
+      alert('Recall failed');
     }
   };
 
@@ -114,6 +126,7 @@ export default function Company() {
               <div><span className="text-gray-500">Top Carrier:</span> <span className="font-semibold">{(summary.top_carriers && summary.top_carriers[0]) || '—'}</span></div>
             </div>
           )}
+          <Button size="sm" onClick={handleRecall} className="bg-indigo-600 hover:bg-indigo-700 text-white">Recall</Button>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -162,6 +175,17 @@ export default function Company() {
             </TabsContent>
             <TabsContent value="ai_insights">
               <EnrichmentTab company={company || { id: companyId }} onCompanyUpdate={setCompany} user={null} isGated={false} onUnlock={() => {}} isLoading={false} onEnrich={handleEnrich} isEnriching={isEnriching} />
+              {recall && (
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold">AI Recall</h3>
+                  <p className="mt-2 text-sm whitespace-pre-wrap">{recall.summary}</p>
+                  <ul className="list-disc pl-5 mt-2">
+                    {(recall.bullets || []).map((b, i) => (
+                      <li key={i} className="text-sm">{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </TabsContent>
             <TabsContent value="notes">
               <NotesTab notes={notes} onAddNote={handleAddNote} isLoading={isLoading} />
