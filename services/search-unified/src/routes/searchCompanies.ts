@@ -102,7 +102,13 @@ lit.shipments_daily_part
       offset,
     };
 
-    const [rows] = await bq.query({ query: sql, params });
+    const types = {
+      origin: { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      dest:   { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      hs4:    { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      hs:     { type: 'ARRAY', arrayType: { type: 'STRING' } },
+    };
+    const [rows] = await bq.query({ query: sql, params, types });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
     const items = rows.map((r: any) => ({
