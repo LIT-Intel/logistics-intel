@@ -64,32 +64,48 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     SELECT
       company_id,
       company_name,
-      ANY_VALUE(mode) AS any_mode,
       COUNT(*) AS shipments_12m,
       MAX(date) AS last_activity,
-      ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 5) AS top_routes,
-      ARRAY_AGG(STRUCT(carrier) ORDER BY date DESC LIMIT 5) AS top_carriers
-    FROM lit.shipments_daily_part
+      ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 20) AS top_routes,
+      ARRAY_AGG(STRUCT(carrier) ORDER BY date DESC LIMIT 20) AS top_carriers
+    FROM `lit.shipments_daily_part`
     WHERE 1=1
       AND ( @has_mode  = FALSE OR UPPER(mode) = @mode)
-
       AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST(SPLIT( @origin_csv, ',')))
       AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST(SPLIT( @dest_csv,   ',')))
-
-      /* HS guard — optional, short-circuited; prefix OR exact */
       AND (
         ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST(SPLIT( @hs4_csv, ',')))
         OR
         ( @has_hs  = FALSE OR hs_code             IN UNNEST(SPLIT( @hs_csv,  ',')))
       )
-
-      ${q ? `AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))` : ''}
+      ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
+      AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)
     GROUP BY company_id, company_name
+  ),
+  shaped AS (
+    SELECT
+      c.*,
+      /* FE-friendly arrays extracted from structs */
+      ARRAY(
+        SELECT DISTINCT r.origin_country FROM UNNEST(c.top_routes) r
+        WHERE r.origin_country IS NOT NULL
+        LIMIT 5
+      ) AS origins_top,
+      ARRAY(
+        SELECT DISTINCT r.dest_country FROM UNNEST(c.top_routes) r
+        WHERE r.dest_country IS NOT NULL
+        LIMIT 5
+      ) AS dests_top,
+      ARRAY(
+        SELECT DISTINCT x.carrier FROM UNNEST(c.top_carriers) x
+        WHERE x.carrier IS NOT NULL
+        LIMIT 5
+      ) AS carriers_top
+    FROM companies c
   )
   SELECT
-    *,
-    COUNT(*) OVER() AS total_rows
-  FROM companies
+    *, COUNT(*) OVER() AS total_rows
+  FROM shaped
   ORDER BY shipments_12m DESC
   LIMIT @limit OFFSET @offset
 `;
@@ -121,10 +137,24 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const items = rows.map((r: any) => ({
       company_id: r.company_id,
       company_name: r.company_name,
+
+      // snake_case (existing)
       shipments_12m: Number(r.shipments_12m ?? 0),
       last_activity: r.last_activity,
       top_routes: r.top_routes ?? [],
       top_carriers: r.top_carriers ?? [],
+
+      // arrays extracted for quick UI use
+      origins_top: Array.isArray(r.origins_top) ? r.origins_top : [],
+      dests_top: Array.isArray(r.dests_top) ? r.dests_top : [],
+      carriers_top: Array.isArray(r.carriers_top) ? r.carriers_top : [],
+
+      // camelCase mirrors (backward/forward compatible with FE)
+      shipments12m: Number(r.shipments_12m ?? 0),
+      lastActivity: r.last_activity ?? null,
+      originsTop: Array.isArray(r.origins_top) ? r.origins_top : [],
+      destsTop: Array.isArray(r.dests_top) ? r.dests_top : [],
+      carriersTop: Array.isArray(r.carriers_top) ? r.carriers_top : [],
     }));
 
     res.json({ total, items });
