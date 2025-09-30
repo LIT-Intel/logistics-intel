@@ -87,7 +87,7 @@ lit.shipments_daily_part
 `;
 
     const params = {
-      q,
+      q: q ?? '',
       mode: modeNorm ?? '',
       has_mode: hasMode,
       origin: Array.isArray(originNorm) ? originNorm : [],
@@ -102,7 +102,28 @@ lit.shipments_daily_part
       offset,
     };
 
-    const [rows] = await bq.query({ query: sql, params });
+    const types = {
+      q:        { type: 'STRING' },
+      mode:     { type: 'STRING' },
+      has_mode: { type: 'BOOL' },
+
+      origin:     { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_origin: { type: 'BOOL' },
+
+      dest:       { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_dest:   { type: 'BOOL' },
+
+      hs4:        { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_hs4:    { type: 'BOOL' },
+
+      hs:         { type: 'ARRAY', arrayType: { type: 'STRING' } },
+      has_hs:     { type: 'BOOL' },
+
+      limit:    { type: 'INT64' },
+      offset:   { type: 'INT64' },
+    } as const;
+
+    const [rows] = await bq.query({ query: sql, params, types });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
     const items = rows.map((r: any) => ({
