@@ -76,7 +76,7 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       MAX(date) AS last_activity,
       ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 5) AS top_routes,
       ARRAY_AGG(STRUCT(carrier) ORDER BY date DESC LIMIT 5) AS top_carriers
-    FROM `lit.shipments_daily_part`
+    FROM lit.shipments_daily_part
     WHERE 1=1
       AND ( @has_mode  = FALSE OR UPPER(mode) = @mode)
 
