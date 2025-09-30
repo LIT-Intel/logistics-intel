@@ -66,13 +66,13 @@ lit.shipments_daily_part
     WHERE 1=1
       AND ( @has_mode = FALSE OR UPPER(mode) = @mode)
 
-      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST( @origin))
-      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST( @dest))
+      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST(CAST( @origin AS ARRAY<STRING>)))
+      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST(CAST( @dest   AS ARRAY<STRING>)))
 
       AND (
-        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST( @hs4))
+        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST(CAST( @hs4 AS ARRAY<STRING>)))
         OR
-        ( @has_hs  = FALSE OR hs_code             IN UNNEST( @hs))
+        ( @has_hs  = FALSE OR hs_code             IN UNNEST(CAST( @hs  AS ARRAY<STRING>)))
       )
 
       ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
