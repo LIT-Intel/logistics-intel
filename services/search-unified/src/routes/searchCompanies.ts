@@ -66,14 +66,13 @@ lit.shipments_daily_part
     WHERE 1=1
       AND ( @has_mode = FALSE OR UPPER(mode) = @mode)
 
-      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST( @origin))
-      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST( @dest))
+      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST(CAST( @origin AS ARRAY<STRING>)))
+      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST(CAST( @dest   AS ARRAY<STRING>)))
 
-      /* HS guard — optional, short-circuited; prefix OR exact */
       AND (
-        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST( @hs4))
+        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST(CAST( @hs4 AS ARRAY<STRING>)))
         OR
-        ( @has_hs  = FALSE OR hs_code IN UNNEST( @hs))
+        ( @has_hs  = FALSE OR hs_code             IN UNNEST(CAST( @hs  AS ARRAY<STRING>)))
       )
 
       ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
@@ -89,47 +88,21 @@ lit.shipments_daily_part
 
     const params = {
       q,
-      mode: modeNorm ?? '',       // never null; gate with has_mode
-      has_mode: hasMode,          // BOOL
-
-      origin: originNorm ?? [],   // always array
-      has_origin: hasOrigin,      // BOOL
-
-      dest: destNorm ?? [],       // always array
-      has_dest: hasDest,          // BOOL
-
-      hs4: hs4 ?? [],             // always array
-      has_hs4: hasHS4,            // BOOL
-
-      hs: hsExact ?? [],          // always array
-      has_hs: hasHS,              // BOOL
-
+      mode: modeNorm ?? '',
+      has_mode: hasMode,
+      origin: Array.isArray(originNorm) ? originNorm : [],
+      has_origin: hasOrigin,
+      dest: Array.isArray(destNorm) ? destNorm : [],
+      has_dest: hasDest,
+      hs4: Array.isArray(hs4) ? hs4 : [],
+      has_hs4: hasHS4,
+      hs: Array.isArray(hsExact) ? hsExact : [],
+      has_hs: hasHS,
       limit,
       offset,
     };
 
-    const types = {
-      q:        { type: 'STRING' },
-      mode:     { type: 'STRING' },
-      has_mode: { type: 'BOOL' },
-
-      origin:     { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      has_origin: { type: 'BOOL' },
-
-      dest:       { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      has_dest:   { type: 'BOOL' },
-
-      hs4:        { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      has_hs4:    { type: 'BOOL' },
-
-      hs:         { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      has_hs:     { type: 'BOOL' },
-
-      limit:    { type: 'INT64' },
-      offset:   { type: 'INT64' },
-    } as const;
-
-    const [rows] = await bq.query({ query: sql, params, types });
+    const [rows] = await bq.query({ query: sql, params });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
     const items = rows.map((r: any) => ({
