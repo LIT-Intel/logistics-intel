@@ -1,0 +1,5 @@
+🚀 Starting test execution...
+❌ Test execution failed: Error: Execution arguments are not found in config. Please run `testsprite_generate_code_and_execute` first.
+    at Command.<anonymous> (file:///home/vraymond/.npm/_npx/d9346830dbd0a8a4/node_modules/@testsprite/testsprite-mcp/dist/index.js:146463:19)
+    at async Command.parseAsync (file:///home/vraymond/.npm/_npx/d9346830dbd0a8a4/node_modules/@testsprite/testsprite-mcp/dist/index.js:144736:6)
+    at async main (file:///home/vraymond/.npm/_npx/d9346830dbd0a8a4/node_modules/@testsprite/testsprite-mcp/dist/index.js:146647:9)
