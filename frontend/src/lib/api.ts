@@ -79,6 +79,28 @@ export type ShipmentRow = {
   weight_kg: string | number | null;
 };
 
+// Company item + KPI extractor tolerant to snake/camel
+export type CompanyItem = {
+  company_id: string | null;
+  company_name: string;
+  shipments_12m?: number; shipments12m?: number; shipments?: number;
+  last_activity?: string | null; lastActivity?: string | null; lastShipmentDate?: string | null;
+  origins_top?: string[]; originsTop?: string[];
+  dests_top?: string[];   destsTop?: string[];
+  carriers_top?: string[]; carriersTop?: string[];
+};
+
+export function kpiFrom(item: CompanyItem) {
+  const shipments12m = Number(
+    item.shipments12m ?? item.shipments_12m ?? item.shipments ?? 0
+  );
+  const lastActivity = (item.lastActivity ?? item.last_activity ?? item.lastShipmentDate) || null;
+  const originsTop   = item.originsTop   ?? item.origins_top   ?? [];
+  const destsTop     = item.destsTop     ?? item.dests_top     ?? [];
+  const carriersTop  = item.carriersTop  ?? item.carriers_top  ?? [];
+  return { shipments12m, lastActivity, originsTop, destsTop, carriersTop };
+}
+
 // Public API base (robust across Vite/Next)
 const API_BASE: string = ((import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 
