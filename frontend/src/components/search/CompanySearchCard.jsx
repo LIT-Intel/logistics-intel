@@ -14,6 +14,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { kpiFrom } from '@/lib/api';
 
 export default function CompanySearchCard({
   company,
@@ -34,6 +35,23 @@ export default function CompanySearchCard({
   };
 
   const isCurrentlySaving = savingCompanyId === company.id;
+
+  const { shipments12m, lastActivity, originsTop, carriersTop } = kpiFrom({
+    company_id: company.company_id || company.id || null,
+    company_name: company.company_name || company.name || 'Unknown',
+    shipments_12m: company.shipments_12m,
+    shipments12m: company.shipments_12m,
+    shipments: company.shipments,
+    last_activity: company.last_seen,
+    lastActivity: company.last_seen,
+    lastShipmentDate: company.last_seen,
+    origins_top: company.origins_top,
+    originsTop: company.originsTop,
+    dests_top: company.dests_top,
+    destsTop: company.destsTop,
+    carriers_top: company.carriers_top,
+    carriersTop: company.carriersTop,
+  });
 
   return (
     <motion.div
@@ -69,18 +87,14 @@ export default function CompanySearchCard({
             <TrendingUp className="w-3 h-3" />
             Shipments (12M)
           </div>
-          <div className="text-lg font-bold text-blue-900">
-            {formatShipments(company.shipments_12m || company?.kpis?.shipments_12m)}
-          </div>
+          <div className="text-lg font-bold text-blue-900">{formatShipments(shipments12m)}</div>
         </div>
         <div className="bg-purple-50 rounded-lg p-3">
           <div className="flex items-center gap-2 text-xs text-purple-600 font-medium mb-1">
             <Calendar className="w-3 h-3" />
             Last Activity
           </div>
-          <div className="text-sm font-bold text-purple-900">
-            {company.last_seen ? format(new Date(company.last_seen), 'MMM d') : 'N/A'}
-          </div>
+          <div className="text-sm font-bold text-purple-900">{lastActivity ? format(new Date(lastActivity), 'MMM d') : 'N/A'}</div>
         </div>
       </div>
 
@@ -89,14 +103,14 @@ export default function CompanySearchCard({
           <Ship className="w-3 h-3 text-gray-500" />
           <span className="text-gray-600">Top Route:</span>
           <span className="font-medium text-gray-900 truncate flex-1">
-            {company.top_route || (company.origin && company.destination ? `${company.origin} → ${company.destination}` : 'Various routes')}
+            {originsTop?.[0] ? `${originsTop[0]} → ${''}` : (company.origin && company.destination ? `${company.origin} → ${company.destination}` : 'Various routes')}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <Building2 className="w-3 h-3 text-gray-500" />
           <span className="text-gray-600">Top Carrier:</span>
           <span className="font-medium text-gray-900 truncate flex-1">
-            {company.top_carrier || 'Multiple carriers'}
+            {carriersTop?.[0] || 'Multiple carriers'}
           </span>
         </div>
       </div>
