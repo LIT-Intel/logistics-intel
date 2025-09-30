@@ -79,6 +79,9 @@ export type ShipmentRow = {
   weight_kg: string | number | null;
 };
 
+// Public API base (robust across Vite/Next)
+const API_BASE: string = ((import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
+
 // New: searchCompanies params (array-based payload)
 export type SearchCompaniesParams = {
   q?: string | null;
@@ -103,10 +106,27 @@ export async function searchCompanies(params: SearchCompaniesParams) {
     limit,
     offset,
   } as const;
-  return api.post<{ total: number; items: CompanySearchItem[] }>(
-    '/public/searchCompanies',
-    body
-  );
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/public/searchCompanies`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`network_error:${String(e)}`);
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`bad_status:${res.status}:${text.substring(0, 300)}`);
+  }
+
+  const json: any = await res.json().catch(() => ({}));
+  const total = Number(json?.total ?? 0);
+  const items = Array.isArray(json?.items) ? json.items : [];
+  return { total, items } as { total: number; items: CompanySearchItem[] };
 }
 
 export type SearchCompaniesBody = {
