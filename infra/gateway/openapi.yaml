@@ -29,6 +29,11 @@ paths:
     get:
       summary: Get dashboard summary
       operationId: publicDashboardSummary
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app
+        protocol: h2
+        jwt_audience: https://search-unified-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       responses:
         '200':
           description: OK
@@ -116,6 +121,11 @@ paths:
     get:
       summary: Get feature flags
       operationId: crmFeatureFlags
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app
+        protocol: h2
+        jwt_audience: https://search-unified-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       responses:
         '200':
           description: OK
