@@ -66,13 +66,13 @@ lit.shipments_daily_part
     WHERE 1=1
       AND ( @has_mode = FALSE OR UPPER(mode) = @mode)
 
-      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST(CAST( @origin AS ARRAY<STRING>)))
-      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST(CAST( @dest   AS ARRAY<STRING>)))
+      AND ( @has_origin = FALSE OR UPPER(origin_country) IN UNNEST( @origin))
+      AND ( @has_dest   = FALSE OR UPPER(dest_country)   IN UNNEST( @dest))
 
       AND (
-        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST(CAST( @hs4 AS ARRAY<STRING>)))
+        ( @has_hs4 = FALSE OR SUBSTR(hs_code,1,4) IN UNNEST( @hs4))
         OR
-        ( @has_hs  = FALSE OR hs_code             IN UNNEST(CAST( @hs  AS ARRAY<STRING>)))
+        ( @has_hs  = FALSE OR hs_code             IN UNNEST( @hs))
       )
 
       ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
@@ -102,13 +102,7 @@ lit.shipments_daily_part
       offset,
     };
 
-    const types = {
-      origin: { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      dest:   { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      hs4:    { type: 'ARRAY', arrayType: { type: 'STRING' } },
-      hs:     { type: 'ARRAY', arrayType: { type: 'STRING' } },
-    };
-    const [rows] = await bq.query({ query: sql, params, types });
+    const [rows] = await bq.query({ query: sql, params });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
     const items = rows.map((r: any) => ({
