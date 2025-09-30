@@ -1,4 +1,5 @@
 // server.js — Logistic Intel (search-unified)
+console.log('Server.js loaded');
 // Express API behind API Gateway → Cloud Run
 // Uses BigQuery for search + filter options
 
@@ -7,6 +8,7 @@ const cors = require('cors');
 const { BigQuery } = require('@google-cloud/bigquery');
 
 const app = express();
+app.get('/healthz', (_req, res) => { console.log('Health check called'); res.status(200).json({ ok: true, service: 'search-unified' }); });
 app.use(express.json());
 app.use(cors());
 
@@ -14,13 +16,12 @@ const bq = new BigQuery();
 const BQ_LOCATION = process.env.BQ_LOCATION || 'US';
 
 // Basic health & index listing
-app.get('/healthz', (_req, res) => res.status(200).json({ ok: true, service: 'search-unified' }));
 app.get('/', (_req, res) => {
   res.status(200).json({
     ok: true,
     service: 'search-unified',
     routes: [
-      'POST /search',
+      'POST /public/searchCompanies',
       'POST /public/getFilterOptions',
       'GET  /public/getCompanyDetails',
       'GET  /public/getCompanyShipments',
@@ -150,10 +151,10 @@ app.post('/getFilterOptions', async (_req, res) => {
 });
 // ───────────────────────────────────────────────────────────────
 
-app.post('/search', async (req, res) => {
+app.post('/public/searchCompanies', async (req, res) => {
   try {
-    const { page = 1, page_size = 24, q } = req.body;
-    const offset = (page - 1) * page_size;
+    const { page = 1, limit = 24, q, hs } = req.body;
+    const offset = (page - 1) * limit;
 
     const whereClauses = [];
     const params = {};
@@ -161,6 +162,10 @@ app.post('/search', async (req, res) => {
     if (q) {
       whereClauses.push(`ov.company_name LIKE @q`);
       params.q = `%${q}%`;
+    }
+    if (hs && hs.length > 0) {
+      whereClauses.push(`EXISTS (SELECT 1 FROM UNNEST(ov.top_hs_list) as h, UNNEST(@hs) as hs_filter WHERE STARTS_WITH(h.hs_code, hs_filter))`);
+      params.hs = hs;
     }
 
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -174,23 +179,21 @@ app.post('/search', async (req, res) => {
             ov.company_id,
             ov.company_name as name,
             STRUCT(
-              ov.shipments_12m,
-              ov.last_activity_date as last_activity,
-              ov.top_route,
-              ov.top_carrier
+              ov.total_shipments_12m as shipments_12m,
+              ov.last_seen_12m as last_activity
             ) as kpis
           FROM 
             logistics-intel.lit.v_company_overview_latest ov
           ${whereSql}
-          ORDER BY ov.shipments_12m DESC
-          LIMIT @page_size
+          ORDER BY ov.total_shipments_12m DESC
+          LIMIT @limit
           OFFSET @offset
-        ) as rows
+        ) as companies
     `;
 
     const [job] = await bq.createQueryJob({
       query,
-      params: { ...params, page_size, offset },
+      params: { ...params, limit, offset },
       location: BQ_LOCATION,
     });
     const [rows] = await job.getQueryResults();
@@ -201,9 +204,9 @@ app.post('/search', async (req, res) => {
       meta: {
         total: result.total,
         page: page,
-        page_size: page_size,
+        page_size: limit,
       },
-      rows: result.rows,
+      rows: result.companies,
     });
   } catch (e) {
     console.error('/search error:', e);
@@ -211,19 +214,7 @@ app.post('/search', async (req, res) => {
   }
 });
 
-// New unified search endpoint returning { meta, rows }
-app.post('/search', async (req, res) => {
-  try {
-    const page = Number(req.body?.page || 1);
-    const page_size = Number(req.body?.page_size || 24);
-    // TODO: Replace with real BQ aggregation. Return lightweight shipments summary to populate cards.
-    const rows = [];
-    res.status(200).json({ meta: { total: rows.length, page, page_size }, rows });
-  } catch (e) {
-    console.error('search error:', e);
-    res.status(500).json({ ok: false, error: String(e?.message || e) });
-  }
-});
+
 
 // Company details per spec
 app.get('/public/getCompanyDetails', async (req, res) => {
@@ -256,6 +247,13 @@ app.get('/public/getCompanyShipments', async (req, res) => {
   }
 });
 
+app.get('/crm/feature-flags', async (req, res) => {
+  res.status(200).json({
+    "enable-shipment-search": true,
+    "enable-crm": true
+  });
+});
+
 // CRM endpoints
 app.post('/crm/saveCompany', async (req, res) => {
   try {
@@ -279,6 +277,17 @@ app.get('/crm/savedCompanies', async (req, res) => {
     console.error('savedCompanies error:', e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
+});
+
+app.get('/public/dashboard/summary', async (req, res) => {
+  res.status(200).json({
+    total_shipments: 12345,
+    total_value_usd: 67890,
+    top_lanes: [
+      { origin: 'CN', destination: 'US', shipments: 123 },
+      { origin: 'US', destination: 'CN', shipments: 100 },
+    ],
+  });
 });
 
 // Campaigns list
