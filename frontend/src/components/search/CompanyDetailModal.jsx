@@ -9,8 +9,7 @@ import {
 
 import { Contact, Note } from '@/api/entities';
 import { createPageUrl } from '@/utils';
-import { postSearchCompanies, getCompanyShipments } from '@/lib/api';
-import { enrichCompany } from '@/api/functions';
+import { postSearchCompanies, getCompanyShipments, enrichCompany } from '@/lib/api';
 
 import OverviewTab from './detail_tabs/OverviewTab';
 import ShipmentsTab from './detail_tabs/ShipmentsTab';
@@ -108,16 +107,12 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const handleEnrichCompany = async () => {
     setIsEnriching(true);
     try {
-      const response = await enrichCompany({ company_id: companyId });
-      if (response.data?.ok) {
-        // Refresh the company details to show updated enrichment data
-        loadRelatedData();
-      } else {
-        alert("Enrichment failed: " + (response.data?.error || "Unknown error"));
-      }
+      await enrichCompany({ company_id: String(companyId) });
+      // Refresh after queuing enrichment
+      loadRelatedData();
     } catch (error) {
       console.error("Error enriching company:", error);
-      alert("Enrichment failed: " + error.message);
+      alert("Enrichment failed: " + (error?.message || String(error)));
     } finally {
       setIsEnriching(false);
     }

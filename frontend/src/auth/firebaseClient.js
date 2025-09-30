@@ -33,7 +33,7 @@ try {
       console.warn("Firebase config missing; auth disabled in this environment.");
     }
   }
-} catch (e) {
+  } catch (e) {
   console.error("Failed to initialize Firebase:", e);
 }
 

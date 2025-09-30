@@ -25,7 +25,7 @@ export default function OverviewTab({ company, isLoading }) {
   };
 
   const analytics = useMemo(() => {
-    if (!company) return null;
+    if (!company) return { totalShipments: 0, topRoute: 'N/A', topCarriers: [], modeBreakdown: [] };
 
     return {
       totalShipments: company.shipments_12m || 0,
