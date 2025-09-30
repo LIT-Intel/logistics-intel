@@ -1,4 +1,5 @@
 import { Router } from "express";
+import * as fs from 'fs';
 import { z } from "zod";
 import { bq } from "../bq.js";
 
@@ -110,8 +111,8 @@ lit.shipments_daily_part
     };
     console.log('params:', JSON.stringify(params, null, 2));
     console.log('types:', JSON.stringify(types, null, 2));
-    require('fs').writeFileSync('params.json', JSON.stringify(params, null, 2));
-    require('fs').writeFileSync('types.json', JSON.stringify(types, null, 2));
+    fs.writeFileSync('params.json', JSON.stringify(params, null, 2));
+    fs.writeFileSync('types.json', JSON.stringify(types, null, 2));
     const [rows] = await bq.query({ query: sql, params, types });
     const total = rows.length ? Number(rows[0].total_rows ?? 0) : 0;
 
