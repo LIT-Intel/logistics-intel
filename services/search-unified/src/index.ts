@@ -17,13 +17,18 @@ app.use((req: any, res: any, next: any) => {
   next();
 });
 
-app.use(health);
-// --- lightweight health endpoints (safe to add anytime)
+// app.use(health);
+// --- lightweight health + status (safe to keep permanently)
+app.get('/healthz', (_req, res) => {
+  res.status(200).send('ok');
+});
+
 app.get('/public/status', (_req, res) => {
   res.json({ ok: true, service: 'search-unified' });
 });
 
-app.get('/healthz', (_req, res) => {
+// Some infra ping "/" — make it 200 too
+app.get('/', (_req, res) => {
   res.status(200).send('ok');
 });
 app.use(getFilterOptions);
