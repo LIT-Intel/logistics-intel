@@ -20,9 +20,11 @@ import {
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
+import { kpiFrom } from '@/lib/kpi';
 
-export default function CompanyCard({ company, onDelete, onView, onStartOutreach }) {
+export default function CompanyCard({ company: item, onDelete, onView, onStartOutreach }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { shipments12m, lastActivity, originsTop, destsTop, carriersTop } = kpiFrom(item);
   
   const formatWeight = (weightKg) => {
     if (weightKg === null || weightKg === undefined || isNaN(weightKg)) return 'N/A';
@@ -31,10 +33,9 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
     return `${weightKg.toFixed(0)} kg`;
   };
 
-  const totalWeight = company.total_weight_12m || 0;
-  const shipmentCount = company.shipments_12m || 0;
-  const topRoute = company.top_routes?.[0] || 'Various routes';
-  const primaryCarrier = company.top_carriers?.[0] || 'Multiple carriers';
+  const totalWeight = item.total_weight_12m || 0;
+  const topRoute = originsTop.length > 0 && destsTop.length > 0 ? `${originsTop[0]} → ${destsTop[0]}` : 'Various routes';
+  const primaryCarrier = carriersTop[0] || 'Multiple carriers';
 
   const getModeDistribution = (modeMix) => {
     if (!modeMix || typeof modeMix !== 'object') return [];
@@ -44,12 +45,12 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
       .slice(0, 2);
   };
 
-  const modeDistribution = getModeDistribution(company.mode_mix_json);
+  const modeDistribution = getModeDistribution(item.mode_mix_json);
 
   const handleDelete = () => {
     setIsMenuOpen(false);
     if (onDelete) {
-      onDelete(company.id);
+      onDelete(item.id);
     } else {
       console.warn("onDelete handler not provided to CompanyCard");
     }
@@ -65,18 +66,17 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
     >
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-gray-900 truncate text-lg mb-1">
-            {company.name}
-          </h3>
+          <div className="text-xs opacity-60">ID: {item.company_id || 'pending-id'}</div>
+          <div className="text-base font-semibold">{item.company_name || 'Unknown'}</div>
           <div className="flex items-center gap-3 text-sm text-gray-600">
             <div className="flex items-center gap-1">
               <Building2 className="w-3 h-3" />
-              <span className="truncate">{company.industry || 'N/A'}</span>
+              <span className="truncate">{item.industry || 'N/A'}</span>
             </div>
             <div className="flex items-center gap-1">
               <MapPin className="w-3 h-3" />
               <span className="truncate">
-                {[company.hq_city, company.hq_country].filter(Boolean).join(', ') || 'N/A'}
+                {[item.hq_city, item.hq_country].filter(Boolean).join(', ') || 'N/A'}
               </span>
             </div>
           </div>
@@ -89,11 +89,11 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onView}>
+            <DropdownMenuItem onClick={() => item.company_id && onView(item)}>
               <Eye className="w-4 h-4 mr-2" />
               View Details
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onStartOutreach(company)}>
+            <DropdownMenuItem onClick={() => onStartOutreach(item)}>
               <Mail className="w-4 h-4 mr-2" />
               Start Outreach
             </DropdownMenuItem>
@@ -114,7 +114,7 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
           </div>
           <div className="bg-purple-50 rounded-lg p-3">
             <div className="text-xs text-purple-600 font-medium">Shipments</div>
-            <div className="text-base font-bold text-purple-900">{shipmentCount.toLocaleString()}</div>
+            <div className="text-base font-bold text-purple-900">{shipments12m.toLocaleString()}</div>
           </div>
         </div>
 
@@ -157,13 +157,13 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
       <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${
-            company.enrichment_status === 'enriched' ? 'bg-green-500' : 
-            company.enrichment_status === 'pending' ? 'bg-yellow-500' : 'bg-gray-300'
+            item.enrichment_status === 'enriched' ? 'bg-green-500' : 
+            item.enrichment_status === 'pending' ? 'bg-yellow-500' : 'bg-gray-300'
           }`} />
-          <span className="capitalize">{company.enrichment_status || 'none'}</span>
+          <span className="capitalize">{item.enrichment_status || 'none'}</span>
         </div>
         <span>
-          {company.last_seen ? `Last: ${format(new Date(company.last_seen), 'MMM d')}` : 'No recent activity'}
+          {lastActivity ? `Last: ${format(new Date(lastActivity), 'MMM d')}` : 'No recent activity'}
         </span>
       </div>
 
@@ -171,7 +171,8 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
         <Button
           size="sm"
           variant="outline"
-          onClick={onView}
+          disabled={!item.company_id}
+          onClick={() => item.company_id && onView(item)}
           className="flex-1"
         >
           <Eye className="w-3 h-3 mr-1" />
@@ -179,7 +180,7 @@ export default function CompanyCard({ company, onDelete, onView, onStartOutreach
         </Button>
         <Button
           size="sm"
-          onClick={() => onStartOutreach(company)}
+          onClick={() => onStartOutreach(item)}
           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
         >
           <Mail className="w-3 h-3 mr-1" />

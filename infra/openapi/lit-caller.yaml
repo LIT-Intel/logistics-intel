@@ -1,0 +1,221 @@
+swagger: "2.0"
+info: { title: "LIT Caller API", version: "1.0.0" }
+host: lit-caller-gw-2e68g4k3.uc.gateway.dev
+schemes: ["https"]
+x-google-endpoints:
+  - name: lit-caller-gw-2e68g4k3.uc.gateway.dev
+    allowCors: true
+
+paths:
+  /:
+    get:
+      operationId: "index"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "index_options"
+      responses:
+        "204":
+          description: OK
+  /healthz:
+    get:
+      operationId: "healthz"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/healthz
+      responses:
+        '200':
+          description: OK
+    options:
+      summary: CORS preflight
+      responses:
+        '204':
+          description: No content
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/healthz
+  /health:
+    get:
+      operationId: "health"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/health
+      responses:
+        '200':
+          description: OK
+    options:
+      summary: CORS preflight
+      responses:
+        '204':
+          description: No content
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/health
+
+  /search:
+    post:
+      operationId: "search"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/search
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      security: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "search_options"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/search
+      responses:
+        "204":
+          description: OK
+
+  /public/getFilterOptions:
+    get:
+      operationId: "getFilterOptions_get"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/public/getFilterOptions
+      produces:
+      - "application/json"
+      security: []
+      responses:
+        "200":
+          description: OK
+    post:
+      operationId: "getFilterOptions_post"
+      x-google-backend:
+        address: https://search-unified-18758026728.us-central1.run.app/public/getFilterOptions
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      security: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "getFilterOptions_options"
+      responses:
+        "204":
+          description: OK
+
+  /public/getCompanyDetails:
+    get:
+      operationId: "getCompanyDetails"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/public/getCompanyDetails
+      produces:
+      - "application/json"
+      security: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "getCompanyDetails_options"
+      responses:
+        "204":
+          description: OK
+
+  /public/getCompanyShipments:
+    get:
+      operationId: "getCompanyShipments"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/public/getCompanyShipments
+      produces:
+      - "application/json"
+      security: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "getCompanyShipments_options"
+      responses:
+        "204":
+          description: OK
+
+  /crm/saveCompany:
+    post:
+      operationId: "saveCompany"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/crm/saveCompany
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      security:
+      - firebase: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "saveCompany_options"
+      responses:
+        "204":
+          description: OK
+
+  /crm/savedCompanies:
+    get:
+      operationId: "savedCompanies"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/crm/savedCompanies
+      produces:
+      - "application/json"
+      security:
+      - firebase: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "savedCompanies_options"
+      responses:
+        "204":
+          description: OK
+
+  /crm/companyStage:
+    patch:
+      operationId: "companyStage"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/crm/companyStage
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      security:
+      - firebase: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "companyStage_options"
+      responses:
+        "204":
+          description: OK
+
+  /campaigns:
+    get:
+      operationId: "campaigns"
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app/campaigns
+      produces:
+      - "application/json"
+      security:
+      - firebase: []
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: "campaigns_options"
+      responses:
+        "204":
+          description: OK
+
+securityDefinitions:
+  firebase:
+    authorizationUrl: ""
+    flow: "implicit"
+    type: "oauth2"
+    x-google-issuer: "https://securetoken.google.com/logistics-intel"
+    x-google-jwks_uri: "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+    x-google-audiences: "logistics-intel"

@@ -1,0 +1,1 @@
+export const ok = (res: any, body: any) => res.status(200).json(body);

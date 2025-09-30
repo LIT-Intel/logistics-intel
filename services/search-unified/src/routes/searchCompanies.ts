@@ -60,14 +60,22 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const hsCsv     = hasHS     ? hsExact.join(',')    : '';   // e.g., "847130,850440"
 
     const sql = `
-  WITH companies AS (
+  WITH base AS (
     SELECT
-      company_id,
-      company_name,
-      COUNT(*) AS shipments_12m,
-      MAX(date) AS last_activity,
-      ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 20) AS top_routes,
-      ARRAY_AGG(STRUCT(carrier) ORDER BY date DESC LIMIT 20) AS top_carriers
+      -- Prefer real IDs/names when present in the shipments table;
+      -- fall back to normalized name and a stable hash-based id.
+      ANY_VALUE(company_id)       AS any_company_id,
+      ANY_VALUE(company_name)     AS any_company_name,
+      -- If name is null, try other name fields you may have (e.g., consignee/shipper)
+      ANY_VALUE(COALESCE(company_name, party_name, consignee_name, shipper_name)) AS any_party_name,
+      LOWER(REGEXP_REPLACE(COALESCE(company_name, party_name, consignee_name, shipper_name), r'\s+', ' ')) AS name_norm,
+      SAFE.CONCAT('comp_', TO_HEX(FARM_FINGERPRINT(LOWER(COALESCE(company_name, party_name, consignee_name, shipper_name))))) AS hash_company_id,
+      mode,
+      origin_country,
+      dest_country,
+      carrier,
+      date,
+      hs_code
     FROM `lit.shipments_daily_part`
     WHERE 1=1
       AND ( @has_mode  = FALSE OR UPPER(mode) = @mode)
@@ -78,33 +86,83 @@ r.post("/public/searchCompanies", async (req, res, next) => {
         OR
         ( @has_hs  = FALSE OR hs_code             IN UNNEST(SPLIT( @hs_csv,  ',')))
       )
-      ${q ? 'AND CONTAINS_SUBSTR(LOWER(company_name), LOWER( @q))' : ''}
+      ${q ? "AND CONTAINS_SUBSTR(LOWER(COALESCE(company_name, party_name, consignee_name, shipper_name)), LOWER(@q))" : ''}
       AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)
-    GROUP BY company_id, company_name
+  ),
+  companies AS (
+    SELECT
+      -- Choose ID: real one if present anywhere, else stable hash by name.
+      COALESCE(
+        ANY_VALUE(any_company_id),
+        ANY_VALUE(NULLIF(any_company_name, '')),
+        ANY_VALUE(NULLIF(any_party_name, '')),
+        ANY_VALUE(hash_company_id)
+      ) AS company_id,
+      -- Choose display name: prefer real company_name, fall back to party name, else id.
+      COALESCE(
+        ANY_VALUE(any_company_name),
+        ANY_VALUE(any_party_name),
+        ANY_VALUE(name_norm),
+        ANY_VALUE(hash_company_id)
+      ) AS company_name,
+
+      COUNT(*) AS shipments_12m,
+      MAX(date) AS last_activity_date,
+
+      -- Keep some recent rows for building tops
+      ARRAY_AGG(STRUCT(origin_country, dest_country) ORDER BY date DESC LIMIT 200) AS route_samples,
+      ARRAY_AGG(STRUCT(carrier)        ORDER BY date DESC LIMIT 200) AS carrier_samples
+    FROM base
+    GROUP BY name_norm, hash_company_id
   ),
   shaped AS (
     SELECT
-      c.*,
-      /* FE-friendly arrays extracted from structs */
+      company_id,
+      company_name,
+      shipments_12m,
+      -- Return DATE as ISO string for the FE (prevents {value:...} object)
+      CAST(last_activity_date AS STRING) AS last_activity,
+
+      -- Deduped “top” arrays
       ARRAY(
-        SELECT DISTINCT r.origin_country FROM UNNEST(c.top_routes) r
+        SELECT DISTINCT r.origin_country
+        FROM UNNEST(route_samples) r
         WHERE r.origin_country IS NOT NULL
         LIMIT 5
       ) AS origins_top,
+
       ARRAY(
-        SELECT DISTINCT r.dest_country FROM UNNEST(c.top_routes) r
+        SELECT DISTINCT r.dest_country
+        FROM UNNEST(route_samples) r
         WHERE r.dest_country IS NOT NULL
         LIMIT 5
       ) AS dests_top,
+
       ARRAY(
-        SELECT DISTINCT x.carrier FROM UNNEST(c.top_carriers) x
-        WHERE x.carrier IS NOT NULL
+        SELECT DISTINCT c.carrier
+        FROM UNNEST(carrier_samples) c
+        WHERE c.carrier IS NOT NULL
         LIMIT 5
       ) AS carriers_top
-    FROM companies c
+    FROM companies
   )
   SELECT
-    *, COUNT(*) OVER() AS total_rows
+    company_id,
+    company_name,
+    shipments_12m,
+    last_activity,
+    origins_top,
+    dests_top,
+    carriers_top,
+
+    -- camelCase mirrors for FE compatibility
+    shipments_12m AS shipments12m,
+    last_activity AS lastActivity,
+    origins_top   AS originsTop,
+    dests_top     AS destsTop,
+    carriers_top  AS carriersTop,
+
+    COUNT(*) OVER() AS total_rows
   FROM shaped
   ORDER BY shipments_12m DESC
   LIMIT @limit OFFSET @offset
@@ -141,8 +199,6 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       // snake_case (existing)
       shipments_12m: Number(r.shipments_12m ?? 0),
       last_activity: r.last_activity,
-      top_routes: r.top_routes ?? [],
-      top_carriers: r.top_carriers ?? [],
 
       // arrays extracted for quick UI use
       origins_top: Array.isArray(r.origins_top) ? r.origins_top : [],
@@ -150,7 +206,7 @@ r.post("/public/searchCompanies", async (req, res, next) => {
       carriers_top: Array.isArray(r.carriers_top) ? r.carriers_top : [],
 
       // camelCase mirrors (backward/forward compatible with FE)
-      shipments12m: Number(r.shipments_12m ?? 0),
+      shipments12m: Number(r.shipments12m ?? 0),
       lastActivity: r.last_activity ?? null,
       originsTop: Array.isArray(r.origins_top) ? r.origins_top : [],
       destsTop: Array.isArray(r.dests_top) ? r.dests_top : [],
