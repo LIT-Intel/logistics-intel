@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import CommandIcon from '@/components/common/CommandIcon';
 import PreCallBriefing from '@/components/company/PreCallBriefing';
 import { searchCompanies, getCompanyShipments, recallCompany, kpiFrom, CompanyItem } from '@/lib/api';
 import { buildPreCallPrompt } from '@/lib/ai';
@@ -66,27 +67,10 @@ export default function CompanyPage() {
     <div className='max-w-6xl mx-auto p-6 space-y-4'>
       <div className='flex items-center justify-between gap-4 flex-wrap'>
         <div>
-          {(() => {
-            const CommandIcon = () => (
-              <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true" className="drop-shadow-sm">
-                <defs>
-                  <linearGradient id="litGrad" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#6EE7F9"/>
-                    <stop offset="50%" stopColor="#60A5FA"/>
-                    <stop offset="100%" stopColor="#A78BFA"/>
-                  </linearGradient>
-                </defs>
-                <rect x="2" y="2" width="20" height="20" rx="6" fill="url(#litGrad)"/>
-                <path d="M7 12h10M12 7v10" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
-              </svg>
-            );
-            return (
-              <h1 className='text-[22px] md:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2'>
-                <CommandIcon />
-                <span>LIT Command Center</span>
-              </h1>
-            );
-          })()}
+          <h1 className='text-[22px] md:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2'>
+            <CommandIcon />
+            <span>LIT Command Center</span>
+          </h1>
           <div className='text-xs opacity-60'>ID: {id}</div>
         </div>
         <div className='flex gap-2'>
