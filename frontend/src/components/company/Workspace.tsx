@@ -82,6 +82,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   }, [companies, query]);
   const active = useMemo(() => companies.find(c => c.id === activeId), [companies, activeId]);
   const [tab, setTab] = useState('Overview');
+  const [subTab, setSubTab] = useState<'Bio'|'Products'|'Tradelanes'|'News'|'LinkedIn'|'Growth'>('Bio');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<any | null>(null);
@@ -209,10 +210,60 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 </div>
               </div>
               <div className='mt-4'>
-                <Tabs tabs={["Overview", "Shipments", "Contacts", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
+                <Tabs tabs={["Overview", "Pre-Call", "Shipments", "Contacts", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
+                  <div className='mt-3'>
+                    <div className='flex gap-2 border-b mb-3'>
+                      {(['Bio','Products','Tradelanes','News','LinkedIn','Growth'] as const).map(k => (
+                        <button key={k} onClick={()=>setSubTab(k)} className={`px-3 py-2 text-sm ${subTab===k?'border-b-2 border-blue-600 font-semibold':'text-slate-500'}`}>{k}</button>
+                      ))}
+                    </div>
+                    {subTab==='Bio' && (
+                      <div className='rounded-2xl p-4 border bg-gradient-to-br from-sky-50 via-blue-50 to-violet-50'>
+                        <div className='text-xl font-extrabold text-slate-900 mb-1'>{overview.name}</div>
+                        <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
+                      </div>
+                    )}
+                    {subTab==='Products' && (
+                      <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                        <div className='rounded-xl border bg-white p-3'>
+                          <div className='h-40 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
+                          <div className='mt-2 text-sm font-medium'>Primary Product</div>
+                        </div>
+                        <div className='rounded-xl border bg-white p-3'>
+                          <div className='h-40 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
+                          <div className='mt-2 text-sm font-medium'>Secondary Product</div>
+                        </div>
+                      </div>
+                    )}
+                    {subTab==='Tradelanes' && (
+                      <div className='rounded-xl border bg-white p-3'>
+                        <div className='text-sm font-medium mb-2'>Key Tradelanes</div>
+                        <ul className='text-sm list-disc pl-5'>
+                          {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
+                            <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {subTab==='News' && (
+                      <div className='rounded-xl border bg-white p-3 text-sm text-slate-700'>Latest news coming soon.</div>
+                    )}
+                    {subTab==='LinkedIn' && (
+                      <div className='rounded-xl border bg-white p-3 text-sm'>
+                        <div>LinkedIn: <a className='text-blue-600 underline' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a></div>
+                      </div>
+                    )}
+                    {subTab==='Growth' && (
+                      <div className='rounded-xl border bg-white p-3'>
+                        <div className='text-sm text-slate-600'>Financials integration to follow. Basic growth placeholder shown in Pre‑Call charts.</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!loading && !error && tab === 'Pre-Call' && overview && (
                   <div className='mt-3'>
                     <PreCallBriefing company={{ name: overview.name, kpis: overview.kpis || overview.kpi || overview.k, charts: overview.charts, ai: overview.ai }} />
                   </div>
