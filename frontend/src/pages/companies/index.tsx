@@ -61,7 +61,7 @@ export default function Companies() {
           <div className='text-xs text-gray-500'>Save from Search will appear here</div>
         </div>
       </header>
-      <main className='px-4 py-6'>
+      <main className='pl-4 pr-[10px] py-6'>
         <Workspace companies={companies} onAdd={() => setOpen(true)} />
       </main>
       <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />
