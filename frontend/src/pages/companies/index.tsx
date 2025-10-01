@@ -13,8 +13,18 @@ export default function Companies() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) setCompanies(JSON.parse(raw));
+      const rawA = localStorage.getItem(LS_KEY);
+      const rawB = localStorage.getItem('manualCompanies');
+      const a = rawA ? JSON.parse(rawA) : [];
+      const b = rawB ? JSON.parse(rawB) : [];
+      const map = new Map<string, any>();
+      [...a, ...b].forEach((c: any) => {
+        const id = String(c?.id || c?.company_id || '');
+        if (!id) return;
+        if (!map.has(id)) map.set(id, c);
+      });
+      const merged = Array.from(map.values());
+      if (merged.length) setCompanies(merged);
     } catch {}
   }, []);
 

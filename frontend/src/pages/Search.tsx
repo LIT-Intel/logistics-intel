@@ -137,7 +137,12 @@ export default function Search() {
       setTotalResults(total);
     } catch (error) {
       console.error("Search error:", error);
-      setSearchError((error?.message && String(error.message)) || "Search failed. Please try again.");
+      const msg = String((error as any)?.message || 'internal error');
+      if (msg.includes('searchCompanies.sql') || msg.includes('ENOENT')) {
+        setSearchError('Search service is updating. Please retry in a moment.');
+      } else {
+        setSearchError(msg);
+      }
       setSearchResults([]);
       setTotalResults(0);
     } finally {
@@ -168,7 +173,18 @@ export default function Search() {
   const resultsQuery = useQuery({
     queryKey: ['searchCompanies', payload],
     queryFn: async () => {
-      const resp = await postSearchCompanies(payload as any);
+      let resp: any;
+      try {
+        resp = await postSearchCompanies(payload as any);
+      } catch (e: any) {
+        const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE || '';
+        const r = await fetch(`${String(base).replace(/\/$/, '')}/public/searchCompanies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!r.ok) {
+          const t = await r.text().catch(()=> '');
+          throw new Error(`Search failed. Please try again. (${r.status}) ${t.slice(0,160)}`);
+        }
+        resp = await r.json();
+      }
       const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
       const mapped = raw.map((item) => ({
         id: item.company_id || (item.company_name || '').toLowerCase().replace(/[^a-z0-9]+/g,'-'),
