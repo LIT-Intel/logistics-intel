@@ -10,6 +10,7 @@ import { createPageUrl } from "@/utils";
 import LitPageHeader from "../components/ui/LitPageHeader";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
+import LitKpi from "../components/ui/LitKpi";
 
 const safeSummary = {
   shipments90d: 0,
@@ -38,7 +39,7 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+    <div className="relative px-2 md:px-5 py-3 min-h-screen">
       <LitWatermark />
       <div className="max-w-7xl mx-auto">
         <LitPageHeader title="LIT Dashboard" />
@@ -50,6 +51,12 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+              <LitKpi label="Shipments (90d)" value={data.shipments90d} accentClass="from-sky-400 to-violet-500" />
+              <LitKpi label="Saved Companies" value={data.savedCompanies} accentClass="from-sky-400 to-violet-500" />
+              <LitKpi label="Recent Searches" value={data.recentSearches7d} accentClass="from-sky-400 to-violet-500" />
+              <LitKpi label="Active Users" value={0} accentClass="from-sky-400 to-violet-500" />
+            </div>
             <div className="mb-6">
               <LitPanel>
                 <DashboardKPICards stats={{ activeUsers: 0, searches: data.recentSearches7d, shipments: data.shipments90d, companies: data.savedCompanies }} />

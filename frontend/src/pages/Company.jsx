@@ -116,7 +116,7 @@ export default function Company() {
   }
 
   return (
-    <div className="relative">
+    <div className="relative px-2 md:px-5 py-3">
       <LitWatermark />
       <LitPageHeader title={summary?.company_name || 'Company'}>
         <div className="flex items-center gap-2">

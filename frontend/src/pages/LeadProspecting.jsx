@@ -169,7 +169,7 @@ export default function LeadProspecting() {
   }
 
   return (
-    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+    <div className="relative px-2 md:px-5 py-3 min-h-screen">
       <LitWatermark />
       <div className="max-w-7xl mx-auto">
         <LitPageHeader title="Lead Prospecting" />
