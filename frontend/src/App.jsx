@@ -152,14 +152,7 @@ export default function App() {
             </RequireAuth>
           }
         />
-        <Route
-          path="/app/transactions"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Transactions"><Transactions /></Layout>
-            </RequireAuth>
-          }
-        />
+        {/* Transactions removed */}
         <Route
           path="/app/widgets"
           element={

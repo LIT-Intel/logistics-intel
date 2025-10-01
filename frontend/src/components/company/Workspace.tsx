@@ -232,7 +232,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
                 <div>
-                  <h1 className='text-2xl font-black text-slate-900'>{active.name}</h1>
+          <h1 className='text-3xl md:text-3xl font-extrabold tracking-tight text-slate-900'>{active.name}</h1>
                   <div className='text-xs text-slate-500'>ID: {active.id}</div>
                 </div>
                 <div className='flex items-center gap-2'>
