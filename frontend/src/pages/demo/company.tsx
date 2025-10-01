@@ -24,7 +24,7 @@ export default function DemoCompany() {
           <div className='text-xs text-gray-500'>Fixtures only; production data loads on /company/:id</div>
         </div>
       </header>
-      <main className='px-4 py-6'>
+      <main className='pl-4 pr-[10px] py-6'>
         <Workspace companies={companies} onAdd={onAdd} />
         <div className='max-w-7xl mx-auto mt-6 text-xs text-slate-500'>Tip: Use Add to simulate manual company. KPIs will show 0 / pending enrichment — parity with production create.</div>
       </main>
