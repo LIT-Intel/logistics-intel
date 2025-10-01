@@ -87,6 +87,8 @@ function Tabs({ tabs, value, onChange }: { tabs: string[]; value: string; onChan
 
 export default function Workspace({ companies, onAdd }: { companies: any[]; onAdd: () => void }) {
   const [activeId, setActiveId] = useState(companies[0]?.id);
+  const aiVendor = ((import.meta as any)?.env?.VITE_AI_VENDOR || (process as any)?.env?.NEXT_PUBLIC_AI_VENDOR || '') as string;
+  const aiEnabled = !!aiVendor;
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -242,7 +244,8 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-xs' onClick={async()=>{
                     try { await enrichCompany({ company_id: String(active.id) }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
                   }}>Enrich Now</button>
-                  <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                  <button className='px-3 py-1.5 rounded border text-xs disabled:opacity-60' title={aiEnabled? 'AI Recall' : 'Connect AI in Settings → Providers'} disabled={!aiEnabled}
+                    onClick={async()=>{
                     try { await recallCompany({ company_id: String(active.id) }); alert('AI Recall requested'); } catch(e:any){ alert('Recall failed: '+ String(e?.message||e)); }
                   }}>AI Recall</button>
                 </div>

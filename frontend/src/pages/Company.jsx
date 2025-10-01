@@ -95,6 +95,7 @@ export default function Company() {
 
   const handleRecall = async () => {
     if (!companyId) return;
+    const vendor = (import.meta?.env?.VITE_AI_VENDOR || process?.env?.NEXT_PUBLIC_AI_VENDOR || 'gemini');
     try {
       const r = await recallCompany({ company_id: String(companyId) });
       setRecall({ summary: r?.summary || '', bullets: Array.isArray(r?.bullets) ? r.bullets : [] });
