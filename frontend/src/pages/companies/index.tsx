@@ -58,15 +58,19 @@ export default function Companies() {
 
   return (
     <div className='min-h-screen w-full bg-gradient-to-br from-gray-50 to-white'>
-      <div className='px-6 py-4'>
-        <header className='mb-4 flex items-center gap-3'>
+      <div className='pl-[5px] pr-[5px] pt-[5px]'>
+        <header className='mb-[5px] flex items-center gap-[5px]'>
           <CommandIcon />
           <h1 className='text-4xl md:text-5xl font-extrabold tracking-tight uppercase'>LIT Command Center</h1>
         </header>
       </div>
-      <main className='pl-4 pr-[10px] py-2'>
-        <Workspace companies={companies} onAdd={() => setOpen(true)} />
-      </main>
+      <div className='flex gap-[5px] pl-[5px] pr-[5px]'>
+        <aside className='w-[340px] shrink-0'>
+          <Workspace companies={companies} onAdd={() => setOpen(true)} />
+        </aside>
+        <main className='flex-1 min-w-0'>
+        </main>
+      </div>
       <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />
     </div>
   );
