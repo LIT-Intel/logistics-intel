@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
 import CommandIcon from '@/components/common/CommandIcon';
 import PreCallBriefing from '@/components/company/PreCallBriefing';
 import { searchCompanies, getCompanyShipments, recallCompany, kpiFrom, CompanyItem } from '@/lib/api';
@@ -79,7 +80,7 @@ export default function CompanyPage() {
             await fetch(`${base}/crm/saveCompany`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: id, company_name: data.name, source: 'company' }) });
             alert('Saved to CRM');
           }}>Save to CRM</button>
-          <button className='rounded border px-3 py-1.5 text-sm' onClick={async () => {
+          <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-sm' onClick={async () => {
             const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE;
             await fetch(`${base}/crm/enrich`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: id }) });
             alert('Enrichment queued');
@@ -91,9 +92,13 @@ export default function CompanyPage() {
             const ai = await recallCompany({ company_id: id, questions: [prompt] });
             setData((prev: any) => prev ? { ...prev, ai: { summary: (ai as any)?.summary || '', bullets: Array.isArray((ai as any)?.bullets) ? (ai as any).bullets : [] } } : prev);
           }}>Refresh Recall</button>
+          <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); pdf.save('company.pdf'); }catch(e:any){ alert('PDF failed: '+ String(e?.message||e)); } }}>Save PDF</button>
+          <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const blob=pdf.output('blob'); const form=new FormData(); form.append('file', blob, 'company.pdf'); form.append('companyId', id); await fetch('/api/emailPdf', { method:'POST', body:form }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
         </div>
       </div>
-      <PreCallBriefing company={{ name: data.name, kpis: data.kpis, charts: data.charts, ai: data.ai }} />
+      <section id='company-pdf-root'>
+        <PreCallBriefing company={{ name: data.name, kpis: data.kpis, charts: data.charts, ai: data.ai }} />
+      </section>
     </div>
   );
 }
