@@ -20,13 +20,44 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
 );
 
 function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick: () => void }) {
+  const city   = c.city || c.meta?.city || '—';
+  const state  = c.state || c.meta?.state || '';
+  const domain = c.domain || c.website || c.meta?.website || '';
+
   return (
-    <button onClick={onClick} className={`w-full text-left rounded-2xl p-4 mb-3 transition shadow hover:shadow-lg border ${active ? 'border-slate-300 bg-white' : 'border-white/40 bg-gradient-to-br from-white/80 to-white/60 backdrop-blur'}`}>
-      <div className='font-semibold'>{c.name}</div>
-      <div className='text-xs text-slate-500'>Shipments 12M</div>
-      <div className='text-lg font-extrabold'>{(c.kpis?.shipments12m ?? 0).toLocaleString()}</div>
-      <div className='mt-1 text-[11px] text-slate-500'>Last: {c.kpis?.lastActivity || '—'}</div>
-      <div className='mt-2 flex gap-1 flex-wrap'>{(c.kpis?.originsTop || []).slice(0, 3).map((x: string) => (<Pill key={x}>{x}</Pill>))}</div>
+    <button
+      onClick={onClick}
+      className={[
+        'w-full text-left rounded-2xl p-4 mb-3 transition',
+        'shadow-sm hover:shadow-lg',
+        'border',
+        active ? 'border-slate-300 bg-white' : 'border-white/70 bg-white/95',
+        'hover:-translate-y-[1px] relative'
+      ].join(' ')}
+    >
+      <span className="absolute left-0 top-3 bottom-3 w-0.5 rounded-full bg-gradient-to-b from-cyan-300 via-blue-400 to-violet-400" />
+      <div className='font-semibold text-slate-900 pr-1'>{c.name}</div>
+      <div className='mt-0.5 text-xs text-slate-600'>
+        {city}{state ? `, ${state}` : ''}
+      </div>
+      {domain ? (
+        <div className='mt-2'>
+          <a
+            href={domain.startsWith('http') ? domain : `https://${domain}`}
+            target='_blank' rel='noreferrer'
+            className='inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-gradient-to-r from-sky-50 to-violet-50 border-sky-100 text-sky-700 hover:text-sky-800 hover:from-sky-100 hover:to-violet-100'
+          >
+            <span className='h-1.5 w-1.5 rounded-full bg-sky-400' />
+            {domain.replace(/^https?:\/\//, '')}
+          </a>
+        </div>
+      ) : null}
+      <div className='mt-3 grid grid-cols-2 gap-2 text-[11px]'>
+        <div className='text-slate-500'>Shipments 12M</div>
+        <div className='text-right text-slate-900 font-bold'>{(c.kpis?.shipments12m ?? 0).toLocaleString()}</div>
+        <div className='text-slate-500'>Last</div>
+        <div className='text-right text-slate-700'>{c.kpis?.lastActivity || '—'}</div>
+      </div>
     </button>
   );
 }
@@ -146,7 +177,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   return (
     <div className='w-full mx-auto flex flex-col lg:flex-row gap-5 px-5'>
       <aside className='w-full lg:w-[320px] xl:w-[360px] shrink-0'>
-        <div className='rounded-3xl p-4 bg-white/80 backdrop-blur border border-white/50 shadow-xl'>
+        <div className='rounded-3xl p-4 bg-white/80 backdrop-blur border border-white/70 shadow-xl'>
           <div className='mb-3 flex items-center justify-between gap-2'>
             <h2 className='text-sm font-semibold text-slate-700'>Companies</h2>
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-gradient-to-r from-blue-600 to-blue-500 text-white'>Add</button>
@@ -165,7 +196,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
         </div>
       </aside>
       <main className='min-w-0 flex-1 pr-5'>
-        <div className='rounded-3xl p-5 md:p-6 bg-white/80 backdrop-blur border border-white/50 shadow-2xl'>
+        <div className='rounded-3xl p-6 bg-white/75 backdrop-blur border border-white/60 shadow-2xl'>
           {active ? (
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
