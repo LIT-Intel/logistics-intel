@@ -227,9 +227,21 @@ export default function Search() {
       // After successful save, navigate to Command Center
       navigate('/companies');
     } catch (error) {
-      console.error("Failed to save company:", error);
-      setSavedCompanyIds(originalSavedIds);
-      alert("Failed to save company. Please try again.");
+      // Local fallback: persist minimal record so user can continue flow
+      try {
+        const id = String(company.company_id || company.id || ('comp_' + Math.random().toString(36).slice(2, 8)));
+        const lsKey = 'lit_companies';
+        const raw = localStorage.getItem(lsKey);
+        const existing = raw ? JSON.parse(raw) : [];
+        const name = String(company.name || company.company_name || 'Company');
+        const fresh = { id, name, kpis: { shipments12m: company.shipments_12m || 0, lastActivity: company.last_seen || null, originsTop: [], destsTop: [], carriersTop: [] } };
+        localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
+        navigate('/companies');
+      } catch (e) {
+        console.error("Failed to save company:", error);
+        setSavedCompanyIds(originalSavedIds);
+        alert("Failed to save company. Please try again.");
+      }
     } finally {
       setSavingCompanyId(null);
     }

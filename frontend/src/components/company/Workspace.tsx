@@ -232,8 +232,16 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   <h1 className='text-2xl font-black text-slate-900'>{active.name}</h1>
                   <div className='text-xs text-slate-500'>ID: {active.id}</div>
                 </div>
-                <div className='flex gap-2 text-xs'>
-                  {(active.kpis?.destsTop || []).map((d: string) => (<Pill key={d}>Dest {d}</Pill>))}
+                <div className='flex items-center gap-2'>
+                  <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                    try { await saveCompanyToCrm({ company_id: String(active.id), company_name: active.name, source:'companies' }); alert('Saved to CRM'); } catch(e:any){ alert('Save failed: '+ String(e?.message||e)); }
+                  }}>Save</button>
+                  <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                    try { await enrichCompany({ company_id: String(active.id) }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
+                  }}>Enrich Now</button>
+                  <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                    try { await recallCompany({ company_id: String(active.id) }); alert('AI Recall requested'); } catch(e:any){ alert('Recall failed: '+ String(e?.message||e)); }
+                  }}>AI Recall</button>
                 </div>
               </div>
               <div className='mt-4'>
