@@ -280,3 +280,63 @@ export async function createCompany(body: { name: string; domain?: string; stree
   return res.json();
 }
 
+export async function getCompany(company_id: string) {
+  const url = `${API_BASE}/crm/company.get?company_id=${encodeURIComponent(company_id)}`;
+  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  if (!res.ok) throw new Error(`company.get ${res.status}`);
+  return res.json();
+}
+
+export async function enrichContacts(company_id: string) {
+  const res = await fetch(`${API_BASE}/crm/contacts.enrich`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify({ company_id })
+  });
+  if (!res.ok) throw new Error(`contacts.enrich ${res.status}`);
+  return res.json();
+}
+
+export async function listContacts(company_id: string, dept?: string) {
+  const u = new URL(`${API_BASE}/crm/contacts.list`);
+  u.searchParams.set('company_id', company_id);
+  if (dept) u.searchParams.set('dept', dept);
+  const res = await fetch(u.toString(), { headers: { 'accept': 'application/json' } });
+  if (!res.ok) throw new Error(`contacts.list ${res.status}`);
+  return res.json();
+}
+
+export async function getEmailThreads(company_id: string) {
+  const url = `${API_BASE}/crm/email.threads?company_id=${encodeURIComponent(company_id)}`;
+  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  if (!res.ok) throw new Error(`email.threads ${res.status}`);
+  return res.json();
+}
+
+export async function getCalendarEvents(company_id: string) {
+  const url = `${API_BASE}/crm/calendar.events?company_id=${encodeURIComponent(company_id)}`;
+  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  if (!res.ok) throw new Error(`calendar.events ${res.status}`);
+  return res.json();
+}
+
+export async function createTask(p: { company_id: string; title: string; due_date?: string; notes?: string }) {
+  const res = await fetch(`${API_BASE}/crm/task.create`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify(p)
+  });
+  if (!res.ok) throw new Error(`task.create ${res.status}`);
+  return res.json();
+}
+
+export async function createAlert(p: { company_id: string; type: string; message: string }) {
+  const res = await fetch(`${API_BASE}/crm/alert.create`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify(p)
+  });
+  if (!res.ok) throw new Error(`alert.create ${res.status}`);
+  return res.json();
+}
+
