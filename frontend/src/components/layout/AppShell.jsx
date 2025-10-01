@@ -61,6 +61,7 @@ export default function AppShell({ currentPageName, children }) {
             <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
             <SideLink to="/app/search" icon={Search} label="Search" />
             {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Command Center" />}
+            <SideLink to="/app/rfp" icon={FileText} label="RFP Studio" />
             {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
           </nav>
 
