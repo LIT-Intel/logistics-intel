@@ -121,7 +121,11 @@ export default function AppShell({ currentPageName, children }) {
               </div>
             </div>
           </header>
-          <div className="p-4 md:p-6 flex-1 overflow-y-auto min-w-0">{children}</div>
+          <div className="flex-1 overflow-y-auto min-w-0 w-full flex gap-[5px] pl-[5px] pr-[5px]">
+            <div className="flex-1 min-w-0 max-w-none">
+              {children}
+            </div>
+          </div>
         </main>
       </div>
 
