@@ -52,6 +52,7 @@ export default function Search() {
   const [viewMode, setViewMode] = useState("grid");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerId, setDrawerId] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   
   const [hasSearched, setHasSearched] = useState(false);
   useEffect(() => {
@@ -304,7 +305,20 @@ export default function Search() {
           </div>
         </div>
 
-        <SearchFilters onChange={setFilters} />
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-sm text-gray-700">Filters</div>
+          <button
+            className="text-sm px-3 py-1.5 rounded border bg-white hover:bg-gray-50"
+            onClick={() => setShowFilters((v) => !v)}
+          >
+            {showFilters ? "Hide Filters" : "Show Filters"}
+          </button>
+        </div>
+        {showFilters && (
+          <div className="mb-6 bg-white/80 backdrop-blur-sm rounded-2xl shadow p-4 border border-gray-200/60">
+            <SearchFilters onChange={setFilters} />
+          </div>
+        )}
 
         {searchError && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
