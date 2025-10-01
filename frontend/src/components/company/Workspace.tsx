@@ -39,33 +39,33 @@ function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick:
     <button
       onClick={onClick}
       className={[
-        'w-full text-left rounded-2xl p-5 mb-4 transition',
-        'shadow-sm hover:shadow-xl',
+        'w-full text-left rounded-xl p-3 mb-2 transition',
+        'shadow-sm hover:shadow',
         'border',
-        active ? 'border-slate-300 bg-white' : 'border-white/70 bg-gradient-to-br from-white via-slate-50 to-indigo-50',
+        active ? 'border-indigo-500 bg-white' : 'border-gray-200 bg-white',
         'hover:-translate-y-[1px] relative'
       ].join(' ')}
     >
-      <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-gradient-to-b from-cyan-300 via-blue-500 to-violet-500" />
-      <div className='font-extrabold text-slate-900 pr-1 text-[18px] md:text-[20px] tracking-tight'>{c.name}</div>
-      <div className='mt-0.5 text-xs text-slate-600'>
+      <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-gradient-to-b from-blue-500 via-indigo-500 to-purple-500" />
+      <div className='font-semibold text-slate-900 pr-1 text-[15px] md:text-[16px] tracking-tight'>{c.name}</div>
+      <div className='mt-0.5 text-[11px] text-slate-600'>
         {city}{state ? `, ${state}` : ''}
       </div>
       {domain ? (
-        <div className='mt-2'>
+        <div className='mt-1.5'>
           <a
             href={domain.startsWith('http') ? domain : `https://${domain}`}
             target='_blank' rel='noreferrer'
-            className='inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-gradient-to-r from-sky-100 via-blue-100 to-violet-100 border-sky-200 text-sky-800 hover:text-sky-900 hover:from-sky-200 hover:to-violet-200 shadow-sm'
+            className='inline-flex items-center gap-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-700 hover:text-gray-900'
           >
-            <span className='h-1.5 w-1.5 rounded-full bg-sky-500' />
+            <span className='h-1.5 w-1.5 rounded-full bg-gray-400' />
             {domain.replace(/^https?:\/\//, '')}
           </a>
         </div>
       ) : null}
-      <div className='mt-3 grid grid-cols-2 gap-3 text-[12px]'>
+      <div className='mt-2 grid grid-cols-2 gap-2 text-[10px]'>
         <div className='text-slate-500'>Shipments 12M</div>
-        <div className='text-right text-slate-900 font-bold'>{(c.kpis?.shipments12m ?? 0).toLocaleString()}</div>
+        <div className='text-right text-slate-900 font-semibold text-sm'>{(c.kpis?.shipments12m ?? 0).toLocaleString()}</div>
         <div className='text-slate-500'>Last</div>
         <div className='text-right text-slate-700'>{c.kpis?.lastActivity || '—'}</div>
       </div>
