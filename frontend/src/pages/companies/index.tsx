@@ -26,6 +26,19 @@ export default function Companies() {
       const merged = Array.from(map.values());
       if (merged.length) setCompanies(merged);
     } catch {}
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LS_KEY || e.key === 'manualCompanies') {
+        try {
+          const a = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+          const b = JSON.parse(localStorage.getItem('manualCompanies') || '[]');
+          const map = new Map<string, any>();
+          [...a, ...b].forEach((c: any) => { const id = String(c?.id || c?.company_id || ''); if (id && !map.has(id)) map.set(id, c); });
+          setCompanies(Array.from(map.values()));
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   useEffect(() => {
