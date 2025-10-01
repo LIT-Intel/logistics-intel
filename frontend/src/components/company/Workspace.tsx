@@ -92,7 +92,6 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   }, [companies, query]);
   const active = useMemo(() => companies.find(c => c.id === activeId), [companies, activeId]);
   const [tab, setTab] = useState('Overview');
-  const [subTab, setSubTab] = useState<'Bio'|'Products'|'Tradelanes'|'News'|'LinkedIn'|'Growth'|'Spend'>('Bio');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<any | null>(null);
@@ -224,74 +223,63 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
-                  <div className='mt-3'>
-                    <div className='flex gap-2 border-b mb-3'>
-                      {(['Bio','Products','Tradelanes','News','LinkedIn','Growth','Spend'] as const).map(k => (
-                        <button key={k} onClick={()=>setSubTab(k)} className={`px-3 py-2 text-sm ${subTab===k?'border-b-2 border-blue-600 font-semibold':'text-slate-500'}`}>{k}</button>
-                      ))}
+                  <div className='mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4'>
+                    {/* Bio card */}
+                    <div className='rounded-2xl p-4 border bg-gradient-to-br from-sky-50 via-blue-50 to-violet-50'>
+                      <div className='text-[15px] font-extrabold text-slate-900 mb-1'>{overview.name}</div>
+                      <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
                     </div>
-                    {subTab==='Bio' && (
-                      <div className='rounded-2xl p-4 border bg-gradient-to-br from-sky-50 via-blue-50 to-violet-50'>
-                        <div className='text-xl font-extrabold text-slate-900 mb-1'>{overview.name}</div>
-                        <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
+                    {/* Products card */}
+                    <div className='rounded-2xl border bg-white p-4'>
+                      <div className='text-sm font-medium mb-2'>Products</div>
+                      <div className='grid grid-cols-2 gap-2'>
+                        <div className='h-24 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
+                        <div className='h-24 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
                       </div>
-                    )}
-                    {subTab==='Products' && (
-                      <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-                        <div className='rounded-xl border bg-white p-3'>
-                          <div className='h-40 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
-                          <div className='mt-2 text-sm font-medium'>Primary Product</div>
+                    </div>
+                    {/* Tradelanes card */}
+                    <div className='rounded-2xl border bg-white p-4'>
+                      <div className='text-sm font-medium mb-2'>Key Tradelanes</div>
+                      <ul className='text-sm list-disc pl-5'>
+                        {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
+                          <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    {/* News card */}
+                    <div className='rounded-2xl border bg-white p-4'>
+                      <div className='text-sm font-medium mb-2'>Latest News</div>
+                      <div className='text-sm text-slate-600'>Coming soon.</div>
+                    </div>
+                    {/* LinkedIn card */}
+                    <div className='rounded-2xl border bg-white p-4'>
+                      <div className='text-sm font-medium mb-2'>LinkedIn</div>
+                      <a className='text-blue-600 underline text-sm' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a>
+                    </div>
+                    {/* Growth card */}
+                    <div className='rounded-2xl border bg-white p-4'>
+                      <div className='text-sm font-medium mb-2'>Historical Growth</div>
+                      <div className='text-sm text-slate-600'>Integrations for charts and financials to follow.</div>
+                    </div>
+                    {/* Spend estimator card */}
+                    <div className='rounded-2xl border bg-white p-4'>
+                      <div className='text-sm font-medium mb-2'>Logistics Spend Estimator</div>
+                      <div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-sm'>
+                        <div className='rounded-lg border p-3'>
+                          <div className='text-slate-500'>Shipments (12M)</div>
+                          <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
                         </div>
-                        <div className='rounded-xl border bg-white p-3'>
-                          <div className='h-40 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
-                          <div className='mt-2 text-sm font-medium'>Secondary Product</div>
+                        <div className='rounded-lg border p-3'>
+                          <div className='text-slate-500'>Est. Ocean Spend</div>
+                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
+                        </div>
+                        <div className='rounded-lg border p-3'>
+                          <div className='text-slate-500'>Est. Air Spend</div>
+                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
                         </div>
                       </div>
-                    )}
-                    {subTab==='Tradelanes' && (
-                      <div className='rounded-xl border bg-white p-3'>
-                        <div className='text-sm font-medium mb-2'>Key Tradelanes</div>
-                        <ul className='text-sm list-disc pl-5'>
-                          {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
-                            <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {subTab==='News' && (
-                      <div className='rounded-xl border bg-white p-3 text-sm text-slate-700'>Latest news coming soon.</div>
-                    )}
-                    {subTab==='LinkedIn' && (
-                      <div className='rounded-xl border bg-white p-3 text-sm'>
-                        <div>LinkedIn: <a className='text-blue-600 underline' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a></div>
-                      </div>
-                    )}
-                    {subTab==='Growth' && (
-                      <div className='rounded-xl border bg-white p-3'>
-                        <div className='text-sm text-slate-600'>Financials integration to follow. Basic growth placeholder shown in Pre‑Call charts.</div>
-                      </div>
-                    )}
-                    {subTab==='Spend' && (
-                      <div className='rounded-xl border bg-white p-3'>
-                        <div className='text-sm font-medium mb-2'>Logistics Spend Estimator</div>
-                        <p className='text-sm text-slate-600 mb-3'>Estimated annual logistics spend based on last 12 months shipment volume and market benchmark rates.</p>
-                        <div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-sm'>
-                          <div className='rounded-lg border p-3'>
-                            <div className='text-slate-500'>Shipments (12M)</div>
-                            <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
-                          </div>
-                          <div className='rounded-lg border p-3'>
-                            <div className='text-slate-500'>Est. Ocean Spend</div>
-                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
-                          </div>
-                          <div className='rounded-lg border p-3'>
-                            <div className='text-slate-500'>Est. Air Spend</div>
-                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
-                          </div>
-                        </div>
-                        <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
-                      </div>
-                    )}
+                      <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
+                    </div>
                   </div>
                 )}
                 {!loading && !error && tab === 'Pre-Call' && overview && (
