@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import CommandIcon from '@/components/common/CommandIcon';
-import MobileCompaniesDrawer from '@/components/company/MobileCompaniesDrawer';
 import CreateCompanyModal from '@/components/company/CreateCompanyModal';
 import Workspace from '@/components/company/Workspace';
 
@@ -65,16 +64,9 @@ export default function Companies() {
           <h1 className='text-4xl md:text-5xl font-extrabold tracking-tight uppercase'>LIT Command Center</h1>
         </header>
       </div>
-      <div className='w-full flex gap-[5px] pl-[5px] pr-[5px]'>
-        <aside className='hidden md:block w-[340px] shrink-0'>
-          <Workspace companies={companies} onAdd={() => setOpen(true)} />
-        </aside>
-        <main className='flex-1 min-w-0 max-w-none'>
-          <MobileCompaniesDrawer className='md:hidden mb-2' />
-          <section id='company-pdf-root' className='w-full'>
-            <Workspace companies={companies} onAdd={() => setOpen(true)} />
-          </section>
-        </main>
+      <div className='w-full pl-[5px] pr-[5px]'>
+        {/* Render Workspace once (includes left rail + main) */}
+        <Workspace companies={companies} onAdd={() => setOpen(true)} />
       </div>
       <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />
     </div>
