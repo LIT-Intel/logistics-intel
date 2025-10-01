@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign } from 'lucide-react';
+import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign, Sparkles } from 'lucide-react';
 import PreCallBriefing from '@/components/company/PreCallBriefing';
 import { buildPreCallPrompt } from '@/lib/ai';
 import {
@@ -430,10 +430,9 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
             </>
           ) : (
             <div className='flex items-center justify-center min-h-[420px]'>
-              <div className='text-center max-w-lg'>
-                <div className='mx-auto h-20 w-20 rounded-2xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-rose-500 shadow-lg' />
-                <p className='mt-4 font-bold text-slate-900'>This is your COMPANY ENRICHMENT COMMAND CENTER — select a company on the left to view KPIs, shipments, contacts, and AI insights.</p>
-                <p className='mt-2 text-sm text-slate-600'>Use Save, Enrich, and AI Recall actions to populate data once a company is selected.</p>
+              <div className='relative text-center max-w-xl px-6'>
+                <Sparkles className='absolute inset-0 m-auto w-48 h-48 text-indigo-300 opacity-15 pointer-events-none' />
+                <p className='relative font-bold text-slate-900'>This is your COMPANY ENRICHMENT COMMAND CENTER — select a company on the left to view KPIs, shipments, contacts, and AI insights.</p>
               </div>
             </div>
           )}
