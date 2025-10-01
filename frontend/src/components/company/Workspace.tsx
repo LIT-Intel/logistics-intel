@@ -39,15 +39,15 @@ function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick:
     <button
       onClick={onClick}
       className={[
-        'w-full text-left rounded-2xl p-4 mb-3 transition',
-        'shadow-sm hover:shadow-lg',
+        'w-full text-left rounded-2xl p-5 mb-4 transition',
+        'shadow-sm hover:shadow-xl',
         'border',
-        active ? 'border-slate-300 bg-white' : 'border-white/70 bg-white/95',
+        active ? 'border-slate-300 bg-white' : 'border-white/70 bg-gradient-to-br from-white via-slate-50 to-indigo-50',
         'hover:-translate-y-[1px] relative'
       ].join(' ')}
     >
-      <span className="absolute left-0 top-3 bottom-3 w-0.5 rounded-full bg-gradient-to-b from-cyan-300 via-blue-400 to-violet-400" />
-      <div className='font-extrabold text-slate-900 pr-1 text-[16px] md:text-[18px] tracking-tight'>{c.name}</div>
+      <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-gradient-to-b from-cyan-300 via-blue-500 to-violet-500" />
+      <div className='font-extrabold text-slate-900 pr-1 text-[18px] md:text-[20px] tracking-tight'>{c.name}</div>
       <div className='mt-0.5 text-xs text-slate-600'>
         {city}{state ? `, ${state}` : ''}
       </div>
@@ -63,7 +63,7 @@ function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick:
           </a>
         </div>
       ) : null}
-      <div className='mt-3 grid grid-cols-2 gap-2 text-[11px]'>
+      <div className='mt-3 grid grid-cols-2 gap-3 text-[12px]'>
         <div className='text-slate-500'>Shipments 12M</div>
         <div className='text-right text-slate-900 font-bold'>{(c.kpis?.shipments12m ?? 0).toLocaleString()}</div>
         <div className='text-slate-500'>Last</div>
@@ -188,10 +188,10 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   return (
     <div className='w-full mx-auto flex flex-col lg:flex-row gap-6 px-5'>
       <aside className='w-full lg:w-[320px] xl:w-[360px] shrink-0'>
-        <div className='rounded-3xl p-4 bg-white/85 backdrop-blur border border-white/70 shadow-[0_10px_40px_-10px_rgba(30,64,175,0.25)]'>
-          <div className='mb-3 flex items-center justify-between gap-2'>
-            <h2 className='text-sm font-semibold text-slate-700'>Companies</h2>
-            <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-gradient-to-r from-blue-600 to-blue-500 text-white'>Add</button>
+        <div className='rounded-3xl p-4 bg-white/90 backdrop-blur border border-white/70 shadow-[0_10px_40px_-10px_rgba(30,64,175,0.25)]'>
+          <div className='mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white'>
+            <h2 className='text-sm font-semibold'>Companies</h2>
+            <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg bg-white/15 hover:bg-white/25 transition'>Add</button>
           </div>
           <div className='mb-3'>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
@@ -224,92 +224,63 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
-                  <div className='mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6'>
+                  <div className='mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-7'>
                     {/* Bio */}
-                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
-                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
-                        <Building2 className='h-4 w-4' />
-                        <div className='text-sm font-semibold'>Company Bio</div>
-                      </div>
-                      <div className='p-4'>
-                        <div className='text-[15px] font-extrabold text-slate-900 mb-1'>{overview.name}</div>
-                        <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
-                      </div>
+                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Company Bio</h3>
+                      <div className='text-[16px] font-extrabold text-slate-900 mb-2'>{overview.name}</div>
+                      <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
                     </div>
                     {/* Products */}
-                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
-                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
-                        <PackageIcon className='h-4 w-4' />
-                        <div className='text-sm font-semibold'>Products</div>
-                      </div>
-                      <div className='p-4 grid grid-cols-2 gap-2'>
-                        <div className='h-24 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
-                        <div className='h-24 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
+                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Products</h3>
+                      <div className='grid grid-cols-2 gap-3'>
+                        <div className='h-36 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
+                        <div className='h-36 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
                       </div>
                     </div>
                     {/* Tradelanes */}
-                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
-                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
-                        <ShipIcon className='h-4 w-4' />
-                        <div className='text-sm font-semibold'>Key Tradelanes</div>
-                      </div>
-                      <div className='p-4'>
-                        <ul className='text-sm list-disc pl-5'>
-                          {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
-                            <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
-                          ))}
-                        </ul>
-                      </div>
+                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Key Tradelanes</h3>
+                      <ul className='text-sm list-disc pl-5'>
+                        {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
+                          <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
+                        ))}
+                      </ul>
                     </div>
                     {/* News */}
-                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
-                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
-                        <Newspaper className='h-4 w-4' />
-                        <div className='text-sm font-semibold'>Latest News</div>
-                      </div>
-                      <div className='p-4 text-sm text-slate-700'>Coming soon.</div>
+                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Latest News</h3>
+                      <div className='text-sm text-slate-700'>Coming soon.</div>
                     </div>
                     {/* LinkedIn */}
-                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
-                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
-                        <LinkedinIcon className='h-4 w-4' />
-                        <div className='text-sm font-semibold'>LinkedIn</div>
-                      </div>
-                      <div className='p-4 text-sm'>
-                        <a className='text-blue-600 underline' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a>
-                      </div>
+                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>LinkedIn</h3>
+                      <a className='text-blue-600 underline text-sm' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a>
                     </div>
                     {/* Growth */}
-                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
-                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
-                        <TrendingUp className='h-4 w-4' />
-                        <div className='text-sm font-semibold'>Historical Growth</div>
-                      </div>
-                      <div className='p-4 text-sm text-slate-700'>Integrations for charts and financials to follow.</div>
+                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Historical Growth</h3>
+                      <div className='text-sm text-slate-700'>Integrations for charts and financials to follow.</div>
                     </div>
                     {/* Spend */}
-                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
-                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
-                        <DollarSign className='h-4 w-4' />
-                        <div className='text-sm font-semibold'>Logistics Spend Estimator</div>
-                      </div>
-                      <div className='p-4'>
-                        <div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-sm'>
-                          <div className='rounded-lg border p-3 bg-white/95'>
-                            <div className='text-slate-500'>Shipments (12M)</div>
-                            <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
-                          </div>
-                          <div className='rounded-lg border p-3 bg-white/95'>
-                            <div className='text-slate-500'>Est. Ocean Spend</div>
-                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
-                          </div>
-                          <div className='rounded-lg border p-3 bg-white/95'>
-                            <div className='text-slate-500'>Est. Air Spend</div>
-                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
-                          </div>
+                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-3'>Logistics Spend Estimator</h3>
+                      <div className='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm'>
+                        <div className='rounded-lg border p-4 bg-white/95'>
+                          <div className='text-slate-500'>Shipments (12M)</div>
+                          <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
                         </div>
-                        <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
+                        <div className='rounded-lg border p-4 bg-white/95'>
+                          <div className='text-slate-500'>Est. Ocean Spend</div>
+                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
+                        </div>
+                        <div className='rounded-lg border p-4 bg-white/95'>
+                          <div className='text-slate-500'>Est. Air Spend</div>
+                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
+                        </div>
                       </div>
+                      <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
                     </div>
                   </div>
                 )}
