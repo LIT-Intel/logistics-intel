@@ -36,9 +36,9 @@ export default function Companies() {
   return (
     <div className='min-h-screen w-full bg-gradient-to-br from-gray-50 to-white'>
       <div className='px-6 py-4'>
-        <header className='mb-4 flex items-center gap-2'>
+        <header className='mb-4 flex items-center gap-3'>
           <CommandIcon />
-          <h1 className='text-2xl font-semibold tracking-tight'>LIT Command Center</h1>
+          <h1 className='text-4xl md:text-5xl font-extrabold tracking-tight uppercase'>LIT Command Center</h1>
         </header>
       </div>
       <main className='pl-4 pr-[10px] py-2'>
