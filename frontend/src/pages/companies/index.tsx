@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import CommandIcon from '../../components/common/CommandIcon';
 import CreateCompanyModal from '../../components/company/CreateCompanyModal';
 import Workspace from '../../components/company/Workspace';
+import LitPageHeader from '../../components/ui/LitPageHeader';
 
 type CompanyLite = { id: string; name: string; kpis?: any; charts?: any; ai?: any };
 
@@ -59,10 +60,7 @@ export default function Companies() {
   return (
     <div className='min-h-screen w-full bg-gradient-to-br from-gray-50 to-white'>
       <div className='pl-[5px] pr-[5px] pt-[5px]'>
-        <header className='mb-[5px] flex items-center gap-[5px]'>
-          <CommandIcon />
-          <h1 className='text-4xl md:text-5xl font-extrabold tracking-tight uppercase'>LIT Command Center</h1>
-        </header>
+        <LitPageHeader title="LIT Command Center" />
       </div>
       <div className='w-full pl-[5px] pr-[5px]'>
         {/* Render Workspace once (includes left rail + main) */}
