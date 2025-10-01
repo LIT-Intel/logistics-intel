@@ -99,6 +99,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   const [shipments, setShipments] = useState<any[]>([]);
   const [threads, setThreads] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<any[]>([]);
   const [campaignName, setCampaignName] = useState('Follow-up Campaign');
   const [campaignChannel, setCampaignChannel] = useState<'email' | 'linkedin'>('email');
 
@@ -185,12 +186,28 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
     return () => { ignore = true; };
   }, [activeId]);
 
+  // Load contacts when Contacts tab is opened
+  useEffect(() => {
+    let cancel = false;
+    async function loadContacts() {
+      if (tab !== 'Contacts' || !activeId) return;
+      try {
+        const c = await (await import('@/lib/api')).then(m => m.listContacts(String(activeId))).catch(() => []);
+        if (!cancel) setContacts(Array.isArray((c as any)?.contacts) ? (c as any).contacts : (Array.isArray(c) ? c : []));
+      } catch {
+        if (!cancel) setContacts([]);
+      }
+    }
+    loadContacts();
+    return () => { cancel = true; };
+  }, [tab, activeId]);
+
   return (
     <div className='w-full max-w-7xl xl:max-w-[1280px] 2xl:max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-6 pl-5 pr-[10px]'>
       <aside className='w-full lg:w-[320px] xl:w-[360px] shrink-0'>
         <div className='rounded-3xl p-4 bg-white/90 backdrop-blur border border-white/70 shadow-[0_10px_40px_-10px_rgba(30,64,175,0.25)]'>
           <div className='mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white'>
-            <h2 className='text-sm font-semibold'>Companies</h2>
+            <h2 className='text-sm font-semibold'>Command Center</h2>
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg bg-white/15 hover:bg-white/25 transition'>Add</button>
           </div>
           <div className='mb-3'>
@@ -328,8 +345,38 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 )}
                 {!loading && !error && tab === 'Contacts' && (
                   <div className='mt-3 text-sm text-slate-700'>
-                    <div className='text-xs text-slate-500 mb-2'>Enrich contacts via Settings → Enrich Now. Contact management UI will be expanded in a follow-up.</div>
-                    <div className='text-slate-600'>No contacts to show.</div>
+                    <div className='mb-2 flex items-center gap-2'>
+                      <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                        try { await (await import('@/lib/api')).then(m => m.enrichContacts(String(activeId))); alert('Contacts enrichment queued');
+                          // refetch after a short delay
+                          setTimeout(async()=>{
+                            try { const c = await (await import('@/lib/api')).then(m => m.listContacts(String(activeId))).catch(()=>[]);
+                              setContacts(Array.isArray((c as any)?.contacts) ? (c as any).contacts : (Array.isArray(c) ? c : [])); } catch {}
+                          }, 1000);
+                        } catch(e:any){ alert('Enrich contacts failed: '+ String(e?.message||e)); }
+                      }}>Enrich Contacts</button>
+                    </div>
+                    {contacts.length === 0 ? (
+                      <div className='text-slate-600'>No contacts to show.</div>
+                    ) : (
+                      <div className='overflow-auto rounded border'>
+                        <table className='w-full text-sm'>
+                          <thead className='sticky top-0 bg-white'><tr className='[&>th]:py-2 [&>th]:text-left'>
+                            <th>Name</th><th>Title</th><th>Email</th><th>Dept</th>
+                          </tr></thead>
+                          <tbody>
+                            {contacts.map((c:any, i:number)=> (
+                              <tr key={i} className='border-t'>
+                                <td>{c.name || c.full_name || '—'}</td>
+                                <td>{c.title || '—'}</td>
+                                <td>{c.email || '—'}</td>
+                                <td>{c.dept || c.department || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
                 {!loading && !error && tab === 'Activity' && (

@@ -74,7 +74,7 @@ export default function App() {
         <Route
           path="/companies"
           element={
-            <Layout currentPageName="Companies"><CompaniesIndex /></Layout>
+            <Layout currentPageName="Command Center"><CompaniesIndex /></Layout>
           }
         />
         <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
@@ -100,7 +100,7 @@ export default function App() {
           path="/app/companies"
           element={
             <RequireAuth>
-              <Layout currentPageName="Companies"><Companies /></Layout>
+              <Layout currentPageName="Command Center"><Companies /></Layout>
             </RequireAuth>
           }
         />

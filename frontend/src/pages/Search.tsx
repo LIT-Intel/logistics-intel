@@ -224,6 +224,8 @@ export default function Search() {
       if (!res || !(res.status === 'created' || res.status === 'exists')) {
         throw new Error('Save failed');
       }
+      // After successful save, navigate to Command Center
+      navigate('/companies');
     } catch (error) {
       console.error("Failed to save company:", error);
       setSavedCompanyIds(originalSavedIds);
