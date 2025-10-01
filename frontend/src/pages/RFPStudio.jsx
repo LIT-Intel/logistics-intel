@@ -231,7 +231,7 @@ export default function RFPStudio() {
   }
 
   return (
-    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+    <div className="relative px-2 md:px-5 py-3 min-h-screen">
       <LitWatermark />
       <div className="max-w-6xl mx-auto">
         <LitPageHeader title="RFP Studio">
