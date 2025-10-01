@@ -234,10 +234,17 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                     {/* Products */}
                     <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
                       <h3 className='text-sm font-semibold text-slate-800 mb-2'>Products</h3>
-                      <div className='grid grid-cols-2 gap-3'>
-                        <div className='h-36 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
-                        <div className='h-36 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
-                      </div>
+                      <ul className='space-y-2 text-sm text-slate-700'>
+                        {((overview as any)?.products && Array.isArray((overview as any).products) && (overview as any).products.length > 0
+                          ? (overview as any).products
+                          : ['Product A', 'Product B', 'Product C']
+                        ).map((p: string, i: number) => (
+                          <li key={i} className='flex items-center gap-2'>
+                            <PackageIcon className='h-4 w-4 text-slate-500' />
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                     {/* Tradelanes */}
                     <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
