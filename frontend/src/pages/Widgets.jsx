@@ -5,6 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { calcTariff, generateQuote } from "@/lib/api";
 import { sendEmail } from "@/api/functions";
+import LitPageHeader from "../components/ui/LitPageHeader";
+import LitPanel from "../components/ui/LitPanel";
+import LitWatermark from "../components/ui/LitWatermark";
 
 export default function Widgets() {
   // Tariff state
@@ -25,18 +28,14 @@ export default function Widgets() {
   }, [quoteResult, companyId, notes]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Widgets</h1>
-      </div>
+    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+      <LitWatermark />
+      <div className="max-w-7xl mx-auto space-y-6">
+        <LitPageHeader title="Widgets" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Tariff Calculator */}
-        <Card className="rounded-lg shadow-md border border-gray-200">
-          <CardHeader>
-            <CardTitle>Tariff Calculator</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Tariff Calculator */}
+          <LitPanel title="Tariff Calculator">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Input placeholder="HS Code" value={tariffInput.hsCode} onChange={(e) => setTariffInput(v => ({ ...v, hsCode: e.target.value }))} />
               <Input placeholder="Value (USD)" type="number" value={tariffInput.valueUsd} onChange={(e) => setTariffInput(v => ({ ...v, valueUsd: Number(e.target.value || 0) }))} />
@@ -47,15 +46,10 @@ export default function Widgets() {
             {tariffResult && (
               <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto">{JSON.stringify(tariffResult, null, 2)}</pre>
             )}
-          </CardContent>
-        </Card>
+          </LitPanel>
 
-        {/* Quote Generator */}
-        <Card className="rounded-lg shadow-md border border-gray-200">
-          <CardHeader>
-            <CardTitle>Quote Generator</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+          {/* Quote Generator */}
+          <LitPanel title="Quote Generator">
             <Input placeholder="Company ID (optional)" value={companyId} onChange={(e) => setCompanyId(e.target.value)} />
             <div className="space-y-2">
               {lanes.map((lane, idx) => (
@@ -89,8 +83,8 @@ export default function Widgets() {
             {quoteResult && (
               <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto">{JSON.stringify(quoteResult, null, 2)}</pre>
             )}
-          </CardContent>
-        </Card>
+          </LitPanel>
+        </div>
       </div>
     </div>
   );

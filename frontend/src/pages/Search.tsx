@@ -8,6 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Search as SearchIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+// @ts-nocheck
+import LitPageHeader from "../components/ui/LitPageHeader";
+import LitPanel from "../components/ui/LitPanel";
+import LitWatermark from "../components/ui/LitWatermark";
 
 import SearchFilters from "../components/search/SearchFilters";
 import CompanyDetailModal from "../components/search/CompanyDetailModal";
@@ -206,7 +210,7 @@ export default function Search() {
       }
       return { rows, meta: { total: (resp as any).total || rows.length, page: currentPage, page_size: ITEMS_PER_PAGE } };
     },
-    keepPreviousData: true,
+    // keepPreviousData not supported in current lib; omit
     enabled: hasSearched,
   });
 
@@ -285,20 +289,12 @@ export default function Search() {
   };
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
+    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+      <LitWatermark />
       <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">
-              Trade Intelligence Discovery
-            </h1>
-            <p className="text-gray-600 mt-2 text-sm md:text-base">
-              Search companies by trade activity, routes, commodities, and shipping patterns
-            </p>
-          </div>
-        </div>
+        <LitPageHeader title="Search" />
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 md:p-6 mb-6 md:mb-8 border border-gray-200/60">
+        <LitPanel>
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 relative">
               <Input
@@ -319,20 +315,22 @@ export default function Search() {
               {isLoading ? "Searching..." : "Search"}
             </Button>
           </div>
-        </div>
+        </LitPanel>
 
         <div className="mb-4 flex items-center justify-between">
-          <div className="text-sm text-gray-700">Filters</div>
+          <div className="text-sm text-slate-700">Filters</div>
           <button
-            className="text-sm px-3 py-1.5 rounded border bg-white hover:bg-gray-50"
+            className="text-sm px-3 py-1.5 rounded border bg-white hover:bg-slate-50"
             onClick={() => setShowFilters((v) => !v)}
           >
             {showFilters ? "Hide Filters" : "Show Filters"}
           </button>
         </div>
         {showFilters && (
-          <div className="mb-6 bg-white/80 backdrop-blur-sm rounded-2xl shadow p-4 border border-gray-200/60">
-            <SearchFilters onChange={setFilters} />
+          <div className="mb-6">
+            <LitPanel title="Filters">
+              <SearchFilters onChange={setFilters} />
+            </LitPanel>
           </div>
         )}
 
@@ -365,10 +363,10 @@ export default function Search() {
             onPageChange={handlePageChange}
           />
         ) : (
-          <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-300">
+          <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
             <SearchIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Search</h3>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto">
+            <h3 className="text-lg font-medium text-slate-900 mb-2">Ready to Search</h3>
+            <p className="text-sm text-slate-500 max-w-sm mx-auto">
               Enter a company name or use the filters above to search for trade intelligence data.
             </p>
           </div>
