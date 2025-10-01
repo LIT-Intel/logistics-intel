@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign, Sparkles } from 'lucide-react';
-import PreCallBriefing from '@/components/company/PreCallBriefing';
-import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
-import { buildPreCallPrompt } from '@/lib/ai';
+import PreCallBriefing from '../company/PreCallBriefing';
+import { exportCompanyPdf } from '../pdf/exportCompanyPdf';
+import { buildPreCallPrompt } from '../../lib/ai';
 import {
   searchCompanies,
   getCompanyShipments,
@@ -15,7 +15,7 @@ import {
   createAlert,
   getEmailThreads,
   getCalendarEvents,
-} from '@/lib/api';
+} from '../../lib/api';
 
 function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
   const s = Math.max(0, Number(shipments12m||0));
@@ -193,10 +193,11 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
     let cancel = false;
     async function loadContacts() {
       if (tab !== 'Contacts' || !activeId) return;
-      try {
-        const c = await (await import('@/lib/api')).then(m => m.listContacts(String(activeId))).catch(() => []);
-        if (!cancel) setContacts(Array.isArray((c as any)?.contacts) ? (c as any).contacts : (Array.isArray(c) ? c : []));
-      } catch {
+        try {
+          const api = await import('../../lib/api');
+          const c: any = await (api as any).listContacts(String(activeId));
+          if (!cancel) setContacts(Array.isArray(c?.contacts) ? c.contacts : (Array.isArray(c) ? c : []));
+        } catch {
         if (!cancel) setContacts([]);
       }
     }
@@ -363,11 +364,17 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   <div className='mt-3 text-sm text-slate-700'>
                     <div className='mb-2 flex items-center gap-2'>
                       <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
-                        try { await (await import('@/lib/api')).then(m => m.enrichContacts(String(activeId))); alert('Contacts enrichment queued');
+                        try {
+                          const api = await import('../../lib/api');
+                          await (api as any).enrichContacts(String(activeId));
+                          alert('Contacts enrichment queued');
                           // refetch after a short delay
                           setTimeout(async()=>{
-                            try { const c = await (await import('@/lib/api')).then(m => m.listContacts(String(activeId))).catch(()=>[]);
-                              setContacts(Array.isArray((c as any)?.contacts) ? (c as any).contacts : (Array.isArray(c) ? c : [])); } catch {}
+                            try {
+                              const api = await import('../../lib/api');
+                              const c: any = await (api as any).listContacts(String(activeId));
+                              setContacts(Array.isArray(c?.contacts) ? c.contacts : (Array.isArray(c) ? c : []));
+                            } catch {}
                           }, 1000);
                         } catch(e:any){ alert('Enrich contacts failed: '+ String(e?.message||e)); }
                       }}>Enrich Contacts</button>

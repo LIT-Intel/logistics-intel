@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import CommandIcon from '@/components/common/CommandIcon';
-import CreateCompanyModal from '@/components/company/CreateCompanyModal';
-import Workspace from '@/components/company/Workspace';
+import CommandIcon from '../../components/common/CommandIcon';
+import CreateCompanyModal from '../../components/company/CreateCompanyModal';
+import Workspace from '../../components/company/Workspace';
 
 type CompanyLite = { id: string; name: string; kpis?: any; charts?: any; ai?: any };
 

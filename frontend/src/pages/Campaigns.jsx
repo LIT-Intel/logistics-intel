@@ -12,6 +12,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from '@/auth/AuthProvider';
 import { api } from '@/lib/api';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import LitPageHeader from '@/components/ui/LitPageHeader';
+import LitPanel from '@/components/ui/LitPanel';
+import LitKpi from '@/components/ui/LitKpi';
+import LitSidebar from '@/components/ui/LitSidebar';
+import LitWatermark from '@/components/ui/LitWatermark';
 
 // Helper function to ensure data is an array, handling various API response formats
 const asArray = (data) => {
@@ -177,11 +182,7 @@ export default function CampaignsPage() {
     <div className="w-full flex gap-[5px] pl-[5px] pr-[5px] min-h-screen">
       {/* Sidebar */}
       <aside className="hidden md:block w-[340px] shrink-0">
-        <div className="rounded-2xl p-4 bg-white/80 backdrop-blur border border-slate-200 shadow">
-          <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
-            <span className="bg-gradient-to-r from-sky-400 to-violet-500 text-white rounded-full p-1.5">📣</span>
-            Campaigns
-          </h2>
+        <LitSidebar title="Campaigns">
           <Button onClick={handleCreateNew} className="w-full py-2 mb-4 bg-gradient-to-r from-sky-400 to-violet-500 text-white font-semibold rounded-lg shadow hover:opacity-90">
             + New Campaign
           </Button>
@@ -197,18 +198,15 @@ export default function CampaignsPage() {
               </div>
             ))}
           </div>
-        </div>
+        </LitSidebar>
       </aside>
 
       {/* Main Workspace */}
-      <main className="flex-1 min-w-0 max-w-none p-[5px]">
-        <div className="mb-4">
-          <h1 className="text-2xl font-extrabold tracking-tight flex items-center gap-2">
-            <span className="bg-gradient-to-r from-sky-400 to-violet-500 text-white rounded-lg p-1.5">📊</span>
-            LIT Campaigns
-          </h1>
-          <p className="text-sm text-slate-600">Design, launch, and track automated email + LinkedIn sequences.</p>
-        </div>
+      <main className="flex-1 min-w-0 max-w-none p-[5px] relative">
+        <LitWatermark />
+        <LitPageHeader title="LIT Campaigns">
+          {/* optional actions */}
+        </LitPageHeader>
 
         {error && (
           <Alert variant="destructive" className="mb-4">
@@ -230,25 +228,27 @@ export default function CampaignsPage() {
 
           <TabsContent value="overview" className="mt-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              <KpiCard label="Emails Sent" value="1,240" />
-              <KpiCard label="Open Rate" value="68%" />
-              <KpiCard label="Reply Rate" value="24%" />
-              <KpiCard label="LinkedIn Connects" value="82" />
+              <LitKpi label="Emails Sent" value="1,240" accentClass="from-sky-400 to-violet-500" />
+              <LitKpi label="Open Rate" value="68%" accentClass="from-sky-400 to-violet-500" />
+              <LitKpi label="Reply Rate" value="24%" accentClass="from-sky-400 to-violet-500" />
+              <LitKpi label="LinkedIn Connects" value="82" accentClass="from-sky-400 to-violet-500" />
             </div>
-            <div className="mt-6 p-4 rounded-2xl bg-white border border-slate-200 shadow">
-              <p className="text-sm text-slate-600">Recent activity timeline will appear here…</p>
+            <div className="mt-6">
+              <LitPanel title="Recent Activity">
+                <p className="text-sm text-slate-600">Recent activity timeline will appear here…</p>
+              </LitPanel>
             </div>
           </TabsContent>
 
           <TabsContent value="builder" className="mt-6">
-            <div className="p-6 bg-white rounded-2xl shadow border border-slate-200">
+            <LitPanel title="Sequence Builder">
               <p className="text-slate-600">Drag-and-drop outreach sequence builder here…</p>
               <div className="mt-4 grid gap-3">
                 <div className="rounded-xl border p-3">Step 1: Email — Subject, Message, Wait Days</div>
                 <div className="rounded-xl border p-3">Step 2: LinkedIn — Message, Wait Days</div>
                 <div className="rounded-xl border p-3">Step 3: Follow-up Email — Subject, Message, Wait Days</div>
               </div>
-            </div>
+            </LitPanel>
           </TabsContent>
 
           <TabsContent value="templates" className="mt-6">
@@ -256,9 +256,9 @@ export default function CampaignsPage() {
           </TabsContent>
 
           <TabsContent value="analytics" className="mt-6">
-            <div className="p-6 bg-white rounded-2xl shadow border border-slate-200">
+            <LitPanel title="Engagement Analytics">
               <p className="text-slate-600">Charts and engagement analytics here…</p>
-            </div>
+            </LitPanel>
           </TabsContent>
         </Tabs>
       </main>
@@ -266,14 +266,7 @@ export default function CampaignsPage() {
   );
 }
 
-function KpiCard({ label, value }) {
-  return (
-    <div className="p-4 bg-white rounded-xl shadow text-center border border-slate-200">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="text-xl font-bold text-slate-900">{value}</p>
-    </div>
-  );
-}
+// KpiCard replaced by LitKpi
 
 function TemplateList() {
   const templates = [
