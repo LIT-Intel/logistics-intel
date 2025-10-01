@@ -38,7 +38,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   const [tab, setTab] = useState('Overview');
 
   return (
-    <div className='max-w-7xl mx-auto flex flex-col lg:flex-row gap-4 px-5 md:px-5'>
+    <div className='w-full mx-auto flex flex-col lg:flex-row gap-5 px-5'>
       <aside className='w-full lg:w-[320px] xl:w-[360px] shrink-0'>
         <div className='rounded-3xl p-4 bg-white/80 backdrop-blur border border-white/50 shadow-xl'>
           <div className='mb-3 flex items-center justify-between gap-2'>
@@ -58,8 +58,8 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
           </div>
         </div>
       </aside>
-      <main className='min-w-0 flex-1'>
-        <div className='rounded-3xl p-5 md:p-6 bg-white/80 backdrop-blur border border-white/50 shadow-2xl' style={{ marginLeft: 20, marginRight: 20 }}>
+      <main className='min-w-0 flex-1 pr-5'>
+        <div className='rounded-3xl p-5 md:p-6 bg-white/80 backdrop-blur border border-white/50 shadow-2xl'>
           {active ? (
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
