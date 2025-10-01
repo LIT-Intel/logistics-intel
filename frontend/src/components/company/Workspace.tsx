@@ -204,8 +204,8 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   }, [tab, activeId]);
 
   return (
-    <div className='w-full max-w-7xl xl:max-w-[1280px] 2xl:max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-6 pl-5 pr-[10px]'>
-      <aside className='w-full lg:w-[320px] xl:w-[360px] shrink-0'>
+    <div className='w-full mx-auto flex flex-col lg:flex-row gap-[5px] pl-[5px] pr-[5px]'>
+      <aside className='w-[340px] shrink-0'>
         <div className='rounded-3xl p-4 bg-white/90 backdrop-blur border border-white/70 shadow-[0_10px_40px_-10px_rgba(30,64,175,0.25)]'>
           <div className='mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white'>
             <h2 className='text-sm font-semibold'>Command Center</h2>
@@ -224,7 +224,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
           </div>
         </div>
       </aside>
-      <main className='min-w-0 flex-1 pr-0'>
+      <main className='flex-1 min-w-0'>
         <div className='rounded-3xl p-6 bg-white/80 backdrop-blur border border-white/60 shadow-[0_10px_50px_-10px_rgba(30,64,175,0.28)]'>
           {active ? (
             <>
