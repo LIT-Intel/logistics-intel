@@ -7,6 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileText, Plus, Eye, Mail, Download, Settings } from 'lucide-react';
 import LockedFeature from '../components/common/LockedFeature';
 import { checkFeatureAccess } from '../components/utils/planLimits';
+import LitPageHeader from '../components/ui/LitPageHeader';
+import LitPanel from '../components/ui/LitPanel';
+import LitWatermark from '../components/ui/LitWatermark';
 
 import RFPBuilderForm from '../components/rfp/RFPBuilderForm';
 import RFPPreview from '../components/rfp/RFPPreview';
@@ -228,28 +231,20 @@ export default function RFPStudio() {
   }
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
+    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+      <LitWatermark />
       <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">RFP Studio</h1>
-            <p className="text-gray-600 mt-2 text-sm md:text-base">
-              Create professional freight quotes and proposals
-            </p>
-          </div>
-          
-          <div className="flex gap-2">
-            {activeTab === 'create' && (
-              <Button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
-              >
-                {isSaving ? 'Saving...' : 'Save Quote'}
-              </Button>
-            )}
-          </div>
-        </div>
+        <LitPageHeader title="RFP Studio">
+          {activeTab === 'create' && (
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+            >
+              {isSaving ? 'Saving...' : 'Save Quote'}
+            </Button>
+          )}
+        </LitPageHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3 bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60">
@@ -268,22 +263,26 @@ export default function RFPStudio() {
           </TabsList>
 
           <TabsContent value="create" className="space-y-6 mt-6">
-            <RFPBuilderForm 
-              quote={quoteData}
-              onQuoteChange={setQuoteData}
-              onSave={handleSave}
-              onGeneratePDF={handleDownloadPDF}
-              onSendEmail={handleSendEmail}
-              isGeneratingPDF={isLoading}
-            />
+            <LitPanel>
+              <RFPBuilderForm 
+                quote={quoteData}
+                onQuoteChange={setQuoteData}
+                onSave={handleSave}
+                onGeneratePDF={handleDownloadPDF}
+                onSendEmail={handleSendEmail}
+                isGeneratingPDF={isLoading}
+              />
+            </LitPanel>
           </TabsContent>
 
           <TabsContent value="preview" className="space-y-6 mt-6">
-            <RFPPreview 
-              quoteData={quoteData}
-              onSendEmail={handleSendEmail}
-              onDownloadPDF={handleDownloadPDF}
-            />
+            <LitPanel>
+              <RFPPreview 
+                quoteData={quoteData}
+                onSendEmail={handleSendEmail}
+                onDownloadPDF={handleDownloadPDF}
+              />
+            </LitPanel>
           </TabsContent>
 
           <TabsContent value="saved" className="space-y-6 mt-6">

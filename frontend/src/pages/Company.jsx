@@ -9,6 +9,9 @@ import EnrichmentTab from "@/components/search/detail_tabs/EnrichmentTab";
 import NotesTab from "@/components/search/detail_tabs/NotesTab";
 import { Contact, Note } from "@/api/entities";
 import { postSearchCompanies, getCompanyShipments, enrichCompany, recallCompany } from "@/lib/api";
+import LitPageHeader from "../components/ui/LitPageHeader";
+import LitPanel from "../components/ui/LitPanel";
+import LitWatermark from "../components/ui/LitWatermark";
 
 export default function Company() {
   const { id } = useParams();
@@ -113,21 +116,9 @@ export default function Company() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{summary?.company_name || 'Company'}</h1>
-          <p className="text-sm text-gray-600">ID: {companyId}</p>
-          {summary && (
-            <div className="mt-2 text-sm text-gray-700 space-y-1">
-              <div><span className="text-gray-500">Shipments (12M):</span> <span className="font-semibold">{new Intl.NumberFormat().format(summary.shipments_12m || 0)}</span></div>
-              <div><span className="text-gray-500">Last Activity:</span> <span className="font-semibold">{summary.last_activity ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }).format(new Date(summary.last_activity)) : 'N/A'}</span></div>
-              <div><span className="text-gray-500">Top Route:</span> <span className="font-semibold">{(summary.top_routes && summary.top_routes[0]) || '—'}</span></div>
-              <div><span className="text-gray-500">Top Carrier:</span> <span className="font-semibold">{(summary.top_carriers && summary.top_carriers[0]) || '—'}</span></div>
-            </div>
-          )}
-          <Button size="sm" onClick={handleRecall} className="bg-indigo-600 hover:bg-indigo-700 text-white">Recall</Button>
-        </div>
+    <div className="relative">
+      <LitWatermark />
+      <LitPageHeader title={summary?.company_name || 'Company'}>
         <div className="flex items-center gap-2">
           <Button
             className="bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700"
@@ -138,10 +129,11 @@ export default function Company() {
           <Button size="sm" onClick={handleEnrich} disabled={isEnriching} className="bg-purple-600 hover:bg-purple-700 text-white">
             {isEnriching ? 'Enriching…' : 'Enrich Now'}
           </Button>
+          <Button size="sm" onClick={handleRecall} className="bg-indigo-600 hover:bg-indigo-700 text-white">Recall</Button>
         </div>
-      </div>
+      </LitPageHeader>
 
-      <div className="bg-white rounded-xl border shadow-sm">
+      <LitPanel>
         <Tabs defaultValue="overview" className="w-full">
           <div className="px-4 pt-4 border-b">
             <TabsList>
@@ -192,7 +184,7 @@ export default function Company() {
             </TabsContent>
           </div>
         </Tabs>
-      </div>
+      </LitPanel>
     </div>
   );
 }
