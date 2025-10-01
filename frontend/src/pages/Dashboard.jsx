@@ -51,16 +51,11 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
-              <LitKpi label="Shipments (90d)" value={data.shipments90d} accentClass="from-sky-400 to-violet-500" />
-              <LitKpi label="Saved Companies" value={data.savedCompanies} accentClass="from-sky-400 to-violet-500" />
-              <LitKpi label="Recent Searches" value={data.recentSearches7d} accentClass="from-sky-400 to-violet-500" />
-              <LitKpi label="Active Users" value={0} accentClass="from-sky-400 to-violet-500" />
-            </div>
-            <div className="mb-6">
-              <LitPanel>
-                <DashboardKPICards stats={{ activeUsers: 0, searches: data.recentSearches7d, shipments: data.shipments90d, companies: data.savedCompanies }} />
-              </LitPanel>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+              <LitKpi label="Shipments (90d)" value={data.shipments90d} accentClass="from-sky-400 to-violet-500" deltaPercent={3.2} deltaPositive icon={null} />
+              <LitKpi label="Saved Companies" value={data.savedCompanies} accentClass="from-sky-400 to-violet-500" deltaPercent={1.4} deltaPositive icon={null} />
+              <LitKpi label="Recent Searches" value={data.recentSearches7d} accentClass="from-sky-400 to-violet-500" deltaPercent={-0.8} icon={null} />
+              <LitKpi label="Active Users" value={0} accentClass="from-sky-400 to-violet-500" deltaPercent={0.0} icon={null} />
             </div>
             <div className="mb-8">
               <LitPanel>
