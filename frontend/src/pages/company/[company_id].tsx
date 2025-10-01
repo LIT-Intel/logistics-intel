@@ -67,7 +67,7 @@ export default function CompanyPage() {
     <div className='max-w-6xl mx-auto p-6 space-y-4'>
       <div className='flex items-center justify-between gap-4 flex-wrap'>
         <div>
-          <h1 className='text-[22px] md:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2'>
+          <h1 className='text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 uppercase flex items-center gap-2'>
             <CommandIcon />
             <span>LIT Command Center</span>
           </h1>

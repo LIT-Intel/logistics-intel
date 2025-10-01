@@ -429,7 +429,13 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
               </div>
             </>
           ) : (
-            <div className='text-slate-500'>Select a company…</div>
+            <div className='flex items-center justify-center min-h-[420px]'>
+              <div className='text-center max-w-lg'>
+                <div className='mx-auto h-20 w-20 rounded-2xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-rose-500 shadow-lg' />
+                <p className='mt-4 font-bold text-slate-900'>This is your COMPANY ENRICHMENT COMMAND CENTER — select a company on the left to view KPIs, shipments, contacts, and AI insights.</p>
+                <p className='mt-2 text-sm text-slate-600'>Use Save, Enrich, and AI Recall actions to populate data once a company is selected.</p>
+              </div>
+            </div>
           )}
         </div>
       </main>
