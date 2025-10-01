@@ -15,6 +15,16 @@ import {
   getCalendarEvents,
 } from '@/lib/api';
 
+function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
+  const s = Math.max(0, Number(shipments12m||0));
+  if (mode === 'ocean') {
+    // rough: $1,200 per shipment placeholder
+    return Math.round(s * 1200);
+  }
+  // air: $2.50/kg equivalent placeholder (assume 400kg avg)
+  return Math.round(s * 2.5 * 400);
+}
+
 const Pill = ({ children }: { children: React.ReactNode }) => (
   <span className='px-2 py-0.5 rounded-full text-xs bg-white/70 border border-white/60 shadow-sm'>{children}</span>
 );
@@ -82,7 +92,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   }, [companies, query]);
   const active = useMemo(() => companies.find(c => c.id === activeId), [companies, activeId]);
   const [tab, setTab] = useState('Overview');
-  const [subTab, setSubTab] = useState<'Bio'|'Products'|'Tradelanes'|'News'|'LinkedIn'|'Growth'>('Bio');
+  const [subTab, setSubTab] = useState<'Bio'|'Products'|'Tradelanes'|'News'|'LinkedIn'|'Growth'|'Spend'>('Bio');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<any | null>(null);
@@ -216,7 +226,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 {!loading && !error && tab === 'Overview' && overview && (
                   <div className='mt-3'>
                     <div className='flex gap-2 border-b mb-3'>
-                      {(['Bio','Products','Tradelanes','News','LinkedIn','Growth'] as const).map(k => (
+                      {(['Bio','Products','Tradelanes','News','LinkedIn','Growth','Spend'] as const).map(k => (
                         <button key={k} onClick={()=>setSubTab(k)} className={`px-3 py-2 text-sm ${subTab===k?'border-b-2 border-blue-600 font-semibold':'text-slate-500'}`}>{k}</button>
                       ))}
                     </div>
@@ -259,6 +269,27 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                     {subTab==='Growth' && (
                       <div className='rounded-xl border bg-white p-3'>
                         <div className='text-sm text-slate-600'>Financials integration to follow. Basic growth placeholder shown in Pre‑Call charts.</div>
+                      </div>
+                    )}
+                    {subTab==='Spend' && (
+                      <div className='rounded-xl border bg-white p-3'>
+                        <div className='text-sm font-medium mb-2'>Logistics Spend Estimator</div>
+                        <p className='text-sm text-slate-600 mb-3'>Estimated annual logistics spend based on last 12 months shipment volume and market benchmark rates.</p>
+                        <div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-sm'>
+                          <div className='rounded-lg border p-3'>
+                            <div className='text-slate-500'>Shipments (12M)</div>
+                            <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
+                          </div>
+                          <div className='rounded-lg border p-3'>
+                            <div className='text-slate-500'>Est. Ocean Spend</div>
+                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
+                          </div>
+                          <div className='rounded-lg border p-3'>
+                            <div className='text-slate-500'>Est. Air Spend</div>
+                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
+                          </div>
+                        </div>
+                        <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
                       </div>
                     )}
                   </div>
