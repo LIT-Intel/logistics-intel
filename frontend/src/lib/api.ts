@@ -266,3 +266,17 @@ export async function saveCampaign(payload: { name: string; company_ids: string[
   return res.json();
 }
 
+// Company create/get (manual create parity)
+export async function createCompany(body: { name: string; domain?: string; street?: string; city?: string; state?: string; postal?: string; country?: string }) {
+  const res = await fetch(`${API_BASE}/crm/company.create`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`company.create ${res.status}:${t.slice(0,200)}`);
+  }
+  return res.json();
+}
+
