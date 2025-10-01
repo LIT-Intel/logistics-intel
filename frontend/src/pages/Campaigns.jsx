@@ -11,6 +11,7 @@ import { checkFeatureAccess } from '@/components/utils/planLimits';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from '@/auth/AuthProvider';
 import { api } from '@/lib/api';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 // Helper function to ensure data is an array, handling various API response formats
 const asArray = (data) => {
@@ -31,6 +32,7 @@ export default function CampaignsPage() {
   const [debugInfo, setDebugInfo] = useState('');
   const [hasAccess, setHasAccess] = useState(false); // hasAccess is now a state variable
   const [selectedCampaign, setSelectedCampaign] = useState(null);
+  const [tab, setTab] = useState('overview');
 
   // This useEffect now handles all initial data loading and access checks
   useEffect(() => {
@@ -162,85 +164,128 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="p-6 bg-[#F6F8FB] min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        {/* Smoke-test mock cards to verify rendering path */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {['Q4 Prospecting','Reactivation Push','Freight Expo Leads','Top Lanes Outreach'].map((title, idx) => (
-            <div key={idx} className="bg-white rounded-2xl shadow border p-4">
-              <div className="text-sm text-gray-500">Smoke Test</div>
-              <div className="text-lg font-semibold text-gray-900">{title}</div>
-              <div className="text-xs text-gray-500">Leads: — | Status: Draft</div>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
-          <Button onClick={handleCreateNew}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Campaign
+    <div className="w-full flex gap-[5px] pl-[5px] pr-[5px] min-h-screen">
+      {/* Sidebar */}
+      <aside className="hidden md:block w-[340px] shrink-0">
+        <div className="rounded-2xl p-4 bg-white/80 backdrop-blur border border-slate-200 shadow">
+          <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
+            <span className="bg-gradient-to-r from-sky-400 to-violet-500 text-white rounded-full p-1.5">📣</span>
+            Campaigns
+          </h2>
+          <Button onClick={handleCreateNew} className="w-full py-2 mb-4 bg-gradient-to-r from-sky-400 to-violet-500 text-white font-semibold rounded-lg shadow hover:opacity-90">
+            + New Campaign
           </Button>
+          <div className="space-y-3">
+            {campaigns.map((c) => (
+              <div key={c.id} className="p-3 rounded-xl bg-white shadow hover:shadow-md transition border border-slate-200">
+                <div className="font-semibold">{c.name || c.title || 'Campaign'}</div>
+                <div className="text-xs text-slate-500">{c.status || 'Draft'}</div>
+                <div className="flex justify-between text-xs mt-2">
+                  <span>Open: {(c.open ?? 0)}%</span>
+                  <span>Reply: {(c.reply ?? 0)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Workspace */}
+      <main className="flex-1 min-w-0 max-w-none p-[5px]">
+        <div className="mb-4">
+          <h1 className="text-2xl font-extrabold tracking-tight flex items-center gap-2">
+            <span className="bg-gradient-to-r from-sky-400 to-violet-500 text-white rounded-lg p-1.5">📊</span>
+            LIT Campaigns
+          </h1>
+          <p className="text-sm text-slate-600">Design, launch, and track automated email + LinkedIn sequences.</p>
         </div>
 
         {error && (
-          <Alert variant="destructive" className="mb-6">
+          <Alert variant="destructive" className="mb-4">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Data Loading Error</AlertTitle>
             <AlertDescription>
               {error}
-              <br/>
-              <span className="text-xs mt-2 block">
-                This indicates a backend connectivity issue or missing data. Please contact Base44 support if this persists.
-              </span>
-              {debugInfo && (
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-xs">Technical Details</summary>
-                  <pre className="text-xs mt-1 bg-gray-100 p-2 rounded whitespace-pre-wrap">{debugInfo}</pre>
-                </details>
-              )}
             </AlertDescription>
           </Alert>
         )}
 
-        {campaigns.length === 0 && !isLoading && !error && (
-          <Card className="text-center p-12 border-2 border-dashed">
-            <CardContent>
-              <Users className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-4 text-lg font-medium text-gray-900">No campaigns yet</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Get started by creating a new outreach campaign.
-              </p>
-              <div className="mt-6">
-                <Button onClick={handleCreateNew}>
-                  <Plus className="mr-2 h-4 w-4" /> Create Campaign
-                </Button>
+        <Tabs defaultValue="overview" value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="builder">Builder</TabsTrigger>
+            <TabsTrigger value="templates">Templates</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="mt-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              <KpiCard label="Emails Sent" value="1,240" />
+              <KpiCard label="Open Rate" value="68%" />
+              <KpiCard label="Reply Rate" value="24%" />
+              <KpiCard label="LinkedIn Connects" value="82" />
+            </div>
+            <div className="mt-6 p-4 rounded-2xl bg-white border border-slate-200 shadow">
+              <p className="text-sm text-slate-600">Recent activity timeline will appear here…</p>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="builder" className="mt-6">
+            <div className="p-6 bg-white rounded-2xl shadow border border-slate-200">
+              <p className="text-slate-600">Drag-and-drop outreach sequence builder here…</p>
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-xl border p-3">Step 1: Email — Subject, Message, Wait Days</div>
+                <div className="rounded-xl border p-3">Step 2: LinkedIn — Message, Wait Days</div>
+                <div className="rounded-xl border p-3">Step 3: Follow-up Email — Subject, Message, Wait Days</div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </TabsContent>
 
-        {!isLoading && !error && campaigns.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {campaigns.map((campaign) => (
-              <CampaignCard
-                key={campaign.id}
-                campaign={campaign}
-                onToggle={handleToggle}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onClick={(c) => setSelectedCampaign(c)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+          <TabsContent value="templates" className="mt-6">
+            <TemplateList />
+          </TabsContent>
 
-      {selectedCampaign && (
-        <CampaignAnalytics
-          campaign={selectedCampaign}
-          onClose={() => setSelectedCampaign(null)}
-        />
-      )}
+          <TabsContent value="analytics" className="mt-6">
+            <div className="p-6 bg-white rounded-2xl shadow border border-slate-200">
+              <p className="text-slate-600">Charts and engagement analytics here…</p>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
+  );
+}
+
+function KpiCard({ label, value }) {
+  return (
+    <div className="p-4 bg-white rounded-xl shadow text-center border border-slate-200">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-xl font-bold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function TemplateList() {
+  const templates = [
+    'Logistics Buyer Intro',
+    'Warehouse Ops Outreach',
+    'Freight Cost Savings',
+    'Customs Compliance Help',
+    'Air Freight Quick Quote',
+    'New Lane Opportunity',
+    'Follow-up Reminder',
+    'Seasonal Shipping Offer',
+    'Tech/Automation Value Prop',
+    'Reconnect after Trade Show',
+  ];
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {templates.map((t, i) => (
+        <div key={i} className="p-4 bg-white rounded-lg shadow hover:shadow-md transition cursor-pointer border border-slate-200">
+          <h3 className="font-semibold">{t}</h3>
+          <p className="text-xs text-slate-500 mt-2">Click to apply this template</p>
+        </div>
+      ))}
     </div>
   );
 }
