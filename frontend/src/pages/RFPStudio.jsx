@@ -3,7 +3,7 @@ import { RFPQuote, Company, Contact } from '@/api/entities';
 import { User } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Plus, Eye, Mail, Download, Settings, Upload, Users, BarChart3, CalendarDays } from 'lucide-react';
+import { FileText, Plus, Mail, Upload, BarChart3 } from 'lucide-react';
 import LitSidebar from '../components/ui/LitSidebar';
 import LitPageHeader from '../components/ui/LitPageHeader';
 import LitPanel from '../components/ui/LitPanel';
@@ -231,17 +231,9 @@ export default function RFPStudio() {
 
   return (
     <div className="relative px-2 md:px-5 py-3 min-h-screen">
-      <LitWatermark />
-      <div className="max-w-7xl mx-auto">
-        <LitPageHeader title="RFP Studio">
-          <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white"><Plus className="w-4 h-4 mr-1"/> New RFP</Button>
-          <Button variant="outline" className="border-slate-200"><Upload className="w-4 h-4 mr-1"/> Import</Button>
-          <Button variant="outline" className="border-slate-200"><FileText className="w-4 h-4 mr-1"/> Templates</Button>
-        </LitPageHeader>
-
-        <div className="w-full flex gap-[5px]">
-          <aside className="hidden md:block w-[300px] shrink-0">
-            <LitSidebar title="RFPs">
+      <div className="w-full flex gap-[5px]">
+        <aside className="hidden md:block w-[340px] shrink-0">
+          <LitSidebar title="RFPs">
               <div className="space-y-3">
                 {rfps.map(r => (
                   <button key={r.id} onClick={()=>setActiveId(r.id)} className={`w-full text-left p-3 rounded-xl border ${activeId===r.id? 'bg-white ring-2 ring-violet-300 border-slate-200':'bg-white/90 border-slate-200 hover:bg-white'}`}>
@@ -253,11 +245,16 @@ export default function RFPStudio() {
                   </button>
                 ))}
               </div>
-            </LitSidebar>
-          </aside>
+          </LitSidebar>
+        </aside>
 
-          <main className="flex-1 min-w-0 relative">
-            <LitWatermark />
+        <main className="flex-1 min-w-0 p-[5px] max-w-none">
+          <LitWatermark />
+          <LitPageHeader title="RFP Studio">
+            <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white"><Plus className="w-4 h-4 mr-1"/> New RFP</Button>
+            <Button variant="outline" className="border-slate-200"><Upload className="w-4 h-4 mr-1"/> Import</Button>
+            <Button variant="outline" className="border-slate-200"><FileText className="w-4 h-4 mr-1"/> Templates</Button>
+          </LitPageHeader>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -330,8 +327,7 @@ export default function RFPStudio() {
                 </LitPanel>
               </TabsContent>
             </Tabs>
-          </main>
-        </div>
+        </main>
       </div>
     </div>
   );
