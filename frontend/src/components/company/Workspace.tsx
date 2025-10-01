@@ -213,7 +213,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
           <div className='mb-3'>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
           </div>
-          <div className='max-h-[70vh] overflow-auto pr-1'>
+          <div className='max-h-[70vh] overflow-auto pr-1 sm:pr-2'>
             {filtered.map(c => (
               <CompanyCard key={c.id} c={c} active={c.id === activeId} onClick={() => { setActiveId(c.id); setTab('Overview'); }} />
             ))}
