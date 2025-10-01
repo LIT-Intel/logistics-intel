@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign } from 'lucide-react';
 import PreCallBriefing from '@/components/company/PreCallBriefing';
 import { buildPreCallPrompt } from '@/lib/ai';
 import {
@@ -46,7 +47,7 @@ function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick:
       ].join(' ')}
     >
       <span className="absolute left-0 top-3 bottom-3 w-0.5 rounded-full bg-gradient-to-b from-cyan-300 via-blue-400 to-violet-400" />
-      <div className='font-semibold text-slate-900 pr-1'>{c.name}</div>
+      <div className='font-extrabold text-slate-900 pr-1 text-[16px] md:text-[18px] tracking-tight'>{c.name}</div>
       <div className='mt-0.5 text-xs text-slate-600'>
         {city}{state ? `, ${state}` : ''}
       </div>
@@ -55,9 +56,9 @@ function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick:
           <a
             href={domain.startsWith('http') ? domain : `https://${domain}`}
             target='_blank' rel='noreferrer'
-            className='inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-gradient-to-r from-sky-50 to-violet-50 border-sky-100 text-sky-700 hover:text-sky-800 hover:from-sky-100 hover:to-violet-100'
+            className='inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border bg-gradient-to-r from-sky-100 via-blue-100 to-violet-100 border-sky-200 text-sky-800 hover:text-sky-900 hover:from-sky-200 hover:to-violet-200 shadow-sm'
           >
-            <span className='h-1.5 w-1.5 rounded-full bg-sky-400' />
+            <span className='h-1.5 w-1.5 rounded-full bg-sky-500' />
             {domain.replace(/^https?:\/\//, '')}
           </a>
         </div>
@@ -185,9 +186,9 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   }, [activeId]);
 
   return (
-    <div className='w-full mx-auto flex flex-col lg:flex-row gap-5 px-5'>
+    <div className='w-full mx-auto flex flex-col lg:flex-row gap-6 px-5'>
       <aside className='w-full lg:w-[320px] xl:w-[360px] shrink-0'>
-        <div className='rounded-3xl p-4 bg-white/80 backdrop-blur border border-white/70 shadow-xl'>
+        <div className='rounded-3xl p-4 bg-white/85 backdrop-blur border border-white/70 shadow-[0_10px_40px_-10px_rgba(30,64,175,0.25)]'>
           <div className='mb-3 flex items-center justify-between gap-2'>
             <h2 className='text-sm font-semibold text-slate-700'>Companies</h2>
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-gradient-to-r from-blue-600 to-blue-500 text-white'>Add</button>
@@ -206,7 +207,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
         </div>
       </aside>
       <main className='min-w-0 flex-1 pr-5'>
-        <div className='rounded-3xl p-6 bg-white/75 backdrop-blur border border-white/60 shadow-2xl'>
+        <div className='rounded-3xl p-6 bg-white/80 backdrop-blur border border-white/60 shadow-[0_10px_50px_-10px_rgba(30,64,175,0.28)]'>
           {active ? (
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
@@ -223,62 +224,92 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
-                  <div className='mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4'>
-                    {/* Bio card */}
-                    <div className='rounded-2xl p-4 border bg-gradient-to-br from-sky-50 via-blue-50 to-violet-50'>
-                      <div className='text-[15px] font-extrabold text-slate-900 mb-1'>{overview.name}</div>
-                      <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
+                  <div className='mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6'>
+                    {/* Bio */}
+                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
+                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
+                        <Building2 className='h-4 w-4' />
+                        <div className='text-sm font-semibold'>Company Bio</div>
+                      </div>
+                      <div className='p-4'>
+                        <div className='text-[15px] font-extrabold text-slate-900 mb-1'>{overview.name}</div>
+                        <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
+                      </div>
                     </div>
-                    {/* Products card */}
-                    <div className='rounded-2xl border bg-white p-4'>
-                      <div className='text-sm font-medium mb-2'>Products</div>
-                      <div className='grid grid-cols-2 gap-2'>
+                    {/* Products */}
+                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
+                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
+                        <PackageIcon className='h-4 w-4' />
+                        <div className='text-sm font-semibold'>Products</div>
+                      </div>
+                      <div className='p-4 grid grid-cols-2 gap-2'>
                         <div className='h-24 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
                         <div className='h-24 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200'/>
                       </div>
                     </div>
-                    {/* Tradelanes card */}
-                    <div className='rounded-2xl border bg-white p-4'>
-                      <div className='text-sm font-medium mb-2'>Key Tradelanes</div>
-                      <ul className='text-sm list-disc pl-5'>
-                        {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
-                          <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    {/* News card */}
-                    <div className='rounded-2xl border bg-white p-4'>
-                      <div className='text-sm font-medium mb-2'>Latest News</div>
-                      <div className='text-sm text-slate-600'>Coming soon.</div>
-                    </div>
-                    {/* LinkedIn card */}
-                    <div className='rounded-2xl border bg-white p-4'>
-                      <div className='text-sm font-medium mb-2'>LinkedIn</div>
-                      <a className='text-blue-600 underline text-sm' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a>
-                    </div>
-                    {/* Growth card */}
-                    <div className='rounded-2xl border bg-white p-4'>
-                      <div className='text-sm font-medium mb-2'>Historical Growth</div>
-                      <div className='text-sm text-slate-600'>Integrations for charts and financials to follow.</div>
-                    </div>
-                    {/* Spend estimator card */}
-                    <div className='rounded-2xl border bg-white p-4'>
-                      <div className='text-sm font-medium mb-2'>Logistics Spend Estimator</div>
-                      <div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-sm'>
-                        <div className='rounded-lg border p-3'>
-                          <div className='text-slate-500'>Shipments (12M)</div>
-                          <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
-                        </div>
-                        <div className='rounded-lg border p-3'>
-                          <div className='text-slate-500'>Est. Ocean Spend</div>
-                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
-                        </div>
-                        <div className='rounded-lg border p-3'>
-                          <div className='text-slate-500'>Est. Air Spend</div>
-                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
-                        </div>
+                    {/* Tradelanes */}
+                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
+                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
+                        <ShipIcon className='h-4 w-4' />
+                        <div className='text-sm font-semibold'>Key Tradelanes</div>
                       </div>
-                      <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
+                      <div className='p-4'>
+                        <ul className='text-sm list-disc pl-5'>
+                          {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
+                            <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    {/* News */}
+                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
+                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
+                        <Newspaper className='h-4 w-4' />
+                        <div className='text-sm font-semibold'>Latest News</div>
+                      </div>
+                      <div className='p-4 text-sm text-slate-700'>Coming soon.</div>
+                    </div>
+                    {/* LinkedIn */}
+                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
+                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
+                        <LinkedinIcon className='h-4 w-4' />
+                        <div className='text-sm font-semibold'>LinkedIn</div>
+                      </div>
+                      <div className='p-4 text-sm'>
+                        <a className='text-blue-600 underline' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a>
+                      </div>
+                    </div>
+                    {/* Growth */}
+                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
+                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
+                        <TrendingUp className='h-4 w-4' />
+                        <div className='text-sm font-semibold'>Historical Growth</div>
+                      </div>
+                      <div className='p-4 text-sm text-slate-700'>Integrations for charts and financials to follow.</div>
+                    </div>
+                    {/* Spend */}
+                    <div className='rounded-2xl border bg-white p-0 shadow-[0_10px_30px_-12px_rgba(30,64,175,0.25)] overflow-hidden'>
+                      <div className='px-4 py-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white flex items-center gap-2'>
+                        <DollarSign className='h-4 w-4' />
+                        <div className='text-sm font-semibold'>Logistics Spend Estimator</div>
+                      </div>
+                      <div className='p-4'>
+                        <div className='grid grid-cols-1 md:grid-cols-3 gap-3 text-sm'>
+                          <div className='rounded-lg border p-3 bg-white/95'>
+                            <div className='text-slate-500'>Shipments (12M)</div>
+                            <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
+                          </div>
+                          <div className='rounded-lg border p-3 bg-white/95'>
+                            <div className='text-slate-500'>Est. Ocean Spend</div>
+                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
+                          </div>
+                          <div className='rounded-lg border p-3 bg-white/95'>
+                            <div className='text-slate-500'>Est. Air Spend</div>
+                            <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
+                          </div>
+                        </div>
+                        <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
+                      </div>
                     </div>
                   </div>
                 )}
