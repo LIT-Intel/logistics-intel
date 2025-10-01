@@ -58,7 +58,7 @@ export default function AppShell({ currentPageName, children }) {
 
           <div className="px-4 py-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">Menu</div>
           <nav className="mb-4">
-            <SideLink to="/app/dashboard" icon={BarChart3} label="Analytics" />
+            <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
             <SideLink to="/app/search" icon={Search} label="Search" />
             {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Command Center" />}
             {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
@@ -139,7 +139,7 @@ export default function AppShell({ currentPageName, children }) {
               <button className="p-2 rounded-lg border border-white/20" onClick={() => setMobileOpen(false)} aria-label="Close menu">✕</button>
             </div>
             <nav className="space-y-1">
-              <SideLink to="/app/dashboard" icon={BarChart3} label="Analytics" />
+              <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
               <SideLink to="/app/search" icon={Search} label="Search" />
               {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Command Center" />}
               {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
