@@ -214,16 +214,29 @@ export async function generateQuote(input: { companyId?: string|number; lanes: A
 // ------------------------ CRM / Enrich / Recall / Campaigns ------------------------
 
 export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string|null; source?: string }) {
-  const res = await fetch(`${API_BASE}/crm/saveCompany`, {
+  // Primary endpoint per gateway spec
+  try {
+    const res = await fetch(`${API_BASE}/crm/saveCompany`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+      body: JSON.stringify({ ...payload, source: payload.source ?? 'search' })
+    });
+    if (res.ok) return res.json();
+    // If 404/405, fall through to company.create
+  } catch (_) {}
+
+  // Fallback to company.create (parity path)
+  const createRes = await fetch(`${API_BASE}/crm/company.create`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'accept': 'application/json' },
-    body: JSON.stringify({ ...payload, source: payload.source ?? 'search' })
+    body: JSON.stringify({ name: payload.company_name })
   });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`saveCompany ${res.status}:${t.slice(0,200)}`);
+  if (!createRes.ok) {
+    const t = await createRes.text().catch(() => '');
+    throw new Error(`company.create ${createRes.status}:${t.slice(0,200)}`);
   }
-  return res.json();
+  const j = await createRes.json().catch(() => ({} as any));
+  return { status: 'created', crm_company_id: j?.company_id || j?.id || payload.company_id };
 }
 
 export async function enrichCompany(payload: { company_id: string }) {
