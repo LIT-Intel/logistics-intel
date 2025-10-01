@@ -40,15 +40,16 @@ function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick:
     <button
       onClick={onClick}
       className={[
+        'company-card',
         'w-full text-left rounded-xl p-3 mb-2 transition',
         'shadow-sm hover:shadow',
         'border',
-        active ? 'border-indigo-500 bg-white' : 'border-gray-200 bg-white',
+        active ? 'active border-indigo-500 bg-[rgba(106,90,249,0.08)]' : 'border-gray-200 bg-white',
         'hover:-translate-y-[1px] relative'
       ].join(' ')}
     >
-      <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-gradient-to-b from-blue-500 via-indigo-500 to-purple-500" />
-      <div className='font-semibold text-slate-900 pr-1 text-[15px] md:text-[16px] tracking-tight'>{c.name}</div>
+      {/* removed gradient accent bar */}
+      <div className='font-semibold text-[16px] text-[#1b1b3a] pr-1 tracking-tight'>{c.name}</div>
       <div className='mt-0.5 text-[11px] text-slate-600'>
         {city}{state ? `, ${state}` : ''}
       </div>
@@ -207,9 +208,9 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
     <div className='w-full mx-auto flex flex-col lg:flex-row gap-[5px] pl-[5px] pr-[5px]'>
       <aside className='w-[340px] shrink-0'>
         <div className='rounded-3xl p-4 bg-white/90 backdrop-blur border border-white/70 shadow-[0_10px_40px_-10px_rgba(30,64,175,0.25)]'>
-          <div className='mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white'>
+          <div className='mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white text-slate-900 border-b border-[#eee]'>
             <h2 className='text-sm font-semibold'>Command Center</h2>
-            <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg bg-white/15 hover:bg-white/25 transition'>Add</button>
+            <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-slate-50 transition'>Add</button>
           </div>
           <div className='mb-3'>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
@@ -225,7 +226,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
         </div>
       </aside>
       <main className='flex-1 min-w-0'>
-        <div className='rounded-3xl p-6 bg-white/80 backdrop-blur border border-white/60 shadow-[0_10px_50px_-10px_rgba(30,64,175,0.28)]'>
+        <div className='company-detail rounded-3xl p-6 bg-white/90 backdrop-blur border border-white/60 shadow-[0_10px_50px_-10px_rgba(30,64,175,0.28)]'>
           {active ? (
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>

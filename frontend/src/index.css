@@ -109,6 +109,8 @@ button:focus-visible {
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    --brand-accent: #6a5af9;
+    --brand-dark: #1b1b3a;
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -155,4 +157,16 @@ button:focus-visible {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Companies: active card + watermark */
+.company-card.active {
+  border: 2px solid var(--brand-accent);
+  background: rgba(106, 90, 249, 0.08);
+}
+
+.company-detail {
+  background: url('/assets/watermark-lit.svg') no-repeat bottom right;
+  background-size: 300px;
+  background-color: #fff;
 }
