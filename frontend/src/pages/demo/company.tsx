@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Workspace from '@/components/company/Workspace';
-import PreCallBriefing from '@/components/company/PreCallBriefing';
+import CreateCompanyModal from '@/components/company/CreateCompanyModal';
 
 export default function DemoCompany() {
   const FIX = [
@@ -9,22 +9,26 @@ export default function DemoCompany() {
     { id: 'comp_shaw', name: 'Shaw Industries', kpis: { shipments12m: 6120, lastActivity: '2025-09-04', originsTop: ['CN', 'VN', 'MX'], destsTop: ['US', 'EU'], carriersTop: ['MSC', 'MAERSK'] }, charts: { growth: [{ y: 4200, x: '2021' }, { y: 5100, x: '2022' }, { y: 5850, x: '2023' }, { y: 6120, x: '2024' }], ecosystem: [{ label: 'Carpet', value: 40 }, { label: 'Hard Surfaces', value: 50 }, { label: 'Ancillary', value: 10 }], competition: [{ k: 'Scale', Shaw: 9, Market: 8 }, { k: 'Sustainability', Shaw: 9, Market: 7 }, { k: 'Resi', Shaw: 8, Market: 7 }, { k: 'Commercial', Shaw: 8, Market: 6 }, { k: 'Innovation', Shaw: 7, Market: 7 }], sourcing: [{ country: 'CN', pct: 45 }, { country: 'VN', pct: 35 }, { country: 'MX', pct: 20 }] }, ai: { summary: 'Vertical scale; propose VMI + LVT program lanes; sustainability reporting hooks.', bullets: ['VMI near DCs with SLA scorecards.', 'Dedicated capacity for LVT peaks.', 'Sustainability lane reporting.'] } }
   ];
   const [companies, setCompanies] = useState(FIX);
-  const onAdd = () => {
-    const name = prompt('New company name (manual add):', 'DSV A/S');
-    if (!name) return;
-    const id = 'comp_' + Math.random().toString(36).slice(2, 8);
-    const fresh = { id, name, kpis: { shipments12m: 0, lastActivity: null, originsTop: [], destsTop: [], carriersTop: [] }, charts: { growth: [], ecosystem: [], competition: [{ k: 'Scale', [name]: 7, Market: 7 }], sourcing: [] }, ai: { summary: 'Pending enrichment…', bullets: ['—'] } } as any;
-    setCompanies([fresh, ...companies]);
+  const [open, setOpen] = useState(false);
+  const onAdd = () => setOpen(true);
+  const onCreated = (id: string, name: string) => {
+    const fresh: any = { id, name, kpis: { shipments12m: 0, lastActivity: null, originsTop: [], destsTop: [], carriersTop: [] }, charts: { growth: [], ecosystem: [], competition: [{ k: 'Scale', [name]: 7, Market: 7 }], sourcing: [] }, ai: { summary: 'Pending enrichment…', bullets: ['—'] } };
+    setCompanies(prev => [fresh, ...prev]);
   };
 
   return (
-    <div className='min-h-screen w-full bg-gradient-to-br from-slate-100 to-slate-200 p-4 md:p-8'>
-      <div className='mb-4'>
-        <h1 className='text-3xl font-black'>Company Workspace — Demo</h1>
-        <p className='text-slate-600'>This page uses fixtures only. Production wiring happens in Phase 4+.</p>
-      </div>
-      <Workspace companies={companies} onAdd={onAdd} />
-      <div className='mt-6 text-xs text-slate-500'>Tip: Click "Add" to simulate a manual company. KPIs will show 0 / pending enrichment — same behavior we’ll ship live.</div>
+    <div className='min-h-screen w-full bg-gradient-to-br from-gray-50 to-white'>
+      <header className='sticky top-0 z-10 bg-white/70 backdrop-blur border-b'>
+        <div className='max-w-7xl mx-auto px-4 py-3 flex items-center justify-between'>
+          <div className='font-black text-xl tracking-tight'>LIT — Company Workspace (Demo)</div>
+          <div className='text-xs text-gray-500'>Fixtures only; production data loads on /company/:id</div>
+        </div>
+      </header>
+      <main className='px-4 py-6'>
+        <Workspace companies={companies} onAdd={onAdd} />
+        <div className='max-w-7xl mx-auto mt-6 text-xs text-slate-500'>Tip: Use Add to simulate manual company. KPIs will show 0 / pending enrichment — parity with production create.</div>
+      </main>
+      <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />
     </div>
   );
 }
