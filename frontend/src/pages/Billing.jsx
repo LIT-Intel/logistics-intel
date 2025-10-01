@@ -7,6 +7,9 @@ import { createStripePortalSession } from '@/api/functions';
 import { getPlanLimits } from '@/components/utils/planLimits';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import LitPageHeader from '../components/ui/LitPageHeader';
+import LitPanel from '../components/ui/LitPanel';
+import LitWatermark from '../components/ui/LitWatermark';
 
 export default function Billing() {
   const [user, setUser] = useState(null);
@@ -68,10 +71,10 @@ export default function Billing() {
   const hasActiveSubscription = user.stripe_customer_id && user.subscription_status === 'active';
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gray-50/70 min-h-screen">
+    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+      <LitWatermark />
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Billing & Subscription</h1>
-        
+        <LitPageHeader title="Billing & Subscription" />
         <Card className="mb-8 shadow-lg">
           <CardHeader>
             <CardTitle>Your Current Plan</CardTitle>
@@ -157,20 +160,18 @@ export default function Billing() {
         
         {/* Help section for users without subscriptions */}
         {(!hasActiveSubscription) && (
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold text-blue-900 mb-2">Ready to Upgrade?</h3>
-              <p className="text-blue-700 mb-4">
-                Unlock advanced features, higher usage limits, and priority support with a paid plan.
-              </p>
-              <Button 
-                onClick={() => navigate(createPageUrl('Pricing'))}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                View Plans & Pricing
-              </Button>
-            </CardContent>
-          </Card>
+          <LitPanel>
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">Ready to Upgrade?</h3>
+            <p className="text-blue-700 mb-4">
+              Unlock advanced features, higher usage limits, and priority support with a paid plan.
+            </p>
+            <Button 
+              onClick={() => navigate(createPageUrl('Pricing'))}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              View Plans & Pricing
+            </Button>
+          </LitPanel>
         )}
       </div>
     </div>

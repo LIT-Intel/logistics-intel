@@ -10,6 +10,9 @@ import { Search, Building2, Users, Mail, Download, Plus, Filter, Target } from '
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { searchLeads } from '@/api/functions';
+import LitPageHeader from '../components/ui/LitPageHeader';
+import LitPanel from '../components/ui/LitPanel';
+import LitWatermark from '../components/ui/LitWatermark';
 
 export default function LeadProspecting() {
   const navigate = useNavigate();
@@ -166,30 +169,15 @@ export default function LeadProspecting() {
   }
 
   return (
-    <div className="p-6 md:p-8 bg-gradient-to-br from-purple-50 to-pink-50/30 min-h-screen">
+    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+      <LitWatermark />
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900">Lead Prospecting</h1>
-            <p className="text-gray-600 mt-2">Search and import potential LIT subscribers from Apollo.io</p>
-          </div>
-          <Badge className="bg-red-100 text-red-800">
-            Admin Only
-          </Badge>
-        </div>
+        <LitPageHeader title="Lead Prospecting" />
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Search Criteria */}
           <div className="lg:col-span-1">
-            <Card className="sticky top-4">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="w-5 h-5" />
-                  Search Criteria
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <LitPanel title="Search Criteria">
                 <div>
                   <label className="block text-sm font-medium mb-1">Industry</label>
                   <Select value={searchCriteria.industry} onValueChange={(value) => setSearchCriteria({...searchCriteria, industry: value})}>
@@ -246,11 +234,7 @@ export default function LeadProspecting() {
                   <p className="text-xs text-gray-500 mt-1">Default includes decision makers</p>
                 </div>
 
-                <Button 
-                  onClick={handleSearch} 
-                  disabled={isSearching}
-                  className="w-full"
-                >
+                <Button onClick={handleSearch} disabled={isSearching} className="w-full">
                   {isSearching ? (
                     <>Searching...</>
                   ) : (
@@ -260,33 +244,31 @@ export default function LeadProspecting() {
                     </>
                   )}
                 </Button>
-              </CardContent>
-            </Card>
+            </LitPanel>
           </div>
 
           {/* Results */}
           <div className="lg:col-span-2">
             {!searchPerformed ? (
-              <Card className="h-64 flex items-center justify-center">
+              <LitPanel>
                 <div className="text-center">
                   <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Search for Leads</h3>
                   <p className="text-gray-500">Configure your search criteria and find potential LIT subscribers</p>
                 </div>
-              </Card>
+              </LitPanel>
             ) : searchResults.length === 0 ? (
-              <Card className="h-64 flex items-center justify-center">
+              <LitPanel>
                 <div className="text-center">
                   <Search className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No Results Found</h3>
                   <p className="text-gray-500">Try adjusting your search criteria</p>
                 </div>
-              </Card>
+              </LitPanel>
             ) : (
               <div className="space-y-4">
                 {/* Results Header */}
-                <Card>
-                  <CardContent className="p-4">
+                <LitPanel>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <Checkbox 
@@ -318,14 +300,12 @@ export default function LeadProspecting() {
                         )}
                       </Button>
                     </div>
-                  </CardContent>
-                </Card>
+                </LitPanel>
 
                 {/* Results List */}
                 <div className="space-y-3">
                   {searchResults.map((company) => (
-                    <Card key={company.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
+                    <LitPanel key={company.id}>
                         <div className="flex items-start gap-4">
                           <Checkbox 
                             checked={selectedCompanies.includes(company.id)}
@@ -376,8 +356,7 @@ export default function LeadProspecting() {
                             )}
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
+                    </LitPanel>
                   ))}
                 </div>
               </div>

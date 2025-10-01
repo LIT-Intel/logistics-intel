@@ -6,6 +6,9 @@ import { Alert, AlertDescription, AlertTitle }
   from '@/components/ui/alert';
 import { Lightbulb, ServerCrash, CheckCircle, Clock, Wifi } from 'lucide-react';
 import { litPing } from '@/api/functions';
+import LitPageHeader from '../components/ui/LitPageHeader';
+import LitPanel from '../components/ui/LitPanel';
+import LitWatermark from '../components/ui/LitWatermark';
 
 export default function Diagnostic() {
   const [user, setUser] = useState(null);
@@ -98,16 +101,13 @@ export default function Diagnostic() {
   };
   
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
+    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+      <LitWatermark />
       <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">System Diagnostic</h1>
-          <p className="text-gray-600">Run tests to identify database and gateway connectivity issues.</p>
-        </div>
+        <LitPageHeader title="System Diagnostic" />
 
         {/* New LIT Gateway Test */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/60 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">LIT Gateway Connection Test</h2>
+        <LitPanel title="LIT Gateway Connection Test">
           <p className="text-gray-600 mb-4">Tests the connection to the LIT Gateway to see if it can perform a basic query.</p>
           
           <Button
@@ -146,11 +146,10 @@ export default function Diagnostic() {
               </AlertDescription>
             </Alert>
           )}
-        </div>
+        </LitPanel>
 
         {/* User Status */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/60 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Initial Check: User Status</h2>
+        <LitPanel title="Initial Check: User Status">
           {userStatus === 'loading' && <p>Loading user...</p>}
           {userStatus === 'error' && (
             <p className="text-red-600 font-semibold flex items-center gap-2">
@@ -164,7 +163,7 @@ export default function Diagnostic() {
               <p>User loaded successfully: {user.email}</p>
             </div>
           )}
-        </div>
+        </LitPanel>
       </div>
     </div>
   );
