@@ -226,8 +226,8 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
           </div>
         </div>
       </aside>
-      <main className='flex-1 min-w-0'>
-        <div className='company-detail rounded-3xl p-6 bg-white/90 backdrop-blur border border-white/60 shadow-[0_10px_50px_-10px_rgba(30,64,175,0.28)]'>
+      <main className='flex-1 min-w-0 p-[5px] max-w-none'>
+        <div className='company-detail rounded-3xl p-6 bg-white/90 backdrop-blur border border-slate-200 shadow-[0_10px_40px_-10px_rgba(2,6,23,0.08)]'>
           {active ? (
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
