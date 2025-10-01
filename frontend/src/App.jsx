@@ -9,7 +9,7 @@ const Landing        = lazy(() => import("@/pages/Landing"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
 const Search         = lazy(() => import("@/pages/Search"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
-const Companies      = lazy(() => import("@/pages/Companies"));
+const Companies      = lazy(() => import("@/pages/companies/index"));
 const Campaigns      = lazy(() => import("@/pages/Campaigns"));
 const CampaignBuilder= lazy(() => import("@/pages/CampaignBuilder"));
 const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));

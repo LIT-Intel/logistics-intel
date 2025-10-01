@@ -28,26 +28,38 @@ function Tabs({ tabs, value, onChange }: { tabs: string[]; value: string; onChan
 
 export default function Workspace({ companies, onAdd }: { companies: any[]; onAdd: () => void }) {
   const [activeId, setActiveId] = useState(companies[0]?.id);
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return companies;
+    return companies.filter(c => String(c.name || '').toLowerCase().includes(q));
+  }, [companies, query]);
   const active = useMemo(() => companies.find(c => c.id === activeId), [companies, activeId]);
   const [tab, setTab] = useState('Overview');
 
   return (
-    <div className='max-w-7xl mx-auto grid grid-cols-12 gap-4'>
-      <aside className='col-span-12 md:col-span-4 lg:col-span-3'>
-        <div className='rounded-3xl p-4 bg-white/70 backdrop-blur border border-white/50 shadow-xl'>
-          <div className='mb-3 flex items-center justify-between'>
+    <div className='max-w-7xl mx-auto flex flex-col lg:flex-row gap-4 px-5 md:px-5'>
+      <aside className='w-full lg:w-[320px] xl:w-[360px] shrink-0'>
+        <div className='rounded-3xl p-4 bg-white/80 backdrop-blur border border-white/50 shadow-xl'>
+          <div className='mb-3 flex items-center justify-between gap-2'>
             <h2 className='text-sm font-semibold text-slate-700'>Companies</h2>
-            <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white/80'>Add</button>
+            <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-gradient-to-r from-blue-600 to-blue-500 text-white'>Add</button>
           </div>
-          <div>
-            {companies.map(c => (
+          <div className='mb-3'>
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
+          </div>
+          <div className='max-h-[70vh] overflow-auto pr-1'>
+            {filtered.map(c => (
               <CompanyCard key={c.id} c={c} active={c.id === activeId} onClick={() => { setActiveId(c.id); setTab('Overview'); }} />
             ))}
+            {filtered.length === 0 && (
+              <div className='text-xs text-slate-500 py-6 text-center'>No companies match “{query}”.</div>
+            )}
           </div>
         </div>
       </aside>
-      <main className='col-span-12 md:col-span-8 lg:col-span-9'>
-        <div className='rounded-3xl p-6 bg-white/70 backdrop-blur border border-white/50 shadow-2xl'>
+      <main className='min-w-0 flex-1'>
+        <div className='rounded-3xl p-5 md:p-6 bg-white/80 backdrop-blur border border-white/50 shadow-2xl' style={{ marginLeft: 20, marginRight: 20 }}>
           {active ? (
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
