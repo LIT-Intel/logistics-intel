@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign, Sparkles } from 'lucide-react';
 import PreCallBriefing from '@/components/company/PreCallBriefing';
+import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
 import { buildPreCallPrompt } from '@/lib/ai';
 import {
   searchCompanies,
@@ -236,7 +237,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
                     try { await saveCompanyToCrm({ company_id: String(active.id), company_name: active.name, source:'companies' }); alert('Saved to CRM'); } catch(e:any){ alert('Save failed: '+ String(e?.message||e)); }
                   }}>Save</button>
-                  <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                  <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-xs' onClick={async()=>{
                     try { await enrichCompany({ company_id: String(active.id) }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
                   }}>Enrich Now</button>
                   <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
@@ -318,7 +319,13 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 )}
                 {!loading && !error && tab === 'Pre-Call' && overview && (
                   <div className='mt-3'>
-                    <PreCallBriefing company={{ name: overview.name, kpis: overview.kpis || overview.kpi || overview.k, charts: overview.charts, ai: overview.ai }} />
+                    <div className='flex items-center justify-end gap-2'>
+                      <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); pdf.save('company.pdf'); }catch(e:any){ alert('PDF failed: '+ String(e?.message||e)); } }}>Save PDF</button>
+                      <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const blob=pdf.output('blob'); const form=new FormData(); form.append('file', blob, 'company.pdf'); form.append('companyId', String(activeId)); await fetch('/api/emailPdf', { method:'POST', body:form }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
+                    </div>
+                    <section id='company-pdf-root'>
+                      <PreCallBriefing company={{ name: overview.name, kpis: overview.kpis || overview.kpi || overview.k, charts: overview.charts, ai: overview.ai }} />
+                    </section>
                   </div>
                 )}
                 {!loading && !error && tab === 'Shipments' && (
