@@ -28,6 +28,8 @@ const Transactions   = lazy(() => import("@/pages/Transactions"));
 const Widgets        = lazy(() => import("@/pages/Widgets"));
 const Company        = lazy(() => import("@/pages/Company"));
 const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
+const DemoCompany    = lazy(() => import("@/pages/demo/company"));
+const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
 
 const DEMO_MODE = !import.meta.env.VITE_FIREBASE_API_KEY;
 
@@ -60,6 +62,19 @@ export default function App() {
           path="/demo"
           element={
             <Layout currentPageName="Demo"><SearchPanel /></Layout>
+          }
+        />
+        <Route
+          path="/demo/company"
+          element={
+            <Layout currentPageName="Company Demo"><DemoCompany /></Layout>
+          }
+        />
+        {/* Public companies (manual create demo) */}
+        <Route
+          path="/companies"
+          element={
+            <Layout currentPageName="Companies"><CompaniesIndex /></Layout>
           }
         />
         <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
