@@ -39,10 +39,7 @@ export default function RFPStudio() {
     notes: ''
   });
   
-  const [savedQuotes, setSavedQuotes] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const hasAccess = true;
 
@@ -54,187 +51,19 @@ export default function RFPStudio() {
   const [proposalSummary, setProposalSummary] = useState('');
   const [proposalSolution, setProposalSolution] = useState('');
 
-  useEffect(() => {
-    const checkUserAndLoad = async () => {
-      try {
-        const userData = await User.me();
-        setUser(userData);
-        const access = checkFeatureAccess(userData, 'rfp_generation');
-        if (access) {
-          loadSavedQuotes();
-        }
-      } catch (error) {
-        console.error('Error loading user:', error);
-      }
-      setIsLoading(false);
-    };
-    checkUserAndLoad();
-  }, []);
+  useEffect(() => { setIsLoading(false); }, []);
 
-  const loadSavedQuotes = async () => {
-    try {
-      const quotes = await RFPQuote.list('-updated_date');
-      setSavedQuotes(quotes);
-    } catch (error) {
-      console.error('Error loading quotes:', error);
-    }
-  };
+  const loadSavedQuotes = async () => {};
 
-  const handleSave = async () => {
-    if (!quoteData.quote_name || !quoteData.origin || !quoteData.destination) {
-      alert('Please fill in the required fields (Quote Name, Origin, Destination)');
-      return;
-    }
+  const handleSave = async () => {};
 
-    setIsSaving(true);
-    try {
-      await RFPQuote.create(quoteData);
-      alert('Quote saved successfully!');
-      loadSavedQuotes();
-      setActiveTab('preview');
-    } catch (error) {
-      console.error('Error saving quote:', error);
-      alert('Failed to save quote. Please try again.');
-    }
-    setIsSaving(false);
-  };
+  const handleSendEmail = async () => {};
 
-  const handleSendEmail = async () => {
-    if (!quoteData.contact_email) {
-      alert('Please specify a contact email to send the quote');
-      return;
-    }
+  const handleDownloadPDF = async () => {};
 
-    setIsLoading(true);
-    try {
-      // Generate email content
-      const emailSubject = `${quoteData.quote_name} - Freight Quote`;
-      const emailBody = generateQuoteEmailHTML(quoteData);
+  const generateQuoteEmailHTML = (_quote) => '';
 
-      const response = await sendEmail({
-        to: quoteData.contact_email,
-        subject: emailSubject,
-        body_html: emailBody,
-        from_name: undefined // Use default sender name
-      });
-
-      if (response.data.success) {
-        alert('Quote sent successfully via email!');
-      } else {
-        throw new Error(response.data.error || 'Failed to send email');
-      }
-    } catch (error) {
-      console.error('Error sending email:', error);
-      alert('Failed to send email. Please check the console for details.');
-    }
-    setIsLoading(false);
-  };
-
-  const handleDownloadPDF = async () => {
-    setIsLoading(true);
-    try {
-      // Pass the payload in the expected { quoteData, user } structure.
-      const response = await generateRfpPdf({ quoteData, user });
-      
-      // The backend returns a direct PDF file (blob), not a JSON object with a URL.
-      // This code correctly handles the blob response to trigger a download.
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `${quoteData.quote_name || 'Quote'}.pdf`;
-      
-      document.body.appendChild(link);
-      link.click();
-      
-      // Clean up by removing the link and revoking the object URL.
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(link.href);
-
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try again or contact support.');
-    }
-    setIsLoading(false);
-  };
-
-  const generateQuoteEmailHTML = (quote) => {
-    const formatCurrency = (amount) => {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD'
-      }).format(amount || 0);
-    };
-
-    return `
-      <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px;">
-              ${quote.quote_name}
-            </h2>
-            
-            <p>Dear ${quote.contact_name || 'Valued Customer'},</p>
-            
-            <p>Thank you for your inquiry. Please find our freight quote details below:</p>
-            
-            <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="margin-top: 0; color: #1e40af;">Shipment Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Origin:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.origin}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Destination:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.destination}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Commodity:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.commodity}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Incoterm:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.incoterm}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Total Cost:</strong></td>
-                  <td style="padding: 8px 0; font-size: 18px; font-weight: bold; color: #1e40af;">${formatCurrency(quote.total_cost)}</td>
-                </tr>
-              </table>
-            </div>
-            
-            ${quote.notes ? `
-            <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <h4 style="margin-top: 0; color: #92400e;">Additional Notes:</h4>
-              <p style="margin-bottom: 0;">${quote.notes}</p>
-            </div>
-            ` : ''}
-            
-            <p>This quote is valid until ${quote.valid_until ? new Date(quote.valid_until).toLocaleDateString() : 'further notice'}.</p>
-            
-            <p>If you have any questions or would like to proceed with this shipment, please don't hesitate to contact us.</p>
-            
-            <p>Best regards,<br>
-            The LIT Team</p>
-            
-            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
-            <p style="font-size: 12px; color: #6b7280;">
-              This quote was generated using Logistic Intel. 
-              <a href="https://logisticintel.com" style="color: #1e40af;">Learn more</a>
-            </p>
-          </div>
-        </body>
-      </html>
-    `;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  if (isLoading) { return null; }
 
   // keep page accessible; gating can be added later
 
