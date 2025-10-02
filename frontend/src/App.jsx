@@ -18,6 +18,7 @@ const Settings       = lazy(() => import("@/pages/Settings"));
 const Billing        = lazy(() => import("@/pages/Billing"));
 const AffiliateDash  = lazy(() => import("@/pages/AffiliateDashboard"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
+const AdminSettings  = lazy(() => import("@/pages/AdminSettings"));
 const LeadProspecting= lazy(() => import("@/pages/LeadProspecting"));
 const CMSManager     = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
@@ -149,6 +150,14 @@ export default function App() {
           element={
             <RequireAuth>
               <Layout currentPageName="Settings"><Settings /></Layout>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/app/admin/settings"
+          element={
+            <RequireAuth>
+              <Layout currentPageName="Admin Settings"><AdminSettings /></Layout>
             </RequireAuth>
           }
         />
