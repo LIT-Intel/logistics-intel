@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { RFPQuote, Company, Contact } from '@/api/entities';
 import { User } from '@/api/entities';
 import { Button } from '@/components/ui/button';
@@ -14,12 +14,12 @@ import { rfpSearchCompanies, rfpGetCompanyShipments, rfpGetBenchmark, rfpExportH
 
 export default function RFPStudio() {
   const [activeTab, setActiveTab] = useState('overview');
-  const rfps = [
+  const [rfps, setRfps] = useState([
     { id: 'rfp_001', name: 'Pride Mobility — Ocean 2026', client: 'Pride Mobility', status: 'Draft', due: 'Dec 12' },
     { id: 'rfp_002', name: 'Shaw Industries — LCL Program', client: 'Shaw Industries', status: 'Active', due: 'Jan 08' },
     { id: 'rfp_003', name: 'Wahoo Fitness — Q1 Air', client: 'Wahoo Fitness', status: 'Outreach', due: 'Nov 30' }
-  ];
-  const [activeId, setActiveId] = useState(rfps[0].id);
+  ]);
+  const [activeId, setActiveId] = useState('rfp_001');
   const [quoteData, setQuoteData] = useState({
     quote_name: '',
     mode_combo: 'ocean',
@@ -50,6 +50,9 @@ export default function RFPStudio() {
   const [lanes, setLanes] = useState([]);
   const [finModel, setFinModel] = useState(null);
   const [busy, setBusy] = useState(null);
+  const fileRef = useRef(null);
+  const [proposalSummary, setProposalSummary] = useState('');
+  const [proposalSolution, setProposalSolution] = useState('');
 
   useEffect(() => {
     const checkUserAndLoad = async () => {
@@ -235,6 +238,55 @@ export default function RFPStudio() {
 
   // keep page accessible; gating can be added later
 
+  async function loadKpisForActive() {
+    try {
+      setBusy('load');
+      const r = rfps.find(x=> x.id===activeId);
+      const q = (r && (r.client || (r.name && r.name.split('—')[0]))) || '';
+      const s = await rfpSearchCompanies({ q, limit: 1, offset: 0 });
+      const item = (Array.isArray(s?.items) && s.items[0]) || null;
+      if (!item) { setCompany(null); setLanes([]); setFinModel(null); return; }
+      const companyId = item.company_id || '';
+      const shipments12m = Number(item.shipments12m || item.shipments || 0);
+      const kpis = {
+        companyId,
+        companyName: item.company_name || 'Company',
+        shipments12m,
+        lastActivity: (item.lastActivity && item.lastActivity.value) ? item.lastActivity.value : (item.lastActivity || null) || undefined,
+        originsTop: (item.originsTop || []).map((o)=> String((o && (o.v||o)) || '')),
+        destsTop: (item.destsTop || []).map((d)=> String((d && (d.v||d)) || '')),
+        carriersTop: (item.carriersTop || []).map((c)=> String((c && (c.v||c)) || '')),
+      };
+      setCompany(kpis);
+      const g = await rfpGetCompanyShipments(companyId, 200, 0);
+      const rows = Array.isArray(g?.rows) ? g.rows : [];
+      const aggMap = new Map();
+      for (const row of rows) {
+        const key = `${row.origin_country||row.origin}=>${row.dest_country||row.destination}`;
+        const prev = aggMap.get(key) || { origin_country: row.origin_country||row.origin, dest_country: row.dest_country||row.destination, shipments: 0, value_usd: 0 };
+        prev.shipments += 1;
+        const v = Number(row.value_usd||0);
+        if (!Number.isNaN(v)) prev.value_usd = (prev.value_usd||0) + v;
+        aggMap.set(key, prev);
+      }
+      const lanesAgg = Array.from(aggMap.values());
+      setLanes(lanesAgg);
+      const baseline = lanesAgg.reduce((sum, l)=> sum + (Number(l.value_usd||0)), 0) || (shipments12m * 8650);
+      let proposed = baseline * 0.87;
+      try {
+        const bench = await rfpGetBenchmark({ mode: 'ocean', lanes: lanesAgg.map(l=> ({ o: l.origin_country, d: l.dest_country, vol: l.shipments })) });
+        if (bench && typeof bench.proposedUsd === 'number') proposed = bench.proposedUsd;
+      } catch {}
+      const savings = Math.max(0, baseline - proposed);
+      const pct = baseline > 0 ? (savings / baseline) : 0;
+      setFinModel({ baseline, proposed, savings, pct });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  useEffect(()=>{ if (activeId) loadKpisForActive(); }, [activeId]);
+
   return (
     <div className="relative px-2 md:px-5 py-3 min-h-screen">
       <div className="w-full flex gap-[5px]">
@@ -257,9 +309,36 @@ export default function RFPStudio() {
         <main className="flex-1 min-w-0 p-[5px] max-w-none">
           <LitWatermark />
           <LitPageHeader title="RFP Studio">
-            <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white"><Plus className="w-4 h-4 mr-1"/> New RFP</Button>
-            <Button variant="outline" className="border-slate-200"><Upload className="w-4 h-4 mr-1"/> Import</Button>
-            <Button variant="outline" className="border-slate-200"><FileText className="w-4 h-4 mr-1"/> Templates</Button>
+            <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white" onClick={()=>{
+              const name = prompt('RFP name','New RFP');
+              if (!name) return;
+              const client = prompt('Client name','DSV A/S') || '';
+              const id = 'rfp_'+Math.random().toString(36).slice(2,8);
+              const due = new Date(); due.setDate(due.getDate()+21);
+              const dueStr = due.toLocaleDateString(undefined,{ month:'short', day:'2-digit'});
+              const next = [{ id, name, client, status:'Draft', due: dueStr }, ...rfps];
+              setRfps(next); setActiveId(id); setActiveTab('overview');
+              setCompany(null); setLanes([]); setFinModel(null);
+            }}><Plus className="w-4 h-4 mr-1"/> New RFP</Button>
+            <input ref={fileRef} type="file" accept="application/json" className="hidden" onChange={async(e)=>{
+              try {
+                const f = e.target.files && e.target.files[0]; if (!f) return;
+                const text = await f.text();
+                const arr = JSON.parse(text);
+                if (Array.isArray(arr)) {
+                  const mapped = arr.map((r,i)=> ({ id: r.id || ('rfp_'+i+'_'+Math.random().toString(36).slice(2,6)), name: r.name||'Imported RFP', client: r.client||'Client', status: r.status||'Draft', due: r.due||'TBD' }));
+                  setRfps(prev=> [...mapped, ...prev]);
+                } else {
+                  alert('Invalid JSON array');
+                }
+              } catch(err){ alert('Import failed'); }
+            }} />
+            <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
+            <Button variant="outline" className="border-slate-200" onClick={()=>{
+              setActiveTab('proposal');
+              setProposalSummary('Draft a proposal executive summary for DSV including quantified savings, capacity strategy, compliance, technology, sustainability.');
+              setProposalSolution('Our solution provides dedicated capacity, compliance management, visibility tooling, and sustainability reporting.');
+            }}><FileText className="w-4 h-4 mr-1"/> Templates</Button>
           </LitPageHeader>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
@@ -272,57 +351,6 @@ export default function RFPStudio() {
               </TabsList>
 
               <TabsContent value="overview" className="mt-6 space-y-6">
-                <div className="flex items-center justify-end">
-                  <Button size="sm" disabled={busy==="load"} onClick={async()=>{
-                    try {
-                      setBusy("load");
-                      // Pick a company by client name from active RFP
-                      const r = rfps.find(x=> x.id===activeId);
-                      const q = r?.client || r?.name?.split('—')?.[0] || '';
-                      const s = await rfpSearchCompanies({ q, limit: 1, offset: 0 });
-                      const item = (Array.isArray(s?.items) && s.items[0]) || null;
-                      if (!item) { setCompany(null); setLanes([]); setFinModel(null); alert('No company found'); return; }
-                      const companyId = item.company_id || '';
-                      const shipments12m = Number(item.shipments12m || item.shipments || 0);
-                      const kpis = {
-                        companyId,
-                        companyName: item.company_name || 'Company',
-                        shipments12m,
-                        lastActivity: (item.lastActivity && item.lastActivity.value) ? item.lastActivity.value : (item.lastActivity || null) || undefined,
-                        originsTop: (item.originsTop || []).map((o)=> String((o && (o.v||o)) || '')),
-                        destsTop: (item.destsTop || []).map((d)=> String((d && (d.v||d)) || '')),
-                        carriersTop: (item.carriersTop || []).map((c)=> String((c && (c.v||c)) || '')),
-                      };
-                      setCompany(kpis);
-                      // Fetch shipments and aggregate lanes
-                      const g = await rfpGetCompanyShipments(companyId, 200, 0);
-                      const rows = Array.isArray(g?.rows) ? g.rows : [];
-                      const aggMap = new Map();
-                      for (const row of rows) {
-                        const key = `${row.origin_country||row.origin}=>${row.dest_country||row.destination}`;
-                        const prev = aggMap.get(key) || { origin_country: row.origin_country||row.origin, dest_country: row.dest_country||row.destination, shipments: 0, value_usd: 0 };
-                        prev.shipments += 1;
-                        const v = Number(row.value_usd||0);
-                        if (!Number.isNaN(v)) prev.value_usd = (prev.value_usd||0) + v;
-                        aggMap.set(key, prev);
-                      }
-                      const lanesAgg = Array.from(aggMap.values());
-                      setLanes(lanesAgg);
-                      // Compute baseline and proposed
-                      const baseline = lanesAgg.reduce((sum, l)=> sum + (Number(l.value_usd||0)), 0) || (shipments12m * 8650);
-                      let proposed = baseline * 0.87;
-                      try {
-                        const bench = await rfpGetBenchmark({ mode: 'ocean', lanes: lanesAgg.map(l=> ({ o: l.origin_country, d: l.dest_country, vol: l.shipments })) });
-                        if (bench && typeof bench.proposedUsd === 'number') proposed = bench.proposedUsd;
-                      } catch {}
-                      const savings = Math.max(0, baseline - proposed);
-                      const pct = baseline > 0 ? (savings / baseline) : 0;
-                      setFinModel({ baseline, proposed, savings, pct });
-                    } finally {
-                      setBusy(null);
-                    }
-                  }}>Load KPIs</Button>
-                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                   <LitPanel title="Company">
                     <div className="text-3xl font-black text-slate-900">{company?.companyName || '—'}</div>
@@ -339,7 +367,7 @@ export default function RFPStudio() {
 
               <TabsContent value="proposal" className="mt-6 space-y-6">
                 <LitPanel title="Executive Summary">
-                  <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Draft your executive summary here..."/>
+                  <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Draft your executive summary here..." value={proposalSummary} onChange={e=> setProposalSummary(e.target.value)} />
                   <div className="mt-2 flex gap-2">
                     <Button size="sm" className="bg-violet-600 text-white"><BarChart3 className="w-4 h-4 mr-1"/> AI Assist</Button>
                     <Button size="sm" variant="outline">Refine with AI</Button>
@@ -347,7 +375,7 @@ export default function RFPStudio() {
                   </div>
                 </LitPanel>
                 <LitPanel title="Solution Offering">
-                  <textarea className="w-full h-32 p-3 border rounded-lg" placeholder="Describe your solution..."/>
+                  <textarea className="w-full h-32 p-3 border rounded-lg" placeholder="Describe your solution..." value={proposalSolution} onChange={e=> setProposalSolution(e.target.value)} />
                 </LitPanel>
               </TabsContent>
 
