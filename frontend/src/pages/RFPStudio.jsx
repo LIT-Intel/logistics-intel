@@ -49,7 +49,7 @@ export default function RFPStudio() {
   const [company, setCompany] = useState(null);
   const [lanes, setLanes] = useState([]);
   const [finModel, setFinModel] = useState(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(null);
 
   useEffect(() => {
     const checkUserAndLoad = async () => {
@@ -289,9 +289,9 @@ export default function RFPStudio() {
                         companyName: item.company_name || 'Company',
                         shipments12m,
                         lastActivity: (item.lastActivity && item.lastActivity.value) ? item.lastActivity.value : (item.lastActivity || null) || undefined,
-                        originsTop: (item.originsTop || []).map((o:any)=> String(o.v||o)),
-                        destsTop: (item.destsTop || []).map((d:any)=> String(d.v||d)),
-                        carriersTop: (item.carriersTop || []).map((c:any)=> String(c.v||c)),
+                        originsTop: (item.originsTop || []).map((o)=> String((o && (o.v||o)) || '')),
+                        destsTop: (item.destsTop || []).map((d)=> String((d && (d.v||d)) || '')),
+                        carriersTop: (item.carriersTop || []).map((c)=> String((c && (c.v||c)) || '')),
                       };
                       setCompany(kpis);
                       // Fetch shipments and aggregate lanes
