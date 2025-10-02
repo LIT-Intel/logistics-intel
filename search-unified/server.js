@@ -7,12 +7,23 @@ const express = require('express');
 const cors = require('cors');
 const { BigQuery } = require('@google-cloud/bigquery');
 
+console.log('search-unified: loading express and bigquery modules');
+
 const app = express();
 app.get('/healthz', (_req, res) => { console.log('Health check called'); res.status(200).json({ ok: true, service: 'search-unified' }); });
 app.use(express.json());
 app.use(cors());
 
-const bq = new BigQuery();
+let bq;
+try {
+  console.log('search-unified: initializing BigQuery client');
+  bq = new BigQuery();
+  console.log('search-unified: BigQuery client initialized successfully');
+} catch (e) {
+  console.error('search-unified: FATAL: failed to initialize BigQuery client', e);
+  process.exit(1);
+}
+
 const BQ_LOCATION = process.env.BQ_LOCATION || 'US';
 
 // Basic health & index listing
@@ -52,25 +63,29 @@ async function handleGetFilterOptions(_req, res) {
 
     const qModes = `
       SELECT DISTINCT LOWER(mode) AS mode
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       ${where}
       AND mode IS NOT NULL AND mode != ''
       ORDER BY mode`;
     const qOrigins = `
       SELECT DISTINCT UPPER(origin_country) AS origin_country
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       ${where}
       AND origin_country IS NOT NULL AND origin_country != ''
       ORDER BY origin_country`;
     const qDests = `
       SELECT DISTINCT UPPER(dest_country) AS dest_country
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       ${where}
       AND dest_country IS NOT NULL AND dest_country != ''
       ORDER BY dest_country`;
     const qRange = `
       SELECT MIN(date) AS date_min, MAX(date) AS date_max
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       WHERE date IS NOT NULL`;
 
     const [[modes], [origins], [dests], [rng]] = await Promise.all([
@@ -105,28 +120,32 @@ app.post('/getFilterOptions', async (_req, res) => {
 
     const qModes = `
       SELECT DISTINCT LOWER(mode) AS mode
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       ${where}
       AND mode IS NOT NULL AND mode != ''
       ORDER BY mode
     `;
     const qOrigins = `
       SELECT DISTINCT UPPER(origin_country) AS origin_country
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       ${where}
       AND origin_country IS NOT NULL AND origin_country != ''
       ORDER BY origin_country
     `;
     const qDests = `
       SELECT DISTINCT UPPER(dest_country) AS dest_country
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       ${where}
       AND dest_country IS NOT NULL AND dest_country != ''
       ORDER BY dest_country
     `;
     const qRange = `
       SELECT MIN(date) AS date_min, MAX(date) AS date_max
-      FROM \`logistics-intel.lit.v_shipments_normalized\`
+      FROM 
+      logistics-intel.lit.v_shipments_normalized
       WHERE date IS NOT NULL
     `;
 
@@ -241,7 +260,8 @@ app.get('/public/getCompanyShipments', async (req, res) => {
     const company_id = String(req.query?.company_id || '');
     if (!company_id) return res.status(400).json({ error: 'missing company_id' });
     res.status(200).json({ company_id, rows: [], source: 'primary' });
-  } catch (e) {
+  }
+  catch (e) {
     console.error('getCompanyShipments error:', e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
@@ -318,5 +338,5 @@ app.patch('/crm/companyStage', async (req, res) => {
 // Start server
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`search-unified listening on port ${PORT}`);
+  console.log(`search-unified: server listening on port ${PORT}`);
 });
