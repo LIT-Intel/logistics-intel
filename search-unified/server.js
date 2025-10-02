@@ -176,15 +176,18 @@ app.post('/public/searchCompanies', async (req, res) => {
     const offset = (page - 1) * limit;
 
     const whereClauses = [];
-    const params = {};
+    const params = { limit, offset };
+    const types = { limit: 'INT64', offset: 'INT64' };
 
     if (q) {
       whereClauses.push(`ov.company_name LIKE @q`);
       params.q = `%${q}%`;
+      types.q = 'STRING';
     }
     if (hs && hs.length > 0) {
       whereClauses.push(`EXISTS (SELECT 1 FROM UNNEST(ov.top_hs_list) as h, UNNEST(@hs) as hs_filter WHERE STARTS_WITH(h.hs_code, hs_filter))`);
       params.hs = hs;
+      types.hs = { type: 'ARRAY', arrayType: { type: 'STRING' } };
     }
 
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -212,7 +215,8 @@ app.post('/public/searchCompanies', async (req, res) => {
 
     const [job] = await bq.createQueryJob({
       query,
-      params: { ...params, limit, offset },
+      params,
+      types,
       location: BQ_LOCATION,
     });
     const [rows] = await job.getQueryResults();
