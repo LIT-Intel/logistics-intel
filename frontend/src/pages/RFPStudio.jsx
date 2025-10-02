@@ -8,6 +8,8 @@ import LitSidebar from '../components/ui/LitSidebar';
 import LitPageHeader from '../components/ui/LitPageHeader';
 import LitPanel from '../components/ui/LitPanel';
 import LitWatermark from '../components/ui/LitWatermark';
+import { rfpSearchCompanies, rfpGetCompanyShipments, rfpGetBenchmark, rfpExportHtml, rfpExportPdf, rfpAddToCampaign } from '@/lib/api.rfp';
+import type { CompanyKpis, LanesAgg, FinancialModel } from '@/lib/types.rfp';
 
 // existing builder/preview kept for future wiring
 
@@ -44,6 +46,11 @@ export default function RFPStudio() {
   const [user, setUser] = useState(null);
 
   const hasAccess = true;
+
+  const [company, setCompany] = useState<CompanyKpis | null>(null);
+  const [lanes, setLanes] = useState<LanesAgg[]>([]);
+  const [finModel, setFinModel] = useState<FinancialModel | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const checkUserAndLoad = async () => {
@@ -266,11 +273,65 @@ export default function RFPStudio() {
               </TabsList>
 
               <TabsContent value="overview" className="mt-6 space-y-6">
+                <div className="flex items-center justify-end">
+                  <Button size="sm" disabled={busy==="load"} onClick={async()=>{
+                    try {
+                      setBusy("load");
+                      // Pick a company by client name from active RFP
+                      const r = rfps.find(x=> x.id===activeId);
+                      const q = r?.client || r?.name?.split('—')?.[0] || '';
+                      const s = await rfpSearchCompanies({ q, limit: 1, offset: 0 });
+                      const item = (Array.isArray(s?.items) && s.items[0]) || null;
+                      if (!item) { setCompany(null); setLanes([]); setFinModel(null); alert('No company found'); return; }
+                      const companyId = item.company_id || '';
+                      const shipments12m = Number(item.shipments12m || item.shipments || 0);
+                      const kpis: CompanyKpis = {
+                        companyId,
+                        companyName: item.company_name || 'Company',
+                        shipments12m,
+                        lastActivity: (item.lastActivity && item.lastActivity.value) ? item.lastActivity.value : (item.lastActivity || null) || undefined,
+                        originsTop: (item.originsTop || []).map((o:any)=> String(o.v||o)),
+                        destsTop: (item.destsTop || []).map((d:any)=> String(d.v||d)),
+                        carriersTop: (item.carriersTop || []).map((c:any)=> String(c.v||c)),
+                      };
+                      setCompany(kpis);
+                      // Fetch shipments and aggregate lanes
+                      const g = await rfpGetCompanyShipments(companyId, 200, 0);
+                      const rows: any[] = Array.isArray(g?.rows) ? g.rows : [];
+                      const aggMap = new Map<string, {origin_country:string;dest_country:string;shipments:number; value_usd?:number}>();
+                      for (const row of rows) {
+                        const key = `${row.origin_country||row.origin}=>${row.dest_country||row.destination}`;
+                        const prev = aggMap.get(key) || { origin_country: row.origin_country||row.origin, dest_country: row.dest_country||row.destination, shipments: 0, value_usd: 0 };
+                        prev.shipments += 1;
+                        const v = Number(row.value_usd||0);
+                        if (!Number.isNaN(v)) prev.value_usd = (prev.value_usd||0) + v;
+                        aggMap.set(key, prev);
+                      }
+                      const lanesAgg = Array.from(aggMap.values());
+                      setLanes(lanesAgg as any);
+                      // Compute baseline and proposed
+                      const baseline = lanesAgg.reduce((sum, l)=> sum + (Number(l.value_usd||0)), 0) || (shipments12m * 8650);
+                      let proposed = baseline * 0.87;
+                      try {
+                        const bench = await rfpGetBenchmark({ mode: 'ocean', lanes: lanesAgg.map(l=> ({ o: l.origin_country, d: l.dest_country, vol: l.shipments })) });
+                        if (bench && typeof bench.proposedUsd === 'number') proposed = bench.proposedUsd;
+                      } catch {}
+                      const savings = Math.max(0, baseline - proposed);
+                      const pct = baseline > 0 ? (savings / baseline) : 0;
+                      setFinModel({ baseline, proposed, savings, pct } as FinancialModel);
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}>Load KPIs</Button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                  <LitPanel title="Active RFPs"><div className="text-3xl font-black text-slate-900">3</div><p className="text-xs text-slate-500 mt-1">+1 this week</p></LitPanel>
-                  <LitPanel title="Avg Response Time"><div className="text-3xl font-black text-slate-900">2.4d</div><p className="text-xs text-slate-500 mt-1">-0.3d vs prev</p></LitPanel>
-                  <LitPanel title="# Vendors Invited"><div className="text-3xl font-black text-slate-900">12</div><p className="text-xs text-slate-500 mt-1">+2 new</p></LitPanel>
-                  <LitPanel title="On-Time Milestones"><div className="text-3xl font-black text-slate-900">92%</div><p className="text-xs text-slate-500 mt-1">green status</p></LitPanel>
+                  <LitPanel title="Company">
+                    <div className="text-3xl font-black text-slate-900">{company?.companyName || '—'}</div>
+                    <p className="text-xs text-slate-500 mt-1">ID: {company?.companyId || '—'}</p>
+                  </LitPanel>
+                  <LitPanel title="Shipments (12M)"><div className="text-3xl font-black text-slate-900">{(company?.shipments12m||0).toLocaleString()}</div></LitPanel>
+                  <LitPanel title="Top Origins"><div className="text-sm text-slate-900">{(company?.originsTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
+                  <LitPanel title="Top Carriers"><div className="text-sm text-slate-900">{(company?.carriersTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
                 </div>
                 <LitPanel title="Timeline">
                   <div className="h-40 flex items-center justify-center text-slate-500 text-sm">Timeline chart placeholder</div>
@@ -293,7 +354,24 @@ export default function RFPStudio() {
 
               <TabsContent value="financials" className="mt-6 space-y-6">
                 <LitPanel title="Savings Model">
-                  <div className="h-48 flex items-center justify-center text-slate-500 text-sm">Baseline vs Proposed bar chart</div>
+                  {finModel ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                      <div className="rounded-lg border p-4 bg-white/95">
+                        <div className="text-slate-500">Baseline</div>
+                        <div className="text-2xl font-black text-slate-900">${finModel.baseline.toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-lg border p-4 bg-white/95">
+                        <div className="text-slate-500">Proposed</div>
+                        <div className="text-2xl font-black text-slate-900">${finModel.proposed.toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-lg border p-4 bg-white/95">
+                        <div className="text-slate-500">Savings</div>
+                        <div className="text-2xl font-black text-green-600">${finModel.savings.toLocaleString()} ({(finModel.pct*100).toFixed(1)}%)</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-48 flex items-center justify-center text-slate-500 text-sm">Baseline vs Proposed chart</div>
+                  )}
                 </LitPanel>
               </TabsContent>
 
@@ -318,9 +396,15 @@ export default function RFPStudio() {
 
               <TabsContent value="export" className="mt-6 space-y-4">
                 <div className="flex gap-2">
-                  <Button className="bg-blue-600 text-white">Export PDF</Button>
-                  <Button variant="outline">Export HTML</Button>
-                  <Button variant="outline">Add to Campaign</Button>
+                  <Button className="bg-blue-600 text-white" disabled={busy==='pdf'} onClick={async()=>{
+                    try{ setBusy('pdf'); const body={ company: company||{}, proposal:{ executiveSummary:'', solutionOffering:''}, financials: finModel||{} }; const r= await rfpExportPdf(body); if(r?.pdfUrl){ window.open(r.pdfUrl,'_blank'); } else { alert('PDF generated (server may return blob).'); } } finally { setBusy(null); }
+                  }}>Export PDF</Button>
+                  <Button variant="outline" disabled={busy==='html'} onClick={async()=>{
+                    try{ setBusy('html'); const body={ company: company||{}, proposal:{ executiveSummary:'', solutionOffering:''}, financials: finModel||{} }; const r= await rfpExportHtml(body); alert('HTML generated'); } finally { setBusy(null); }
+                  }}>Export HTML</Button>
+                  <Button variant="outline" disabled={busy==='campaign'} onClick={async()=>{
+                    try{ setBusy('campaign'); const html = '<h1>Proposal</h1>'; const title = `RFP: ${company?.companyName||'Company'}`; await rfpAddToCampaign({ companyId: company?.companyId||'', title, html }); alert('Draft campaign created'); } finally { setBusy(null); }
+                  }}>Add to Campaign</Button>
                 </div>
                 <LitPanel title="Preview">
                   <div className="h-56 flex items-center justify-center text-slate-500 text-sm">Proposal preview placeholder</div>
