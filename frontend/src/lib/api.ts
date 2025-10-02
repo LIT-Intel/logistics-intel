@@ -216,12 +216,8 @@ export async function generateQuote(input: { companyId?: string|number; lanes: A
 export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string|null; source?: string }) {
   // Primary endpoint per gateway spec
   try {
-    const res = await fetch(`${API_BASE}/crm/saveCompany`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'accept': 'application/json' },
-      body: JSON.stringify({ ...payload, source: payload.source ?? 'search' })
-    });
-    if (res.ok) return res.json();
+    const j = await api.post(`/crm/saveCompany`, { ...payload, source: payload.source ?? 'search' });
+    return j as any;
     // If 404/405, fall through to company.create
   } catch (_) {}
 
@@ -240,16 +236,7 @@ export async function saveCompanyToCrm(payload: { company_id: string; company_na
 }
 
 export async function enrichCompany(payload: { company_id: string }) {
-  const res = await fetch(`${API_BASE}/crm/enrich`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`enrich ${res.status}:${t.slice(0,200)}`);
-  }
-  return res.json();
+  return api.post(`/crm/enrich`, payload);
 }
 
 export async function recallCompany(payload: { company_id: string; questions?: string[] }) {
@@ -301,13 +288,7 @@ export async function getCompany(company_id: string) {
 }
 
 export async function enrichContacts(company_id: string) {
-  const res = await fetch(`${API_BASE}/crm/contacts.enrich`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
-    body: JSON.stringify({ company_id })
-  });
-  if (!res.ok) throw new Error(`contacts.enrich ${res.status}`);
-  return res.json();
+  return api.post(`/crm/contacts.enrich`, { company_id });
 }
 
 export async function listContacts(company_id: string, dept?: string) {
