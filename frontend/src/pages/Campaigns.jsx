@@ -17,6 +17,7 @@ import LitPanel from '@/components/ui/LitPanel';
 import LitKpi from '@/components/ui/LitKpi';
 import LitSidebar from '@/components/ui/LitSidebar';
 import LitWatermark from '@/components/ui/LitWatermark';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line } from 'recharts';
 
 // Helper function to ensure data is an array, handling various API response formats
 const asArray = (data) => {
@@ -38,6 +39,8 @@ export default function CampaignsPage() {
   const [hasAccess, setHasAccess] = useState(false); // hasAccess is now a state variable
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [tab, setTab] = useState('overview');
+  const [activeId, setActiveId] = useState(null);
+  const [sequenceById, setSequenceById] = useState({});
 
   // This useEffect now handles all initial data loading and access checks
   useEffect(() => {
@@ -88,6 +91,10 @@ export default function CampaignsPage() {
 
     loadData();
   }, [user]);
+
+  useEffect(()=>{
+    if (!activeId && campaigns.length) setActiveId(campaigns[0].id);
+  },[campaigns, activeId]);
 
   const handleCreateNew = () => {
     setEditingCampaign(null);
@@ -188,14 +195,14 @@ export default function CampaignsPage() {
           </Button>
           <div className="space-y-3">
             {campaigns.map((c) => (
-              <div key={c.id} className="p-3 rounded-xl bg-white shadow hover:shadow-md transition border border-slate-200">
+              <button key={c.id} onClick={()=>{ setActiveId(c.id); setTab('builder'); setSelectedCampaign(c); }} className={`w-full text-left p-3 rounded-xl bg-white shadow hover:shadow-md transition border ${activeId===c.id? 'border-violet-400 ring-1 ring-violet-200' : 'border-slate-200'}`}>
                 <div className="font-semibold">{c.name || c.title || 'Campaign'}</div>
                 <div className="text-xs text-slate-500">{c.status || 'Draft'}</div>
                 <div className="flex justify-between text-xs mt-2">
                   <span>Open: {(c.open ?? 0)}%</span>
                   <span>Reply: {(c.reply ?? 0)}%</span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </LitSidebar>
@@ -242,22 +249,82 @@ export default function CampaignsPage() {
 
           <TabsContent value="builder" className="mt-6">
             <LitPanel title="Sequence Builder">
-              <p className="text-slate-600">Drag-and-drop outreach sequence builder here…</p>
-              <div className="mt-4 grid gap-3">
-                <div className="rounded-xl border p-3">Step 1: Email — Subject, Message, Wait Days</div>
-                <div className="rounded-xl border p-3">Step 2: LinkedIn — Message, Wait Days</div>
-                <div className="rounded-xl border p-3">Step 3: Follow-up Email — Subject, Message, Wait Days</div>
-              </div>
+              {(() => {
+                const currentId = activeId || (campaigns[0] && campaigns[0].id);
+                const seq = sequenceById[currentId] || [
+                  { channel:'email', subject:'Intro', message:'Quick intro about savings…', wait:2 },
+                  { channel:'linkedin', subject:'', message:'Connect note', wait:3 },
+                  { channel:'email', subject:'Follow-up', message:'Just floating this back…', wait:4 },
+                ];
+                const updateSeq = (next) => setSequenceById(prev => ({ ...prev, [currentId]: next }));
+                const onChange = (idx, key, val) => {
+                  const next = seq.map((s,i)=> i===idx? ({ ...s, [key]: val }): s);
+                  updateSeq(next);
+                };
+                return (
+                  <div className="grid gap-3">
+                    {seq.map((step, i)=> (
+                      <div key={i} className="rounded-xl border p-3 bg-white">
+                        <div className="flex items-center gap-2 mb-2">
+                          <select value={step.channel} onChange={e=> onChange(i,'channel', e.target.value)} className="border rounded px-2 py-1 text-sm">
+                            <option value="email">Email</option>
+                            <option value="linkedin">LinkedIn</option>
+                          </select>
+                          {step.channel==='email' && (
+                            <input value={step.subject} onChange={e=> onChange(i,'subject', e.target.value)} placeholder="Subject" className="flex-1 border rounded px-2 py-1 text-sm" />
+                          )}
+                          <input type="number" min="0" value={step.wait} onChange={e=> onChange(i,'wait', Number(e.target.value||0))} className="w-20 border rounded px-2 py-1 text-sm" />
+                          <button className="text-xs px-2 py-1 border rounded" onClick={()=> updateSeq(seq.filter((_,idx)=> idx!==i))}>Remove</button>
+                        </div>
+                        <textarea value={step.message} onChange={e=> onChange(i,'message', e.target.value)} placeholder="Message" className="w-full h-24 border rounded p-2 text-sm" />
+                      </div>
+                    ))}
+                    <div className="flex gap-2">
+                      <button className="text-xs px-3 py-1.5 border rounded" onClick={()=> updateSeq([...seq, { channel:'email', subject:'', message:'', wait:3 }])}>Add Step</button>
+                      <button className="text-xs px-3 py-1.5 border rounded" onClick={()=> alert('Sequence saved (stub).')}>Save</button>
+                    </div>
+                  </div>
+                );
+              })()}
             </LitPanel>
           </TabsContent>
 
           <TabsContent value="templates" className="mt-6">
-            <TemplateList />
+            <TemplateList onApply={(tpl)=>{
+              const currentId = activeId || (campaigns[0] && campaigns[0].id);
+              const preset = tpl==='Logistics Buyer Intro'
+                ? [
+                    { channel:'email', subject:'Intro', message:'We help reduce freight costs by 12–18%…', wait:2 },
+                    { channel:'linkedin', subject:'', message:'Exploring ways to streamline freight ops…', wait:3 },
+                  ]
+                : [ { channel:'email', subject: tpl, message:`Template: ${tpl}`, wait:2 } ];
+              setSequenceById(prev => ({ ...prev, [currentId]: preset }));
+              setTab('builder');
+            }} />
           </TabsContent>
 
           <TabsContent value="analytics" className="mt-6">
             <LitPanel title="Engagement Analytics">
-              <p className="text-slate-600">Charts and engagement analytics here…</p>
+              {(() => {
+                const c = campaigns.find(x=> x.id===activeId) || campaigns[0] || { open:0, reply:0 };
+                const data = [
+                  { k:'Open', v:c.open||0 },
+                  { k:'Reply', v:c.reply||0 },
+                ];
+                return (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="k" />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="v" fill="#7c3aed" radius={[6,6,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
             </LitPanel>
           </TabsContent>
         </Tabs>
