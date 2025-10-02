@@ -128,11 +128,12 @@ export default function RFPStudio() {
           <LitSidebar title="RFPs">
               <div className="space-y-3">
                 {rfps.map(r => (
-                  <button key={r.id} onClick={()=>setActiveId(r.id)} className={`w-full text-left p-3 rounded-xl border ${activeId===r.id? 'bg-white ring-2 ring-violet-300 border-slate-200':'bg-white/90 border-slate-200 hover:bg-white'}`}>
+                  <button key={r.id} onClick={()=>{ setActiveId(r.id); setActiveTab('overview'); }} className={`w-full text-left p-3 rounded-xl border ${activeId===r.id? 'bg-white ring-2 ring-violet-300 border-slate-200':'bg-white/90 border-slate-200 hover:bg-white'}`}>
                     <div className="text-sm font-semibold text-[#23135b] truncate">{r.name}</div>
                     <div className="mt-1 text-xs text-slate-600 flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">{r.status}</span>
                       <span className="text-slate-500">Due {r.due}</span>
+                      {r.client && <span className="text-slate-700">• {r.client}</span>}
                     </div>
                   </button>
                 ))}
@@ -142,7 +143,7 @@ export default function RFPStudio() {
 
         <main className="flex-1 min-w-0 p-[5px] max-w-none">
           <LitWatermark />
-          <LitPageHeader title="RFP Studio">
+          <LitPageHeader title={company?.companyName ? `RFP Studio — ${company.companyName}` : 'RFP Studio'}>
             <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white" onClick={()=>{
               const name = prompt('RFP name','New RFP');
               if (!name) return;
@@ -162,6 +163,7 @@ export default function RFPStudio() {
                 const pricedRes = priceAll(payload.lanes, payload.rates);
                 setPriced(pricedRes);
                 setActiveTab('proposal');
+                if (fileRef.current) fileRef.current.value = '';
               } catch(err){ alert('Import failed'); }
             }} />
             <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
@@ -197,6 +199,11 @@ export default function RFPStudio() {
               </TabsContent>
 
               <TabsContent value="proposal" className="mt-6 space-y-6">
+                {rfpPayload?.__diagnostics && (
+                  <div className="rounded-xl border border-slate-200 bg-white/90 p-3 text-sm text-slate-700">
+                    Confidence: {(rfpPayload.__diagnostics.confidence*100).toFixed(0)}% — Sheets scanned: {rfpPayload.__diagnostics.sheetRanks.length}
+                  </div>
+                )}
                 <LitPanel title="Executive Summary">
                   <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Draft your executive summary here..." value={proposalSummary} onChange={e=> setProposalSummary(e.target.value)} />
                   <div className="mt-2 flex gap-2">
