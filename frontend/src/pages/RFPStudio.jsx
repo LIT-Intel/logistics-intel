@@ -212,7 +212,7 @@ export default function RFPStudio() {
                     <Button size="sm" variant="outline">Generate Talk Tracks</Button>
                   </div>
                 </LitPanel>
-                {priced && (
+                {priced && priced.lanes.length > 0 && (
                   <LitPanel title="Lane Pricing (Detected)">
                     <div className="text-sm text-slate-600 mb-2">Total Annual: ${priced.totalAnnual.toLocaleString()}</div>
                     <div className="space-y-3">
@@ -228,6 +228,11 @@ export default function RFPStudio() {
                     </div>
                   </LitPanel>
                 )}
+                {!priced || priced.lanes.length === 0 ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
+                    Upload detected, but lanes/rates were empty. Ensure your CSV has a lanes sheet (mode, origin/destination) and a rates sheet (charge, uom, rate). Try saving as XLSX if CSV headers are merged.
+                  </div>
+                ) : null}
                 <LitPanel title="Solution Offering">
                   <textarea className="w-full h-32 p-3 border rounded-lg" placeholder="Describe your solution..." value={proposalSolution} onChange={e=> setProposalSolution(e.target.value)} />
                 </LitPanel>

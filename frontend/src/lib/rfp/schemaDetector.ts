@@ -47,8 +47,8 @@ function canonUom(uomText: string): RfpRateCharge['uom'] {
 function scoreSheet(cols: string[]): Score {
   const laneKeys = [ ...Object.values(SYN.lanes).flat() ];
   const rateKeys = [ ...Object.values(SYN.rates).flat() ];
-  const laneScore = cols.reduce((acc, c) => acc + (laneKeys.some(k => headerKey(c).includes(k)) ? 1 : 0), 0);
-  const rateScore = cols.reduce((acc, c) => acc + (rateKeys.some(k => headerKey(c).includes(k)) ? 1 : 0), 0);
+  const laneScore = cols.reduce((acc, c) => acc + (laneKeys.some(k => headerKey(c).includes(k)) ? 2 : 0), 0);
+  const rateScore = cols.reduce((acc, c) => acc + (rateKeys.some(k => headerKey(c).includes(k)) ? 2 : 0), 0);
   return { laneScore, rateScore };
 }
 
@@ -179,7 +179,7 @@ export function detectFromSheets(sheets: Sheet[]): RfpPayload {
 
   const laneHits = lanes.length > 0 ? 1 : 0;
   const rateHits = rates.length > 0 ? 1 : 0;
-  const confidence = Math.min(1, 0.2 + 0.2 * sheetRanks.filter(s => s.laneScore >= 2).length + 0.2 * sheetRanks.filter(s => s.rateScore >= 2).length + 0.2 * laneHits + 0.2 * rateHits);
+  const confidence = Math.min(1, 0.2 + 0.2 * sheetRanks.filter(s => s.laneScore >= 4).length + 0.2 * sheetRanks.filter(s => s.rateScore >= 4).length + 0.2 * laneHits + 0.2 * rateHits);
 
   return { meta, lanes, rates, __diagnostics: { sheetRanks, confidence } };
 }

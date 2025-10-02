@@ -8,8 +8,15 @@ export async function ingestWorkbook(file: File): Promise<RfpPayload> {
     const j = JSON.parse(text);
     if (j && j.meta && j.lanes && j.rates) return j as RfpPayload;
   }
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array' });
+  // CSV handling: read as text; XLSX can parse string input
+  let wb: XLSX.WorkBook;
+  if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
+    const text = await file.text();
+    wb = XLSX.read(text, { type: 'string' });
+  } else {
+    const buf = await file.arrayBuffer();
+    wb = XLSX.read(buf, { type: 'array' });
+  }
   const sheets = wb.SheetNames.map((name: string) => {
     const ws = wb.Sheets[name];
     const rows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false }) as Record<string, any>[];
