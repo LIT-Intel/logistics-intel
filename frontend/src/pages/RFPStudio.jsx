@@ -54,6 +54,7 @@ export default function RFPStudio() {
   const fileRef = useRef(null);
   const [rfpPayload, setRfpPayload] = useState(null);
   const [priced, setPriced] = useState(null);
+  const [templates, setTemplates] = useState(defaultTemplates);
   const [proposalSummary, setProposalSummary] = useState('');
   const [proposalSolution, setProposalSolution] = useState('');
 
@@ -161,7 +162,7 @@ export default function RFPStudio() {
                 const f = e.target.files && e.target.files[0]; if (!f) return;
                 const payload = await ingestWorkbook(f);
                 setRfpPayload(payload);
-                const pricedRes = priceAll(payload.lanes, payload.rates);
+                const pricedRes = priceAll(payload.lanes, payload.rates, templates);
                 setPriced(pricedRes);
                 setActiveTab('proposal');
                 if (fileRef.current) fileRef.current.value = '';
@@ -185,21 +186,68 @@ export default function RFPStudio() {
                 <TabsTrigger value="export">Export & Outreach</TabsTrigger>
               </TabsList>
               <TabsContent value="rates" className="mt-6 space-y-6">
-                <LitPanel title="Proposed Rate Templates">
-                  <div className="grid md:grid-cols-2 gap-4 text-sm">
-                    {Object.entries(defaultTemplates).map(([k, v]) => (
+                <LitPanel title="Proposed Rate Templates (Editable)">
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm border border-slate-200">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="p-2 border">Service</th>
+                          <th className="p-2 border">Base Name</th>
+                          <th className="p-2 border">UOM</th>
+                          <th className="p-2 border">Rate</th>
+                          <th className="p-2 border">Min</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(templates).map(([k, v]) => (
+                          <tr key={k}>
+                            <td className="p-2 border font-semibold text-slate-900">{k}</td>
+                            <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={v.base.name} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, name: e.target.value } }}))} /></td>
+                            <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={v.base.uom} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, uom: e.target.value } }}))} /></td>
+                            <td className="p-2 border"><input type="number" className="w-full border rounded px-2 py-1" value={v.base.rate} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, rate: Number(e.target.value||0) } }}))} /></td>
+                            <td className="p-2 border"><input type="number" className="w-full border rounded px-2 py-1" value={v.base.min||0} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, min: Number(e.target.value||0) } }}))} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </LitPanel>
+                <LitPanel title="Accessorials per Service Level">
+                  <div className="space-y-4">
+                    {Object.entries(templates).map(([k, v]) => (
                       <div key={k} className="rounded-xl border p-3 bg-white/95">
                         <div className="font-semibold text-slate-900 mb-2">{k}</div>
-                        <div className="text-slate-700">Base: {v.base.name} — {v.base.uom} — ${v.base.rate}{v.base.min?` (min ${v.base.min})`:''}</div>
-                        <div className="mt-2 text-slate-600">Accessorials:</div>
-                        <ul className="list-disc pl-5 text-slate-600">
-                          {v.accessorials.map((a,i)=>(<li key={i}>{a.name} — {a.uom} — ${a.rate}</li>))}
-                        </ul>
+                        <table className="w-full text-sm border border-slate-200">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="p-2 border">Name</th>
+                              <th className="p-2 border">UOM</th>
+                              <th className="p-2 border">Rate</th>
+                              <th className="p-2 border">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {v.accessorials.map((a,i)=> (
+                              <tr key={i}>
+                                <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={a.name} onChange={(e)=> setTemplates(t=>{ const next={...t}; next[k].accessorials[i]={...a, name:e.target.value}; return next; })} /></td>
+                                <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={a.uom} onChange={(e)=> setTemplates(t=>{ const next={...t}; next[k].accessorials[i]={...a, uom:e.target.value}; return next; })} /></td>
+                                <td className="p-2 border"><input type="number" className="w-full border rounded px-2 py-1" value={a.rate} onChange={(e)=> setTemplates(t=>{ const next={...t}; next[k].accessorials[i]={...a, rate:Number(e.target.value||0)}; return next; })} /></td>
+                                <td className="p-2 border"><button className="text-red-600" onClick={()=> setTemplates(t=>{ const next={...t}; next[k].accessorials = next[k].accessorials.filter((_,idx)=> idx!==i); return next; })}>Remove</button></td>
+                              </tr>
+                            ))}
+                            <tr>
+                              <td className="p-2 border" colSpan={4}><button className="text-blue-600" onClick={()=> setTemplates(t=>{ const next={...t}; next[k].accessorials = [...next[k].accessorials, { name: 'New Charge', uom: 'per_shpt', rate: 0, currency: 'USD' }]; return next; })}>+ Add Accessorial</button></td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     ))}
                   </div>
                 </LitPanel>
-                <div className="rounded-xl border border-slate-200 bg-white/90 p-3 text-xs text-slate-600">These templates are applied automatically when no explicit rates are uploaded. Edit this source later to customize per account.</div>
+                <div className="flex gap-2">
+                  <Button className="bg-blue-600 text-white" onClick={()=>{ if (rfpPayload) { setPriced(priceAll(rfpPayload.lanes||[], rfpPayload.rates||[], templates)); } }}>Apply Templates to Lanes</Button>
+                  <Button variant="outline" onClick={()=> setTemplates(defaultTemplates)}>Reset Templates</Button>
+                </div>
               </TabsContent>
 
               <TabsContent value="overview" className="mt-6 space-y-6">

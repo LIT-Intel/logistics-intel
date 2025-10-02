@@ -1,5 +1,5 @@
 import type { RfpLane, RfpRate, RfpRateScope, RfpRateCharge, PricedLane, PricedLineItem, PricedResult } from '@/types/rfp';
-import { defaultTemplates, pickTemplateKey } from './templates';
+import { defaultTemplates, pickTemplateKey, type RateTemplates } from './templates';
 
 function matchesScope(lane: RfpLane, scope: RfpRateScope): boolean {
   const modeOk = true; // caller filters by mode already
@@ -50,7 +50,7 @@ export function priceLane(lane: RfpLane, rate: RfpRate): PricedLane {
   return { laneIndex: -1, mode: (lane.mode || 'OCEAN') as NonNullable<RfpLane['mode']>, equipment: lane.equipment, charges: items, unitCost, annualCost };
 }
 
-export function priceAll(lanes: RfpLane[], rates: RfpRate[]): PricedResult {
+export function priceAll(lanes: RfpLane[], rates: RfpRate[], templates?: RateTemplates): PricedResult {
   const priced: PricedLane[] = [];
   for (let i=0; i<lanes.length; i++) {
     const lane = lanes[i];
@@ -59,7 +59,7 @@ export function priceAll(lanes: RfpLane[], rates: RfpRate[]): PricedResult {
     // If no explicit rates, synthesize from templates
     if (!chosen) {
       const key = pickTemplateKey(lane.mode, lane.equipment);
-      const tmpl = defaultTemplates[key];
+      const tmpl = (templates || defaultTemplates)[key];
       const synthetic: RfpRate = {
         mode: lane.mode,
         scope: { equipment: lane.equipment },
