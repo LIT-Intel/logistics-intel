@@ -1,11 +1,13 @@
+export type Mode = 'AIR' | 'OCEAN' | 'LCL' | 'FCL' | 'TRUCK' | 'RAIL';
+
 export type RfpMeta = {
-  bid_name: string;
-  customer: string;
-  valid_from: string; // YYYY-MM-DD
-  valid_to: string;   // YYYY-MM-DD
-  contact_name: string;
-  contact_email: string;
-  currency: string;   // e.g. USD
+  bid_name?: string;
+  customer?: string;
+  valid_from?: string; // YYYY-MM-DD
+  valid_to?: string;   // YYYY-MM-DD
+  contact_name?: string;
+  contact_email?: string;
+  currency?: string;   // default USD
 };
 
 export type RfpLocation = {
@@ -16,29 +18,31 @@ export type RfpLocation = {
 };
 
 export type RfpLaneDemand = {
-  shipments_per_year: number;
+  shipments_per_year?: number;
   avg_weight_kg?: number;
   avg_volume_cbm?: number;
 };
 
 export type RfpLane = {
-  mode: 'AIR'|'OCEAN'|'LCL'|'FCL'|'TRUCK';
+  mode?: Mode;
   incoterm?: string;
-  origin: RfpLocation;
-  destination: RfpLocation;
+  origin?: RfpLocation;
+  destination?: RfpLocation;
   service_level?: string;
   equipment?: string;
-  demand: RfpLaneDemand;
+  demand?: RfpLaneDemand;
 };
 
-export type RfpCharge = {
+export type RfpRateCharge = {
   name: string;
   uom: 'per_kg'|'per_cbm'|'per_cnt'|'per_shpt'|'flat';
   rate: number;
   min?: number;
+  currency?: string;
 };
 
 export type RfpRateScope = {
+  mode?: Mode;
   origin_port?: string;
   dest_port?: string;
   origin_airport?: string;
@@ -47,21 +51,26 @@ export type RfpRateScope = {
 };
 
 export type RfpRate = {
-  mode: 'AIR'|'OCEAN'|'LCL'|'FCL'|'TRUCK';
-  scope: RfpRateScope;
-  currency: string;
-  charges: RfpCharge[];
+  mode?: Mode;
+  scope?: RfpRateScope;
+  currency?: string;
+  charges: RfpRateCharge[];
 };
 
 export type RfpPayload = {
   meta: RfpMeta;
   lanes: RfpLane[];
   rates: RfpRate[];
+  __diagnostics?: {
+    sheetRanks: { sheet: string; laneScore: number; rateScore: number }[];
+    confidence: number;
+    unmappedHeaders?: string[];
+  };
 };
 
 export type PricedLineItem = {
   name: string;
-  uom: RfpCharge['uom'];
+  uom: RfpRateCharge['uom'];
   rate: number;
   qty: number;
   extended: number;
@@ -70,7 +79,7 @@ export type PricedLineItem = {
 
 export type PricedLane = {
   laneIndex: number;
-  mode: RfpLane['mode'];
+  mode: NonNullable<RfpLane['mode']>;
   equipment?: string;
   charges: PricedLineItem[];
   unitCost: number;     // per shipment
