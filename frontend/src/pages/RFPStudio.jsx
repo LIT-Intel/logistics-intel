@@ -296,8 +296,8 @@ export default function RFPStudio() {
                       setCompany(kpis);
                       // Fetch shipments and aggregate lanes
                       const g = await rfpGetCompanyShipments(companyId, 200, 0);
-                      const rows: any[] = Array.isArray(g?.rows) ? g.rows : [];
-                      const aggMap = new Map<string, {origin_country:string;dest_country:string;shipments:number; value_usd?:number}>();
+                      const rows = Array.isArray(g?.rows) ? g.rows : [];
+                      const aggMap = new Map();
                       for (const row of rows) {
                         const key = `${row.origin_country||row.origin}=>${row.dest_country||row.destination}`;
                         const prev = aggMap.get(key) || { origin_country: row.origin_country||row.origin, dest_country: row.dest_country||row.destination, shipments: 0, value_usd: 0 };
