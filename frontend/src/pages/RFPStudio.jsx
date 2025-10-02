@@ -11,6 +11,7 @@ import LitWatermark from '../components/ui/LitWatermark';
 import { rfpSearchCompanies, rfpGetCompanyShipments, rfpGetBenchmark, rfpExportHtml, rfpExportPdf, rfpAddToCampaign } from '@/lib/api.rfp';
 import { ingestWorkbook } from '@/lib/rfp/ingest';
 import { priceAll } from '@/lib/rfp/pricing';
+import { defaultTemplates } from '@/lib/rfp/templates';
 import { toHtml, toPdf } from '@/lib/rfp/export';
 
 // existing builder/preview kept for future wiring
@@ -177,11 +178,29 @@ export default function RFPStudio() {
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="proposal">Proposal</TabsTrigger>
+                <TabsTrigger value="rates">Rates</TabsTrigger>
                 <TabsTrigger value="financials">Financials</TabsTrigger>
                 <TabsTrigger value="vendors">Vendors</TabsTrigger>
                 <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="export">Export & Outreach</TabsTrigger>
               </TabsList>
+              <TabsContent value="rates" className="mt-6 space-y-6">
+                <LitPanel title="Proposed Rate Templates">
+                  <div className="grid md:grid-cols-2 gap-4 text-sm">
+                    {Object.entries(defaultTemplates).map(([k, v]) => (
+                      <div key={k} className="rounded-xl border p-3 bg-white/95">
+                        <div className="font-semibold text-slate-900 mb-2">{k}</div>
+                        <div className="text-slate-700">Base: {v.base.name} — {v.base.uom} — ${v.base.rate}{v.base.min?` (min ${v.base.min})`:''}</div>
+                        <div className="mt-2 text-slate-600">Accessorials:</div>
+                        <ul className="list-disc pl-5 text-slate-600">
+                          {v.accessorials.map((a,i)=>(<li key={i}>{a.name} — {a.uom} — ${a.rate}</li>))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </LitPanel>
+                <div className="rounded-xl border border-slate-200 bg-white/90 p-3 text-xs text-slate-600">These templates are applied automatically when no explicit rates are uploaded. Edit this source later to customize per account.</div>
+              </TabsContent>
 
               <TabsContent value="overview" className="mt-6 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
