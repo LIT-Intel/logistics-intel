@@ -87,7 +87,7 @@ function Tabs({ tabs, value, onChange }: { tabs: string[]; value: string; onChan
 
 export default function Workspace({ companies, onAdd }: { companies: any[]; onAdd: () => void }) {
   const [activeId, setActiveId] = useState(companies[0]?.id);
-  const aiVendor = ((import.meta as any)?.env?.VITE_AI_VENDOR || (process as any)?.env?.NEXT_PUBLIC_AI_VENDOR || '') as string;
+  const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || ((typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_AI_VENDOR) ? (process as any).env.NEXT_PUBLIC_AI_VENDOR : '') ) as string;
   const aiEnabled = !!aiVendor;
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
