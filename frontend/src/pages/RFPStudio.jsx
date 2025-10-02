@@ -9,7 +9,6 @@ import LitPageHeader from '../components/ui/LitPageHeader';
 import LitPanel from '../components/ui/LitPanel';
 import LitWatermark from '../components/ui/LitWatermark';
 import { rfpSearchCompanies, rfpGetCompanyShipments, rfpGetBenchmark, rfpExportHtml, rfpExportPdf, rfpAddToCampaign } from '@/lib/api.rfp';
-import type { CompanyKpis, LanesAgg, FinancialModel } from '@/lib/types.rfp';
 
 // existing builder/preview kept for future wiring
 
@@ -47,9 +46,9 @@ export default function RFPStudio() {
 
   const hasAccess = true;
 
-  const [company, setCompany] = useState<CompanyKpis | null>(null);
-  const [lanes, setLanes] = useState<LanesAgg[]>([]);
-  const [finModel, setFinModel] = useState<FinancialModel | null>(null);
+  const [company, setCompany] = useState(null);
+  const [lanes, setLanes] = useState([]);
+  const [finModel, setFinModel] = useState(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -285,7 +284,7 @@ export default function RFPStudio() {
                       if (!item) { setCompany(null); setLanes([]); setFinModel(null); alert('No company found'); return; }
                       const companyId = item.company_id || '';
                       const shipments12m = Number(item.shipments12m || item.shipments || 0);
-                      const kpis: CompanyKpis = {
+                      const kpis = {
                         companyId,
                         companyName: item.company_name || 'Company',
                         shipments12m,
@@ -308,7 +307,7 @@ export default function RFPStudio() {
                         aggMap.set(key, prev);
                       }
                       const lanesAgg = Array.from(aggMap.values());
-                      setLanes(lanesAgg as any);
+                      setLanes(lanesAgg);
                       // Compute baseline and proposed
                       const baseline = lanesAgg.reduce((sum, l)=> sum + (Number(l.value_usd||0)), 0) || (shipments12m * 8650);
                       let proposed = baseline * 0.87;
@@ -318,7 +317,7 @@ export default function RFPStudio() {
                       } catch {}
                       const savings = Math.max(0, baseline - proposed);
                       const pct = baseline > 0 ? (savings / baseline) : 0;
-                      setFinModel({ baseline, proposed, savings, pct } as FinancialModel);
+                      setFinModel({ baseline, proposed, savings, pct });
                     } finally {
                       setBusy(null);
                     }
