@@ -3,12 +3,15 @@ import { RFPQuote, Company, Contact } from '@/api/entities';
 import { User } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Plus, Mail, Upload, BarChart3 } from 'lucide-react';
+import { FileText, Plus, Mail, Upload, BarChart3, DollarSign } from 'lucide-react';
 import LitSidebar from '../components/ui/LitSidebar';
 import LitPageHeader from '../components/ui/LitPageHeader';
 import LitPanel from '../components/ui/LitPanel';
 import LitWatermark from '../components/ui/LitWatermark';
 import { rfpSearchCompanies, rfpGetCompanyShipments, rfpGetBenchmark, rfpExportHtml, rfpExportPdf, rfpAddToCampaign } from '@/lib/api.rfp';
+import { ingestWorkbook } from '@/lib/rfp/ingest';
+import { priceAll } from '@/lib/rfp/pricing';
+import { toHtml, toPdf } from '@/lib/rfp/export';
 
 // existing builder/preview kept for future wiring
 
@@ -48,6 +51,8 @@ export default function RFPStudio() {
   const [finModel, setFinModel] = useState(null);
   const [busy, setBusy] = useState(null);
   const fileRef = useRef(null);
+  const [rfpPayload, setRfpPayload] = useState(null);
+  const [priced, setPriced] = useState(null);
   const [proposalSummary, setProposalSummary] = useState('');
   const [proposalSolution, setProposalSolution] = useState('');
 
@@ -149,17 +154,14 @@ export default function RFPStudio() {
               setRfps(next); setActiveId(id); setActiveTab('overview');
               setCompany(null); setLanes([]); setFinModel(null);
             }}><Plus className="w-4 h-4 mr-1"/> New RFP</Button>
-            <input ref={fileRef} type="file" accept="application/json" className="hidden" onChange={async(e)=>{
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,application/json" className="hidden" onChange={async(e)=>{
               try {
                 const f = e.target.files && e.target.files[0]; if (!f) return;
-                const text = await f.text();
-                const arr = JSON.parse(text);
-                if (Array.isArray(arr)) {
-                  const mapped = arr.map((r,i)=> ({ id: r.id || ('rfp_'+i+'_'+Math.random().toString(36).slice(2,6)), name: r.name||'Imported RFP', client: r.client||'Client', status: r.status||'Draft', due: r.due||'TBD' }));
-                  setRfps(prev=> [...mapped, ...prev]);
-                } else {
-                  alert('Invalid JSON array');
-                }
+                const payload = await ingestWorkbook(f);
+                setRfpPayload(payload);
+                const pricedRes = priceAll(payload.lanes, payload.rates);
+                setPriced(pricedRes);
+                setActiveTab('proposal');
               } catch(err){ alert('Import failed'); }
             }} />
             <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
@@ -203,6 +205,22 @@ export default function RFPStudio() {
                     <Button size="sm" variant="outline">Generate Talk Tracks</Button>
                   </div>
                 </LitPanel>
+                {priced && (
+                  <LitPanel title="Lane Pricing (Detected)">
+                    <div className="text-sm text-slate-600 mb-2">Total Annual: ${priced.totalAnnual.toLocaleString()}</div>
+                    <div className="space-y-3">
+                      {priced.lanes.map((p, idx)=> (
+                        <div key={idx} className="rounded-xl border p-3 bg-white/95">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold text-slate-900">{p.mode}{p.equipment?(' / '+p.equipment):''}</div>
+                            <div className="text-slate-900 font-bold flex items-center"><DollarSign className="w-4 h-4 mr-1"/>{p.unitCost.toFixed(2)} / shpt</div>
+                          </div>
+                          <div className="text-xs text-slate-600">Annual: ${p.annualCost.toLocaleString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </LitPanel>
+                )}
                 <LitPanel title="Solution Offering">
                   <textarea className="w-full h-32 p-3 border rounded-lg" placeholder="Describe your solution..." value={proposalSolution} onChange={e=> setProposalSolution(e.target.value)} />
                 </LitPanel>
@@ -253,10 +271,47 @@ export default function RFPStudio() {
               <TabsContent value="export" className="mt-6 space-y-4">
                 <div className="flex gap-2">
                   <Button className="bg-blue-600 text-white" disabled={busy==='pdf'} onClick={async()=>{
-                    try{ setBusy('pdf'); const body={ company: company||{}, proposal:{ executiveSummary:'', solutionOffering:''}, financials: finModel||{} }; const r= await rfpExportPdf(body); if(r?.pdfUrl){ window.open(r.pdfUrl,'_blank'); } else { alert('PDF generated (server may return blob).'); } } finally { setBusy(null); }
+                    try{
+                      setBusy('pdf');
+                      // Try server first
+                      try {
+                        const body={ company: company||{}, proposal:{ executiveSummary: proposalSummary, solutionOffering: proposalSolution}, financials: finModel||{} };
+                        const r= await rfpExportPdf(body);
+                        if(r?.pdfUrl){ window.open(r.pdfUrl,'_blank'); return; }
+                      } catch {}
+                      // Fallback to client-side export if we have payload
+                      if (rfpPayload && priced) {
+                        const html = toHtml(rfpPayload, priced);
+                        const blob = await toPdf(html);
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href=url; a.download = `${(rfps.find(x=>x.id===activeId)?.name||'proposal').replace(/\s+/g,'-')}.pdf`; a.click(); URL.revokeObjectURL(url);
+                      } else {
+                        alert('No priced payload to export. Upload an RFP workbook first.');
+                      }
+                    } finally { setBusy(null); }
                   }}>Export PDF</Button>
                   <Button variant="outline" disabled={busy==='html'} onClick={async()=>{
-                    try{ setBusy('html'); const body={ company: company||{}, proposal:{ executiveSummary:'', solutionOffering:''}, financials: finModel||{} }; const r= await rfpExportHtml(body); alert('HTML generated'); } finally { setBusy(null); }
+                    try{
+                      setBusy('html');
+                      try {
+                        const body={ company: company||{}, proposal:{ executiveSummary: proposalSummary, solutionOffering: proposalSolution}, financials: finModel||{} };
+                        const r= await rfpExportHtml(body);
+                        if (r?.html) {
+                          const blob = new Blob([r.html], { type:'text/html' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a'); a.href=url; a.download=`${(rfps.find(x=>x.id===activeId)?.name||'proposal').replace(/\s+/g,'-')}.html`; a.click(); URL.revokeObjectURL(url);
+                          return;
+                        }
+                      } catch {}
+                      if (rfpPayload && priced) {
+                        const html = toHtml(rfpPayload, priced);
+                        const blob = new Blob([html], { type:'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href=url; a.download=`${(rfps.find(x=>x.id===activeId)?.name||'proposal').replace(/\s+/g,'-')}.html`; a.click(); URL.revokeObjectURL(url);
+                      } else {
+                        alert('No priced payload to export. Upload an RFP workbook first.');
+                      }
+                    } finally { setBusy(null); }
                   }}>Export HTML</Button>
                   <Button variant="outline" disabled={busy==='campaign'} onClick={async()=>{
                     try{ setBusy('campaign'); const html = '<h1>Proposal</h1>'; const title = `RFP: ${company?.companyName||'Company'}`; await rfpAddToCampaign({ companyId: company?.companyId||'', title, html }); alert('Draft campaign created'); } finally { setBusy(null); }
