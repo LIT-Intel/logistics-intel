@@ -1,4 +1,3 @@
-// src/lib/api/search.ts
 export type SearchFilters = {
   q?: string;
   origin?: string[];
@@ -24,14 +23,14 @@ export type SearchCompaniesResponse = {
 
 const GW =
   (import.meta as any).env?.VITE_LIT_GATEWAY_BASE ||
-  process.env.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
+  (globalThis as any).process?.env?.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
   "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
 
 function toCsv(a?: string[]): string {
   return Array.isArray(a) && a.length > 0 ? a.join(",") : "";
 }
 
-function buildPayload(f: SearchFilters) {
+function normalizePayload(f: SearchFilters) {
   const limit = Math.max(1, Math.min(50, Number(f.limit ?? 24)));
   const offset = Math.max(0, Number(f.offset ?? 0));
   return {
@@ -47,7 +46,7 @@ function buildPayload(f: SearchFilters) {
 export async function searchCompanies(
   filters: SearchFilters
 ): Promise<SearchCompaniesResponse> {
-  const payload = buildPayload(filters);
+  const payload = normalizePayload(filters);
   const res = await fetch(`${GW}/public/searchCompanies`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -59,3 +58,7 @@ export async function searchCompanies(
   }
   return (await res.json()) as SearchCompaniesResponse;
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/fix/search-sql-arrays
