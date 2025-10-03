@@ -1,8 +1,11 @@
 {
   "version": 2,
-  "rewrites": [
-    { "source": "/api/public/(.*)", "destination": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev/public/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "builds": [
+    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
+  ],
+  "routes": [
+    { "src": "/api/public/(.*)", "dest": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev/public/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
 
