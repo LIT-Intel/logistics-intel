@@ -12,6 +12,7 @@ import { postSearchCompanies, getCompanyShipments, enrichCompany, recallCompany 
 import LitPageHeader from "../components/ui/LitPageHeader";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
+import { ingestWorkbook } from "@/lib/rfp/ingest";
 
 export default function Company() {
   const { id } = useParams();
@@ -28,6 +29,21 @@ export default function Company() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
   const [recall, setRecall] = useState(null);
+  const [rfpPayload, setRfpPayload] = useState(null);
+  const rfpKey = `lit_rfp_payload_${companyId}`;
+
+  function deriveKpisFromPayload(payload) {
+    if (!payload || !Array.isArray(payload.lanes)) return null;
+    const shipments12m = payload.lanes.reduce((s, ln) => s + (Number(ln?.demand?.shipments_per_year || 0)), 0);
+    const origins = new Map(); const dests = new Map();
+    for (const ln of payload.lanes) {
+      const o = ln?.origin?.port || ln?.origin?.country; if (o) origins.set(o, (origins.get(o) || 0) + 1);
+      const d = ln?.destination?.port || ln?.destination?.country; if (d) dests.set(d, (dests.get(d) || 0) + 1);
+    }
+    const originsTop = Array.from(origins.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+    const destsTop = Array.from(dests.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+    return { shipments12m, originsTop, destsTop };
+  }
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -72,6 +88,27 @@ export default function Company() {
   }, [companyId, shipmentsPage]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load saved lanes (RFP) for this company and derive KPIs for Overview
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(rfpKey);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setRfpPayload(saved);
+        const k = deriveKpisFromPayload(saved);
+        if (k) {
+          setCompany(prev => ({
+            ...(prev || {}),
+            shipments_12m: k.shipments12m,
+            top_route: (k.originsTop && k.destsTop && k.originsTop.length && k.destsTop.length) ? `${k.originsTop[0]} → ${k.destsTop[0]}` : undefined,
+            top_carriers: [],
+          }));
+        }
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
 
   const handleAddContact = async (contactData) => {
     await Contact.create({ ...contactData, company_id: companyId });
@@ -151,6 +188,67 @@ export default function Company() {
             </TabsContent>
             <TabsContent value="shipments">
               <ShipmentsTab shipments={shipments} isLoading={isLoading} />
+              <LitPanel title="Upload Lanes (RFP Data)">
+                <div className="flex items-center gap-2 mb-3">
+                  <input id="company-lanes-file" type="file" accept=".xlsx,.xls,.csv,application/json" className="hidden" onChange={async (e) => {
+                    try {
+                      const f = e.target.files && e.target.files[0]; if (!f) return;
+                      const payload = await ingestWorkbook(f);
+                      setRfpPayload(payload);
+                      try { localStorage.setItem(rfpKey, JSON.stringify(payload)); } catch {}
+                      const k = deriveKpisFromPayload(payload);
+                      if (k) {
+                        setCompany(prev => ({
+                          ...(prev || {}),
+                          shipments_12m: k.shipments12m,
+                          top_route: (k.originsTop && k.destsTop && k.originsTop.length && k.destsTop.length) ? `${k.originsTop[0]} → ${k.destsTop[0]}` : undefined,
+                          top_carriers: [],
+                        }));
+                      }
+                      const el = document.getElementById('company-lanes-file'); if (el) el.value = '';
+                    } catch { alert('Import failed'); }
+                  }} />
+                  <Button variant="outline" onClick={() => { const el = document.getElementById('company-lanes-file'); if (el) el.click(); }}>Import</Button>
+                  <Button variant="outline" onClick={() => { try { localStorage.setItem(rfpKey, JSON.stringify(rfpPayload || {})); alert('Saved'); } catch { alert('Save failed'); } }}>Save</Button>
+                  <Button variant="outline" className="text-red-600" onClick={() => { try { localStorage.removeItem(rfpKey); } catch {} setRfpPayload(null); alert('Reset'); }}>Reset</Button>
+                </div>
+                {rfpPayload && Array.isArray(rfpPayload.lanes) && rfpPayload.lanes.length > 0 ? (
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm border border-slate-200">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="p-2 border">Service</th>
+                          <th className="p-2 border">Equipment</th>
+                          <th className="p-2 border">POL</th>
+                          <th className="p-2 border">POD</th>
+                          <th className="p-2 border">Origin Country</th>
+                          <th className="p-2 border">Dest Country</th>
+                          <th className="p-2 border">Shpts/Year</th>
+                          <th className="p-2 border">Avg Kg</th>
+                          <th className="p-2 border">Avg CBM</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rfpPayload.lanes.map((ln, i) => (
+                          <tr key={i}>
+                            <td className="p-2 border">{ln.mode || '—'}</td>
+                            <td className="p-2 border">{ln.equipment || '—'}</td>
+                            <td className="p-2 border">{ln.origin?.port || '—'}</td>
+                            <td className="p-2 border">{ln.destination?.port || '—'}</td>
+                            <td className="p-2 border">{ln.origin?.country || '—'}</td>
+                            <td className="p-2 border">{ln.destination?.country || '—'}</td>
+                            <td className="p-2 border">{ln.demand?.shipments_per_year || 0}</td>
+                            <td className="p-2 border">{ln.demand?.avg_weight_kg || 0}</td>
+                            <td className="p-2 border">{ln.demand?.avg_volume_cbm || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-600">No uploaded lanes.</div>
+                )}
+              </LitPanel>
               {shipmentsTotal > SHIP_PAGE_SIZE && (
                 <div className="flex items-center justify-between mt-4">
                   <div className="text-sm text-gray-600">
