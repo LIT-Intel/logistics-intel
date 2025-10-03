@@ -34,6 +34,16 @@ function detectMode(val: any): Mode | undefined {
   return undefined;
 }
 
+function normalizeEquipment(val: any): string | undefined {
+  const t = String(val||'').trim().toUpperCase();
+  if (!t) return undefined;
+  if (t === '20' || /20FT|20 GP|20GP/.test(t)) return '20GP';
+  if (t === '40' || /40FT|40 GP|40GP/.test(t)) return '40GP';
+  if (/40HQ|40HC|40 HIGH/.test(t)) return '40HQ';
+  if (/ULD|PALLET/.test(t)) return 'PALLET';
+  return t;
+}
+
 function canonUom(uomText: string): RfpRateCharge['uom'] {
   const t = norm(uomText);
   for (const u of UOM_CANON) {
@@ -109,7 +119,7 @@ export function detectFromSheets(sheets: Sheet[]): RfpPayload {
             airport: c.dest_airport ? String(row[c.dest_airport] ?? '').trim() : undefined,
           },
           service_level: c.service_level ? String(row[c.service_level] ?? '').trim() : undefined,
-          equipment: c.equipment ? String(row[c.equipment] ?? '').trim() : undefined,
+          equipment: c.equipment ? normalizeEquipment(row[c.equipment]) : undefined,
           demand: {
             shipments_per_year: c.shipments_per_year ? (Number(row[c.shipments_per_year] ?? '') || undefined) as number|undefined : undefined,
             avg_weight_kg: c.weight_kg ? (Number(row[c.weight_kg] ?? '') || undefined) as number|undefined : undefined,
