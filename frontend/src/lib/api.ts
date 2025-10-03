@@ -1,3 +1,4 @@
+// frontend/src/lib/api.ts
 import { searchCompanies as _searchCompanies } from "@/lib/api/search";
 export type {
   SearchFilters,
@@ -11,11 +12,14 @@ const GW =
   (globalThis as any).process?.env?.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
   "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
 
-// ---- Compatibility named exports ----
+// ---- Compatibility named exports (legacy callers expect these) ----
+
+// Old name used in some components; proxy to new search
 export async function postSearchCompanies(payload: any) {
   return _searchCompanies(payload);
 }
 
+// Filters for the search UI
 export async function getFilterOptions(): Promise<{
   modes: string[];
   origins: string[];
@@ -34,6 +38,7 @@ export async function getFilterOptions(): Promise<{
   return await res.json();
 }
 
+// Company shipments drawer
 export async function getCompanyShipments(opts: {
   company_id: string;
   limit?: number;
@@ -56,6 +61,7 @@ export async function getCompanyShipments(opts: {
   return await res.json();
 }
 
+// Enrichment (thin wrapper; endpoint name may vary across envs)
 export async function enrichCompany(body: { company_id: string }) {
   const res = await fetch(`${GW}/crm/enrichCompany`, {
     method: "POST",
@@ -69,6 +75,7 @@ export async function enrichCompany(body: { company_id: string }) {
   return await res.json();
 }
 
+// AI Recall (compat)
 export async function recallCompany(body: { company_id: string; questions?: string[] }) {
   const res = await fetch(`${GW}/ai/recall`, {
     method: "POST",
@@ -82,6 +89,7 @@ export async function recallCompany(body: { company_id: string; questions?: stri
   return await res.json();
 }
 
+// Campaign save (compat)
 export async function saveCampaign(body: Record<string, any>) {
   const res = await fetch(`${GW}/crm/campaigns`, {
     method: "POST",
@@ -110,6 +118,28 @@ export async function saveCompanyToCrm(payload: {
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     throw new Error(`saveCompanyToCrm failed: ${res.status} ${txt}`);
+  }
+  return await res.json();
+}
+
+// Manual company create (compat)
+export async function createCompany(body: {
+  name: string;
+  domain?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  postal?: string;
+  country?: string;
+}) {
+  const res = await fetch(`${GW}/crm/company.create`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`company.create failed: ${res.status} ${txt.slice(0, 200)}`);
   }
   return await res.json();
 }
@@ -150,7 +180,8 @@ export const api = {
   recallCompany,
   saveCampaign,
   saveCompanyToCrm,
-  kpiFrom, // also available via named import
+  createCompany,
+  kpiFrom,
 };
 
 // Also export the new search by name for TSX pages that import it directly
