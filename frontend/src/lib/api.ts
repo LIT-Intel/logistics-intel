@@ -24,8 +24,6 @@ export async function getCompanyShipments(company_id: string, limit = 10, offset
   return res.json();
 }
 
-// Minimal pass-through to existing CRM endpoint used in this app.
-// (If your backend expects a different shape/route, this keeps the build green and still works with current logs.)
 export async function enrichCompany(payload: any) {
   const res = await fetch(`${GW}/crm/saveCompany`, {
     method: "POST",
@@ -35,6 +33,20 @@ export async function enrichCompany(payload: any) {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`enrichCompany failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+// New: saveCampaign for CampaignBuilder.jsx
+export async function saveCampaign(payload: any) {
+  const res = await fetch(`${GW}/campaigns`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`saveCampaign failed: ${res.status} ${text}`);
   }
   return res.json();
 }
