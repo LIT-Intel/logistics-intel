@@ -125,6 +125,16 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   }
 
   useEffect(() => {
+    // Ensure an active selection when companies load or change
+    if (!activeId && companies && companies.length > 0) {
+      setActiveId(companies[0].id);
+    } else if (activeId && companies && companies.length > 0) {
+      const exists = companies.some(c => String(c.id) === String(activeId));
+      if (!exists) setActiveId(companies[0].id);
+    }
+  }, [companies]);
+
+  useEffect(() => {
     let ignore = false;
     async function load() {
       if (!activeId) return;
