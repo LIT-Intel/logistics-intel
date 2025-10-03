@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
+import { getFilterOptions } from '@/lib/api';
 
 const brand = {
   heading: 'text-[28px] font-bold tracking-tight text-purple-700',
@@ -223,6 +224,12 @@ export default function SearchAppPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<any | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[] }>({ modes: [], origins: [], destinations: [] });
+  const [origin, setOrigin] = useState<string[]>([]);
+  const [dest, setDest] = useState<string[]>([]);
+  const [hs, setHs] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -236,6 +243,27 @@ export default function SearchAppPage() {
       } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const fo = await getFilterOptions();
+        setOpts({ modes: fo.modes || [], origins: fo.origins || [], destinations: fo.destinations || [] });
+      } catch {}
+    })();
+  }, []);
+
+  async function runSearch() {
+    setLoading(true);
+    try {
+      const data = await searchCompanies({ q: query || null, origin, dest, hs, limit: 24, offset: 0 });
+      const norm = (data?.rows || data || []).map((r: any)=> ({ ...r, tags: r.tags || [] }));
+      setRows(norm);
+    } catch (e) {
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!query) return rows;
@@ -258,11 +286,24 @@ export default function SearchAppPage() {
           </div>
 
           <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
-            <Input placeholder="Search by company name or alias (e.g., UPS, Maersk)…" className="pl-9 rounded-xl bg-white/90" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
+                <Input
+                  placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
+                  className="pl-9 rounded-xl bg-white/90 h-11"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
+                />
+              </div>
+              <Button onClick={runSearch} className="rounded-xl h-11 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+              <Button variant="outline" className="gap-2 rounded-xl h-11" onClick={() => setFiltersOpen(true)}><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
+            </div>
             <div className="mt-3 flex items-center gap-2">
               <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
               <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
+              {loading && <span className="text-xs text-muted-foreground">Searching…</span>}
             </div>
           </div>
 
@@ -323,6 +364,46 @@ export default function SearchAppPage() {
         </div>
 
         <DetailsDialog open={open} onOpenChange={setOpen} row={active} />
+
+        <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <DialogContent className="max-w-xl rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Filters</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <div className="text-sm font-medium mb-2">Origin</div>
+                <div className="flex flex-wrap gap-2">
+                  {opts.origins.map((o) => {
+                    const active = origin.includes(o);
+                    return (
+                      <Button key={o} variant={active ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setOrigin((prev)=> active ? prev.filter(x=> x!==o) : [...prev, o])}>{o}</Button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm font-medium mb-2">Destination</div>
+                <div className="flex flex-wrap gap-2">
+                  {opts.destinations.map((d) => {
+                    const active = dest.includes(d);
+                    return (
+                      <Button key={d} variant={active ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setDest((prev)=> active ? prev.filter(x=> x!==d) : [...prev, d])}>{d}</Button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm font-medium mb-2">HS Codes</div>
+                <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setHs(e.target.value.split(',').map(s=> s.trim()).filter(Boolean))} />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={() => { setOrigin([]); setDest([]); setHs([]); }}>Clear</Button>
+                <Button onClick={() => { setFiltersOpen(false); runSearch(); }}>Apply</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );
