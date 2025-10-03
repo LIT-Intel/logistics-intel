@@ -57,34 +57,36 @@ export default function CompanySearchListItem({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="p-4 hover:bg-gray-50 transition-all duration-200 cursor-pointer border-b border-gray-100 last:border-b-0"
+      className="rounded-xl p-[1px] mb-3 cursor-pointer bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-700 hover:from-indigo-600 hover:to-blue-600 transition-shadow shadow-sm hover:shadow-md"
       onClick={() => onSelect(company)}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0 pr-4">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-gray-900 truncate">{company.company_name || company.name}</h3>
-            {isNew && <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs">New</Badge>}
+      <div className="rounded-xl bg-white p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0 pr-4">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900 truncate">{company.company_name || company.name}</h3>
+              {isNew && <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs">New</Badge>}
+            </div>
+            <p className="text-xs text-gray-600 mb-2">ID: {company.company_id || company.id}</p>
+            <p className="text-sm text-gray-700 line-clamp-2 mb-2">
+              {(company.summary || company.description || `Top route ${company.top_route || 'various'}; top carrier ${company.top_carrier || 'various'}.`).toString()}
+            </p>
+            <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+              <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Shipments (12M): <b className="text-gray-900 ml-1">{formatShipments(shipments12m)}</b></span>
+              <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{lastActivity ? format(new Date(lastActivity), 'MMM d') : 'N/A'}</b></span>
+              <span className="hidden md:flex items-center gap-1"><Ship className="w-3 h-3" /> Route: <b className="text-gray-900 ml-1 truncate max-w-[220px]">{originsTop?.[0] || company.top_route || 'Various'}</b></span>
+            </div>
           </div>
-          <p className="text-xs text-gray-600 mb-2">ID: {company.company_id || company.id}</p>
-          <p className="text-sm text-gray-700 line-clamp-2 mb-2">
-            {(company.summary || company.description || `Top route ${company.top_route || 'various'}; top carrier ${company.top_carrier || 'various'}.`).toString()}
-          </p>
-          <div className="flex flex-wrap gap-4 text-xs text-gray-600">
-            <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Shipments (12M): <b className="text-gray-900 ml-1">{formatShipments(shipments12m)}</b></span>
-            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{lastActivity ? format(new Date(lastActivity), 'MMM d') : 'N/A'}</b></span>
-            <span className="hidden md:flex items-center gap-1"><Ship className="w-3 h-3" /> Route: <b className="text-gray-900 ml-1 truncate max-w-[220px]">{originsTop?.[0] || company.top_route || 'Various'}</b></span>
+          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <Button size="sm" variant="outline" onClick={() => onSave(company)} disabled={isCurrentlySaving || isSaved}>
+              {isCurrentlySaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+              {isSaved ? <BookmarkCheck className="w-3 h-3 mr-1 text-blue-600" /> : <Bookmark className="w-3 h-3 mr-1" />}
+              {isSaved ? 'Saved' : 'Save'}
+            </Button>
+            <Button size="sm" onClick={() => { isSaved ? (window.location.href = `/app/companies/${company.id || company.company_id}`) : onSelect(company); }} className="bg-blue-600 hover:bg-blue-700 text-white">
+              View
+            </Button>
           </div>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <Button size="sm" variant="outline" onClick={() => onSave(company)} disabled={isCurrentlySaving || isSaved}>
-            {isCurrentlySaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
-            {isSaved ? <BookmarkCheck className="w-3 h-3 mr-1 text-blue-600" /> : <Bookmark className="w-3 h-3 mr-1" />}
-            {isSaved ? 'Saved' : 'Save'}
-          </Button>
-          <Button size="sm" onClick={() => { isSaved ? (window.location.href = `/app/companies/${company.id || company.company_id}`) : onSelect(company); }} className="bg-blue-600 hover:bg-blue-700 text-white">
-            View
-          </Button>
         </div>
       </div>
     </motion.div>

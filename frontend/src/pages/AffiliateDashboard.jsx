@@ -20,6 +20,9 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
+import LitPageHeader from '../components/ui/LitPageHeader';
+import LitPanel from '../components/ui/LitPanel';
+import LitWatermark from '../components/ui/LitWatermark';
 
 export default function AffiliateDashboard() {
   const [user, setUser] = useState(null);
@@ -122,28 +125,10 @@ export default function AffiliateDashboard() {
   }
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
+    <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
+      <LitWatermark />
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">Affiliate Dashboard</h1>
-            <p className="text-gray-600 mt-2 text-sm md:text-base">
-              Track your referrals and commission earnings
-            </p>
-            <div className="flex items-center gap-4 mt-2">
-              <Badge className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 border-0">
-                <Star className="w-3 h-3 mr-1" />
-                {user?.role === 'admin' ? 'Admin Partner' : 'Active Affiliate'}
-              </Badge>
-              {affiliate?.ref_code && (
-                <span className="text-xs text-gray-500 font-mono">
-                  Code: {affiliate.ref_code}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+        <LitPageHeader title="Affiliate Dashboard" />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -350,11 +335,7 @@ export default function AffiliateDashboard() {
           transition={{ duration: 0.5, delay: 0.7 }}
           className="mt-8"
         >
-          <Card className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60">
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <LitPanel title="Recent Activity">
               <div className="space-y-4">
                 {[
                   { type: 'signup', name: 'John Smith', email: 'john@freightco.com', date: '2 hours ago', status: 'Trial Started' },
@@ -384,8 +365,7 @@ export default function AffiliateDashboard() {
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+          </LitPanel>
         </motion.div>
       </div>
     </div>

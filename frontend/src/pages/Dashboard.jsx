@@ -2,12 +2,15 @@ import React, { useEffect, useState } from "react";
 import DashboardKPICards from "@/components/dashboard/DashboardKPICards";
 import DashboardHeroCards from "@/components/dashboard/DashboardHeroCards";
 import RecentCompanies from "@/components/dashboard/RecentCompanies";
-import DashboardLayout from "@/components/layout/DashboardLayout";
 import DashboardKPICardsSkeleton from "@/components/dashboard/DashboardKPICards.skeleton";
 import DashboardHeroCardsSkeleton from "@/components/dashboard/DashboardHeroCards.skeleton";
 import RecentCompaniesSkeleton from "@/components/dashboard/RecentCompanies.skeleton";
 import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
+import LitPageHeader from "../components/ui/LitPageHeader";
+import LitPanel from "../components/ui/LitPanel";
+import LitWatermark from "../components/ui/LitWatermark";
+import LitKpi from "../components/ui/LitKpi";
 
 const safeSummary = {
   shipments90d: 0,
@@ -36,31 +39,35 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <DashboardLayout>
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">Overview of your recent activity and search performance.</p>
+    <div className="relative px-2 md:px-5 py-3 min-h-screen">
+      <LitWatermark />
+      <div className="max-w-7xl mx-auto">
+        <LitPageHeader title="LIT Dashboard" />
+        {loading ? (
+          <div className="space-y-6">
+            <DashboardKPICardsSkeleton />
+            <DashboardHeroCardsSkeleton />
+            <RecentCompaniesSkeleton />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+              <LitKpi label="Shipments (90d)" value={data.shipments90d} accentClass="from-sky-400 to-violet-500" deltaPercent={3.2} deltaPositive icon={null} />
+              <LitKpi label="Saved Companies" value={data.savedCompanies} accentClass="from-sky-400 to-violet-500" deltaPercent={1.4} deltaPositive icon={null} />
+              <LitKpi label="Recent Searches" value={data.recentSearches7d} accentClass="from-sky-400 to-violet-500" deltaPercent={-0.8} icon={null} />
+              <LitKpi label="Active Users" value={0} accentClass="from-sky-400 to-violet-500" deltaPercent={0.0} icon={null} />
+            </div>
+            <div className="mb-8">
+              <LitPanel>
+                <DashboardHeroCards />
+              </LitPanel>
+            </div>
+            <LitPanel>
+              <RecentCompanies companies={data.recent_companies} onNavigate={(url) => (window.location.href = url)} />
+            </LitPanel>
+          </>
+        )}
       </div>
-
-      {loading ? (
-        <div className="space-y-6">
-          <DashboardKPICardsSkeleton />
-          <DashboardHeroCardsSkeleton />
-          <RecentCompaniesSkeleton />
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-12 gap-4 mb-6">
-            <DashboardKPICards stats={{ activeUsers: 0, searches: data.recentSearches7d, shipments: data.shipments90d, companies: data.savedCompanies }} />
-          </div>
-
-          <div className="mb-8">
-            <DashboardHeroCards />
-          </div>
-
-          <RecentCompanies companies={data.recent_companies} onNavigate={(url) => (window.location.href = url)} />
-        </>
-      )}
-    </DashboardLayout>
+    </div>
   );
 }

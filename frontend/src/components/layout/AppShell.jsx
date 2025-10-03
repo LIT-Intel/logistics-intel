@@ -58,16 +58,15 @@ export default function AppShell({ currentPageName, children }) {
 
           <div className="px-4 py-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">Menu</div>
           <nav className="mb-4">
-            <SideLink to="/app/dashboard" icon={BarChart3} label="Analytics" />
+            <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
             <SideLink to="/app/search" icon={Search} label="Search" />
-            {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Companies" />}
+            {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Command Center" />}
             {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
-            <SideLink to="/app/transactions" icon={Activity} label="Transactions" />
           </nav>
 
           <div className="px-4 py-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">Tools</div>
           <nav className="mb-4">
-            <SideLink to="/app/rfp-studio" icon={FileText} label="RFP Studio" />
+            <SideLink to="/app/rfp" icon={FileText} label="RFP Studio" />
             <SideLink to="/app/widgets" icon={Package} label="Widgets" />
           </nav>
 
@@ -121,7 +120,11 @@ export default function AppShell({ currentPageName, children }) {
               </div>
             </div>
           </header>
-          <div className="p-4 md:p-6 flex-1 overflow-y-auto min-w-0">{children}</div>
+          <div className="flex-1 overflow-y-auto min-w-0 w-full flex gap-[5px] pl-[5px] pr-[5px]">
+            <div className="flex-1 min-w-0 max-w-none">
+              {children}
+            </div>
+          </div>
         </main>
       </div>
 
@@ -135,12 +138,11 @@ export default function AppShell({ currentPageName, children }) {
               <button className="p-2 rounded-lg border border-white/20" onClick={() => setMobileOpen(false)} aria-label="Close menu">✕</button>
             </div>
             <nav className="space-y-1">
-              <SideLink to="/app/dashboard" icon={BarChart3} label="Analytics" />
+              <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
               <SideLink to="/app/search" icon={Search} label="Search" />
-              {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Companies" />}
+              {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Command Center" />}
               {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
-              <SideLink to="/app/transactions" icon={Activity} label="Transactions" />
-              <SideLink to="/app/rfp-studio" icon={FileText} label="RFP Studio" />
+              <SideLink to="/app/rfp" icon={FileText} label="RFP Studio" />
               <SideLink to="/app/widgets" icon={Package} label="Widgets" />
               <SideLink to="/app/settings" icon={Settings} label="Settings" />
               <SideLink to="/app/billing" icon={CreditCard} label="Billing" />

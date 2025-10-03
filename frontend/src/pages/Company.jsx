@@ -9,6 +9,10 @@ import EnrichmentTab from "@/components/search/detail_tabs/EnrichmentTab";
 import NotesTab from "@/components/search/detail_tabs/NotesTab";
 import { Contact, Note } from "@/api/entities";
 import { postSearchCompanies, getCompanyShipments, enrichCompany, recallCompany } from "@/lib/api";
+import LitPageHeader from "../components/ui/LitPageHeader";
+import LitPanel from "../components/ui/LitPanel";
+import LitWatermark from "../components/ui/LitWatermark";
+import { ingestWorkbook } from "@/lib/rfp/ingest";
 
 export default function Company() {
   const { id } = useParams();
@@ -26,6 +30,23 @@ export default function Company() {
   const [isEnriching, setIsEnriching] = useState(false);
   const [recall, setRecall] = useState(null);
 
+  // RFP (lanes) payload persisted locally per company
+  const [rfpPayload, setRfpPayload] = useState(null);
+  const rfpKey = `lit_rfp_payload_${companyId}`;
+
+  function deriveKpisFromPayload(payload) {
+    if (!payload || !Array.isArray(payload.lanes)) return null;
+    const shipments12m = payload.lanes.reduce((s, ln) => s + (Number(ln?.demand?.shipments_per_year || 0)), 0);
+    const origins = new Map(); const dests = new Map();
+    for (const ln of payload.lanes) {
+      const o = ln?.origin?.port || ln?.origin?.country; if (o) origins.set(o, (origins.get(o) || 0) + 1);
+      const d = ln?.destination?.port || ln?.destination?.country; if (d) dests.set(d, (dests.get(d) || 0) + 1);
+    }
+    const originsTop = Array.from(origins.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+    const destsTop = Array.from(dests.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+    return { shipments12m, originsTop, destsTop };
+  }
+
   const load = useCallback(async () => {
     if (!companyId) return;
     setIsLoading(true);
@@ -38,7 +59,7 @@ export default function Company() {
       ]);
       let sum = Array.isArray(summaryRes?.data) && summaryRes.data.length ? summaryRes.data[0] : null;
       if (!sum) {
-        // fallback to singular param
+        // fallback: singular param
         const fallback = await postSearchCompanies({ company_id: String(companyId), limit: 1, offset: 0 });
         sum = Array.isArray(fallback?.data) && fallback.data.length ? fallback.data[0] : null;
       }
@@ -70,14 +91,37 @@ export default function Company() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Load saved lanes (RFP) for this company and derive KPIs for Overview
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(rfpKey);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setRfpPayload(saved);
+        const k = deriveKpisFromPayload(saved);
+        if (k) {
+          setCompany(prev => ({
+            ...(prev || {}),
+            shipments_12m: k.shipments12m,
+            top_route: (k.originsTop && k.destsTop && k.originsTop.length && k.destsTop.length) ? `${k.originsTop[0]} → ${k.destsTop[0]}` : undefined,
+            top_carriers: [],
+          }));
+        }
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
+
   const handleAddContact = async (contactData) => {
     await Contact.create({ ...contactData, company_id: companyId });
     load();
   };
+
   const handleAddNote = async (noteContent) => {
     await Note.create({ content: noteContent, company_id: companyId });
     load();
   };
+
   const handleEnrich = async () => {
     setIsEnriching(true);
     try {
@@ -113,21 +157,9 @@ export default function Company() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{summary?.company_name || 'Company'}</h1>
-          <p className="text-sm text-gray-600">ID: {companyId}</p>
-          {summary && (
-            <div className="mt-2 text-sm text-gray-700 space-y-1">
-              <div><span className="text-gray-500">Shipments (12M):</span> <span className="font-semibold">{new Intl.NumberFormat().format(summary.shipments_12m || 0)}</span></div>
-              <div><span className="text-gray-500">Last Activity:</span> <span className="font-semibold">{summary.last_activity ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' }).format(new Date(summary.last_activity)) : 'N/A'}</span></div>
-              <div><span className="text-gray-500">Top Route:</span> <span className="font-semibold">{(summary.top_routes && summary.top_routes[0]) || '—'}</span></div>
-              <div><span className="text-gray-500">Top Carrier:</span> <span className="font-semibold">{(summary.top_carriers && summary.top_carriers[0]) || '—'}</span></div>
-            </div>
-          )}
-          <Button size="sm" onClick={handleRecall} className="bg-indigo-600 hover:bg-indigo-700 text-white">Recall</Button>
-        </div>
+    <div className="relative px-2 md:px-5 py-3">
+      <LitWatermark />
+      <LitPageHeader title={summary?.company_name || 'Company'}>
         <div className="flex items-center gap-2">
           <Button
             className="bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700"
@@ -138,10 +170,11 @@ export default function Company() {
           <Button size="sm" onClick={handleEnrich} disabled={isEnriching} className="bg-purple-600 hover:bg-purple-700 text-white">
             {isEnriching ? 'Enriching…' : 'Enrich Now'}
           </Button>
+          <Button size="sm" onClick={handleRecall} className="bg-indigo-600 hover:bg-indigo-700 text-white">Recall</Button>
         </div>
-      </div>
+      </LitPageHeader>
 
-      <div className="bg-white rounded-xl border shadow-sm">
+      <LitPanel>
         <Tabs defaultValue="overview" className="w-full">
           <div className="px-4 pt-4 border-b">
             <TabsList>
@@ -156,10 +189,81 @@ export default function Company() {
             <TabsContent value="overview">
               <OverviewTab company={company} shipments={shipments} isLoading={isLoading} />
             </TabsContent>
+
             <TabsContent value="shipments">
               <ShipmentsTab shipments={shipments} isLoading={isLoading} />
+
+              <LitPanel title="Upload Lanes (RFP Data)">
+                <div className="flex items-center gap-2 mb-3">
+                  <input
+                    id="company-lanes-file"
+                    type="file"
+                    accept=".xlsx,.xls,.csv,application/json"
+                    className="hidden"
+                    onChange={async (e) => {
+                      try {
+                        const f = e.target.files && e.target.files[0]; if (!f) return;
+                        const payload = await ingestWorkbook(f);
+                        setRfpPayload(payload);
+                        try { localStorage.setItem(rfpKey, JSON.stringify(payload)); } catch {}
+                        const k = deriveKpisFromPayload(payload);
+                        if (k) {
+                          setCompany(prev => ({
+                            ...(prev || {}),
+                            shipments_12m: k.shipments12m,
+                            top_route: (k.originsTop && k.destsTop && k.originsTop.length && k.destsTop.length) ? `${k.originsTop[0]} → ${k.destsTop[0]}` : undefined,
+                            top_carriers: [],
+                          }));
+                        }
+                        const el = document.getElementById('company-lanes-file'); if (el) el.value = '';
+                      } catch { alert('Import failed'); }
+                    }}
+                  />
+                  <Button variant="outline" onClick={() => { const el = document.getElementById('company-lanes-file'); if (el) el.click(); }}>Import</Button>
+                  <Button variant="outline" onClick={() => { try { localStorage.setItem(rfpKey, JSON.stringify(rfpPayload || {})); alert('Saved'); } catch { alert('Save failed'); } }}>Save</Button>
+                  <Button variant="outline" className="text-red-600" onClick={() => { try { localStorage.removeItem(rfpKey); } catch {} setRfpPayload(null); alert('Reset'); }}>Reset</Button>
+                </div>
+
+                {rfpPayload && Array.isArray(rfpPayload.lanes) && rfpPayload.lanes.length > 0 ? (
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm border border-slate-200">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="p-2 border">Service</th>
+                          <th className="p-2 border">Equipment</th>
+                          <th className="p-2 border">POL</th>
+                          <th className="p-2 border">POD</th>
+                          <th className="p-2 border">Origin Country</th>
+                          <th className="p-2 border">Dest Country</th>
+                          <th className="p-2 border">Shpts/Year</th>
+                          <th className="p-2 border">Avg Kg</th>
+                          <th className="p-2 border">Avg CBM</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rfpPayload.lanes.map((ln, i) => (
+                          <tr key={i}>
+                            <td className="p-2 border">{ln.mode || '—'}</td>
+                            <td className="p-2 border">{ln.equipment || '—'}</td>
+                            <td className="p-2 border">{ln.origin?.port || '—'}</td>
+                            <td className="p-2 border">{ln.destination?.port || '—'}</td>
+                            <td className="p-2 border">{ln.origin?.country || '—'}</td>
+                            <td className="p-2 border">{ln.destination?.country || '—'}</td>
+                            <td className="p-2 border">{ln.demand?.shipments_per_year || 0}</td>
+                            <td className="p-2 border">{ln.demand?.avg_weight_kg || 0}</td>
+                            <td className="p-2 border">{ln.demand?.avg_volume_cbm || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-600">No uploaded lanes.</div>
+                )}
+              </LitPanel>
+
               {shipmentsTotal > SHIP_PAGE_SIZE && (
-                <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center justify_between mt-4">
                   <div className="text-sm text-gray-600">
                     Showing {Math.min(shipmentsTotal, shipmentsPage * SHIP_PAGE_SIZE) - SHIP_PAGE_SIZE + 1}-{Math.min(shipmentsTotal, shipmentsPage * SHIP_PAGE_SIZE)} of {shipmentsTotal}
                   </div>
@@ -170,15 +274,17 @@ export default function Company() {
                 </div>
               )}
             </TabsContent>
+
             <TabsContent value="contacts">
               <ContactsTab contacts={contacts} companyId={companyId} company={company} onAddContact={handleAddContact} isGated={false} onUnlock={() => {}} isLoading={false} />
             </TabsContent>
+
             <TabsContent value="ai_insights">
               <EnrichmentTab company={company || { id: companyId }} onCompanyUpdate={setCompany} user={null} isGated={false} onUnlock={() => {}} isLoading={false} onEnrich={handleEnrich} isEnriching={isEnriching} />
               {recall && (
                 <div className="mt-6">
                   <h3 className="text-lg font-semibold">AI Recall</h3>
-                  <p className="mt-2 text-sm whitespace-pre-wrap">{recall.summary}</p>
+                  <p className="mt-2 text_sm whitespace-pre-wrap">{recall.summary}</p>
                   <ul className="list-disc pl-5 mt-2">
                     {(recall.bullets || []).map((b, i) => (
                       <li key={i} className="text-sm">{b}</li>
@@ -187,13 +293,13 @@ export default function Company() {
                 </div>
               )}
             </TabsContent>
+
             <TabsContent value="notes">
               <NotesTab notes={notes} onAddNote={handleAddNote} isLoading={isLoading} />
             </TabsContent>
           </div>
         </Tabs>
-      </div>
+      </LitPanel>
     </div>
   );
 }
-

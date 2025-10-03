@@ -1,4 +1,3 @@
-// src/lib/api.ts
 import { searchCompanies as _searchCompanies } from "@/lib/api/search";
 export type {
   SearchFilters,
@@ -12,14 +11,11 @@ const GW =
   (globalThis as any).process?.env?.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
   "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
 
-// ---- Compatibility named exports (legacy callers expect these) ----
-
-// Old name used in some components; proxy to new search
+// ---- Compatibility named exports ----
 export async function postSearchCompanies(payload: any) {
   return _searchCompanies(payload);
 }
 
-// Filters for the search UI
 export async function getFilterOptions(): Promise<{
   modes: string[];
   origins: string[];
@@ -38,7 +34,6 @@ export async function getFilterOptions(): Promise<{
   return await res.json();
 }
 
-// Company shipments drawer
 export async function getCompanyShipments(opts: {
   company_id: string;
   limit?: number;
@@ -61,14 +56,12 @@ export async function getCompanyShipments(opts: {
   return await res.json();
 }
 
-// Enrichment (thin wrapper; endpoint name may vary across envs)
 export async function enrichCompany(body: { company_id: string }) {
   const res = await fetch(`${GW}/crm/enrichCompany`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  // tolerate 404/501 gracefully for envs without CRM service
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     throw new Error(`enrichCompany failed: ${res.status} ${txt}`);
@@ -76,7 +69,19 @@ export async function enrichCompany(body: { company_id: string }) {
   return await res.json();
 }
 
-// Campaign save (compat; adjust route when CRM endpoint is finalized)
+export async function recallCompany(body: { company_id: string; questions?: string[] }) {
+  const res = await fetch(`${GW}/ai/recall`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`recallCompany failed: ${res.status} ${txt}`);
+  }
+  return await res.json();
+}
+
 export async function saveCampaign(body: Record<string, any>) {
   const res = await fetch(`${GW}/crm/campaigns`, {
     method: "POST",
@@ -90,13 +95,28 @@ export async function saveCampaign(body: Record<string, any>) {
   return await res.json();
 }
 
-// ---- New consolidated API object (current code uses this) ----
+export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string|null; source?: string }) {
+  const res = await fetch(`${GW}/crm/saveCompany`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...payload, source: payload.source ?? "search" }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`saveCompanyToCrm failed: ${res.status} ${txt}`);
+  }
+  return await res.json();
+}
+
+// New consolidated API object
 export const api = {
   searchCompanies: _searchCompanies,
   getFilterOptions,
   getCompanyShipments,
   enrichCompany,
+  recallCompany,
   saveCampaign,
+  saveCompanyToCrm,
 };
 
 // Also export the new search by name for TSX pages that import it directly
