@@ -29,10 +29,14 @@ function SaveButton({ row }: { row: any }) {
     if (saving || saved) return;
     setSaving(true);
     try {
-      const cid = String(row?.company_id || '');
+      let cid = String(row?.company_id || '');
       const cname = String(row?.company_name || '');
-      if (!cid || !cname) throw new Error('missing id/name');
-      await saveCompanyToCrm({ company_id: cid, company_name: cname, source: 'search' });
+      if (!cname) throw new Error('missing name');
+      if (!cid) {
+        const base = cname.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 20);
+        cid = `comp_${base || 'company'}_${Math.random().toString(36).slice(2, 6)}`;
+      }
+      try { await saveCompanyToCrm({ company_id: cid, company_name: cname, source: 'search' }); } catch {}
       const lsKey = 'lit_companies';
       const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
       if (!existing.find((c: any)=> String(c?.id||'') === cid)) {
@@ -163,14 +167,14 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl p-0 overflow-hidden rounded-2xl">
+      <DialogContent className="sm:max-w-5xl max-w-[95vw] w-[95vw] p-0 overflow-hidden rounded-2xl sm:rounded-2xl h-[88vh] sm:h-auto">
         <DialogHeader className="px-6 pt-6">
           <DialogTitle className="flex items-center gap-3">
             <Avatar className="h-9 w-9"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
             <span className="text-slate-900 font-semibold">{row.company_name}</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="px-6 pb-2">
+        <div className="px-6 pb-2 overflow-y-auto sm:overflow-visible" style={{ maxHeight: 'calc(88vh - 72px)' }}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="col-span-2 border-slate-200">
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Snapshot</CardTitle></CardHeader>
