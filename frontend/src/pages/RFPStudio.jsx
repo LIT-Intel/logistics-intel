@@ -18,11 +18,18 @@ import { toHtml, toPdf } from '@/lib/rfp/export';
 
 export default function RFPStudio() {
   const [activeTab, setActiveTab] = useState('overview');
-  const [rfps, setRfps] = useState([
-    { id: 'rfp_001', name: 'Pride Mobility — Ocean 2026', client: 'Pride Mobility', status: 'Draft', due: 'Dec 12' },
-    { id: 'rfp_002', name: 'Shaw Industries — LCL Program', client: 'Shaw Industries', status: 'Active', due: 'Jan 08' },
-    { id: 'rfp_003', name: 'Wahoo Fitness — Q1 Air', client: 'Wahoo Fitness', status: 'Outreach', due: 'Nov 30' }
-  ]);
+  const [rfps, setRfps] = useState([]);
+  // Load RFP list from storage and keep in sync
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('lit_rfps');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) setRfps(arr);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('lit_rfps', JSON.stringify(rfps)); } catch {}
+  }, [rfps]);
   const [activeId, setActiveId] = useState('rfp_001');
   const [quoteData, setQuoteData] = useState({
     quote_name: '',
@@ -208,14 +215,23 @@ export default function RFPStudio() {
           <LitSidebar title="RFPs">
               <div className="space-y-3">
                 {rfps.map(r => (
-                  <button key={r.id} onClick={()=>{ setActiveId(r.id); setActiveTab('overview'); }} className={`w-full text-left p-3 rounded-xl border ${activeId===r.id? 'bg-white ring-2 ring-violet-300 border-slate-200':'bg-white/90 border-slate-200 hover:bg-white'}`}>
-                    <div className="text-sm font-semibold text-[#23135b] truncate">{r.name}</div>
-                    <div className="mt-1 text-xs text-slate-600 flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">{r.status}</span>
-                      <span className="text-slate-500">Due {r.due}</span>
-                      {r.client && <span className="text-slate-700">• {r.client}</span>}
+                  <div key={r.id} className={`w-full p-3 rounded-xl border ${activeId===r.id? 'bg-white ring-2 ring-violet-300 border-slate-200':'bg-white/90 border-slate-200 hover:bg-white'}`}>
+                    <button onClick={()=>{ setActiveId(r.id); setActiveTab('overview'); }} className="w-full text-left">
+                      <div className="text-sm font-semibold text-[#23135b] truncate">{r.name}</div>
+                      <div className="mt-1 text-xs text-slate-600 flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">{r.status||'Draft'}</span>
+                        {r.due && <span className="text-slate-500">Due {r.due}</span>}
+                        {r.client && <span className="text-slate-700">• {r.client}</span>}
+                        {r.companyId && <span className="text-slate-500">ID {r.companyId}</span>}
+                      </div>
+                    </button>
+                    <div className="mt-2 flex justify-end">
+                      <button className="text-xs text-red-600" onClick={()=>{
+                        const next = rfps.filter(x => x.id !== r.id);
+                        setRfps(next);
+                      }}>Remove</button>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
           </LitSidebar>

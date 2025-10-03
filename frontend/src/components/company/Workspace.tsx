@@ -363,7 +363,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                       </div>
                       <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
                       <div className='mt-3 flex gap-2'>
-                        <button className='px-3 py-1.5 rounded border text-xs' onClick={() => {
+                        <button className='px-3 py-1.5 rounded border text-xs bg-gradient-to-r from-blue-600 to-violet-600 text-white' onClick={() => {
                           // Add to RFP using universal company id/name
                           try {
                             const key = 'lit_rfps';
@@ -381,7 +381,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                             }
                           } catch { alert('Failed to add to RFP'); }
                         }}>Add to RFP</button>
-                        <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                        <button className='px-3 py-1.5 rounded border text-xs bg-gradient-to-r from-blue-600 to-violet-600 text-white' onClick={async()=>{
                           try { await saveCampaign({ name: `${overview?.name||'Company'} — Outreach`, channel: 'email', company_ids: [String(activeId)] }); alert('Added to Campaigns'); } catch(e:any){ alert('Failed: '+ String(e?.message||e)); }
                         }}>Add to Campaign</button>
                       </div>
