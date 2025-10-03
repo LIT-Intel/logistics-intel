@@ -162,7 +162,7 @@ export default function RFPStudio() {
                 const f = e.target.files && e.target.files[0]; if (!f) return;
                 const payload = await ingestWorkbook(f);
                 setRfpPayload(payload);
-                const pricedRes = priceAll(payload.lanes, payload.rates, templates);
+                const pricedRes = priceAll(payload.lanes||[], payload.rates||[], templates);
                 setPriced(pricedRes);
                 setActiveTab('proposal');
                 if (fileRef.current) fileRef.current.value = '';
@@ -276,6 +276,19 @@ export default function RFPStudio() {
                     Confidence: {(rfpPayload.__diagnostics.confidence*100).toFixed(0)}% — Sheets scanned: {rfpPayload.__diagnostics.sheetRanks.length}
                   </div>
                 )}
+                <div className="rounded-xl border border-slate-200 bg-white/90 p-3 text-sm text-slate-700">
+                  <div className="flex items-center gap-2">
+                    <span>File Service Type:</span>
+                    <select className="border rounded px-2 py-1" onChange={(e)=>{
+                      // no-op for now; could set a hint in state to bias detector in future
+                    }}>
+                      <option value="auto">Auto-detect</option>
+                      <option value="ocean">Ocean</option>
+                      <option value="air">Airfreight</option>
+                      <option value="truck">Truck</option>
+                    </select>
+                  </div>
+                </div>
                 {rfpPayload && (
                   <LitPanel title="Detected Lanes (Preview)">
                     <div className="overflow-auto">
