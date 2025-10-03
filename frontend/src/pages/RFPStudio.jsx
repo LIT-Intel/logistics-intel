@@ -276,6 +276,45 @@ export default function RFPStudio() {
                     Confidence: {(rfpPayload.__diagnostics.confidence*100).toFixed(0)}% — Sheets scanned: {rfpPayload.__diagnostics.sheetRanks.length}
                   </div>
                 )}
+                {rfpPayload && (
+                  <LitPanel title="Detected Lanes (Preview)">
+                    <div className="overflow-auto">
+                      <table className="w-full text-sm border border-slate-200">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="p-2 border">Service</th>
+                            <th className="p-2 border">POL</th>
+                            <th className="p-2 border">POD</th>
+                            <th className="p-2 border">Origin Country</th>
+                            <th className="p-2 border">Dest Country</th>
+                            <th className="p-2 border">Equip</th>
+                            <th className="p-2 border">Shpts/Year</th>
+                            <th className="p-2 border">Avg Kg</th>
+                            <th className="p-2 border">Avg CBM</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(rfpPayload.lanes||[]).slice(0,100).map((ln, i)=> (
+                            <tr key={i}>
+                              <td className="p-2 border">{ln.mode||'—'}</td>
+                              <td className="p-2 border">{ln.origin?.port||'—'}</td>
+                              <td className="p-2 border">{ln.destination?.port||'—'}</td>
+                              <td className="p-2 border">{ln.origin?.country||'—'}</td>
+                              <td className="p-2 border">{ln.destination?.country||'—'}</td>
+                              <td className="p-2 border">{ln.equipment||'—'}</td>
+                              <td className="p-2 border">{ln.demand?.shipments_per_year||0}</td>
+                              <td className="p-2 border">{ln.demand?.avg_weight_kg||0}</td>
+                              <td className="p-2 border">{ln.demand?.avg_volume_cbm||0}</td>
+                            </tr>
+                          ))}
+                          {(!rfpPayload.lanes || rfpPayload.lanes.length===0) && (
+                            <tr><td className="p-2 text-center text-slate-600" colSpan={9}>No lanes detected</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </LitPanel>
+                )}
                 <LitPanel title="Executive Summary">
                   <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Draft your executive summary here..." value={proposalSummary} onChange={e=> setProposalSummary(e.target.value)} />
                   <div className="mt-2 flex gap-2">
