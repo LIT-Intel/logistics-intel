@@ -58,7 +58,3 @@ export async function searchCompanies(
   }
   return (await res.json()) as SearchCompaniesResponse;
 }
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/fix/search-sql-arrays
