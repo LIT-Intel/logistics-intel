@@ -14,13 +14,52 @@ import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPi
 import { motion, AnimatePresence } from 'framer-motion';
 import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
 import { InlineFilters } from '@/components/search/InlineFilters';
-import { getFilterOptions } from '@/lib/api';
+import { getFilterOptions, saveCompanyToCrm } from '@/lib/api';
 
 const brand = {
   heading: 'text-[28px] font-bold tracking-tight text-purple-700',
   kpiIcon: 'h-5 w-5 text-indigo-600',
   chip: 'rounded-full'
 };
+
+function SaveButton({ row }: { row: any }) {
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  async function onClick() {
+    if (saving || saved) return;
+    setSaving(true);
+    try {
+      const cid = String(row?.company_id || '');
+      const cname = String(row?.company_name || '');
+      if (!cid || !cname) throw new Error('missing id/name');
+      await saveCompanyToCrm({ company_id: cid, company_name: cname, source: 'search' });
+      const lsKey = 'lit_companies';
+      const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
+      if (!existing.find((c: any)=> String(c?.id||'') === cid)) {
+        const kpis = {
+          shipments12m: row?.shipments_12m || 0,
+          lastActivity: row?.last_activity || null,
+          originsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.origin_country) : [],
+          destsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.dest_country) : [],
+          carriersTop: Array.isArray(row?.top_carriers) ? row.top_carriers.map((c: any)=> c.carrier) : [],
+        };
+        const fresh = { id: cid, name: cname, kpis };
+        localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
+        window.dispatchEvent(new StorageEvent('storage', { key: lsKey } as any));
+      }
+      setSaved(true);
+    } catch (e) {
+      console.error('save failed', e);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Button size="sm" variant={saved ? 'secondary' : 'default'} onClick={onClick} className="rounded-xl" disabled={saving || saved}>
+      {saved ? 'Saved' : (saving ? 'Saving…' : 'Save')}
+    </Button>
+  );
+}
 
 function KPI({ value, label, icon }: { value: number | string | null; label: string; icon: React.ReactNode }) {
   return (
@@ -68,7 +107,10 @@ function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
               ))}
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => onOpen(row)} className="rounded-xl">View Details <ChevronRight className="ml-1 h-4 w-4" /></Button>
+          <div className="flex items-center gap-2">
+            <SaveButton row={row} />
+            <Button variant="secondary" size="sm" onClick={() => onOpen(row)} className="rounded-xl">View Details <ChevronRight className="ml-1 h-4 w-4" /></Button>
+          </div>
         </CardHeader>
         <CardContent className="pt-0 flex-1 flex flex-col">
           <div className="grid grid-cols-3 gap-4">
@@ -229,6 +271,13 @@ export default function SearchAppPage() {
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[] }>({ modes: [], origins: [], destinations: [] });
   const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]}>({ origin: [], dest: [], hs: [] });
   const [loading, setLoading] = useState(false);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(()=>{
+    try {
+      const a = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+      return new Set<string>(a.map((c: any)=> String(c?.id||'' )).filter(Boolean));
+    } catch { return new Set(); }
+  });
 
   useEffect(() => {
     (async () => {
@@ -279,6 +328,34 @@ export default function SearchAppPage() {
     const top_carriers = r.top_carriers || r.carriersTop || [];
     const tags = r.tags || [];
     return { ...r, company_name, company_id, shipments_12m, last_activity, top_routes, top_carriers, tags };
+  }
+
+  async function onSaveCompany(row: any) {
+    const cid = String(row?.company_id || '');
+    const cname = String(row?.company_name || '');
+    if (!cid || !cname) return;
+    setSavingIds(prev => new Set(prev).add(cid));
+    try {
+      await saveCompanyToCrm({ company_id: cid, company_name: cname, source: 'search' });
+    } catch {}
+    try {
+      const lsKey = 'lit_companies';
+      const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
+      if (!existing.find((c: any)=> String(c?.id||'') === cid)) {
+        const kpis = {
+          shipments12m: row?.shipments_12m || 0,
+          lastActivity: row?.last_activity || null,
+          originsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.origin_country) : [],
+          destsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.dest_country) : [],
+          carriersTop: Array.isArray(row?.top_carriers) ? row.top_carriers.map((c: any)=> c.carrier) : [],
+        };
+        const fresh = { id: cid, name: cname, kpis };
+        localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
+      }
+      setSavedIds(prev=> new Set(prev).add(cid));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'lit_companies' } as any));
+    } catch {}
+    setSavingIds(prev => { const n = new Set(prev); n.delete(cid); return n; });
   }
 
   const filtered = useMemo(() => {
@@ -388,6 +465,7 @@ export default function SearchAppPage() {
                     <TableHead className="w-[18%] text-slate-700">Last Activity</TableHead>
                     <TableHead className="w-[18%] text-slate-700">Top Routes</TableHead>
                     <TableHead className="w-[18%] text-slate-700">Top Carrier</TableHead>
+                    <TableHead className="w-[10%] text-slate-700 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -405,6 +483,9 @@ export default function SearchAppPage() {
                       <TableCell>{r.last_activity ?? '—'}</TableCell>
                       <TableCell>{r.top_routes?.[0] ? `${r.top_routes[0].origin_country} → ${r.top_routes[0].dest_country} (${r.top_routes[0].cnt})` : '—'}</TableCell>
                       <TableCell>{r.top_carriers?.[0]?.carrier ?? '—'}</TableCell>
+                      <TableCell className="text-right">
+                        <SaveButton row={r} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
