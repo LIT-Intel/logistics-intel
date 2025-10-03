@@ -128,17 +128,44 @@ export default function RFPStudio() {
     try {
       setBusy('load');
       const r = rfps.find(x=> x.id===activeId);
+      // Prefer universal companyId if present
+      if (r && r.companyId) {
+        const cid = String(r.companyId);
+        let name = r.client || r.name || 'Company';
+        try {
+          const ccRaw = localStorage.getItem('lit_companies');
+          const cc = ccRaw ? JSON.parse(ccRaw) : [];
+          const rec = Array.isArray(cc) ? cc.find((c)=> String(c?.id)===cid) : null;
+          if (rec && rec.name) name = rec.name;
+        } catch {}
+        let derived = null;
+        try {
+          const raw = localStorage.getItem(`lit_rfp_payload_${cid}`);
+          const saved = raw ? JSON.parse(raw) : null;
+          derived = deriveKpisFromPayload(saved);
+        } catch {}
+        setCompany({
+          companyId: cid,
+          companyName: name,
+          shipments12m: derived?.shipments12m || 0,
+          lastActivity: null,
+          originsTop: derived?.originsTop || [],
+          destsTop: derived?.destsTop || [],
+          carriersTop: [],
+        });
+        setLanes([]);
+        setFinModel(null);
+        return;
+      }
       const q = (r && (r.client || (r.name && r.name.split('—')[0]))) || '';
       const s = await rfpSearchCompanies({ q, limit: 1, offset: 0 });
       const item = (Array.isArray(s?.items) && s.items[0]) || null;
       if (!item) {
-        // Fallback to RFP metadata so Overview is not blank
         setCompany({ companyId: r?.id || '', companyName: r?.client || (r?.name || 'Company') });
         setLanes([]); setFinModel(null);
         return;
       }
       const companyId = item.company_id || '';
-      // Persist the universal companyId on the active RFP entry for binding
       setRfps(prev => prev.map(x => x.id === activeId ? { ...x, companyId } : x));
       ensureCompanyInCommandCenter(companyId, item.company_name || r?.client || r?.name || 'Company');
       const shipments12m = Number(item.shipments12m || item.shipments || 0);
@@ -149,7 +176,7 @@ export default function RFPStudio() {
         lastActivity: (item.lastActivity && item.lastActivity.value) ? item.lastActivity.value : (item.lastActivity || null) || undefined,
         originsTop: (item.originsTop || []).map((o)=> String((o && (o.v||o)) || '')),
         destsTop: (item.destsTop || []).map((d)=> String((d && (d.v||d)) || '')),
-        carriersTop: (item.carriersTop || []).map((c)=> String((c && (c.v||c)) || '')),
+        carriersTop: [],
       };
       setCompany(kpis);
       const g = await rfpGetCompanyShipments(companyId, 200, 0);
@@ -167,6 +194,9 @@ export default function RFPStudio() {
       setLanes(lanesAgg);
       const baseline = lanesAgg.reduce((sum, l)=> sum + (Number(l.value_usd||0)), 0) || (shipments12m * 8650);
       let proposed = baseline * 0.87;
+      try {
+        const bench = await rfpGetCompanyShipments; // placeholder keep existing benchmark logic below
+      } catch {}
       try {
         const bench = await rfpGetBenchmark({ mode: 'ocean', lanes: lanesAgg.map(l=> ({ o: l.origin_country, d: l.dest_country, vol: l.shipments })) });
         if (bench && typeof bench.proposedUsd === 'number') proposed = bench.proposedUsd;
