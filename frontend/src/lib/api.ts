@@ -6,9 +6,24 @@ const GW =
   process.env.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
   "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
 
-// --- Named exports expected by existing components ---
-export async function postSearchCompanies(filters: Parameters<typeof Search.searchCompanies>[0]) {
+// ---- Named exports used across existing components ----
+export async function postSearchCompanies(
+  filters: Parameters<typeof Search.searchCompanies>[0]
+) {
   return Search.searchCompanies(filters);
+}
+
+// Add: direct named re-export so legacy imports compile
+export const searchCompanies = Search.searchCompanies;
+
+// Add: filter options endpoint used by SearchPanel / SearchFilters
+export async function getFilterOptions() {
+  const res = await fetch(`${GW}/public/getFilterOptions`, { method: "GET" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`getFilterOptions failed: ${res.status} ${text}`);
+  }
+  return res.json();
 }
 
 export async function getCompanyShipments(company_id: string, limit = 10, offset = 0) {
@@ -37,7 +52,6 @@ export async function enrichCompany(payload: any) {
   return res.json();
 }
 
-// New: saveCampaign for CampaignBuilder.jsx
 export async function saveCampaign(payload: any) {
   const res = await fetch(`${GW}/campaigns`, {
     method: "POST",
@@ -51,12 +65,12 @@ export async function saveCampaign(payload: any) {
   return res.json();
 }
 
-// --- Aggregated API object used by new pages ---
+// Aggregated API object used by newer pages
 export const api = {
   searchCompanies: Search.searchCompanies,
 };
 
-// Re-export types used across the app
+// Re-export types
 export type {
   SearchFilters,
   SearchCompaniesResponse,
