@@ -1,3 +1,5 @@
+import { apiBase } from "../apiBase";
+
 export type SearchFilters = {
   q?: string | null;
   origin?: string[] | string | null;
@@ -21,23 +23,23 @@ export type SearchCompaniesResponse = {
   rows: SearchCompanyRow[];
 };
 
-const GW =
-  (import.meta as any).env?.VITE_LIT_GATEWAY_BASE ||
-  (globalThis as any).process?.env?.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
-  "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
-
-function toCsv(a?: string[]): string {
-  return Array.isArray(a) && a.length > 0 ? a.join(",") : "";
+function toCsvOrNull(a?: string[] | string | null): string | null {
+  if (Array.isArray(a)) return a.length > 0 ? a.join(",") : null;
+  if (typeof a === 'string') {
+    const v = a.trim();
+    return v.length ? v : null;
+  }
+  return null;
 }
 
 function normalizePayload(f: SearchFilters) {
   const limit = Math.max(1, Math.min(50, Number(f.limit ?? 24)));
   const offset = Math.max(0, Number(f.offset ?? 0));
   return {
-    q: (f.q ?? "").trim(),
-    origin: toCsv(f.origin),
-    dest: toCsv(f.dest),
-    hs: toCsv(f.hs),
+    q: typeof f.q === 'string' && f.q.trim().length ? f.q.trim() : null,
+    origin: toCsvOrNull(f.origin),
+    dest: toCsvOrNull(f.dest),
+    hs: toCsvOrNull(f.hs),
     limit,
     offset,
   };
@@ -45,7 +47,7 @@ function normalizePayload(f: SearchFilters) {
 
 export async function searchCompanies(filters: SearchFilters): Promise<SearchCompaniesResponse> {
   const payload = normalizePayload(filters);
-  const res = await fetch(`${GW}/public/searchCompanies`, {
+  const res = await fetch(`${apiBase()}/public/searchCompanies`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -76,7 +78,7 @@ export async function getCompanyShipments(input: GetCompanyShipmentsInput) {
   if (input.hs) params.set('hs', input.hs);
   if (typeof input.limit === 'number') params.set('limit', String(input.limit));
   if (typeof input.offset === 'number') params.set('offset', String(input.offset));
-  const res = await fetch(`${GW}/public/getCompanyShipments?${params.toString()}`);
+  const res = await fetch(`${apiBase()}/public/getCompanyShipments?${params.toString()}`);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`getCompanyShipments failed: ${res.status} ${text}`);
