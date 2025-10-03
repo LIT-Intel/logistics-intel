@@ -260,9 +260,14 @@ export default function RFPStudio() {
                   <LitPanel title="Top Origins"><div className="text-sm text-slate-900">{(company?.originsTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
                   <LitPanel title="Top Carriers"><div className="text-sm text-slate-900">{(company?.carriersTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
                 </div>
-                <LitPanel title="Timeline">
-                  <div className="h-40 flex items-center justify-center text-slate-500 text-sm">Timeline chart placeholder</div>
-                </LitPanel>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <LitPanel title="Timeline (Editable)">
+                    <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="List proposal timeline requirements…"></textarea>
+                  </LitPanel>
+                  <LitPanel title="Key Details (Editable)">
+                    <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Add locations, warehouses, notes…"></textarea>
+                  </LitPanel>
+                </div>
               </TabsContent>
 
               <TabsContent value="proposal" className="mt-6 space-y-6">
