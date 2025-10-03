@@ -9,7 +9,7 @@ const Landing        = lazy(() => import("@/pages/Landing"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
 const Search         = lazy(() => import("@/pages/Search"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
-const Companies      = lazy(() => import("@/pages/Companies"));
+const Companies      = lazy(() => import("@/pages/companies/index"));
 const Campaigns      = lazy(() => import("@/pages/Campaigns"));
 const CampaignBuilder= lazy(() => import("@/pages/CampaignBuilder"));
 const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));
@@ -18,6 +18,7 @@ const Settings       = lazy(() => import("@/pages/Settings"));
 const Billing        = lazy(() => import("@/pages/Billing"));
 const AffiliateDash  = lazy(() => import("@/pages/AffiliateDashboard"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
+const AdminSettings  = lazy(() => import("@/pages/AdminSettings"));
 const LeadProspecting= lazy(() => import("@/pages/LeadProspecting"));
 const CMSManager     = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
@@ -28,6 +29,8 @@ const Transactions   = lazy(() => import("@/pages/Transactions"));
 const Widgets        = lazy(() => import("@/pages/Widgets"));
 const Company        = lazy(() => import("@/pages/Company"));
 const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
+const DemoCompany    = lazy(() => import("@/pages/demo/company"));
+const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
 
 const DEMO_MODE = !import.meta.env.VITE_FIREBASE_API_KEY;
 
@@ -62,6 +65,19 @@ export default function App() {
             <Layout currentPageName="Demo"><SearchPanel /></Layout>
           }
         />
+        <Route
+          path="/demo/company"
+          element={
+            <Layout currentPageName="Company Demo"><DemoCompany /></Layout>
+          }
+        />
+        {/* Public companies (manual create demo) */}
+        <Route
+          path="/companies"
+          element={
+            <Layout currentPageName="Command Center"><CompaniesIndex /></Layout>
+          }
+        />
         <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
         <Route path="/signup" element={<Layout currentPageName="Signup"><Signup /></Layout>} />
         {/* App (protected) */}
@@ -85,7 +101,7 @@ export default function App() {
           path="/app/companies"
           element={
             <RequireAuth>
-              <Layout currentPageName="Companies"><Companies /></Layout>
+              <Layout currentPageName="Command Center"><Companies /></Layout>
             </RequireAuth>
           }
         />
@@ -138,13 +154,14 @@ export default function App() {
           }
         />
         <Route
-          path="/app/transactions"
+          path="/app/admin/settings"
           element={
             <RequireAuth>
-              <Layout currentPageName="Transactions"><Transactions /></Layout>
+              <Layout currentPageName="Admin Settings"><AdminSettings /></Layout>
             </RequireAuth>
           }
         />
+        {/* Transactions removed */}
         <Route
           path="/app/widgets"
           element={

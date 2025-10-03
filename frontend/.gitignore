@@ -1,3 +1,7 @@
+dist/
+*.log
+*.local
+node_modules/
 # Logs
 logs
 *.log

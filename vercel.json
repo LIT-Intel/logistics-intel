@@ -1,7 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "npm ci --prefix frontend",
-  "installCommand": "pnpm --filter ./frontend build",
   "env": {
     "VITE_API_BASE": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev"
   },
@@ -9,7 +7,7 @@
     {
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
-      "config": { "distDir": "frontend/dist" }
+      "config": { "distDir": "dist" }
     }
   ],
   "rewrites": [

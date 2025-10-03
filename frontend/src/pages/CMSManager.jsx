@@ -19,6 +19,9 @@ import {
   Save,
   RefreshCw
 } from 'lucide-react';
+import LitPageHeader from '../components/ui/LitPageHeader';
+import LitPanel from '../components/ui/LitPanel';
+import LitWatermark from '../components/ui/LitWatermark';
 
 import PageEditor from '../components/cms/PageEditor';
 import BlogEditor from '../components/cms/BlogEditor';
@@ -160,36 +163,19 @@ export default function CMSManager() {
   ];
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
+    <div className="relative px-2 md:px-5 py-3 min-h-screen">
+      <LitWatermark />
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">Content Management System</h1>
-            <p className="text-gray-600 mt-2 text-sm md:text-base">
-              Manage all website content, pages, and blog posts
-            </p>
-          </div>
-          
-          <div className="flex gap-3">
-            <Button
-              onClick={loadData}
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </Button>
-            <Button
-              onClick={() => window.open(window.location.origin, '_blank')}
-              variant="outline" 
-              className="flex items-center gap-2"
-            >
-              <Eye className="w-4 h-4" />
-              Preview Site
-            </Button>
-          </div>
-        </div>
+        <LitPageHeader title="Content Management System">
+          <Button onClick={loadData} variant="outline" className="flex items-center gap-2">
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </Button>
+          <Button onClick={() => window.open(window.location.origin, '_blank')} variant="outline" className="flex items-center gap-2">
+            <Eye className="w-4 h-4" />
+            Preview Site
+          </Button>
+        </LitPageHeader>
 
         {/* CMS Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -208,13 +194,15 @@ export default function CMSManager() {
 
           {/* Pages Tab */}
           <TabsContent value="pages" className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">Website Pages</h2>
-              <Button onClick={() => handleCreateNew('page')} className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Create Page
-              </Button>
-            </div>
+            <LitPanel>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Website Pages</h2>
+                <Button onClick={() => handleCreateNew('page')} className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Create Page
+                </Button>
+              </div>
+            </LitPanel>
             
             <div className="grid gap-4">
               {pages.map(page => (
@@ -269,13 +257,15 @@ export default function CMSManager() {
 
           {/* Blog Tab */}
           <TabsContent value="blog" className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">Blog Posts</h2>
-              <Button onClick={() => handleCreateNew('blog')} className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                New Post
-              </Button>
-            </div>
+            <LitPanel>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Blog Posts</h2>
+                <Button onClick={() => handleCreateNew('blog')} className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  New Post
+                </Button>
+              </div>
+            </LitPanel>
             
             <div className="grid gap-4">
               {blogPosts.map(post => (

@@ -1,20 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { RFPQuote, Company, Contact } from '@/api/entities';
 import { User } from '@/api/entities';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Plus, Eye, Mail, Download, Settings } from 'lucide-react';
-import LockedFeature from '../components/common/LockedFeature';
-import { checkFeatureAccess } from '../components/utils/planLimits';
+import { FileText, Plus, Mail, Upload, BarChart3, DollarSign } from 'lucide-react';
+import LitSidebar from '../components/ui/LitSidebar';
+import LitPageHeader from '../components/ui/LitPageHeader';
+import LitPanel from '../components/ui/LitPanel';
+import LitWatermark from '../components/ui/LitWatermark';
+import { rfpSearchCompanies, rfpGetCompanyShipments, rfpGetBenchmark, rfpExportHtml, rfpExportPdf, rfpAddToCampaign } from '@/lib/api.rfp';
+import { ingestWorkbook } from '@/lib/rfp/ingest';
+import { priceAll } from '@/lib/rfp/pricing';
+import { defaultTemplates } from '@/lib/rfp/templates';
+import { toHtml, toPdf } from '@/lib/rfp/export';
 
-import RFPBuilderForm from '../components/rfp/RFPBuilderForm';
-import RFPPreview from '../components/rfp/RFPPreview';
-import { generateRfpPdf } from '@/api/functions';
-import { sendEmail } from '@/api/functions';
+// existing builder/preview kept for future wiring
 
 export default function RFPStudio() {
-  const [activeTab, setActiveTab] = useState('create');
+  const [activeTab, setActiveTab] = useState('overview');
+  const [rfps, setRfps] = useState([]);
+  // Load RFP list from storage and keep in sync
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('lit_rfps');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) setRfps(arr);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('lit_rfps', JSON.stringify(rfps)); } catch {}
+  }, [rfps]);
+  const [activeId, setActiveId] = useState('rfp_001');
   const [quoteData, setQuoteData] = useState({
     quote_name: '',
     mode_combo: 'ocean',
@@ -34,330 +50,613 @@ export default function RFPStudio() {
     notes: ''
   });
   
-  const [savedQuotes, setSavedQuotes] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const hasAccess = user ? checkFeatureAccess(user, 'rfp_generation') : false;
+  const hasAccess = true;
 
-  useEffect(() => {
-    const checkUserAndLoad = async () => {
+  const [company, setCompany] = useState(null);
+  const [lanes, setLanes] = useState([]);
+  const [finModel, setFinModel] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const fileRef = useRef(null);
+  const [rfpPayload, setRfpPayload] = useState(null);
+  const [priced, setPriced] = useState(null);
+  const [templates, setTemplates] = useState(defaultTemplates);
+  const [showPricing, setShowPricing] = useState(false);
+  const STORAGE_PREFIX = 'lit_rfp_payload_';
+  const activeRfp = rfps.find(x => x.id === activeId);
+
+  // Derive KPIs from uploaded payload if API lookup is empty
+  function deriveKpisFromPayload(payload) {
+    if (!payload || !Array.isArray(payload.lanes)) return null;
+    const shipments12m = payload.lanes.reduce((s, ln)=> s + (Number(ln?.demand?.shipments_per_year||0)), 0);
+    const origins = new Map(); const dests = new Map();
+    for (const ln of payload.lanes) {
+      const o = ln?.origin?.port || ln?.origin?.country; if (o) origins.set(o, (origins.get(o)||0)+1);
+      const d = ln?.destination?.port || ln?.destination?.country; if (d) dests.set(d, (dests.get(d)||0)+1);
+    }
+    const originsTop = Array.from(origins.entries()).sort((a,b)=> b[1]-a[1]).slice(0,3).map(x=>x[0]);
+    const destsTop = Array.from(dests.entries()).sort((a,b)=> b[1]-a[1]).slice(0,3).map(x=>x[0]);
+    return { shipments12m, lastActivity: null, originsTop, destsTop, carriersTop: [] };
+  }
+  function summarizeServiceEquipment(payload) {
+    const counts = { byService: {}, byEquip: {} };
+    if (!payload || !Array.isArray(payload.lanes)) return counts;
+    for (const ln of payload.lanes) {
+      const s = ln?.mode || '—';
+      const e = ln?.equipment || '—';
+      counts.byService[s] = (counts.byService[s] || 0) + 1;
+      counts.byEquip[e] = (counts.byEquip[e] || 0) + 1;
+    }
+    return counts;
+  }
+  function ensureCompanyInCommandCenter(id, name) {
+    try {
+      const key = 'lit_companies';
+      const raw = localStorage.getItem(key);
+      const arr = raw ? JSON.parse(raw) : [];
+      const exists = Array.isArray(arr) && arr.some(c => String(c?.id) === String(id));
+      if (!exists) {
+        const fresh = { id: String(id), name: String(name||'Company'), kpis: { shipments12m: 0, lastActivity: null, originsTop: [], destsTop: [], carriersTop: [] } };
+        const next = [fresh, ...arr];
+        localStorage.setItem(key, JSON.stringify(next));
+        // notify other tabs
+        try { window.dispatchEvent(new StorageEvent('storage', { key })); } catch {}
+      }
+    } catch {}
+  }
+  const [proposalSummary, setProposalSummary] = useState('');
+  const [proposalSolution, setProposalSolution] = useState('');
+
+  useEffect(() => { setIsLoading(false); }, []);
+
+  const loadSavedQuotes = async () => {};
+
+  const handleSave = async () => {};
+
+  const handleSendEmail = async () => {};
+
+  const handleDownloadPDF = async () => {};
+
+  const generateQuoteEmailHTML = (_quote) => '';
+
+  if (isLoading) { return null; }
+
+  // keep page accessible; gating can be added later
+
+  async function loadKpisForActive() {
+    try {
+      setBusy('load');
+      const r = rfps.find(x=> x.id===activeId);
+      // Prefer universal companyId if present
+      if (r && r.companyId) {
+        const cid = String(r.companyId);
+        let name = r.client || r.name || 'Company';
+        try {
+          const ccRaw = localStorage.getItem('lit_companies');
+          const cc = ccRaw ? JSON.parse(ccRaw) : [];
+          const rec = Array.isArray(cc) ? cc.find((c)=> String(c?.id)===cid) : null;
+          if (rec && rec.name) name = rec.name;
+        } catch {}
+        let derived = null;
+        try {
+          const raw = localStorage.getItem(`lit_rfp_payload_${cid}`);
+          const saved = raw ? JSON.parse(raw) : null;
+          derived = deriveKpisFromPayload(saved);
+        } catch {}
+        setCompany({
+          companyId: cid,
+          companyName: name,
+          shipments12m: derived?.shipments12m || 0,
+          lastActivity: null,
+          originsTop: derived?.originsTop || [],
+          destsTop: derived?.destsTop || [],
+          carriersTop: [],
+        });
+        setLanes([]);
+        setFinModel(null);
+        return;
+      }
+      const q = (r && (r.client || (r.name && r.name.split('—')[0]))) || '';
+      const s = await rfpSearchCompanies({ q, limit: 1, offset: 0 });
+      const item = (Array.isArray(s?.items) && s.items[0]) || null;
+      if (!item) {
+        setCompany({ companyId: r?.id || '', companyName: r?.client || (r?.name || 'Company') });
+        setLanes([]); setFinModel(null);
+        return;
+      }
+      const companyId = item.company_id || '';
+      setRfps(prev => prev.map(x => x.id === activeId ? { ...x, companyId } : x));
+      ensureCompanyInCommandCenter(companyId, item.company_name || r?.client || r?.name || 'Company');
+      const shipments12m = Number(item.shipments12m || item.shipments || 0);
+      const kpis = {
+        companyId,
+        companyName: item.company_name || 'Company',
+        shipments12m,
+        lastActivity: (item.lastActivity && item.lastActivity.value) ? item.lastActivity.value : (item.lastActivity || null) || undefined,
+        originsTop: (item.originsTop || []).map((o)=> String((o && (o.v||o)) || '')),
+        destsTop: (item.destsTop || []).map((d)=> String((d && (d.v||d)) || '')),
+        carriersTop: [],
+      };
+      setCompany(kpis);
+      const g = await rfpGetCompanyShipments(companyId, 200, 0);
+      const rows = Array.isArray(g?.rows) ? g.rows : [];
+      const aggMap = new Map();
+      for (const row of rows) {
+        const key = `${row.origin_country||row.origin}=>${row.dest_country||row.destination}`;
+        const prev = aggMap.get(key) || { origin_country: row.origin_country||row.origin, dest_country: row.dest_country||row.destination, shipments: 0, value_usd: 0 };
+        prev.shipments += 1;
+        const v = Number(row.value_usd||0);
+        if (!Number.isNaN(v)) prev.value_usd = (prev.value_usd||0) + v;
+        aggMap.set(key, prev);
+      }
+      const lanesAgg = Array.from(aggMap.values());
+      setLanes(lanesAgg);
+      const baseline = lanesAgg.reduce((sum, l)=> sum + (Number(l.value_usd||0)), 0) || (shipments12m * 8650);
+      let proposed = baseline * 0.87;
       try {
-        const userData = await User.me();
-        setUser(userData);
-        const access = checkFeatureAccess(userData, 'rfp_generation');
-        if (access) {
-          loadSavedQuotes();
-        }
-      } catch (error) {
-        console.error('Error loading user:', error);
-      }
-      setIsLoading(false);
-    };
-    checkUserAndLoad();
-  }, []);
+        const bench = await rfpGetCompanyShipments; // placeholder keep existing benchmark logic below
+      } catch {}
+      try {
+        const bench = await rfpGetBenchmark({ mode: 'ocean', lanes: lanesAgg.map(l=> ({ o: l.origin_country, d: l.dest_country, vol: l.shipments })) });
+        if (bench && typeof bench.proposedUsd === 'number') proposed = bench.proposedUsd;
+      } catch {}
+      const savings = Math.max(0, baseline - proposed);
+      const pct = baseline > 0 ? (savings / baseline) : 0;
+      setFinModel({ baseline, proposed, savings, pct });
+    } finally {
+      setBusy(null);
+    }
+  }
 
-  const loadSavedQuotes = async () => {
+  useEffect(()=>{
+    if (!activeId) return;
+    // Load any saved payload for this RFP
     try {
-      const quotes = await RFPQuote.list('-updated_date');
-      setSavedQuotes(quotes);
-    } catch (error) {
-      console.error('Error loading quotes:', error);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!quoteData.quote_name || !quoteData.origin || !quoteData.destination) {
-      alert('Please fill in the required fields (Quote Name, Origin, Destination)');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await RFPQuote.create(quoteData);
-      alert('Quote saved successfully!');
-      loadSavedQuotes();
-      setActiveTab('preview');
-    } catch (error) {
-      console.error('Error saving quote:', error);
-      alert('Failed to save quote. Please try again.');
-    }
-    setIsSaving(false);
-  };
-
-  const handleSendEmail = async () => {
-    if (!quoteData.contact_email) {
-      alert('Please specify a contact email to send the quote');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Generate email content
-      const emailSubject = `${quoteData.quote_name} - Freight Quote`;
-      const emailBody = generateQuoteEmailHTML(quoteData);
-
-      const response = await sendEmail({
-        to: quoteData.contact_email,
-        subject: emailSubject,
-        body_html: emailBody,
-        from_name: undefined // Use default sender name
-      });
-
-      if (response.data.success) {
-        alert('Quote sent successfully via email!');
+      const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+      const raw = localStorage.getItem(STORAGE_PREFIX + keySuffix);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setRfpPayload(saved);
+        setPriced(priceAll(saved.lanes||[], saved.rates||[], templates));
       } else {
-        throw new Error(response.data.error || 'Failed to send email');
+        setRfpPayload(null); setPriced(null);
       }
-    } catch (error) {
-      console.error('Error sending email:', error);
-      alert('Failed to send email. Please check the console for details.');
+    } catch {}
+    loadKpisForActive();
+  }, [activeId]);
+
+  // Auto-reprice when templates or payload changes
+  useEffect(()=>{
+    if (rfpPayload) {
+      setPriced(priceAll(rfpPayload.lanes||[], rfpPayload.rates||[], templates));
+      // If no company KPI yet, populate from payload
+      if (!company || !company.companyId) {
+        const k = deriveKpisFromPayload(rfpPayload);
+        if (k) setCompany(prev => ({ ...(prev||{}), shipments12m: k.shipments12m, last_seen: k.lastActivity, top_route: undefined, top_carriers: [], industry: null }));
+      }
     }
-    setIsLoading(false);
-  };
-
-  const handleDownloadPDF = async () => {
-    setIsLoading(true);
-    try {
-      // Pass the payload in the expected { quoteData, user } structure.
-      const response = await generateRfpPdf({ quoteData, user });
-      
-      // The backend returns a direct PDF file (blob), not a JSON object with a URL.
-      // This code correctly handles the blob response to trigger a download.
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `${quoteData.quote_name || 'Quote'}.pdf`;
-      
-      document.body.appendChild(link);
-      link.click();
-      
-      // Clean up by removing the link and revoking the object URL.
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(link.href);
-
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try again or contact support.');
-    }
-    setIsLoading(false);
-  };
-
-  const generateQuoteEmailHTML = (quote) => {
-    const formatCurrency = (amount) => {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD'
-      }).format(amount || 0);
-    };
-
-    return `
-      <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px;">
-              ${quote.quote_name}
-            </h2>
-            
-            <p>Dear ${quote.contact_name || 'Valued Customer'},</p>
-            
-            <p>Thank you for your inquiry. Please find our freight quote details below:</p>
-            
-            <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="margin-top: 0; color: #1e40af;">Shipment Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Origin:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.origin}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Destination:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.destination}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Commodity:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.commodity}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;"><strong>Incoterm:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">${quote.incoterm}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Total Cost:</strong></td>
-                  <td style="padding: 8px 0; font-size: 18px; font-weight: bold; color: #1e40af;">${formatCurrency(quote.total_cost)}</td>
-                </tr>
-              </table>
-            </div>
-            
-            ${quote.notes ? `
-            <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <h4 style="margin-top: 0; color: #92400e;">Additional Notes:</h4>
-              <p style="margin-bottom: 0;">${quote.notes}</p>
-            </div>
-            ` : ''}
-            
-            <p>This quote is valid until ${quote.valid_until ? new Date(quote.valid_until).toLocaleDateString() : 'further notice'}.</p>
-            
-            <p>If you have any questions or would like to proceed with this shipment, please don't hesitate to contact us.</p>
-            
-            <p>Best regards,<br>
-            The LIT Team</p>
-            
-            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
-            <p style="font-size: 12px; color: #6b7280;">
-              This quote was generated using Logistic Intel. 
-              <a href="https://logisticintel.com" style="color: #1e40af;">Learn more</a>
-            </p>
-          </div>
-        </body>
-      </html>
-    `;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (!hasAccess) {
-    return <LockedFeature featureName="RFP Studio" />;
-  }
+  }, [templates, rfpPayload]);
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">RFP Studio</h1>
-            <p className="text-gray-600 mt-2 text-sm md:text-base">
-              Create professional freight quotes and proposals
-            </p>
-          </div>
-          
-          <div className="flex gap-2">
-            {activeTab === 'create' && (
-              <Button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
-              >
-                {isSaving ? 'Saving...' : 'Save Quote'}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60">
-            <TabsTrigger value="create" className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Create
-            </TabsTrigger>
-            <TabsTrigger value="preview" className="flex items-center gap-2">
-              <Eye className="w-4 h-4" />
-              Preview
-            </TabsTrigger>
-            <TabsTrigger value="saved" className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              Saved ({savedQuotes.length})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="create" className="space-y-6 mt-6">
-            <RFPBuilderForm 
-              quote={quoteData}
-              onQuoteChange={setQuoteData}
-              onSave={handleSave}
-              onGeneratePDF={handleDownloadPDF}
-              onSendEmail={handleSendEmail}
-              isGeneratingPDF={isLoading}
-            />
-          </TabsContent>
-
-          <TabsContent value="preview" className="space-y-6 mt-6">
-            <RFPPreview 
-              quoteData={quoteData}
-              onSendEmail={handleSendEmail}
-              onDownloadPDF={handleDownloadPDF}
-            />
-          </TabsContent>
-
-          <TabsContent value="saved" className="space-y-6 mt-6">
-            {savedQuotes.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="inline-block p-6 bg-white/80 rounded-full shadow-lg mb-6">
-                  <FileText className="w-16 h-16 text-blue-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">No Saved Quotes</h2>
-                <p className="text-gray-600 mb-6">
-                  Create your first quote to get started with professional proposals.
-                </p>
-                <Button
-                  onClick={() => setActiveTab('create')}
-                  className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Quote
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {savedQuotes.map((quote) => (
-                  <Card key={quote.id} className="bg-white/80 backdrop-blur-sm shadow-lg border border-gray-200/60 hover:shadow-xl transition-shadow">
-                    <CardHeader>
-                      <CardTitle className="text-lg font-semibold truncate">
-                        {quote.quote_name}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2 mb-4">
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Route:</span> {quote.origin} → {quote.destination}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Total:</span> {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(quote.total_cost || 0)}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Status:</span> {quote.status || 'Draft'}
-                        </p>
+    <div className="relative px-2 md:px-5 py-3 min-h-screen">
+      <div className="w-full flex gap-[5px]">
+        <aside className="hidden md:block w-[340px] shrink-0">
+          <LitSidebar title="RFPs">
+              <div className="space-y-3">
+                {rfps.map(r => (
+                  <div key={r.id} className={`w-full p-3 rounded-xl border ${activeId===r.id? 'bg-white ring-2 ring-violet-300 border-slate-200':'bg-white/90 border-slate-200 hover:bg-white'}`}>
+                    <button onClick={()=>{ setActiveId(r.id); setActiveTab('overview'); }} className="w-full text-left">
+                      <div className="text-sm font-semibold text-[#23135b] truncate">{r.name}</div>
+                      <div className="mt-1 text-xs text-slate-600 flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">{r.status||'Draft'}</span>
+                        {r.due && <span className="text-slate-500">Due {r.due}</span>}
+                        {r.client && <span className="text-slate-700">• {r.client}</span>}
+                        {r.companyId && <span className="text-slate-500">ID {r.companyId}</span>}
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setQuoteData(quote);
-                            setActiveTab('preview');
-                          }}
-                          className="flex-1"
-                        >
-                          <Eye className="w-3 h-3 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setQuoteData(quote);
-                            setActiveTab('create');
-                          }}
-                          className="flex-1"
-                        >
-                          <Settings className="w-3 h-3 mr-1" />
-                          Edit
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </button>
+                    <div className="mt-2 flex justify-end">
+                      <button className="text-xs text-red-600" onClick={()=>{
+                        const next = rfps.filter(x => x.id !== r.id);
+                        setRfps(next);
+                      }}>Remove</button>
+                    </div>
+                  </div>
                 ))}
               </div>
+          </LitSidebar>
+        </aside>
+
+        <main className="flex-1 min-w-0 p-[5px] max-w-none">
+          <LitWatermark />
+          <LitPageHeader title={company?.companyName ? `RFP Studio — ${company.companyName}` : 'RFP Studio'}>
+            {company?.companyId && (
+              <Button variant="outline" className="border-slate-200" onClick={()=> window.location.href = `/app/companies/${company.companyId}`}>Open Company</Button>
             )}
-          </TabsContent>
-        </Tabs>
+            <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white" onClick={()=>{
+              const name = prompt('RFP name','New RFP');
+              if (!name) return;
+              const client = prompt('Client name (must match Command Center)','DSV A/S') || '';
+              // Guardrail: require company to exist in Command Center
+              const ccRaw = localStorage.getItem('lit_companies');
+              const cc = ccRaw ? JSON.parse(ccRaw) : [];
+              const match = Array.isArray(cc) ? cc.find((c)=> String((c && c.name) || '').toLowerCase() === String(client).toLowerCase()) : null;
+              if (!match) { alert('Please add this company in Command Center first.'); return; }
+              const id = 'rfp_'+Math.random().toString(36).slice(2,8);
+              const due = new Date(); due.setDate(due.getDate()+21);
+              const dueStr = due.toLocaleDateString(undefined,{ month:'short', day:'2-digit'});
+              const next = [{ id, name, client, companyId: match.id, status:'Draft', due: dueStr }, ...rfps];
+              setRfps(next); setActiveId(id); setActiveTab('overview');
+              setCompany(null); setLanes([]); setFinModel(null);
+            }}><Plus className="w-4 h-4 mr-1"/> New RFP</Button>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,application/json" className="hidden" onChange={async(e)=>{
+              try {
+                const f = e.target.files && e.target.files[0]; if (!f) return;
+                const payload = await ingestWorkbook(f);
+                setRfpPayload(payload);
+                const pricedRes = priceAll(payload.lanes||[], payload.rates||[], templates);
+                setPriced(pricedRes);
+                setActiveTab('proposal'); setShowPricing(false);
+                if (fileRef.current) fileRef.current.value = '';
+                // Update company from RFP meta + derived KPIs
+                const derived = deriveKpisFromPayload(payload);
+                const name = activeRfp?.client || activeRfp?.name || 'Company';
+                const id = activeRfp?.companyId || activeRfp?.id || '';
+                setCompany(prev => ({
+                  ...(prev||{}),
+                  companyId: (company?.companyId || activeRfp?.companyId || id),
+                  companyName: name,
+                  shipments12m: derived?.shipments12m || 0,
+                  originsTop: derived?.originsTop || [],
+                  carriersTop: derived?.carriersTop || [],
+                }));
+                // Save uploaded lanes keyed by universal company id if present
+                const keySuffix = (activeRfp?.companyId || company?.companyId || id || activeId) || activeId;
+                try { localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(payload)); } catch {}
+                ensureCompanyInCommandCenter(keySuffix, name);
+              } catch(err){ alert('Import failed'); }
+            }} />
+            <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
+            <Button variant="outline" className="border-slate-200" onClick={()=>{
+              const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+              if (!keySuffix || !rfpPayload) { alert('Nothing to save'); return; }
+              try { localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(rfpPayload)); alert('RFP data saved'); } catch { alert('Save failed'); }
+            }}>Save Data</Button>
+            <Button variant="outline" className="border-slate-200 text-red-600" onClick={()=>{
+              const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+              if (!keySuffix) return;
+              try { localStorage.removeItem(STORAGE_PREFIX + keySuffix); } catch {}
+              setRfpPayload(null); setPriced(null);
+              alert('RFP data reset');
+            }}>Reset Data</Button>
+            <Button variant="outline" className="border-slate-200" onClick={()=>{
+              setActiveTab('proposal');
+              setProposalSummary('Draft a proposal executive summary for DSV including quantified savings, capacity strategy, compliance, technology, sustainability.');
+              setProposalSolution('Our solution provides dedicated capacity, compliance management, visibility tooling, and sustainability reporting.');
+            }}><FileText className="w-4 h-4 mr-1"/> Templates</Button>
+          </LitPageHeader>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="data">Data</TabsTrigger>
+                <TabsTrigger value="proposal">Proposal</TabsTrigger>
+                <TabsTrigger value="rates">Rates</TabsTrigger>
+                <TabsTrigger value="financials">Financials</TabsTrigger>
+                <TabsTrigger value="vendors">Vendors</TabsTrigger>
+                <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                <TabsTrigger value="export">Export & Outreach</TabsTrigger>
+              </TabsList>
+              <TabsContent value="data" className="mt-6 space-y-6">
+                <LitPanel title="Uploaded Lanes">
+                  {rfpPayload && Array.isArray(rfpPayload.lanes) && rfpPayload.lanes.length > 0 ? (
+                    <div className="overflow-auto">
+                      <table className="w-full text-sm border border-slate-200">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="p-2 border">Service</th>
+                            <th className="p-2 border">Equipment</th>
+                            <th className="p-2 border">POL</th>
+                            <th className="p-2 border">POD</th>
+                            <th className="p-2 border">Origin Country</th>
+                            <th className="p-2 border">Dest Country</th>
+                            <th className="p-2 border">Shpts/Year</th>
+                            <th className="p-2 border">Avg Kg</th>
+                            <th className="p-2 border">Avg CBM</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rfpPayload.lanes.map((ln, i)=> (
+                            <tr key={i}>
+                              <td className="p-2 border">{ln.mode||'—'}</td>
+                              <td className="p-2 border">{ln.equipment||'—'}</td>
+                              <td className="p-2 border">{ln.origin?.port||'—'}</td>
+                              <td className="p-2 border">{ln.destination?.port||'—'}</td>
+                              <td className="p-2 border">{ln.origin?.country||'—'}</td>
+                              <td className="p-2 border">{ln.destination?.country||'—'}</td>
+                              <td className="p-2 border">{ln.demand?.shipments_per_year||0}</td>
+                              <td className="p-2 border">{ln.demand?.avg_weight_kg||0}</td>
+                              <td className="p-2 border">{ln.demand?.avg_volume_cbm||0}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-600">No uploaded lanes yet.</div>
+                  )}
+                </LitPanel>
+              </TabsContent>
+              <TabsContent value="rates" className="mt-6 space-y-6">
+                <LitPanel title="Proposed Rate Templates (Editable)">
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm border border-slate-200">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="p-2 border">Service</th>
+                          <th className="p-2 border">Base Name</th>
+                          <th className="p-2 border">UOM</th>
+                          <th className="p-2 border">Rate</th>
+                          <th className="p-2 border">Min</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(templates).map(([k, v]) => (
+                          <tr key={k}>
+                            <td className="p-2 border font-semibold text-slate-900">{k}</td>
+                            <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={v.base.name} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, name: e.target.value } }}))} /></td>
+                            <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={v.base.uom} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, uom: e.target.value } }}))} /></td>
+                            <td className="p-2 border"><input type="number" className="w-full border rounded px-2 py-1" value={v.base.rate} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, rate: Number(e.target.value||0) } }}))} /></td>
+                            <td className="p-2 border"><input type="number" className="w-full border rounded px-2 py-1" value={v.base.min||0} onChange={(e)=> setTemplates(t=> ({...t, [k]: { ...t[k], base: { ...t[k].base, min: Number(e.target.value||0) } }}))} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </LitPanel>
+                <LitPanel title="Accessorials per Service Level">
+                  <div className="space-y-4">
+                    {Object.entries(templates).map(([k, v]) => (
+                      <div key={k} className="rounded-xl border p-3 bg-white/95">
+                        <div className="font-semibold text-slate-900 mb-2">{k}</div>
+                        <table className="w-full text-sm border border-slate-200">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="p-2 border">Name</th>
+                              <th className="p-2 border">UOM</th>
+                              <th className="p-2 border">Rate</th>
+                              <th className="p-2 border">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {v.accessorials.map((a,i)=> (
+                              <tr key={i}>
+                                <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={a.name} onChange={(e)=> setTemplates(t=>{ const next={...t}; next[k].accessorials[i]={...a, name:e.target.value}; return next; })} /></td>
+                                <td className="p-2 border"><input className="w-full border rounded px-2 py-1" value={a.uom} onChange={(e)=> setTemplates(t=>{ const next={...t}; next[k].accessorials[i]={...a, uom:e.target.value}; return next; })} /></td>
+                                <td className="p-2 border"><input type="number" className="w-full border rounded px-2 py-1" value={a.rate} onChange={(e)=> setTemplates(t=>{ const next={...t}; next[k].accessorials[i]={...a, rate:Number(e.target.value||0)}; return next; })} /></td>
+                                <td className="p-2 border"><button className="text-red-600" onClick={()=> setTemplates(t=>{ const next={...t}; next[k].accessorials = next[k].accessorials.filter((_,idx)=> idx!==i); return next; })}>Remove</button></td>
+                              </tr>
+                            ))}
+                            <tr>
+                              <td className="p-2 border" colSpan={4}><button className="text-blue-600" onClick={()=> setTemplates(t=>{ const next={...t}; next[k].accessorials = [...next[k].accessorials, { name: 'New Charge', uom: 'per_shpt', rate: 0, currency: 'USD' }]; return next; })}>+ Add Accessorial</button></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                </LitPanel>
+                <div className="flex gap-2">
+                  <Button className="bg-blue-600 text-white" onClick={()=>{ if (rfpPayload) { setPriced(priceAll(rfpPayload.lanes||[], rfpPayload.rates||[], templates)); } }}>Apply Templates to Lanes</Button>
+                  <Button variant="outline" onClick={()=> setTemplates(defaultTemplates)}>Reset Templates</Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="overview" className="mt-6 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                  <LitPanel title="Company">
+                    <div className="text-3xl font-black text-slate-900">{company?.companyName || '—'}</div>
+                    <p className="text-xs text-slate-500 mt-1">ID: {company?.companyId || '—'}</p>
+                  </LitPanel>
+                  <LitPanel title="Shipments (12M)"><div className="text-3xl font-black text-slate-900">{(company?.shipments12m||0).toLocaleString()}</div></LitPanel>
+                  <LitPanel title="Top Origins"><div className="text-sm text-slate-900">{(company?.originsTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
+                  <LitPanel title="Top Carriers"><div className="text-sm text-slate-900">{(company?.carriersTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
+                </div>
+                {rfpPayload && (
+                  <LitPanel title="Service & Equipment Summary">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      {(() => { const s = summarizeServiceEquipment(rfpPayload); return (
+                        <>
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">By Service</div>
+                            {Object.entries(s.byService).length ? (
+                              <ul className="list-disc pl-5 text-slate-700">
+                                {Object.entries(s.byService).map(([k,v])=> (<li key={k}>{k}: {String(v)}</li>))}
+                              </ul>
+                            ) : (<div className="text-slate-600">—</div>)}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">By Equipment</div>
+                            {Object.entries(s.byEquip).length ? (
+                              <ul className="list-disc pl-5 text-slate-700">
+                                {Object.entries(s.byEquip).map(([k,v])=> (<li key={k}>{k}: {String(v)}</li>))}
+                              </ul>
+                            ) : (<div className="text-slate-600">—</div>)}
+                          </div>
+                        </>
+                      ); })()}
+                    </div>
+                  </LitPanel>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <LitPanel title="Timeline (Editable)">
+                    <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="List proposal timeline requirements…"></textarea>
+                  </LitPanel>
+                  <LitPanel title="Key Details (Editable)">
+                    <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Add locations, warehouses, notes…"></textarea>
+                  </LitPanel>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="proposal" className="mt-6 space-y-6">
+                {rfpPayload?.__diagnostics && (
+                  <div className="rounded-xl border border-slate-200 bg-white/90 p-3 text-sm text-slate-700">
+                    Confidence: {(rfpPayload.__diagnostics.confidence*100).toFixed(0)}% — Sheets scanned: {rfpPayload.__diagnostics.sheetRanks.length}
+                  </div>
+                )}
+                <div className="rounded-xl border border-slate-200 bg-white/90 p-3 text-sm text-slate-700">
+                  <div className="flex items-center gap-2">
+                    <span>File Service Type:</span>
+                    <select className="border rounded px-2 py-1" onChange={(e)=>{
+                      const v = e.target.value;
+                      if (!rfpPayload || !Array.isArray(rfpPayload.lanes)) return;
+                      if (v === 'auto') return;
+                      const modeMap = { ocean: 'OCEAN', air: 'AIR', truck: 'TRUCK' };
+                      const mode = modeMap[v] || undefined;
+                      if (!mode) return;
+                      setRfpPayload(prev => {
+                        const lanes = (prev.lanes||[]).map(ln => ({ ...ln, mode }));
+                        const next = { ...prev, lanes };
+                        try { if (activeId) localStorage.setItem(STORAGE_PREFIX + activeId, JSON.stringify(next)); } catch {}
+                        return next;
+                      });
+                    }}>
+                      <option value="auto">Auto-detect</option>
+                      <option value="ocean">Ocean</option>
+                      <option value="air">Airfreight</option>
+                      <option value="truck">Truck</option>
+                    </select>
+                  </div>
+                </div>
+                <LitPanel title="Executive Summary">
+                  <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Draft your executive summary here..." value={proposalSummary} onChange={e=> setProposalSummary(e.target.value)} />
+                  <div className="mt-2 flex gap-2">
+                    <Button size="sm" className="bg-violet-600 text-white"><BarChart3 className="w-4 h-4 mr-1"/> AI Assist</Button>
+                    <Button size="sm" variant="outline">Refine with AI</Button>
+                    <Button size="sm" variant="outline">Generate Talk Tracks</Button>
+                  </div>
+                </LitPanel>
+                {showPricing && priced && priced.lanes.length > 0 && (
+                  <LitPanel title="Lane Pricing (Detected)">
+                    <div className="text-sm text-slate-600 mb-2">Total Annual: ${priced.totalAnnual.toLocaleString()}</div>
+                    <div className="space-y-3">
+                      {priced.lanes.map((p, idx)=> (
+                        <div key={idx} className="rounded-xl border p-3 bg-white/95">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold text-slate-900">{p.mode}{p.equipment?(' / '+p.equipment):''}</div>
+                            <div className="text-slate-900 font-bold flex items-center"><DollarSign className="w-4 h-4 mr-1"/>{p.unitCost.toFixed(2)} / shpt</div>
+                          </div>
+                          <div className="text-xs text-slate-600">Annual: ${p.annualCost.toLocaleString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </LitPanel>
+                )}
+                <div className="flex gap-2">
+                  <Button className="bg-blue-600 text-white" onClick={()=> setShowPricing(true)}>Add Rates to Proposal</Button>
+                  <Button variant="outline" className="text-red-600" onClick={()=> { setShowPricing(false); }}>Remove Pricing Table</Button>
+                </div>
+                <LitPanel title="Solution Offering">
+                  <textarea className="w-full h-32 p-3 border rounded-lg" placeholder="Describe your solution..." value={proposalSolution} onChange={e=> setProposalSolution(e.target.value)} />
+                </LitPanel>
+              </TabsContent>
+
+              <TabsContent value="financials" className="mt-6 space-y-6">
+                <LitPanel title="Savings Model">
+                  {finModel ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                      <div className="rounded-lg border p-4 bg-white/95">
+                        <div className="text-slate-500">Baseline</div>
+                        <div className="text-2xl font-black text-slate-900">${finModel.baseline.toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-lg border p-4 bg-white/95">
+                        <div className="text-slate-500">Proposed</div>
+                        <div className="text-2xl font-black text-slate-900">${finModel.proposed.toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-lg border p-4 bg-white/95">
+                        <div className="text-slate-500">Savings</div>
+                        <div className="text-2xl font-black text-green-600">${finModel.savings.toLocaleString()} ({(finModel.pct*100).toFixed(1)}%)</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-48 flex items-center justify-center text-slate-500 text-sm">Baseline vs Proposed chart</div>
+                  )}
+                </LitPanel>
+              </TabsContent>
+
+              <TabsContent value="vendors" className="mt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {["MSC","MAERSK","CMA","HAPAG","ONE","HMM"].map((v)=>(
+                    <LitPanel key={v} title={v}>
+                      <div className="text-sm text-slate-600">Contacts: 2</div>
+                      <div className="mt-2"><Button size="sm" className="bg-blue-600 text-white"><Mail className="w-4 h-4 mr-1"/> Invite</Button></div>
+                    </LitPanel>
+                  ))}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="timeline" className="mt-6">
+                <LitPanel title="Milestones">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    {['Kickoff','Vendor Q&A','Proposal Draft','Submission'].map((m)=>(<div key={m} className="p-3 rounded-lg border">{m}</div>))}
+                  </div>
+                </LitPanel>
+              </TabsContent>
+
+              <TabsContent value="export" className="mt-6 space-y-4">
+                <div className="flex gap-2">
+                  <Button className="bg-blue-600 text-white" disabled={busy==='pdf'} onClick={async()=>{
+                    try{
+                      setBusy('pdf');
+                      // Try server first
+                      try {
+                        const body={ company: company||{}, proposal:{ executiveSummary: proposalSummary, solutionOffering: proposalSolution}, financials: finModel||{} };
+                        const r= await rfpExportPdf(body);
+                        if(r?.pdfUrl){ window.open(r.pdfUrl,'_blank'); return; }
+                      } catch {}
+                      // Fallback to client-side export if we have payload
+                      if (rfpPayload && priced) {
+                        const html = toHtml(rfpPayload, priced);
+                        const blob = await toPdf(html);
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href=url; a.download = `${(rfps.find(x=>x.id===activeId)?.name||'proposal').replace(/\s+/g,'-')}.pdf`; a.click(); URL.revokeObjectURL(url);
+                      } else {
+                        alert('No priced payload to export. Upload an RFP workbook first.');
+                      }
+                    } finally { setBusy(null); }
+                  }}>Export PDF</Button>
+                  <Button variant="outline" disabled={busy==='html'} onClick={async()=>{
+                    try{
+                      setBusy('html');
+                      try {
+                        const body={ company: company||{}, proposal:{ executiveSummary: proposalSummary, solutionOffering: proposalSolution}, financials: finModel||{} };
+                        const r= await rfpExportHtml(body);
+                        if (r?.html) {
+                          const blob = new Blob([r.html], { type:'text/html' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a'); a.href=url; a.download=`${(rfps.find(x=>x.id===activeId)?.name||'proposal').replace(/\s+/g,'-')}.html`; a.click(); URL.revokeObjectURL(url);
+                          return;
+                        }
+                      } catch {}
+                      if (rfpPayload && priced) {
+                        const html = toHtml(rfpPayload, priced);
+                        const blob = new Blob([html], { type:'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href=url; a.download=`${(rfps.find(x=>x.id===activeId)?.name||'proposal').replace(/\s+/g,'-')}.html`; a.click(); URL.revokeObjectURL(url);
+                      } else {
+                        alert('No priced payload to export. Upload an RFP workbook first.');
+                      }
+                    } finally { setBusy(null); }
+                  }}>Export HTML</Button>
+                  <Button variant="outline" disabled={busy==='campaign'} onClick={async()=>{
+                    try{ setBusy('campaign'); const html = '<h1>Proposal</h1>'; const title = `RFP: ${company?.companyName||'Company'}`; await rfpAddToCampaign({ companyId: company?.companyId||'', title, html }); alert('Draft campaign created'); } finally { setBusy(null); }
+                  }}>Add to Campaign</Button>
+                </div>
+                <LitPanel title="Preview">
+                  <div className="h-56 flex items-center justify-center text-slate-500 text-sm">Proposal preview placeholder</div>
+                </LitPanel>
+              </TabsContent>
+            </Tabs>
+        </main>
       </div>
     </div>
   );

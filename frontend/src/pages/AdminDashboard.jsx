@@ -7,6 +7,9 @@ import AdminKPIs from "../components/admin/AdminKPIs";
 import UserAnalytics from "../components/admin/UserAnalytics";
 import ImportsMonitor from "../components/admin/ImportsMonitor";
 import UserManagementTable from "../components/admin/UserManagementTable";
+import LitPageHeader from "../components/ui/LitPageHeader";
+import LitPanel from "../components/ui/LitPanel";
+import LitWatermark from "../components/ui/LitWatermark";
 
 /** -------- helpers: be resilient to API shape differences -------- */
 function asArray(x) {
@@ -190,30 +193,36 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="p-6 md:p-8 bg-gradient-to-br from-purple-50 to-pink-50/30 min-h-screen">
+    <div className="relative px-2 md:px-5 py-3 min-h-screen">
+      <LitWatermark />
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="text-gray-600 mt-2">Platform analytics and user management</p>
-            <p className="text-xs text-gray-500 mt-1">
-              Logged in as: {currentUser.email} (Role: {currentUser.role})
-            </p>
-          </div>
+        <LitPageHeader title="Admin Dashboard" />
+
+        <div className="mb-6">
+          <LitPanel>
+            <p className="text-xs text-slate-600">Logged in as: {currentUser.email} (Role: {currentUser.role})</p>
+          </LitPanel>
         </div>
 
-        <AdminKPIs data={kpiData} />
-
-        {/* Charts Grid */}
-        <div className="grid lg:grid-cols-2 gap-8 mt-8">
-          <UserAnalytics users={allUsers} searches={searches} />
-          <ImportsMonitor jobs={importJobs} />
+        <div className="mb-6">
+          <LitPanel>
+            <AdminKPIs data={kpiData} />
+          </LitPanel>
         </div>
 
-        {/* User Management Table */}
+        <div className="grid lg:grid-cols-2 gap-8 mt-2">
+          <LitPanel>
+            <UserAnalytics users={allUsers} searches={searches} />
+          </LitPanel>
+          <LitPanel>
+            <ImportsMonitor jobs={importJobs} />
+          </LitPanel>
+        </div>
+
         <div className="mt-8">
-          <UserManagementTable users={allUsers} onUserUpdate={loadData} />
+          <LitPanel title="User Management">
+            <UserManagementTable users={allUsers} onUserUpdate={loadData} />
+          </LitPanel>
         </div>
       </div>
     </div>
