@@ -1,0 +1,10 @@
+steps:
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    args:
+      - '--destination=us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run/search-unified:$COMMIT_SHA'
+      - '--context=.'
+      - '--dockerfile=services/search-unified/Dockerfile'
+      - '--cache=true'
+      - '--single-snapshot'
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run/search-unified:$COMMIT_SHA'

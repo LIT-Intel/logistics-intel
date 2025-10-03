@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useQuery } from '@tanstack/react-query';
-import { api, postSearchCompanies } from '@/lib/api';
-import CompanyDrawer from '@/components/company/CompanyDrawer';
+import { useQuery } from "@tanstack/react-query";
+import { api, postSearchCompanies, saveCompanyToCrm } from "@/lib/api";
+import CompanyDrawer from "@/components/company/CompanyDrawer";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 // @ts-nocheck
 import LitPageHeader from "../components/ui/LitPageHeader";
 import LitPanel from "../components/ui/LitPanel";
@@ -17,9 +16,6 @@ import SearchFilters from "../components/search/SearchFilters";
 import CompanyDetailModal from "../components/search/CompanyDetailModal";
 import SearchResults from "../components/search/SearchResults";
 import UpgradePrompt from "../components/common/UpgradePrompt";
-
-// legacy searchCompanies removed; using postSearchCompanies only
-import { saveCompanyToCrm } from "@/lib/api";
 
 const ITEMS_PER_PAGE = 50;
 
@@ -35,7 +31,7 @@ export default function Search() {
     carrier: "",
     hs: [],
     date_start: null,
-    date_end: null
+    date_end: null,
   });
 
   const [searchResults, setSearchResults] = useState([]);
@@ -57,15 +53,15 @@ export default function Search() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerId, setDrawerId] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  
+
   const [hasSearched, setHasSearched] = useState(false);
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
   useEffect(() => {
-    // Auto search on filter changes or debounced query changes, starting from page 1
     if (hasSearched) {
       handleSearch(1);
     }
@@ -76,93 +72,126 @@ export default function Search() {
     return Math.max(1, Math.ceil((totalResults || 0) / ITEMS_PER_PAGE));
   }, [totalResults]);
 
-  // user is provided by AuthProvider; no additional load needed
+  const handleSearch = useCallback(
+    async (page) => {
+      const p = page || 1;
+      setIsLoading(true);
+      setSearchError(null);
+      setCurrentPage(p);
+      setHasSearched(true);
 
-  const handleSearch = useCallback(async (page) => {
-    const p = page || 1;
-    setIsLoading(true);
-    setSearchError(null);
-    setCurrentPage(p);
-    setHasSearched(true);
+      try {
+        const offset = (p - 1) * ITEMS_PER_PAGE;
+        const sanitize = (s) => String(s).replace(/["']/g, "").trim();
+        const hsText = (filters.hs_text || "")
+          .split(",")
+          .map(sanitize)
+          .filter(Boolean);
+        const hsMerged = Array.isArray(filters.hs)
+          ? Array.from(new Set([...filters.hs, ...hsText]))
+          : hsText;
+        const hs_codes = (hsMerged || [])
+          .map((s) => s.replace(/[^0-9]/g, ""))
+          .filter(Boolean);
+        const mode =
+          filters.mode && filters.mode !== "any"
+            ? filters.mode === "air"
+              ? "air"
+              : "ocean"
+            : undefined;
+        const originArr = filters.origin ? [sanitize(filters.origin)] : [];
+        const destArr = filters.destination ? [sanitize(filters.destination)] : [];
 
-    try {
-      const offset = (p - 1) * ITEMS_PER_PAGE;
-      const sanitize = (s: string) => String(s).replace(/["']/g, '').trim();
-      const hsText = (filters.hs_text || '').split(',').map(sanitize).filter(Boolean);
-      const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
-      const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
-      const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'air' : 'ocean') : undefined;
-      const originArr = filters.origin ? [sanitize(filters.origin)] : [];
-      const destArr = filters.destination ? [sanitize(filters.destination)] : [];
-
-      const qSanitized = sanitize(searchQuery || '');
-      const body = {
-        ...(qSanitized ? { q: qSanitized } : {}),
-        ...(mode ? { mode } : {}),
-        origin: originArr,
-        dest: destArr,
-        hs: hs_codes,
-        limit: ITEMS_PER_PAGE,
-        offset,
-      } as const;
-
-      const resp = await postSearchCompanies(body as any);
-      const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
-      const total = typeof (resp as any)?.total === 'number' ? (resp as any).total : (raw as any[]).length;
-
-      // Normalize to UI shape expected by cards/list items
-      const mapped = (raw as any[]).map((item: any) => {
-        const id = item.company_id || item.id || (item.company_name || '').toLowerCase?.().replace?.(/[^a-z0-9]+/g, '-') || undefined;
-        const name = item.company_name || 'Unknown';
-        const topRoute = (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined;
-        const topCarrier = Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined;
-        return {
-          id,
-          company_id: item.company_id || null,
-          name,
-          shipments_12m: item.shipments || 0,
-          last_seen: item.lastShipmentDate || null,
-          top_route: topRoute,
-          top_carrier: topCarrier,
+        const qSanitized = sanitize(searchQuery || "");
+        const body = {
+          ...(qSanitized ? { q: qSanitized } : {}),
+          ...(mode ? { mode } : {}),
+          origin: originArr,
+          dest: destArr,
+          hs: hs_codes,
+          limit: ITEMS_PER_PAGE,
+          offset,
         };
-      });
-      // Dedupe by company_id (fallback name) and cap to ITEMS_PER_PAGE
-      const seen = new Set<string>();
-      const results: any[] = [];
-      for (const row of mapped) {
-        const key = row.company_id || `name:${row.name}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        results.push(row);
-        if (results.length >= ITEMS_PER_PAGE) break;
-      }
 
-      setSearchResults(results);
-      setTotalResults(total);
-    } catch (error) {
-      console.error("Search error:", error);
-      const msg = String((error as any)?.message || 'internal error');
-      if (msg.includes('searchCompanies.sql') || msg.includes('ENOENT')) {
-        setSearchError('Search service is updating. Please retry in a moment.');
-      } else {
-        setSearchError(msg);
+        const resp = await postSearchCompanies(body);
+        const raw = Array.isArray(resp?.items) ? resp.items : [];
+        const total =
+          typeof resp?.total === "number" ? resp.total : (raw || []).length;
+
+        const mapped = (raw || []).map((item) => {
+          const id =
+            item.company_id ||
+            item.id ||
+            item.company_name?.toLowerCase?.().replace?.(/[^a-z0-9]+/g, "-");
+          const name = item.company_name || "Unknown";
+          const topRoute =
+            Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
+              ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
+              : undefined;
+          const topCarrier = Array.isArray(item.carriersTop)
+            ? item.carriersTop[0]?.v || undefined
+            : undefined;
+          return {
+            id,
+            company_id: item.company_id || null,
+            name,
+            shipments_12m: item.shipments || 0,
+            last_seen: item.lastShipmentDate || null,
+            top_route: topRoute,
+            top_carrier: topCarrier,
+          };
+        });
+
+        const seen = new Set();
+        const results = [];
+        for (const row of mapped) {
+          const key = row.company_id || `name:${row.name}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          results.push(row);
+          if (results.length >= ITEMS_PER_PAGE) break;
+        }
+
+        setSearchResults(results);
+        setTotalResults(total);
+      } catch (error) {
+        console.error("Search error:", error);
+        const msg = String(error?.message || "internal error");
+        if (msg.includes("searchCompanies.sql") || msg.includes("ENOENT")) {
+          setSearchError("Search service is updating. Please retry in a moment.");
+        } else {
+          setSearchError(msg);
+        }
+        setSearchResults([]);
+        setTotalResults(0);
+      } finally {
+        setIsLoading(false);
       }
-      setSearchResults([]);
-      setTotalResults(0);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [searchQuery, filters]);
+    },
+    [searchQuery, filters]
+  );
 
   const payload = useMemo(() => {
-    const sanitize = (s: string) => String(s).replace(/["']/g, '').trim();
-    const hsText = (filters.hs_text || '').split(',').map(sanitize).filter(Boolean);
-    const hsMerged = Array.isArray(filters.hs) ? Array.from(new Set([...filters.hs, ...hsText])) : hsText;
-    const hs_codes = (hsMerged || []).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean);
-    const mode = (filters.mode && filters.mode !== 'any') ? (filters.mode === 'air' ? 'AIR' : 'OCEAN') : undefined;
+    const sanitize = (s) => String(s).replace(/["']/g, "").trim();
+    const hsText = (filters.hs_text || "")
+      .split(",")
+      .map(sanitize)
+      .filter(Boolean);
+    const hsMerged = Array.isArray(filters.hs)
+      ? Array.from(new Set([...filters.hs, ...hsText]))
+      : hsText;
+    const hs_codes = (hsMerged || [])
+      .map((s) => s.replace(/[^0-9]/g, ""))
+      .filter(Boolean);
+    const mode =
+      filters.mode && filters.mode !== "any"
+        ? filters.mode === "air"
+          ? "AIR"
+          : "OCEAN"
+        : undefined;
     const origin = filters.origin ? [sanitize(filters.origin)] : undefined;
     const dest = filters.destination ? [sanitize(filters.destination)] : undefined;
-    const qSanitized = sanitize(searchQuery || '');
+    const qSanitized = sanitize(searchQuery || "");
     return {
       ...(qSanitized ? { q: qSanitized } : {}),
       ...(mode ? { mode } : {}),
@@ -171,36 +200,55 @@ export default function Search() {
       ...(hs_codes.length ? { hs: hs_codes } : {}),
       limit: ITEMS_PER_PAGE,
       offset: (currentPage - 1) * ITEMS_PER_PAGE,
-    } as const;
+    };
   }, [filters, currentPage, searchQuery]);
 
   const resultsQuery = useQuery({
-    queryKey: ['searchCompanies', payload],
+    queryKey: ["searchCompanies", payload],
     queryFn: async () => {
-      let resp: any;
+      let resp;
       try {
-        resp = await postSearchCompanies(payload as any);
-      } catch (e: any) {
-        const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE || '';
-        const r = await fetch(`${String(base).replace(/\/$/, '')}/public/searchCompanies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+        resp = await postSearchCompanies(payload);
+      } catch (e) {
+        const base =
+          (import.meta as any)?.env?.VITE_API_BASE ||
+          process.env.NEXT_PUBLIC_API_BASE ||
+          "";
+        const r = await fetch(
+          `${String(base).replace(/\/$/, "")}/public/searchCompanies`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
         if (!r.ok) {
-          const t = await r.text().catch(()=> '');
-          throw new Error(`Search failed. Please try again. (${r.status}) ${t.slice(0,160)}`);
+          const t = await r.text().catch(() => "");
+          throw new Error(
+            `Search failed. Please try again. (${r.status}) ${t.slice(0, 160)}`
+          );
         }
         resp = await r.json();
       }
-      const raw = Array.isArray((resp as any)?.items) ? (resp as any).items : [];
+      const raw = Array.isArray(resp?.items) ? resp.items : [];
       const mapped = raw.map((item) => ({
-        id: item.company_id || (item.company_name || '').toLowerCase().replace(/[^a-z0-9]+/g,'-'),
+        id:
+          item.company_id ||
+          (item.company_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-"),
         company_id: item.company_id || null,
-        name: item.company_name || 'Unknown',
+        name: item.company_name || "Unknown",
         shipments_12m: item.shipments || 0,
         last_seen: item.lastShipmentDate || null,
-        top_route: (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)) ? `${item.originsTop[0]?.v || ''} → ${item.destsTop[0]?.v || ''}`.trim() : undefined,
-        top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
+        top_route:
+          Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
+            ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
+            : undefined,
+        top_carrier: Array.isArray(item.carriersTop)
+          ? item.carriersTop[0]?.v || undefined
+          : undefined,
       }));
-      const seen = new Set<string>();
-      const rows: any[] = [];
+      const seen = new Set();
+      const rows = [];
       for (const row of mapped) {
         const key = row.company_id || `name:${row.name}`;
         if (seen.has(key)) continue;
@@ -208,15 +256,21 @@ export default function Search() {
         rows.push(row);
         if (rows.length >= ITEMS_PER_PAGE) break;
       }
-      return { rows, meta: { total: (resp as any).total || rows.length, page: currentPage, page_size: ITEMS_PER_PAGE } };
+      return {
+        rows,
+        meta: {
+          total: resp?.total || rows.length,
+          page: currentPage,
+          page_size: ITEMS_PER_PAGE,
+        },
+      };
     },
-    // keepPreviousData not supported in current lib; omit
     enabled: hasSearched,
   });
 
   const handleCompanySelect = useCallback((company) => {
     setSelectedCompany(company);
-    setDrawerId(String(company?.id || company?.company_id || ''));
+    setDrawerId(String(company?.id || company?.company_id || ""));
     setDrawerOpen(true);
   }, []);
 
@@ -236,28 +290,39 @@ export default function Search() {
     setSavedCompanyIds(optimisticNewIds);
 
     try {
-      // Save to CRM via API Gateway
       const res = await saveCompanyToCrm({
-        company_id: String(company.company_id || company.id || ''),
-        company_name: String(company.name || company.company_name || 'Unknown'),
-        source: 'search'
+        company_id: String(company.company_id || company.id || ""),
+        company_name: String(company.name || company.company_name || "Unknown"),
+        source: "search",
       });
-      if (!res || !(res.status === 'created' || res.status === 'exists')) {
-        throw new Error('Save failed');
+      if (!res || !(res.status === "created" || res.status === "exists")) {
+        throw new Error("Save failed");
       }
-      // After successful save, navigate to Command Center
-      navigate('/companies');
+      navigate("/companies");
     } catch (error) {
-      // Local fallback: persist minimal record so user can continue flow
       try {
-        const id = String(company.company_id || company.id || ('comp_' + Math.random().toString(36).slice(2, 8)));
-        const lsKey = 'lit_companies';
+        const id = String(
+          company.company_id ||
+            company.id ||
+            "comp_" + Math.random().toString(36).slice(2, 8)
+        );
+        const lsKey = "lit_companies";
         const raw = localStorage.getItem(lsKey);
         const existing = raw ? JSON.parse(raw) : [];
-        const name = String(company.name || company.company_name || 'Company');
-        const fresh = { id, name, kpis: { shipments12m: company.shipments_12m || 0, lastActivity: company.last_seen || null, originsTop: [], destsTop: [], carriersTop: [] } };
+        const name = String(company.name || company.company_name || "Company");
+        const fresh = {
+          id,
+          name,
+          kpis: {
+            shipments12m: company.shipments_12m || 0,
+            lastActivity: company.last_seen || null,
+            originsTop: [],
+            destsTop: [],
+            carriersTop: [],
+          },
+        };
         localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
-        navigate('/companies');
+        navigate("/companies");
       } catch (e) {
         console.error("Failed to save company:", error);
         setSavedCompanyIds(originalSavedIds);
@@ -269,23 +334,24 @@ export default function Search() {
   };
 
   const handleStartOutreach = (company) => {
-    const companyId = company.id;
-    if (companyId) {
-      navigate(createPageUrl("EmailCenter?company_id=" + companyId));
+    try {
+      navigate("/campaigns/new");
+    } catch {
+      // noop
     }
   };
 
   const handleDraftRFP = (company) => {
-    const companyId = company.id;
-    if (companyId) {
-      navigate(createPageUrl("RFPStudio?company_id=" + companyId));
+    try {
+      navigate("/rfp/new");
+    } catch {
+      // noop
     }
   };
 
-  const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= totalPages && !isLoading) {
-      handleSearch(newPage);
-    }
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    handleSearch(page);
   };
 
   return (
@@ -302,7 +368,9 @@ export default function Search() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by company name or alias (e.g., UPS, Maersk)..."
                 className="pl-4 pr-12 py-3 text-base md:text-lg bg-gray-50 border-0 rounded-xl"
-                onKeyDown={(e) => { if (e.key === "Enter") handleSearch(1); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSearch(1);
+                }}
               />
               <SearchIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             </div>
@@ -345,8 +413,16 @@ export default function Search() {
 
         {hasSearched ? (
           <SearchResults
-            searchResults={(resultsQuery.data?.rows && resultsQuery.data.rows.length > 0) ? resultsQuery.data.rows : searchResults}
-            totalResults={(resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0) ? resultsQuery.data.meta.total : totalResults}
+            searchResults={
+              resultsQuery.data?.rows && resultsQuery.data.rows.length > 0
+                ? resultsQuery.data.rows
+                : searchResults
+            }
+            totalResults={
+              resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0
+                ? resultsQuery.data.meta.total
+                : totalResults
+            }
             isLoading={isLoading || resultsQuery.isLoading}
             onCompanySelect={handleCompanySelect}
             onSave={handleSaveCompany}
@@ -359,15 +435,27 @@ export default function Search() {
             viewMode={viewMode}
             setViewMode={setViewMode}
             currentPage={currentPage}
-            totalPages={Math.max(1, Math.ceil((((resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0) ? resultsQuery.data.meta.total : totalResults) / ITEMS_PER_PAGE) || 1))}
+            totalPages={Math.max(
+              1,
+              Math.ceil(
+                ((resultsQuery.data?.meta?.total &&
+                  resultsQuery.data.meta.total > 0
+                  ? resultsQuery.data.meta.total
+                  : totalResults) /
+                  ITEMS_PER_PAGE) || 1
+              )
+            )}
             onPageChange={handlePageChange}
           />
         ) : (
           <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
             <SearchIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Ready to Search</h3>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              Ready to Search
+            </h3>
             <p className="text-sm text-slate-500 max-w-sm mx-auto">
-              Enter a company name or use the filters above to search for trade intelligence data.
+              Enter a company name or use the filters above to search for trade
+              intelligence data.
             </p>
           </div>
         )}
@@ -388,7 +476,6 @@ export default function Search() {
           isSaved={savedCompanyIds.has(selectedCompany?.id)}
         />
       </div>
-      <CompanyDrawer id={drawerId} open={drawerOpen} onOpenChange={setDrawerOpen} />
     </div>
   );
 }
