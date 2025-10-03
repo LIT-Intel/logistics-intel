@@ -343,7 +343,7 @@ export default function RFPStudio() {
                 <TabsTrigger value="rates">Rates</TabsTrigger>
                 <TabsTrigger value="financials">Financials</TabsTrigger>
                 <TabsTrigger value="vendors">Vendors</TabsTrigger>
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                <TabsTrigger value="settings">Settings</TabsTrigger>
                 <TabsTrigger value="export">Export & Outreach</TabsTrigger>
               </TabsList>
               <TabsContent value="data" className="mt-6 space-y-6">
@@ -456,6 +456,8 @@ export default function RFPStudio() {
                   <LitPanel title="Company">
                     <div className="text-3xl font-black text-slate-900">{company?.companyName || '—'}</div>
                     <p className="text-xs text-slate-500 mt-1">ID: {company?.companyId || '—'}</p>
+                    {company?.website && <p className="text-xs text-slate-500 mt-1">{company.website}</p>}
+                    {(company?.city || company?.state) && <p className="text-xs text-slate-500 mt-1">{company.city||''}{company.state?`, ${company.state}`:''}</p>}
                   </LitPanel>
                   <LitPanel title="Shipments (12M)"><div className="text-3xl font-black text-slate-900">{(company?.shipments12m||0).toLocaleString()}</div></LitPanel>
                   <LitPanel title="Top Origins"><div className="text-sm text-slate-900">{(company?.originsTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
@@ -487,14 +489,7 @@ export default function RFPStudio() {
                     </div>
                   </LitPanel>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <LitPanel title="Timeline (Editable)">
-                    <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="List proposal timeline requirements…"></textarea>
-                  </LitPanel>
-                  <LitPanel title="Key Details (Editable)">
-                    <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Add locations, warehouses, notes…"></textarea>
-                  </LitPanel>
-                </div>
+                
               </TabsContent>
 
               <TabsContent value="proposal" className="mt-6 space-y-6">
@@ -594,11 +589,38 @@ export default function RFPStudio() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="timeline" className="mt-6">
-                <LitPanel title="Milestones">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    {['Kickoff','Vendor Q&A','Proposal Draft','Submission'].map((m)=>(<div key={m} className="p-3 rounded-lg border">{m}</div>))}
+              <TabsContent value="settings" className="mt-6 space-y-6">
+                <LitPanel title="Company & RFP Settings">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <label className="block"><div className="text-slate-600 mb-1">Company Name</div>
+                      <input className="w-full border rounded px-3 py-2" defaultValue={company?.companyName||''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), companyName: e.target.value }))} />
+                    </label>
+                    <label className="block"><div className="text-slate-600 mb-1">Website</div>
+                      <input className="w-full border rounded px-3 py-2" defaultValue={company?.website||''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), website: e.target.value }))} />
+                    </label>
+                    <label className="block"><div className="text-slate-600 mb-1">Email</div>
+                      <input className="w-full border rounded px-3 py-2" defaultValue={company?.email||''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), email: e.target.value }))} />
+                    </label>
+                    <label className="block"><div className="text-slate-600 mb-1">Phone</div>
+                      <input className="w-full border rounded px-3 py-2" defaultValue={company?.phone||''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), phone: e.target.value }))} />
+                    </label>
+                    <label className="block"><div className="text-slate-600 mb-1">City</div>
+                      <input className="w-full border rounded px-3 py-2" defaultValue={company?.city||''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), city: e.target.value }))} />
+                    </label>
+                    <label className="block"><div className="text-slate-600 mb-1">State</div>
+                      <input className="w-full border rounded px-3 py-2" defaultValue={company?.state||''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), state: e.target.value }))} />
+                    </label>
+                    <label className="block"><div className="text-slate-600 mb-1">Due Date</div>
+                      <input type="date" className="w-full border rounded px-3 py-2" defaultValue={activeRfp?.due||''} onBlur={(e)=> setRfps(prev=> prev.map(x=> x.id===activeId? { ...x, due: e.target.value }: x))} />
+                    </label>
+                    <label className="block md:col-span-2"><div className="text-slate-600 mb-1">Requirements</div>
+                      <textarea className="w-full h-24 p-3 border rounded-lg" placeholder="Add requirements…" onBlur={(e)=>{ try { const key = `rfp_req_${activeId}`; localStorage.setItem(key, e.target.value); } catch {} }} />
+                    </label>
+                    <label className="block md:col-span-2"><div className="text-slate-600 mb-1">Products (comma-separated)</div>
+                      <input className="w-full border rounded px-3 py-2" defaultValue={Array.isArray(company?.products)? company.products.join(', '): ''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), products: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) }))} />
+                    </label>
                   </div>
+                  <div className="mt-3 text-xs text-slate-500">Settings are saved in local storage and reflected in Overview automatically.</div>
                 </LitPanel>
               </TabsContent>
 
