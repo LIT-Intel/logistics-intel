@@ -2,6 +2,7 @@ import express from "express";
 import health from "./routes/health.js";
 import getFilterOptions from "./routes/getFilterOptions.js";
 import searchCompanies from "./routes/searchCompanies.js";
+import getCompanyShipments from "./routes/getCompanyShipments.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -16,11 +17,23 @@ app.use((req: any, res: any, next: any) => {
   next();
 });
 
-app.use(health);
-// Back-compat healthz endpoint for Cloud Run checks
-app.get('/healthz', (_req: any, res: any) => res.status(200).json({ status: 'OK' }));
+// app.use(health);
+// --- lightweight health + status (safe to keep permanently)
+app.get('/healthz', (_req, res) => {
+  res.status(200).send('ok');
+});
+
+app.get('/public/status', (_req, res) => {
+  res.json({ ok: true, service: 'search-unified' });
+});
+
+// Some infra ping "/" — make it 200 too
+app.get('/', (_req, res) => {
+  res.status(200).send('ok');
+});
 app.use(getFilterOptions);
 app.use(searchCompanies);
+app.use(getCompanyShipments);
 
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err);

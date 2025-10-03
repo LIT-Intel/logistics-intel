@@ -1,0 +1,253 @@
+// services/search-unified/src/index.ts
+import express from "express";
+import cors from "cors";
+import { BigQuery } from "@google-cloud/bigquery";
+
+const app = express();
+const bq = new BigQuery({ location: "US" });
+
+// ----- CORS (global) + JSON -----
+app.use(cors({
+  origin: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  maxAge: 3600,
+}));
+app.options("*", (_req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Max-Age", "3600");
+  res.status(204).end();
+});
+app.use(express.json({ limit: "2mb" }));
+
+// ----- Helpers -----
+const DATASET = process.env.BQ_DATASET || "lit";
+const TABLE_SHIP = (name: string) => \`logistics-intel.${DATASET}.${name}\`;
+
+function validDate(s?: string): string | null {
+  if (!s) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+function clampInt(v: any, min: number, max: number, d: number): number {
+  const n = Number(v);
+  if (Number.isFinite(n)) return Math.max(min, Math.min(max, Math.trunc(n)));
+  return d;
+}
+// ----- Status (replaces /healthz) -----
+app.get("/public/status", async (_req, res) => {
+  let bq_ok = false; let bq_err: string | null = null;
+  try { await bq.query({ query: "SELECT 1", location: "US" }); bq_ok = true; }
+  catch (e: any) { bq_err = String(e?.message || e); }
+  res.status(200).json({ ok: true, service: "search-unified", bq_ok, bq_err, ts: Date.now() });
+});
+
+// ----- Filters -----
+app.get("/public/getFilterOptions", async (req, res) => {
+  try {
+    const start = validDate(String(req.query.startDate || "")) || "2024-01-01";
+    const end   = validDate(String(req.query.endDate   || "")) || "2099-12-31";
+
+    const sql = `
+      WITH shipments AS (
+        SELECT
+          COALESCE(origin_country, origin) AS origin,
+          COALESCE(dest_country, destination) AS destination,
+          mode,
+          CAST(hs_code AS STRING) AS hs_code
+        FROM ${TABLE_SHIP("shipments_daily_part")}
+        WHERE (date BETWEEN @startDate AND @endDate)
+      ),
+      agg AS (
+        SELECT
+          ARRAY(SELECT DISTINCT origin FROM shipments WHERE origin IS NOT NULL ORDER BY origin) AS origins,
+          ARRAY(SELECT DISTINCT destination FROM shipments WHERE destination IS NOT NULL ORDER BY destination) AS destinations,
+          ARRAY(SELECT DISTINCT mode FROM shipments WHERE mode IS NOT NULL ORDER BY mode) AS modes,
+          ARRAY(SELECT DISTINCT hs_code FROM shipments WHERE hs_code IS NOT NULL ORDER BY hs_code) AS hs_codes
+      )
+      SELECT * FROM agg
+    `;
+
+    const [rows] = await bq.query({
+      query: sql,
+      location: "US",
+      params: { startDate: start, endDate: end }
+    });
+
+    const r = (rows && rows[0]) || { origins: [], destinations: [], modes: ["air","ocean"], hs_codes: [] };
+    res.status(200).json(r);
+  } catch (e) {
+    console.error(e);
+    res.status(200).json({ origins: [], destinations: [], modes: ["air","ocean"], hs_codes: [] });
+  }
+});
+
+// ----- Search -----
+app.post("/search", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const q = String(body.q || "");
+    const mode = ["air","ocean"].includes(body.mode) ? String(body.mode) : "all";
+    const limit = clampInt(body.limit, 1, 100, 10);
+    const offset = clampInt(body.offset, 0, 1000000, 0);
+    const start = validDate(String(body.startDate || "")) || "2024-01-01";
+    const end   = validDate(String(body.endDate   || "")) || "2099-12-31";
+
+    const sql = `
+      WITH base AS (
+        SELECT
+          company_id,
+          ANY_VALUE(company_name) AS company_name,
+          mode,
+          CONCAT(COALESCE(origin_country, origin), '→', COALESCE(dest_country, destination)) AS route,
+          carrier,
+          date AS shipped_on
+        FROM ${TABLE_SHIP("shipments_daily_part")}
+        WHERE (date BETWEEN @startDate AND @endDate)
+          AND ( @mode = 'all' OR mode = @mode)
+          AND ( @q = '' OR LOWER(company_name) LIKE CONCAT('%', LOWER( @q), '%'))
+        GROUP BY company_id, mode, route, carrier, shipped_on
+      ),
+      kpis AS (
+        SELECT
+          company_id,
+          ANY_VALUE(company_name) AS company_name,
+          COUNTIF(shipped_on >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)) AS shipments_12m,
+          MAX(shipped_on) AS last_activity,
+          ARRAY_AGG(route ORDER BY COUNT(*) DESC LIMIT 1)[OFFSET(0)] AS top_route,
+          ARRAY_AGG(carrier ORDER BY COUNT(*) DESC LIMIT 1)[OFFSET(0)] AS top_carrier
+        FROM base
+        GROUP BY company_id
+      ),
+      total_cte AS ( SELECT COUNT(*) AS total FROM kpis )
+      SELECT
+        (SELECT total FROM total_cte) AS total,
+        ARRAY(
+          SELECT AS STRUCT
+            company_id,
+            company_name AS name,
+            STRUCT(
+              shipments_12m AS shipments_12m,
+              CAST(last_activity AS STRING) AS last_activity,
+              top_route AS top_route,
+              top_carrier AS top_carrier
+            ) AS kpis
+          FROM kpis
+          ORDER BY shipments_12m DESC, last_activity DESC
+          LIMIT @limit OFFSET @offset
+        ) AS rows
+    `;
+
+    const [rows] = await bq.query({
+      query: sql,
+      location: "US",
+      params: { q, mode, limit, offset, startDate: start, endDate: end }
+    });
+
+    const total = Number(rows?.[0]?.total || 0);
+    const items = (rows?.[0]?.rows as any[]) || [];
+    const page_size = limit;
+    const page = Math.floor(offset / limit) + 1;
+
+    res.status(200).json({ meta: { total, page, page_size }, rows: items });
+  } catch (e) {
+    console.error(e);
+    res.status(200).json({ meta: { total: 0, page: 1, page_size: 10 }, rows: [] });
+  }
+});
+
+// ----- Company Details -----
+app.get("/public/getCompanyDetails", async (req, res) => {
+  try {
+    const company_id = String(req.query.company_id || "");
+    if (!company_id) return res.status(200).json({});
+
+    const sql = `
+      WITH src AS (
+        SELECT *
+        FROM \`logistics-intel.${DATASET}.company_overview_daily_part\`
+        WHERE company_id = @company_id
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY company_id ORDER BY snapshot_date DESC) = 1
+      ),
+      from_ship AS (
+        SELECT
+          company_id,
+          ANY_VALUE(company_name) AS name,
+          COUNTIF(date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)) AS shipments_12m,
+          MAX(date) AS last_activity,
+          ARRAY_AGG(CONCAT(COALESCE(origin_country, origin), '→', COALESCE(dest_country, destination))
+            ORDER BY COUNT(*) DESC LIMIT 1)[OFFSET(0)] AS top_route,
+          ARRAY_AGG(carrier ORDER BY COUNT(*) DESC LIMIT 1)[OFFSET(0)] AS top_carrier
+        FROM ${TABLE_SHIP("shipments_daily_part")}
+        WHERE company_id = @company_id
+        GROUP BY company_id
+      )
+      SELECT
+        COALESCE(s.company_id, f.company_id) AS company_id,
+        COALESCE(s.company_name, f.name) AS name,
+        s.hq_country, s.hq_city,
+        STRUCT(
+          f.shipments_12m AS shipments_12m,
+          CAST(f.last_activity AS STRING) AS last_activity,
+          f.top_route AS top_route,
+          f.top_carrier AS top_carrier
+        ) AS kpis
+      FROM src s
+      FULL OUTER JOIN from_ship f USING (company_id)
+    `;
+    const [rows] = await bq.query({ query: sql, location: "US", params: { company_id } });
+    res.status(200).json(rows?.[0] || {});
+  } catch (e) {
+    console.error(e);
+    res.status(200).json({});
+  }
+});
+
+// ----- Company Shipments -----
+app.get("/public/getCompanyShipments", async (req, res) => {
+  try {
+    const company_id = String(req.query.company_id || "");
+    if (!company_id) return res.status(200).json({ rows: [] });
+    const range = String(req.query.range || "12m");
+    const days = range === "30d" ? 30 : 365;
+
+    const sql = `
+      SELECT
+        CAST(date AS STRING) AS shipped_on,
+        mode,
+        COALESCE(origin_country, origin) AS origin,
+        COALESCE(dest_country, destination) AS destination,
+        carrier,
+        value_usd,
+        gross_weight_kg AS weight_kg
+      FROM ${TABLE_SHIP("shipments_daily_part")}
+      WHERE company_id = @company_id
+        AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL @days DAY)
+      ORDER BY date DESC
+    `;
+    const [rows] = await bq.query({
+      query: sql,
+      location: "US",
+      params: { company_id, days }
+    });
+    res.status(200).json({ rows });
+  } catch (e) {
+    console.error(e);
+    res.status(200).json({ rows: [] });
+  }
+});
+
+// ----- Error handler -----
+app.use((err: any, _req: any, res: any, _next: any) => {
+  console.error(err);
+  res.status(500).json({ error: "internal_error", detail: String(err?.message || err) });
+});
+
+// ----- Listen -----
+const port = Number(process.env.PORT) || 8080;
+app.listen(port, "0.0.0.0", () => {
+  console.log(`search-unified listening on :${port}`);
+});
+
+export default app;

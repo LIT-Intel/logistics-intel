@@ -29,6 +29,8 @@ export default function Company() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
   const [recall, setRecall] = useState(null);
+
+  // RFP (lanes) payload persisted locally per company
   const [rfpPayload, setRfpPayload] = useState(null);
   const rfpKey = `lit_rfp_payload_${companyId}`;
 
@@ -57,7 +59,7 @@ export default function Company() {
       ]);
       let sum = Array.isArray(summaryRes?.data) && summaryRes.data.length ? summaryRes.data[0] : null;
       if (!sum) {
-        // fallback to singular param
+        // fallback: singular param
         const fallback = await postSearchCompanies({ company_id: String(companyId), limit: 1, offset: 0 });
         sum = Array.isArray(fallback?.data) && fallback.data.length ? fallback.data[0] : null;
       }
@@ -114,10 +116,12 @@ export default function Company() {
     await Contact.create({ ...contactData, company_id: companyId });
     load();
   };
+
   const handleAddNote = async (noteContent) => {
     await Note.create({ content: noteContent, company_id: companyId });
     load();
   };
+
   const handleEnrich = async () => {
     setIsEnriching(true);
     try {
@@ -132,7 +136,6 @@ export default function Company() {
 
   const handleRecall = async () => {
     if (!companyId) return;
-    const vendor = (import.meta?.env?.VITE_AI_VENDOR || process?.env?.NEXT_PUBLIC_AI_VENDOR || 'gemini');
     try {
       const r = await recallCompany({ company_id: String(companyId) });
       setRecall({ summary: r?.summary || '', bullets: Array.isArray(r?.bullets) ? r.bullets : [] });
@@ -186,32 +189,41 @@ export default function Company() {
             <TabsContent value="overview">
               <OverviewTab company={company} shipments={shipments} isLoading={isLoading} />
             </TabsContent>
+
             <TabsContent value="shipments">
               <ShipmentsTab shipments={shipments} isLoading={isLoading} />
+
               <LitPanel title="Upload Lanes (RFP Data)">
                 <div className="flex items-center gap-2 mb-3">
-                  <input id="company-lanes-file" type="file" accept=".xlsx,.xls,.csv,application/json" className="hidden" onChange={async (e) => {
-                    try {
-                      const f = e.target.files && e.target.files[0]; if (!f) return;
-                      const payload = await ingestWorkbook(f);
-                      setRfpPayload(payload);
-                      try { localStorage.setItem(rfpKey, JSON.stringify(payload)); } catch {}
-                      const k = deriveKpisFromPayload(payload);
-                      if (k) {
-                        setCompany(prev => ({
-                          ...(prev || {}),
-                          shipments_12m: k.shipments12m,
-                          top_route: (k.originsTop && k.destsTop && k.originsTop.length && k.destsTop.length) ? `${k.originsTop[0]} → ${k.destsTop[0]}` : undefined,
-                          top_carriers: [],
-                        }));
-                      }
-                      const el = document.getElementById('company-lanes-file'); if (el) el.value = '';
-                    } catch { alert('Import failed'); }
-                  }} />
+                  <input
+                    id="company-lanes-file"
+                    type="file"
+                    accept=".xlsx,.xls,.csv,application/json"
+                    className="hidden"
+                    onChange={async (e) => {
+                      try {
+                        const f = e.target.files && e.target.files[0]; if (!f) return;
+                        const payload = await ingestWorkbook(f);
+                        setRfpPayload(payload);
+                        try { localStorage.setItem(rfpKey, JSON.stringify(payload)); } catch {}
+                        const k = deriveKpisFromPayload(payload);
+                        if (k) {
+                          setCompany(prev => ({
+                            ...(prev || {}),
+                            shipments_12m: k.shipments12m,
+                            top_route: (k.originsTop && k.destsTop && k.originsTop.length && k.destsTop.length) ? `${k.originsTop[0]} → ${k.destsTop[0]}` : undefined,
+                            top_carriers: [],
+                          }));
+                        }
+                        const el = document.getElementById('company-lanes-file'); if (el) el.value = '';
+                      } catch { alert('Import failed'); }
+                    }}
+                  />
                   <Button variant="outline" onClick={() => { const el = document.getElementById('company-lanes-file'); if (el) el.click(); }}>Import</Button>
                   <Button variant="outline" onClick={() => { try { localStorage.setItem(rfpKey, JSON.stringify(rfpPayload || {})); alert('Saved'); } catch { alert('Save failed'); } }}>Save</Button>
                   <Button variant="outline" className="text-red-600" onClick={() => { try { localStorage.removeItem(rfpKey); } catch {} setRfpPayload(null); alert('Reset'); }}>Reset</Button>
                 </div>
+
                 {rfpPayload && Array.isArray(rfpPayload.lanes) && rfpPayload.lanes.length > 0 ? (
                   <div className="overflow-auto">
                     <table className="w-full text-sm border border-slate-200">
@@ -249,8 +261,9 @@ export default function Company() {
                   <div className="text-sm text-gray-600">No uploaded lanes.</div>
                 )}
               </LitPanel>
+
               {shipmentsTotal > SHIP_PAGE_SIZE && (
-                <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center justify_between mt-4">
                   <div className="text-sm text-gray-600">
                     Showing {Math.min(shipmentsTotal, shipmentsPage * SHIP_PAGE_SIZE) - SHIP_PAGE_SIZE + 1}-{Math.min(shipmentsTotal, shipmentsPage * SHIP_PAGE_SIZE)} of {shipmentsTotal}
                   </div>
@@ -261,15 +274,17 @@ export default function Company() {
                 </div>
               )}
             </TabsContent>
+
             <TabsContent value="contacts">
               <ContactsTab contacts={contacts} companyId={companyId} company={company} onAddContact={handleAddContact} isGated={false} onUnlock={() => {}} isLoading={false} />
             </TabsContent>
+
             <TabsContent value="ai_insights">
               <EnrichmentTab company={company || { id: companyId }} onCompanyUpdate={setCompany} user={null} isGated={false} onUnlock={() => {}} isLoading={false} onEnrich={handleEnrich} isEnriching={isEnriching} />
               {recall && (
                 <div className="mt-6">
                   <h3 className="text-lg font-semibold">AI Recall</h3>
-                  <p className="mt-2 text-sm whitespace-pre-wrap">{recall.summary}</p>
+                  <p className="mt-2 text_sm whitespace-pre-wrap">{recall.summary}</p>
                   <ul className="list-disc pl-5 mt-2">
                     {(recall.bullets || []).map((b, i) => (
                       <li key={i} className="text-sm">{b}</li>
@@ -278,6 +293,7 @@ export default function Company() {
                 </div>
               )}
             </TabsContent>
+
             <TabsContent value="notes">
               <NotesTab notes={notes} onAddNote={handleAddNote} isLoading={isLoading} />
             </TabsContent>
@@ -287,4 +303,3 @@ export default function Company() {
     </div>
   );
 }
-
