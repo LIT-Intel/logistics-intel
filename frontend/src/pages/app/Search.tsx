@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
+import { InlineFilters } from '@/components/search/InlineFilters';
 import { getFilterOptions } from '@/lib/api';
 
 const brand = {
@@ -226,9 +227,7 @@ export default function SearchAppPage() {
   const [active, setActive] = useState<any | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[] }>({ modes: [], origins: [], destinations: [] });
-  const [origin, setOrigin] = useState<string[]>([]);
-  const [dest, setDest] = useState<string[]>([]);
-  const [hs, setHs] = useState<string[]>([]);
+  const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]}>({ origin: [], dest: [], hs: [] });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -254,7 +253,7 @@ export default function SearchAppPage() {
   async function runSearch() {
     setLoading(true);
     try {
-      const data = await searchCompanies({ q: query || null, origin, dest, hs, limit: 24, offset: 0 });
+      const data = await searchCompanies({ q: query || null, origin: filters.origin, dest: filters.dest, hs: filters.hs, limit: 24, offset: 0 });
       const arr = (data?.rows || data || []);
       const norm = arr.map((r: any) => normalizeRow(r));
       setRows(norm);
@@ -306,7 +305,6 @@ export default function SearchAppPage() {
                 />
               </div>
               <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
-              <Button variant="outline" className="gap-2 rounded-xl h-12" onClick={() => setFiltersOpen((v)=>!v)}><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
             </div>
             <div className="mt-3 flex items-center gap-2">
               <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
@@ -320,9 +318,9 @@ export default function SearchAppPage() {
                     <div className="text-sm font-medium mb-2">Origin</div>
                     <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
                       {opts.origins.map((o) => {
-                        const isOn = origin.includes(o);
+                        const isOn = filters.origin.includes(o);
                         return (
-                          <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setOrigin((prev)=> isOn ? prev.filter(x=> x!==o) : [...prev, o])}>{o}</Button>
+                          <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, origin: isOn ? prev.origin.filter(x=>x!==o) : [...prev.origin, o] }))}>{o}</Button>
                         );
                       })}
                     </div>
@@ -331,24 +329,25 @@ export default function SearchAppPage() {
                     <div className="text-sm font-medium mb-2">Destination</div>
                     <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
                       {opts.destinations.map((d) => {
-                        const isOn = dest.includes(d);
+                        const isOn = filters.dest.includes(d);
                         return (
-                          <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setDest((prev)=> isOn ? prev.filter(x=> x!==d) : [...prev, d])}>{d}</Button>
+                          <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, dest: isOn ? prev.dest.filter(x=>x!==d) : [...prev.dest, d] }))}>{d}</Button>
                         );
                       })}
                     </div>
                   </div>
                   <div>
                     <div className="text-sm font-medium mb-2">HS Codes</div>
-                    <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setHs(e.target.value.split(',').map(s=> s.trim()).filter(Boolean))} />
+                    <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setFilters(prev=> ({ ...prev, hs: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
                   </div>
                 </div>
                 <div className="mt-3 flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => { setOrigin([]); setDest([]); setHs([]); }}>Clear</Button>
+                  <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [] }); }}>Clear</Button>
                   <Button onClick={() => { runSearch(); }}>Apply</Button>
                 </div>
               </div>
             )}
+            <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
           </div>
 
           {rows.length === 0 && (
