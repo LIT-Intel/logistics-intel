@@ -230,11 +230,16 @@ export default function RFPStudio() {
             <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white" onClick={()=>{
               const name = prompt('RFP name','New RFP');
               if (!name) return;
-              const client = prompt('Client name','DSV A/S') || '';
+              const client = prompt('Client name (must match Command Center)','DSV A/S') || '';
+              // Guardrail: require company to exist in Command Center
+              const ccRaw = localStorage.getItem('lit_companies');
+              const cc = ccRaw ? JSON.parse(ccRaw) : [];
+              const match = Array.isArray(cc) ? cc.find((c)=> String((c && c.name) || '').toLowerCase() === String(client).toLowerCase()) : null;
+              if (!match) { alert('Please add this company in Command Center first.'); return; }
               const id = 'rfp_'+Math.random().toString(36).slice(2,8);
               const due = new Date(); due.setDate(due.getDate()+21);
               const dueStr = due.toLocaleDateString(undefined,{ month:'short', day:'2-digit'});
-              const next = [{ id, name, client, status:'Draft', due: dueStr }, ...rfps];
+              const next = [{ id, name, client, companyId: match.id, status:'Draft', due: dueStr }, ...rfps];
               setRfps(next); setActiveId(id); setActiveTab('overview');
               setCompany(null); setLanes([]); setFinModel(null);
             }}><Plus className="w-4 h-4 mr-1"/> New RFP</Button>
