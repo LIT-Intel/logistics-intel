@@ -24,6 +24,20 @@ export default function Companies() {
         if (!id) return;
         if (!map.has(id)) map.set(id, c);
       });
+      // Migrate any RFP Studio payloads into Command Center if missing
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i) as string;
+          if (!key) continue;
+          if (!key.startsWith('lit_rfp_payload_')) continue;
+          const cid = key.replace('lit_rfp_payload_', '');
+          if (cid && !map.has(cid)) {
+            const payload = JSON.parse(localStorage.getItem(key) || 'null');
+            const name = (payload && payload.meta && (payload.meta.customer || payload.meta.bid_name)) || 'Company';
+            map.set(cid, { id: cid, name, kpis: { shipments12m: 0, lastActivity: null, originsTop: [], destsTop: [], carriersTop: [] } });
+          }
+        }
+      } catch {}
       const merged = Array.from(map.values());
       if (merged.length) setCompanies(merged);
     } catch {}
