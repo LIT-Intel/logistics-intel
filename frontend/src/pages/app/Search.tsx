@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
@@ -167,14 +167,20 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl max-w-[95vw] w-[95vw] p-0 overflow-hidden rounded-2xl sm:rounded-2xl h-[88vh] sm:h-auto">
-        <DialogHeader className="px-6 pt-6">
-          <DialogTitle className="flex items-center gap-3">
-            <Avatar className="h-9 w-9"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
-            <span className="text-slate-900 font-semibold">{row.company_name}</span>
-          </DialogTitle>
-        </DialogHeader>
-        <div className="px-6 pb-2 overflow-y-auto sm:overflow-visible" style={{ maxHeight: 'calc(88vh - 72px)' }}>
+      <DialogContent className="p-0 w-screen h-[100dvh] rounded-none sm:rounded-2xl sm:w-auto sm:h-auto sm:max-w-5xl">
+        <div className="flex flex-col h-full">
+          <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 sticky top-0 bg-white z-10 border-b">
+            <DialogTitle className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-9 w-9"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
+                <span className="text-slate-900 font-semibold truncate max-w-[60vw] sm:max-w-none">{row.company_name}</span>
+              </div>
+              <DialogClose asChild>
+                <button className="inline-flex items-center justify-center rounded-md border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 sm:hidden"><XCircle className="h-4 w-4"/></button>
+              </DialogClose>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-4 sm:px-6 pb-3 sm:pb-2 overflow-y-auto sm:overflow-visible flex-1">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="col-span-2 border-slate-200">
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Snapshot</CardTitle></CardHeader>
@@ -207,16 +213,16 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
               </CardContent>
             </Card>
           </div>
-        </div>
-        <Separator />
-        <div className="px-6 pb-6">
-          <Tabs defaultValue="shipments">
-            <TabsList className="grid w-full grid-cols-4">
+          </div>
+          <Separator />
+          <div className="px-4 sm:px-6 pb-4">
+            <Tabs defaultValue="shipments">
+              <TabsList className="flex sm:grid w-full sm:grid-cols-4 overflow-x-auto gap-2">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="shipments">Shipments</TabsTrigger>
               <TabsTrigger value="contacts">Contacts</TabsTrigger>
               <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
-            </TabsList>
+              </TabsList>
             <TabsContent value="overview" className="mt-4"><div className="text-sm text-muted-foreground">Company metadata, enrichment summary, confidence scores…</div></TabsContent>
             <TabsContent value="shipments" className="mt-4">
               <div className="rounded-xl border border-slate-200 overflow-hidden">
@@ -255,10 +261,11 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
                   </div>
                 )}
               </div>
-            </TabsContent>
+              </TabsContent>
             <TabsContent value="contacts" className="mt-4"><div className="text-sm text-muted-foreground">Linked contacts and enrichment actions…</div></TabsContent>
             <TabsContent value="campaigns" className="mt-4"><div className="text-sm text-muted-foreground">Recent sequences and follow-ups…</div></TabsContent>
-          </Tabs>
+            </Tabs>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
