@@ -55,6 +55,21 @@ export default function RFPStudio() {
   const [rfpPayload, setRfpPayload] = useState(null);
   const [priced, setPriced] = useState(null);
   const [templates, setTemplates] = useState(defaultTemplates);
+  const STORAGE_PREFIX = 'lit_rfp_payload_';
+
+  // Derive KPIs from uploaded payload if API lookup is empty
+  function deriveKpisFromPayload(payload) {
+    if (!payload || !Array.isArray(payload.lanes)) return null;
+    const shipments12m = payload.lanes.reduce((s, ln)=> s + (Number(ln?.demand?.shipments_per_year||0)), 0);
+    const origins = new Map(); const dests = new Map();
+    for (const ln of payload.lanes) {
+      const o = ln?.origin?.port || ln?.origin?.country; if (o) origins.set(o, (origins.get(o)||0)+1);
+      const d = ln?.destination?.port || ln?.destination?.country; if (d) dests.set(d, (dests.get(d)||0)+1);
+    }
+    const originsTop = Array.from(origins.entries()).sort((a,b)=> b[1]-a[1]).slice(0,3).map(x=>x[0]);
+    const destsTop = Array.from(dests.entries()).sort((a,b)=> b[1]-a[1]).slice(0,3).map(x=>x[0]);
+    return { shipments12m, lastActivity: null, originsTop, destsTop, carriersTop: [] };
+  }
   const [proposalSummary, setProposalSummary] = useState('');
   const [proposalSolution, setProposalSolution] = useState('');
 
@@ -121,7 +136,33 @@ export default function RFPStudio() {
     }
   }
 
-  useEffect(()=>{ if (activeId) loadKpisForActive(); }, [activeId]);
+  useEffect(()=>{
+    if (!activeId) return;
+    // Load any saved payload for this RFP
+    try {
+      const raw = localStorage.getItem(STORAGE_PREFIX + activeId);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setRfpPayload(saved);
+        setPriced(priceAll(saved.lanes||[], saved.rates||[], templates));
+      } else {
+        setRfpPayload(null); setPriced(null);
+      }
+    } catch {}
+    loadKpisForActive();
+  }, [activeId]);
+
+  // Auto-reprice when templates or payload changes
+  useEffect(()=>{
+    if (rfpPayload) {
+      setPriced(priceAll(rfpPayload.lanes||[], rfpPayload.rates||[], templates));
+      // If no company KPI yet, populate from payload
+      if (!company || !company.companyId) {
+        const k = deriveKpisFromPayload(rfpPayload);
+        if (k) setCompany(prev => ({ ...(prev||{}), shipments12m: k.shipments12m, last_seen: k.lastActivity, top_route: undefined, top_carriers: [], industry: null }));
+      }
+    }
+  }, [templates, rfpPayload]);
 
   return (
     <div className="relative px-2 md:px-5 py-3 min-h-screen">
@@ -146,6 +187,9 @@ export default function RFPStudio() {
         <main className="flex-1 min-w-0 p-[5px] max-w-none">
           <LitWatermark />
           <LitPageHeader title={company?.companyName ? `RFP Studio — ${company.companyName}` : 'RFP Studio'}>
+            {company?.companyId && (
+              <Button variant="outline" className="border-slate-200" onClick={()=> window.location.href = `/app/companies/${company.companyId}`}>Open Company</Button>
+            )}
             <Button className="bg-gradient-to-r from-blue-600 to-blue-500 text-white" onClick={()=>{
               const name = prompt('RFP name','New RFP');
               if (!name) return;
@@ -170,6 +214,16 @@ export default function RFPStudio() {
             }} />
             <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
             <Button variant="outline" className="border-slate-200" onClick={()=>{
+              if (!activeId || !rfpPayload) { alert('Nothing to save'); return; }
+              try { localStorage.setItem(STORAGE_PREFIX + activeId, JSON.stringify(rfpPayload)); alert('RFP data saved'); } catch { alert('Save failed'); }
+            }}>Save Data</Button>
+            <Button variant="outline" className="border-slate-200 text-red-600" onClick={()=>{
+              if (!activeId) return;
+              try { localStorage.removeItem(STORAGE_PREFIX + activeId); } catch {}
+              setRfpPayload(null); setPriced(null);
+              alert('RFP data reset');
+            }}>Reset Data</Button>
+            <Button variant="outline" className="border-slate-200" onClick={()=>{
               setActiveTab('proposal');
               setProposalSummary('Draft a proposal executive summary for DSV including quantified savings, capacity strategy, compliance, technology, sustainability.');
               setProposalSolution('Our solution provides dedicated capacity, compliance management, visibility tooling, and sustainability reporting.');
@@ -178,6 +232,7 @@ export default function RFPStudio() {
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="data">Data</TabsTrigger>
                 <TabsTrigger value="proposal">Proposal</TabsTrigger>
                 <TabsTrigger value="rates">Rates</TabsTrigger>
                 <TabsTrigger value="financials">Financials</TabsTrigger>
@@ -185,6 +240,46 @@ export default function RFPStudio() {
                 <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="export">Export & Outreach</TabsTrigger>
               </TabsList>
+              <TabsContent value="data" className="mt-6 space-y-6">
+                <LitPanel title="Uploaded Lanes">
+                  {rfpPayload && Array.isArray(rfpPayload.lanes) && rfpPayload.lanes.length > 0 ? (
+                    <div className="overflow-auto">
+                      <table className="w-full text-sm border border-slate-200">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="p-2 border">Service</th>
+                            <th className="p-2 border">Equipment</th>
+                            <th className="p-2 border">POL</th>
+                            <th className="p-2 border">POD</th>
+                            <th className="p-2 border">Origin Country</th>
+                            <th className="p-2 border">Dest Country</th>
+                            <th className="p-2 border">Shpts/Year</th>
+                            <th className="p-2 border">Avg Kg</th>
+                            <th className="p-2 border">Avg CBM</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rfpPayload.lanes.map((ln, i)=> (
+                            <tr key={i}>
+                              <td className="p-2 border">{ln.mode||'—'}</td>
+                              <td className="p-2 border">{ln.equipment||'—'}</td>
+                              <td className="p-2 border">{ln.origin?.port||'—'}</td>
+                              <td className="p-2 border">{ln.destination?.port||'—'}</td>
+                              <td className="p-2 border">{ln.origin?.country||'—'}</td>
+                              <td className="p-2 border">{ln.destination?.country||'—'}</td>
+                              <td className="p-2 border">{ln.demand?.shipments_per_year||0}</td>
+                              <td className="p-2 border">{ln.demand?.avg_weight_kg||0}</td>
+                              <td className="p-2 border">{ln.demand?.avg_volume_cbm||0}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-600">No uploaded lanes yet.</div>
+                  )}
+                </LitPanel>
+              </TabsContent>
               <TabsContent value="rates" className="mt-6 space-y-6">
                 <LitPanel title="Proposed Rate Templates (Editable)">
                   <div className="overflow-auto">
