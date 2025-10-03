@@ -235,10 +235,8 @@ export default function SearchAppPage() {
     (async () => {
       try {
         const data = await searchCompanies({ q: null, limit: 24, offset: 0 });
-        const norm = (data?.rows || data || []).map((r: any)=> ({
-          ...r,
-          tags: r.tags || [],
-        }));
+        const arr = (data?.rows || data || []);
+        const norm = arr.map((r: any) => normalizeRow(r));
         setRows(norm);
       } catch {}
     })();
@@ -257,12 +255,25 @@ export default function SearchAppPage() {
     setLoading(true);
     try {
       const data = await searchCompanies({ q: query || null, origin, dest, hs, limit: 24, offset: 0 });
-      const norm = (data?.rows || data || []).map((r: any)=> ({ ...r, tags: r.tags || [] }));
+      const arr = (data?.rows || data || []);
+      const norm = arr.map((r: any) => normalizeRow(r));
       setRows(norm);
     } catch (e) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function normalizeRow(r: any) {
+    const company_name = r.company_name || r.name || r.company || '';
+    const company_id = r.company_id || r.id || null;
+    const shipments_12m = r.shipments_12m ?? r.kpis?.shipments_12m ?? r.shipments ?? 0;
+    let last_activity: any = r.last_activity ?? r.kpis?.last_activity ?? r.lastShipmentDate ?? null;
+    if (last_activity && typeof last_activity === 'object' && 'value' in last_activity) last_activity = last_activity.value;
+    const top_routes = r.top_routes || r.routesTop || [];
+    const top_carriers = r.top_carriers || r.carriersTop || [];
+    const tags = r.tags || [];
+    return { ...r, company_name, company_id, shipments_12m, last_activity, top_routes, top_carriers, tags };
   }
 
   const filtered = useMemo(() => {
@@ -279,10 +290,7 @@ export default function SearchAppPage() {
               <h1 className={brand.heading}>Search</h1>
               <p className="text-sm text-muted-foreground">Find shippers & receivers. Use filters for origin/dest/HS. Click a card to view details.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" className="gap-2 rounded-xl"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
-              <Button variant="ghost" className="gap-2 text-muted-foreground rounded-xl" onClick={() => { setQuery(''); }}><XCircle className="h-4 w-4"/>Clear</Button>
-            </div>
+            <div />
           </div>
 
           <div className="relative">
@@ -291,23 +299,59 @@ export default function SearchAppPage() {
                 <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
                 <Input
                   placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
-                  className="pl-9 rounded-xl bg-white/90 h-11"
+                  className="pl-9 rounded-xl bg-white/90 h-12 text-base"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
                 />
               </div>
-              <Button onClick={runSearch} className="rounded-xl h-11 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
-              <Button variant="outline" className="gap-2 rounded-xl h-11" onClick={() => setFiltersOpen(true)}><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
+              <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+              <Button variant="outline" className="gap-2 rounded-xl h-12" onClick={() => setFiltersOpen((v)=>!v)}><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
             </div>
             <div className="mt-3 flex items-center gap-2">
               <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
               <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
               {loading && <span className="text-xs text-muted-foreground">Searching…</span>}
             </div>
+            {filtersOpen && (
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-white/95 shadow-sm p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <div className="text-sm font-medium mb-2">Origin</div>
+                    <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                      {opts.origins.map((o) => {
+                        const isOn = origin.includes(o);
+                        return (
+                          <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setOrigin((prev)=> isOn ? prev.filter(x=> x!==o) : [...prev, o])}>{o}</Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium mb-2">Destination</div>
+                    <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                      {opts.destinations.map((d) => {
+                        const isOn = dest.includes(d);
+                        return (
+                          <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setDest((prev)=> isOn ? prev.filter(x=> x!==d) : [...prev, d])}>{d}</Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium mb-2">HS Codes</div>
+                    <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setHs(e.target.value.split(',').map(s=> s.trim()).filter(Boolean))} />
+                  </div>
+                </div>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => { setOrigin([]); setDest([]); setHs([]); }}>Clear</Button>
+                  <Button onClick={() => { runSearch(); }}>Apply</Button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {filtered.length === 0 && (
+          {rows.length === 0 && (
             <div className="mt-10 text-center">
               <div className="mx-auto w-fit rounded-2xl border p-8 bg-white/80 shadow-sm">
                 <Factory className="mx-auto mb-3 h-8 w-8 text-muted-foreground"/>
@@ -317,17 +361,17 @@ export default function SearchAppPage() {
             </div>
           )}
 
-          {filtered.length > 0 && view === 'cards' && (
+          {rows.length > 0 && view === 'cards' && (
             <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 auto-rows-[280px]">
               <AnimatePresence>
-                {filtered.map((r: any) => (
+                {rows.map((r: any) => (
                   <CompanyCard key={r.company_id || r.company_name} row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
                 ))}
               </AnimatePresence>
             </div>
           )}
 
-          {filtered.length > 0 && view === 'list' && (
+          {rows.length > 0 && view === 'list' && (
             <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden">
               <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
               <Table>
@@ -341,7 +385,7 @@ export default function SearchAppPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((r: any) => (
+                  {rows.map((r: any) => (
                     <TableRow key={r.company_id || r.company_name} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-purple-400 transition-colors">
                       <TableCell>
                         <div className="font-medium text-slate-900">{r.company_name}</div>
@@ -364,46 +408,6 @@ export default function SearchAppPage() {
         </div>
 
         <DetailsDialog open={open} onOpenChange={setOpen} row={active} />
-
-        <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <DialogContent className="max-w-xl rounded-2xl">
-            <DialogHeader>
-              <DialogTitle>Filters</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm font-medium mb-2">Origin</div>
-                <div className="flex flex-wrap gap-2">
-                  {opts.origins.map((o) => {
-                    const active = origin.includes(o);
-                    return (
-                      <Button key={o} variant={active ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setOrigin((prev)=> active ? prev.filter(x=> x!==o) : [...prev, o])}>{o}</Button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium mb-2">Destination</div>
-                <div className="flex flex-wrap gap-2">
-                  {opts.destinations.map((d) => {
-                    const active = dest.includes(d);
-                    return (
-                      <Button key={d} variant={active ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setDest((prev)=> active ? prev.filter(x=> x!==d) : [...prev, d])}>{d}</Button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium mb-2">HS Codes</div>
-                <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setHs(e.target.value.split(',').map(s=> s.trim()).filter(Boolean))} />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="ghost" onClick={() => { setOrigin([]); setDest([]); setHs([]); }}>Clear</Button>
-                <Button onClick={() => { setFiltersOpen(false); runSearch(); }}>Apply</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
     </TooltipProvider>
   );
