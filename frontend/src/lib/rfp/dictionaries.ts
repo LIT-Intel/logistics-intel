@@ -9,7 +9,7 @@ export const SYN = {
     currency: ['currency', 'cur', 'iso currency'],
   },
   lanes: {
-    mode: ['mode', 'transport mode', 'service mode'],
+    mode: ['mode', 'transport mode', 'service mode', 'service'],
     incoterm: ['incoterm', 'terms'],
     origin_country: ['origin country', 'por country', 'pol country'],
     origin_city: ['origin city', 'city of origin', 'pickup city'],
