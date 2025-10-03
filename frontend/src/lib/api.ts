@@ -95,7 +95,13 @@ export async function saveCampaign(body: Record<string, any>) {
   return await res.json();
 }
 
-export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string|null; source?: string }) {
+// Save company to CRM (compat)
+export async function saveCompanyToCrm(payload: {
+  company_id: string;
+  company_name: string;
+  notes?: string | null;
+  source?: string;
+}) {
   const res = await fetch(`${GW}/crm/saveCompany`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -108,7 +114,34 @@ export async function saveCompanyToCrm(payload: { company_id: string; company_na
   return await res.json();
 }
 
-// New consolidated API object
+// Derive simple display KPIs from a company search row or summary
+export function kpiFrom(input: any): {
+  shipments12m: number;
+  lastActivity: string | null;
+  topRoute?: string;
+  topCarrier?: string;
+} {
+  if (!input) return { shipments12m: 0, lastActivity: null };
+  const shipments12m = Number(input.shipments_12m ?? input.shipments ?? 0) || 0;
+  const lastActivity =
+    typeof input.last_activity === "string"
+      ? input.last_activity
+      : input.lastShipmentDate || null;
+  const topRoute =
+    Array.isArray(input.top_routes) && input.top_routes.length
+      ? input.top_routes[0]
+      : Array.isArray(input.originsTop) && Array.isArray(input.destsTop)
+      ? `${input.originsTop[0]?.v || ""} → ${input.destsTop[0]?.v || ""}`.trim()
+      : undefined;
+  const topCarrier = Array.isArray(input.top_carriers)
+    ? input.top_carriers[0]
+    : Array.isArray(input.carriersTop)
+    ? input.carriersTop[0]?.v
+    : undefined;
+  return { shipments12m, lastActivity, topRoute, topCarrier };
+}
+
+// ---- New consolidated API object (current code uses this) ----
 export const api = {
   searchCompanies: _searchCompanies,
   getFilterOptions,
@@ -117,6 +150,7 @@ export const api = {
   recallCompany,
   saveCampaign,
   saveCompanyToCrm,
+  kpiFrom, // also available via named import
 };
 
 // Also export the new search by name for TSX pages that import it directly
