@@ -352,10 +352,10 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                     </div>
                     {/* Tradelanes */}
                     <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Key Tradelanes</h3>
+                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Top Destinations</h3>
                       <ul className='text-sm list-disc pl-5'>
-                        {(overview.kpis?.originsTop||[]).slice(0,5).map((o:string,i:number)=> (
-                          <li key={i}>{o} → {(overview.kpis?.destsTop||[])[i] || 'US'}</li>
+                        {(overview.kpis?.destsTop||[]).slice(0,5).map((d:string,i:number)=> (
+                          <li key={i}>{d}</li>
                         ))}
                       </ul>
                     </div>
@@ -612,6 +612,49 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                     <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await enrichCompany({ company_id: String(activeId) }); alert('Enrichment queued'); }catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); } }}>Enrich Now</button>
                     <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await createTask({ company_id: String(activeId), title: 'Follow up', notes: 'Automated task' }); alert('Task created'); }catch(e:any){ alert('Task failed: '+ String(e?.message||e)); } }}>Create Task</button>
                     <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await createAlert({ company_id: String(activeId), type: 'info', message: 'Review KPIs' }); alert('Alert created'); }catch(e:any){ alert('Alert failed: '+ String(e?.message||e)); } }}>Create Alert</button>
+                    {/* Archive / Delete / Remove from lists */}
+                    <button className='px-3 py-2 rounded border text-sm text-amber-700' onClick={()=>{
+                      try {
+                        const key = 'lit_companies';
+                        const raw = localStorage.getItem(key); const arr = raw? JSON.parse(raw):[];
+                        const next = Array.isArray(arr)? arr.map((c:any)=> String(c?.id)===String(activeId)? { ...c, archived: true }: c): arr;
+                        localStorage.setItem(key, JSON.stringify(next));
+                        window.dispatchEvent(new StorageEvent('storage', { key }));
+                        alert('Archived');
+                      } catch { alert('Archive failed'); }
+                    }}>Archive Company</button>
+                    <button className='px-3 py-2 rounded border text-sm text-red-700' onClick={()=>{
+                      if (!confirm('Remove this company from Command Center?')) return;
+                      try {
+                        const key = 'lit_companies';
+                        const raw = localStorage.getItem(key); const arr = raw? JSON.parse(raw):[];
+                        const next = Array.isArray(arr)? arr.filter((c:any)=> String(c?.id)!==String(activeId)) : arr;
+                        localStorage.setItem(key, JSON.stringify(next));
+                        window.dispatchEvent(new StorageEvent('storage', { key }));
+                        // Remove related local data
+                        try { localStorage.removeItem(`lit_rfp_payload_${String(activeId)}`); } catch {}
+                        try {
+                          const rr = localStorage.getItem('lit_rfps');
+                          const rarr = rr? JSON.parse(rr):[];
+                          localStorage.setItem('lit_rfps', JSON.stringify((Array.isArray(rarr)? rarr.filter((r:any)=> String(r?.companyId)!==String(activeId)) : rarr)));
+                        } catch {}
+                        try {
+                          const cc = localStorage.getItem('lit_campaigns_companies');
+                          const carr = cc? JSON.parse(cc):[];
+                          localStorage.setItem('lit_campaigns_companies', JSON.stringify((Array.isArray(carr)? carr.filter((id:string)=> String(id)!==String(activeId)) : carr)));
+                        } catch {}
+                        alert('Removed');
+                      } catch { alert('Remove failed'); }
+                    }}>Remove Company</button>
+                    <button className='px-3 py-2 rounded border text-sm' onClick={()=>{
+                      // Remove from Campaign
+                      try {
+                        const cc = localStorage.getItem('lit_campaigns_companies'); const carr = cc? JSON.parse(cc):[];
+                        const next = Array.isArray(carr)? carr.filter((id:string)=> String(id)!==String(activeId)) : carr;
+                        localStorage.setItem('lit_campaigns_companies', JSON.stringify(next));
+                        alert('Removed from Campaign list');
+                      } catch { alert('Failed'); }
+                    }}>Remove from Campaign</button>
                   </div>
                 )}
               </div>
