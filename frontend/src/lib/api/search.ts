@@ -23,23 +23,20 @@ export type SearchCompaniesResponse = {
   rows: SearchCompanyRow[];
 };
 
-function toCsvOrNull(a?: string[] | string | null): string | null {
-  if (Array.isArray(a)) return a.length > 0 ? a.join(",") : null;
-  if (typeof a === 'string') {
-    const v = a.trim();
-    return v.length ? v : null;
-  }
-  return null;
+function toCsv(a?: string[] | string | null): string {
+  if (Array.isArray(a)) return a.length > 0 ? a.join(",") : "";
+  if (typeof a === 'string') return a.trim();
+  return "";
 }
 
 function normalizePayload(f: SearchFilters) {
   const limit = Math.max(1, Math.min(50, Number(f.limit ?? 24)));
   const offset = Math.max(0, Number(f.offset ?? 0));
   return {
-    q: typeof f.q === 'string' && f.q.trim().length ? f.q.trim() : null,
-    origin: toCsvOrNull(f.origin),
-    dest: toCsvOrNull(f.dest),
-    hs: toCsvOrNull(f.hs),
+    q: typeof f.q === 'string' ? f.q.trim() : "",
+    origin: toCsv(f.origin),
+    dest: toCsv(f.dest),
+    hs: toCsv(f.hs),
     limit,
     offset,
   };
@@ -56,7 +53,11 @@ export async function searchCompanies(filters: SearchFilters): Promise<SearchCom
     const text = await res.text().catch(() => "");
     throw new Error(`Search failed: ${res.status} ${text}`);
   }
-  return (await res.json()) as SearchCompaniesResponse;
+  const data = await res.json();
+  const rows = Array.isArray(data)
+    ? data
+    : (Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.items) ? data.items : []));
+  return { meta: { total: rows.length, page: 1, page_size: rows.length }, rows } as SearchCompaniesResponse;
 }
 
 export type GetCompanyShipmentsInput = {
@@ -83,5 +84,6 @@ export async function getCompanyShipments(input: GetCompanyShipmentsInput) {
     const text = await res.text().catch(() => '');
     throw new Error(`getCompanyShipments failed: ${res.status} ${text}`);
   }
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data?.rows ?? []);
 }

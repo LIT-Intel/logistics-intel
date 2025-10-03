@@ -233,8 +233,8 @@ export default function SearchAppPage() {
   useEffect(() => {
     (async () => {
       try {
-        console.log('[LIT] initial search → payload', { q: null, limit: 24, offset: 0 });
-        const data = await searchCompanies({ q: null, limit: 24, offset: 0 });
+        console.log('[LIT] initial search → payload', { q: '', limit: 24, offset: 0 });
+        const data = await searchCompanies({ q: '', limit: 24, offset: 0 });
         const arr = (data?.rows || data || []);
         const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_id && r.company_name);
         console.log('[LIT] initial search → rows', norm.length, norm.slice(0,2));
@@ -255,7 +255,7 @@ export default function SearchAppPage() {
   async function runSearch() {
     setLoading(true);
     try {
-      const payload = { q: query || null, origin: filters.origin, dest: filters.dest, hs: filters.hs, limit: 24, offset: 0 };
+      const payload = { q: query || '', origin: filters.origin, dest: filters.dest, hs: filters.hs, limit: 24, offset: 0 };
       console.log('[LIT] runSearch → payload', payload);
       const data = await searchCompanies(payload);
       const arr = (data?.rows || data || []);
