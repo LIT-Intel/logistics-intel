@@ -17,11 +17,6 @@ async function j<T>(p: Promise<Response>): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-// Legacy compatibility
-export async function postSearchCompanies(payload: any) {
-  return _searchCompanies(payload);
-}
-
 // Widgets compatibility endpoints
 export async function calcTariff(input: { hsCode?: string; origin?: string; destination?: string; valueUsd?: number }) {
   const res = await fetch(`${GW}/widgets/tariff/calc`, {
@@ -84,9 +79,6 @@ export function kpiFrom(item: CompanyItem) {
   return { shipments12m, lastActivity, originsTop, destsTop, carriersTop };
 }
 
-// Expose modern search under both names
-export { _searchCompanies as searchCompanies };
-
 export type SearchCompaniesBody = {
   q?: string;
   mode?: 'air'|'ocean';
@@ -101,22 +93,6 @@ export type SearchCompaniesBody = {
   company_id?: string;       // accepted for summary lookup
   company_ids?: string[];    // accepted for summary lookup
 };
-
-export async function postSearchCompanies(payload: any) {
-  const body = typeof payload === 'object' && payload ? {
-    q: (payload.q ?? '').trim(),
-    origin: Array.isArray(payload.origin) ? payload.origin.join(',') : (payload.origin ?? ''),
-    dest: Array.isArray(payload.dest) ? payload.dest.join(',') : (payload.dest ?? ''),
-    hs: Array.isArray(payload.hs) ? payload.hs.join(',') : (payload.hs ?? ''),
-    limit: Math.max(1, Math.min(50, Number(payload.limit ?? 24))),
-    offset: Math.max(0, Number(payload.offset ?? 0)),
-  } : { q: '', origin: '', dest: '', hs: '', limit: 24, offset: 0 };
-  const res = await fetch(`${GW}/public/searchCompanies`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
-  });
-  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
-  return res.json();
-}
 
 export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }) {
   const { company_id } = params;
