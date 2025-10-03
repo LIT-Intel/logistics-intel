@@ -83,6 +83,21 @@ export default function RFPStudio() {
     }
     return counts;
   }
+  function ensureCompanyInCommandCenter(id, name) {
+    try {
+      const key = 'lit_companies';
+      const raw = localStorage.getItem(key);
+      const arr = raw ? JSON.parse(raw) : [];
+      const exists = Array.isArray(arr) && arr.some(c => String(c?.id) === String(id));
+      if (!exists) {
+        const fresh = { id: String(id), name: String(name||'Company'), kpis: { shipments12m: 0, lastActivity: null, originsTop: [], destsTop: [], carriersTop: [] } };
+        const next = [fresh, ...arr];
+        localStorage.setItem(key, JSON.stringify(next));
+        // notify other tabs
+        try { window.dispatchEvent(new StorageEvent('storage', { key })); } catch {}
+      }
+    } catch {}
+  }
   const [proposalSummary, setProposalSummary] = useState('');
   const [proposalSolution, setProposalSolution] = useState('');
 
@@ -118,6 +133,7 @@ export default function RFPStudio() {
       const companyId = item.company_id || '';
       // Persist the universal companyId on the active RFP entry for binding
       setRfps(prev => prev.map(x => x.id === activeId ? { ...x, companyId } : x));
+      ensureCompanyInCommandCenter(companyId, item.company_name || r?.client || r?.name || 'Company');
       const shipments12m = Number(item.shipments12m || item.shipments || 0);
       const kpis = {
         companyId,
@@ -234,7 +250,7 @@ export default function RFPStudio() {
                 // Update company from RFP meta + derived KPIs
                 const derived = deriveKpisFromPayload(payload);
                 const name = activeRfp?.client || activeRfp?.name || 'Company';
-                const id = activeRfp?.id || '';
+                const id = activeRfp?.companyId || activeRfp?.id || '';
                 setCompany(prev => ({
                   ...(prev||{}),
                   companyId: (company?.companyId || activeRfp?.companyId || id),
@@ -244,8 +260,9 @@ export default function RFPStudio() {
                   carriersTop: derived?.carriersTop || [],
                 }));
                 // Save uploaded lanes keyed by universal company id if present
-                const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+                const keySuffix = (activeRfp?.companyId || company?.companyId || id || activeId) || activeId;
                 try { localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(payload)); } catch {}
+                ensureCompanyInCommandCenter(keySuffix, name);
               } catch(err){ alert('Import failed'); }
             }} />
             <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
