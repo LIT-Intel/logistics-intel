@@ -10,10 +10,6 @@ import {
   saveCampaign,
   saveCompanyToCrm,
   enrichCompany,
-  createTask,
-  createAlert,
-  getEmailThreads,
-  getCalendarEvents,
 } from '../../lib/api';
 
 function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
@@ -93,7 +89,7 @@ function Tabs({ tabs, value, onChange }: { tabs: string[]; value: string; onChan
 
 export default function Workspace({ companies, onAdd }: { companies: any[]; onAdd: () => void }) {
   const [activeId, setActiveId] = useState(companies[0]?.id);
-  const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || ((typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_AI_VENDOR) ? (process as any).env.NEXT_PUBLIC_AI_VENDOR : '') ) as string;
+  const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || '') as string;
   const aiEnabled = !!aiVendor;
   const [query, setQuery] = useState('');
   const [filterRfp, setFilterRfp] = useState(false);
@@ -167,11 +163,14 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
           if (!ignore) setShipments([]);
         }
 
-        // Try to find company via search for KPIs
+        // Try to find company via search for KPIs (dynamic import to avoid build-time linkage)
         let match: any = null;
         try {
-          const res = await searchCompanies({ limit: 50, offset: 0 });
-          match = (res as any).items?.find((x: any) => String(x.company_id) === String(activeId)) || null;
+          const mod = await import('../../lib/api');
+          if ((mod as any).searchCompanies) {
+            const res = await (mod as any).searchCompanies({ limit: 50, offset: 0 });
+            match = (res as any).items?.find((x: any) => String(x.company_id) === String(activeId)) || null;
+          }
         } catch {}
 
         const baseName = active?.name || match?.company_name || 'Company';
@@ -234,12 +233,18 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
 
         // Activity fetch (best-effort)
         try {
-          const t = await getEmailThreads(String(activeId));
-          if (!ignore) setThreads(Array.isArray(t?.threads) ? t.threads : (Array.isArray(t) ? t : []));
+          const mod = await import('../../lib/api');
+          if ((mod as any).getEmailThreads) {
+            const t = await (mod as any).getEmailThreads(String(activeId));
+            if (!ignore) setThreads(Array.isArray(t?.threads) ? t.threads : (Array.isArray(t) ? t : []));
+          }
         } catch {}
         try {
-          const ev = await getCalendarEvents(String(activeId));
-          if (!ignore) setEvents(Array.isArray(ev?.events) ? ev.events : (Array.isArray(ev) ? ev : []));
+          const mod = await import('../../lib/api');
+          if ((mod as any).getCalendarEvents) {
+            const ev = await (mod as any).getCalendarEvents(String(activeId));
+            if (!ignore) setEvents(Array.isArray(ev?.events) ? ev.events : (Array.isArray(ev) ? ev : []));
+          }
         } catch {}
       } catch (e: any) {
         if (!ignore) setError(String(e?.message ?? e));
@@ -609,8 +614,8 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   <div className='mt-3 flex flex-wrap gap-2'>
                     <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await saveCompanyToCrm({ company_id: String(activeId), company_name: active?.name || 'Company', source:'companies' }); alert('Saved to CRM'); }catch(e:any){ alert('Save failed: '+ String(e?.message||e)); } }}>Save to CRM</button>
                     <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await enrichCompany({ company_id: String(activeId) }); alert('Enrichment queued'); }catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); } }}>Enrich Now</button>
-                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await createTask({ company_id: String(activeId), title: 'Follow up', notes: 'Automated task' }); alert('Task created'); }catch(e:any){ alert('Task failed: '+ String(e?.message||e)); } }}>Create Task</button>
-                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await createAlert({ company_id: String(activeId), type: 'info', message: 'Review KPIs' }); alert('Alert created'); }catch(e:any){ alert('Alert failed: '+ String(e?.message||e)); } }}>Create Alert</button>
+                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ const mod = await import('../../lib/api'); if ((mod as any).createTask) { await (mod as any).createTask({ company_id: String(activeId), title: 'Follow up', notes: 'Automated task' }); alert('Task created'); } else { alert('Task API unavailable'); } }catch(e:any){ alert('Task failed: '+ String(e?.message||e)); } }}>Create Task</button>
+                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ const mod = await import('../../lib/api'); if ((mod as any).createAlert) { await (mod as any).createAlert({ company_id: String(activeId), type: 'info', message: 'Review KPIs' }); alert('Alert created'); } else { alert('Alert API unavailable'); } }catch(e:any){ alert('Alert failed: '+ String(e?.message||e)); } }}>Create Alert</button>
                     {/* Archive / Delete / Remove from lists */}
                     <button className='px-3 py-2 rounded border text-sm text-amber-700' onClick={()=>{
                       try {
