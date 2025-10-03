@@ -265,6 +265,8 @@ export default function SearchAppPage() {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'cards'|'list'>('cards');
   const [rows, setRows] = useState<any[]>([]);
+  const [lastPayload, setLastPayload] = useState<any>(null);
+  const [lastEndpoint, setLastEndpoint] = useState<string>('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<any | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -282,8 +284,11 @@ export default function SearchAppPage() {
   useEffect(() => {
     (async () => {
       try {
-        console.log('[LIT] initial search → payload', { q: '', limit: 24, offset: 0 });
-        const data = await searchCompanies({ q: '', limit: 24, offset: 0 });
+        const payload = { q: null, limit: 24, offset: 0 } as const;
+        setLastPayload(payload);
+        setLastEndpoint('/public/searchCompanies');
+        console.log('[LIT] initial search → payload', payload);
+        const data = await searchCompanies(payload as any);
         const arr = (data?.rows || data || []);
         const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_id && r.company_name);
         console.log('[LIT] initial search → rows', norm.length, norm.slice(0,2));
@@ -304,7 +309,9 @@ export default function SearchAppPage() {
   async function runSearch() {
     setLoading(true);
     try {
-      const payload = { q: query || '', origin: filters.origin, dest: filters.dest, hs: filters.hs, limit: 24, offset: 0 };
+      const payload = { q: (query?.trim() || null), origin: (filters.origin?.length ? filters.origin : null), dest: (filters.dest?.length ? filters.dest : null), hs: (filters.hs?.length ? filters.hs : null), limit: 24, offset: 0 };
+      setLastPayload(payload);
+      setLastEndpoint('/public/searchCompanies');
       console.log('[LIT] runSearch → payload', payload);
       const data = await searchCompanies(payload);
       const arr = (data?.rows || data || []);
@@ -432,6 +439,11 @@ export default function SearchAppPage() {
               </div>
             )}
             <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
+            <div className="mt-1 text-[11px] text-muted-foreground select-text">
+              <div>Endpoint: <code>{lastEndpoint}</code></div>
+              <div>Payload: <code>{JSON.stringify(lastPayload)}</code></div>
+              <div>Rows: <code>{rows?.length ?? 0}</code></div>
+            </div>
           </div>
 
           {rows.length === 0 && (
