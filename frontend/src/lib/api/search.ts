@@ -56,3 +56,30 @@ export async function searchCompanies(filters: SearchFilters): Promise<SearchCom
   }
   return (await res.json()) as SearchCompaniesResponse;
 }
+
+export type GetCompanyShipmentsInput = {
+  company_id?: string | null;
+  company_name?: string | null;
+  origin?: string | null;
+  dest?: string | null;
+  hs?: string | null;
+  limit?: number;
+  offset?: number;
+};
+
+export async function getCompanyShipments(input: GetCompanyShipmentsInput) {
+  const params = new URLSearchParams();
+  if (input.company_id) params.set('company_id', input.company_id);
+  else if (input.company_name) params.set('company_name', input.company_name);
+  if (input.origin) params.set('origin', input.origin);
+  if (input.dest) params.set('dest', input.dest);
+  if (input.hs) params.set('hs', input.hs);
+  if (typeof input.limit === 'number') params.set('limit', String(input.limit));
+  if (typeof input.offset === 'number') params.set('offset', String(input.offset));
+  const res = await fetch(`${GW}/public/getCompanyShipments?${params.toString()}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`getCompanyShipments failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}

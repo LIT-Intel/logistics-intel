@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { cn } from '@/lib/utils';
 import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { searchCompanies } from '@/lib/api/search';
+import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
 
 const brand = {
   heading: 'text-[28px] font-bold tracking-tight text-purple-700',
@@ -94,6 +94,27 @@ function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
 }
 
 function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChange: (v: boolean) => void; row: any }) {
+  const [shipments, setShipments] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open || !row) return;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const data = await getCompanyShipments({ company_id: row.company_id ?? null, company_name: row.company_name ?? null, limit: 50, offset: 0 });
+        const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data) ? data : []);
+        setShipments(rows);
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load shipments');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [open, row?.company_id, row?.company_name]);
+
   if (!row) return null;
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
   return (
@@ -155,9 +176,36 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
                   <div>Date</div><div>Mode</div><div>Origin → Dest</div><div>HS</div><div>Carrier</div>
                 </div>
                 <Separator />
-                <div className="grid grid-cols-5 p-3 text-sm">
-                  <div>—</div><div>—</div><div>—</div><div>—</div><div>—</div>
-                </div>
+                {loading && (
+                  <div className="p-4 text-sm text-muted-foreground">Loading…</div>
+                )}
+                {error && (
+                  <div className="p-4 text-sm text-red-600">{error}</div>
+                )}
+                {!loading && !error && (
+                  <div className="divide-y">
+                    {shipments.length === 0 && (
+                      <div className="p-3 text-sm text-muted-foreground">No shipments found.</div>
+                    )}
+                    {shipments.map((s: any, i: number) => {
+                      const date = s.shipped_on || s.date || s.dt || '—';
+                      const mode = s.mode || s.transport_mode || '—';
+                      const origin = s.origin || s.origin_port || s.origin_country || s.o || '—';
+                      const dest = s.destination || s.dest || s.destination_port || s.dest_country || s.d || '—';
+                      const hs = s.hs || s.hs_code || '—';
+                      const carrier = s.carrier || s.line || s.airline || '—';
+                      return (
+                        <div key={i} className="grid grid-cols-5 p-3 text-sm">
+                          <div>{date}</div>
+                          <div className="capitalize">{mode}</div>
+                          <div>{origin} → {dest}</div>
+                          <div>{hs}</div>
+                          <div>{carrier}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </TabsContent>
             <TabsContent value="contacts" className="mt-4"><div className="text-sm text-muted-foreground">Linked contacts and enrichment actions…</div></TabsContent>
