@@ -1,8 +1,8 @@
 export type SearchFilters = {
-  q?: string;
-  origin?: string[];
-  dest?: string[];
-  hs?: string[];
+  q?: string | null;
+  origin?: string[] | string | null;
+  dest?: string[] | string | null;
+  hs?: string[] | string | null;
   limit?: number;
   offset?: number;
 };
@@ -43,9 +43,7 @@ function normalizePayload(f: SearchFilters) {
   };
 }
 
-export async function searchCompanies(
-  filters: SearchFilters
-): Promise<SearchCompaniesResponse> {
+export async function searchCompanies(filters: SearchFilters): Promise<SearchCompaniesResponse> {
   const payload = normalizePayload(filters);
   const res = await fetch(`${GW}/public/searchCompanies`, {
     method: "POST",
