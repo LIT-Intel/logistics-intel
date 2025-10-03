@@ -1,4 +1,5 @@
-mport { searchCompanies as _searchCompanies } from "@/lib/api/search";
+// Backwards-compatible base for legacy helper functions that expect /public
+import { auth } from '@/auth/firebaseClient';
 export type {
   SearchFilters,
   SearchCompaniesResponse,
