@@ -4,7 +4,6 @@ import PreCallBriefing from '../company/PreCallBriefing';
 import { exportCompanyPdf } from '../pdf/exportCompanyPdf';
 import { buildPreCallPrompt } from '../../lib/ai';
 import {
-  searchCompanies,
   getCompanyShipments,
   kpiFrom,
   recallCompany,
