@@ -167,7 +167,7 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="p-0 w-screen h-[100dvh] rounded-none sm:rounded-2xl sm:w-auto sm:h-auto sm:max-w-5xl">
+      <DialogContent className="p-0 w-screen h-[100dvh] max-h-[100dvh] rounded-none sm:rounded-2xl sm:w-auto sm:h-auto sm:max-w-5xl">
         <div className="flex flex-col h-full">
           <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 sticky top-0 bg-white z-10 border-b">
             <DialogTitle className="flex items-center justify-between gap-3">
@@ -180,7 +180,7 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
               </DialogClose>
             </DialogTitle>
           </DialogHeader>
-          <div className="px-4 sm:px-6 pb-3 sm:pb-2 overflow-y-auto sm:overflow-visible flex-1">
+          <div className="px-4 sm:px-6 pb-3 sm:pb-2 overflow-y-auto sm:overflow-visible flex-1 overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' as any }}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="col-span-2 border-slate-200">
               <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Snapshot</CardTitle></CardHeader>
@@ -215,7 +215,7 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
           </div>
           </div>
           <Separator />
-          <div className="px-4 sm:px-6 pb-4">
+          <div className="px-4 sm:px-6 pb-20 sm:pb-4">
             <Tabs defaultValue="shipments">
               <TabsList className="flex sm:grid w-full sm:grid-cols-4 overflow-x-auto gap-2">
               <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -265,6 +265,11 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
             <TabsContent value="contacts" className="mt-4"><div className="text-sm text-muted-foreground">Linked contacts and enrichment actions…</div></TabsContent>
             <TabsContent value="campaigns" className="mt-4"><div className="text-sm text-muted-foreground">Recent sequences and follow-ups…</div></TabsContent>
             </Tabs>
+          </div>
+          <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white/95 border-t p-2 flex justify-end">
+            <DialogClose asChild>
+              <button className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-slate-700"><XCircle className="h-4 w-4"/>Close</button>
+            </DialogClose>
           </div>
         </div>
       </DialogContent>
