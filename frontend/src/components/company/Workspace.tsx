@@ -31,7 +31,7 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
   <span className='px-2 py-0.5 rounded-full text-xs bg-white/70 border border-white/60 shadow-sm'>{children}</span>
 );
 
-function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick: () => void }) {
+function CompanyCard({ c, active, onClick, flags }: { c: any; active: boolean; onClick: () => void; flags?: { inRfp?: boolean; inCampaign?: boolean } }) {
   const city   = c.city || c.meta?.city || '—';
   const state  = c.state || c.meta?.state || '';
   const domain = c.domain || c.website || c.meta?.website || '';
@@ -49,7 +49,14 @@ function CompanyCard({ c, active, onClick }: { c: any; active: boolean; onClick:
       ].join(' ')}
     >
       {/* removed gradient accent bar */}
-      <div className='font-semibold text-[16px] text-[#1b1b3a] pr-1 tracking-tight'>{c.name}</div>
+      <div className='flex items-center justify-between gap-2'>
+        <div className='font-semibold text-[16px] text-[#1b1b3a] pr-1 tracking-tight'>{c.name}</div>
+        <div className='flex items-center gap-1'>
+          {flags?.inRfp && <span title='In RFP' className='inline-block w-2.5 h-2.5 rounded-full bg-violet-600' />}
+          {flags?.inCampaign && <span title='In Campaign' className='inline-block w-2.5 h-2.5 rounded-full bg-blue-600' />}
+        </div>
+      </div>
+      <div className='text-[11px] text-slate-500'>ID: {String(c.id || c.company_id || '—')}</div>
       <div className='mt-0.5 text-[11px] text-slate-600'>
         {city}{state ? `, ${state}` : ''}
       </div>
@@ -90,11 +97,23 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || ((typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_AI_VENDOR) ? (process as any).env.NEXT_PUBLIC_AI_VENDOR : '') ) as string;
   const aiEnabled = !!aiVendor;
   const [query, setQuery] = useState('');
+  const [filterRfp, setFilterRfp] = useState(false);
+  const [filterCampaign, setFilterCampaign] = useState(false);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return companies;
-    return companies.filter(c => String(c.name || '').toLowerCase().includes(q));
-  }, [companies, query]);
+    let base = companies;
+    if (q) base = base.filter(c => String(c.name || '').toLowerCase().includes(q));
+    try {
+      const rRaw = localStorage.getItem('lit_rfps');
+      const rfps = rRaw ? JSON.parse(rRaw) : [];
+      const rIds = new Set((Array.isArray(rfps) ? rfps : []).map((r:any)=> String(r.companyId||'')));
+      const cRaw = localStorage.getItem('lit_campaigns_companies');
+      const cIds = new Set(((cRaw ? JSON.parse(cRaw) : []) as string[]).map(x=> String(x)));
+      if (filterRfp) base = base.filter(c => rIds.has(String(c.id)));
+      if (filterCampaign) base = base.filter(c => cIds.has(String(c.id)));
+    } catch {}
+    return base;
+  }, [companies, query, filterRfp, filterCampaign]);
   const active = useMemo(() => companies.find(c => c.id === activeId), [companies, activeId]);
   const [tab, setTab] = useState('Overview');
   const [loading, setLoading] = useState(false);
@@ -260,11 +279,22 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
           </div>
           <div className='mb-3'>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
+            <div className='mt-2 flex items-center gap-3 text-xs text-slate-700'>
+              <label className='flex items-center gap-1'><input type='checkbox' checked={filterRfp} onChange={e=> setFilterRfp(e.target.checked)} /> Has RFP</label>
+              <label className='flex items-center gap-1'><input type='checkbox' checked={filterCampaign} onChange={e=> setFilterCampaign(e.target.checked)} /> In Campaign</label>
+            </div>
           </div>
           <div className='max-h-[70vh] overflow-auto pr-1 sm:pr-2'>
-            {filtered.map(c => (
-              <CompanyCard key={c.id} c={c} active={c.id === activeId} onClick={() => { setActiveId(c.id); setTab('Overview'); }} />
-            ))}
+            {filtered.map(c => {
+              let inRfp=false, inCampaign=false;
+              try {
+                const rr = localStorage.getItem('lit_rfps'); const arr = rr? JSON.parse(rr):[]; inRfp = Array.isArray(arr) && arr.some((r:any)=> String(r.companyId||'')===String(c.id));
+                const cc = localStorage.getItem('lit_campaigns_companies'); const carr = cc? JSON.parse(cc):[]; inCampaign = Array.isArray(carr) && carr.includes(String(c.id));
+              } catch {}
+              return (
+                <CompanyCard key={c.id} c={c} active={c.id === activeId} onClick={() => { setActiveId(c.id); setTab('Overview'); }} flags={{ inRfp, inCampaign }} />
+              );
+            })}
             {filtered.length === 0 && (
               <div className='text-xs text-slate-500 py-6 text-center'>No companies match “{query}”.</div>
             )}
