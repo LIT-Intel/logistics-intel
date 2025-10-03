@@ -362,6 +362,29 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                         </div>
                       </div>
                       <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
+                      <div className='mt-3 flex gap-2'>
+                        <button className='px-3 py-1.5 rounded border text-xs' onClick={() => {
+                          // Add to RFP using universal company id/name
+                          try {
+                            const key = 'lit_rfps';
+                            const raw = localStorage.getItem(key);
+                            const arr = raw ? JSON.parse(raw) : [];
+                            const exists = Array.isArray(arr) && arr.some((r:any)=> String(r?.companyId) === String(activeId));
+                            const name = overview?.name || 'Company';
+                            if (!exists) {
+                              const id = 'rfp_'+Math.random().toString(36).slice(2,8);
+                              const rec = { id, name: `${name} — Opportunity`, client: name, companyId: String(activeId), status:'Draft', due:'TBD' };
+                              localStorage.setItem(key, JSON.stringify([rec, ...arr]));
+                              alert('Added to RFP');
+                            } else {
+                              alert('Already in RFP');
+                            }
+                          } catch { alert('Failed to add to RFP'); }
+                        }}>Add to RFP</button>
+                        <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                          try { await saveCampaign({ name: `${overview?.name||'Company'} — Outreach`, channel: 'email', company_ids: [String(activeId)] }); alert('Added to Campaigns'); } catch(e:any){ alert('Failed: '+ String(e?.message||e)); }
+                        }}>Add to Campaign</button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -404,7 +427,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                         </table>
                       </div>
                     )}
-                    {/* RFP lanes upload/editor bound to Command Center company */}
+                    {/* RFP lanes upload/editor bound to Command Center company with manual overrides */}
                     <div className='mt-4 rounded border p-3'>
                       <div className='flex items-center gap-2 mb-3'>
                         <input id='cc-lanes-file' type='file' accept='.xlsx,.xls,.csv,application/json' className='hidden' onChange={async (e) => {
@@ -426,11 +449,36 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                         <button className='px-3 py-1.5 rounded border text-xs' onClick={() => { try { localStorage.setItem(rfpKey, JSON.stringify(rfpPayload || {})); alert('Saved'); } catch { alert('Save failed'); } }}>Save</button>
                         <button className='px-3 py-1.5 rounded border text-xs text-red-600' onClick={() => { try { localStorage.removeItem(rfpKey); } catch {} setRfpPayload(null); alert('Reset'); }}>Reset</button>
                       </div>
+                      <div className='grid grid-cols-1 md:grid-cols-3 gap-3 mb-3'>
+                        <div className='text-xs'>
+                          <div className='mb-1 font-medium'>Shipments (12M) Override</div>
+                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 120' onChange={(e)=>{
+                            const v = Number(e.target.value||0);
+                            if (overview) setOverview({ ...overview, kpis: { ...(overview.kpis||{}), shipments12m: v } });
+                          }} />
+                        </div>
+                        <div className='text-xs'>
+                          <div className='mb-1 font-medium'>Total Air Revenue (USD)</div>
+                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 250000' onChange={(e)=>{ /* reserved for future charts */ }} />
+                        </div>
+                        <div className='text-xs'>
+                          <div className='mb-1 font-medium'>Total Ocean Revenue (USD)</div>
+                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 500000' onChange={(e)=>{ /* reserved */ }} />
+                        </div>
+                        <div className='text-xs'>
+                          <div className='mb-1 font-medium'>Total Trucking Revenue (USD)</div>
+                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 120000' onChange={(e)=>{ /* reserved */ }} />
+                        </div>
+                        <div className='text-xs'>
+                          <div className='mb-1 font-medium'>Total Drayage Revenue (USD)</div>
+                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 80000' onChange={(e)=>{ /* reserved */ }} />
+                        </div>
+                      </div>
                       {rfpPayload && Array.isArray(rfpPayload.lanes) && rfpPayload.lanes.length > 0 ? (
                         <div className='overflow-auto'>
                           <table className='w-full text-sm border'>
                             <thead className='bg-slate-50'>
-                              <tr><th className='p-2 border'>Service</th><th className='p-2 border'>Equipment</th><th className='p-2 border'>POL</th><th className='p-2 border'>POD</th><th className='p-2 border'>Origin Country</th><th className='p-2 border'>Dest Country</th><th className='p-2 border'>Shpts/Year</th><th className='p-2 border'>Avg Kg</th><th className='p-2 border'>Avg CBM</th></tr>
+                              <tr><th className='p-2 border'>Service</th><th className='p-2 border'>Equipment</th><th className='p-2 border'>POL</th><th className='p-2 border'>POD</th><th className='p-2 border'>Origin Country</th><th className='p-2 border'>Dest Country</th><th className='p-2 border'>Shipments</th><th className='p-2 border'>Avg Kg</th><th className='p-2 border'>Avg CBM</th></tr>
                             </thead>
                             <tbody>
                               {rfpPayload.lanes.map((ln: any, i: number) => (
