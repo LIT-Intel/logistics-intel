@@ -116,6 +116,8 @@ export default function RFPStudio() {
         return;
       }
       const companyId = item.company_id || '';
+      // Persist the universal companyId on the active RFP entry for binding
+      setRfps(prev => prev.map(x => x.id === activeId ? { ...x, companyId } : x));
       const shipments12m = Number(item.shipments12m || item.shipments || 0);
       const kpis = {
         companyId,
@@ -158,7 +160,8 @@ export default function RFPStudio() {
     if (!activeId) return;
     // Load any saved payload for this RFP
     try {
-      const raw = localStorage.getItem(STORAGE_PREFIX + activeId);
+      const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+      const raw = localStorage.getItem(STORAGE_PREFIX + keySuffix);
       if (raw) {
         const saved = JSON.parse(raw);
         setRfpPayload(saved);
@@ -234,22 +237,27 @@ export default function RFPStudio() {
                 const id = activeRfp?.id || '';
                 setCompany(prev => ({
                   ...(prev||{}),
-                  companyId: id,
+                  companyId: (company?.companyId || activeRfp?.companyId || id),
                   companyName: name,
                   shipments12m: derived?.shipments12m || 0,
                   originsTop: derived?.originsTop || [],
                   carriersTop: derived?.carriersTop || [],
                 }));
+                // Save uploaded lanes keyed by universal company id if present
+                const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+                try { localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(payload)); } catch {}
               } catch(err){ alert('Import failed'); }
             }} />
             <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
             <Button variant="outline" className="border-slate-200" onClick={()=>{
-              if (!activeId || !rfpPayload) { alert('Nothing to save'); return; }
-              try { localStorage.setItem(STORAGE_PREFIX + activeId, JSON.stringify(rfpPayload)); alert('RFP data saved'); } catch { alert('Save failed'); }
+              const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+              if (!keySuffix || !rfpPayload) { alert('Nothing to save'); return; }
+              try { localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(rfpPayload)); alert('RFP data saved'); } catch { alert('Save failed'); }
             }}>Save Data</Button>
             <Button variant="outline" className="border-slate-200 text-red-600" onClick={()=>{
-              if (!activeId) return;
-              try { localStorage.removeItem(STORAGE_PREFIX + activeId); } catch {}
+              const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
+              if (!keySuffix) return;
+              try { localStorage.removeItem(STORAGE_PREFIX + keySuffix); } catch {}
               setRfpPayload(null); setPriced(null);
               alert('RFP data reset');
             }}>Reset Data</Button>
