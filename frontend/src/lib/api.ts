@@ -1,20 +1,12 @@
-// Backwards-compatible base for legacy helper functions that expect /public
+import { searchCompanies as _searchCompanies } from '@/lib/api/search';
+export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 import { auth } from '@/auth/firebaseClient';
-const BASE = (() => {
-  const envAny = (import.meta as any)?.env || {};
-  const base = envAny.VITE_API_BASE || envAny.VITE_PROXY_BASE || "/api/public";
-  if (base.endsWith("/public")) return base;
-  if (base.endsWith("/public/")) return base.slice(0, -1);
-  if (base === "/api/public") return base;
-  return base.replace(/\/$/, "") + "/public";
-})();
 
-// New generic API client per spec (expects BASE_ORIGIN without /public)
-const BASE_ORIGIN: string = (() => {
-  const raw = (import.meta as any).env?.VITE_API_BASE || "";
-  if (!raw) return BASE.replace(/\/public$/, "");
-  return raw.replace(/\/public\/?$/, "");
-})();
+// Gateway base (env override → default)
+const GW =
+  (import.meta as any).env?.VITE_LIT_GATEWAY_BASE ||
+  (globalThis as any).process?.env?.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
+  'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
 
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
@@ -27,7 +19,7 @@ async function j<T>(p: Promise<Response>): Promise<T> {
 
 export const api = {
   async get<T>(path: string, init?: RequestInit) {
-    const url = `${BASE_ORIGIN}${path}`;
+    const url = `${GW}${path}`;
     const token = await auth?.currentUser?.getIdToken?.().catch(() => null);
     const headers = {
       'accept': 'application/json',
@@ -37,7 +29,7 @@ export const api = {
     return j<T>(fetch(url, { ...(init || {}), headers, credentials: 'omit', cache: 'no-store' }));
   },
   async post<T>(path: string, body: unknown, init?: RequestInit) {
-    const url = `${BASE_ORIGIN}${path}`;
+    const url = `${GW}${path}`;
     const token = await auth?.currentUser?.getIdToken?.().catch(() => null);
     const headers = {
       'content-type': 'application/json',
@@ -101,55 +93,8 @@ export function kpiFrom(item: CompanyItem) {
   return { shipments12m, lastActivity, originsTop, destsTop, carriersTop };
 }
 
-// Public API base (robust across Vite/Next)
-const API_BASE: string = ((import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
-
-// New: searchCompanies params (array-based payload)
-export type SearchCompaniesParams = {
-  q?: string | null;
-  mode?: 'AIR' | 'OCEAN' | '' | null;
-  origin?: string[];   // ISO2
-  dest?: string[];     // ISO2
-  hs?: string[];       // array of strings (digit-only recommended)
-  limit?: number;
-  offset?: number;
-};
-
-export async function searchCompanies(params: SearchCompaniesParams) {
-  const safeArray = (v?: string[]) => (Array.isArray(v) ? v : []);
-  const limit = Math.min(params?.limit ?? 50, 50);
-  const offset = params?.offset ?? 0;
-  const body = {
-    q: params?.q ?? null,
-    mode: params?.mode ?? null,
-    origin: safeArray(params?.origin),
-    dest: safeArray(params?.dest),
-    hs: safeArray(params?.hs),
-    limit,
-    offset,
-  } as const;
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/public/searchCompanies`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch (e) {
-    throw new Error(`network_error:${String(e)}`);
-  }
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`bad_status:${res.status}:${text.substring(0, 300)}`);
-  }
-
-  const json: any = await res.json().catch(() => ({}));
-  const total = Number(json?.total ?? 0);
-  const items = Array.isArray(json?.items) ? json.items : [];
-  return { total, items } as { total: number; items: CompanySearchItem[] };
-}
+// Expose modern search under both names
+export { _searchCompanies as searchCompanies };
 
 export type SearchCompaniesBody = {
   q?: string;
@@ -166,22 +111,36 @@ export type SearchCompaniesBody = {
   company_ids?: string[];    // accepted for summary lookup
 };
 
-export async function postSearchCompanies(body: SearchCompaniesBody, signal?: AbortSignal): Promise<{ total: number; items: CompanySearchItem[] }> {
-  return api.post<{ total: number; items: CompanySearchItem[] }>(
-    '/public/searchCompanies',
-    body,
-    { signal }
-  );
+export async function postSearchCompanies(payload: any) {
+  const body = typeof payload === 'object' && payload ? {
+    q: (payload.q ?? '').trim(),
+    origin: Array.isArray(payload.origin) ? payload.origin.join(',') : (payload.origin ?? ''),
+    dest: Array.isArray(payload.dest) ? payload.dest.join(',') : (payload.dest ?? ''),
+    hs: Array.isArray(payload.hs) ? payload.hs.join(',') : (payload.hs ?? ''),
+    limit: Math.max(1, Math.min(50, Number(payload.limit ?? 24))),
+    offset: Math.max(0, Number(payload.offset ?? 0)),
+  } : { q: '', origin: '', dest: '', hs: '', limit: 24, offset: 0 };
+  const res = await fetch(`${GW}/public/searchCompanies`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
+  return res.json();
 }
 
-export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }, signal?: AbortSignal): Promise<{ rows: ShipmentRow[]; total?: number }> {
-  const { company_id, limit = 50, offset = 0 } = params;
-  const searchParams = new URLSearchParams({ company_id, limit: String(limit), offset: String(offset) });
-  return api.get<{ rows: ShipmentRow[]; total?: number }>(`/public/getCompanyShipments?${searchParams.toString()}`, { signal });
+export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }) {
+  const { company_id } = params;
+  const limit = Math.max(1, Math.min(100, Number(params.limit ?? 20)));
+  const offset = Math.max(0, Number(params.offset ?? 0));
+  const qs = new URLSearchParams({ company_id, limit: String(limit), offset: String(offset) });
+  const res = await fetch(`${GW}/public/getCompanyShipments?${qs.toString()}`, { method: 'GET' });
+  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getCompanyShipments failed: ${res.status} ${t}`); }
+  return res.json();
 }
 
-export async function getFilterOptions(_input: object = {}, signal?: AbortSignal) {
-  return api.get('/public/getFilterOptions', { signal });
+export async function getFilterOptions() {
+  const res = await fetch(`${GW}/public/getFilterOptions`, { method: 'GET', headers: { 'content-type': 'application/json' } });
+  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${res.status} ${t}`); }
+  return res.json();
 }
 
 export type SearchCompaniesInput = { q?: string; mode?: "all"|"ocean"|"air"; filters?: Record<string, any>; dateRange?: { from?: string; to?: string }; pagination?: { limit?: number; offset?: number } };
@@ -214,47 +173,25 @@ export async function generateQuote(input: { companyId?: string|number; lanes: A
 // ------------------------ CRM / Enrich / Recall / Campaigns ------------------------
 
 export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string|null; source?: string }) {
-  // Primary endpoint per gateway spec
-  try {
-    const j = await api.post(`/crm/saveCompany`, { ...payload, source: payload.source ?? 'search' });
-    return j as any;
-    // If 404/405, fall through to company.create
-  } catch (_) {}
-
-  // Fallback to company.create (parity path)
-  const createRes = await fetch(`${API_BASE}/crm/company.create`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
-    body: JSON.stringify({ name: payload.company_name })
-  });
-  if (!createRes.ok) {
-    const t = await createRes.text().catch(() => '');
-    throw new Error(`company.create ${createRes.status}:${t.slice(0,200)}`);
-  }
-  const j = await createRes.json().catch(() => ({} as any));
-  return { status: 'created', crm_company_id: j?.company_id || j?.id || payload.company_id };
+  const res = await fetch(`${GW}/crm/saveCompany`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...payload, source: payload.source ?? 'search' }) });
+  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`saveCompanyToCrm failed: ${res.status} ${t}`); }
+  return res.json();
 }
 
 export async function enrichCompany(payload: { company_id: string }) {
-  return api.post(`/crm/enrich`, payload);
+  const res = await fetch(`${GW}/crm/enrichCompany`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`enrichCompany failed: ${res.status} ${t}`); }
+  return res.json();
 }
 
 export async function recallCompany(payload: { company_id: string; questions?: string[] }) {
-  const vendor = (process.env.NEXT_PUBLIC_AI_VENDOR || (import.meta as any)?.env?.VITE_AI_VENDOR || 'gemini');
-  const res = await fetch(`${API_BASE}/ai/recall`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'accept': 'application/json', 'x-ai-vendor': String(vendor) },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`recall ${res.status}:${t.slice(0,200)}`);
-  }
+  const res = await fetch(`${GW}/ai/recall`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`recallCompany failed: ${res.status} ${t}`); }
   return res.json();
 }
 
 export async function saveCampaign(payload: { name: string; company_ids: string[]; channel: 'email'|'linkedin'; persona?: string; template_id?: string; }) {
-  const res = await fetch(`${API_BASE}/crm/campaigns`, {
+  const res = await fetch(`${GW}/crm/campaigns`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'accept': 'application/json' },
     body: JSON.stringify(payload)
@@ -268,7 +205,7 @@ export async function saveCampaign(payload: { name: string; company_ids: string[
 
 // Company create/get (manual create parity)
 export async function createCompany(body: { name: string; domain?: string; street?: string; city?: string; state?: string; postal?: string; country?: string }) {
-  const res = await fetch(`${API_BASE}/crm/company.create`, {
+  const res = await fetch(`${GW}/crm/company.create`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'accept': 'application/json' },
     body: JSON.stringify(body || {})
@@ -281,7 +218,7 @@ export async function createCompany(body: { name: string; domain?: string; stree
 }
 
 export async function getCompany(company_id: string) {
-  const url = `${API_BASE}/crm/company.get?company_id=${encodeURIComponent(company_id)}`;
+  const url = `${GW}/crm/company.get?company_id=${encodeURIComponent(company_id)}`;
   const res = await fetch(url, { headers: { 'accept': 'application/json' } });
   if (!res.ok) throw new Error(`company.get ${res.status}`);
   return res.json();
@@ -292,7 +229,7 @@ export async function enrichContacts(company_id: string) {
 }
 
 export async function listContacts(company_id: string, dept?: string) {
-  const u = new URL(`${API_BASE}/crm/contacts.list`);
+  const u = new URL(`${GW}/crm/contacts.list`);
   u.searchParams.set('company_id', company_id);
   if (dept) u.searchParams.set('dept', dept);
   const res = await fetch(u.toString(), { headers: { 'accept': 'application/json' } });
@@ -301,21 +238,21 @@ export async function listContacts(company_id: string, dept?: string) {
 }
 
 export async function getEmailThreads(company_id: string) {
-  const url = `${API_BASE}/crm/email.threads?company_id=${encodeURIComponent(company_id)}`;
+  const url = `${GW}/crm/email.threads?company_id=${encodeURIComponent(company_id)}`;
   const res = await fetch(url, { headers: { 'accept': 'application/json' } });
   if (!res.ok) throw new Error(`email.threads ${res.status}`);
   return res.json();
 }
 
 export async function getCalendarEvents(company_id: string) {
-  const url = `${API_BASE}/crm/calendar.events?company_id=${encodeURIComponent(company_id)}`;
+  const url = `${GW}/crm/calendar.events?company_id=${encodeURIComponent(company_id)}`;
   const res = await fetch(url, { headers: { 'accept': 'application/json' } });
   if (!res.ok) throw new Error(`calendar.events ${res.status}`);
   return res.json();
 }
 
 export async function createTask(p: { company_id: string; title: string; due_date?: string; notes?: string }) {
-  const res = await fetch(`${API_BASE}/crm/task.create`, {
+  const res = await fetch(`${GW}/crm/task.create`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'accept': 'application/json' },
     body: JSON.stringify(p)
@@ -325,7 +262,7 @@ export async function createTask(p: { company_id: string; title: string; due_dat
 }
 
 export async function createAlert(p: { company_id: string; type: string; message: string }) {
-  const res = await fetch(`${API_BASE}/crm/alert.create`, {
+  const res = await fetch(`${GW}/crm/alert.create`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'accept': 'application/json' },
     body: JSON.stringify(p)
