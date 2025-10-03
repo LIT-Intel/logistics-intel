@@ -228,6 +228,18 @@ export default function RFPStudio() {
                 setPriced(pricedRes);
                 setActiveTab('proposal'); setShowPricing(false);
                 if (fileRef.current) fileRef.current.value = '';
+                // Update company from RFP meta + derived KPIs
+                const derived = deriveKpisFromPayload(payload);
+                const name = activeRfp?.client || activeRfp?.name || 'Company';
+                const id = activeRfp?.id || '';
+                setCompany(prev => ({
+                  ...(prev||{}),
+                  companyId: id,
+                  companyName: name,
+                  shipments12m: derived?.shipments12m || 0,
+                  originsTop: derived?.originsTop || [],
+                  carriersTop: derived?.carriersTop || [],
+                }));
               } catch(err){ alert('Import failed'); }
             }} />
             <Button variant="outline" className="border-slate-200" onClick={()=> fileRef.current && fileRef.current.click()}><Upload className="w-4 h-4 mr-1"/> Import</Button>
