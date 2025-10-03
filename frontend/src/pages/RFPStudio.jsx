@@ -55,7 +55,9 @@ export default function RFPStudio() {
   const [rfpPayload, setRfpPayload] = useState(null);
   const [priced, setPriced] = useState(null);
   const [templates, setTemplates] = useState(defaultTemplates);
+  const [showPricing, setShowPricing] = useState(false);
   const STORAGE_PREFIX = 'lit_rfp_payload_';
+  const activeRfp = rfps.find(x => x.id === activeId);
 
   // Derive KPIs from uploaded payload if API lookup is empty
   function deriveKpisFromPayload(payload) {
@@ -69,6 +71,17 @@ export default function RFPStudio() {
     const originsTop = Array.from(origins.entries()).sort((a,b)=> b[1]-a[1]).slice(0,3).map(x=>x[0]);
     const destsTop = Array.from(dests.entries()).sort((a,b)=> b[1]-a[1]).slice(0,3).map(x=>x[0]);
     return { shipments12m, lastActivity: null, originsTop, destsTop, carriersTop: [] };
+  }
+  function summarizeServiceEquipment(payload) {
+    const counts = { byService: {}, byEquip: {} };
+    if (!payload || !Array.isArray(payload.lanes)) return counts;
+    for (const ln of payload.lanes) {
+      const s = ln?.mode || '—';
+      const e = ln?.equipment || '—';
+      counts.byService[s] = (counts.byService[s] || 0) + 1;
+      counts.byEquip[e] = (counts.byEquip[e] || 0) + 1;
+    }
+    return counts;
   }
   const [proposalSummary, setProposalSummary] = useState('');
   const [proposalSolution, setProposalSolution] = useState('');
@@ -96,7 +109,12 @@ export default function RFPStudio() {
       const q = (r && (r.client || (r.name && r.name.split('—')[0]))) || '';
       const s = await rfpSearchCompanies({ q, limit: 1, offset: 0 });
       const item = (Array.isArray(s?.items) && s.items[0]) || null;
-      if (!item) { setCompany(null); setLanes([]); setFinModel(null); return; }
+      if (!item) {
+        // Fallback to RFP metadata so Overview is not blank
+        setCompany({ companyId: r?.id || '', companyName: r?.client || (r?.name || 'Company') });
+        setLanes([]); setFinModel(null);
+        return;
+      }
       const companyId = item.company_id || '';
       const shipments12m = Number(item.shipments12m || item.shipments || 0);
       const kpis = {
@@ -208,7 +226,7 @@ export default function RFPStudio() {
                 setRfpPayload(payload);
                 const pricedRes = priceAll(payload.lanes||[], payload.rates||[], templates);
                 setPriced(pricedRes);
-                setActiveTab('proposal');
+                setActiveTab('proposal'); setShowPricing(false);
                 if (fileRef.current) fileRef.current.value = '';
               } catch(err){ alert('Import failed'); }
             }} />
@@ -355,6 +373,32 @@ export default function RFPStudio() {
                   <LitPanel title="Top Origins"><div className="text-sm text-slate-900">{(company?.originsTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
                   <LitPanel title="Top Carriers"><div className="text-sm text-slate-900">{(company?.carriersTop||[]).slice(0,3).join(', ')||'—'}</div></LitPanel>
                 </div>
+                {rfpPayload && (
+                  <LitPanel title="Service & Equipment Summary">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      {(() => { const s = summarizeServiceEquipment(rfpPayload); return (
+                        <>
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">By Service</div>
+                            {Object.entries(s.byService).length ? (
+                              <ul className="list-disc pl-5 text-slate-700">
+                                {Object.entries(s.byService).map(([k,v])=> (<li key={k}>{k}: {String(v)}</li>))}
+                              </ul>
+                            ) : (<div className="text-slate-600">—</div>)}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">By Equipment</div>
+                            {Object.entries(s.byEquip).length ? (
+                              <ul className="list-disc pl-5 text-slate-700">
+                                {Object.entries(s.byEquip).map(([k,v])=> (<li key={k}>{k}: {String(v)}</li>))}
+                              </ul>
+                            ) : (<div className="text-slate-600">—</div>)}
+                          </div>
+                        </>
+                      ); })()}
+                    </div>
+                  </LitPanel>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <LitPanel title="Timeline (Editable)">
                     <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="List proposal timeline requirements…"></textarea>
@@ -375,7 +419,18 @@ export default function RFPStudio() {
                   <div className="flex items-center gap-2">
                     <span>File Service Type:</span>
                     <select className="border rounded px-2 py-1" onChange={(e)=>{
-                      // no-op for now; could set a hint in state to bias detector in future
+                      const v = e.target.value;
+                      if (!rfpPayload || !Array.isArray(rfpPayload.lanes)) return;
+                      if (v === 'auto') return;
+                      const modeMap = { ocean: 'OCEAN', air: 'AIR', truck: 'TRUCK' };
+                      const mode = modeMap[v] || undefined;
+                      if (!mode) return;
+                      setRfpPayload(prev => {
+                        const lanes = (prev.lanes||[]).map(ln => ({ ...ln, mode }));
+                        const next = { ...prev, lanes };
+                        try { if (activeId) localStorage.setItem(STORAGE_PREFIX + activeId, JSON.stringify(next)); } catch {}
+                        return next;
+                      });
                     }}>
                       <option value="auto">Auto-detect</option>
                       <option value="ocean">Ocean</option>
@@ -384,45 +439,6 @@ export default function RFPStudio() {
                     </select>
                   </div>
                 </div>
-                {rfpPayload && (
-                  <LitPanel title="Detected Lanes (Preview)">
-                    <div className="overflow-auto">
-                      <table className="w-full text-sm border border-slate-200">
-                        <thead className="bg-slate-50">
-                          <tr>
-                            <th className="p-2 border">Service</th>
-                            <th className="p-2 border">POL</th>
-                            <th className="p-2 border">POD</th>
-                            <th className="p-2 border">Origin Country</th>
-                            <th className="p-2 border">Dest Country</th>
-                            <th className="p-2 border">Equip</th>
-                            <th className="p-2 border">Shpts/Year</th>
-                            <th className="p-2 border">Avg Kg</th>
-                            <th className="p-2 border">Avg CBM</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(rfpPayload.lanes||[]).slice(0,100).map((ln, i)=> (
-                            <tr key={i}>
-                              <td className="p-2 border">{ln.mode||'—'}</td>
-                              <td className="p-2 border">{ln.origin?.port||'—'}</td>
-                              <td className="p-2 border">{ln.destination?.port||'—'}</td>
-                              <td className="p-2 border">{ln.origin?.country||'—'}</td>
-                              <td className="p-2 border">{ln.destination?.country||'—'}</td>
-                              <td className="p-2 border">{ln.equipment||'—'}</td>
-                              <td className="p-2 border">{ln.demand?.shipments_per_year||0}</td>
-                              <td className="p-2 border">{ln.demand?.avg_weight_kg||0}</td>
-                              <td className="p-2 border">{ln.demand?.avg_volume_cbm||0}</td>
-                            </tr>
-                          ))}
-                          {(!rfpPayload.lanes || rfpPayload.lanes.length===0) && (
-                            <tr><td className="p-2 text-center text-slate-600" colSpan={9}>No lanes detected</td></tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </LitPanel>
-                )}
                 <LitPanel title="Executive Summary">
                   <textarea className="w-full h-40 p-3 border rounded-lg" placeholder="Draft your executive summary here..." value={proposalSummary} onChange={e=> setProposalSummary(e.target.value)} />
                   <div className="mt-2 flex gap-2">
@@ -431,7 +447,7 @@ export default function RFPStudio() {
                     <Button size="sm" variant="outline">Generate Talk Tracks</Button>
                   </div>
                 </LitPanel>
-                {priced && priced.lanes.length > 0 && (
+                {showPricing && priced && priced.lanes.length > 0 && (
                   <LitPanel title="Lane Pricing (Detected)">
                     <div className="text-sm text-slate-600 mb-2">Total Annual: ${priced.totalAnnual.toLocaleString()}</div>
                     <div className="space-y-3">
@@ -447,11 +463,10 @@ export default function RFPStudio() {
                     </div>
                   </LitPanel>
                 )}
-                {!priced || priced.lanes.length === 0 ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
-                    Upload detected, but lanes/rates were empty. Ensure your CSV has a lanes sheet (mode, origin/destination) and a rates sheet (charge, uom, rate). Try saving as XLSX if CSV headers are merged.
-                  </div>
-                ) : null}
+                <div className="flex gap-2">
+                  <Button className="bg-blue-600 text-white" onClick={()=> setShowPricing(true)}>Add Rates to Proposal</Button>
+                  <Button variant="outline" className="text-red-600" onClick={()=> { setShowPricing(false); }}>Remove Pricing Table</Button>
+                </div>
                 <LitPanel title="Solution Offering">
                   <textarea className="w-full h-32 p-3 border rounded-lg" placeholder="Describe your solution..." value={proposalSolution} onChange={e=> setProposalSolution(e.target.value)} />
                 </LitPanel>
