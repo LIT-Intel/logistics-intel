@@ -45,7 +45,7 @@ function CompanyCard({ c, active, onClick, flags }: { c: any; active: boolean; o
     >
       {/* removed gradient accent bar */}
       <div className='flex items-center justify-between gap-2'>
-        <div className='font-semibold text-[16px] text-[#1b1b3a] pr-1 tracking-tight'>{c.name}</div>
+        <div className='font-semibold text-[16px] pr-1 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-violet-500'>{c.name}</div>
         <div className='flex items-center gap-1'>
           {flags?.inRfp && <span title='In RFP' className='inline-block w-2.5 h-2.5 rounded-full bg-violet-600' />}
           {flags?.inCampaign && <span title='In Campaign' className='inline-block w-2.5 h-2.5 rounded-full bg-blue-600' />}
@@ -611,11 +611,54 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   </div>
                 )}
                 {!loading && !error && tab === 'Settings' && (
-                  <div className='mt-3 flex flex-wrap gap-2'>
-                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await saveCompanyToCrm({ company_id: String(activeId), company_name: active?.name || 'Company', source:'companies' }); alert('Saved to CRM'); }catch(e:any){ alert('Save failed: '+ String(e?.message||e)); } }}>Save to CRM</button>
-                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await enrichCompany({ company_id: String(activeId) }); alert('Enrichment queued'); }catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); } }}>Enrich Now</button>
-                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ const mod = await import('../../lib/api'); if ((mod as any).createTask) { await (mod as any).createTask({ company_id: String(activeId), title: 'Follow up', notes: 'Automated task' }); alert('Task created'); } else { alert('Task API unavailable'); } }catch(e:any){ alert('Task failed: '+ String(e?.message||e)); } }}>Create Task</button>
-                    <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ const mod = await import('../../lib/api'); if ((mod as any).createAlert) { await (mod as any).createAlert({ company_id: String(activeId), type: 'info', message: 'Review KPIs' }); alert('Alert created'); } else { alert('Alert API unavailable'); } }catch(e:any){ alert('Alert failed: '+ String(e?.message||e)); } }}>Create Alert</button>
+                  <div className='mt-3 flex flex-col gap-4'>
+                    <div className='rounded-xl border p-4 bg-white/95'>
+                      <div className='grid grid-cols-1 md:grid-cols-2 gap-3 text-sm'>
+                        <label className='block'>
+                          <div className='text-slate-600 mb-1'>Company Name</div>
+                          <input className='w-full border rounded px-3 py-2'
+                            defaultValue={active?.name||''}
+                            onBlur={(e)=>{
+                              const v=e.target.value; if(!v) return; const key='lit_companies';
+                              try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, name:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{}
+                            }} />
+                        </label>
+                        <label className='block'>
+                          <div className='text-slate-600 mb-1'>Website</div>
+                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.website||''}
+                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, website:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
+                        </label>
+                        <label className='block'>
+                          <div className='text-slate-600 mb-1'>Email</div>
+                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.email||''}
+                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, email:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
+                        </label>
+                        <label className='block'>
+                          <div className='text-slate-600 mb-1'>Phone</div>
+                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.phone||''}
+                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, phone:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
+                        </label>
+                        <label className='block'>
+                          <div className='text-slate-600 mb-1'>City</div>
+                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.city||''}
+                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, city:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
+                        </label>
+                        <label className='block'>
+                          <div className='text-slate-600 mb-1'>State</div>
+                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.state||''}
+                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, state:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
+                        </label>
+                        <label className='block md:col-span-2'>
+                          <div className='text-slate-600 mb-1'>Products (comma-separated)</div>
+                          <input className='w-full border rounded px-3 py-2' defaultValue={(overview as any)?.products?.join(', ')||''}
+                            onBlur={(e)=>{ const raw=e.target.value; const products = raw.split(',').map(s=>s.trim()).filter(Boolean); setOverview(prev => prev? { ...prev, products }: prev); }} />
+                        </label>
+                      </div>
+                      <div className='mt-3 flex gap-2'>
+                        <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await saveCompanyToCrm({ company_id: String(activeId), company_name: active?.name || 'Company', source:'companies' }); alert('Saved to CRM'); }catch(e:any){ alert('Save failed: '+ String(e?.message||e)); } }}>Save to CRM</button>
+                        <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await enrichCompany({ company_id: String(activeId) }); alert('Enrichment queued'); }catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); } }}>Enrich Now</button>
+                      </div>
+                    </div>
                     {/* Archive / Delete / Remove from lists */}
                     <button className='px-3 py-2 rounded border text-sm text-amber-700' onClick={()=>{
                       try {
