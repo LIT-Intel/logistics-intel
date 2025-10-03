@@ -1,6 +1,7 @@
+// src/lib/api/search.ts
 export type SearchFilters = {
   q?: string;
-  origin?: string[]; // ISO2 upper-case: ["CN","US"]
+  origin?: string[];
   dest?: string[];
   hs?: string[];
   limit?: number;
@@ -22,22 +23,17 @@ export type SearchCompaniesResponse = {
 };
 
 const GW =
-  process.env.NEXT_PUBLIC_LIT_GATEWAY_BASE ??
+  (import.meta as any).env?.VITE_LIT_GATEWAY_BASE ||
+  process.env.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
   "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
 
 function toCsv(a?: string[]): string {
   return Array.isArray(a) && a.length > 0 ? a.join(",") : "";
 }
 
-function clamp(n: unknown, min: number, max: number, dflt: number) {
-  const v = Number(n);
-  if (Number.isFinite(v)) return Math.min(max, Math.max(min, v));
-  return dflt;
-}
-
 function buildPayload(f: SearchFilters) {
-  const limit = clamp(f.limit, 1, 50, 24);
-  const offset = clamp(f.offset, 0, Number.MAX_SAFE_INTEGER, 0);
+  const limit = Math.max(1, Math.min(50, Number(f.limit ?? 24)));
+  const offset = Math.max(0, Number(f.offset ?? 0));
   return {
     q: (f.q ?? "").trim(),
     origin: toCsv(f.origin),
@@ -48,7 +44,9 @@ function buildPayload(f: SearchFilters) {
   };
 }
 
-export async function searchCompanies(filters: SearchFilters): Promise<SearchCompaniesResponse> {
+export async function searchCompanies(
+  filters: SearchFilters
+): Promise<SearchCompaniesResponse> {
   const payload = buildPayload(filters);
   const res = await fetch(`${GW}/public/searchCompanies`, {
     method: "POST",
