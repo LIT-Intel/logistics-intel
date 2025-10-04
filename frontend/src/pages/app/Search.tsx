@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory } from 'lucide-react';
+import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory, Bell, Bookmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
 import { InlineFilters } from '@/components/search/InlineFilters';
@@ -21,6 +21,29 @@ const brand = {
   kpiIcon: 'h-5 w-5 text-indigo-600',
   chip: 'rounded-full'
 };
+
+function AlertsPanel() {
+  return (
+    <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 p-4">
+      <div className="flex items-center gap-2 mb-3 text-slate-900 font-semibold"><Bell className="h-4 w-4 text-indigo-600"/> Alerts</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+        <div className="rounded-xl border p-3">
+          <div className="font-medium text-slate-900 mb-1">Volume Spike</div>
+          <div className="text-xs text-slate-600 mb-2">Alert when shipments increase by X% over last 30 days.</div>
+          <div className="flex items-center gap-2"><input type="number" className="w-24 border rounded px-2 py-1" placeholder="30" /> <span className="text-xs text-slate-600">%</span></div>
+          <div className="mt-2"><Button size="sm" className="rounded-xl">Save Alert</Button></div>
+        </div>
+        <div className="rounded-xl border p-3">
+          <div className="font-medium text-slate-900 mb-1">New Shipper</div>
+          <div className="text-xs text-slate-600 mb-2">Alert on new shippers in the last 3–6 months.</div>
+          <div className="flex items-center gap-2"><select className="border rounded px-2 py-1 text-sm"><option>3 months</option><option>6 months</option></select></div>
+          <div className="mt-2"><Button size="sm" className="rounded-xl">Save Alert</Button></div>
+        </div>
+      </div>
+      <div className="mt-4 text-xs text-slate-500">Alerts are a placeholder until backend wiring is complete.</div>
+    </div>
+  );
+}
 
 function SaveButton({ row }: { row: any }) {
   const [saving, setSaving] = React.useState(false);
@@ -416,29 +439,34 @@ export default function SearchAppPage() {
     <TooltipProvider>
       <div className="min-h-screen w-full bg-slate-50">
         <div className="pl-[5px] pr-[5px] pt-[5px]">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h1 className={brand.heading}>Search</h1>
-              <p className="text-sm text-muted-foreground">Find shippers & receivers. Use filters for origin/dest/HS. Click a card to view details.</p>
-            </div>
-            <div />
+          <div className="mb-3">
+            <h1 className={brand.heading}>Search</h1>
+            <p className="text-sm text-muted-foreground">Find shippers & receivers. Use filters for origin/dest/HS. Click a card to view details.</p>
           </div>
           <div className="w-full flex gap-[5px]">
             <aside className="hidden md:block w-[320px] shrink-0">
-              <div className="rounded-2xl border border-slate-200 bg-white/95 p-3">
+              <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm">
                 <div className="text-sm font-semibold text-slate-900 mb-2">Explore</div>
                 <div className="space-y-2">
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border ${exploreTab==='trending'?'bg-indigo-50 border-indigo-200':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('trending'); setHasSearched(false); }}>Trending Companies</button>
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border ${exploreTab==='new'?'bg-indigo-50 border-indigo-200':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('new'); setHasSearched(false); }}>New Shippers (3–6M)</button>
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border ${exploreTab==='saved'?'bg-indigo-50 border-indigo-200':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('saved'); loadSavedCompanies(); }}>Saved Companies</button>
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border ${exploreTab==='alerts'?'bg-indigo-50 border-indigo-200':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('alerts'); setHasSearched(false); }}>Alerts</button>
+                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='trending'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('trending'); setHasSearched(false); }}>
+                    <TrendingUp className="h-4 w-4 text-indigo-600"/> Trending Companies
+                  </button>
+                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='new'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('new'); setHasSearched(false); }}>
+                    <SparklesIcon/> New Shippers (3–6M)
+                  </button>
+                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='saved'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('saved'); loadSavedCompanies(); }}>
+                    <Bookmark className="h-4 w-4 text-indigo-600"/> Saved Companies
+                  </button>
+                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='alerts'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('alerts'); setHasSearched(false); }}>
+                    <Bell className="h-4 w-4 text-indigo-600"/> Alerts
+                  </button>
                 </div>
               </div>
             </aside>
             <main className="flex-1 min-w-0">
               <div className="relative">
-                <div className="flex items-center gap-2">
-                  <div className="relative w-full max-w-2xl">
+                <div className="flex items-center justify-center gap-2">
+                  <div className="relative w-full max-w-3xl">
                     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
                     <Input
                       placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
@@ -493,11 +521,7 @@ export default function SearchAppPage() {
                   </div>
                 )}
                 <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
-                <div className="mt-1 text-[11px] text-muted-foreground select-text">
-                  <div>Endpoint: <code>{lastEndpoint}</code></div>
-                  <div>Payload: <code>{JSON.stringify(lastPayload)}</code></div>
-                  <div>Rows: <code>{rows?.length ?? 0}</code></div>
-                </div>
+                {/* Debug removed for production */}
 
                 {exploreTab==='none' && !hasSearched && (
                   <div className="mt-10 text-center">
@@ -513,8 +537,14 @@ export default function SearchAppPage() {
                   <div className="mt-10 text-center text-sm text-muted-foreground">No saved companies yet.</div>
                 )}
 
-                {exploreTab!=='none' && exploreTab!=='saved' && (
-                  <div className="mt-10 text-center text-sm text-muted-foreground">Select a filter or run a search to populate.</div>
+                {exploreTab==='alerts' && (
+                  <AlertsPanel />
+                )}
+                {exploreTab==='trending' && (
+                  <div className="mt-10 text-center text-sm text-muted-foreground">Trending Companies will appear here.</div>
+                )}
+                {exploreTab==='new' && (
+                  <div className="mt-10 text-center text-sm text-muted-foreground">New Shippers (3–6M) will appear here.</div>
                 )}
 
                 {(hasSearched || exploreTab==='saved') && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'cards' && (
