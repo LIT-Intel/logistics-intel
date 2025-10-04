@@ -297,6 +297,7 @@ export default function SearchAppPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 50;
+  const [hasSearched, setHasSearched] = useState(false);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(()=>{
     try {
@@ -305,21 +306,7 @@ export default function SearchAppPage() {
     } catch { return new Set(); }
   });
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const payload = { q: null, limit: pageSize, offset: 0 } as const;
-        setLastPayload(payload);
-        setLastEndpoint('/public/searchCompanies');
-        console.log('[LIT] initial search → payload', payload);
-        const data = await searchCompanies(payload as any);
-        const arr = (data?.rows || data || []);
-        const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_id && r.company_name);
-        console.log('[LIT] initial search → rows', norm.length, norm.slice(0,2));
-        setRows(norm);
-      } catch {}
-    })();
-  }, []);
+  // Do not auto-load results. Wait for user to search.
 
   useEffect(() => {
     (async () => {
@@ -342,6 +329,7 @@ export default function SearchAppPage() {
       const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_id && r.company_name);
       console.log('[LIT] runSearch → rows', norm.length, norm.slice(0,2));
       setRows(norm);
+      setHasSearched(true);
     } catch (e) {
       console.error('[LIT] runSearch error', e);
     } finally {
@@ -481,17 +469,17 @@ export default function SearchAppPage() {
                   <div>Rows: <code>{rows?.length ?? 0}</code></div>
                 </div>
 
-                {rows.length === 0 && (
+                {!hasSearched && (
                   <div className="mt-10 text-center">
                     <div className="mx-auto w-fit rounded-2xl border p-8 bg-white/80 shadow-sm">
                       <Factory className="mx-auto mb-3 h-8 w-8 text-muted-foreground"/>
-                      <div className="font-medium">No companies match “{query}”.</div>
-                      <div className="text-sm text-muted-foreground">Try a broader term or clear filters.</div>
+                      <div className="font-medium">Start a search</div>
+                      <div className="text-sm text-muted-foreground">Enter a term above and press Search.</div>
                     </div>
                   </div>
                 )}
 
-                {rows.length > 0 && view === 'cards' && (
+                {hasSearched && rows.length > 0 && view === 'cards' && (
                   <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 items-stretch">
                     <AnimatePresence>
                       {rows.map((r: any) => (
@@ -501,7 +489,7 @@ export default function SearchAppPage() {
                   </div>
                 )}
 
-                {rows.length > 0 && view === 'list' && (
+                {hasSearched && rows.length > 0 && view === 'list' && (
                   <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden">
                     <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
                     <Table>
@@ -539,7 +527,7 @@ export default function SearchAppPage() {
                     </Table>
                   </div>
                 )}
-                {rows.length > 0 && (
+                {hasSearched && rows.length > 0 && (
                   <div className="mt-4 flex items-center justify-between">
                     <div className="text-xs text-slate-600">Page {page}</div>
                     <div className="flex gap-2">
