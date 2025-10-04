@@ -388,8 +388,8 @@ export default function SearchAppPage() {
 
   return (
     <TooltipProvider>
-      <div className="min-h-[90vh] w-full bg-slate-50">
-        <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="min-h-screen w-full bg-slate-50">
+        <div className="pl-[5px] pr-[5px] pt-[5px]">
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h1 className={brand.heading}>Search</h1>
