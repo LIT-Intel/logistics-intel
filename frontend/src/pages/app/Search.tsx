@@ -359,6 +359,14 @@ export default function SearchAppPage() {
     }
   }
 
+  // Reset view on mount to ensure no default cards render
+  useEffect(() => {
+    setRows([]);
+    setHasSearched(false);
+    setExploreTab('none');
+    setPage(1);
+  }, []);
+
   function normalizeRow(r: any) {
     const company_name = r.company_name || r.name || r.company || '';
     const company_id = r.company_id || r.id || null;
