@@ -481,7 +481,7 @@ export default function SearchAppPage() {
                   <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
                   <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
                 </div>
-                <div className="mt-3 flex items-center gap-2">
+                <div className="mt-3 mb-2 flex items-center gap-2">
                   <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
                   <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
                   {loading && <span className="text-xs text-muted-foreground">Searching…</span>}
@@ -534,14 +534,10 @@ export default function SearchAppPage() {
                 {exploreTab==='alerts' && (
                   <AlertsPanel />
                 )}
-                {exploreTab==='trending' && (
-                  <div className="mt-10 text-center text-sm text-muted-foreground">Trending Companies will appear here.</div>
-                )}
-                {exploreTab==='new' && (
-                  <div className="mt-10 text-center text-sm text-muted-foreground">New Shippers (3–6M) will appear here.</div>
-                )}
+                {exploreTab==='trending' && !hasSearched && rows.length === 0 && (<SearchEmpty state="idle"/>) }
+                {exploreTab==='new' && !hasSearched && rows.length === 0 && (<SearchEmpty state="idle"/>) }
 
-                {(hasSearched || exploreTab==='saved') && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'cards' && (
+                {hasSearched && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'cards' && (
                   <div className="mt-6">
                     <ResultsGrid rows={(exploreTab==='saved'? savedRows : rows)} renderCard={(r)=> (
                       <CompanyCard row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
@@ -549,7 +545,7 @@ export default function SearchAppPage() {
                   </div>
                 )}
 
-                {(hasSearched || exploreTab==='saved') && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'list' && (
+                {hasSearched && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'list' && (
                   <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden">
                     <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
                     <Table>
