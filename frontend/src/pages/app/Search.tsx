@@ -295,6 +295,8 @@ export default function SearchAppPage() {
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[] }>({ modes: [], origins: [], destinations: [] });
   const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]}>({ origin: [], dest: [], hs: [] });
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(()=>{
     try {
@@ -306,7 +308,7 @@ export default function SearchAppPage() {
   useEffect(() => {
     (async () => {
       try {
-        const payload = { q: null, limit: 24, offset: 0 } as const;
+        const payload = { q: null, limit: pageSize, offset: 0 } as const;
         setLastPayload(payload);
         setLastEndpoint('/public/searchCompanies');
         console.log('[LIT] initial search → payload', payload);
@@ -331,7 +333,7 @@ export default function SearchAppPage() {
   async function runSearch() {
     setLoading(true);
     try {
-      const payload = { q: (query?.trim() || null), origin: (filters.origin?.length ? filters.origin : null), dest: (filters.dest?.length ? filters.dest : null), hs: (filters.hs?.length ? filters.hs : null), limit: 24, offset: 0 };
+      const payload = { q: (query?.trim() || null), origin: (filters.origin?.length ? filters.origin : null), dest: (filters.dest?.length ? filters.dest : null), hs: (filters.hs?.length ? filters.hs : null), limit: pageSize, offset: (page-1)*pageSize };
       setLastPayload(payload);
       setLastEndpoint('/public/searchCompanies');
       console.log('[LIT] runSearch → payload', payload);
@@ -490,7 +492,7 @@ export default function SearchAppPage() {
                 )}
 
                 {rows.length > 0 && view === 'cards' && (
-                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 auto-rows-[280px]">
+                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 items-stretch">
                     <AnimatePresence>
                       {rows.map((r: any) => (
                         <CompanyCard key={r.company_id || r.company_name} row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
@@ -500,7 +502,7 @@ export default function SearchAppPage() {
                 )}
 
                 {rows.length > 0 && view === 'list' && (
-                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden">
+                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden">
                     <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
                     <Table>
                       <TableHeader className="bg-slate-50/80">
@@ -515,12 +517,12 @@ export default function SearchAppPage() {
                       </TableHeader>
                       <TableBody>
                         {rows.map((r: any) => (
-                          <TableRow key={r.company_id || r.company_name} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-purple-400 transition-colors">
+                          <TableRow key={r.company_id || r.company_name} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors">
                             <TableCell>
                               <div className="font-medium text-slate-900">{r.company_name}</div>
                               <div className="mt-1 flex flex-wrap gap-1">
                                 {(r.tags||[]).map((t: string, i: number) => (
-                                  <Badge key={i} variant="outline" className="rounded-full border-indigo-200 text-slate-600">{t}</Badge>
+                                  <Badge key={i} variant="secondary" className="rounded-full bg-indigo-50 border-indigo-200 text-slate-700">{t}</Badge>
                                 ))}
                               </div>
                             </TableCell>
@@ -535,6 +537,15 @@ export default function SearchAppPage() {
                         ))}
                       </TableBody>
                     </Table>
+                  </div>
+                )}
+                {rows.length > 0 && (
+                  <div className="mt-4 flex items-center justify-between">
+                    <div className="text-xs text-slate-600">Page {page}</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={()=> { setPage(p=> Math.max(1, p-1)); setTimeout(runSearch, 0); }}>Prev</Button>
+                      <Button size="sm" variant="outline" disabled={rows.length < pageSize || loading} onClick={()=> { setPage(p=> p+1); setTimeout(runSearch, 0); }}>Next</Button>
+                    </div>
                   </div>
                 )}
               </div>
