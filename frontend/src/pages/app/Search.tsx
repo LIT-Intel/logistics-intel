@@ -47,7 +47,7 @@ function SaveButton({ row }: { row: any }) {
           destsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.dest_country) : [],
           carriersTop: Array.isArray(row?.top_carriers) ? row.top_carriers.map((c: any)=> c.carrier) : [],
         };
-        const fresh = { id: cid, name: cname, kpis };
+        const fresh = { id: cid, name: cname, kpis, savedAt: Date.now() };
         localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
         window.dispatchEvent(new StorageEvent('storage', { key: lsKey } as any));
       }
@@ -97,6 +97,9 @@ function CarrierPill({ c, n }: { c: string; n: number }) {
 
 function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
+  const isSaved = (() => {
+    try { return new Set(JSON.parse(localStorage.getItem('lit_companies')||'[]').map((c:any)=> String(c?.id||''))).has(String(row?.company_id||'')); } catch { return false; }
+  })();
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
       <Card className="group transition-shadow rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm hover:shadow-md min-h-[260px] flex flex-col">
@@ -109,6 +112,9 @@ function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
               {(row.tags||[]).map((t: string, i: number) => (
                 <Badge key={i} variant="outline" className={cn(brand.chip, 'border-indigo-200 text-slate-600')}>{t}</Badge>
               ))}
+              {isSaved && (
+                <Badge variant="secondary" className="rounded-full bg-emerald-50 border-emerald-200 text-emerald-700">Saved</Badge>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
