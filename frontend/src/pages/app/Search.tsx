@@ -537,7 +537,10 @@ export default function SearchAppPage() {
                 {exploreTab==='trending' && !hasSearched && rows.length === 0 && (<SearchEmpty state="idle"/>) }
                 {exploreTab==='new' && !hasSearched && rows.length === 0 && (<SearchEmpty state="idle"/>) }
 
-                {hasSearched && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'cards' && (
+                {(
+                  (exploreTab==='none' && hasSearched && rows.length>0) ||
+                  (exploreTab==='saved' && savedRows.length>0)
+                ) && view === 'cards' && (
                   <div className="mt-6">
                     <ResultsGrid rows={(exploreTab==='saved'? savedRows : rows)} renderCard={(r)=> (
                       <CompanyCard row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
@@ -545,7 +548,10 @@ export default function SearchAppPage() {
                   </div>
                 )}
 
-                {hasSearched && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'list' && (
+                {(
+                  (exploreTab==='none' && hasSearched && rows.length>0) ||
+                  (exploreTab==='saved' && savedRows.length>0)
+                ) && view === 'list' && (
                   <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden">
                     <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
                     <Table>
@@ -583,7 +589,10 @@ export default function SearchAppPage() {
                     </Table>
                   </div>
                 )}
-                {(hasSearched || exploreTab==='saved') && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && (
+                {(
+                  (exploreTab==='none' && hasSearched && rows.length>0) ||
+                  (exploreTab==='saved' && savedRows.length>0)
+                ) && (
                   <div className="mt-4 flex items-center justify-between">
                     <div className="text-xs text-slate-600">Page {page}</div>
                     <div className="flex gap-2">
@@ -592,7 +601,7 @@ export default function SearchAppPage() {
                     </div>
                   </div>
                 )}
-                {hasSearched && rows.length === 0 && (<SearchEmpty state="no-results"/>)}
+                {exploreTab==='none' && hasSearched && rows.length === 0 && (<SearchEmpty state="no-results"/>)}
               </div>
             </main>
           </div>
