@@ -1,6 +1,5 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import CompanyCard from '@/pages/app/Search'; // will use exported CompanyCard type via props if needed
 
 export default function ResultsGrid({ rows, renderCard }: { rows: any[]; renderCard: (row:any)=>React.ReactNode }) {
   return (
