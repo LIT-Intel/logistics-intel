@@ -14,6 +14,8 @@ import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPi
 import { motion, AnimatePresence } from 'framer-motion';
 import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
 import { InlineFilters } from '@/components/search/InlineFilters';
+import SearchEmpty from '@/components/SearchEmpty';
+import ResultsGrid from '@/components/ResultsGrid';
 import { getFilterOptions, saveCompanyToCrm } from '@/lib/api';
 
 const brand = {
@@ -523,15 +525,7 @@ export default function SearchAppPage() {
                 <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
                 {/* Debug removed for production */}
 
-                {exploreTab==='none' && !hasSearched && (
-                  <div className="mt-10 text-center">
-                    <div className="mx-auto w-fit rounded-2xl border p-8 bg-white/80 shadow-sm">
-                      <Factory className="mx-auto mb-3 h-8 w-8 text-muted-foreground"/>
-                      <div className="font-medium">Start a search</div>
-                      <div className="text-sm text-muted-foreground">Enter a term above and press Search.</div>
-                    </div>
-                  </div>
-                )}
+                {exploreTab==='none' && !hasSearched && (<SearchEmpty state="idle"/>)}
 
                 {exploreTab==='saved' && savedRows.length === 0 && (
                   <div className="mt-10 text-center text-sm text-muted-foreground">No saved companies yet.</div>
@@ -548,12 +542,10 @@ export default function SearchAppPage() {
                 )}
 
                 {(hasSearched || exploreTab==='saved') && ( (exploreTab==='saved' ? savedRows : rows).length > 0 ) && view === 'cards' && (
-                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-5 items-stretch">
-                    <AnimatePresence>
-                      {(exploreTab==='saved' ? savedRows : rows).map((r: any) => (
-                        <CompanyCard key={r.company_id || r.company_name} row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
-                      ))}
-                    </AnimatePresence>
+                  <div className="mt-6">
+                    <ResultsGrid rows={(exploreTab==='saved'? savedRows : rows)} renderCard={(r)=> (
+                      <CompanyCard row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
+                    )} />
                   </div>
                 )}
 
@@ -604,6 +596,7 @@ export default function SearchAppPage() {
                     </div>
                   </div>
                 )}
+                {hasSearched && rows.length === 0 && (<SearchEmpty state="no-results"/>)}
               </div>
             </main>
           </div>
