@@ -1,27 +1,13 @@
 {
   "version": 2,
+  "env": {
+    "VITE_API_BASE": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev"
+  },
   "buildCommand": "cd frontend && npm ci && npm run build",
   "outputDirectory": "frontend/dist",
-  "rewrites": [
-    { "source": "/api/public/(.*)", "destination": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev/public/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}
-
-{
-  "version": 2,
-  "env": {
-    "VITE_API_BASE": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev"
-  },
-  "builds": [
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
-    }
-  ],
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
 
