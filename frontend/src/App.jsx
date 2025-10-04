@@ -55,9 +55,13 @@ export default function App() {
             </Layout>
           }
         />
-        {/* Public Search routes (Base44 UI on GCP) */}
-        {/* Remove public search to avoid opening outside shell */}
-        <Route path="/company/:id" element={<CompanyDrawerRoute />} />
+        {/* Public Company route → use full Company page for consistency */}
+        <Route
+          path="/company/:id"
+          element={
+            <Layout currentPageName="Company"><Company /></Layout>
+          }
+        />
         {/* Public demo page */}
         <Route
           path="/demo"
