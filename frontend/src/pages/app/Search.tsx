@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory, Bell, Bookmark } from 'lucide-react';
+import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory, Bell, Bookmark, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
 import { InlineFilters } from '@/components/search/InlineFilters';
@@ -452,7 +452,7 @@ export default function SearchAppPage() {
                     <TrendingUp className="h-4 w-4 text-indigo-600"/> Trending Companies
                   </button>
                   <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='new'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('new'); setHasSearched(false); }}>
-                    <SparklesIcon/> New Shippers (3–6M)
+                    <Sparkles className="h-4 w-4 text-indigo-600"/> New Shippers (3–6M)
                   </button>
                   <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='saved'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('saved'); loadSavedCompanies(); }}>
                     <Bookmark className="h-4 w-4 text-indigo-600"/> Saved Companies
