@@ -2,17 +2,18 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import OverviewTab from "@/components/search/detail_tabs/OverviewTab";
-import ShipmentsTab from "@/components/search/detail_tabs/ShipmentsTab";
-import ContactsTab from "@/components/search/detail_tabs/ContactsTab";
-import EnrichmentTab from "@/components/search/detail_tabs/EnrichmentTab";
-import NotesTab from "@/components/search/detail_tabs/NotesTab";
+import { Card, CardContent } from "@/components/ui/card";
 import { Contact, Note } from "@/api/entities";
 import { postSearchCompanies, getCompanyShipments, enrichCompany, recallCompany } from "@/lib/api";
-import LitPageHeader from "../components/ui/LitPageHeader";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
 import { ingestWorkbook } from "@/lib/rfp/ingest";
+import CompanyHeader from "@/components/company/CompanyHeader";
+import CompanyFirmographics from "@/components/company/CompanyFirmographics";
+import FeaturedContact from "@/components/company/FeaturedContact";
+import ContactsList from "@/components/company/ContactsList";
+import RfpPanel from "@/components/company/RfpPanel";
+import PreCallPanel from "@/components/company/PreCallPanel";
 
 export default function Company() {
   const { id } = useParams();
@@ -159,39 +160,51 @@ export default function Company() {
   return (
     <div className="relative px-2 md:px-5 py-3">
       <LitWatermark />
-      <LitPageHeader title={summary?.company_name || 'Company'}>
-        <div className="flex items-center gap-2">
-          <Button
-            className="bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700"
-            onClick={() => { window.location.href = `/app/pre-call?company_id=${companyId}`; }}
-          >
-            Pre-Call Briefing
-          </Button>
-          <Button size="sm" onClick={handleEnrich} disabled={isEnriching} className="bg-purple-600 hover:bg-purple-700 text-white">
-            {isEnriching ? 'Enriching…' : 'Enrich Now'}
-          </Button>
-          <Button size="sm" onClick={handleRecall} className="bg-indigo-600 hover:bg-indigo-700 text-white">Recall</Button>
-        </div>
-      </LitPageHeader>
+      {summary && (
+        <CompanyHeader
+          company={{ id: String(companyId), name: summary?.company_name || 'Company', confidence: 0.86 }}
+          onEnrichCompany={handleEnrich}
+          onEnrichContacts={handleEnrich}
+          loading={isEnriching ? 'company' : null}
+        />
+      )}
 
       <LitPanel>
         <Tabs defaultValue="overview" className="w-full">
           <div className="px-4 pt-4 border-b">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="shipments">Shipments</TabsTrigger>
+              <TabsTrigger value="precall">Pre-Call</TabsTrigger>
               <TabsTrigger value="contacts">Contacts</TabsTrigger>
-              <TabsTrigger value="ai_insights">AI Insights</TabsTrigger>
-              <TabsTrigger value="notes">Notes</TabsTrigger>
+              <TabsTrigger value="shipments">Shipments</TabsTrigger>
+              <TabsTrigger value="rfp">RFP</TabsTrigger>
             </TabsList>
           </div>
           <div className="p-4">
-            <TabsContent value="overview">
-              <OverviewTab company={company} shipments={shipments} isLoading={isLoading} />
+            <TabsContent value="overview" className="space-y-4">
+              {Array.isArray(contacts) && contacts.find(c => c.isPrimary) && (
+                <FeaturedContact c={contacts.find(c => c.isPrimary)} onSetPrimary={(id)=> setContacts(prev=> prev.map(c=> ({...c, isPrimary: c.id===id})))} />
+              )}
+              <div className="grid gap-4 md:grid-cols-2">
+                <CompanyFirmographics company={{ id: String(companyId), name: summary?.company_name || 'Company' }} />
+                <RfpPanel primary={(Array.isArray(contacts) && contacts.find(c => c.isPrimary)) || undefined} />
+              </div>
+              <ContactsList rows={contacts} onSelect={()=>{}} onSetPrimary={(id)=> setContacts(prev=> prev.map(c=> ({...c, isPrimary: c.id===id})))} />
             </TabsContent>
 
-            <TabsContent value="shipments">
-              <ShipmentsTab shipments={shipments} isLoading={isLoading} />
+            <TabsContent value="precall" className="space-y-4">
+              <PreCallPanel company={{ id: String(companyId), name: summary?.company_name || 'Company' }} />
+            </TabsContent>
+
+            <TabsContent value="contacts" className="space-y-4">
+              <ContactsList rows={contacts} onSelect={()=>{}} onSetPrimary={(id)=> setContacts(prev=> prev.map(c=> ({...c, isPrimary: c.id===id})))} />
+              <CompanyFirmographics company={{ id: String(companyId), name: summary?.company_name || 'Company' }} />
+            </TabsContent>
+
+            <TabsContent value="shipments" className="space-y-4">
+              <Card className="rounded-2xl border shadow-sm">
+                <CardContent className="p-6 text-sm text-muted-foreground">Shipments table placeholder. (Wire to /public/getCompanyShipments)</CardContent>
+              </Card>
 
               <LitPanel title="Upload Lanes (RFP Data)">
                 <div className="flex items-center gap-2 mb-3">
@@ -275,27 +288,9 @@ export default function Company() {
               )}
             </TabsContent>
 
-            <TabsContent value="contacts">
-              <ContactsTab contacts={contacts} companyId={companyId} company={company} onAddContact={handleAddContact} isGated={false} onUnlock={() => {}} isLoading={false} />
-            </TabsContent>
-
-            <TabsContent value="ai_insights">
-              <EnrichmentTab company={company || { id: companyId }} onCompanyUpdate={setCompany} user={null} isGated={false} onUnlock={() => {}} isLoading={false} onEnrich={handleEnrich} isEnriching={isEnriching} />
-              {recall && (
-                <div className="mt-6">
-                  <h3 className="text-lg font-semibold">AI Recall</h3>
-                  <p className="mt-2 text_sm whitespace-pre-wrap">{recall.summary}</p>
-                  <ul className="list-disc pl-5 mt-2">
-                    {(recall.bullets || []).map((b, i) => (
-                      <li key={i} className="text-sm">{b}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="notes">
-              <NotesTab notes={notes} onAddNote={handleAddNote} isLoading={isLoading} />
+            <TabsContent value="rfp" className="space-y-4">
+              <RfpPanel primary={(Array.isArray(contacts) && contacts.find(c => c.isPrimary)) || undefined} />
+              <div className="text-sm text-muted-foreground">Assign this contact to the active campaign or RFP. Add sequencing later.</div>
             </TabsContent>
           </div>
         </Tabs>
