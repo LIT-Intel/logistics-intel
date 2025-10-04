@@ -403,69 +403,142 @@ export default function SearchAppPage() {
             </div>
             <div />
           </div>
+          <div className="w-full flex gap-[5px]">
+            <aside className="hidden md:block w-[320px] shrink-0">
+              <div className="rounded-2xl border border-slate-200 bg-white/95 p-3">
+                <div className="text-sm font-semibold text-slate-900 mb-2">Explore</div>
+                <div className="space-y-2">
+                  <button className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 border">Trending Companies</button>
+                  <button className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 border">New Shippers (3–6M)</button>
+                  <button className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 border">Saved Companies</button>
+                  <button className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 border">Alerts</button>
+                </div>
+              </div>
+            </aside>
+            <main className="flex-1 min-w-0">
+              <div className="relative">
+                <div className="flex items-center gap-2">
+                  <div className="relative w-full max-w-2xl">
+                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
+                    <Input
+                      placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
+                      className="pl-9 rounded-xl bg-white/90 h-12 text-base"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
+                    />
+                  </div>
+                  <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+                  <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
+                  <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
+                  {loading && <span className="text-xs text-muted-foreground">Searching…</span>}
+                </div>
+                {filtersOpen && (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white/95 shadow-sm p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <div className="text-sm font-medium mb-2">Origin</div>
+                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                          {opts.origins.map((o) => {
+                            const isOn = filters.origin.includes(o);
+                            return (
+                              <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, origin: isOn ? prev.origin.filter(x=>x!==o) : [...prev.origin, o] }))}>{o}</Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium mb-2">Destination</div>
+                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                          {opts.destinations.map((d) => {
+                            const isOn = filters.dest.includes(d);
+                            return (
+                              <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, dest: isOn ? prev.dest.filter(x=>x!==d) : [...prev.dest, d] }))}>{d}</Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium mb-2">HS Codes</div>
+                        <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setFilters(prev=> ({ ...prev, hs: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
+                      </div>
+                    </div>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [] }); }}>Clear</Button>
+                      <Button onClick={() => { runSearch(); }}>Apply</Button>
+                    </div>
+                  </div>
+                )}
+                <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
+                <div className="mt-1 text-[11px] text-muted-foreground select-text">
+                  <div>Endpoint: <code>{lastEndpoint}</code></div>
+                  <div>Payload: <code>{JSON.stringify(lastPayload)}</code></div>
+                  <div>Rows: <code>{rows?.length ?? 0}</code></div>
+                </div>
 
-          <div className="relative">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
-                <Input
-                  placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
-                  className="pl-9 rounded-xl bg-white/90 h-12 text-base"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
-                />
-              </div>
-              <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
-              <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
-              <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
-              {loading && <span className="text-xs text-muted-foreground">Searching…</span>}
-            </div>
-            {filtersOpen && (
-              <div className="mt-3 rounded-2xl border border-slate-200 bg-white/95 shadow-sm p-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <div className="text-sm font-medium mb-2">Origin</div>
-                    <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                      {opts.origins.map((o) => {
-                        const isOn = filters.origin.includes(o);
-                        return (
-                          <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, origin: isOn ? prev.origin.filter(x=>x!==o) : [...prev.origin, o] }))}>{o}</Button>
-                        );
-                      })}
+                {rows.length === 0 && (
+                  <div className="mt-10 text-center">
+                    <div className="mx-auto w-fit rounded-2xl border p-8 bg-white/80 shadow-sm">
+                      <Factory className="mx-auto mb-3 h-8 w-8 text-muted-foreground"/>
+                      <div className="font-medium">No companies match “{query}”.</div>
+                      <div className="text-sm text-muted-foreground">Try a broader term or clear filters.</div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-sm font-medium mb-2">Destination</div>
-                    <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                      {opts.destinations.map((d) => {
-                        const isOn = filters.dest.includes(d);
-                        return (
-                          <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, dest: isOn ? prev.dest.filter(x=>x!==d) : [...prev.dest, d] }))}>{d}</Button>
-                        );
-                      })}
-                    </div>
+                )}
+
+                {rows.length > 0 && view === 'cards' && (
+                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 auto-rows-[280px]">
+                    <AnimatePresence>
+                      {rows.map((r: any) => (
+                        <CompanyCard key={r.company_id || r.company_name} row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
+                      ))}
+                    </AnimatePresence>
                   </div>
-                  <div>
-                    <div className="text-sm font-medium mb-2">HS Codes</div>
-                    <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setFilters(prev=> ({ ...prev, hs: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
+                )}
+
+                {rows.length > 0 && view === 'list' && (
+                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden">
+                    <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
+                    <Table>
+                      <TableHeader className="bg-slate-50/80">
+                        <TableRow>
+                          <TableHead className="w-[34%] text-slate-700">Company</TableHead>
+                          <TableHead className="w-[12%] text-slate-700">Shipments (12m)</TableHead>
+                          <TableHead className="w-[18%] text-slate-700">Last Activity</TableHead>
+                          <TableHead className="w-[18%] text-slate-700">Top Routes</TableHead>
+                          <TableHead className="w-[18%] text-slate-700">Top Carrier</TableHead>
+                          <TableHead className="w-[10%] text-slate-700 text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rows.map((r: any) => (
+                          <TableRow key={r.company_id || r.company_name} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-purple-400 transition-colors">
+                            <TableCell>
+                              <div className="font-medium text-slate-900">{r.company_name}</div>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {(r.tags||[]).map((t: string, i: number) => (
+                                  <Badge key={i} variant="outline" className="rounded-full border-indigo-200 text-slate-600">{t}</Badge>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell>{r.shipments_12m ?? '—'}</TableCell>
+                            <TableCell>{r.last_activity ?? '—'}</TableCell>
+                            <TableCell>{r.top_routes?.[0] ? `${r.top_routes[0].origin_country} → ${r.top_routes[0].dest_country} (${r.top_routes[0].cnt})` : '—'}</TableCell>
+                            <TableCell>{r.top_carriers?.[0]?.carrier ?? '—'}</TableCell>
+                            <TableCell className="text-right">
+                              <SaveButton row={r} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
-                </div>
-                <div className="mt-3 flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [] }); }}>Clear</Button>
-                  <Button onClick={() => { runSearch(); }}>Apply</Button>
-                </div>
+                )}
               </div>
-            )}
-            <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
-            <div className="mt-1 text-[11px] text-muted-foreground select-text">
-              <div>Endpoint: <code>{lastEndpoint}</code></div>
-              <div>Payload: <code>{JSON.stringify(lastPayload)}</code></div>
-              <div>Rows: <code>{rows?.length ?? 0}</code></div>
-            </div>
+            </main>
           </div>
 
           {rows.length === 0 && (
