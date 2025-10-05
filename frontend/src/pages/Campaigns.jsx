@@ -64,7 +64,7 @@ export default function CampaignsPage() {
         setHasAccess(true);
         // Load campaigns via Gateway
         try {
-          const resp = await api.get('/public/campaigns');
+          const resp = await api.get('/crm/campaigns');
           setCampaigns(asArray(resp));
           setDebugInfo(prev => prev + `\nLoaded ${asArray(resp).length} campaigns.`);
         } catch (campaignError) {
@@ -115,7 +115,7 @@ export default function CampaignsPage() {
     setEditingCampaign(null);
     setIsLoading(true); // Indicate loading while re-fetching campaigns
     try {
-      const resp = await api.get('/public/campaigns');
+      const resp = await api.get('/crm/campaigns');
       setCampaigns(asArray(resp));
       setError(null);
     } catch (_e) {
