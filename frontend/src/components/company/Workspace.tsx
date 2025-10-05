@@ -328,7 +328,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 </div>
               </div>
               <div className='mt-4'>
-                <Tabs tabs={["Overview", "Pre-Call", "Shipments", "Contacts", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
+                <Tabs tabs={["Overview", "Pre-Call", "Contacts", "Shipments", "RFP", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
@@ -617,6 +617,14 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                         <ul className='text-sm list-disc pl-4'>{events.slice(0,10).map((e:any,i:number)=>(<li key={i}>{e.title || e.summary || 'Event'}</li>))}</ul>
                       )}
                     </div>
+                  </div>
+                )}
+                {!loading && !error && tab === 'RFP' && (
+                  <div className='mt-3'>
+                    <RfpPanel primary={contacts.find(c=> c.isPrimary) || undefined} onAddCampaign={async()=>{
+                      try { await saveCampaign({ name: `${overview?.name||'Company'} — Outreach`, channel: 'email', company_ids: [String(activeId)] }); alert('Added to Campaigns'); } catch(e:any){ alert('Failed: '+ String(e?.message||e)); }
+                    }} />
+                    <div className='mt-4 text-sm text-slate-600'>Assign this contact to the active campaign or RFP. Add sequencing later.</div>
                   </div>
                 )}
                 {!loading && !error && tab === 'Campaigns' && (

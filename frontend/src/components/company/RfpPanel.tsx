@@ -10,13 +10,13 @@ function Avatar({ name }: { name: string }) {
   return <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-sm"><span className="text-base font-semibold">{initials}</span></div>;
 }
 
-export default function RfpPanel({ primary }: { primary?: ContactCore }){
+export default function RfpPanel({ primary, onAddCampaign }: { primary?: ContactCore; onAddCampaign?: () => void }){
   return (
     <Card className="rounded-2xl border shadow-sm">
       <CardContent className="p-5">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-medium">RFP Contact</div>
-          <Button variant="outline"><UserPlus className="mr-2 h-4 w-4"/>Add to Campaign</Button>
+          <Button variant="outline" onClick={onAddCampaign}><UserPlus className="mr-2 h-4 w-4"/>Add to Campaign</Button>
         </div>
         {primary ? (
           <div className="flex items-center gap-4">
