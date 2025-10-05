@@ -306,8 +306,8 @@ export default function SearchAppPage() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<any | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[] }>({ modes: [], origins: [], destinations: [] });
-  const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]}>({ origin: [], dest: [], hs: [] });
+  const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[]; carriers: string[] }>({ modes: [], origins: [], destinations: [], carriers: [] });
+  const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]; mode:string[]; carrier:string[]}>({ origin: [], dest: [], hs: [], mode: [], carrier: [] });
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 50;
@@ -328,7 +328,7 @@ export default function SearchAppPage() {
     (async () => {
       try {
         const fo = await getFilterOptions();
-        setOpts({ modes: fo.modes || [], origins: fo.origins || [], destinations: fo.destinations || [] });
+        setOpts({ modes: fo.modes || [], origins: fo.origins || [], destinations: fo.destinations || [], carriers: fo.carriers || [] });
       } catch {}
     })();
   }, []);
@@ -336,7 +336,16 @@ export default function SearchAppPage() {
   async function runSearch() {
     setLoading(true);
     try {
-      const payload = { q: (query?.trim() || null), origin: (filters.origin?.length ? filters.origin : null), dest: (filters.dest?.length ? filters.dest : null), hs: (filters.hs?.length ? filters.hs : null), limit: pageSize, offset: (page-1)*pageSize };
+      const payload = {
+        q: (query?.trim() || ''),
+        origin: filters.origin,
+        dest: filters.dest,
+        hs: filters.hs,
+        mode: filters.mode,
+        carrier: filters.carrier,
+        limit: pageSize,
+        offset: (page-1)*pageSize
+      };
       setLastPayload(payload);
       setLastEndpoint('/public/searchCompanies');
       console.log('[LIT] runSearch → payload', payload);
@@ -483,7 +492,7 @@ export default function SearchAppPage() {
                 </div>
                 {filtersOpen && (
                   <div className="mt-3 rounded-2xl border border-slate-200 bg-white/95 shadow-sm p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                       <div>
                         <div className="text-sm font-medium mb-2">Origin</div>
                         <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
@@ -507,12 +516,34 @@ export default function SearchAppPage() {
                         </div>
                       </div>
                       <div>
+                        <div className="text-sm font-medium mb-2">Mode</div>
+                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                          {opts.modes.map((m) => {
+                            const isOn = filters.mode.includes(m);
+                            return (
+                              <Button key={m} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, mode: isOn ? prev.mode.filter(x=>x!==m) : [...prev.mode, m] }))}>{m}</Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium mb-2">Carrier</div>
+                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                          {opts.carriers.map((c) => {
+                            const isOn = filters.carrier.includes(c);
+                            return (
+                              <Button key={c} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, carrier: isOn ? prev.carrier.filter(x=>x!==c) : [...prev.carrier, c] }))}>{c}</Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
                         <div className="text-sm font-medium mb-2">HS Codes</div>
                         <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setFilters(prev=> ({ ...prev, hs: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
                       </div>
                     </div>
                     <div className="mt-3 flex justify-end gap-2">
-                      <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [] }); }}>Clear</Button>
+                      <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [], mode: [], carrier: [] }); }}>Clear</Button>
                       <Button onClick={() => { runSearch(); }}>Apply</Button>
                     </div>
                   </div>
