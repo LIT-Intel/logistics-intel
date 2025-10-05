@@ -164,7 +164,16 @@ export async function recallCompany(payload: { company_id: string; questions?: s
 }
 
 export async function enrichContacts(company_id: string) {
-  return api.post(`/crm/contacts.enrich`, { company_id });
+  const res = await fetch(`${GW}/crm/contacts.enrich`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    body: JSON.stringify({ company_id })
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(()=> '');
+    throw new Error(`contacts.enrich ${res.status} ${t}`);
+  }
+  return res.json();
 }
 
 export async function listContacts(company_id: string, dept?: string) {
