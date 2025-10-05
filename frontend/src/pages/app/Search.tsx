@@ -111,14 +111,7 @@ function RoutePill({ o, d, n }: { o: string; d: string; n: number }) {
   );
 }
 
-function CarrierPill({ c, n }: { c: string; n: number }) {
-  return (
-    <Badge variant="outline" className={cn(brand.chip, 'px-3 py-1 font-medium border-indigo-200')}>
-      <span className="inline-flex items-center gap-1"><Package className="h-3.5 w-3.5 text-purple-600" />{c}</span>
-      <span className="ml-2 text-muted-foreground">{n}</span>
-    </Badge>
-  );
-}
+// Top carriers chip removed in favor of emphasizing destinations
 
 function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
@@ -151,7 +144,7 @@ function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
           <div className="grid grid-cols-3 gap-4">
             <KPI value={row.shipments_12m} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
             <KPI value={row.last_activity ?? '—'} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
-            <KPI value={row.top_carriers?.[0]?.carrier ?? '—'} label="Top carrier" icon={<Package className={brand.kpiIcon} />} />
+            <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
           </div>
           <Separator className="my-4" />
           <div className="mt-auto">
@@ -160,11 +153,7 @@ function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
                 <RoutePill key={i} o={r.origin_country} d={r.dest_country} n={r.cnt} />
               )) : (<span className="text-sm text-muted-foreground">No route data yet</span>)}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {row.top_carriers?.length ? row.top_carriers.map((c: any, i: number) => (
-                <CarrierPill key={i} c={c.carrier} n={c.cnt} />
-              )) : null}
-            </div>
+            {/* Top carriers removed */}
           </div>
         </CardContent>
       </Card>
@@ -219,7 +208,7 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   <KPI value={row.shipments_12m} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
                   <KPI value={row.last_activity ?? '—'} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
-                  <KPI value={row.top_carriers?.[0]?.carrier ?? '—'} label="Top carrier" icon={<Package className={brand.kpiIcon} />} />
+                  <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
                 </div>
                 <Separator className="my-4" />
                 <div>
@@ -354,8 +343,14 @@ export default function SearchAppPage() {
       const data = await searchCompanies(payload);
       const arr = (data?.rows || data || []);
       const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_id && r.company_name);
-      console.log('[LIT] runSearch → rows', norm.length, norm.slice(0,2));
-      setRows(norm);
+      const seen = new Set<string>();
+      const deduped: any[] = [];
+      for (const r of norm) {
+        const k = r.company_id ? `id:${r.company_id}` : `name:${String(r.company_name||'').toLowerCase()}`;
+        if (!seen.has(k)) { seen.add(k); deduped.push(r); }
+      }
+      console.log('[LIT] runSearch → rows', deduped.length, deduped.slice(0,2));
+      setRows(deduped);
       setHasSearched(true);
       setExploreTab('none');
     } catch (e) {
@@ -561,7 +556,7 @@ export default function SearchAppPage() {
                           <TableHead className="w-[12%] text-slate-700">Shipments (12m)</TableHead>
                           <TableHead className="w-[18%] text-slate-700">Last Activity</TableHead>
                           <TableHead className="w-[18%] text-slate-700">Top Routes</TableHead>
-                          <TableHead className="w-[18%] text-slate-700">Top Carrier</TableHead>
+                          <TableHead className="w-[18%] text-slate-700">Top Destination</TableHead>
                           <TableHead className="w-[10%] text-slate-700 text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -579,7 +574,7 @@ export default function SearchAppPage() {
                             <TableCell>{r.shipments_12m ?? '—'}</TableCell>
                             <TableCell>{r.last_activity ?? '—'}</TableCell>
                             <TableCell>{r.top_routes?.[0] ? `${r.top_routes[0].origin_country} → ${r.top_routes[0].dest_country} (${r.top_routes[0].cnt})` : '—'}</TableCell>
-                            <TableCell>{r.top_carriers?.[0]?.carrier ?? '—'}</TableCell>
+                            <TableCell>{r.top_routes?.[0]?.dest_country ?? '—'}</TableCell>
                             <TableCell className="text-right">
                               <SaveButton row={r} />
                             </TableCell>
