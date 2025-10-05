@@ -118,6 +118,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   const [threads, setThreads] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
+  const primaryContact = useMemo(() => contacts.find((c: any) => c.isPrimary || c.is_primary), [contacts]);
   const [campaignName, setCampaignName] = useState('Follow-up Campaign');
   const [campaignChannel, setCampaignChannel] = useState<'email' | 'linkedin'>('email');
 
@@ -332,94 +333,17 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
-                  <div className='mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-7'>
-                    {/* Bio */}
-                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Company Bio</h3>
-                      <div className='text-[16px] font-extrabold text-slate-900 mb-2'>{overview.name}</div>
-                      <div className='text-sm text-slate-700 whitespace-pre-wrap'>{overview.ai?.summary || 'Bio coming soon.'}</div>
+                  <div className='mt-3 space-y-4'>
+                    {primaryContact && (
+                      <FeaturedContact c={primaryContact} onSetPrimary={(id)=> setContacts(prev=> prev.map((c:any)=> ({...c, is_primary: String(c.id)===String(id), isPrimary: String(c.id)===String(id)})))} />
+                    )}
+                    <div className='grid gap-4 md:grid-cols-2'>
+                      <CompanyFirmographics company={{ id: String(activeId), name: overview.name }} />
+                      <RfpPanel primary={primaryContact || undefined} onAddCampaign={async()=>{
+                        try { await saveCampaign({ name: `${overview?.name||'Company'} — Outreach`, channel: 'email', company_ids: [String(activeId)] }); alert('Added to Campaigns'); } catch(e:any){ alert('Failed: '+ String(e?.message||e)); }
+                      }} />
                     </div>
-                    {/* Products */}
-                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Products</h3>
-                      <ul className='space-y-2 text-sm text-slate-700'>
-                        {((overview as any)?.products && Array.isArray((overview as any).products) && (overview as any).products.length > 0
-                          ? (overview as any).products
-                          : ['Product A', 'Product B', 'Product C']
-                        ).map((p: string, i: number) => (
-                          <li key={i} className='flex items-center gap-2'>
-                            <PackageIcon className='h-4 w-4 text-slate-500' />
-                            <span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    {/* Tradelanes */}
-                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Top Destinations</h3>
-                      <ul className='text-sm list-disc pl-5'>
-                        {(overview.kpis?.destsTop||[]).slice(0,5).map((d:string,i:number)=> (
-                          <li key={i}>{d}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    {/* News */}
-                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Latest News</h3>
-                      <div className='text-sm text-slate-700'>Coming soon.</div>
-                    </div>
-                    {/* LinkedIn */}
-                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>LinkedIn</h3>
-                      <a className='text-blue-600 underline text-sm' href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(overview.name)}`} target='_blank' rel='noreferrer'>Search profile</a>
-                    </div>
-                    {/* Growth */}
-                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-2'>Historical Growth</h3>
-                      <div className='text-sm text-slate-700'>Integrations for charts and financials to follow.</div>
-                    </div>
-                    {/* Spend */}
-                    <div className='rounded-2xl border bg-white p-5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]'>
-                      <h3 className='text-sm font-semibold text-slate-800 mb-3'>Logistics Spend Estimator</h3>
-                      <div className='grid grid-cols-1 md:grid-cols-3 gap-4 text-sm'>
-                        <div className='rounded-lg border p-4 bg-white/95'>
-                          <div className='text-slate-500'>Shipments (12M)</div>
-                          <div className='text-lg font-bold text-slate-900'>{Number(overview.kpis?.shipments12m||0).toLocaleString()}</div>
-                        </div>
-                        <div className='rounded-lg border p-4 bg-white/95'>
-                          <div className='text-slate-500'>Est. Ocean Spend</div>
-                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'ocean').toLocaleString()}</div>
-                        </div>
-                        <div className='rounded-lg border p-4 bg-white/95'>
-                          <div className='text-slate-500'>Est. Air Spend</div>
-                          <div className='text-lg font-bold text-slate-900'>${estimateSpend(overview.kpis?.shipments12m||0,'air').toLocaleString()}</div>
-                        </div>
-                      </div>
-                      <div className='mt-3 text-xs text-slate-500'>Benchmarks assumed: Ocean $1,200/TEU-equivalent; Air $2.50/kg-equivalent. Replace with live market rates in Phase 2.</div>
-                      <div className='mt-3 flex gap-2'>
-                        <button className='px-3 py-1.5 rounded border text-xs bg-gradient-to-r from-blue-600 to-violet-600 text-white' onClick={() => {
-                          // Add to RFP using universal company id/name
-                          try {
-                            const key = 'lit_rfps';
-                            const raw = localStorage.getItem(key);
-                            const arr = raw ? JSON.parse(raw) : [];
-                            const exists = Array.isArray(arr) && arr.some((r:any)=> String(r?.companyId) === String(activeId));
-                            const name = overview?.name || 'Company';
-                            if (!exists) {
-                              const id = 'rfp_'+Math.random().toString(36).slice(2,8);
-                              const rec = { id, name: `${name} — Opportunity`, client: name, companyId: String(activeId), status:'Draft', due:'TBD' };
-                              localStorage.setItem(key, JSON.stringify([rec, ...arr]));
-                              alert('Added to RFP');
-                            } else {
-                              alert('Already in RFP');
-                            }
-                          } catch { alert('Failed to add to RFP'); }
-                        }}>Add to RFP</button>
-                        <button className='px-3 py-1.5 rounded border text-xs bg-gradient-to-r from-blue-600 to-violet-600 text-white' onClick={async()=>{
-                          try { await saveCampaign({ name: `${overview?.name||'Company'} — Outreach`, channel: 'email', company_ids: [String(activeId)] }); alert('Added to Campaigns'); } catch(e:any){ alert('Failed: '+ String(e?.message||e)); }
-                        }}>Add to Campaign</button>
-                      </div>
-                    </div>
+                    <ContactsList rows={contacts as any} onSelect={()=>{}} onSetPrimary={(id)=> setContacts(prev=> prev.map((c:any)=> ({...c, is_primary: String(c.id)===String(id), isPrimary: String(c.id)===String(id)})))} />
                   </div>
                 )}
                 {!loading && !error && tab === 'Pre-Call' && overview && (
