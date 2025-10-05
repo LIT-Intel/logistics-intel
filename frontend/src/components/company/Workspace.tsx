@@ -538,45 +538,69 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   </div>
                 )}
                 {!loading && !error && tab === 'Contacts' && (
-                  <div className='mt-3 text-sm text-slate-700'>
-                    <div className='mb-2 flex items-center gap-2'>
+                  <div className='mt-3'>
+                    <div className='mb-3 flex items-center gap-2'>
                       <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
                         try {
                           const api = await import('../../lib/api');
                           await (api as any).enrichContacts(String(activeId));
-                          alert('Contacts enrichment queued');
-                          // refetch after a short delay
                           setTimeout(async()=>{
                             try {
-                              const api = await import('../../lib/api');
                               const c: any = await (api as any).listContacts(String(activeId));
                               setContacts(Array.isArray(c?.contacts) ? c.contacts : (Array.isArray(c) ? c : []));
                             } catch {}
-                          }, 1000);
+                          }, 1200);
                         } catch(e:any){ alert('Enrich contacts failed: '+ String(e?.message||e)); }
                       }}>Enrich Contacts</button>
                     </div>
-                    {contacts.length === 0 ? (
-                      <div className='text-slate-600'>No contacts to show.</div>
-                    ) : (
-                      <div className='overflow-auto rounded border'>
-                        <table className='w-full text-sm'>
-                          <thead className='sticky top-0 bg-white'><tr className='[&>th]:py-2 [&>th]:text-left'>
-                            <th>Name</th><th>Title</th><th>Email</th><th>Dept</th>
-                          </tr></thead>
-                          <tbody>
-                            {contacts.map((c:any, i:number)=> (
-                              <tr key={i} className='border-t'>
-                                <td>{c.name || c.full_name || '—'}</td>
-                                <td>{c.title || '—'}</td>
-                                <td>{c.email || '—'}</td>
-                                <td>{c.dept || c.department || '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                    <div className='grid gap-4 md:grid-cols-2'>
+                      {/* Featured primary contact */}
+                      <div className='md:col-span-2'>
+                        {Array.isArray(contacts) && contacts.find((c:any)=> c.is_primary || c.isPrimary) ? (
+                          <div className='rounded-2xl border bg-white p-4'>
+                            <div className='text-sm font-semibold mb-2'>Primary Contact</div>
+                            <div className='flex items-center justify-between gap-3'>
+                              <div className='min-w-0'>
+                                <div className='font-medium truncate'>{(contacts.find((c:any)=> c.is_primary || c.isPrimary)?.full_name) || (contacts.find((c:any)=> c.is_primary || c.isPrimary)?.name) || '—'}</div>
+                                <div className='text-xs text-slate-600'>{contacts.find((c:any)=> c.is_primary || c.isPrimary)?.title || '—'}</div>
+                              </div>
+                              <button className='px-3 py-1.5 rounded border text-xs' onClick={()=>{
+                                const pid = contacts.find((c:any)=> c.is_primary || c.isPrimary)?.id;
+                                if (!pid) return;
+                                setContacts(prev=> prev.map((c:any)=> ({...c, is_primary: String(c.id)===String(pid), isPrimary: String(c.id)===String(pid)})));
+                              }}>Set Primary</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className='rounded-2xl border bg-white p-4 text-sm text-slate-600'>No primary contact yet.</div>
+                        )}
                       </div>
-                    )}
+                      {/* Contacts list */}
+                      <div className='md:col-span-2'>
+                        <div className='rounded-2xl border bg-white p-4'>
+                          <div className='text-sm font-semibold mb-2'>All Contacts</div>
+                          {contacts.length === 0 ? (
+                            <div className='text-sm text-slate-600'>No contacts to show.</div>
+                          ) : (
+                            <div className='divide-y'>
+                              {contacts.map((c:any, i:number)=> (
+                                <div key={i} className='py-2 flex items-center justify-between gap-3'>
+                                  <div className='min-w-0'>
+                                    <div className='font-medium truncate'>{c.full_name || c.name || '—'}</div>
+                                    <div className='text-xs text-slate-600 truncate'>{c.title || '—'}{c.department? ` • ${c.department}`: ''}{c.location? ` • ${c.location}`: ''}</div>
+                                  </div>
+                                  <div className='flex items-center gap-2'>
+                                    <button className='px-2 py-1 rounded border text-xs' onClick={()=>{
+                                      setContacts(prev=> prev.map((x:any)=> ({...x, is_primary: String(x.id)===String(c.id), isPrimary: String(x.id)===String(c.id)})));
+                                    }}>Set Primary</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
                 {!loading && !error && tab === 'Activity' && (
