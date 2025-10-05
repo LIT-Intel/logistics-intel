@@ -530,25 +530,9 @@ export default function RFPStudio() {
                     <Button size="sm" variant="outline">Generate Talk Tracks</Button>
                   </div>
                 </LitPanel>
-                {showPricing && priced && priced.lanes.length > 0 && (
-                  <LitPanel title="Lane Pricing (Detected)">
-                    <div className="text-sm text-slate-600 mb-2">Total Annual: ${priced.totalAnnual.toLocaleString()}</div>
-                    <div className="space-y-3">
-                      {priced.lanes.map((p, idx)=> (
-                        <div key={idx} className="rounded-xl border p-3 bg-white/95">
-                          <div className="flex items-center justify-between">
-                            <div className="font-semibold text-slate-900">{p.mode}{p.equipment?(' / '+p.equipment):''}</div>
-                            <div className="text-slate-900 font-bold flex items-center"><DollarSign className="w-4 h-4 mr-1"/>{p.unitCost.toFixed(2)} / shpt</div>
-                          </div>
-                          <div className="text-xs text-slate-600">Annual: ${p.annualCost.toLocaleString()}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </LitPanel>
-                )}
+                {/* Removed per spec: Lane Pricing (Detected) table */}
                 <div className="flex gap-2">
-                  <Button className="bg-blue-600 text-white" onClick={()=> setShowPricing(true)}>Add Rates to Proposal</Button>
-                  <Button variant="outline" className="text-red-600" onClick={()=> { setShowPricing(false); }}>Remove Pricing Table</Button>
+                  <Button className="bg-blue-600 text-white" onClick={()=> setShowPricing(true)}>Attach Rates to Proposal</Button>
                 </div>
                 <LitPanel title="Solution Offering">
                   <textarea className="w-full h-32 p-3 border rounded-lg" placeholder="Describe your solution..." value={proposalSolution} onChange={e=> setProposalSolution(e.target.value)} />
