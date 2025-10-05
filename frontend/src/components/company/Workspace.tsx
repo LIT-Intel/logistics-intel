@@ -426,7 +426,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                   <div className='mt-3'>
                     <div className='flex items-center justify-end gap-2'>
                       <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); pdf.save('company.pdf'); }catch(e:any){ alert('PDF failed: '+ String(e?.message||e)); } }}>Save PDF</button>
-                      <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const blob=pdf.output('blob'); const form=new FormData(); form.append('file', blob, 'company.pdf'); form.append('companyId', String(activeId)); await fetch('/api/emailPdf', { method:'POST', body:form }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
+                      <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const data = pdf.output('datauristring'); await fetch('/api/emailPdf', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ data, filename:'company.pdf', to:'' }) }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
                     </div>
                     <section id='company-pdf-root'>
                       <PreCallBriefing company={{ name: overview.name, kpis: overview.kpis || overview.kpi || overview.k, charts: overview.charts, ai: overview.ai }} />
