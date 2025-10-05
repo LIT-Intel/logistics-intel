@@ -15,6 +15,10 @@ export type SearchFilters = {
   origin?: string[] | null;
   dest?: string[] | null;
   hs?: string[] | null;
+  mode?: string[] | null;
+  carrier?: string[] | null;
+  startDate?: string | null; // YYYY-MM-DD
+  endDate?: string | null;   // YYYY-MM-DD
   limit?: number;
   offset?: number;
 };
@@ -33,24 +37,25 @@ export type SearchCompaniesResponse = {
   rows: SearchCompanyRow[];
 };
 
-function csvOrNull(v?: string[] | null) {
-  if (!v || v.length === 0) return null;
+function csvOrEmpty(v?: string[] | null) {
+  if (!v || v.length === 0) return '';
   const trimmed = v.map(s => s.trim()).filter(Boolean);
-  return trimmed.length ? trimmed.join(',') : null;
+  return trimmed.length ? trimmed.join(',') : '';
 }
 
 function normalizePayload(f: SearchFilters) {
   const limit = Math.max(1, Math.min(50, Number(f.limit ?? 24)));
   const offset = Math.max(0, Number(f.offset ?? 0));
   const body: Record<string, any> = {};
-  const q = typeof f.q === 'string' ? f.q.trim() : null;
-  body.q = q && q.length ? q : null;
-  const originCSV = csvOrNull(f.origin ?? null);
-  const destCSV = csvOrNull(f.dest ?? null);
-  const hsCSV = csvOrNull(f.hs ?? null);
-  if (originCSV) body.origin = originCSV;
-  if (destCSV) body.dest = destCSV;
-  if (hsCSV) body.hs = hsCSV;
+  const q = typeof f.q === 'string' ? f.q.trim() : '';
+  body.q = q; // send empty string instead of null to allow default results
+  body.origin = csvOrEmpty(f.origin ?? null);
+  body.dest = csvOrEmpty(f.dest ?? null);
+  body.hs = csvOrEmpty(f.hs ?? null);
+  body.mode = csvOrEmpty(f.mode ?? null);
+  body.carrier = csvOrEmpty(f.carrier ?? null);
+  if (f.startDate) body.startDate = f.startDate;
+  if (f.endDate) body.endDate = f.endDate;
   body.limit = limit;
   body.offset = offset;
   return body;
