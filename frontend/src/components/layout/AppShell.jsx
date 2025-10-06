@@ -60,8 +60,8 @@ export default function AppShell({ currentPageName, children }) {
           <nav className="mb-4">
             <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
             <SideLink to="/app/search" icon={Search} label="Search" />
-            {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Command Center" />}
-            {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
+            <SideLink to="/app/companies" icon={Building2} label="Command Center" />
+            <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
           </nav>
 
           <div className="px-4 py-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">Tools</div>
@@ -140,8 +140,8 @@ export default function AppShell({ currentPageName, children }) {
             <nav className="space-y-1">
               <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
               <SideLink to="/app/search" icon={Search} label="Search" />
-              {canViewPro && <SideLink to="/app/companies" icon={Building2} label="Command Center" />}
-              {canViewPro && <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />}
+              <SideLink to="/app/companies" icon={Building2} label="Command Center" />
+              <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
               <SideLink to="/app/rfp" icon={FileText} label="RFP Studio" />
               <SideLink to="/app/widgets" icon={Package} label="Widgets" />
               <SideLink to="/app/settings" icon={Settings} label="Settings" />
