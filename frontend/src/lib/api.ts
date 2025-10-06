@@ -164,6 +164,11 @@ export async function getCompanyShipments(params: { company_id: string; limit?: 
 }
 
 export async function getFilterOptions() {
+  // Try lit-caller proxy first; fallback to Gateway
+  try {
+    const r = await fetch(`${API_BASE}/api/getFilterOptions`, { headers: { 'accept': 'application/json' } });
+    if (r.ok) return r.json();
+  } catch {}
   const res = await fetch(`${GW}/public/getFilterOptions`, { method: 'GET', headers: { 'content-type': 'application/json' } });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${res.status} ${t}`); }
   return res.json();
