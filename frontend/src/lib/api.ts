@@ -1,5 +1,43 @@
 import { searchCompanies as _searchCompanies } from '@/lib/api/search';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
+export const API_BASE = 'https://lit-caller-187580267283.us-central1.run.app';
+
+export type SearchPayload = {
+  q: string | null;
+  origin?: string[];
+  dest?: string[];
+  hs?: string[];
+  limit?: number;
+  offset?: number;
+};
+
+export async function searchCompaniesProxy(payload: SearchPayload){
+  const body = {
+    q: payload.q ?? null,
+    origin: Array.isArray(payload.origin) ? payload.origin : [],
+    dest: Array.isArray(payload.dest) ? payload.dest : [],
+    hs: Array.isArray(payload.hs) ? payload.hs : [],
+    limit: Number(payload.limit ?? 12),
+    offset: Number(payload.offset ?? 0)
+  } as const;
+  const r = await fetch(`${API_BASE}/api/searchCompanies`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
+  return r.json();
+}
+
+export async function getCompanyShipmentsProxy(params: {company_id?: string; company_name?: string; origin?: string[]; dest?: string[]; hs?: string[]; limit?: number; offset?: number;}){
+  const qp = new URLSearchParams();
+  if(params.company_id) qp.set('company_id', params.company_id);
+  if(params.company_name) qp.set('company_name', params.company_name);
+  if(params.origin?.length) qp.set('origin', params.origin.join(','));
+  if(params.dest?.length) qp.set('dest', params.dest.join(','));
+  if(params.hs?.length) qp.set('hs', params.hs.join(','));
+  qp.set('limit', String(params.limit ?? 20));
+  qp.set('offset', String(params.offset ?? 0));
+  const r = await fetch(`${API_BASE}/api/getCompanyShipments?${qp.toString()}`);
+  if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
+  return r.json();
+}
 import { auth } from '@/auth/firebaseClient';
 
 // Gateway base (env override → default)
