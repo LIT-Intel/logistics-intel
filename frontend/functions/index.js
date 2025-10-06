@@ -1,5 +1,7 @@
-const { onCall } = require('firebase-functions/v2/https');
+const { onCall, onRequest } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2/options');
+const fetch = require('cross-fetch');
+const { GoogleAuth } = require('google-auth-library');
 
 setGlobalOptions({ region: 'us-central1' });
 
@@ -102,4 +104,47 @@ exports.createStripePortalSession = onCall(async () => {
 
 exports.sendEmail = onCall(async () => {
   return { ok: false, message: 'Email service not wired yet.' };
+});
+
+// === Cloud Run ID token proxy for Search ===
+const RUN_BASE = 'https://search-unified-gxezx63yea-uc.a.run.app';
+async function idToken(aud) {
+  const auth = new GoogleAuth();
+  const client = await auth.getIdTokenClient(aud);
+  const headers = await client.getRequestHeaders();
+  return headers['Authorization'];
+}
+
+exports.searchCompanies = onRequest({ cors: true }, async (req, res) => {
+  try {
+    if (req.method === 'OPTIONS') return res.status(204).send('');
+    const authz = await idToken(RUN_BASE);
+    const r = await fetch(`${RUN_BASE}/public/searchCompanies`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': authz },
+      body: JSON.stringify(req.body || {})
+    });
+    const text = await r.text();
+    res.set({ 'Content-Type': r.headers.get('content-type') || 'application/json' });
+    return res.status(r.status).send(text);
+  } catch (e) {
+    return res.status(500).json({ ok:false, error: e && e.message ? e.message : 'proxy error' });
+  }
+});
+
+exports.getCompanyShipments = onRequest({ cors: true }, async (req, res) => {
+  try {
+    if (req.method === 'OPTIONS') return res.status(204).send('');
+    const authz = await idToken(RUN_BASE);
+    const qs = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const r = await fetch(`${RUN_BASE}/public/getCompanyShipments${qs}`, {
+      method: 'GET',
+      headers: { 'Authorization': authz }
+    });
+    const text = await r.text();
+    res.set({ 'Content-Type': r.headers.get('content-type') || 'application/json' });
+    return res.status(r.status).send(text);
+  } catch (e) {
+    return res.status(500).json({ ok:false, error: e && e.message ? e.message : 'proxy error' });
+  }
 });
