@@ -38,6 +38,10 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
   if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
   return r.json();
 }
+
+// Back-compat names expected by some pages
+export const searchCompaniesProxyCompat = searchCompaniesProxy;
+export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
 import { auth } from '@/auth/firebaseClient';
 
 // Gateway base (env override → default)
