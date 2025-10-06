@@ -495,47 +495,63 @@ export default function SearchAppPage() {
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                       <div>
                         <div className="text-sm font-medium mb-2">Origin</div>
-                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                          {opts.origins.map((o) => {
-                            const isOn = filters.origin.includes(o);
-                            return (
-                              <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, origin: isOn ? prev.origin.filter(x=>x!==o) : [...prev.origin, o] }))}>{o}</Button>
-                            );
-                          })}
-                        </div>
+                        {opts.origins.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                            {opts.origins.map((o) => {
+                              const isOn = filters.origin.includes(o);
+                              return (
+                                <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, origin: isOn ? prev.origin.filter(x=>x!==o) : [...prev.origin, o] }))}>{o}</Button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Input placeholder="CSV e.g., CN,TR" onChange={(e)=> setFilters(prev=> ({ ...prev, origin: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
+                        )}
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">Destination</div>
-                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                          {opts.destinations.map((d) => {
-                            const isOn = filters.dest.includes(d);
-                            return (
-                              <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, dest: isOn ? prev.dest.filter(x=>x!==d) : [...prev.dest, d] }))}>{d}</Button>
-                            );
-                          })}
-                        </div>
+                        {opts.destinations.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                            {opts.destinations.map((d) => {
+                              const isOn = filters.dest.includes(d);
+                              return (
+                                <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, dest: isOn ? prev.dest.filter(x=>x!==d) : [...prev.dest, d] }))}>{d}</Button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Input placeholder="CSV e.g., US,CA" onChange={(e)=> setFilters(prev=> ({ ...prev, dest: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
+                        )}
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">Mode</div>
-                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                          {opts.modes.map((m) => {
-                            const isOn = filters.mode.includes(m);
-                            return (
-                              <Button key={m} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, mode: isOn ? prev.mode.filter(x=>x!==m) : [...prev.mode, m] }))}>{m}</Button>
-                            );
-                          })}
-                        </div>
+                        {opts.modes.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                            {opts.modes.map((m) => {
+                              const isOn = filters.mode.includes(m);
+                              return (
+                                <Button key={m} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, mode: isOn ? prev.mode.filter(x=>x!==m) : [...prev.mode, m] }))}>{m}</Button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Input placeholder="CSV e.g., ocean,air" onChange={(e)=> setFilters(prev=> ({ ...prev, mode: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
+                        )}
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">Carrier</div>
-                        <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                          {opts.carriers.map((c) => {
-                            const isOn = filters.carrier.includes(c);
-                            return (
-                              <Button key={c} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, carrier: isOn ? prev.carrier.filter(x=>x!==c) : [...prev.carrier, c] }))}>{c}</Button>
-                            );
-                          })}
-                        </div>
+                        {opts.carriers.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                            {opts.carriers.map((c) => {
+                              const isOn = filters.carrier.includes(c);
+                              return (
+                                <Button key={c} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, carrier: isOn ? prev.carrier.filter(x=>x!==c) : [...prev.carrier, c] }))}>{c}</Button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Input placeholder="CSV carriers" onChange={(e)=> setFilters(prev=> ({ ...prev, carrier: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
+                        )}
                       </div>
                       <div>
                         <div className="text-sm font-medium mb-2">HS Codes</div>
@@ -544,12 +560,13 @@ export default function SearchAppPage() {
                     </div>
                     <div className="mt-3 flex justify-end gap-2">
                       <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [], mode: [], carrier: [] }); }}>Clear</Button>
-                      <Button onClick={() => { runSearch(); }}>Apply</Button>
+                      <Button onClick={() => { runSearch(); setFiltersOpen(false); }}>Apply</Button>
                     </div>
                   </div>
                 )}
                 <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
-                {/* Debug removed for production */}
+                {/* Build tag for deploy verification */}
+                <div className="mt-2 text-[10px] text-muted-foreground">build: fix/deploy-ui-proxy</div>
 
                 {exploreTab==='none' && !hasSearched && (<SearchEmpty state="idle"/>)}
 
