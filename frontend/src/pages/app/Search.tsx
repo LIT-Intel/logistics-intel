@@ -18,6 +18,7 @@ import { InlineFilters } from '@/components/search/InlineFilters';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
 import { getFilterOptions, saveCompanyToCrm } from '@/lib/api';
+import { useToast } from '@/components/ui/use-toast';
 
 const brand = {
   heading: 'text-[28px] font-bold tracking-tight text-purple-700',
@@ -325,6 +326,7 @@ export default function SearchAppPage() {
       return new Set<string>(a.map((c: any)=> String(c?.id||'' )).filter(Boolean));
     } catch { return new Set(); }
   });
+  const { toast } = useToast();
 
   // Do not auto-load results. Wait for user to search.
 
@@ -341,15 +343,13 @@ export default function SearchAppPage() {
     setLoading(true);
     try {
       const payload = {
-        q: (query?.trim() || ''),
-        origin: filters.origin,
-        dest: filters.dest,
-        hs: filters.hs,
-        mode: filters.mode,
-        carrier: filters.carrier,
-        limit: pageSize,
-        offset: (page-1)*pageSize
-      };
+        q: (query?.trim() || '') || null,
+        origin: filters.origin.length ? filters.origin : null,
+        dest: filters.dest.length ? filters.dest : null,
+        hs: filters.hs.length ? filters.hs : null,
+        limit: 20,
+        offset: 0,
+      } as const;
       setLastPayload(payload);
       setLastEndpoint('/api/lit/public/searchCompanies');
       console.log('[LIT] runSearch → payload', payload);
@@ -357,10 +357,13 @@ export default function SearchAppPage() {
       if (!res.ok) throw new Error(`searchCompanies ${res.status}`);
       const data = await res.json();
       const arr = (data?.rows || data || []);
-      const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_id && r.company_name);
+      const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_name);
       const seen = new Set<string>();
       const deduped: any[] = [];
       for (const r of norm) {
+        if (!r.company_id && r.company_name) {
+          r.company_id = `name:${r.company_name.toLowerCase()}`;
+        }
         const k = r.company_id ? `id:${r.company_id}` : `name:${String(r.company_name||'').toLowerCase()}`;
         if (!seen.has(k)) { seen.add(k); deduped.push(r); }
       }
@@ -370,6 +373,7 @@ export default function SearchAppPage() {
       setExploreTab('none');
     } catch (e) {
       console.error('[LIT] runSearch error', e);
+      toast({ title: 'Search failed. Please try again.' });
     } finally {
       setLoading(false);
     }
