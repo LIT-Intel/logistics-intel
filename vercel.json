@@ -1,19 +1,15 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "frontend/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } },
-    { "src": "frontend/api/**/*.ts", "use": "@vercel/node" }
-  ],
-  "env": {
-    "VITE_API_BASE": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev"
-  },
   "buildCommand": "cd frontend && npm ci && npm run build",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs22.x"
+    }
+  },
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/api/lit/(.*)", "dest": "frontend/api/lit/[...path].ts" },
-    { "src": "/api/emailPdf", "dest": "frontend/api/emailPdf.ts" },
+    { "src": "/api/lit/(.*)", "dest": "api/lit/[...path].ts" },
     { "src": "/(.*)", "dest": "frontend/dist/index.html" }
   ]
 }
-
