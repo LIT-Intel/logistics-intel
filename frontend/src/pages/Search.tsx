@@ -210,12 +210,9 @@ export default function Search() {
       try {
         resp = await postSearchCompanies(payload);
       } catch (e) {
-        const base =
-          (import.meta as any)?.env?.VITE_API_BASE ||
-          process.env.NEXT_PUBLIC_API_BASE ||
-          "";
+        // Fallback: always use proxy path to avoid CORS and HTML responses
         const r = await fetch(
-          `${String(base).replace(/\/$/, "")}/public/searchCompanies`,
+          `/api/lit/public/searchCompanies`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
