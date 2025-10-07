@@ -11,8 +11,9 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory, Bell, Bookmark, Sparkles } from 'lucide-react';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
-import { searchCompanies, getCompanyShipments } from '@/lib/api/search';
+import { getCompanyShipments } from '@/lib/api/search';
 import { InlineFilters } from '@/components/search/InlineFilters';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
@@ -77,6 +78,9 @@ function SaveButton({ row }: { row: any }) {
         window.dispatchEvent(new StorageEvent('storage', { key: lsKey } as any));
       }
       setSaved(true);
+      if (cid) {
+        window.location.href = `/app/companies/${cid}`;
+      }
     } catch (e) {
       console.error('save failed', e);
     } finally {
@@ -347,9 +351,11 @@ export default function SearchAppPage() {
         offset: (page-1)*pageSize
       };
       setLastPayload(payload);
-      setLastEndpoint('/public/searchCompanies');
+      setLastEndpoint('/api/lit/public/searchCompanies');
       console.log('[LIT] runSearch → payload', payload);
-      const data = await searchCompanies(payload);
+      const res = await fetch('/api/lit/public/searchCompanies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(`searchCompanies ${res.status}`);
+      const data = await res.json();
       const arr = (data?.rows || data || []);
       const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_id && r.company_name);
       const seen = new Set<string>();
@@ -462,27 +468,8 @@ export default function SearchAppPage() {
             <h1 className={brand.heading}>Search</h1>
             <p className="text-sm text-muted-foreground">Find shippers & receivers. Use filters for origin/dest/HS. Click a card to view details.</p>
           </div>
-          <div className="w-full flex gap-[5px]">
-            <aside className="hidden md:block w-[320px] shrink-0">
-              <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm">
-                <div className="text-sm font-semibold text-slate-900 mb-2">Explore</div>
-                <div className="space-y-2">
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='trending'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('trending'); setHasSearched(false); }}>
-                    <TrendingUp className="h-4 w-4 text-indigo-600"/> Trending Companies
-                  </button>
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='new'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('new'); setHasSearched(false); }}>
-                    <Sparkles className="h-4 w-4 text-indigo-600"/> New Shippers (3–6M)
-                  </button>
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='saved'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('saved'); loadSavedCompanies(); }}>
-                    <Bookmark className="h-4 w-4 text-indigo-600"/> Saved Companies
-                  </button>
-                  <button className={`w-full text-left px-3 py-2 rounded-xl border flex items-center gap-2 ${exploreTab==='alerts'?'bg-indigo-50 border-indigo-200 text-indigo-700':'hover:bg-slate-50'}`} onClick={()=>{ setExploreTab('alerts'); setHasSearched(false); }}>
-                    <Bell className="h-4 w-4 text-indigo-600"/> Alerts
-                  </button>
-                </div>
-              </div>
-            </aside>
-            <main className="flex-1 min-w-0">
+          <div className="w-full">
+            <main className="flex-1 min-w-0 max-w-6xl mx-auto">
               <div className="relative">
                 <div className="flex items-center justify-center gap-2">
                   <div className="relative w-full max-w-3xl">
@@ -498,10 +485,29 @@ export default function SearchAppPage() {
                   <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
                   <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
                 </div>
-                <div className="mt-3 mb-2 flex items-center gap-2">
+                <div className="mt-3 mb-2 flex items-center gap-2 justify-center">
                   <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
                   <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
                   {loading && <span className="text-xs text-muted-foreground">Searching…</span>}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="rounded-xl">Explore</Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem onClick={()=>{ setExploreTab('trending'); setHasSearched(false); }}>
+                        <TrendingUp className="h-4 w-4 text-indigo-600"/> Trending Companies
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={()=>{ setExploreTab('new'); setHasSearched(false); }}>
+                        <Sparkles className="h-4 w-4 text-indigo-600"/> New Shippers (3–6M)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={()=>{ setExploreTab('saved'); loadSavedCompanies(); }}>
+                        <Bookmark className="h-4 w-4 text-indigo-600"/> Saved Companies
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={()=>{ setExploreTab('alerts'); setHasSearched(false); }}>
+                        <Bell className="h-4 w-4 text-indigo-600"/> Alerts
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 {filtersOpen && (
                   <div className="mt-3 rounded-2xl border border-slate-200 bg-white/95 shadow-sm p-4">
@@ -659,15 +665,7 @@ export default function SearchAppPage() {
             </main>
           </div>
 
-          {rows.length === 0 && (
-            <div className="mt-10 text-center">
-              <div className="mx-auto w-fit rounded-2xl border p-8 bg-white/80 shadow-sm">
-                <Factory className="mx-auto mb-3 h-8 w-8 text-muted-foreground"/>
-                <div className="font-medium">No companies match “{query}”.</div>
-                <div className="text-sm text-muted-foreground">Try a broader term or clear filters.</div>
-              </div>
-            </div>
-          )}
+          {/* Empty states handled via SearchEmpty (idle vs no-results) */}
         </div>
 
         <DetailsDialog open={open} onOpenChange={setOpen} row={active} />
