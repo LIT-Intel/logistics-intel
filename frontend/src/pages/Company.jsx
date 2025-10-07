@@ -30,6 +30,7 @@ export default function Company() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
   const [recall, setRecall] = useState(null);
+  useEffect(()=>{ console.log('[Company] mount', { companyId }); }, [companyId]);
 
   // RFP (lanes) payload persisted locally per company
   const [rfpPayload, setRfpPayload] = useState(null);
@@ -126,7 +127,9 @@ export default function Company() {
   const handleEnrich = async () => {
     setIsEnriching(true);
     try {
+      console.log('[Company] enrichCompany → start', { companyId });
       await enrichCompany({ company_id: String(companyId) });
+      console.log('[Company] enrichCompany ← ok');
       await load();
     } catch (e) {
       console.error('Enrich error', e);
