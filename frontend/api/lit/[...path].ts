@@ -1,9 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 // Prefer env; fallback to known Gateway hostname used across the app
-const GATEWAY = process.env.LIT_API_BASE || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
+const GATEWAY = ((globalThis as any).process?.env?.LIT_API_BASE) || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   try {
     const method = (req.method || 'GET').toUpperCase();
     const parts = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean);
