@@ -4,15 +4,6 @@
     { "src": "frontend/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } },
     { "src": "frontend/api/**/*.ts", "use": "@vercel/node" }
   ],
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/api/emailPdf", "dest": "frontend/api/emailPdf.ts" },
-    { "src": "/(.*)", "dest": "frontend/dist/index.html" }
-  ]
-}
-
-{
-  "version": 2,
   "env": {
     "VITE_API_BASE": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev"
   },
@@ -20,7 +11,9 @@
   "outputDirectory": "frontend/dist",
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "/api/lit/(.*)", "dest": "frontend/api/lit/[...path].ts" },
+    { "src": "/api/emailPdf", "dest": "frontend/api/emailPdf.ts" },
+    { "src": "/(.*)", "dest": "frontend/dist/index.html" }
   ]
 }
 
