@@ -18,7 +18,7 @@ export default async function handler(req: any, res: any) {
 
     // Debug logging
     const bodyPreview = !/^(GET|HEAD)$/i.test(method) ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {})) : undefined;
-    console.log('[lit-proxy]', { target: GATEWAY, method, suffix, url, body: bodyPreview?.slice?.(0, 400) });
+    console.log('[lit-proxy] begin', { target: GATEWAY, method, suffix, url, body: bodyPreview?.slice?.(0, 400) });
 
     // Clone headers; drop hop-by-hop / host
     const headers = new Headers();
@@ -42,6 +42,7 @@ export default async function handler(req: any, res: any) {
     const upstream = await fetch(url, init);
     // Pass through status and body
     const text = await upstream.text();
+    console.log('[lit-proxy] end', { status: upstream.status, ct: upstream.headers.get('content-type') });
 
     // Mirror content-type if present
     const ct = upstream.headers.get('content-type');
