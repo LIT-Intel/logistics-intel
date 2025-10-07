@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "installCommand": "npm install --prefix frontend",
-  "buildCommand": "npm run build --prefix frontend && rm -rf dist && cp -r frontend/dist dist",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
     "api/**/*.ts": {
@@ -11,6 +11,6 @@
   "routes": [
     { "handle": "filesystem" },
     { "src": "/api/lit/(.*)", "dest": "api/lit/[...path].ts" },
-    { "src": "/(.*)", "dest": "dist/index.html" }
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
