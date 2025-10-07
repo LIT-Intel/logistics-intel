@@ -1,6 +1,7 @@
 import { searchCompanies as _searchCompanies } from '@/lib/api/search';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
-export const API_BASE = 'https://lit-caller-187580267283.us-central1.run.app';
+// Always call via Vercel proxy from the browser to avoid CORS
+export const API_BASE = '/api/lit';
 
 export type SearchPayload = {
   q: string | null;
@@ -34,7 +35,7 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
   if(params.hs?.length) qp.set('hs', params.hs.join(','));
   qp.set('limit', String(params.limit ?? 20));
   qp.set('offset', String(params.offset ?? 0));
-  const r = await fetch(`${API_BASE}/api/getCompanyShipments?${qp.toString()}`);
+  const r = await fetch(`${API_BASE}/public/getCompanyShipments?${qp.toString()}`);
   if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
   return r.json();
 }
@@ -45,10 +46,7 @@ export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
 import { auth } from '@/auth/firebaseClient';
 
 // Gateway base (env override → default)
-const GW =
-  (import.meta as any).env?.VITE_LIT_GATEWAY_BASE ||
-  (globalThis as any).process?.env?.NEXT_PUBLIC_LIT_GATEWAY_BASE ||
-  'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
+const GW = '/api/lit';
 
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
@@ -158,12 +156,7 @@ export async function getCompanyShipments(params: { company_id: string; limit?: 
 }
 
 export async function getFilterOptions() {
-  // Try lit-caller proxy first; fallback to Gateway
-  try {
-    const r = await fetch(`${API_BASE}/api/getFilterOptions`, { headers: { 'accept': 'application/json' } });
-    if (r.ok) return r.json();
-  } catch {}
-  const res = await fetch(`${GW}/public/getFilterOptions`, { method: 'GET', headers: { 'content-type': 'application/json' } });
+  const res = await fetch(`/api/lit/public/getFilterOptions`, { method: 'GET', headers: { 'accept': 'application/json' } });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${res.status} ${t}`); }
   return res.json();
 }
