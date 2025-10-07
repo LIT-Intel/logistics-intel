@@ -192,7 +192,14 @@ export async function enrichCompany(payload: { company_id: string }) {
 }
 
 export async function recallCompany(payload: { company_id: string; questions?: string[] }) {
+  // Prefer POST; if 405, fallback to GET with query params
   const res = await fetch(`${GW}/ai/recall`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  if (res.status === 405) {
+    const qs = new URLSearchParams({ company_id: payload.company_id });
+    const g = await fetch(`${GW}/ai/recall?${qs.toString()}`, { method: 'GET', headers: { 'accept': 'application/json' } });
+    if (!g.ok) { const t = await g.text().catch(()=> ''); throw new Error(`recallCompany failed: ${g.status} ${t}`); }
+    return g.json();
+  }
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`recallCompany failed: ${res.status} ${t}`); }
   return res.json();
 }

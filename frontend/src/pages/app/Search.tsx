@@ -400,6 +400,7 @@ export default function SearchAppPage() {
           return;
         } catch (e2) {
           console.error('[LIT] search GET fallback failed', e2);
+          toast({ title: 'Search failed (GET fallback). Check proxy/backend.' });
         }
       }
       toast({ title: 'Search failed. Please try again.' });
