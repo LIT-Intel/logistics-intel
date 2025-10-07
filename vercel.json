@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm ci && npm run build",
-  "outputDirectory": "frontend/dist",
+  "buildCommand": "npm ci --prefix frontend && npm run build --prefix frontend && rm -rf dist && cp -r frontend/dist dist",
+  "outputDirectory": "dist",
   "functions": {
     "api/**/*.ts": {
       "runtime": "nodejs22.x"
@@ -10,6 +10,6 @@
   "routes": [
     { "handle": "filesystem" },
     { "src": "/api/lit/(.*)", "dest": "api/lit/[...path].ts" },
-    { "src": "/(.*)", "dest": "frontend/dist/index.html" }
+    { "src": "/(.*)", "dest": "dist/index.html" }
   ]
 }
