@@ -1,9 +1,11 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+// Local types to avoid @vercel/node types requirement
+type Req = any;
+type Res = any;
 
 // Simple email relay for PDF attachments.
 // Expects JSON: { data: string (data:application/pdf;base64,...), filename?: string, to: string, subject?: string, text?: string, html?: string }
 // Uses RESEND_API_KEY if available. If not configured, returns 202 to avoid blocking demo flows.
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: Req, res: Res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'method_not_allowed' });
