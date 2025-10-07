@@ -1,26 +1,31 @@
+const BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE) || '/api/lit';
+
 export type FeatureFlags = {
-  gates: Record<string, boolean>;
-  killSwitches: Record<string, boolean>;
-  variants: Record<string, unknown>;
-  _source?: string;
+  pro?: boolean;
+  enterprise?: boolean;
+  enrich_enabled?: boolean;
+  gating?: Record<string, boolean>;
+  _source?: 'remote' | 'local-fallback';
 };
 
 /**
- * Temporary shim while API Gateway CORS is fixed.
- * - Tries to fetch real flags
- * - If CORS/404/network error occurs, returns safe defaults
+ * Returns feature flags. Never throws: on 404/500/network error,
+ * returns a permissive-but-safe default so the UI can render.
  */
-export async function fetchFeatureFlags(apiBase: string): Promise<FeatureFlags> {
+export async function getFeatureFlags(): Promise<FeatureFlags> {
   try {
-    const res = await fetch(`${apiBase}/crm/feature-flags`, { credentials: "omit" });
-    if (!res.ok) throw new Error(`feature-flags ${res.status}`);
-    return (await res.json()) as FeatureFlags;
-  } catch {
-    return {
-      gates: { pro: false, enterprise: false },
-      killSwitches: {},
-      variants: {},
-      _source: "local-fallback",
-    };
-  }
+    const res = await fetch(`${BASE}/crm/feature-flags`, { method: 'GET' });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ...data, _source: 'remote' as const };
+    }
+  } catch {}
+  // Safe defaults: enable basic screens, let Search run, avoid blocking UI
+  return {
+    pro: true,
+    enterprise: false,
+    enrich_enabled: true,
+    gating: {},
+    _source: 'local-fallback'
+  };
 }
