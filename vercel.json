@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "installCommand": "npm ci --prefix frontend",
-  "buildCommand": "npm ci --prefix frontend && npm run build --prefix frontend && rm -rf dist && cp -r frontend/dist dist",
+  "installCommand": "npm install --prefix frontend",
+  "buildCommand": "npm run build --prefix frontend && rm -rf dist && cp -r frontend/dist dist",
   "outputDirectory": "dist",
   "functions": {
     "api/**/*.ts": {
