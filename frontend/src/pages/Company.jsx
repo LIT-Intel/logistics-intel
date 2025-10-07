@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Contact, Note } from "@/api/entities";
-import { postSearchCompanies, getCompanyShipments, enrichCompany, recallCompany } from "@/lib/api";
+import { postSearchCompanies, getCompanyShipments, recallCompany } from "@/lib/api";
+import { useToast } from "@/components/ui/use-toast";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
 import { ingestWorkbook } from "@/lib/rfp/ingest";
@@ -29,6 +30,8 @@ export default function Company() {
   const [notes, setNotes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichWhich, setEnrichWhich] = useState(null); // 'company' | 'contacts' | null
+  const { toast } = useToast();
   const [recall, setRecall] = useState(null);
 
   // RFP (lanes) payload persisted locally per company
@@ -123,15 +126,87 @@ export default function Company() {
     load();
   };
 
-  const handleEnrich = async () => {
+  const handleEnrichCompany = async () => {
+    if (!companyId) return;
+    setEnrichWhich('company');
     setIsEnriching(true);
     try {
-      await enrichCompany({ company_id: String(companyId) });
-      await load();
+      const res = await fetch('/api/lit/crm/lusha/enrichCompany', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: String(companyId) })
+      });
+      if (!res.ok) throw new Error(`enrichCompany ${res.status}`);
+      const data = await res.json();
+      // Update firmographics and contacts in UI
+      if (data && data.company) {
+        setSummary((prev) => prev ? { ...prev, company_name: data.company.name } : prev);
+        setCompany((prev) => ({ ...(prev || {}), 
+          industry: data.company.industry || (prev && prev.industry) || null,
+          hq_city: data.company.hqCity || (prev && prev.hq_city) || null,
+          hq_country: data.company.hqCountry || (prev && prev.hq_country) || null,
+          domain: data.company.domain || (prev && prev.domain) || null,
+          employee_count: data.company.size || (prev && prev.employee_count) || null,
+          confidence: data.company.confidence ?? (prev && prev.confidence)
+        }));
+      }
+      if (Array.isArray(data?.contacts)) {
+        setContacts(data.contacts.map(c => ({
+          id: c.id || c.fullName,
+          full_name: c.fullName || c.name,
+          title: c.title || '',
+          email: c.email || '',
+          phone: c.phone || '',
+          linkedin: c.linkedin || '',
+          confidence: c.confidence,
+          isPrimary: !!c.isPrimary,
+        })));
+      }
     } catch (e) {
-      console.error('Enrich error', e);
+      console.error('Enrich company failed', e);
+      toast({ title: 'Enrichment failed. Please try again.' });
     } finally {
       setIsEnriching(false);
+      setEnrichWhich(null);
+    }
+  };
+
+  const handleEnrichContacts = async () => {
+    if (!companyId) return;
+    setEnrichWhich('contacts');
+    setIsEnriching(true);
+    try {
+      const res = await fetch('/api/lit/crm/lusha/enrichContacts', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: String(companyId) })
+      });
+      if (!res.ok) throw new Error(`enrichContacts ${res.status}`);
+      const data = await res.json();
+      if (Array.isArray(data?.contacts)) {
+        setContacts(data.contacts.map(c => ({
+          id: c.id || c.fullName,
+          full_name: c.fullName || c.name,
+          title: c.title || '',
+          email: c.email || '',
+          phone: c.phone || '',
+          linkedin: c.linkedin || '',
+          confidence: c.confidence,
+          isPrimary: !!c.isPrimary,
+        })));
+      }
+      if (data && data.company) {
+        setCompany((prev) => ({ ...(prev || {}), 
+          industry: data.company.industry || (prev && prev.industry) || null,
+          hq_city: data.company.hqCity || (prev && prev.hq_city) || null,
+          hq_country: data.company.hqCountry || (prev && prev.hq_country) || null,
+          domain: data.company.domain || (prev && prev.domain) || null,
+          employee_count: data.company.size || (prev && prev.employee_count) || null,
+          confidence: data.company.confidence ?? (prev && prev.confidence)
+        }));
+      }
+    } catch (e) {
+      console.error('Enrich contacts failed', e);
+      toast({ title: 'Enrichment failed. Please try again.' });
+    } finally {
+      setIsEnriching(false);
+      setEnrichWhich(null);
     }
   };
 
@@ -162,10 +237,10 @@ export default function Company() {
       <LitWatermark />
       {summary && (
         <CompanyHeader
-          company={{ id: String(companyId), name: summary?.company_name || 'Company', confidence: 0.86 }}
-          onEnrichCompany={handleEnrich}
-          onEnrichContacts={handleEnrich}
-          loading={isEnriching ? 'company' : null}
+          company={{ id: String(companyId), name: summary?.company_name || 'Company', confidence: (company && company.confidence) || undefined }}
+          onEnrichCompany={handleEnrichCompany}
+          onEnrichContacts={handleEnrichContacts}
+          loading={enrichWhich}
         />
       )}
 
@@ -186,7 +261,7 @@ export default function Company() {
                 <FeaturedContact c={contacts.find(c => c.isPrimary)} onSetPrimary={(id)=> setContacts(prev=> prev.map(c=> ({...c, isPrimary: c.id===id})))} />
               )}
               <div className="grid gap-4 md:grid-cols-2">
-                <CompanyFirmographics company={{ id: String(companyId), name: summary?.company_name || 'Company' }} />
+                <CompanyFirmographics company={{ id: String(companyId), name: summary?.company_name || 'Company', domain: company?.domain, size: company?.employee_count, linkedin: company?.linkedin, confidence: company?.confidence, industry: company?.industry, hqCity: company?.hq_city, hqCountry: company?.hq_country }} />
                 <RfpPanel primary={(Array.isArray(contacts) && contacts.find(c => c.isPrimary)) || undefined} />
               </div>
               <ContactsList rows={contacts} onSelect={()=>{}} onSetPrimary={(id)=> setContacts(prev=> prev.map(c=> ({...c, isPrimary: c.id===id})))} />
@@ -198,7 +273,7 @@ export default function Company() {
 
             <TabsContent value="contacts" className="space-y-4">
               <ContactsList rows={contacts} onSelect={()=>{}} onSetPrimary={(id)=> setContacts(prev=> prev.map(c=> ({...c, isPrimary: c.id===id})))} />
-              <CompanyFirmographics company={{ id: String(companyId), name: summary?.company_name || 'Company' }} />
+              <CompanyFirmographics company={{ id: String(companyId), name: summary?.company_name || 'Company', domain: company?.domain, size: company?.employee_count, linkedin: company?.linkedin, confidence: company?.confidence, industry: company?.industry, hqCity: company?.hq_city, hqCountry: company?.hq_country }} />
             </TabsContent>
 
             <TabsContent value="shipments" className="space-y-4">
