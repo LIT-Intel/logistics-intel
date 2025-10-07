@@ -17,7 +17,7 @@ import { getCompanyShipments } from '@/lib/api/search';
 import { InlineFilters } from '@/components/search/InlineFilters';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
-import { getFilterOptions, saveCompanyToCrm } from '@/lib/api';
+import { getFilterOptions, saveCompanyToCrm, postSearchCompanies } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 
 const brand = {
@@ -353,9 +353,8 @@ export default function SearchAppPage() {
       setLastPayload(payload);
       setLastEndpoint('/api/lit/public/searchCompanies');
       console.log('[LIT] runSearch → payload', payload);
-      const res = await fetch('/api/lit/public/searchCompanies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) throw new Error(`searchCompanies ${res.status}`);
-      const data = await res.json();
+      // Prefer wrapper which normalizes arrays→CSV and routes via proxy
+      const data = await postSearchCompanies(payload as any);
       const arr = (data?.rows || data || []);
       const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_name);
       const seen = new Set<string>();
@@ -371,8 +370,38 @@ export default function SearchAppPage() {
       setRows(deduped);
       setHasSearched(true);
       setExploreTab('none');
-    } catch (e) {
+    } catch (e: any) {
       console.error('[LIT] runSearch error', e);
+      if (String(e?.message||'').includes('405')) {
+        toast({ title: 'Search endpoint returned 405. Falling back to GET…' });
+        try {
+          const qs = new URLSearchParams();
+          if (query?.trim()) qs.set('q', query.trim());
+          if (filters.origin.length) qs.set('origin', filters.origin.join(','));
+          if (filters.dest.length) qs.set('dest', filters.dest.join(','));
+          if (filters.hs.length) qs.set('hs', filters.hs.join(','));
+          qs.set('limit', '20');
+          qs.set('offset', '0');
+          const res2 = await fetch(`/api/lit/public/searchCompanies?${qs.toString()}`, { method: 'GET', headers: { 'accept': 'application/json' } });
+          if (!res2.ok) throw new Error(`searchCompanies GET ${res2.status}`);
+          const data2 = await res2.json();
+          const arr2 = (data2?.rows || data2 || []);
+          const norm2 = arr2.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_name);
+          const seen2 = new Set<string>();
+          const deduped2: any[] = [];
+          for (const r of norm2) {
+            if (!r.company_id && r.company_name) r.company_id = `name:${r.company_name.toLowerCase()}`;
+            const k2 = r.company_id ? `id:${r.company_id}` : `name:${String(r.company_name||'').toLowerCase()}`;
+            if (!seen2.has(k2)) { seen2.add(k2); deduped2.push(r); }
+          }
+          setRows(deduped2);
+          setHasSearched(true);
+          setExploreTab('none');
+          return;
+        } catch (e2) {
+          console.error('[LIT] search GET fallback failed', e2);
+        }
+      }
       toast({ title: 'Search failed. Please try again.' });
     } finally {
       setLoading(false);

@@ -18,7 +18,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Debug logging
-    console.log('[lit-proxy]', { target: GATEWAY, method, suffix, url });
+    const bodyPreview = !/^(GET|HEAD)$/i.test(method) ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {})) : undefined;
+    console.log('[lit-proxy]', { target: GATEWAY, method, suffix, url, body: bodyPreview?.slice?.(0, 400) });
 
     // Clone headers; drop hop-by-hop / host
     const headers = new Headers();
