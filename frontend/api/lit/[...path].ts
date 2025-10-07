@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const GATEWAY = process.env.LIT_API_BASE || 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+// Prefer env; fallback to known Gateway hostname used across the app
+const GATEWAY = process.env.LIT_API_BASE || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
