@@ -1,12 +1,24 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+// Prefer env; fallback to known Gateway hostname used across the app
+const GATEWAY = ((globalThis as any).process?.env?.LIT_API_BASE) || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
 
-const GATEWAY = process.env.LIT_API_BASE || 'https://lit-gw-2e68g4k3.uc.gateway.dev';
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   try {
+    const method = (req.method || 'GET').toUpperCase();
     const parts = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean);
     const suffix = parts.join('/');
     const url = `${GATEWAY}/${suffix}${req.url?.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+
+    // CORS: allow browser to call this serverless function
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    if (method === 'OPTIONS') {
+      return res.status(204).send('');
+    }
+
+    // Debug logging
+    const bodyPreview = !/^(GET|HEAD)$/i.test(method) ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {})) : undefined;
+    console.log('[lit-proxy]', { target: GATEWAY, method, suffix, url, body: bodyPreview?.slice?.(0, 400) });
 
     // Clone headers; drop hop-by-hop / host
     const headers = new Headers();
@@ -22,20 +34,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const init: RequestInit = {
-      method: req.method,
+      method,
       headers,
-      body: req.method && !/^(GET|HEAD)$/i.test(req.method) ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {})) : undefined,
+      body: !/^(GET|HEAD)$/i.test(method) ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {})) : undefined,
     };
 
     const upstream = await fetch(url, init);
     // Pass through status and body
     const text = await upstream.text();
-
-    // CORS: allow browser to call this serverless function
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    if (req.method === 'OPTIONS') return res.status(204).send('');
 
     // Mirror content-type if present
     const ct = upstream.headers.get('content-type');

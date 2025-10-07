@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign, Sparkles } from 'lucide-react';
 import PreCallBriefing from '../company/PreCallBriefing';
+import CompanyFirmographics from './CompanyFirmographics';
 import { exportCompanyPdf } from '../pdf/exportCompanyPdf';
 import { buildPreCallPrompt } from '../../lib/ai';
 import {
