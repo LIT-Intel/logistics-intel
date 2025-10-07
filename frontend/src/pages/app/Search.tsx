@@ -408,6 +408,19 @@ export default function SearchAppPage() {
     return { ...r, company_name, company_id, shipments_12m, last_activity, top_routes, top_carriers, tags };
   }
 
+  function dedupeByCompanyId(arr: any[]): any[] {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const r of Array.isArray(arr) ? arr : []) {
+      const id = String(r?.company_id || '');
+      if (!id) continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(r);
+    }
+    return out;
+  }
+
   async function onSaveCompany(row: any) {
     const cid = String(row?.company_id || '');
     const cname = String(row?.company_name || '');
@@ -581,19 +594,17 @@ export default function SearchAppPage() {
                 {exploreTab==='new' && !hasSearched && rows.length === 0 && (<SearchEmpty state="idle"/>) }
 
                 {(
-                  (exploreTab==='none' && hasSearched && rows.length>0) ||
-                  (exploreTab==='saved' && savedRows.length>0)
+                  (rows.length > 0) || (exploreTab==='saved' && savedRows.length>0)
                 ) && view === 'cards' && (
                   <div className="mt-6">
-                    <ResultsGrid rows={(exploreTab==='saved'? savedRows : rows)} renderCard={(r)=> (
+                    <ResultsGrid rows={dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows))} renderCard={(r)=> (
                       <CompanyCard row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
                     )} />
                   </div>
                 )}
 
                 {(
-                  (exploreTab==='none' && hasSearched && rows.length>0) ||
-                  (exploreTab==='saved' && savedRows.length>0)
+                  (rows.length > 0) || (exploreTab==='saved' && savedRows.length>0)
                 ) && view === 'list' && (
                   <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden">
                     <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
@@ -609,8 +620,8 @@ export default function SearchAppPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(exploreTab==='saved' ? savedRows : rows).map((r: any) => (
-                          <TableRow key={r.company_id || r.company_name} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors">
+                        {dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows)).map((r: any) => (
+                          <TableRow key={r.company_id} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors">
                             <TableCell>
                               <div className="font-medium text-slate-900">{r.company_name}</div>
                               <div className="mt-1 flex flex-wrap gap-1">
@@ -633,14 +644,13 @@ export default function SearchAppPage() {
                   </div>
                 )}
                 {(
-                  (exploreTab==='none' && hasSearched && rows.length>0) ||
-                  (exploreTab==='saved' && savedRows.length>0)
+                  (rows.length > 0) || (exploreTab==='saved' && savedRows.length>0)
                 ) && (
                   <div className="mt-4 flex items-center justify-between">
                     <div className="text-xs text-slate-600">Page {page}</div>
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={()=> { setPage(p=> Math.max(1, p-1)); setTimeout(runSearch, 0); }}>Prev</Button>
-                      <Button size="sm" variant="outline" disabled={(exploreTab==='saved' ? savedRows.length : rows.length) < pageSize || loading} onClick={()=> { setPage(p=> p+1); setTimeout(runSearch, 0); }}>Next</Button>
+                      <Button size="sm" variant="outline" disabled={((exploreTab==='saved' && rows.length===0) ? savedRows.length : rows.length) < pageSize || loading} onClick={()=> { setPage(p=> p+1); setTimeout(runSearch, 0); }}>Next</Button>
                     </div>
                   </div>
                 )}
@@ -656,55 +666,6 @@ export default function SearchAppPage() {
                 <div className="font-medium">No companies match “{query}”.</div>
                 <div className="text-sm text-muted-foreground">Try a broader term or clear filters.</div>
               </div>
-            </div>
-          )}
-
-          {rows.length > 0 && view === 'cards' && (
-            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 auto-rows-[280px]">
-              <AnimatePresence>
-                {rows.map((r: any) => (
-                  <CompanyCard key={r.company_id || r.company_name} row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
-
-          {rows.length > 0 && view === 'list' && (
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-white/95 shadow-sm overflow-hidden">
-              <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600"/>
-              <Table>
-                <TableHeader className="bg-slate-50/80">
-                  <TableRow>
-                    <TableHead className="w-[34%] text-slate-700">Company</TableHead>
-                    <TableHead className="w-[12%] text-slate-700">Shipments (12m)</TableHead>
-                    <TableHead className="w-[18%] text-slate-700">Last Activity</TableHead>
-                    <TableHead className="w-[18%] text-slate-700">Top Routes</TableHead>
-                    <TableHead className="w-[18%] text-slate-700">Top Carrier</TableHead>
-                    <TableHead className="w-[10%] text-slate-700 text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((r: any) => (
-                    <TableRow key={r.company_id || r.company_name} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-purple-400 transition-colors">
-                      <TableCell>
-                        <div className="font-medium text-slate-900">{r.company_name}</div>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {(r.tags||[]).map((t: string, i: number) => (
-                            <Badge key={i} variant="outline" className="rounded-full border-indigo-200 text-slate-600">{t}</Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>{r.shipments_12m ?? '—'}</TableCell>
-                      <TableCell>{r.last_activity ?? '—'}</TableCell>
-                      <TableCell>{r.top_routes?.[0] ? `${r.top_routes[0].origin_country} → ${r.top_routes[0].dest_country} (${r.top_routes[0].cnt})` : '—'}</TableCell>
-                      <TableCell>{r.top_carriers?.[0]?.carrier ?? '—'}</TableCell>
-                      <TableCell className="text-right">
-                        <SaveButton row={r} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
             </div>
           )}
         </div>
