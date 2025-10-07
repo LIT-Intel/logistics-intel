@@ -139,18 +139,12 @@ export async function postSearchCompanies(payload: any) {
 }
 
 export type SearchCompaniesBody = {
-  q?: string;
-  mode?: 'air'|'ocean';
-  hs?: string[];
+  q: string | null;
   origin?: string[];
   dest?: string[];
-  carrier?: string[];
-  startDate?: string; // YYYY-MM-DD
-  endDate?: string;   // YYYY-MM-DD
-  limit: number;
-  offset: number;
-  company_id?: string;       // accepted for summary lookup
-  company_ids?: string[];    // accepted for summary lookup
+  hs?: string[];
+  limit?: number;
+  offset?: number;
 };
 
 export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }) {
