@@ -14,7 +14,7 @@ import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPi
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
 // canonical helpers and API wrappers
-import { getFilterOptions, saveCompanyToCrm, postSearchCompanies, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
+import { getFilterOptions, saveCompanyToCrm, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
 import { useSearch } from '@/app/search/useSearch';
 import { InlineFilters } from '@/components/search/InlineFilters';
 import SearchEmpty from '@/components/SearchEmpty';
@@ -197,99 +197,7 @@ function SearchAppPage() {
     })();
   }, []);
 
-  const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
-
-  async function runSearch() {
-    setLoading(true);
-    try {
-      const basePayload = {
-        origin: filters.origin.length ? filters.origin : null,
-        dest: filters.dest.length ? filters.dest : null,
-        hs: filters.hs.length ? filters.hs : null,
-        limit: pageSize,
-        offset: 0,
-      } as const;
-  const qtrim = (q || '').trim();
-      const tokens = qtrim ? (qtrim.split(RE_SPLIT).map(s=>s.trim()).filter(Boolean).slice(0,4) || [qtrim]) : [];
-      setLastPayload({ ...(basePayload as any), q: qtrim || null });
-      setLastEndpoint('/api/lit/public/searchCompanies');
-      console.log('[LIT] runSearch → tokens', tokens);
-
-      let pages: any[][] = [];
-      if (tokens.length > 0) {
-        const results = await Promise.all(tokens.map(async t => {
-          try {
-            const d = await postSearchCompanies({ ...(basePayload as any), q: t });
-            return (d?.rows || d || []) as any[];
-          } catch (e) {
-            console.warn('[LIT] token search failed', t, e);
-            return [] as any[];
-          }
-        }));
-        pages = results;
-      } else {
-        const d = await postSearchCompanies({ ...(basePayload as any), q: null as any });
-        pages = [ (d?.rows || d || []) as any[] ];
-      }
-
-      const dedup = new Map<string, any>();
-      for (const arr of pages) {
-        for (const raw of arr) {
-          const r = normalizeRow(raw);
-          if (!r.company_name) continue;
-          if (!r.company_id) r.company_id = `name:${String(r.company_name||'').toLowerCase()}`;
-          const key = getCompanyKey({ company_id: r.company_id, company_name: r.company_name });
-          if (!dedup.has(key)) dedup.set(key, r);
-        }
-      }
-      const merged = Array.from(dedup.values());
-      console.log('[LIT] runSearch → merged', merged.length, merged.slice(0,2));
-      setAllRows(merged);
-      setPage(1);
-      setRows(merged.slice(0, pageSize));
-      setHasSearched(true);
-      setExploreTab('none');
-    } catch (e: any) {
-      console.error('[LIT] runSearch error', e);
-      if (String(e?.message||'').includes('405')) {
-        toast({ title: 'Search endpoint returned 405. Falling back to GET…' });
-        try {
-          const qs = new URLSearchParams();
-          if (q?.trim()) qs.set('q', q.trim());
-          if (filters.origin.length) qs.set('origin', filters.origin.join(','));
-          if (filters.dest.length) qs.set('dest', filters.dest.join(','));
-          if (filters.hs.length) qs.set('hs', filters.hs.join(','));
-          qs.set('limit', String(pageSize));
-          qs.set('offset', '0');
-          const res2 = await fetch(`/api/lit/public/searchCompanies?${qs.toString()}`, { method: 'GET', headers: { 'accept': 'application/json' } });
-          if (!res2.ok) throw new Error(`searchCompanies GET ${res2.status}`);
-          const data2 = await res2.json();
-          const arr2 = (data2?.rows || data2 || []);
-          const dedup2 = new Map<string, any>();
-          for (const raw of arr2) {
-            const r = normalizeRow(raw);
-            if (!r.company_name) continue;
-            if (!r.company_id) r.company_id = `name:${String(r.company_name||'').toLowerCase()}`;
-            const key = getCompanyKey({ company_id: r.company_id, company_name: r.company_name });
-            if (!dedup2.has(key)) dedup2.set(key, r);
-          }
-          const merged2 = Array.from(dedup2.values());
-          setAllRows(merged2);
-          setPage(1);
-          setRows(merged2.slice(0, pageSize));
-          setHasSearched(true);
-          setExploreTab('none');
-          return;
-        } catch (e2) {
-          console.error('[LIT] search GET fallback failed', e2);
-          toast({ title: 'Search failed (GET fallback). Check proxy/backend.' });
-        }
-      }
-      toast({ title: 'Search failed. Please try again.' });
-    } finally {
-      setLoading(false);
-    }
-  }
+  // All searching handled by useSearch(); no local fetch implementation
 
   function loadSavedCompanies() {
     try {
@@ -492,7 +400,7 @@ function SearchAppPage() {
                     </div>
                     <div className="mt-3 flex justify-end gap-2">
                       <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [], mode: [], carrier: [] }); }}>Clear</Button>
-                      <Button onClick={() => { runSearch(); setFiltersOpen(false); }}>Apply</Button>
+                      <Button onClick={() => { onSubmit(); setFiltersOpen(false); }}>Apply</Button>
                     </div>
                   </div>
                 )}
