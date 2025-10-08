@@ -60,7 +60,7 @@ export default function AppShell({ currentPageName, children }) {
           <nav className="mb-4">
             <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
             <SideLink to="/app/search" icon={Search} label="Search" />
-            <SideLink to="/app/companies" icon={Building2} label="Command Center" />
+            <SideLink to="/app/command-center" icon={Building2} label="Command Center" />
             <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
           </nav>
 
@@ -140,7 +140,7 @@ export default function AppShell({ currentPageName, children }) {
             <nav className="space-y-1">
               <SideLink to="/app/dashboard" icon={BarChart3} label="Dashboard" />
               <SideLink to="/app/search" icon={Search} label="Search" />
-              <SideLink to="/app/companies" icon={Building2} label="Command Center" />
+              <SideLink to="/app/command-center" icon={Building2} label="Command Center" />
               <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
               <SideLink to="/app/rfp" icon={FileText} label="RFP Studio" />
               <SideLink to="/app/widgets" icon={Package} label="Widgets" />
