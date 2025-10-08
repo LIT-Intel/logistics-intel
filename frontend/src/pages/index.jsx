@@ -84,8 +84,8 @@ function PagesContent() {
                 <Route path="/app/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/app/companies" element={<ProtectedRoute><Companies /></ProtectedRoute>} />
                 <Route path="/app/companies/:id" element={<ProtectedRoute><Company /></ProtectedRoute>} />
-                <Route path="/command-center" element={<ProtectedRoute><CommandCenterPage /></ProtectedRoute>} />
-                <Route path="/app/command-center" element={<ProtectedRoute><CommandCenterPage /></ProtectedRoute>} />
+                <Route path="/command-center" element={<CommandCenterPage />} />
+                <Route path="/app/command-center" element={<CommandCenterPage />} />
                 <Route path="/app/command-center/:companyId" element={<ProtectedRoute><CommandCenterCompany /></ProtectedRoute>} />
                 <Route path="/app/admin-dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
                 <Route path="/app/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
