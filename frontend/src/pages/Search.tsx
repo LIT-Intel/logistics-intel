@@ -116,12 +116,8 @@ export default function Search() {
 
         const resp = await postSearchCompanies(body);
         try { console.debug('[Search] postSearchCompanies ok', { payload: body, resp }); } catch {}
-        const raw = Array.isArray(resp?.rows)
-          ? resp.rows
-          : (Array.isArray(resp?.items) ? resp.items : []);
-        const total = typeof resp?.meta?.total === "number"
-          ? resp.meta.total
-          : (typeof resp?.total === "number" ? resp.total : (raw || []).length);
+        const raw = Array.isArray(resp?.items) ? resp.items : (Array.isArray(resp?.rows) ? resp.rows : []);
+        const total = typeof resp?.total === 'number' ? resp.total : (Array.isArray(raw) ? raw.length : 0);
 
         const mapped = (raw || []).map((item) => {
           const id =
@@ -232,9 +228,7 @@ export default function Search() {
         }
         resp = await r.json();
       }
-      const raw = Array.isArray(resp?.rows)
-        ? resp.rows
-        : (Array.isArray(resp?.items) ? resp.items : []);
+      const raw = Array.isArray(resp?.items) ? resp.items : (Array.isArray(resp?.rows) ? resp.rows : []);
       const mapped = raw.map((item) => {
         const name = item.company_name || item.name || "Unknown";
         const id = item.company_id || name.toLowerCase().replace(/[^a-z0-9]+/g, "-");

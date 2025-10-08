@@ -121,19 +121,11 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const body = typeof payload === 'object' && payload ? {
-    q: (payload.q ?? '').trim(),
-    origin: Array.isArray(payload.origin) ? payload.origin.join(',') : (payload.origin ?? ''),
-    dest: Array.isArray(payload.dest) ? payload.dest.join(',') : (payload.dest ?? ''),
-    hs: Array.isArray(payload.hs) ? payload.hs.join(',') : (payload.hs ?? ''),
-    limit: Math.max(1, Math.min(50, Number(payload.limit ?? 24))),
-    offset: Math.max(0, Number(payload.offset ?? 0)),
-  } : { q: '', origin: '', dest: '', hs: '', limit: 24, offset: 0 };
-  const res = await fetch(`${GW}/public/searchCompanies`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+  const res = await fetch(`/api/lit/public/searchCompanies`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {})
   });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
-  return res.json();
+  return res.json(); // { items, total }
 }
 
 export type SearchCompaniesBody = {
