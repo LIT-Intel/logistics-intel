@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/lit/public/(.*)",
+      "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/$1"
+    }
+  ]
+}
