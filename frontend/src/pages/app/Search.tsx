@@ -165,7 +165,7 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
 
 // Replaced inline DetailsDialog with shared CompanyModal component
 
-export default function SearchAppPage() {
+function SearchAppPage() {
   const [view, setView] = useState<'cards'|'list'>('cards');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[]; carriers: string[] }>({ modes: [], origins: [], destinations: [], carriers: [] });
@@ -208,7 +208,7 @@ export default function SearchAppPage() {
         limit: pageSize,
         offset: 0,
       } as const;
-      const qtrim = (query || '').trim();
+  const qtrim = (q || '').trim();
       const tokens = qtrim ? (qtrim.split(RE_SPLIT).map(s=>s.trim()).filter(Boolean).slice(0,4) || [qtrim]) : [];
       setLastPayload({ ...(basePayload as any), q: qtrim || null });
       setLastEndpoint('/api/lit/public/searchCompanies');
@@ -254,7 +254,7 @@ export default function SearchAppPage() {
         toast({ title: 'Search endpoint returned 405. Falling back to GET…' });
         try {
           const qs = new URLSearchParams();
-          if (query?.trim()) qs.set('q', query.trim());
+          if (q?.trim()) qs.set('q', q.trim());
           if (filters.origin.length) qs.set('origin', filters.origin.join(','));
           if (filters.dest.length) qs.set('dest', filters.dest.join(','));
           if (filters.hs.length) qs.set('hs', filters.hs.join(','));
@@ -368,9 +368,9 @@ export default function SearchAppPage() {
   }
 
   const filtered = useMemo(() => {
-    if (!query) return rows;
-    return rows.filter((r: any) => String(r.company_name||'').toLowerCase().includes(query.toLowerCase()));
-  }, [query, rows]);
+    if (!q) return rows;
+    return rows.filter((r: any) => String(r.company_name||'').toLowerCase().includes(q.toLowerCase()));
+  }, [q, rows]);
 
   return (
     <TooltipProvider>
@@ -596,6 +596,15 @@ export default function SearchAppPage() {
         )}
       </div>
     </TooltipProvider>
+  );
+}
+
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+export default function SearchAppPageWrapper() {
+  return (
+    <ErrorBoundary>
+      <SearchAppPage />
+    </ErrorBoundary>
   );
 }
 
