@@ -15,9 +15,11 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { motion, AnimatePresence } from 'framer-motion';
 // canonical helpers and API wrappers
 import { getFilterOptions, saveCompanyToCrm, postSearchCompanies, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
+import { useSearch } from '@/app/search/useSearch';
 import { InlineFilters } from '@/components/search/InlineFilters';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
+import CompanyModal from '@/components/search/CompanyModal';
 import { useToast } from '@/components/ui/use-toast';
 
 const brand = {
@@ -161,161 +163,13 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
   );
 }
 
-function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChange: (v: boolean) => void; row: any }) {
-  const [shipments, setShipments] = React.useState<any[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!open || !row) return;
-    setLoading(true);
-    setError(null);
-    (async () => {
-      try {
-        const url = buildCompanyShipmentsUrl({ company_id: row.company_id, company_name: row.company_name }, 50, 0);
-        const res = await fetch(url, { headers: { 'accept': 'application/json' } });
-        const data = await res.json().catch(()=>({ rows: [] }));
-        const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data) ? data : []);
-        setShipments(rows);
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load shipments');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [open, row?.company_id, row?.company_name]);
-
-  if (!row) return null;
-  const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="p-0 w-screen h-[100dvh] max-h-[100dvh] rounded-none sm:rounded-2xl sm:w-auto sm:h-auto sm:max-w-5xl">
-        <div className="flex flex-col h-full">
-          <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 sticky top-0 bg-white z-10 border-b">
-            <DialogTitle className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-9 w-9"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
-                <span className="text-slate-900 font-semibold truncate max-w-[60vw] sm:max-w-none">{row.company_name}</span>
-              </div>
-              <DialogClose asChild>
-                <button className="inline-flex items-center justify-center rounded-md border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 sm:hidden"><XCircle className="h-4 w-4"/></button>
-              </DialogClose>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="px-4 sm:px-6 pb-3 sm:pb-2 overflow-y-auto sm:overflow-visible flex-1 overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' as any }}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="col-span-2 border-slate-200">
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Snapshot</CardTitle></CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <KPI value={row.shipments_12m} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
-                  <KPI value={row.last_activity ?? '—'} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
-                  <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
-                </div>
-                <Separator className="my-4" />
-                <div>
-                  <div className="text-sm font-medium mb-2">Top routes</div>
-                  <div className="flex flex-wrap gap-2">
-                    {row.top_routes?.length ? row.top_routes.map((r: any, i: number) => (
-                      <Badge key={i} variant="secondary" className={cn(brand.chip, 'px-3 py-1 font-medium bg-indigo-50 border-indigo-100')}>
-                        <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-indigo-600" />{r.origin_country} → {r.dest_country}</span>
-                        <span className="ml-2 text-muted-foreground">{r.cnt}</span>
-                      </Badge>
-                    )) : <span className="text-sm text-muted-foreground">No route data</span>}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-slate-200">
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Quick actions</CardTitle></CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <Button variant="default" className="justify-start rounded-xl"><Mail className="h-4 w-4 mr-2"/>Email Contact</Button>
-                <Button variant="secondary" className="justify-start rounded-xl"><Phone className="h-4 w-4 mr-2"/>Call via CRM</Button>
-                <Button variant="outline" className="justify-start rounded-xl"><ExternalLink className="h-4 w-4 mr-2"/>Open Company Page</Button>
-              </CardContent>
-            </Card>
-          </div>
-          </div>
-          <Separator />
-          <div className="px-4 sm:px-6 pb-20 sm:pb-4">
-            <Tabs defaultValue="shipments">
-              <TabsList className="flex sm:grid w-full sm:grid-cols-4 overflow-x-auto gap-2">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="shipments">Shipments</TabsTrigger>
-              <TabsTrigger value="contacts">Contacts</TabsTrigger>
-              <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
-              </TabsList>
-            <TabsContent value="overview" className="mt-4"><div className="text-sm text-muted-foreground">Company metadata, enrichment summary, confidence scores…</div></TabsContent>
-            <TabsContent value="shipments" className="mt-4">
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-5 text-xs uppercase text-muted-foreground p-3 bg-slate-50/60">
-                  <div>Date</div><div>Mode</div><div>Origin → Dest</div><div>HS</div><div>Carrier</div>
-                </div>
-                <Separator />
-                {loading && (
-                  <div className="p-4 text-sm text-muted-foreground">Loading…</div>
-                )}
-                {error && (
-                  <div className="p-4 text-sm text-red-600">{error}</div>
-                )}
-                {!loading && !error && (
-                  <div className="divide-y">
-                    {shipments.length === 0 && (
-                      <div className="p-3 text-sm text-muted-foreground">No shipments found.</div>
-                    )}
-                    {shipments.map((s: any, i: number) => {
-                      const date = s.shipped_on || s.date || s.dt || '—';
-                      const mode = s.mode || s.transport_mode || '—';
-                      const origin = s.origin || s.origin_port || s.origin_country || s.o || '—';
-                      const dest = s.destination || s.dest || s.destination_port || s.dest_country || s.d || '—';
-                      const hs = s.hs || s.hs_code || '—';
-                      const carrier = s.carrier || s.line || s.airline || '—';
-                      return (
-                        <div key={i} className="grid grid-cols-5 p-3 text-sm">
-                          <div>{date}</div>
-                          <div className="capitalize">{mode}</div>
-                          <div>{origin} → {dest}</div>
-                          <div>{hs}</div>
-                          <div>{carrier}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              </TabsContent>
-            <TabsContent value="contacts" className="mt-4"><div className="text-sm text-muted-foreground">Linked contacts and enrichment actions…</div></TabsContent>
-            <TabsContent value="campaigns" className="mt-4"><div className="text-sm text-muted-foreground">Recent sequences and follow-ups…</div></TabsContent>
-            </Tabs>
-          </div>
-          <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white/95 border-t p-2 flex justify-end">
-            <DialogClose asChild>
-              <button className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-slate-700"><XCircle className="h-4 w-4"/>Close</button>
-            </DialogClose>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+// Replaced inline DetailsDialog with shared CompanyModal component
 
 export default function SearchAppPage() {
-  const [query, setQuery] = useState('');
   const [view, setView] = useState<'cards'|'list'>('cards');
-  const [rows, setRows] = useState<any[]>([]);
-  const [allRows, setAllRows] = useState<any[]>([]);
-  const [lastPayload, setLastPayload] = useState<any>(null);
-  const [lastEndpoint, setLastEndpoint] = useState<string>('');
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState<any | null>(null);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[]; carriers: string[] }>({ modes: [], origins: [], destinations: [], carriers: [] });
   const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]; mode:string[]; carrier:string[]}>({ origin: [], dest: [], hs: [], mode: [], carrier: [] });
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const pageSize = 25;
-  const [hasSearched, setHasSearched] = useState(false);
   const [exploreTab, setExploreTab] = useState<'none'|'trending'|'new'|'saved'|'alerts'>('none');
   const [savedRows, setSavedRows] = useState<any[]>([]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
@@ -326,6 +180,9 @@ export default function SearchAppPage() {
     } catch { return new Set(); }
   });
   const { toast } = useToast();
+  const { q, setQ, rows, loading, run, next, prev, page } = useSearch();
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [modal, setModal] = useState<any | null>(null);
 
   // Do not auto-load results. Wait for user to search.
 
@@ -453,10 +310,7 @@ export default function SearchAppPage() {
 
   // Reset view on mount to ensure no default cards render
   useEffect(() => {
-    setRows([]);
-    setHasSearched(false);
     setExploreTab('none');
-    setPage(1);
   }, []);
 
   function normalizeRow(r: any) {
@@ -534,12 +388,12 @@ export default function SearchAppPage() {
                     <Input
                       placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
                       className="pl-9 rounded-xl bg-white/90 h-12 text-base"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
                     />
                   </div>
-                  <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+                  <Button onClick={() => run()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
                   <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
                 </div>
                 <div className="mt-3 mb-2 flex items-center gap-2 justify-center">
@@ -644,7 +498,7 @@ export default function SearchAppPage() {
                 {/* Build tag for deploy verification */}
                 <div className="mt-2 text-[10px] text-muted-foreground">build: fix/deploy-ui-proxy</div>
 
-                {exploreTab==='none' && !hasSearched && (<SearchEmpty state="idle"/>)}
+                {exploreTab==='none' && !rows.length && (<SearchEmpty state="idle"/>)}
 
                 {exploreTab==='saved' && savedRows.length === 0 && (
                   <div className="mt-10 text-center text-sm text-muted-foreground">No saved companies yet.</div>
@@ -664,7 +518,7 @@ export default function SearchAppPage() {
                       <CompanyCard
                         row={r}
                         selected={selectedKey === getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })}
-                        onOpen={(row) => { setActive(row); setOpen(true); setSelectedKey(getCompanyKey({ company_id: row?.company_id, company_name: row?.company_name })); }}
+                        onOpen={(row) => { setModal(row); setSelectedKey(getCompanyKey({ company_id: row?.company_id, company_name: row?.company_name })); }}
                       />
                     )} />
                   </div>
@@ -693,7 +547,7 @@ export default function SearchAppPage() {
                           return (
                           <TableRow
                             key={k}
-                            onClick={() => { setActive(r); setOpen(true); setSelectedKey(k); }}
+                            onClick={() => { setModal(r); setSelectedKey(k); }}
                             className={cn('cursor-pointer hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors', isActive ? 'bg-indigo-50/40 border-l-indigo-500' : '')}
                           >
                             <TableCell>
@@ -723,20 +577,8 @@ export default function SearchAppPage() {
                   <div className="mt-4 flex items-center justify-between">
                     <div className="text-xs text-slate-600">Page {page}</div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={()=> {
-                        setPage(p=> {
-                          const np = Math.max(1, p-1);
-                          setRows(((exploreTab==='saved' && rows.length===0) ? savedRows : allRows).slice((np-1)*pageSize, np*pageSize));
-                          return np;
-                        });
-                      }}>Prev</Button>
-                      <Button size="sm" variant="outline" disabled={(((exploreTab==='saved' && rows.length===0) ? savedRows.length : allRows.length) <= page*pageSize) || loading} onClick={()=> {
-                        setPage(p=> {
-                          const np = p + 1;
-                          setRows(((exploreTab==='saved' && rows.length===0) ? savedRows : allRows).slice((np-1)*pageSize, np*pageSize));
-                          return np;
-                        });
-                      }}>Next</Button>
+                      <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={prev}>Prev</Button>
+                      <Button size="sm" variant="outline" disabled={loading} onClick={next}>Next</Button>
                     </div>
                   </div>
                 )}
@@ -748,7 +590,9 @@ export default function SearchAppPage() {
           {/* Empty states handled via SearchEmpty (idle vs no-results) */}
         </div>
 
-        <DetailsDialog open={open} onOpenChange={setOpen} row={active} />
+        {modal && (
+          <CompanyModal company={modal} shipmentsUrl={buildCompanyShipmentsUrl(modal, 50, 0)} onClose={() => setModal(null)} />
+        )}
       </div>
     </TooltipProvider>
   );
