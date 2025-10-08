@@ -183,6 +183,7 @@ export default function SearchAppPage() {
   const { q, setQ, rows, loading, run, next, prev, page } = useSearch();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [modal, setModal] = useState<any | null>(null);
+  const hasSearched = (q || '').trim().length > 0;
 
   // Do not auto-load results. Wait for user to search.
 
