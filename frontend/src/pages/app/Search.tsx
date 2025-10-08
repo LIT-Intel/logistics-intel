@@ -165,7 +165,7 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
 
 // Replaced inline DetailsDialog with shared CompanyModal component
 
-export default function SearchAppPage() {
+function SearchAppPage() {
   const [view, setView] = useState<'cards'|'list'>('cards');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[]; carriers: string[] }>({ modes: [], origins: [], destinations: [], carriers: [] });
@@ -181,8 +181,10 @@ export default function SearchAppPage() {
   });
   const { toast } = useToast();
   const { q, setQ, rows, loading, run, next, prev, page } = useSearch();
+  function onSubmit(e?: React.FormEvent) { if (e) e.preventDefault(); run(true); }
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [modal, setModal] = useState<any | null>(null);
+  const hasSearched = (q || '').trim().length > 0;
 
   // Do not auto-load results. Wait for user to search.
 
@@ -207,7 +209,7 @@ export default function SearchAppPage() {
         limit: pageSize,
         offset: 0,
       } as const;
-      const qtrim = (query || '').trim();
+  const qtrim = (q || '').trim();
       const tokens = qtrim ? (qtrim.split(RE_SPLIT).map(s=>s.trim()).filter(Boolean).slice(0,4) || [qtrim]) : [];
       setLastPayload({ ...(basePayload as any), q: qtrim || null });
       setLastEndpoint('/api/lit/public/searchCompanies');
@@ -253,7 +255,7 @@ export default function SearchAppPage() {
         toast({ title: 'Search endpoint returned 405. Falling back to GET…' });
         try {
           const qs = new URLSearchParams();
-          if (query?.trim()) qs.set('q', query.trim());
+          if (q?.trim()) qs.set('q', q.trim());
           if (filters.origin.length) qs.set('origin', filters.origin.join(','));
           if (filters.dest.length) qs.set('dest', filters.dest.join(','));
           if (filters.hs.length) qs.set('hs', filters.hs.join(','));
@@ -367,9 +369,9 @@ export default function SearchAppPage() {
   }
 
   const filtered = useMemo(() => {
-    if (!query) return rows;
-    return rows.filter((r: any) => String(r.company_name||'').toLowerCase().includes(query.toLowerCase()));
-  }, [query, rows]);
+    if (!q) return rows;
+    return rows.filter((r: any) => String(r.company_name||'').toLowerCase().includes(q.toLowerCase()));
+  }, [q, rows]);
 
   return (
     <TooltipProvider>
@@ -382,7 +384,7 @@ export default function SearchAppPage() {
           <div className="w-full">
             <main className="flex-1 min-w-0 max-w-6xl mx-auto">
               <div className="relative">
-                <div className="flex items-center justify-center gap-2">
+                <form onSubmit={onSubmit} className="flex items-center justify-center gap-2">
                   <div className="relative w-full max-w-3xl">
                     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
                     <Input
@@ -390,12 +392,12 @@ export default function SearchAppPage() {
                       className="pl-9 rounded-xl bg-white/90 h-12 text-base"
                       value={q}
                       onChange={(e) => setQ(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(); }}
                     />
                   </div>
-                  <Button onClick={() => run()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+                  <Button type="submit" onClick={() => onSubmit()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
                   <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
-                </div>
+                </form>
                 <div className="mt-3 mb-2 flex items-center gap-2 justify-center">
                   <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
                   <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
@@ -595,6 +597,15 @@ export default function SearchAppPage() {
         )}
       </div>
     </TooltipProvider>
+  );
+}
+
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+export default function SearchAppPageWrapper() {
+  return (
+    <ErrorBoundary>
+      <SearchAppPage />
+    </ErrorBoundary>
   );
 }
 
