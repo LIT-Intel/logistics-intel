@@ -145,7 +145,7 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
         <CardContent className="pt-0 flex-1 flex flex-col">
           <div className="grid grid-cols-3 gap-4">
             <KPI value={row.shipments_12m} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
-            <KPI value={row.last_activity ?? '—'} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
+            <KPI value={(typeof row.last_activity === 'object' ? (row.last_activity?.value || '—') : (row.last_activity ?? '—'))} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
             <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
           </div>
           <Separator className="my-4" />
@@ -469,7 +469,7 @@ function SearchAppPage() {
                               </div>
                             </TableCell>
                             <TableCell>{r.shipments_12m ?? '—'}</TableCell>
-                            <TableCell>{r.last_activity ?? '—'}</TableCell>
+                            <TableCell>{(typeof r.last_activity === 'object' ? (r.last_activity?.value || '—') : (r.last_activity ?? '—'))}</TableCell>
                             <TableCell>{r.top_routes?.[0] ? `${r.top_routes[0].origin_country} → ${r.top_routes[0].dest_country} (${r.top_routes[0].cnt})` : '—'}</TableCell>
                             <TableCell>{r.top_routes?.[0]?.dest_country ?? '—'}</TableCell>
                             <TableCell className="text-right">
