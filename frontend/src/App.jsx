@@ -28,6 +28,7 @@ const Signup         = lazy(() => import("@/pages/signup/Signup"));
 const Transactions   = lazy(() => import("@/pages/Transactions"));
 const Widgets        = lazy(() => import("@/pages/Widgets"));
 const Company        = lazy(() => import("@/pages/Company"));
+const CommandCenterPage = lazy(() => import("@/pages/command-center"));
 const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany    = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
@@ -112,6 +113,14 @@ export default function App() {
           path="/app/companies"
           element={
             <Layout currentPageName="Command Center"><Companies /></Layout>
+          }
+        />
+        <Route
+          path="/app/command-center"
+          element={
+            <RequireAuth>
+              <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
+            </RequireAuth>
           }
         />
         <Route
