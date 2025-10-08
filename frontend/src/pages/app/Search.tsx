@@ -13,11 +13,11 @@ import { cn } from '@/lib/utils';
 import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory, Bell, Bookmark, Sparkles } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getCompanyShipments } from '@/lib/api/search';
+// canonical helpers and API wrappers
+import { getFilterOptions, saveCompanyToCrm, postSearchCompanies, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
 import { InlineFilters } from '@/components/search/InlineFilters';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
-import { getFilterOptions, saveCompanyToCrm, postSearchCompanies } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 
 const brand = {
@@ -56,13 +56,9 @@ function SaveButton({ row }: { row: any }) {
     if (saving || saved) return;
     setSaving(true);
     try {
-      let cid = String(row?.company_id || '');
       const cname = String(row?.company_name || '');
       if (!cname) throw new Error('missing name');
-      if (!cid) {
-        const base = cname.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 20);
-        cid = `comp_${base || 'company'}_${Math.random().toString(36).slice(2, 6)}`;
-      }
+      const cid = getCompanyKey({ company_id: row?.company_id, company_name: cname });
       try { await saveCompanyToCrm({ company_id: cid, company_name: cname, source: 'search' }); } catch {}
       const lsKey = 'lit_companies';
       const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
@@ -79,9 +75,8 @@ function SaveButton({ row }: { row: any }) {
         window.dispatchEvent(new StorageEvent('storage', { key: lsKey } as any));
       }
       setSaved(true);
-      if (cid) {
-        window.location.href = `/app/companies/${cid}`;
-      }
+      // Do not navigate; avoid blank page. Command Center navigation should
+      // only occur once we have a canonical company_id and explicit user intent.
     } catch (e) {
       console.error('save failed', e);
     } finally {
@@ -118,14 +113,14 @@ function RoutePill({ o, d, n }: { o: string; d: string; n: number }) {
 
 // Top carriers chip removed in favor of emphasizing destinations
 
-function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
+function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => void; selected?: boolean }) {
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
   const isSaved = (() => {
     try { return new Set(JSON.parse(localStorage.getItem('lit_companies')||'[]').map((c:any)=> String(c?.id||''))).has(String(row?.company_id||'')); } catch { return false; }
   })();
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-      <Card className="group transition-shadow rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm hover:shadow-md min-h-[260px] flex flex-col">
+      <Card className={cn('group transition-shadow rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm hover:shadow-md min-h-[260px] flex flex-col', selected ? 'ring-2 ring-indigo-500 ring-offset-1' : '')}>
         <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600 rounded-t-2xl" />
         <CardHeader className="pb-2 flex flex-row items-center gap-4">
           <Avatar className="h-10 w-10"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
@@ -177,7 +172,9 @@ function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChang
     setError(null);
     (async () => {
       try {
-        const data = await getCompanyShipments({ company_id: row.company_id ?? null, company_name: row.company_name ?? null, limit: 50, offset: 0 });
+        const url = buildCompanyShipmentsUrl({ company_id: row.company_id, company_name: row.company_name }, 50, 0);
+        const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+        const data = await res.json().catch(()=>({ rows: [] }));
         const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data) ? data : []);
         setShipments(rows);
       } catch (e: any) {
@@ -306,16 +303,18 @@ export default function SearchAppPage() {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'cards'|'list'>('cards');
   const [rows, setRows] = useState<any[]>([]);
+  const [allRows, setAllRows] = useState<any[]>([]);
   const [lastPayload, setLastPayload] = useState<any>(null);
   const [lastEndpoint, setLastEndpoint] = useState<string>('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<any | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[]; carriers: string[] }>({ modes: [], origins: [], destinations: [], carriers: [] });
   const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]; mode:string[]; carrier:string[]}>({ origin: [], dest: [], hs: [], mode: [], carrier: [] });
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const pageSize = 25;
   const [hasSearched, setHasSearched] = useState(false);
   const [exploreTab, setExploreTab] = useState<'none'|'trending'|'new'|'saved'|'alerts'>('none');
   const [savedRows, setSavedRows] = useState<any[]>([]);
@@ -339,35 +338,56 @@ export default function SearchAppPage() {
     })();
   }, []);
 
+  const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
+
   async function runSearch() {
     setLoading(true);
     try {
-      const payload = {
-        q: (query?.trim() || '') || null,
+      const basePayload = {
         origin: filters.origin.length ? filters.origin : null,
         dest: filters.dest.length ? filters.dest : null,
         hs: filters.hs.length ? filters.hs : null,
-        limit: 20,
+        limit: pageSize,
         offset: 0,
       } as const;
-      setLastPayload(payload);
+      const qtrim = (query || '').trim();
+      const tokens = qtrim ? (qtrim.split(RE_SPLIT).map(s=>s.trim()).filter(Boolean).slice(0,4) || [qtrim]) : [];
+      setLastPayload({ ...(basePayload as any), q: qtrim || null });
       setLastEndpoint('/api/lit/public/searchCompanies');
-      console.log('[LIT] runSearch → payload', payload);
-      // Prefer wrapper which normalizes arrays→CSV and routes via proxy
-      const data = await postSearchCompanies(payload as any);
-      const arr = (data?.rows || data || []);
-      const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_name);
-      const seen = new Set<string>();
-      const deduped: any[] = [];
-      for (const r of norm) {
-        if (!r.company_id && r.company_name) {
-          r.company_id = `name:${r.company_name.toLowerCase()}`;
-        }
-        const k = r.company_id ? `id:${r.company_id}` : `name:${String(r.company_name||'').toLowerCase()}`;
-        if (!seen.has(k)) { seen.add(k); deduped.push(r); }
+      console.log('[LIT] runSearch → tokens', tokens);
+
+      let pages: any[][] = [];
+      if (tokens.length > 0) {
+        const results = await Promise.all(tokens.map(async t => {
+          try {
+            const d = await postSearchCompanies({ ...(basePayload as any), q: t });
+            return (d?.rows || d || []) as any[];
+          } catch (e) {
+            console.warn('[LIT] token search failed', t, e);
+            return [] as any[];
+          }
+        }));
+        pages = results;
+      } else {
+        const d = await postSearchCompanies({ ...(basePayload as any), q: null as any });
+        pages = [ (d?.rows || d || []) as any[] ];
       }
-      console.log('[LIT] runSearch → rows', deduped.length, deduped.slice(0,2));
-      setRows(deduped);
+
+      const dedup = new Map<string, any>();
+      for (const arr of pages) {
+        for (const raw of arr) {
+          const r = normalizeRow(raw);
+          if (!r.company_name) continue;
+          if (!r.company_id) r.company_id = `name:${String(r.company_name||'').toLowerCase()}`;
+          const key = getCompanyKey({ company_id: r.company_id, company_name: r.company_name });
+          if (!dedup.has(key)) dedup.set(key, r);
+        }
+      }
+      const merged = Array.from(dedup.values());
+      console.log('[LIT] runSearch → merged', merged.length, merged.slice(0,2));
+      setAllRows(merged);
+      setPage(1);
+      setRows(merged.slice(0, pageSize));
       setHasSearched(true);
       setExploreTab('none');
     } catch (e: any) {
@@ -380,21 +400,24 @@ export default function SearchAppPage() {
           if (filters.origin.length) qs.set('origin', filters.origin.join(','));
           if (filters.dest.length) qs.set('dest', filters.dest.join(','));
           if (filters.hs.length) qs.set('hs', filters.hs.join(','));
-          qs.set('limit', '20');
+          qs.set('limit', String(pageSize));
           qs.set('offset', '0');
           const res2 = await fetch(`/api/lit/public/searchCompanies?${qs.toString()}`, { method: 'GET', headers: { 'accept': 'application/json' } });
           if (!res2.ok) throw new Error(`searchCompanies GET ${res2.status}`);
           const data2 = await res2.json();
           const arr2 = (data2?.rows || data2 || []);
-          const norm2 = arr2.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_name);
-          const seen2 = new Set<string>();
-          const deduped2: any[] = [];
-          for (const r of norm2) {
-            if (!r.company_id && r.company_name) r.company_id = `name:${r.company_name.toLowerCase()}`;
-            const k2 = r.company_id ? `id:${r.company_id}` : `name:${String(r.company_name||'').toLowerCase()}`;
-            if (!seen2.has(k2)) { seen2.add(k2); deduped2.push(r); }
+          const dedup2 = new Map<string, any>();
+          for (const raw of arr2) {
+            const r = normalizeRow(raw);
+            if (!r.company_name) continue;
+            if (!r.company_id) r.company_id = `name:${String(r.company_name||'').toLowerCase()}`;
+            const key = getCompanyKey({ company_id: r.company_id, company_name: r.company_name });
+            if (!dedup2.has(key)) dedup2.set(key, r);
           }
-          setRows(deduped2);
+          const merged2 = Array.from(dedup2.values());
+          setAllRows(merged2);
+          setPage(1);
+          setRows(merged2.slice(0, pageSize));
           setHasSearched(true);
           setExploreTab('none');
           return;
@@ -452,10 +475,10 @@ export default function SearchAppPage() {
     const seen = new Set<string>();
     const out: any[] = [];
     for (const r of Array.isArray(arr) ? arr : []) {
-      const id = String(r?.company_id || '');
-      if (!id) continue;
-      if (seen.has(id)) continue;
-      seen.add(id);
+      const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+      if (!key) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
       out.push(r);
     }
     return out;
@@ -638,7 +661,11 @@ export default function SearchAppPage() {
                 ) && view === 'cards' && (
                   <div className="mt-6">
                     <ResultsGrid rows={dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows))} renderCard={(r)=> (
-                      <CompanyCard row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
+                      <CompanyCard
+                        row={r}
+                        selected={selectedKey === getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })}
+                        onOpen={(row) => { setActive(row); setOpen(true); setSelectedKey(getCompanyKey({ company_id: row?.company_id, company_name: row?.company_name })); }}
+                      />
                     )} />
                   </div>
                 )}
@@ -660,8 +687,15 @@ export default function SearchAppPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows)).map((r: any) => (
-                          <TableRow key={r.company_id} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors">
+                        {dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows)).map((r: any) => {
+                          const k = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+                          const isActive = selectedKey === k;
+                          return (
+                          <TableRow
+                            key={k}
+                            onClick={() => { setActive(r); setOpen(true); setSelectedKey(k); }}
+                            className={cn('cursor-pointer hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors', isActive ? 'bg-indigo-50/40 border-l-indigo-500' : '')}
+                          >
                             <TableCell>
                               <div className="font-medium text-slate-900">{r.company_name}</div>
                               <div className="mt-1 flex flex-wrap gap-1">
@@ -678,7 +712,7 @@ export default function SearchAppPage() {
                               <SaveButton row={r} />
                             </TableCell>
                           </TableRow>
-                        ))}
+                        );})}
                       </TableBody>
                     </Table>
                   </div>
@@ -689,8 +723,20 @@ export default function SearchAppPage() {
                   <div className="mt-4 flex items-center justify-between">
                     <div className="text-xs text-slate-600">Page {page}</div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={()=> { setPage(p=> Math.max(1, p-1)); setTimeout(runSearch, 0); }}>Prev</Button>
-                      <Button size="sm" variant="outline" disabled={((exploreTab==='saved' && rows.length===0) ? savedRows.length : rows.length) < pageSize || loading} onClick={()=> { setPage(p=> p+1); setTimeout(runSearch, 0); }}>Next</Button>
+                      <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={()=> {
+                        setPage(p=> {
+                          const np = Math.max(1, p-1);
+                          setRows(((exploreTab==='saved' && rows.length===0) ? savedRows : allRows).slice((np-1)*pageSize, np*pageSize));
+                          return np;
+                        });
+                      }}>Prev</Button>
+                      <Button size="sm" variant="outline" disabled={(((exploreTab==='saved' && rows.length===0) ? savedRows.length : allRows.length) <= page*pageSize) || loading} onClick={()=> {
+                        setPage(p=> {
+                          const np = p + 1;
+                          setRows(((exploreTab==='saved' && rows.length===0) ? savedRows : allRows).slice((np-1)*pageSize, np*pageSize));
+                          return np;
+                        });
+                      }}>Next</Button>
                     </div>
                   </div>
                 )}
