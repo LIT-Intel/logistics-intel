@@ -1,4 +1,4 @@
-const BASE = ((import.meta as any)?.env?.VITE_API_BASE || '').replace(/\/$/, '');
+const BASE = '/api/lit';
 const HDRS: Record<string,string> = {
   'content-type': 'application/json',
   'accept': 'application/json',
