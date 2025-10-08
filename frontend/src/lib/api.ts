@@ -183,6 +183,10 @@ export function buildCompanyShipmentsUrl(
   return `/api/lit/public/getCompanyShipments?${qs}`;
 }
 
+export function getCompanyKey(row: { company_id?: string; company_name: string }) {
+  return row.company_id?.trim() || `name:${row.company_name.toLowerCase()}`;
+}
+
 export async function createCompany(body: { name: string; domain?: string; street?: string; city?: string; state?: string; postal?: string; country?: string }) {
   const res = await fetch(`${GW}/crm/company.create`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify(body || {})
