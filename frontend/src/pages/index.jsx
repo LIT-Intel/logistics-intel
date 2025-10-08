@@ -3,6 +3,7 @@ import Landing from "./Landing";
 import Dashboard from "./Dashboard";
 import Companies from "./Companies";
 import Company from "./Company";
+import CommandCenterPage from "./command-center/[companyId].tsx";
 import AdminDashboard from "./AdminDashboard";
 import Search from "./Search";
 import RFPStudio from "./RFPStudio";
@@ -82,6 +83,7 @@ function PagesContent() {
                 <Route path="/app/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/app/companies" element={<ProtectedRoute><Companies /></ProtectedRoute>} />
                 <Route path="/app/companies/:id" element={<ProtectedRoute><Company /></ProtectedRoute>} />
+                <Route path="/app/command-center/:companyId" element={<ProtectedRoute><CommandCenterPage /></ProtectedRoute>} />
                 <Route path="/app/admin-dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
                 <Route path="/app/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
                 <Route path="/app/rfp-studio" element={<ProtectedRoute><RFPStudio /></ProtectedRoute>} />

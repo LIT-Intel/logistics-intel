@@ -13,11 +13,13 @@ import { cn } from '@/lib/utils';
 import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPin, Package, TrendingUp, Calendar, Mail, Phone, ExternalLink, Filter, XCircle, Factory, Bell, Bookmark, Sparkles } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getCompanyShipments } from '@/lib/api/search';
+// canonical helpers and API wrappers
+import { getFilterOptions, saveCompanyToCrm, postSearchCompanies, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
+import { useSearch } from '@/app/search/useSearch';
 import { InlineFilters } from '@/components/search/InlineFilters';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
-import { getFilterOptions, saveCompanyToCrm, postSearchCompanies } from '@/lib/api';
+import CompanyModal from '@/components/search/CompanyModal';
 import { useToast } from '@/components/ui/use-toast';
 
 const brand = {
@@ -56,13 +58,9 @@ function SaveButton({ row }: { row: any }) {
     if (saving || saved) return;
     setSaving(true);
     try {
-      let cid = String(row?.company_id || '');
       const cname = String(row?.company_name || '');
       if (!cname) throw new Error('missing name');
-      if (!cid) {
-        const base = cname.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 20);
-        cid = `comp_${base || 'company'}_${Math.random().toString(36).slice(2, 6)}`;
-      }
+      const cid = getCompanyKey({ company_id: row?.company_id, company_name: cname });
       try { await saveCompanyToCrm({ company_id: cid, company_name: cname, source: 'search' }); } catch {}
       const lsKey = 'lit_companies';
       const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
@@ -79,9 +77,8 @@ function SaveButton({ row }: { row: any }) {
         window.dispatchEvent(new StorageEvent('storage', { key: lsKey } as any));
       }
       setSaved(true);
-      if (cid) {
-        window.location.href = `/app/companies/${cid}`;
-      }
+      // Do not navigate; avoid blank page. Command Center navigation should
+      // only occur once we have a canonical company_id and explicit user intent.
     } catch (e) {
       console.error('save failed', e);
     } finally {
@@ -118,14 +115,14 @@ function RoutePill({ o, d, n }: { o: string; d: string; n: number }) {
 
 // Top carriers chip removed in favor of emphasizing destinations
 
-function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
+function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => void; selected?: boolean }) {
   const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
   const isSaved = (() => {
     try { return new Set(JSON.parse(localStorage.getItem('lit_companies')||'[]').map((c:any)=> String(c?.id||''))).has(String(row?.company_id||'')); } catch { return false; }
   })();
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-      <Card className="group transition-shadow rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm hover:shadow-md min-h-[260px] flex flex-col">
+      <Card className={cn('group transition-shadow rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm hover:shadow-md min-h-[260px] flex flex-col', selected ? 'ring-2 ring-indigo-500 ring-offset-1' : '')}>
         <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600 rounded-t-2xl" />
         <CardHeader className="pb-2 flex flex-row items-center gap-4">
           <Avatar className="h-10 w-10"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
@@ -166,157 +163,13 @@ function CompanyCard({ row, onOpen }: { row: any; onOpen: (r: any) => void }) {
   );
 }
 
-function DetailsDialog({ open, onOpenChange, row }: { open: boolean; onOpenChange: (v: boolean) => void; row: any }) {
-  const [shipments, setShipments] = React.useState<any[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!open || !row) return;
-    setLoading(true);
-    setError(null);
-    (async () => {
-      try {
-        const data = await getCompanyShipments({ company_id: row.company_id ?? null, company_name: row.company_name ?? null, limit: 50, offset: 0 });
-        const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data) ? data : []);
-        setShipments(rows);
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load shipments');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [open, row?.company_id, row?.company_name]);
-
-  if (!row) return null;
-  const initials = row.company_name?.split(' ').map((p: string) => p[0]).join('').slice(0,2).toUpperCase();
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="p-0 w-screen h-[100dvh] max-h-[100dvh] rounded-none sm:rounded-2xl sm:w-auto sm:h-auto sm:max-w-5xl">
-        <div className="flex flex-col h-full">
-          <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 sticky top-0 bg-white z-10 border-b">
-            <DialogTitle className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-9 w-9"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
-                <span className="text-slate-900 font-semibold truncate max-w-[60vw] sm:max-w-none">{row.company_name}</span>
-              </div>
-              <DialogClose asChild>
-                <button className="inline-flex items-center justify-center rounded-md border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50 sm:hidden"><XCircle className="h-4 w-4"/></button>
-              </DialogClose>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="px-4 sm:px-6 pb-3 sm:pb-2 overflow-y-auto sm:overflow-visible flex-1 overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' as any }}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="col-span-2 border-slate-200">
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Snapshot</CardTitle></CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <KPI value={row.shipments_12m} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
-                  <KPI value={row.last_activity ?? '—'} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
-                  <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
-                </div>
-                <Separator className="my-4" />
-                <div>
-                  <div className="text-sm font-medium mb-2">Top routes</div>
-                  <div className="flex flex-wrap gap-2">
-                    {row.top_routes?.length ? row.top_routes.map((r: any, i: number) => (
-                      <Badge key={i} variant="secondary" className={cn(brand.chip, 'px-3 py-1 font-medium bg-indigo-50 border-indigo-100')}>
-                        <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-indigo-600" />{r.origin_country} → {r.dest_country}</span>
-                        <span className="ml-2 text-muted-foreground">{r.cnt}</span>
-                      </Badge>
-                    )) : <span className="text-sm text-muted-foreground">No route data</span>}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-slate-200">
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Quick actions</CardTitle></CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <Button variant="default" className="justify-start rounded-xl"><Mail className="h-4 w-4 mr-2"/>Email Contact</Button>
-                <Button variant="secondary" className="justify-start rounded-xl"><Phone className="h-4 w-4 mr-2"/>Call via CRM</Button>
-                <Button variant="outline" className="justify-start rounded-xl"><ExternalLink className="h-4 w-4 mr-2"/>Open Company Page</Button>
-              </CardContent>
-            </Card>
-          </div>
-          </div>
-          <Separator />
-          <div className="px-4 sm:px-6 pb-20 sm:pb-4">
-            <Tabs defaultValue="shipments">
-              <TabsList className="flex sm:grid w-full sm:grid-cols-4 overflow-x-auto gap-2">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="shipments">Shipments</TabsTrigger>
-              <TabsTrigger value="contacts">Contacts</TabsTrigger>
-              <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
-              </TabsList>
-            <TabsContent value="overview" className="mt-4"><div className="text-sm text-muted-foreground">Company metadata, enrichment summary, confidence scores…</div></TabsContent>
-            <TabsContent value="shipments" className="mt-4">
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-5 text-xs uppercase text-muted-foreground p-3 bg-slate-50/60">
-                  <div>Date</div><div>Mode</div><div>Origin → Dest</div><div>HS</div><div>Carrier</div>
-                </div>
-                <Separator />
-                {loading && (
-                  <div className="p-4 text-sm text-muted-foreground">Loading…</div>
-                )}
-                {error && (
-                  <div className="p-4 text-sm text-red-600">{error}</div>
-                )}
-                {!loading && !error && (
-                  <div className="divide-y">
-                    {shipments.length === 0 && (
-                      <div className="p-3 text-sm text-muted-foreground">No shipments found.</div>
-                    )}
-                    {shipments.map((s: any, i: number) => {
-                      const date = s.shipped_on || s.date || s.dt || '—';
-                      const mode = s.mode || s.transport_mode || '—';
-                      const origin = s.origin || s.origin_port || s.origin_country || s.o || '—';
-                      const dest = s.destination || s.dest || s.destination_port || s.dest_country || s.d || '—';
-                      const hs = s.hs || s.hs_code || '—';
-                      const carrier = s.carrier || s.line || s.airline || '—';
-                      return (
-                        <div key={i} className="grid grid-cols-5 p-3 text-sm">
-                          <div>{date}</div>
-                          <div className="capitalize">{mode}</div>
-                          <div>{origin} → {dest}</div>
-                          <div>{hs}</div>
-                          <div>{carrier}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              </TabsContent>
-            <TabsContent value="contacts" className="mt-4"><div className="text-sm text-muted-foreground">Linked contacts and enrichment actions…</div></TabsContent>
-            <TabsContent value="campaigns" className="mt-4"><div className="text-sm text-muted-foreground">Recent sequences and follow-ups…</div></TabsContent>
-            </Tabs>
-          </div>
-          <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white/95 border-t p-2 flex justify-end">
-            <DialogClose asChild>
-              <button className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-slate-700"><XCircle className="h-4 w-4"/>Close</button>
-            </DialogClose>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+// Replaced inline DetailsDialog with shared CompanyModal component
 
 export default function SearchAppPage() {
-  const [query, setQuery] = useState('');
   const [view, setView] = useState<'cards'|'list'>('cards');
-  const [rows, setRows] = useState<any[]>([]);
-  const [lastPayload, setLastPayload] = useState<any>(null);
-  const [lastEndpoint, setLastEndpoint] = useState<string>('');
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState<any | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[]; carriers: string[] }>({ modes: [], origins: [], destinations: [], carriers: [] });
   const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]; mode:string[]; carrier:string[]}>({ origin: [], dest: [], hs: [], mode: [], carrier: [] });
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const pageSize = 50;
-  const [hasSearched, setHasSearched] = useState(false);
   const [exploreTab, setExploreTab] = useState<'none'|'trending'|'new'|'saved'|'alerts'>('none');
   const [savedRows, setSavedRows] = useState<any[]>([]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
@@ -327,6 +180,9 @@ export default function SearchAppPage() {
     } catch { return new Set(); }
   });
   const { toast } = useToast();
+  const { q, setQ, rows, loading, run, next, prev, page } = useSearch();
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [modal, setModal] = useState<any | null>(null);
 
   // Do not auto-load results. Wait for user to search.
 
@@ -339,35 +195,56 @@ export default function SearchAppPage() {
     })();
   }, []);
 
+  const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
+
   async function runSearch() {
     setLoading(true);
     try {
-      const payload = {
-        q: (query?.trim() || '') || null,
+      const basePayload = {
         origin: filters.origin.length ? filters.origin : null,
         dest: filters.dest.length ? filters.dest : null,
         hs: filters.hs.length ? filters.hs : null,
-        limit: 20,
+        limit: pageSize,
         offset: 0,
       } as const;
-      setLastPayload(payload);
+      const qtrim = (query || '').trim();
+      const tokens = qtrim ? (qtrim.split(RE_SPLIT).map(s=>s.trim()).filter(Boolean).slice(0,4) || [qtrim]) : [];
+      setLastPayload({ ...(basePayload as any), q: qtrim || null });
       setLastEndpoint('/api/lit/public/searchCompanies');
-      console.log('[LIT] runSearch → payload', payload);
-      // Prefer wrapper which normalizes arrays→CSV and routes via proxy
-      const data = await postSearchCompanies(payload as any);
-      const arr = (data?.rows || data || []);
-      const norm = arr.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_name);
-      const seen = new Set<string>();
-      const deduped: any[] = [];
-      for (const r of norm) {
-        if (!r.company_id && r.company_name) {
-          r.company_id = `name:${r.company_name.toLowerCase()}`;
-        }
-        const k = r.company_id ? `id:${r.company_id}` : `name:${String(r.company_name||'').toLowerCase()}`;
-        if (!seen.has(k)) { seen.add(k); deduped.push(r); }
+      console.log('[LIT] runSearch → tokens', tokens);
+
+      let pages: any[][] = [];
+      if (tokens.length > 0) {
+        const results = await Promise.all(tokens.map(async t => {
+          try {
+            const d = await postSearchCompanies({ ...(basePayload as any), q: t });
+            return (d?.rows || d || []) as any[];
+          } catch (e) {
+            console.warn('[LIT] token search failed', t, e);
+            return [] as any[];
+          }
+        }));
+        pages = results;
+      } else {
+        const d = await postSearchCompanies({ ...(basePayload as any), q: null as any });
+        pages = [ (d?.rows || d || []) as any[] ];
       }
-      console.log('[LIT] runSearch → rows', deduped.length, deduped.slice(0,2));
-      setRows(deduped);
+
+      const dedup = new Map<string, any>();
+      for (const arr of pages) {
+        for (const raw of arr) {
+          const r = normalizeRow(raw);
+          if (!r.company_name) continue;
+          if (!r.company_id) r.company_id = `name:${String(r.company_name||'').toLowerCase()}`;
+          const key = getCompanyKey({ company_id: r.company_id, company_name: r.company_name });
+          if (!dedup.has(key)) dedup.set(key, r);
+        }
+      }
+      const merged = Array.from(dedup.values());
+      console.log('[LIT] runSearch → merged', merged.length, merged.slice(0,2));
+      setAllRows(merged);
+      setPage(1);
+      setRows(merged.slice(0, pageSize));
       setHasSearched(true);
       setExploreTab('none');
     } catch (e: any) {
@@ -380,21 +257,24 @@ export default function SearchAppPage() {
           if (filters.origin.length) qs.set('origin', filters.origin.join(','));
           if (filters.dest.length) qs.set('dest', filters.dest.join(','));
           if (filters.hs.length) qs.set('hs', filters.hs.join(','));
-          qs.set('limit', '20');
+          qs.set('limit', String(pageSize));
           qs.set('offset', '0');
           const res2 = await fetch(`/api/lit/public/searchCompanies?${qs.toString()}`, { method: 'GET', headers: { 'accept': 'application/json' } });
           if (!res2.ok) throw new Error(`searchCompanies GET ${res2.status}`);
           const data2 = await res2.json();
           const arr2 = (data2?.rows || data2 || []);
-          const norm2 = arr2.map((r: any) => normalizeRow(r)).filter((r:any)=> r.company_name);
-          const seen2 = new Set<string>();
-          const deduped2: any[] = [];
-          for (const r of norm2) {
-            if (!r.company_id && r.company_name) r.company_id = `name:${r.company_name.toLowerCase()}`;
-            const k2 = r.company_id ? `id:${r.company_id}` : `name:${String(r.company_name||'').toLowerCase()}`;
-            if (!seen2.has(k2)) { seen2.add(k2); deduped2.push(r); }
+          const dedup2 = new Map<string, any>();
+          for (const raw of arr2) {
+            const r = normalizeRow(raw);
+            if (!r.company_name) continue;
+            if (!r.company_id) r.company_id = `name:${String(r.company_name||'').toLowerCase()}`;
+            const key = getCompanyKey({ company_id: r.company_id, company_name: r.company_name });
+            if (!dedup2.has(key)) dedup2.set(key, r);
           }
-          setRows(deduped2);
+          const merged2 = Array.from(dedup2.values());
+          setAllRows(merged2);
+          setPage(1);
+          setRows(merged2.slice(0, pageSize));
           setHasSearched(true);
           setExploreTab('none');
           return;
@@ -430,10 +310,7 @@ export default function SearchAppPage() {
 
   // Reset view on mount to ensure no default cards render
   useEffect(() => {
-    setRows([]);
-    setHasSearched(false);
     setExploreTab('none');
-    setPage(1);
   }, []);
 
   function normalizeRow(r: any) {
@@ -452,10 +329,10 @@ export default function SearchAppPage() {
     const seen = new Set<string>();
     const out: any[] = [];
     for (const r of Array.isArray(arr) ? arr : []) {
-      const id = String(r?.company_id || '');
-      if (!id) continue;
-      if (seen.has(id)) continue;
-      seen.add(id);
+      const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+      if (!key) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
       out.push(r);
     }
     return out;
@@ -511,12 +388,12 @@ export default function SearchAppPage() {
                     <Input
                       placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
                       className="pl-9 rounded-xl bg-white/90 h-12 text-base"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
                     />
                   </div>
-                  <Button onClick={runSearch} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+                  <Button onClick={() => run()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
                   <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
                 </div>
                 <div className="mt-3 mb-2 flex items-center gap-2 justify-center">
@@ -621,7 +498,7 @@ export default function SearchAppPage() {
                 {/* Build tag for deploy verification */}
                 <div className="mt-2 text-[10px] text-muted-foreground">build: fix/deploy-ui-proxy</div>
 
-                {exploreTab==='none' && !hasSearched && (<SearchEmpty state="idle"/>)}
+                {exploreTab==='none' && !rows.length && (<SearchEmpty state="idle"/>)}
 
                 {exploreTab==='saved' && savedRows.length === 0 && (
                   <div className="mt-10 text-center text-sm text-muted-foreground">No saved companies yet.</div>
@@ -638,7 +515,11 @@ export default function SearchAppPage() {
                 ) && view === 'cards' && (
                   <div className="mt-6">
                     <ResultsGrid rows={dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows))} renderCard={(r)=> (
-                      <CompanyCard row={r} onOpen={(row) => { setActive(row); setOpen(true); }} />
+                      <CompanyCard
+                        row={r}
+                        selected={selectedKey === getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })}
+                        onOpen={(row) => { setModal(row); setSelectedKey(getCompanyKey({ company_id: row?.company_id, company_name: row?.company_name })); }}
+                      />
                     )} />
                   </div>
                 )}
@@ -660,8 +541,15 @@ export default function SearchAppPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows)).map((r: any) => (
-                          <TableRow key={r.company_id} className="hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors">
+                        {dedupeByCompanyId(((exploreTab==='saved' && rows.length===0) ? savedRows : rows)).map((r: any) => {
+                          const k = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+                          const isActive = selectedKey === k;
+                          return (
+                          <TableRow
+                            key={k}
+                            onClick={() => { setModal(r); setSelectedKey(k); }}
+                            className={cn('cursor-pointer hover:bg-slate-50/60 border-l-2 border-transparent hover:border-l-indigo-400 transition-colors', isActive ? 'bg-indigo-50/40 border-l-indigo-500' : '')}
+                          >
                             <TableCell>
                               <div className="font-medium text-slate-900">{r.company_name}</div>
                               <div className="mt-1 flex flex-wrap gap-1">
@@ -678,7 +566,7 @@ export default function SearchAppPage() {
                               <SaveButton row={r} />
                             </TableCell>
                           </TableRow>
-                        ))}
+                        );})}
                       </TableBody>
                     </Table>
                   </div>
@@ -689,8 +577,8 @@ export default function SearchAppPage() {
                   <div className="mt-4 flex items-center justify-between">
                     <div className="text-xs text-slate-600">Page {page}</div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={()=> { setPage(p=> Math.max(1, p-1)); setTimeout(runSearch, 0); }}>Prev</Button>
-                      <Button size="sm" variant="outline" disabled={((exploreTab==='saved' && rows.length===0) ? savedRows.length : rows.length) < pageSize || loading} onClick={()=> { setPage(p=> p+1); setTimeout(runSearch, 0); }}>Next</Button>
+                      <Button size="sm" variant="outline" disabled={page<=1 || loading} onClick={prev}>Prev</Button>
+                      <Button size="sm" variant="outline" disabled={loading} onClick={next}>Next</Button>
                     </div>
                   </div>
                 )}
@@ -702,7 +590,9 @@ export default function SearchAppPage() {
           {/* Empty states handled via SearchEmpty (idle vs no-results) */}
         </div>
 
-        <DetailsDialog open={open} onOpenChange={setOpen} row={active} />
+        {modal && (
+          <CompanyModal company={modal} shipmentsUrl={buildCompanyShipmentsUrl(modal, 50, 0)} onClose={() => setModal(null)} />
+        )}
       </div>
     </TooltipProvider>
   );
