@@ -114,31 +114,34 @@ export default function Search() {
         };
 
         const resp = await postSearchCompanies(body);
-        const raw = Array.isArray(resp?.items) ? resp.items : [];
-        const total =
-          typeof resp?.total === "number" ? resp.total : (raw || []).length;
+        const raw = Array.isArray(resp?.rows)
+          ? resp.rows
+          : (Array.isArray(resp?.items) ? resp.items : []);
+        const total = typeof resp?.meta?.total === "number"
+          ? resp.meta.total
+          : (typeof resp?.total === "number" ? resp.total : (raw || []).length);
 
         const mapped = (raw || []).map((item) => {
           const id =
             item.company_id ||
             item.id ||
-            item.company_name?.toLowerCase?.().replace?.(/[^a-z0-9]+/g, "-");
-          const name = item.company_name || "Unknown";
-          const topRoute =
-            Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
-              ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
-              : undefined;
-          const topCarrier = Array.isArray(item.carriersTop)
-            ? item.carriersTop[0]?.v || undefined
-            : undefined;
+            (item.company_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+          const name = item.company_name || item.name || "Unknown";
+          const topRoute = Array.isArray(item.top_routes)
+            ? `${item.top_routes?.[0]?.origin_country || ""} → ${item.top_routes?.[0]?.dest_country || ""}`.trim()
+            : (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
+                ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
+                : undefined);
+          const shipments12m = item.shipments_12m ?? item.shipments ?? 0;
+          const lastSeen = (item.last_activity && item.last_activity.value) || item.lastShipmentDate || null;
           return {
             id,
             company_id: item.company_id || null,
             name,
-            shipments_12m: item.shipments || 0,
-            last_seen: item.lastShipmentDate || null,
+            shipments_12m: shipments12m,
+            last_seen: lastSeen,
             top_route: topRoute,
-            top_carrier: topCarrier,
+            top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
           };
         });
 
@@ -227,23 +230,29 @@ export default function Search() {
         }
         resp = await r.json();
       }
-      const raw = Array.isArray(resp?.items) ? resp.items : [];
-      const mapped = raw.map((item) => ({
-        id:
-          item.company_id ||
-          (item.company_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-        company_id: item.company_id || null,
-        name: item.company_name || "Unknown",
-        shipments_12m: item.shipments || 0,
-        last_seen: item.lastShipmentDate || null,
-        top_route:
-          Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
-            ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
-            : undefined,
-        top_carrier: Array.isArray(item.carriersTop)
-          ? item.carriersTop[0]?.v || undefined
-          : undefined,
-      }));
+      const raw = Array.isArray(resp?.rows)
+        ? resp.rows
+        : (Array.isArray(resp?.items) ? resp.items : []);
+      const mapped = raw.map((item) => {
+        const name = item.company_name || item.name || "Unknown";
+        const id = item.company_id || name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        const shipments12m = item.shipments_12m ?? item.shipments ?? 0;
+        const lastSeen = (item.last_activity && item.last_activity.value) || item.lastShipmentDate || null;
+        const topRoute = Array.isArray(item.top_routes)
+          ? `${item.top_routes?.[0]?.origin_country || ""} → ${item.top_routes?.[0]?.dest_country || ""}`.trim()
+          : (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
+              ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
+              : undefined);
+        return {
+          id,
+          company_id: item.company_id || null,
+          name,
+          shipments_12m: shipments12m,
+          last_seen: lastSeen,
+          top_route: topRoute,
+          top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
+        };
+      });
       const seen = new Set();
       const rows = [];
       for (const row of mapped) {
