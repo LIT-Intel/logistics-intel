@@ -5,6 +5,7 @@ import Companies from "./Companies";
 import Company from "./Company";
 import CommandCenterPage from "./command-center";
 import CommandCenterCompany from "./command-center/[companyId].tsx";
+import CCDebug from "./cc-debug";
 import AdminDashboard from "./AdminDashboard";
 import Search from "./Search";
 import RFPStudio from "./RFPStudio";
@@ -87,6 +88,7 @@ function PagesContent() {
                 <Route path="/command-center" element={<CommandCenterPage />} />
                 <Route path="/app/command-center" element={<CommandCenterPage />} />
                 <Route path="/app/command-center/:companyId" element={<ProtectedRoute><CommandCenterCompany /></ProtectedRoute>} />
+                <Route path="/cc-debug" element={<CCDebug />} />
                 <Route path="/app/admin-dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
                 <Route path="/app/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
                 <Route path="/app/rfp-studio" element={<ProtectedRoute><RFPStudio /></ProtectedRoute>} />
