@@ -121,6 +121,17 @@ function Pill({ children }: { children: React.ReactNode }) {
 
 // --- Main Demo Component --- //
 export default function LITEnrichCommandCenterDemo() {
+  // ui-1 temporarily disabled. Use /command-center for the new UI (ui-2).
+  return (
+    <div className="p-6 text-sm text-slate-600">
+      Command Center (ui-1) is temporarily disabled. Please use <a className="underline" href="/command-center">/command-center</a> for the new UI.
+    </div>
+  );
+}
+
+/*
+// --- Original ui-1 (disabled) ---
+export function LITEnrichCommandCenterDemoOriginal() {
   const [company, setCompany] = useState<Company>(demoCompany);
   const [contacts, setContacts] = useState<Contact[]>(demoContacts);
   const [primaryId, setPrimaryId] = useState<string | null>(demoContacts.find(c=>c.isPrimary)?.id ?? null);
@@ -511,3 +522,4 @@ export default function LITEnrichCommandCenterDemo() {
     </div>
   );
 }
+*/
