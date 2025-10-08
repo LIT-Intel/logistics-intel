@@ -4,6 +4,10 @@
     {
       "source": "/api/lit/public/(.*)",
       "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/$1"
+    },
+    {
+      "source": "/api/lit/crm/(.*)",
+      "destination": "https://<YOUR-CRM-API-CLOUD-RUN-URL>/$1"
     }
   ]
 }

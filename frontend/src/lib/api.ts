@@ -167,6 +167,26 @@ export async function saveCompanyToCrm(payload: { company_id: string; company_na
   return await res.json();
 }
 
+export function buildCompanyShipmentsUrl(
+  row: { company_id?: string; company_name: string },
+  limit = 50,
+  offset = 0
+) {
+  const id = row.company_id?.trim()
+    ? row.company_id
+    : `name:${row.company_name.toLowerCase()}`;
+  const qs = new URLSearchParams({
+    company_id: id,
+    limit: String(limit),
+    offset: String(offset),
+  }).toString();
+  return `/api/lit/public/getCompanyShipments?${qs}`;
+}
+
+export function getCompanyKey(row: { company_id?: string; company_name: string }) {
+  return row.company_id?.trim() || `name:${row.company_name.toLowerCase()}`;
+}
+
 export async function createCompany(body: { name: string; domain?: string; street?: string; city?: string; state?: string; postal?: string; country?: string }) {
   const res = await fetch(`${GW}/crm/company.create`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify(body || {})
