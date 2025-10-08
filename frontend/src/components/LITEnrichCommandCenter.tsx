@@ -139,76 +139,33 @@ export default function LITEnrichCommandCenterDemo() {
 
   // ---- Wired to real endpoints via /api/lit proxy ---- //
   async function handleEnrichCompany() {
-    try {
-      setLoading(true);
-      log(`⏳ ${new Date().toLocaleString()} — Enrichment started for ${company.name}`);
-      const res = await fetch('/api/lit/crm/enrich', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: company.id })
-      });
-      if (!res.ok) throw new Error(`enrich ${res.status}`);
-      const data = await res.json();
-      if (data?.company) {
-        setCompany((prev) => ({
-          ...(prev || company),
-          name: data.company.name || prev.name,
-          domain: data.company.domain || prev.domain,
-          shipments12m: prev.shipments12m,
-          lastActivity: prev.lastActivity,
-        }));
-      }
-      log(`✅ ${new Date().toLocaleString()} — Company attributes refreshed`);
-    } catch (e: any) {
-      log(`❌ ${new Date().toLocaleString()} — Enrichment failed: ${e?.message || e}`);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    log(`⏳ ${new Date().toLocaleString()} — Enrichment started for ${company.name}`);
+    const r = await fetch('/api/lit/crm/enrich', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company_id: company.id, domain: company.domain })
+    });
+    const ok = r.ok;
+    log(`${ok ? '✅' : '⚠️'} ${new Date().toLocaleString()} — Company attributes ${ok ? 'refreshed' : 'failed'} (LIT Enrich)`);
+    setLoading(false);
   }
 
   async function handleFindContacts() {
-    try {
-      setLoading(true);
-      log(`⏳ ${new Date().toLocaleString()} — Searching contacts for ${company.domain}`);
-      const url = `/api/lit/crm/contacts?${new URLSearchParams({ domain: company.domain || '' }).toString()}`;
-      const res = await fetch(url, { headers: { 'accept': 'application/json' } });
-      if (!res.ok) throw new Error(`contacts ${res.status}`);
-      const data = await res.json();
-      const rows: any[] = Array.isArray(data?.contacts) ? data.contacts : (Array.isArray(data) ? data : []);
-      const mapped: Contact[] = rows.map((c: any, i: number) => ({
-        id: String(c.id || c.fullName || `lx-${Date.now()}-${i}`),
-        name: String(c.fullName || c.name || '—'),
-        title: c.title || '',
-        email: c.email || '',
-        phone: c.phone || '',
-        source: 'LIT Enrich',
-        linkedinUrl: c.linkedin || c.linkedinUrl || '',
-        avatarUrl: c.avatarUrl || undefined,
-        isPrimary: !!c.isPrimary,
-        status: 'active',
-      }));
-      if (mapped.length) setContacts((prev) => [...mapped, ...prev]);
-      log(`✅ ${new Date().toLocaleString()} — ${mapped.length} new contact(s) appended from LIT Enrich`);
-    } catch (e: any) {
-      log(`❌ ${new Date().toLocaleString()} — Contact search failed: ${e?.message || e}`);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    log(`⏳ ${new Date().toLocaleString()} — Searching LIT Enrich contacts for ${company.domain}`);
+    const r = await fetch(`/api/lit/crm/contacts?domain=${encodeURIComponent(company.domain ?? '')}&limit=10`);
+    const data = await r.json().catch(()=>({ rows: [] }));
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    setContacts(prev => [...rows, ...prev]);
+    log(`✅ ${new Date().toLocaleString()} — ${rows.length} contact(s) appended from LIT Enrich`);
+    setLoading(false);
   }
 
   async function handleGenerateBrief() {
-    try {
-      setLoading(true);
-      log(`⏳ ${new Date().toLocaleString()} — Generating Pre‑Call Briefing`);
-      const res = await fetch('/api/lit/crm/briefing', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: company.id })
-      });
-      if (!res.ok) throw new Error(`briefing ${res.status}`);
-      const data = await res.json();
-      log(`✅ ${new Date().toLocaleString()} — Briefing ready${data?.id ? ` (#${data.id})` : ''}`);
-    } catch (e: any) {
-      log(`❌ ${new Date().toLocaleString()} — Briefing failed: ${e?.message || e}`);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    log(`⏳ ${new Date().toLocaleString()} — Generating Pre‑Call Briefing`);
+    const r = await fetch('/api/lit/crm/briefing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company_id: company.id }) });
+    log(`${r.ok ? '✅' : '⚠️'} ${new Date().toLocaleString()} — Briefing ${r.ok ? 'ready' : 'failed'} and saved to timeline`);
+    setLoading(false);
   }
 
   async function handleSaveToCampaign(contactId: string) {
@@ -241,51 +198,28 @@ export default function LITEnrichCommandCenterDemo() {
   }
 
   async function handleAddContactManual() {
-    if(!newContact.name){
-      log(`⚠️ ${new Date().toLocaleString()} — Provide a name to enrich`);
-      return;
-    }
-    try {
-      setLoading(true);
-      log(`⏳ ${new Date().toLocaleString()} — Enriching manual contact via LIT Enrich: ${newContact.name}`);
-      const res = await fetch('/api/lit/crm/contacts/enrich', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: newContact.name, domain: company.domain })
-      });
-      if (!res.ok) throw new Error(`contacts.enrich ${res.status}`);
-      const data = await res.json();
-      const c = Array.isArray(data?.contacts) ? data.contacts[0] : (data?.contact || data);
-      const id = String(c?.id || `m-${Date.now()}`);
-      setContacts(prev => [{
-        id,
-        name: String(c?.fullName || c?.name || newContact.name),
-        title: c?.title || (newContact.title as string),
-        email: c?.email || (newContact.email as string),
-        phone: c?.phone || (newContact.phone as string),
-        linkedinUrl: c?.linkedin || (newContact.linkedinUrl as string),
-        avatarUrl: c?.avatarUrl || (newContact.avatarUrl as string),
-        source: 'LIT Enrich',
-        status: 'active'
-      }, ...prev]);
-      setNewContact({});
-      log(`✅ ${new Date().toLocaleString()} — Manual contact enriched and added (${id})`);
-    } catch (e: any) {
-      log(`❌ ${new Date().toLocaleString()} — Manual enrich failed: ${e?.message || e}`);
-    } finally {
-      setLoading(false);
-    }
+    if (!newContact.name) { log(`⚠️ ${new Date().toLocaleString()} — Provide a name to enrich`); return; }
+    setLoading(true);
+    log(`⏳ ${new Date().toLocaleString()} — Enriching manual contact via LIT Enrich: ${newContact.name}`);
+    const r = await fetch('/api/lit/crm/contacts/enrich', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company_id: company.id, domain: company.domain, name: newContact.name, title: newContact.title, email: newContact.email, phone: newContact.phone, linkedinUrl: newContact.linkedinUrl }) });
+    const data = await r.json().catch(()=>({ contact: null }));
+    const c = (data as any)?.contact;
+    if (c) setContacts(prev => [c, ...prev]);
+    setNewContact({});
+    log(`${r.ok ? '✅' : '⚠️'} ${new Date().toLocaleString()} — Manual contact ${r.ok ? 'enriched' : 'failed'}`);
+    setLoading(false);
   }
 
   async function handleExportContactsPdf() {
-    try {
-      log(`⏳ ${new Date().toLocaleString()} — Preparing professional PDF (Contacts Overview)`);
-      const res = await fetch('/api/lit/crm/contacts/export', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ companyId: company.id, contacts })
-      });
-      if (!res.ok) throw new Error(`contacts.export ${res.status}`);
-      log(`📄 ${new Date().toLocaleString()} — PDF export queued`);
-    } catch (e: any) {
-      log(`❌ ${new Date().toLocaleString()} — Export failed: ${e?.message || e}`);
-    }
+    log(`⏳ ${new Date().toLocaleString()} — Preparing professional PDF (Contacts Overview)`);
+    const r = await fetch('/api/lit/crm/contacts/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: { id: company.id, name: company.name, domain: company.domain }, contacts }) });
+    if (!r.ok) { log(`⚠️ ${new Date().toLocaleString()} — PDF export failed`); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${company.name.replace(/\s+/g,'_')}_contacts.pdf`; a.click();
+    URL.revokeObjectURL(url);
+    log(`📄 ${new Date().toLocaleString()} — PDF exported`);
   }
 
   // --- Smoke tests (runtime) --- //
