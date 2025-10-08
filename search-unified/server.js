@@ -278,6 +278,62 @@ app.get('/crm/feature-flags', async (req, res) => {
   });
 });
 
+// --- LIT Enrich: minimal backend for Command Center ---
+app.get('/crm/status', (_req, res) => {
+  res.json({ ok: true, ts: Date.now() });
+});
+
+app.post('/crm/enrich', (req, res) => {
+  const { company_id, domain } = req.body || {};
+  if (!company_id || !domain) return res.status(400).json({ error: 'company_id and domain required' });
+  res.json({ ok: true, company_id, enriched_at: new Date().toISOString() });
+});
+
+app.get('/crm/contacts', (_req, res) => {
+  // placeholder until provider is wired
+  res.json({ rows: [] });
+});
+
+app.post('/crm/contacts/enrich', (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name required' });
+  res.json({
+    ok: true,
+    contact: { id: `c_${Date.now()}`, name, source: 'LIT Enrich', status: 'active' }
+  });
+});
+
+app.post('/crm/campaigns/addContact', (req, res) => {
+  const { contact_id, company_id } = req.body || {};
+  if (!contact_id || !company_id) return res.status(400).json({ error: 'contact_id and company_id required' });
+  res.json({ ok: true, contact_id, company_id });
+});
+
+app.post('/crm/contacts/export', (_req, res) => {
+  // minimal valid PDF so UI can download
+  const pdf = `%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R>>endobj
+4 0 obj<</Length 44>>stream
+BT /F1 24 Tf 50 740 Td (Contacts Export) Tj ET
+endstream endobj
+xref 0 5
+0000000000 65535 f 
+0000000010 00000 n 
+0000000060 00000 n 
+0000000118 00000 n 
+0000000222 00000 n 
+trailer<</Root 1 0 R/Size 5>>
+startxref
+320
+%%EOF`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="contacts.pdf"');
+  res.send(pdf);
+});
+// --- end LIT Enrich block ---
+
 // CRM endpoints
 app.post('/crm/saveCompany', async (req, res) => {
   try {
