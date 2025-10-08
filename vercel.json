@@ -1,16 +1,9 @@
 {
   "version": 2,
-  "installCommand": "npm install",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs22.x"
+  "rewrites": [
+    {
+      "source": "/api/lit/public/(.*)",
+      "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/$1"
     }
-  },
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/api/lit/(.*)", "dest": "api/lit/[...path].ts" },
-    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
