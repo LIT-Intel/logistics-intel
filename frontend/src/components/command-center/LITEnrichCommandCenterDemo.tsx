@@ -158,7 +158,7 @@ export default function LITEnrichCommandCenterDemo() {
               <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-700 text-xs px-2 py-1">Live Data</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 w-96 max-w-full">
+          <div className="flex items-center gap-2 w-full md:w-96">
             <div className="relative flex-1">
               <IconSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
               <input placeholder="Search company…" className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200" />
@@ -222,7 +222,7 @@ export default function LITEnrichCommandCenterDemo() {
               <input placeholder="Phone (optional)" value={newContact.phone ?? ''} onChange={e=>setNewContact(v=>({...v, phone:e.target.value}))} className="px-3 py-2 rounded-xl border border-slate-200"/>
               <button onClick={handleAddContactManual} disabled={loading} className="px-3 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60">Add + Enrich</button>
             </div>
-            <div className="overflow-hidden rounded-xl border border-slate-200">
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600"><tr><th className="text-left px-3 py-2">Contact</th><th className="text-left px-3 py-2">Title</th><th className="text-left px-3 py-2">Email</th><th className="text-left px-3 py-2">Phone</th><th className="text-left px-3 py-2">Source</th><th className="text-right px-3 py-2">Actions</th></tr></thead>
                 <tbody>
