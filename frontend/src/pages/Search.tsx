@@ -75,6 +75,7 @@ export default function Search() {
   const handleSearch = useCallback(
     async (page) => {
       const p = page || 1;
+      try { console.debug('[Search] handleSearch called', { q: searchQuery, page: p }); } catch {}
       setIsLoading(true);
       setSearchError(null);
       setCurrentPage(p);
@@ -114,6 +115,7 @@ export default function Search() {
         };
 
         const resp = await postSearchCompanies(body);
+        try { console.debug('[Search] postSearchCompanies ok', { payload: body, resp }); } catch {}
         const raw = Array.isArray(resp?.rows)
           ? resp.rows
           : (Array.isArray(resp?.items) ? resp.items : []);
@@ -369,20 +371,20 @@ export default function Search() {
         <LitPanel>
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 relative">
-              <Input
+              <Input data-test="search-input"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by company name or alias (e.g., UPS, Maersk)..."
                 className="pl-4 pr-12 py-3 text-base md:text-lg bg-gray-50 border-0 rounded-xl"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch(1);
+                  if (e.key === "Enter") { try{ console.debug('[Search] enter submit'); }catch{} handleSearch(1); }
                 }}
               />
               <SearchIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             </div>
 
-            <Button
-              onClick={() => handleSearch(1)}
+            <Button data-test="search-button"
+              onClick={() => { try{ console.debug('[Search] click submit'); }catch{} handleSearch(1); }}
               disabled={isLoading}
               className="px-6 md:px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl"
             >
