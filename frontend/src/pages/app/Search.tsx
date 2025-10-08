@@ -181,6 +181,7 @@ function SearchAppPage() {
   });
   const { toast } = useToast();
   const { q, setQ, rows, loading, run, next, prev, page } = useSearch();
+  function onSubmit(e?: React.FormEvent) { if (e) e.preventDefault(); run(true); }
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [modal, setModal] = useState<any | null>(null);
   const hasSearched = (q || '').trim().length > 0;
@@ -383,7 +384,7 @@ function SearchAppPage() {
           <div className="w-full">
             <main className="flex-1 min-w-0 max-w-6xl mx-auto">
               <div className="relative">
-                <div className="flex items-center justify-center gap-2">
+                <form onSubmit={onSubmit} className="flex items-center justify-center gap-2">
                   <div className="relative w-full max-w-3xl">
                     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
                     <Input
@@ -391,12 +392,12 @@ function SearchAppPage() {
                       className="pl-9 rounded-xl bg-white/90 h-12 text-base"
                       value={q}
                       onChange={(e) => setQ(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(); }}
                     />
                   </div>
-                  <Button onClick={() => run()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+                  <Button type="submit" onClick={() => onSubmit()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
                   <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
-                </div>
+                </form>
                 <div className="mt-3 mb-2 flex items-center gap-2 justify-center">
                   <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
                   <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
