@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { searchCompanies as searchCompaniesHelper } from '@/lib/api';
 
 export type SearchRow = {
   company_id?: string;
@@ -10,6 +11,13 @@ export type SearchRow = {
 
 type Page = { rows: SearchRow[]; nextOffset: number; token: string };
 
+export type SearchFilters = {
+  origin: string | null;
+  destination: string | null;
+  hs: string | null;
+  mode: 'air' | 'ocean' | null;
+};
+
 const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
 
 export function useSearch() {
@@ -19,6 +27,7 @@ export function useSearch() {
   const [page, setPage] = useState(1);
   const pagesRef = useRef<Page[]>([]);
   const LIMIT = 25;
+  const [filters, setFilters] = useState<SearchFilters>({ origin: null, destination: null, hs: null, mode: null });
 
   const tokens = useMemo(() => {
     const trimmed = q.trim();
@@ -27,23 +36,29 @@ export function useSearch() {
     return t.length ? t.slice(0, 4) : [trimmed];
   }, [q]);
 
-  const fetchTokenPage = async (token: string | null, offset = 0) => {
-    const res = await fetch('/api/lit/public/searchCompanies', {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ q: token ?? null, page: Math.floor(offset / LIMIT) + 1, pageSize: LIMIT }),
+  const fetchTokenPage = async (token: string | null, f: SearchFilters, offset = 0) => {
+    const data = await searchCompaniesHelper({
+      q: token ?? null,
+      origin: f.origin,
+      destination: f.destination,
+      hs: f.hs,
+      mode: f.mode,
+      page: Math.floor(offset / LIMIT) + 1,
+      pageSize: LIMIT,
     });
-    const data = await res.json();
     const got: SearchRow[] = data?.items ?? [];
     const total = data?.total ?? got.length;
     const nextOffset = offset + LIMIT >= total ? -1 : offset + LIMIT;
     return { rows: got, nextOffset, token: String(token ?? '') } as Page;
   };
 
-  const run = useCallback(async (reset = true) => {
+  const run = useCallback(async (reset = true, filtersOverride?: SearchFilters) => {
+    const f = filtersOverride ?? filters;
     if (reset) { pagesRef.current = []; setPage(1); }
     setLoading(true);
     const firstPages = tokens.length > 0
-      ? await Promise.all(tokens.map(t => fetchTokenPage(t, 0)))
-      : [await fetchTokenPage(null, 0)];
+      ? await Promise.all(tokens.map(t => fetchTokenPage(t, f, 0)))
+      : [await fetchTokenPage(null, f, 0)];
     pagesRef.current = firstPages;
     const dedup = new Map<string, SearchRow>();
     for (const p of firstPages) {
@@ -54,14 +69,14 @@ export function useSearch() {
     }
     setRows(Array.from(dedup.values()).slice(0, LIMIT));
     setLoading(false);
-  }, [tokens]);
+  }, [tokens, filters]);
 
   const next = useCallback(async () => {
     setLoading(true);
     const advanced = await Promise.all(
       pagesRef.current.map(async p => {
         if (p.nextOffset === -1) return p;
-        return fetchTokenPage(p.token, p.nextOffset);
+        return fetchTokenPage(p.token, filters, p.nextOffset);
       })
     );
     pagesRef.current = advanced;
@@ -94,5 +109,5 @@ export function useSearch() {
     setRows(all.slice((pageNum-1)*LIMIT, pageNum*LIMIT));
   }, [page]);
 
-  return { q, setQ, rows, loading, run, next, prev, page, limit: LIMIT };
+  return { q, setQ, rows, loading, run, next, prev, page, limit: LIMIT, filters, setFilters };
 }

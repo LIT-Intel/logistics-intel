@@ -1,4 +1,3 @@
-import { searchCompanies as _searchCompanies } from '@/lib/api/search';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
@@ -294,7 +293,7 @@ export async function saveCampaign(body: Record<string, any>) {
 
 // Consolidated API object for callers using api.*
 export const api = {
-  searchCompanies: _searchCompanies,
+  searchCompanies,
   getFilterOptions,
   getCompanyShipments,
   enrichCompany,
@@ -308,5 +307,4 @@ export const api = {
   kpiFrom,
 };
 
-// Also export the new search by name for TSX pages that import it directly
-export { _searchCompanies as searchCompanies };
+// The exported searchCompanies above already points to the proxy-backed implementation
