@@ -128,6 +128,24 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
+export async function searchCompanies(input: {
+  q?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  hs?: string | null;
+  mode?: 'air' | 'ocean' | null;
+  page?: number;
+  pageSize?: number;
+}) {
+  const res = await fetch('/api/lit/public/searchCompanies', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input ?? {}),
+  });
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  return res.json() as Promise<{ items: any[]; total: number }>;
+}
+
 export type SearchCompaniesBody = {
   q: string | null;
   origin?: string[];
