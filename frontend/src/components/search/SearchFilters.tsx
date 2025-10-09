@@ -24,7 +24,7 @@ export default function SearchFilters({ value, onChange }: Props) {
   const [origin, setOrigin] = React.useState(value.origin ?? '');
   const [destination, setDestination] = React.useState(value.destination ?? '');
   const [hs, setHs] = React.useState(value.hs ?? '');
-  const [mode, setMode] = React.useState<'ocean'|'air'|null>(value.mode ?? 'ocean');
+  const [mode, setMode] = React.useState<'ocean'|'air'|null>(value.mode ?? null);
 
   // Simple typeahead suggestions
   const [originSug, setOriginSug] = React.useState<string[]>([]);
