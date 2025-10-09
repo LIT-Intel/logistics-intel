@@ -1,9 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { getFilterOptions } from "@/lib/api";
-import { AlertCircle } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useQuery } from "@tanstack/react-query";
-import { Checkbox } from "@/components/ui/checkbox";
+import React, { useEffect, useState } from "react";
 import { Slider } from "@/components/ui/slider";
 
 function parseFilterOptions(response) {
@@ -39,24 +34,7 @@ export default function SearchFilters({ onChange }) {
     value_min: 0,
     value_max: 0,
   });
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["filter-options"],
-    queryFn: () => getFilterOptions({}),
-    staleTime: 1000 * 60 * 10,
-  });
-
-  useEffect(() => {
-    if (data) {
-      const parsed = parseFilterOptions(data);
-      setOptions({
-        origins: parsed.origin_countries.sort(),
-        destinations: parsed.destination_countries.sort(),
-        modes: parsed.modes.sort(),
-        carriers: parsed.carriers.sort(),
-        hs: parsed.hs_prefixes.sort(),
-      });
-    }
-  }, [data]);
+  // Removed remote filter fetch; rely on manual inputs only
   
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -85,35 +63,7 @@ export default function SearchFilters({ onChange }) {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
-  if (error) {
-    return (
-      <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md my-4">
-        <div className="flex">
-          <div className="flex-shrink-0">
-            <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
-          </div>
-          <div className="ml-3">
-            <p className="text-sm text-red-700">
-              Could not load search filters. Please try again later. ({error.message || String(error)})
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ))}
-      </div>
-    );
-  }
+  // No remote state = no error/loader UI
 
   return (
     <div className="mb-6">
