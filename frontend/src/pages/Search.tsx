@@ -404,7 +404,7 @@ export default function Search() {
                   origin: filters.origin ? String(filters.origin) : null,
                   destination: filters.destination ? String(filters.destination) : null,
                   hs: (filters.hs_text ? String(filters.hs_text) : null),
-                  mode: filters.mode === 'air' ? 'air' : (filters.mode === 'ocean' ? 'ocean' : null),
+                  mode: (filters.mode === 'air' || filters.mode === 'ocean') ? filters.mode : null,
                 }}
                 onChange={(next) => {
                   setFilters((prev) => ({
