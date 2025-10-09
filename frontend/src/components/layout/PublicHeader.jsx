@@ -7,7 +7,7 @@ export default function PublicHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const gotoLogin = () => {
-    // hard switch to our login route (no Base44 redirects)
+    // hard switch to our login route
     nav("/login");
   };
 
@@ -17,7 +17,7 @@ export default function PublicHeader() {
         <div className="flex items-center gap-3">
           <Link to="/" className="flex items-center gap-2">
             <img
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/a2395cf9b_logisticsintellogo1200x1200px2.png"
+              src="/favicon.svg"
               alt="LIT"
               className="w-8 h-8"
             />

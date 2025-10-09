@@ -51,7 +51,7 @@ export default function CustomLoginPage({ onClose }) {
       <div className="hidden md:flex w-1/2 bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900 text-white p-8 items-end relative">
         <div className="absolute top-6 left-6 flex items-center gap-2">
           <img
-            src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/a2395cf9b_logisticsintellogo1200x1200px2.png"
+            src="/favicon.svg"
             alt="LIT"
             className="w-8 h-8 rounded"
           />
