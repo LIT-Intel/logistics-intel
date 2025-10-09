@@ -12,7 +12,7 @@ import LitPageHeader from "../components/ui/LitPageHeader";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
 
-import SearchFilters from "../components/search/SearchFilters";
+import SearchFilters from "@/components/search/SearchFilters";
 import CompanyDetailModal from "../components/search/CompanyDetailModal";
 import SearchResults from "../components/search/SearchResults";
 import UpgradePrompt from "../components/common/UpgradePrompt";
@@ -399,7 +399,23 @@ export default function Search() {
         {showFilters && (
           <div className="mb-6">
             <LitPanel title="Filters">
-              <SearchFilters onChange={setFilters} />
+              <SearchFilters
+                value={{
+                  origin: filters.origin ? String(filters.origin) : null,
+                  destination: filters.destination ? String(filters.destination) : null,
+                  hs: (filters.hs_text ? String(filters.hs_text) : null),
+                  mode: filters.mode === 'air' ? 'air' : (filters.mode === 'ocean' ? 'ocean' : null),
+                }}
+                onChange={(next) => {
+                  setFilters((prev) => ({
+                    ...prev,
+                    origin: next.origin ?? '',
+                    destination: next.destination ?? '',
+                    hs_text: next.hs ?? '',
+                    mode: next.mode ?? 'any',
+                  }));
+                }}
+              />
             </LitPanel>
           </div>
         )}
