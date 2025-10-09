@@ -14,9 +14,9 @@ import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPi
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
 // canonical helpers and API wrappers
-import { getFilterOptions, saveCompanyToCrm, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
+import { saveCompanyToCrm, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
 import { useSearch } from '@/app/search/useSearch';
-import { InlineFilters } from '@/components/search/InlineFilters';
+import SearchFilters from '@/components/search/SearchFilters';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
 import CompanyModal from '@/components/search/CompanyModal';
@@ -167,9 +167,8 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
 
 function SearchAppPage() {
   const [view, setView] = useState<'cards'|'list'>('cards');
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [opts, setOpts] = useState<{ modes: string[]; origins: string[]; destinations: string[]; carriers: string[] }>({ modes: [], origins: [], destinations: [], carriers: [] });
-  const [filters, setFilters] = useState<{origin:string[]; dest:string[]; hs:string[]; mode:string[]; carrier:string[]}>({ origin: [], dest: [], hs: [], mode: [], carrier: [] });
+  // New filters model: typeahead + icon toggle
+  const { q, setQ, rows, loading, run, next, prev, page, filters, setFilters } = useSearch();
   const [exploreTab, setExploreTab] = useState<'none'|'trending'|'new'|'saved'|'alerts'>('none');
   const [savedRows, setSavedRows] = useState<any[]>([]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
@@ -180,7 +179,6 @@ function SearchAppPage() {
     } catch { return new Set(); }
   });
   const { toast } = useToast();
-  const { q, setQ, rows, loading, run, next, prev, page } = useSearch();
   function onSubmit(e?: React.FormEvent) { if (e) e.preventDefault(); run(true); }
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [modal, setModal] = useState<any | null>(null);
@@ -188,14 +186,7 @@ function SearchAppPage() {
 
   // Do not auto-load results. Wait for user to search.
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const fo = await getFilterOptions();
-        setOpts({ modes: fo.modes || [], origins: fo.origins || [], destinations: fo.destinations || [], carriers: fo.carriers || [] });
-      } catch {}
-    })();
-  }, []);
+  // No remote filter options; typeahead is local
 
   // All searching handled by useSearch(); no local fetch implementation
 
@@ -304,7 +295,6 @@ function SearchAppPage() {
                     />
                   </div>
                   <Button type="submit" onClick={() => onSubmit()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
-                  <Button variant="outline" onClick={() => setFiltersOpen(v=>!v)} className="rounded-xl h-12 px-4 gap-2"><Filter className="h-4 w-4 text-purple-600"/>Filters</Button>
                 </form>
                 <div className="mt-3 mb-2 flex items-center gap-2 justify-center">
                   <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
@@ -315,98 +305,33 @@ function SearchAppPage() {
                       <Button variant="outline" size="sm" className="rounded-xl">Explore</Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
-                      <DropdownMenuItem onClick={()=>{ setExploreTab('trending'); setHasSearched(false); }}>
+                      <DropdownMenuItem onClick={()=>{ setExploreTab('trending'); }}>
                         <TrendingUp className="h-4 w-4 text-indigo-600"/> Trending Companies
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={()=>{ setExploreTab('new'); setHasSearched(false); }}>
+                      <DropdownMenuItem onClick={()=>{ setExploreTab('new'); }}>
                         <Sparkles className="h-4 w-4 text-indigo-600"/> New Shippers (3–6M)
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={()=>{ setExploreTab('saved'); loadSavedCompanies(); }}>
                         <Bookmark className="h-4 w-4 text-indigo-600"/> Saved Companies
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={()=>{ setExploreTab('alerts'); setHasSearched(false); }}>
+                      <DropdownMenuItem onClick={()=>{ setExploreTab('alerts'); }}>
                         <Bell className="h-4 w-4 text-indigo-600"/> Alerts
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                {filtersOpen && (
-                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white/95 shadow-sm p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                      <div>
-                        <div className="text-sm font-medium mb-2">Origin</div>
-                        {opts.origins.length > 0 ? (
-                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                            {opts.origins.map((o) => {
-                              const isOn = filters.origin.includes(o);
-                              return (
-                                <Button key={o} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, origin: isOn ? prev.origin.filter(x=>x!==o) : [...prev.origin, o] }))}>{o}</Button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <Input placeholder="CSV e.g., CN,TR" onChange={(e)=> setFilters(prev=> ({ ...prev, origin: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium mb-2">Destination</div>
-                        {opts.destinations.length > 0 ? (
-                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                            {opts.destinations.map((d) => {
-                              const isOn = filters.dest.includes(d);
-                              return (
-                                <Button key={d} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, dest: isOn ? prev.dest.filter(x=>x!==d) : [...prev.dest, d] }))}>{d}</Button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <Input placeholder="CSV e.g., US,CA" onChange={(e)=> setFilters(prev=> ({ ...prev, dest: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium mb-2">Mode</div>
-                        {opts.modes.length > 0 ? (
-                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                            {opts.modes.map((m) => {
-                              const isOn = filters.mode.includes(m);
-                              return (
-                                <Button key={m} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, mode: isOn ? prev.mode.filter(x=>x!==m) : [...prev.mode, m] }))}>{m}</Button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <Input placeholder="CSV e.g., ocean,air" onChange={(e)=> setFilters(prev=> ({ ...prev, mode: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium mb-2">Carrier</div>
-                        {opts.carriers.length > 0 ? (
-                          <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
-                            {opts.carriers.map((c) => {
-                              const isOn = filters.carrier.includes(c);
-                              return (
-                                <Button key={c} variant={isOn ? 'default' : 'outline'} size="sm" className="rounded-full" onClick={() => setFilters(prev=> ({ ...prev, carrier: isOn ? prev.carrier.filter(x=>x!==c) : [...prev.carrier, c] }))}>{c}</Button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <Input placeholder="CSV carriers" onChange={(e)=> setFilters(prev=> ({ ...prev, carrier: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium mb-2">HS Codes</div>
-                        <Input placeholder="e.g. 9403, 8501" onChange={(e)=> setFilters(prev=> ({ ...prev, hs: e.target.value.split(',').map(s=> s.trim()).filter(Boolean) }))} />
-                      </div>
-                    </div>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <Button variant="ghost" onClick={() => { setFilters({ origin: [], dest: [], hs: [], mode: [], carrier: [] }); }}>Clear</Button>
-                      <Button onClick={() => { onSubmit(); setFiltersOpen(false); }}>Apply</Button>
-                    </div>
-                  </div>
-                )}
-                <InlineFilters filters={filters} onRemove={(type, val)=>{ setFilters(prev=> ({ ...prev, [type]: prev[type].filter(v=> v!==val) })); }} />
-                {/* Build tag for deploy verification */}
-                <div className="mt-2 text-[10px] text-muted-foreground">build: fix/deploy-ui-proxy</div>
+                {/* New typeahead + icon filters; auto-search via debounce in component */}
+                <div className="mt-3">
+                  <SearchFilters
+                    value={filters}
+                    onChange={(next) => {
+                      setFilters(next);
+                      // auto-run search with new filters
+                      run(true, next);
+                    }}
+                  />
+                </div>
+                {/* Build tag removed */}
 
                 {exploreTab==='none' && !rows.length && (<SearchEmpty state="idle"/>)}
 
