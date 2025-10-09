@@ -24,7 +24,7 @@ const solutions = [
         { value: '3', label: 'Risk Alerts' },
       ],
       // This would be a more complex component in a real app
-      image: "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68acd4246a0f65e4cc375a11/94e836ce1_image.png"
+      image: "/favicon.svg"
     },
     testimonial: {
       quote: "LIT transformed our supplier discovery process. We've reduced sourcing time by 60% and increased our supplier diversity.",
