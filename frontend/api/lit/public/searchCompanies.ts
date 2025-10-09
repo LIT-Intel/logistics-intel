@@ -1,38 +1,46 @@
-export default async function handler(req: any, res: any) {
+// frontend/api/lit/public/searchCompanies.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+
+const GATEWAY_BASE = process.env.NEXT_PUBLIC_API_BASE as string;
+
+// Only allow POST per PRD
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
+
   try {
-    const body = (typeof req.body === 'string') ? JSON.parse(req.body || '{}') : (req.body || {});
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const payload = {
       q: body.q ?? null,
       origin: body.origin ?? null,
       destination: body.destination ?? null,
       hs: body.hs ?? null,
       mode: body.mode ?? null,
-      page: body.page ?? (typeof body.offset === 'number' && typeof body.limit === 'number' ? Math.floor(body.offset / Math.max(1, body.limit)) + 1 : 1),
-      pageSize: body.pageSize ?? body.limit ?? 24,
-    } as const;
+      page: body.page ?? 1,
+      pageSize: body.pageSize ?? 24,
+    };
 
-    const base = process.env.NEXT_PUBLIC_API_BASE || process.env.API_BASE || process.env.GATEWAY_BASE;
-    if (!base) {
-      return res.status(500).json({ error: 'GATEWAY base not configured (NEXT_PUBLIC_API_BASE)' });
-    }
-
-    const upstream = await fetch(`${base.replace(/\/$/, '')}/public/searchCompanies`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload)
+    const upstream = await fetch(`${GATEWAY_BASE.replace(/\/$/, '')}/public/searchCompanies`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
     });
+
     if (!upstream.ok) {
-      const detail = await upstream.text().catch(()=> '');
+      const detail = await upstream.text();
       return res.status(upstream.status).json({ error: 'Upstream error', detail });
     }
+
+    // Upstream: { rows, meta } -> FE contract: { items, total }
     const data = await upstream.json();
     const items = Array.isArray(data?.rows) ? data.rows : [];
-    const total = (data?.meta && typeof data.meta.total === 'number') ? data.meta.total : (Array.isArray(items) ? items.length : 0);
-    res.setHeader('content-type', 'application/json');
-    return res.status(200).send(JSON.stringify({ items, total }));
-  } catch (e: any) {
-    return res.status(500).json({ error: String(e?.message || e) });
+    const total = data?.meta?.total ?? 0;
+
+    // Never leak the raw upstream; always return normalized shape
+    return res.status(200).json({ items, total });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Proxy failure', message: err?.message || String(err) });
   }
 }
