@@ -3,7 +3,6 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 const GATEWAY_BASE = process.env.NEXT_PUBLIC_API_BASE as string;
 
-// Only allow POST per PRD
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -22,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       pageSize: body.pageSize ?? 24,
     };
 
-    const upstream = await fetch(`${GATEWAY_BASE.replace(/\/$/, '')}/public/searchCompanies`, {
+    const upstream = await fetch(`${GATEWAY_BASE}/public/searchCompanies`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
@@ -33,12 +32,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(upstream.status).json({ error: 'Upstream error', detail });
     }
 
-    // Upstream: { rows, meta } -> FE contract: { items, total }
-    const data = await upstream.json();
+    const data = await upstream.json(); // upstream: { rows, meta }
     const items = Array.isArray(data?.rows) ? data.rows : [];
     const total = data?.meta?.total ?? 0;
 
-    // Never leak the raw upstream; always return normalized shape
+    // FE contract per PRD:
     return res.status(200).json({ items, total });
   } catch (err: any) {
     return res.status(500).json({ error: 'Proxy failure', message: err?.message || String(err) });
