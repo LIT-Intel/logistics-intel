@@ -27,21 +27,23 @@ export function useSearch() {
     return t.length ? t.slice(0, 4) : [trimmed];
   }, [q]);
 
-  const fetchTokenPage = async (token: string, offset = 0) => {
+  const fetchTokenPage = async (token: string | null, offset = 0) => {
     const res = await fetch('/api/lit/public/searchCompanies', {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ q: token, limit: LIMIT, offset }),
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ q: token ?? null, page: Math.floor(offset / LIMIT) + 1, pageSize: LIMIT }),
     });
     const data = await res.json();
-    const got: SearchRow[] = data?.rows ?? data?.results ?? [];
-    const total = data?.meta?.total ?? got.length;
+    const got: SearchRow[] = data?.items ?? [];
+    const total = data?.total ?? got.length;
     const nextOffset = offset + LIMIT >= total ? -1 : offset + LIMIT;
-    return { rows: got, nextOffset, token } as Page;
+    return { rows: got, nextOffset, token: String(token ?? '') } as Page;
   };
 
   const run = useCallback(async (reset = true) => {
     if (reset) { pagesRef.current = []; setPage(1); }
     setLoading(true);
-    const firstPages = await Promise.all(tokens.map(t => fetchTokenPage(t, 0)));
+    const firstPages = tokens.length > 0
+      ? await Promise.all(tokens.map(t => fetchTokenPage(t, 0)))
+      : [await fetchTokenPage(null, 0)];
     pagesRef.current = firstPages;
     const dedup = new Map<string, SearchRow>();
     for (const p of firstPages) {
