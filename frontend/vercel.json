@@ -1,13 +1,7 @@
 {
   "version": 2,
   "rewrites": [
-    {
-      "source": "/api/lit/public/(.*)",
-      "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/$1"
-    },
-    {
-      "source": "/api/lit/crm/(.*)",
-      "destination": "https://lit-caller-187580267283.us-central1.run.app/$1"
-    }
+    { "source": "/api/public/(.*)", "destination": "https://lit-caller-gw-2e68g4k3.uc.gateway.dev/public/$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
