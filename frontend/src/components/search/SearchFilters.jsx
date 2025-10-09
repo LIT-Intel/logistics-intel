@@ -86,7 +86,7 @@ export default function SearchFilters({ onChange }) {
           id="origin"
           value={filters.origin}
           onChange={(e) => handleFilterChange('origin', e.target.value)}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
         >
           <option value="">Any Origin</option>
@@ -101,7 +101,7 @@ export default function SearchFilters({ onChange }) {
           id="destination"
           value={filters.destination}
           onChange={(e) => handleFilterChange('destination', e.target.value)}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
         >
           <option value="">Any Destination</option>
@@ -117,7 +117,7 @@ export default function SearchFilters({ onChange }) {
           type="text"
           value={filters.origin_city}
           onChange={(e) => handleFilterChange('origin_city', e.target.value)}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
           placeholder="e.g., Los Angeles"
         />
@@ -131,7 +131,7 @@ export default function SearchFilters({ onChange }) {
           type="text"
           value={filters.origin_state}
           onChange={(e) => handleFilterChange('origin_state', e.target.value.toUpperCase().slice(0, 2))}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
           placeholder="e.g., CA"
         />
@@ -147,7 +147,7 @@ export default function SearchFilters({ onChange }) {
           pattern="\\d*"
           value={filters.origin_zip}
           onChange={(e) => handleFilterChange('origin_zip', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
           placeholder="e.g., 90001"
         />
@@ -161,7 +161,7 @@ export default function SearchFilters({ onChange }) {
           type="text"
           value={filters.dest_city}
           onChange={(e) => handleFilterChange('dest_city', e.target.value)}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
           placeholder="e.g., Shanghai"
         />
@@ -175,7 +175,7 @@ export default function SearchFilters({ onChange }) {
           type="text"
           value={filters.dest_state}
           onChange={(e) => handleFilterChange('dest_state', e.target.value.toUpperCase().slice(0, 2))}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
           placeholder="e.g., NY"
         />
@@ -191,7 +191,7 @@ export default function SearchFilters({ onChange }) {
           pattern="\\d*"
           value={filters.dest_zip}
           onChange={(e) => handleFilterChange('dest_zip', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
           placeholder="e.g., 10001"
         />
@@ -217,7 +217,7 @@ export default function SearchFilters({ onChange }) {
           id="carrier"
           value={filters.carrier}
           onChange={(e) => handleFilterChange('carrier', e.target.value)}
-          disabled={isLoading}
+          disabled={false}
           className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
         >
           <option value="">Any Carrier</option>
