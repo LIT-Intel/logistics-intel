@@ -26,6 +26,7 @@ export function useSearch() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const pagesRef = useRef<Page[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
   const LIMIT = 25;
   const [filters, setFilters] = useState<SearchFilters>({ origin: null, destination: null, hs: null, mode: null });
 
@@ -36,7 +37,7 @@ export function useSearch() {
     return t.length ? t.slice(0, 4) : [trimmed];
   }, [q]);
 
-  const fetchTokenPage = async (token: string | null, f: SearchFilters, offset = 0) => {
+  const fetchTokenPage = async (token: string | null, f: SearchFilters, offset = 0, signal?: AbortSignal) => {
     const data = await searchCompaniesHelper({
       q: token ?? null,
       origin: f.origin,
@@ -45,7 +46,7 @@ export function useSearch() {
       mode: f.mode,
       page: Math.floor(offset / LIMIT) + 1,
       pageSize: LIMIT,
-    });
+    }, signal);
     const got: SearchRow[] = data?.items ?? [];
     const total = data?.total ?? got.length;
     const nextOffset = offset + LIMIT >= total ? -1 : offset + LIMIT;
@@ -57,9 +58,14 @@ export function useSearch() {
     if (reset) { pagesRef.current = []; setPage(1); }
     setLoading(true);
     try {
+      // cancel in-flight
+      if (abortRef.current) abortRef.current.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+
       const firstPages = tokens.length > 0
-        ? await Promise.all(tokens.map(t => fetchTokenPage(t, f, 0)))
-        : [await fetchTokenPage(null, f, 0)];
+        ? await Promise.all(tokens.map(t => fetchTokenPage(t, f, 0, ac.signal)))
+        : [await fetchTokenPage(null, f, 0, ac.signal)];
       pagesRef.current = firstPages;
       const dedup = new Map<string, SearchRow>();
       for (const p of firstPages) {
@@ -80,10 +86,14 @@ export function useSearch() {
   const next = useCallback(async () => {
     setLoading(true);
     try {
+      const ac = new AbortController();
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = ac;
+
       const advanced = await Promise.all(
         pagesRef.current.map(async p => {
           if (p.nextOffset === -1) return p;
-          return fetchTokenPage(p.token, filters, p.nextOffset);
+          return fetchTokenPage(p.token, filters, p.nextOffset, ac.signal);
         })
       );
       pagesRef.current = advanced;
