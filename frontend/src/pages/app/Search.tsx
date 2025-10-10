@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { saveCompanyToCrm, buildCompanyShipmentsUrl, getCompanyKey, getFilterOptions, getFilterOptionsOnce } from '@/lib/api';
 import { useSearch } from '@/app/search/useSearch';
 import SearchFilters from '@/components/search/SearchFilters';
+import { FiltersDrawer } from '@/components/FiltersDrawer';
 import SearchEmpty from '@/components/SearchEmpty';
 import ResultsGrid from '@/components/ResultsGrid';
 import CompanyModal from '@/components/search/CompanyModal';
@@ -327,6 +328,7 @@ function SearchAppPage() {
                   <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
                   <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')} className="rounded-xl"><ListIcon className="h-4 w-4 mr-2"/> List</Button>
                   {loading && <span className="text-xs text-muted-foreground">Searching…</span>}
+                  <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setFiltersOpen(true)}><Filter className="h-4 w-4 mr-2"/>Filters</Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="rounded-xl">Explore</Button>
@@ -347,15 +349,22 @@ function SearchAppPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                {/* New typeahead + icon filters; auto-search via debounce in component */}
-                <div className="mt-3">
-                  <SearchFilters
-                    value={filters}
-                    onChange={(next) => {
-                      setFilters(next);
-                    }}
-                  />
-                </div>
+                {/* Filters hidden by default; open drawer for inputs */}
+                <FiltersDrawer
+                  open={Boolean(filtersOpen)}
+                  onOpenChange={(v) => setFiltersOpen(v)}
+                  filters={{}}
+                  values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined }}
+                  onChange={(patch) => {
+                    setFilters((prev) => ({
+                      origin: typeof patch.origin === 'string' ? patch.origin : (patch.origin === undefined ? null : prev.origin),
+                      destination: typeof patch.destination === 'string' ? patch.destination : (patch.destination === undefined ? null : prev.destination),
+                      hs: prev.hs,
+                      mode: typeof patch.mode === 'string' ? (patch.mode as any) : (patch.mode === undefined ? null : prev.mode),
+                    }));
+                  }}
+                  onApply={() => run(true)}
+                />
                 {/* Build tag removed */}
 
                 {exploreTab==='none' && !rows.length && (<SearchEmpty state="idle"/>)}
