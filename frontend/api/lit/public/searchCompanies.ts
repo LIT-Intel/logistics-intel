@@ -1,15 +1,23 @@
 export default async function handler(req: any, res: any) {
+  const TARGET_BASE_URL = ((globalThis as any).process?.env?.TARGET_BASE_URL) || 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+  const ALLOWED_ORIGIN = 'https://logistics-intel.vercel.app';
+  const ALLOWED_HEADERS = 'authorization, x-client-info, apikey, content-type, x-lit-proxy-token';
+  const ALLOWED_METHODS = 'GET, POST, OPTIONS';
+
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Headers', ALLOWED_HEADERS);
+  res.setHeader('Access-Control-Allow-Methods', ALLOWED_METHODS);
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
   try {
-    const GATEWAY_BASE = (
-      ((globalThis as any).process?.env?.NEXT_PUBLIC_API_BASE) ||
-      ((globalThis as any).process?.env?.VITE_API_BASE) ||
-      'https://lit-gw-2e68g4k3.uc.gateway.dev'
-    ).replace(/\/$/, '');
-
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const payload = {
       q: body.q ?? null,
@@ -21,7 +29,7 @@ export default async function handler(req: any, res: any) {
       pageSize: body.pageSize ?? 24,
     };
 
-    const upstream = await fetch(`${GATEWAY_BASE}/public/searchCompanies`, {
+    const upstream = await fetch(`${String(TARGET_BASE_URL).replace(/\/$/, '')}/public/searchCompanies`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
