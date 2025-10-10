@@ -6,6 +6,8 @@
     { "src": "api/**/*.js", "use": "@vercel/node" }
   ],
   "routes": [
+    { "src": "^/api/lit/public/getFilterOptions$", "dest": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/getFilterOptions", "headers": { "Cache-Control": "public, max-age=900, s-maxage=900", "Vary": "Origin" } },
+    { "src": "^/api/lit/public/searchCompanies$", "dest": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/searchCompanies" },
     { "handle": "filesystem" },
     { "src": "^/api/(.*)$", "dest": "/api/$1" },
     { "src": ".*", "dest": "/index.html" }
