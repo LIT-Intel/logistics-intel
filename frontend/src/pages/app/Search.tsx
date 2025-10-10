@@ -323,7 +323,7 @@ function SearchAppPage() {
                       onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(); }}
                     />
                   </div>
-                  <Button type="submit" onClick={() => onSubmit()} className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
+                  <Button type="submit" className="rounded-xl h-12 px-4"><SearchIcon className="h-4 w-4 mr-2"/>Search</Button>
                 </form>
                 <div className="mt-3 mb-2 flex items-center gap-2 justify-center">
                   <Button variant={view === 'cards' ? 'default' : 'outline'} size="sm" onClick={() => setView('cards')} className="rounded-xl"><LayoutGrid className="h-4 w-4 mr-2"/> Cards</Button>
