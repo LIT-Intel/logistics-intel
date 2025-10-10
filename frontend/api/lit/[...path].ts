@@ -42,6 +42,10 @@ export default async function handler(req: any, res: any) {
     if (cacheControl) res.setHeader('cache-control', cacheControl);
     const etag = upstream.headers.get('etag');
     if (etag) res.setHeader('etag', etag);
+    // Ensure 15m cache for getFilterOptions if upstream omitted it
+    if (!cacheControl && req.method === 'GET' && /(^|\/)public\/getFilterOptions$/.test(subpath)) {
+      res.setHeader('cache-control', 'public, max-age=900, s-maxage=900');
+    }
     return res.send(text);
   } catch (err: any) {
     return res.status(502).json({ error: 'Upstream failure', detail: err?.message || String(err) });
