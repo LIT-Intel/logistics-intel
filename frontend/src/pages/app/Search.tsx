@@ -171,6 +171,7 @@ function SearchAppPage() {
   // New filters model: typeahead + icon toggle
   const { q, setQ, rows, loading, run, next, prev, page, filters, setFilters } = useSearch();
   const [exploreTab, setExploreTab] = useState<'none'|'trending'|'new'|'saved'|'alerts'>('none');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [savedRows, setSavedRows] = useState<any[]>([]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(()=>{
