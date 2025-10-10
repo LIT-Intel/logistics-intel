@@ -154,7 +154,15 @@ export async function searchCompanies(
     signal,
   });
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-  return res.json() as Promise<{ items: any[]; total: number }>;
+  const data = await res.json().catch(() => ({}));
+  // Adapter: accept {items,total} or {rows,meta}
+  const items = Array.isArray(data?.items)
+    ? data.items
+    : (Array.isArray(data?.rows) ? data.rows : []);
+  const total = typeof data?.total === 'number'
+    ? data.total
+    : (data?.meta?.total ?? items.length);
+  return { items, total } as { items: any[]; total: number };
 }
 
 export type SearchCompaniesBody = {
