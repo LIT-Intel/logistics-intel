@@ -6,12 +6,11 @@
     { "src": "api/**/*.js", "use": "@vercel/node" }
   ],
   "rewrites": [
-    { "source": "/api/lit/public/getFilterOptions", "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/getFilterOptions" },
-    { "source": "/api/lit/public/searchCompanies", "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/searchCompanies" }
+    { "source": "/api/lit/public/getFilterOptions", "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/getFilterOptions" }
   ],
   "routes": [
-    { "handle": "filesystem" },
     { "src": "^/api/lit/(.*)$", "dest": "https://lit-gw-2e68g4k3.uc.gateway.dev/$1" },
+    { "handle": "filesystem" },
     { "src": "^/api/(.*)$", "dest": "/api/$1" },
     { "src": ".*", "dest": "/index.html" }
   ]
