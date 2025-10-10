@@ -164,8 +164,8 @@ export async function getCompanyShipments(params: { company_id: string; limit?: 
   return res.json();
 }
 
-export async function getFilterOptions() {
-  const res = await fetch(`/api/lit/public/getFilterOptions`, { method: 'GET', headers: { 'accept': 'application/json' } });
+export async function getFilterOptions(signal?: AbortSignal) {
+  const res = await fetch(`/api/lit/public/getFilterOptions`, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${res.status} ${t}`); }
   return res.json();
 }
