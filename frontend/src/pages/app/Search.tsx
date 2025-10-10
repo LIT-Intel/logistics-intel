@@ -14,7 +14,7 @@ import { LayoutGrid, List as ListIcon, Search as SearchIcon, ChevronRight, MapPi
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
 // canonical helpers and API wrappers
-import { saveCompanyToCrm, buildCompanyShipmentsUrl, getCompanyKey } from '@/lib/api';
+import { saveCompanyToCrm, buildCompanyShipmentsUrl, getCompanyKey, getFilterOptions, getFilterOptionsOnce } from '@/lib/api';
 import { useSearch } from '@/app/search/useSearch';
 import SearchFilters from '@/components/search/SearchFilters';
 import SearchEmpty from '@/components/SearchEmpty';
@@ -186,6 +186,16 @@ function SearchAppPage() {
 
   // Do not auto-load results. Wait for user to search.
 
+  // Load filter options once, non-blocking
+  const [filterOptionsReady, setFilterOptionsReady] = useState(false);
+  useEffect(() => {
+    const ac = new AbortController();
+    getFilterOptionsOnce((signal?: AbortSignal) => getFilterOptions(signal), ac.signal)
+      .then(() => setFilterOptionsReady(true))
+      .catch(() => setFilterOptionsReady(true));
+    return () => ac.abort();
+  }, []);
+
   // Debounced auto-search on filter or query change (prevents UI thrash)
   const lastSigRef = useRef<string>('');
   const hydratedRef = useRef<boolean>(false);
@@ -196,13 +206,14 @@ function SearchAppPage() {
       hydratedRef.current = true;
     }
     const id = setTimeout(() => {
+      if (!filterOptionsReady) return;
       if (lastSigRef.current !== sig) {
         lastSigRef.current = sig;
         run(true);
       }
     }, 400);
     return () => clearTimeout(id);
-  }, [sig, run]);
+  }, [sig, run, filterOptionsReady]);
 
   // All searching handled by useSearch(); no local fetch implementation
 

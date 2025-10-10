@@ -182,6 +182,44 @@ export async function getFilterOptions(signal?: AbortSignal) {
   return res.json();
 }
 
+// --- Filters singleton cache with 10m TTL ---
+let _filtersCache: { data: any; expires: number } | null = null;
+let _filtersInflight: Promise<any> | null = null;
+
+function readFiltersLocal(): { data: any; expires: number } | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = window.localStorage.getItem('lit.filters');
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj?.data || !obj?.expires) return null;
+    if (Date.now() > obj.expires) return null;
+    return obj;
+  } catch { return null; }
+}
+
+function writeFiltersLocal(data: any) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('lit.filters', JSON.stringify({ data, expires: Date.now() + 10 * 60 * 1000 }));
+  } catch {}
+}
+
+export async function getFilterOptionsOnce(fetcher: (signal?: AbortSignal) => Promise<any>, signal?: AbortSignal) {
+  if (_filtersCache && Date.now() < _filtersCache.expires) return _filtersCache.data;
+  const local = readFiltersLocal();
+  if (local) { _filtersCache = local; return local.data; }
+  if (_filtersInflight) return _filtersInflight;
+  _filtersInflight = (async () => {
+    const data = await fetcher(signal);
+    _filtersCache = { data, expires: Date.now() + 10 * 60 * 1000 };
+    writeFiltersLocal(data);
+    _filtersInflight = null;
+    return data;
+  })();
+  return _filtersInflight;
+}
+
 export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string | null; source?: string; }) {
   const res = await fetch(`${GW}/crm/saveCompany`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...payload, source: payload.source ?? "search" }) });
   if (!res.ok) throw new Error(`saveCompanyToCrm failed: ${res.status} ${await res.text().catch(()=> "")}`);
