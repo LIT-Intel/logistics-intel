@@ -56,42 +56,53 @@ export function useSearch() {
     const f = filtersOverride ?? filters;
     if (reset) { pagesRef.current = []; setPage(1); }
     setLoading(true);
-    const firstPages = tokens.length > 0
-      ? await Promise.all(tokens.map(t => fetchTokenPage(t, f, 0)))
-      : [await fetchTokenPage(null, f, 0)];
-    pagesRef.current = firstPages;
-    const dedup = new Map<string, SearchRow>();
-    for (const p of firstPages) {
-      for (const r of p.rows) {
-        const key = (r.company_id?.trim() || `name:${r.company_name.toLowerCase()}`);
-        if (!dedup.has(key)) dedup.set(key, r);
+    try {
+      const firstPages = tokens.length > 0
+        ? await Promise.all(tokens.map(t => fetchTokenPage(t, f, 0)))
+        : [await fetchTokenPage(null, f, 0)];
+      pagesRef.current = firstPages;
+      const dedup = new Map<string, SearchRow>();
+      for (const p of firstPages) {
+        for (const r of p.rows) {
+          const key = (r.company_id?.trim() || `name:${r.company_name.toLowerCase()}`);
+          if (!dedup.has(key)) dedup.set(key, r);
+        }
       }
+      setRows(Array.from(dedup.values()).slice(0, LIMIT));
+    } catch (err) {
+      console.error('[useSearch] run error', err);
+      setRows([]);
+    } finally {
+      setLoading(false);
     }
-    setRows(Array.from(dedup.values()).slice(0, LIMIT));
-    setLoading(false);
   }, [tokens, filters]);
 
   const next = useCallback(async () => {
     setLoading(true);
-    const advanced = await Promise.all(
-      pagesRef.current.map(async p => {
-        if (p.nextOffset === -1) return p;
-        return fetchTokenPage(p.token, filters, p.nextOffset);
-      })
-    );
-    pagesRef.current = advanced;
-    const dedup = new Map<string, SearchRow>();
-    for (const p of advanced) {
-      for (const r of p.rows) {
-        const key = (r.company_id?.trim() || `name:${r.company_name.toLowerCase()}`);
-        if (!dedup.has(key)) dedup.set(key, r);
+    try {
+      const advanced = await Promise.all(
+        pagesRef.current.map(async p => {
+          if (p.nextOffset === -1) return p;
+          return fetchTokenPage(p.token, filters, p.nextOffset);
+        })
+      );
+      pagesRef.current = advanced;
+      const dedup = new Map<string, SearchRow>();
+      for (const p of advanced) {
+        for (const r of p.rows) {
+          const key = (r.company_id?.trim() || `name:${r.company_name.toLowerCase()}`);
+          if (!dedup.has(key)) dedup.set(key, r);
+        }
       }
+      const pageNum = page + 1;
+      setPage(pageNum);
+      setRows(Array.from(dedup.values()).slice((pageNum-1)*LIMIT, pageNum*LIMIT));
+    } catch (err) {
+      console.error('[useSearch] next error', err);
+    } finally {
+      setLoading(false);
     }
-    const pageNum = page + 1;
-    setPage(pageNum);
-    setRows(Array.from(dedup.values()).slice((pageNum-1)*LIMIT, pageNum*LIMIT));
-    setLoading(false);
-  }, [page]);
+  }, [page, filters]);
 
   const prev = useCallback(() => {
     if (page <= 1) return;
