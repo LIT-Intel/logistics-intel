@@ -19,7 +19,10 @@ export default async function handler(req: any, res: any) {
 
   try {
     const subpath = Array.isArray((req as any).query?.path) ? (req as any).query.path.join('/') : String((req as any).query?.path || '');
-    const url = `${TARGET_BASE_URL.replace(/\/$/, '')}/${subpath}`;
+    const originalUrl: string = (req as any).url || '';
+    const qsIndex = originalUrl.indexOf('?');
+    const qs = qsIndex >= 0 ? originalUrl.slice(qsIndex + 1) : '';
+    const url = `${TARGET_BASE_URL.replace(/\/$/, '')}/${subpath}${qs ? `?${qs}` : ''}`;
 
     const headers: Record<string, string> = {
       'content-type': 'application/json',
@@ -34,6 +37,11 @@ export default async function handler(req: any, res: any) {
     const ct = upstream.headers.get('content-type') || 'application/json; charset=utf-8';
     res.status(upstream.status);
     res.setHeader('content-type', ct);
+    // Forward caching-related headers for CDN/edge caching (e.g., filters endpoint)
+    const cacheControl = upstream.headers.get('cache-control');
+    if (cacheControl) res.setHeader('cache-control', cacheControl);
+    const etag = upstream.headers.get('etag');
+    if (etag) res.setHeader('etag', etag);
     return res.send(text);
   } catch (err: any) {
     return res.status(502).json({ error: 'Upstream failure', detail: err?.message || String(err) });

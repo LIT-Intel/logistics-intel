@@ -19,15 +19,36 @@ export default async function handler(req: any, res: any) {
   }
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const payload = {
-      q: body.q ?? null,
-      origin: body.origin ?? null,
-      destination: body.destination ?? null,
-      hs: body.hs ?? null,
-      mode: body.mode ?? null,   // 'air' | 'ocean' | null
-      page: body.page ?? 1,
-      pageSize: body.pageSize ?? 24,
-    };
+    // Build upstream payload, normalizing field names to backend contract
+    const hs_codes = (() => {
+      if (Array.isArray(body.hs_codes)) return body.hs_codes.join(',');
+      if (Array.isArray(body.hs)) return body.hs.join(',');
+      if (typeof body.hs_codes === 'string') return body.hs_codes;
+      if (typeof body.hs === 'string') return body.hs;
+      if (typeof body.hsCodes === 'string') return body.hsCodes;
+      return undefined;
+    })();
+
+    const payload: Record<string, any> = {};
+    const assign = (k: string, v: any) => { if (v !== undefined && v !== null && (typeof v !== 'string' || v.trim() !== '')) payload[k] = v; };
+    assign('q', body.q ?? null);
+    assign('mode', body.mode ?? null);
+    assign('origin', body.origin ?? body.origin_country ?? null);
+    assign('destination', body.destination ?? body.dest ?? body.dest_country ?? null);
+    assign('origin_city', body.origin_city);
+    assign('origin_state', body.origin_state);
+    assign('origin_zip', body.origin_zip);
+    assign('dest_city', body.dest_city);
+    assign('dest_state', body.dest_state);
+    assign('dest_zip', body.dest_zip);
+    assign('carrier', body.carrier);
+    assign('hs_codes', hs_codes);
+    assign('date_start', body.date_start);
+    assign('date_end', body.date_end);
+    assign('min_value_usd', body.min_value_usd);
+    assign('max_value_usd', body.max_value_usd);
+    assign('page', body.page ?? 1);
+    assign('page_size', body.page_size ?? body.pageSize ?? 24);
 
     const upstream = await fetch(`${String(TARGET_BASE_URL).replace(/\/$/, '')}/public/searchCompanies`, {
       method: 'POST',
@@ -40,11 +61,17 @@ export default async function handler(req: any, res: any) {
       return res.status(upstream.status).json({ error: 'Upstream error', detail });
     }
 
-    const data = await upstream.json(); // { rows, meta }
-    const items = Array.isArray(data?.rows) ? data.rows : [];
-    const total = Number(data?.meta?.total ?? 0);
+    const data = await upstream.json().catch(() => ({}));
+    // Adapter: accept either normalized {items,total} or raw {rows,meta}
+    const items = Array.isArray((data as any)?.items)
+      ? (data as any).items
+      : (Array.isArray((data as any)?.rows) ? (data as any).rows : []);
+    const total = typeof (data as any)?.total === 'number'
+      ? (data as any).total
+      : (Number((data as any)?.meta?.total ?? items.length));
 
     res.setHeader('x-lit-normalized', '1');
+    res.setHeader('content-type', 'application/json; charset=utf-8');
     return res.status(200).json({ items, total });
   } catch (err: any) {
     return res.status(500).json({ error: 'Proxy failure', message: err?.message || String(err) });
