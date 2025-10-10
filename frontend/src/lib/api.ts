@@ -147,10 +147,11 @@ export async function searchCompanies(
   const url = String(directBase || '').trim()
     ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
     : '/api/lit/public/searchCompanies';
+  const params = buildSearchParams(input);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(input ?? {}),
+    body: JSON.stringify(params ?? {}),
     signal,
   });
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
@@ -163,6 +164,16 @@ export async function searchCompanies(
     ? data.total
     : (data?.meta?.total ?? items.length);
   return { items, total } as { items: any[]; total: number };
+}
+
+export function buildSearchParams(raw: Record<string, any>) {
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string' && value.trim() === '') continue;
+    cleaned[key] = value;
+  }
+  return cleaned;
 }
 
 export type SearchCompaniesBody = {
