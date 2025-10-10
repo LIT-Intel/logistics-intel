@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -186,7 +186,18 @@ function SearchAppPage() {
 
   // Do not auto-load results. Wait for user to search.
 
-  // No remote filter options; typeahead is local
+  // Debounced auto-search on filter or query change (prevents UI thrash)
+  const lastSigRef = useRef<string>('');
+  const sig = JSON.stringify({ q: (q || '').trim() || null, filters });
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (lastSigRef.current !== sig) {
+        lastSigRef.current = sig;
+        run(true);
+      }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [sig, run]);
 
   // All searching handled by useSearch(); no local fetch implementation
 
@@ -326,8 +337,6 @@ function SearchAppPage() {
                     value={filters}
                     onChange={(next) => {
                       setFilters(next);
-                      // auto-run search with new filters
-                      run(true, next);
                     }}
                   />
                 </div>
