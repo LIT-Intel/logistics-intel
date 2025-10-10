@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -190,10 +190,11 @@ function SearchAppPage() {
 
   // Load filter options once, non-blocking
   const [filterOptionsReady, setFilterOptionsReady] = useState(false);
+  const [filterOptions, setFilterOptions] = useState<any>(null);
   useEffect(() => {
     const ac = new AbortController();
     getFilterOptionsOnce((signal?: AbortSignal) => getFilterOptions(signal), ac.signal)
-      .then(() => setFilterOptionsReady(true))
+      .then((data) => { setFilterOptions(data); setFilterOptionsReady(true); })
       .catch(() => setFilterOptionsReady(true));
     return () => ac.abort();
   }, []);
@@ -202,6 +203,12 @@ function SearchAppPage() {
   const lastSigRef = useRef<string>('');
   const hydratedRef = useRef<boolean>(false);
   const sig = JSON.stringify({ q: (q || '').trim() || null, filters });
+  const triggerSearchNow = useCallback(() => {
+    // Guard identical params: set signature first to prevent the effect from double-firing
+    lastSigRef.current = sig;
+    run(true);
+  }, [sig, run]);
+
   useEffect(() => {
     // Guard initial mount to avoid flip-flop if UI shows 'Any'
     if (!hydratedRef.current) {
@@ -213,7 +220,7 @@ function SearchAppPage() {
         lastSigRef.current = sig;
         run(true);
       }
-    }, 400);
+    }, 325);
     return () => clearTimeout(id);
   }, [sig, run, filterOptionsReady]);
 
@@ -354,7 +361,7 @@ function SearchAppPage() {
                 <FiltersDrawer
                   open={Boolean(filtersOpen)}
                   onOpenChange={(v) => setFiltersOpen(v)}
-                  filters={{}}
+                  filters={filterOptions || {}}
                   values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined }}
                   onChange={(patch) => {
                     setFilters((prev) => ({
@@ -364,7 +371,7 @@ function SearchAppPage() {
                       mode: typeof patch.mode === 'string' ? (patch.mode as any) : (patch.mode === undefined ? null : prev.mode),
                     }));
                   }}
-                  onApply={() => run(true)}
+                  onApply={() => { triggerSearchNow(); setFiltersOpen(false); }}
                 />
                 {/* Build tag removed */}
 
