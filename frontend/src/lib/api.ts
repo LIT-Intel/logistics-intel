@@ -127,6 +127,8 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
+const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+
 export async function searchCompanies(
   input: {
     q?: string | null;
@@ -148,12 +150,25 @@ export async function searchCompanies(
     ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
     : '/api/lit/public/searchCompanies';
   const params = buildSearchParams(input);
-  const res = await fetch(url, {
+  // Try proxy first; on failure, fall back to Gateway directly
+  const tryProxy = () => fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(params ?? {}),
     signal,
   });
+  const tryGateway = () => fetch(`${GATEWAY_BASE_DEFAULT}/public/searchCompanies`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
+  });
+
+  let res: Response | null = null;
+  try {
+    res = await tryProxy();
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok || !ct.includes('application/json')) throw new Error(`proxy_bad_${res.status}`);
+  } catch {
+    res = await tryGateway();
+  }
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
   const data = await res.json().catch(() => ({}));
   // Adapter: accept {items,total} or {rows,meta}
@@ -196,9 +211,25 @@ export async function getCompanyShipments(params: { company_id: string; limit?: 
 }
 
 export async function getFilterOptions(signal?: AbortSignal) {
-  const res = await fetch(`/api/lit/public/getFilterOptions`, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${res.status} ${t}`); }
-  return res.json();
+  // Try Vercel proxy first; if 404 or non-JSON, fall back to Gateway (GET then POST)
+  const proxyUrl = `/api/lit/public/getFilterOptions`;
+  try {
+    const r = await fetch(proxyUrl, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || !ct.includes('application/json')) throw new Error(String(r.status));
+    return await r.json();
+  } catch {
+    // Gateway fallback
+    const u = `${GATEWAY_BASE_DEFAULT}/public/getFilterOptions`;
+    let g = await fetch(u, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
+    let ct = g.headers.get('content-type') || '';
+    if (!g.ok || !ct.includes('application/json')) {
+      // Some upstreams expose it as POST; try that
+      g = await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify({}), signal });
+    }
+    if (!g.ok) { const t = await g.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${g.status} ${t}`); }
+    return await g.json();
+  }
 }
 
 // --- Filters singleton cache with 10m TTL ---
