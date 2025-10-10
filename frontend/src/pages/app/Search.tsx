@@ -188,8 +188,13 @@ function SearchAppPage() {
 
   // Debounced auto-search on filter or query change (prevents UI thrash)
   const lastSigRef = useRef<string>('');
+  const hydratedRef = useRef<boolean>(false);
   const sig = JSON.stringify({ q: (q || '').trim() || null, filters });
   useEffect(() => {
+    // Guard initial mount to avoid flip-flop if UI shows 'Any'
+    if (!hydratedRef.current) {
+      hydratedRef.current = true;
+    }
     const id = setTimeout(() => {
       if (lastSigRef.current !== sig) {
         lastSigRef.current = sig;
