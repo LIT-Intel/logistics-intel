@@ -127,19 +127,31 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
-export async function searchCompanies(input: {
-  q?: string | null;
-  origin?: string | null;
-  destination?: string | null;
-  hs?: string | null;
-  mode?: 'air' | 'ocean' | null;
-  page?: number;
-  pageSize?: number;
-}) {
-  const res = await fetch('/api/lit/public/searchCompanies', {
+export async function searchCompanies(
+  input: {
+    q?: string | null;
+    origin?: string | null;
+    destination?: string | null;
+    hs?: string | null;
+    mode?: 'air' | 'ocean' | null;
+    page?: number;
+    pageSize?: number;
+  },
+  signal?: AbortSignal
+) {
+  // TEMP: prefer direct Gateway if configured; fallback to proxy
+  const directBase = (typeof window !== 'undefined' && (window as any).__LIT_BASE__)
+    || (typeof import_meta !== 'undefined' && (import_meta as any)?.env?.VITE_API_BASE)
+    || (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_API_BASE)
+    || '';
+  const url = String(directBase || '').trim()
+    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
+    : '/api/lit/public/searchCompanies';
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input ?? {}),
+    signal,
   });
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
   return res.json() as Promise<{ items: any[]; total: number }>;
