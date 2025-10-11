@@ -174,8 +174,8 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               ) : shipments.length === 0 ? (
                 <div className="text-center text-muted-foreground py-16">No shipments found.</div>
               ) : (
-                <>
-                  <div className="grid grid-cols-4 gap-4 text-center mb-3">
+                <div className="flex flex-col h-[60vh] sm:h-[65vh]">
+                  <div className="grid grid-cols-4 gap-4 text-center mb-2">
                     <div>
                       <div className="text-xs text-muted-foreground">Total (server)</div>
                       <div className="text-base font-semibold">{(total ?? shipments.length).toLocaleString()}</div>
@@ -193,8 +193,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                       <div className="text-base font-semibold">{kpis.totalTEU.toLocaleString()}</div>
                     </div>
                   </div>
-
-                  <div className="overflow-x-auto border rounded-md max-h-[55vh] overflow-y-auto">
+                  <div className="flex-1 min-h-0 overflow-auto border rounded-md">
                     <table className="min-w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -237,15 +236,14 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                       </tbody>
                     </table>
                   </div>
-
-                  <div className="flex items-center justify-between mt-4">
+                  <div className="flex items-center justify-between mt-3">
                     <div className="text-xs text-muted-foreground">Page {page} • Page size {pageSize}{typeof total === 'number' ? ` • ${total} total` : ''}</div>
                     <div className="space-x-2">
                       <button className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
                       <button className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => setPage((p) => p + 1)} disabled={typeof total === 'number' ? page * pageSize >= total : shipments.length < pageSize}>Next</button>
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </TabsContent>
 
