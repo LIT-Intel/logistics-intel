@@ -100,10 +100,27 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
     return { totalShipments, totalContainers, totalWeight, totalTEU };
   }, [shipments, total]);
 
+  // Merge details KPIs with card KPIs (fallback when details are sparse)
+  const mergedKpi = useMemo(() => {
+    const cardShipments12m = (company?.shipments_12m ?? 0) as number;
+    const cardLast = typeof company?.last_activity === 'string'
+      ? (company?.last_activity as string)
+      : ((company?.last_activity as any)?.value ?? null);
+    const cardTopRoutes = (company as any)?.top_routes ?? [];
+    const cardTopCarriers = (company as any)?.top_carriers ?? [];
+    const d = (details?.kpis ?? {}) as any;
+    return {
+      shipments_12m: (typeof d.shipments_12m === 'number' ? d.shipments_12m : cardShipments12m) as number,
+      last_activity: (typeof d.last_activity === 'string' ? d.last_activity : (d?.last_activity?.value ?? cardLast)) as string | null,
+      top_routes: Array.isArray(d.top_routes) ? d.top_routes : cardTopRoutes,
+      top_carriers: Array.isArray(d.top_carriers) ? d.top_carriers : cardTopCarriers,
+    } as { shipments_12m: number; last_activity: string | null; top_routes: any[]; top_carriers: any[] };
+  }, [details, company]);
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden p-0">
-        <div className="px-6 pt-6">
+      <DialogContent className="max-w-6xl max-h-[90vh] p-0 flex flex-col">
+        <div className="px-4 pt-4">
           <DialogHeader>
             <DialogTitle className="text-2xl font-semibold">
               {company?.company_name || 'Company'}
@@ -111,26 +128,26 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
           </DialogHeader>
 
-          <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="mt-4">
-            <TabsList>
+          <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="mt-3">
+            <TabsList className="sticky top-0 bg-white z-10">
               <TabsTrigger value="kpi">KPI</TabsTrigger>
               <TabsTrigger value="shipments">Shipments</TabsTrigger>
               <TabsTrigger value="contacts">Contacts</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="kpi" className="mt-6">
+            <TabsContent value="kpi" className="mt-3">
               {kpiLoading ? (
                 <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
               ) : (
                 <>
-                  <div className="grid grid-cols-4 gap-6 text-center">
+                  <div className="grid grid-cols-4 gap-4 text-center">
                     <div>
                       <div className="text-sm text-muted-foreground">Shipments (12m)</div>
-                      <div className="text-xl font-semibold">{company?.shipments_12m ?? '—'}</div>
+                      <div className="text-xl font-semibold">{mergedKpi.shipments_12m ?? 0}</div>
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground">Last activity</div>
-                      <div className="text-xl font-semibold">{typeof company?.last_activity === 'string' ? company?.last_activity : company?.last_activity?.value || '—'}</div>
+                      <div className="text-xl font-semibold">{mergedKpi.last_activity ?? '—'}</div>
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground">Containers (page)</div>
@@ -142,7 +159,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                     </div>
                   </div>
 
-                  <div className="mt-6 border rounded-md p-4">
+                  <div className="mt-4 border rounded-md p-4">
                     <div className="text-sm font-medium">Profile</div>
                     <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
                     <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
@@ -151,14 +168,14 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               )}
             </TabsContent>
 
-            <TabsContent value="shipments" className="mt-6">
+            <TabsContent value="shipments" className="mt-3">
               {shipLoading ? (
                 <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading shipments…</div>
               ) : shipments.length === 0 ? (
                 <div className="text-center text-muted-foreground py-16">No shipments found.</div>
               ) : (
                 <>
-                  <div className="grid grid-cols-4 gap-6 text-center mb-4">
+                  <div className="grid grid-cols-4 gap-4 text-center mb-3">
                     <div>
                       <div className="text-xs text-muted-foreground">Total (server)</div>
                       <div className="text-base font-semibold">{(total ?? shipments.length).toLocaleString()}</div>
@@ -177,7 +194,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto border rounded-md">
+                  <div className="overflow-x-auto border rounded-md max-h-[55vh] overflow-y-auto">
                     <table className="min-w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -237,6 +254,8 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             </TabsContent>
           </Tabs>
         </div>
+        {/* Scroller */}
+        <div className="flex-1 min-h-0 overflow-auto px-4 pb-4" />
       </DialogContent>
     </Dialog>
   );
