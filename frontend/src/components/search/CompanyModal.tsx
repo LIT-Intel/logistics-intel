@@ -30,13 +30,13 @@ export default function CompanyModal({
   }, [company?.company_id, company?.company_name]);
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl rounded-2xl bg-white p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-lg font-semibold">{company.company_name}</div>
-          <button onClick={onClose} className="rounded-lg border px-3 py-1.5">Close</button>
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4 sm:p-6">
+      <div className="w-full h-full sm:h-auto sm:max-h-[85vh] sm:max-w-5xl bg-white rounded-none sm:rounded-2xl shadow-xl flex flex-col" role="dialog" aria-modal="true">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-5 border-b sticky top-0 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70">
+          <div className="text-base sm:text-lg font-semibold truncate">{company.company_name}</div>
+          <button onClick={onClose} className="rounded-lg border px-3 py-1.5 text-sm">Close</button>
         </div>
-        <div className="mt-3">
+        <div className="flex-1 overflow-auto p-3 sm:p-4">
           {loading ? 'Loading shipments…' : (
             error ? (
               <div className="text-sm text-rose-600">{error}</div>

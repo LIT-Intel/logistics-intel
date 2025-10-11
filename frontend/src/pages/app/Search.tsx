@@ -145,8 +145,8 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
           </div>
         </CardHeader>
         <CardContent className="pt-0 flex-1 flex flex-col">
-          <div className="grid grid-cols-3 gap-4">
-            <KPI value={row.shipments_12m} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <KPI value={row.shipments_12m ?? 0} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
             <KPI value={(typeof row.last_activity === 'object' ? (row.last_activity?.value || '—') : (row.last_activity ?? '—'))} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
             <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
           </div>
