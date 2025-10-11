@@ -129,6 +129,7 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
           <Avatar className="h-10 w-10"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
           <div className="flex-1">
             <CardTitle className="text-base font-semibold tracking-tight text-slate-900">{row.company_name}</CardTitle>
+            <div className="mt-0.5 text-[11px] text-slate-500" title={row.company_id || '—'}>ID: {row.company_id || '—'}</div>
             <div className="mt-1 flex flex-wrap gap-2">
               {(row.tags||[]).map((t: string, i: number) => (
                 <Badge key={i} variant="outline" className={cn(brand.chip, 'border-indigo-200 text-slate-600')}>{t}</Badge>
