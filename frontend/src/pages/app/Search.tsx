@@ -471,9 +471,7 @@ function SearchAppPage() {
           {/* Empty states handled via SearchEmpty (idle vs no-results) */}
         </div>
 
-        {modal && (
-          <CompanyModal company={modal} shipmentsUrl={buildCompanyShipmentsUrl(modal, 50, 0)} onClose={() => setModal(null)} />
-        )}
+        <CompanyModal company={modal} open={Boolean(modal)} onClose={(open)=>{ if(!open) setModal(null); }} />
       </div>
     </TooltipProvider>
   );
