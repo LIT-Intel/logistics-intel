@@ -281,15 +281,15 @@ export function buildCompanyShipmentsUrl(
   limit = 50,
   offset = 0
 ) {
-  const id = row.company_id?.trim()
-    ? row.company_id
-    : `name:${row.company_name.toLowerCase()}`;
-  const qs = new URLSearchParams({
-    company_id: id,
-    limit: String(limit),
-    offset: String(offset),
-  }).toString();
-  return `/api/lit/public/getCompanyShipments?${qs}`;
+  const params = new URLSearchParams();
+  if (row.company_id && row.company_id.trim()) {
+    params.set('company_id', row.company_id.trim());
+  } else {
+    params.set('company_name', row.company_name);
+  }
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  return `/api/lit/public/getCompanyShipments?${params.toString()}`;
 }
 
 export function getCompanyKey(row: { company_id?: string; company_name: string }) {
