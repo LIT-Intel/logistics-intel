@@ -3,6 +3,15 @@ import { getCompanyShipments, getCompanyDetails } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
+function inferTEUs(desc?: string | null, containerCount?: number | null) {
+  if (!containerCount || containerCount <= 0) return null;
+  const d = (desc || '').toUpperCase();
+  const has40 = /\b40(F|RF|HC|RC)?\b/.test(d) || / 40(RF|RC)/.test(d);
+  const has20 = /\b20(F|RF|HC|RC)?\b/.test(d) || / 20(RF|RC)/.test(d);
+  if (has40 && !has20) return containerCount * 2;
+  if (has20 && !has40) return containerCount * 1;
+  return null;
+}
 
 type Company = {
   company_id?: string | null;
@@ -176,25 +185,38 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                           <th className="px-3 py-2 text-left">Mode</th>
                           <th className="px-3 py-2 text-left">Origin</th>
                           <th className="px-3 py-2 text-left">Destination</th>
-                          <th className="px-3 py-2 text-left">Containers</th>
-                          <th className="px-3 py-2 text-left">Weight (kg)</th>
+                          <th className="px-3 py-2 text-left">Origin Port</th>
+                          <th className="px-3 py-2 text-left">Destination Port</th>
+                          <th className="px-3 py-2 text-right">Value (USD)</th>
+                          <th className="px-3 py-2 text-right">Weight (kg)</th>
+                          <th className="px-3 py-2 text-right">Containers</th>
+                          <th className="px-3 py-2 text-right">TEUs*</th>
                           <th className="px-3 py-2 text-left">Carrier</th>
+                          <th className="px-3 py-2 text-left">HS</th>
                           <th className="px-3 py-2 text-left">Commodity</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {shipments.map((s, i) => (
-                          <tr key={i} className="border-t hover:bg-muted/20">
-                            <td className="px-3 py-2">{s?.date?.value || '—'}</td>
-                            <td className="px-3 py-2">{s?.mode || '—'}</td>
-                            <td className="px-3 py-2">{s?.origin_country || '—'}</td>
-                            <td className="px-3 py-2">{s?.dest_country || '—'}</td>
-                            <td className="px-3 py-2">{s?.container_count ?? '—'}</td>
-                            <td className="px-3 py-2">{s?.gross_weight_kg ?? '—'}</td>
-                            <td className="px-3 py-2">{s?.carrier || '—'}</td>
-                            <td className="px-3 py-2 max-w-[360px] truncate">{s?.commodity_description || '—'}</td>
-                          </tr>
-                        ))}
+                        {shipments.map((s, i) => {
+                          const teu = inferTEUs(s?.commodity_description, s?.container_count);
+                          return (
+                            <tr key={i} className="border-t hover:bg-muted/20">
+                              <td className="px-3 py-2">{s?.date?.value || s?.shipment_date?.value || '—'}</td>
+                              <td className="px-3 py-2">{s?.mode || '—'}</td>
+                              <td className="px-3 py-2">{s?.origin_country || '—'}</td>
+                              <td className="px-3 py-2">{s?.dest_country || '—'}</td>
+                              <td className="px-3 py-2">{s?.origin_port || '—'}</td>
+                              <td className="px-3 py-2">{s?.dest_port || '—'}</td>
+                              <td className="px-3 py-2 text-right">{s?.value_usd == null ? '—' : Number(s.value_usd).toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right">{s?.gross_weight_kg == null ? '—' : Number(s.gross_weight_kg).toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right">{s?.container_count ?? '—'}</td>
+                              <td className="px-3 py-2 text-right">{teu ?? '—'}</td>
+                              <td className="px-3 py-2">{s?.carrier || '—'}</td>
+                              <td className="px-3 py-2">{s?.hs_code || '—'}</td>
+                              <td className="px-3 py-2 max-w-[360px] truncate">{s?.commodity_description || '—'}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
