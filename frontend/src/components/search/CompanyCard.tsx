@@ -32,6 +32,9 @@ export default function CompanyCard({
           <div className="truncate text-xl font-semibold tracking-tight text-slate-900">
             {row.company_name}
           </div>
+          <div className="mt-1 text-xs text-slate-400 truncate" title={row.company_id || '—'}>
+            ID: {row.company_id || '—'}
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
