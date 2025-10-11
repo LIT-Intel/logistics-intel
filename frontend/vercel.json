@@ -6,12 +6,7 @@
     { "src": "api/**/*.js", "use": "@vercel/node" }
   ],
   "rewrites": [
-    { "source": "/api/lit/public/getFilterOptions", "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/public/getFilterOptions" }
-  ],
-  "routes": [
-    { "src": "^/api/lit/(.*)$", "dest": "https://lit-gw-2e68g4k3.uc.gateway.dev/$1" },
-    { "handle": "filesystem" },
-    { "src": "^/api/(.*)$", "dest": "/api/$1" },
-    { "src": ".*", "dest": "/index.html" }
+    { "source": "/api/lit/(.*)", "destination": "https://lit-gw-2e68g4k3.uc.gateway.dev/$1" },
+    { "source": "/((?!api).*)", "destination": "/index.html" }
   ]
 }
