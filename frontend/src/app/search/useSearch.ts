@@ -16,6 +16,9 @@ export type SearchFilters = {
   destination: string | null;
   hs: string | null;
   mode: 'air' | 'ocean' | null;
+  date_start?: string | null;
+  date_end?: string | null;
+  year?: string | null;
 };
 
 const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
@@ -28,7 +31,7 @@ export function useSearch() {
   const pagesRef = useRef<Page[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const LIMIT = 25;
-  const [filters, setFilters] = useState<SearchFilters>({ origin: null, destination: null, hs: null, mode: null });
+  const [filters, setFilters] = useState<SearchFilters>({ origin: null, destination: null, hs: null, mode: null, date_start: null, date_end: null, year: null });
 
   const tokens = useMemo(() => {
     const trimmed = q.trim();
@@ -44,6 +47,8 @@ export function useSearch() {
       destination: f.destination,
       hs: f.hs,
       mode: f.mode,
+      date_start: f.date_start ?? null,
+      date_end: f.date_end ?? null,
       page: Math.floor(offset / LIMIT) + 1,
       pageSize: LIMIT,
     }, signal);
