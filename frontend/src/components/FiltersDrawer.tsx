@@ -12,8 +12,8 @@ export function FiltersDrawer({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   filters: any;
-  values: { origin?: string; destination?: string; mode?: string };
-  onChange: (patch: Partial<{ origin: string | undefined; destination: string | undefined; mode: string | undefined }>) => void;
+  values: { origin?: string; destination?: string; mode?: string; date_start?: string; date_end?: string; year?: string };
+  onChange: (patch: Partial<{ origin: string | undefined; destination: string | undefined; mode: string | undefined; date_start: string | undefined; date_end: string | undefined; year: string | undefined }>) => void;
   onApply: () => void;
 }) {
   const countries: string[] =
@@ -43,6 +43,36 @@ export function FiltersDrawer({
               placeholder="Type a country…"
               value={values.origin ?? ''}
               onChange={(e) => onChange({ origin: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div className="md:col-span-1">
+            <label className="text-xs text-neutral-600">Year</label>
+            <input
+              type="number"
+              min="2000"
+              max="2100"
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              placeholder="YYYY"
+              value={values.year ?? ''}
+              onChange={(e) => onChange({ year: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-600">Date Start</label>
+            <input
+              type="date"
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              value={values.date_start ?? ''}
+              onChange={(e) => onChange({ date_start: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-600">Date End</label>
+            <input
+              type="date"
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              value={values.date_end ?? ''}
+              onChange={(e) => onChange({ date_end: e.target.value.trim() ? e.target.value : undefined })}
             />
           </div>
           <div>

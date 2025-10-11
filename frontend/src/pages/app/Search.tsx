@@ -363,13 +363,16 @@ function SearchAppPage() {
                   open={Boolean(filtersOpen)}
                   onOpenChange={(v) => setFiltersOpen(v)}
                   filters={filterOptions || {}}
-                  values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined }}
+                  values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined, date_start: filters.date_start ?? undefined, date_end: filters.date_end ?? undefined, year: filters.year ?? undefined }}
                   onChange={(patch) => {
                     setFilters((prev) => ({
                       origin: typeof patch.origin === 'string' ? patch.origin : (patch.origin === undefined ? null : prev.origin),
                       destination: typeof patch.destination === 'string' ? patch.destination : (patch.destination === undefined ? null : prev.destination),
                       hs: prev.hs,
                       mode: typeof patch.mode === 'string' ? (patch.mode as any) : (patch.mode === undefined ? null : prev.mode),
+                      date_start: typeof patch.date_start === 'string' ? patch.date_start : (patch.date_start === undefined ? null : prev.date_start),
+                      date_end: typeof patch.date_end === 'string' ? patch.date_end : (patch.date_end === undefined ? null : prev.date_end),
+                      year: typeof patch.year === 'string' ? patch.year : (patch.year === undefined ? null : prev.year),
                     }));
                   }}
                   onApply={() => { triggerSearchNow(); setFiltersOpen(false); }}

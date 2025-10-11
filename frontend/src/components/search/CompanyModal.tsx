@@ -4,7 +4,7 @@ import { buildCompanyShipmentsUrl } from '@/lib/api';
 
 export default function CompanyModal({
   company,
-  shipmentsUrl, // initial (not strictly needed since we rebuild with canonical id)
+  shipmentsUrl,
   onClose,
 }: {
   company: SearchRow;
@@ -14,12 +14,17 @@ export default function CompanyModal({
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dateStart, setDateStart] = useState<string>('');
+  const [dateEnd, setDateEnd] = useState<string>('');
 
   useEffect(() => {
-    const url = buildCompanyShipmentsUrl(company, 50, 0);
+    const urlBase = buildCompanyShipmentsUrl(company, 50, 0);
+    const u = new URL(urlBase, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    if (dateStart) u.searchParams.set('date_start', dateStart);
+    if (dateEnd) u.searchParams.set('date_end', dateEnd);
     setLoading(true);
     setError(null);
-    fetch(url)
+    fetch(u.toString().replace(/^https?:\/\/[^/]+/, ''))
       .then(async (r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         const d = await r.json().catch(() => ({}));
@@ -27,7 +32,7 @@ export default function CompanyModal({
       })
       .catch((e:any) => setError(String(e?.message || e)))
       .finally(() => setLoading(false));
-  }, [company?.company_id, company?.company_name]);
+  }, [company?.company_id, company?.company_name, dateStart, dateEnd]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4 sm:p-6">
@@ -37,6 +42,10 @@ export default function CompanyModal({
           <button onClick={onClose} className="rounded-lg border px-3 py-1.5 text-sm">Close</button>
         </div>
         <div className="flex-1 overflow-auto p-3 sm:p-4">
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:w-auto sm:inline-grid">
+            <input type="date" className="h-9 rounded-lg border px-2 text-sm" value={dateStart} onChange={(e)=> setDateStart(e.target.value)} />
+            <input type="date" className="h-9 rounded-lg border px-2 text-sm" value={dateEnd} onChange={(e)=> setDateEnd(e.target.value)} />
+          </div>
           {loading ? 'Loading shipments…' : (
             error ? (
               <div className="text-sm text-rose-600">{error}</div>
