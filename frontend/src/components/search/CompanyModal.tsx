@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getCompanyShipments, getCompanyDetails } from '@/lib/api';
+import { getCompanyShipmentsUnified, getCompanyDetails } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
@@ -72,7 +72,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
     (async () => {
       setShipLoading(true);
       try {
-        const { rows, total: t } = await getCompanyShipments({
+        const { rows, total: t } = await getCompanyShipmentsUnified({
           company_id: cid,
           company_name: cid ? undefined : cname,
           limit: pageSize,
