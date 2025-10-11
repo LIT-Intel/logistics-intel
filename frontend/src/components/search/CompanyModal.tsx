@@ -1,101 +1,221 @@
-import React, { useEffect, useState } from 'react';
-import type { SearchRow } from '@/lib/types';
-import { buildCompanyShipmentsUrl } from '@/lib/api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getCompanyShipments, getCompanyDetails } from '@/lib/api';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Loader2 } from 'lucide-react';
 
-export default function CompanyModal({
-  company,
-  shipmentsUrl,
-  onClose,
-}: {
-  company: SearchRow;
-  shipmentsUrl?: string;
-  onClose: () => void;
-}) {
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [dateStart, setDateStart] = useState<string>('');
-  const [dateEnd, setDateEnd] = useState<string>('');
+type Company = {
+  company_id?: string | null;
+  company_name: string;
+  shipments_12m?: number | null;
+  last_activity?: { value?: string } | string | null;
+};
+
+type ModalProps = {
+  company: Company | null;
+  open: boolean;
+  onClose: (open: boolean) => void;
+};
+
+export default function CompanyModal({ company, open, onClose }: ModalProps) {
+  const [activeTab, setActiveTab] = useState<'kpi' | 'shipments' | 'contacts'>('kpi');
+
+  const [details, setDetails] = useState<any>(null);
+  const [kpiLoading, setKpiLoading] = useState(false);
+
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [shipLoading, setShipLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
+  const [total, setTotal] = useState<number | null>(null);
+
+  const cid = company?.company_id || undefined;
+  const cname = company?.company_name || '';
 
   useEffect(() => {
-    const urlBase = buildCompanyShipmentsUrl(company, 50, 0);
-    const u = new URL(urlBase, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-    if (dateStart) u.searchParams.set('date_start', dateStart);
-    if (dateEnd) u.searchParams.set('date_end', dateEnd);
-    setLoading(true);
-    setError(null);
-    fetch(u.toString().replace(/^https?:\/\/[^/]+/, ''))
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-        const d = await r.json().catch(() => ({}));
-        setRows(Array.isArray(d?.rows) ? d.rows : []);
-      })
-      .catch((e:any) => setError(String(e?.message || e)))
-      .finally(() => setLoading(false));
-  }, [company?.company_id, company?.company_name, dateStart, dateEnd]);
+    if (!open || !company) return;
+    setActiveTab('kpi');
+    setShipments([]);
+    setPage(1);
+    setTotal(null);
+  }, [open, company?.company_id, company?.company_name]);
+
+  useEffect(() => {
+    if (!open || !company) return;
+    let cancelled = false;
+    (async () => {
+      setKpiLoading(true);
+      try {
+        const res = await getCompanyDetails({ company_id: cid, fallback_name: cname });
+        if (!cancelled) setDetails(res || {});
+      } catch (e) {
+        if (!cancelled) setDetails({});
+      } finally {
+        if (!cancelled) setKpiLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, cid, cname]);
+
+  useEffect(() => {
+    if (!open || !company || activeTab !== 'shipments') return;
+    let cancelled = false;
+    (async () => {
+      setShipLoading(true);
+      try {
+        const { rows, total: t } = await getCompanyShipments({
+          company_id: cid,
+          company_name: cid ? undefined : cname,
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        });
+        if (!cancelled) {
+          setShipments(rows || []);
+          if (typeof t === 'number') setTotal(t);
+        }
+      } catch (e) {
+        if (!cancelled) setShipments([]);
+      } finally {
+        if (!cancelled) setShipLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, company, activeTab, page, pageSize, cid, cname]);
+
+  const kpis = useMemo(() => {
+    const rows = shipments || [];
+    const totalShipments = typeof total === 'number' ? total : rows.length;
+    const totalContainers = rows.reduce((s, r) => s + (Number(r.container_count) || 0), 0);
+    const totalWeight = rows.reduce((s, r) => s + (Number(r.gross_weight_kg) || 0), 0);
+    const totalTEU = totalContainers;
+    return { totalShipments, totalContainers, totalWeight, totalTEU };
+  }, [shipments, total]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4 sm:p-6">
-      <div className="w-full h-full sm:h-auto sm:max-h-[85vh] sm:max-w-5xl bg-white rounded-none sm:rounded-2xl shadow-xl flex flex-col" role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between px-4 py-3 sm:px-5 border-b sticky top-0 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70">
-          <div className="text-base sm:text-lg font-semibold truncate">{company.company_name}</div>
-          <button onClick={onClose} className="rounded-lg border px-3 py-1.5 text-sm">Close</button>
-        </div>
-        <div className="flex-1 overflow-auto p-3 sm:p-4">
-          <div className="mb-3 grid grid-cols-2 gap-2 sm:w-auto sm:inline-grid">
-            <input type="date" className="h-9 rounded-lg border px-2 text-sm" value={dateStart} onChange={(e)=> setDateStart(e.target.value)} />
-            <input type="date" className="h-9 rounded-lg border px-2 text-sm" value={dateEnd} onChange={(e)=> setDateEnd(e.target.value)} />
-          </div>
-          {loading ? 'Loading shipments…' : (
-            error ? (
-              <div className="text-sm text-rose-600">{error}</div>
-            ) : rows.length ? (
-              <div>
-                <div className="text-sm text-slate-700 mb-2">Showing {rows.length} shipments…</div>
-                <div className="overflow-auto rounded-xl border">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="text-left px-3 py-2">Date</th>
-                        <th className="text-left px-3 py-2">Mode</th>
-                        <th className="text-left px-3 py-2">Origin → Dest</th>
-                        <th className="text-left px-3 py-2">Carrier</th>
-                        <th className="text-right px-3 py-2">Containers</th>
-                        <th className="text-right px-3 py-2">Weight (kg)</th>
-                        <th className="text-right px-3 py-2">Value (USD)</th>
-                        <th className="text-left px-3 py-2">HS</th>
-                        <th className="text-left px-3 py-2">Commodity</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((r:any, i:number) => (
-                        <tr key={i} className="border-t">
-                          <td className="px-3 py-2">{r?.shipment_date?.value || r?.date?.value || '—'}</td>
-                          <td className="px-3 py-2">{r?.mode || '—'}</td>
-                          <td className="px-3 py-2">
-                            {(r?.origin_country || '—')} → {(r?.dest_country || '—')}
-                            <div className="text-xs text-slate-500">
-                              {(r?.origin_port || '—')} → {(r?.dest_port || '—')}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2">{r?.carrier || '—'}</td>
-                          <td className="px-3 py-2 text-right">{r?.container_count ?? '—'}</td>
-                          <td className="px-3 py-2 text-right">{r?.gross_weight_kg ?? '—'}</td>
-                          <td className="px-3 py-2 text-right">{r?.value_usd ?? '—'}</td>
-                          <td className="px-3 py-2">{r?.hs_code || '—'}</td>
-                          <td className="px-3 py-2">{r?.commodity_description || '—'}</td>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden p-0">
+        <div className="px-6 pt-6">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-semibold">
+              {company?.company_name || 'Company'}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
+          </DialogHeader>
+
+          <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="mt-4">
+            <TabsList>
+              <TabsTrigger value="kpi">KPI</TabsTrigger>
+              <TabsTrigger value="shipments">Shipments</TabsTrigger>
+              <TabsTrigger value="contacts">Contacts</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="kpi" className="mt-6">
+              {kpiLoading ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-6 text-center">
+                    <div>
+                      <div className="text-sm text-muted-foreground">Shipments (12m)</div>
+                      <div className="text-xl font-semibold">{company?.shipments_12m ?? '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">Last activity</div>
+                      <div className="text-xl font-semibold">{typeof company?.last_activity === 'string' ? company?.last_activity : company?.last_activity?.value || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">Containers (page)</div>
+                      <div className="text-xl font-semibold">{kpis.totalContainers.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">TEU (est.)</div>
+                      <div className="text-xl font-semibold">{kpis.totalTEU.toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 border rounded-md p-4">
+                    <div className="text-sm font-medium">Profile</div>
+                    <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
+                    <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="shipments" className="mt-6">
+              {shipLoading ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading shipments…</div>
+              ) : shipments.length === 0 ? (
+                <div className="text-center text-muted-foreground py-16">No shipments found.</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-6 text-center mb-4">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Total (server)</div>
+                      <div className="text-base font-semibold">{(total ?? shipments.length).toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Containers (page)</div>
+                      <div className="text-base font-semibold">{kpis.totalContainers.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Weight kg (page)</div>
+                      <div className="text-base font-semibold">{kpis.totalWeight.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">TEU est. (page)</div>
+                      <div className="text-base font-semibold">{kpis.totalTEU.toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto border rounded-md">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Date</th>
+                          <th className="px-3 py-2 text-left">Mode</th>
+                          <th className="px-3 py-2 text-left">Origin</th>
+                          <th className="px-3 py-2 text-left">Destination</th>
+                          <th className="px-3 py-2 text-left">Containers</th>
+                          <th className="px-3 py-2 text-left">Weight (kg)</th>
+                          <th className="px-3 py-2 text-left">Carrier</th>
+                          <th className="px-3 py-2 text-left">Commodity</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-slate-500">No shipments found.</div>
-            )
-          )}
+                      </thead>
+                      <tbody>
+                        {shipments.map((s, i) => (
+                          <tr key={i} className="border-t hover:bg-muted/20">
+                            <td className="px-3 py-2">{s?.date?.value || '—'}</td>
+                            <td className="px-3 py-2">{s?.mode || '—'}</td>
+                            <td className="px-3 py-2">{s?.origin_country || '—'}</td>
+                            <td className="px-3 py-2">{s?.dest_country || '—'}</td>
+                            <td className="px-3 py-2">{s?.container_count ?? '—'}</td>
+                            <td className="px-3 py-2">{s?.gross_weight_kg ?? '—'}</td>
+                            <td className="px-3 py-2">{s?.carrier || '—'}</td>
+                            <td className="px-3 py-2 max-w-[360px] truncate">{s?.commodity_description || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-xs text-muted-foreground">Page {page} • Page size {pageSize}{typeof total === 'number' ? ` • ${total} total` : ''}</div>
+                    <div className="space-x-2">
+                      <button className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
+                      <button className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => setPage((p) => p + 1)} disabled={typeof total === 'number' ? page * pageSize >= total : shipments.length < pageSize}>Next</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="contacts" className="mt-6">
+              <div className="text-sm text-muted-foreground">Contacts are a Pro feature. Placeholder panel ready for Phase 3.</div>
+            </TabsContent>
+          </Tabs>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

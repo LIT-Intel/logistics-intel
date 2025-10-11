@@ -210,6 +210,32 @@ export async function getCompanyShipments(params: { company_id: string; limit?: 
   return res.json();
 }
 
+// New helpers per patch: getCompanyDetails, getCompanyShipments (unified signature)
+export async function getCompanyDetails(params: { company_id?: string; fallback_name?: string }) {
+  const q = new URLSearchParams();
+  if (params.company_id) q.set('company_id', params.company_id);
+  const url = `/api/lit/public/getCompanyDetails?${q.toString()}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`getCompanyDetails ${r.status}`);
+  return r.json();
+}
+
+export async function getCompanyShipmentsUnified(params: { company_id?: string; company_name?: string; origin?: string; dest?: string; hs?: string; limit?: number; offset?: number }) {
+  const q = new URLSearchParams();
+  if (params.company_id) q.set('company_id', params.company_id);
+  if (params.company_name) q.set('company_name', params.company_name);
+  if (params.origin) q.set('origin', params.origin);
+  if (params.dest) q.set('dest', params.dest);
+  if (params.hs) q.set('hs', params.hs);
+  q.set('limit', String(params.limit ?? 50));
+  q.set('offset', String(params.offset ?? 0));
+  const url = `/api/lit/public/getCompanyShipments?${q.toString()}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
+  const data = await r.json();
+  return { rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [], total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0) };
+}
+
 export async function getFilterOptions(signal?: AbortSignal) {
   // Try Vercel proxy first; if 404 or non-JSON, fall back to Gateway (GET then POST)
   const proxyUrl = `/api/lit/public/getFilterOptions`;
