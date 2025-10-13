@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { getCompanyShipmentsUnified, getCompanyDetails } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import KpiGrid from './KpiGrid';
+import { computeKpis } from './computeKpis';
+import WatermarkGate from '@/components/ui/WatermarkGate';
 import { Loader2 } from 'lucide-react';
 function inferTEUs(desc?: string | null, containerCount?: number | null) {
   if (!containerCount || containerCount <= 0) return null;
@@ -140,24 +143,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                 <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
               ) : (
                 <>
-                  <div className="grid grid-cols-4 gap-4 text-center">
-                    <div>
-                      <div className="text-sm text-muted-foreground">Shipments (12m)</div>
-                      <div className="text-xl font-semibold">{mergedKpi.shipments_12m ?? 0}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-muted-foreground">Last activity</div>
-                      <div className="text-xl font-semibold">{mergedKpi.last_activity ?? '—'}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-muted-foreground">Containers (page)</div>
-                      <div className="text-xl font-semibold">{kpis.totalContainers.toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-muted-foreground">TEU (est.)</div>
-                      <div className="text-xl font-semibold">{kpis.totalTEU.toLocaleString()}</div>
-                    </div>
-                  </div>
+                  <KpiGrid items={computeKpis(shipments)} />
 
                   <div className="mt-4 border rounded-md p-4">
                     <div className="text-sm font-medium">Profile</div>
@@ -248,7 +234,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             </TabsContent>
 
             <TabsContent value="contacts" className="mt-6">
-              <div className="text-sm text-muted-foreground">Contacts are a Pro feature. Placeholder panel ready for Phase 3.</div>
+              <WatermarkGate />
             </TabsContent>
           </Tabs>
         </div>
