@@ -136,9 +136,7 @@ export default function CommandCenterPage() {
           <div className="ml-auto flex items-center gap-2">
             <Input className="hidden md:block w-[360px]" placeholder="Search companies, contacts, industries, etc." />
             <Button variant="outline" size="sm"><Settings2 className="mr-2 h-4 w-4" />Tools</Button>
-            <Button size="sm" className="bg-gradient-to-r text-white shadow-sm hover:opacity-90">
-              <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Add to Command Center</span>
-            </Button>
+            <Button size="xs" variant="outline" onClick={() => setAddOpen(true)}>+ Add Company</Button>
             <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
           </div>
         </div>
@@ -304,6 +302,44 @@ export default function CommandCenterPage() {
           </div>
         </div>
       </div>
+      {addOpen && (
+        <div className="fixed inset-0 z-50 bg-black/20 flex items-center justify-center">
+          <div className="w-[720px] max-w-[92vw] rounded-2xl bg-white shadow-2xl border">
+            <div className="p-4 border-b flex items-center justify-between">
+              <div className="text-sm font-semibold">Add Company</div>
+              <button onClick={() => setAddOpen(false)} className="text-sm text-muted-foreground">Close</button>
+            </div>
+            <div className="p-4">
+              <div className="text-xs mb-2 font-medium">LIT Search</div>
+              <div className="flex gap-2">
+                <input
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  placeholder="Search by name (e.g., Dole, Acme Robotics)…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && runLitSearch(query)}
+                />
+                <Button onClick={() => runLitSearch(query)} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
+              </div>
+              <div className="mt-4 max-h-80 overflow-auto space-y-2">
+                {results === null && <div className="text-sm text-muted-foreground">Enter a query to search.</div>}
+                {results?.length === 0 && <div className="text-sm text-muted-foreground">No results.</div>}
+                {results && results.map((row) => (
+                  <div key={`${row.company_id}-${row.company_name}`} className="rounded-xl border p-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">{row.company_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Shipments(12m): {row.shipments_12m ?? '—'} • Top lane: {row.top_routes?.[0]?.origin_country ?? '—'} → {row.top_routes?.[0]?.dest_country ?? '—'}
+                      </div>
+                    </div>
+                    <Button size="sm" onClick={() => selectAndSave(row)}>Save</Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -315,6 +351,9 @@ function SectionTitle({ title, compact }: { title: string; compact?: boolean }) 
     <div className={`text-sm font-semibold ${compact ? '' : 'mb-2'}`}>{title}</div>
   );
 }
+
+// Modal UI (render at root below content)
+// NOTE: This JSX should be placed at the bottom of the component tree in the return statement above.
 
 function InfoItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
