@@ -48,6 +48,13 @@ export default function CommandCenterPage() {
     revenue: '—',
     website: '—',
   });
+  // --- KPI state (live) ---
+  const [kpi, setKpi] = useState({
+    shipments12m: '—',
+    lastActivity: '—',
+    topLane: '—',
+    topCarrier: '—',
+  });
 
   useEffect(() => {
     try {
@@ -67,6 +74,54 @@ export default function CommandCenterPage() {
   }, []);
 
   const brandGradient = useMemo(() => 'from-indigo-600 via-violet-600 to-fuchsia-600', []);
+
+  // --- Types + helpers for KPI fetch ---
+  type SearchCompanyRow = {
+    company_id: string | null;
+    company_name: string;
+    shipments_12m: number | null;
+    last_activity?: { value?: string | null } | null;
+    top_routes?: { origin_country: string | null; dest_country: string | null; shipments: number | null }[] | null;
+    top_carriers?: { name: string | null; share_pct: number | null }[] | null;
+  };
+  type SearchCompaniesResp = { meta?: { total: number }, rows?: SearchCompanyRow[], items?: SearchCompanyRow[], total?: number };
+
+  function fmtLane(row: SearchCompanyRow) {
+    const r = row.top_routes?.[0];
+    if (!r || !r.origin_country || !r.dest_country) return '—';
+    return `${r.origin_country} → ${r.dest_country}`;
+  }
+  function fmtCarrier(row: SearchCompanyRow) {
+    const c = row.top_carriers?.[0];
+    return c?.name ?? '—';
+  }
+
+  // Fetch KPI seed from searchCompanies (1 row) — proxy endpoint
+  useEffect(() => {
+    const saved = (() => {
+      try { return JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null'); } catch { return null; }
+    })();
+    const body = saved?.company_id
+      ? { company_id: saved.company_id, limit: 1, offset: 0 }
+      : { q: companyName || null, limit: 1, offset: 0 };
+    fetch('/api/lit/public/searchCompanies', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+    }).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      const data = (await r.json()) as SearchCompaniesResp;
+      const rows = Array.isArray(data.rows) ? data.rows : (Array.isArray(data.items) ? data.items : []);
+      const row = rows?.[0];
+      if (!row) return;
+      setCompanyName(row.company_name || companyName);
+      setKpi({
+        shipments12m: row.shipments_12m != null ? String(row.shipments_12m) : '—',
+        lastActivity: row.last_activity?.value || '—',
+        topLane: fmtLane(row),
+        topCarrier: fmtCarrier(row),
+      });
+    }).catch(() => { /* keep placeholders */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f7f8fb]">
@@ -144,7 +199,7 @@ export default function CommandCenterPage() {
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
           {/* LEFT COLUMN (xl:5) */}
           <div className="xl:col-span-5 space-y-4">
-            <KpiStrip />
+            <KpiStrip kpi={kpi} />
 
             <Card className="p-4 rounded-2xl shadow-sm">
               <SectionTitle title="Company Details" />
@@ -316,12 +371,12 @@ function GhostContact({ name, title }: { name: string; title: string }) {
   );
 }
 
-function KpiStrip() {
+function KpiStrip({ kpi }: { kpi: { shipments12m: string; lastActivity: string; topLane: string; topCarrier: string } }) {
   const items = [
-    { label: 'Shipments (12m)', value: '—' },
-    { label: 'Last Activity', value: '—' },
-    { label: 'Top Lane', value: '—' },
-    { label: 'Top Carrier', value: '—' },
+    { label: 'Shipments (12m)', value: kpi.shipments12m },
+    { label: 'Last Activity', value: kpi.lastActivity },
+    { label: 'Top Lane', value: kpi.topLane },
+    { label: 'Top Carrier', value: kpi.topCarrier },
   ];
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
