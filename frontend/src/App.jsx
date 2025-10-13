@@ -118,9 +118,7 @@ export default function App() {
         <Route
           path="/app/command-center"
           element={
-            <RequireAuth>
-              <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
-            </RequireAuth>
+            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
           }
         />
         <Route
