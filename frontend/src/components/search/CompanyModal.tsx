@@ -5,7 +5,7 @@ import { litUI } from '@/lib/uiTokens';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import KpiGrid from './KpiGrid';
 import { computeKpis } from './computeKpis';
-import WatermarkGate from '@/components/ui/WatermarkGate';
+import ContactsGate from '@/components/search/ContactsGate';
 import { Loader2, X } from 'lucide-react';
 function inferTEUs(desc?: string | null, containerCount?: number | null) {
   if (!containerCount || containerCount <= 0) return null;
@@ -248,7 +248,12 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               )}
             </TabsContent>
             <TabsContent value="contacts" className="mt-2 p-1 sm:p-2">
-              <WatermarkGate />
+              <ContactsGate
+                position="center"
+                companyName={company?.company_name || 'this company'}
+                onUpgrade={() => { /* track('contacts_gate_upgrade_click') */ }}
+                onLearnMore={() => { /* track('contacts_gate_learn_more_click') */ }}
+              />
             </TabsContent>
           </Tabs>
         </div>
