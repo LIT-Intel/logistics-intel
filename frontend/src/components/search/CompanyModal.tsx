@@ -123,7 +123,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] p-0 flex flex-col">
+      <DialogContent className="max-w-6xl h-[90vh] max-h-[90vh] p-0 flex flex-col">
         <div className={`px-4 pt-4`}>
           <DialogHeader>
             <DialogTitle className="text-2xl md:text-3xl font-semibold" style={{ color: litUI.brandPrimary }}>
@@ -132,36 +132,36 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
           </DialogHeader>
 
-          <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="mt-3">
-            <TabsList className="sticky top-0 bg-white z-10">
-              <TabsTrigger value="kpi" className="data-[state=active]:text-white data-[state=active]:bg-violet-600">KPI</TabsTrigger>
-              <TabsTrigger value="shipments" className="data-[state=active]:text-white data-[state=active]:bg-violet-600">Shipments</TabsTrigger>
-              <TabsTrigger value="contacts" className="data-[state=active]:text-white data-[state=active]:bg-violet-600">Contacts</TabsTrigger>
-            </TabsList>
+          <div className="flex-1 min-h-0 flex flex-col mt-3">
+            <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex-1 min-h-0 flex flex-col">
+              <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-3 gap-2 w-full">
+                <TabsTrigger value="kpi" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">KPI</TabsTrigger>
+                <TabsTrigger value="shipments" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Shipments</TabsTrigger>
+                <TabsTrigger value="contacts" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Contacts</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="kpi" className="mt-3">
-              {kpiLoading ? (
-                <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-              ) : (
-                <>
-                  <KpiGrid items={computeKpis(shipments)} />
+              <TabsContent value="kpi" className="mt-2 overflow-auto p-1 sm:p-2">
+                {kpiLoading ? (
+                  <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
+                ) : (
+                  <>
+                    <KpiGrid items={computeKpis(shipments)} />
+                    <div className="mt-3 border rounded-xl p-3">
+                      <div className="text-sm font-medium">Profile</div>
+                      <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
+                      <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
+                    </div>
+                  </>
+                )}
+              </TabsContent>
 
-                  <div className="mt-4 border rounded-md p-4">
-                    <div className="text-sm font-medium">Profile</div>
-                    <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
-                    <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
-                  </div>
-                </>
-              )}
-            </TabsContent>
-
-            <TabsContent value="shipments" className="mt-3">
-              {shipLoading ? (
-                <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading shipments…</div>
-              ) : shipments.length === 0 ? (
-                <div className="text-center text-muted-foreground py-16">No shipments found.</div>
-              ) : (
-                <div className="flex flex-col h-[60vh] sm:h-[65vh]">
+              <TabsContent value="shipments" className="mt-2 flex-1 min-h-0 flex flex-col p-1 sm:p-2">
+                {shipLoading ? (
+                  <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading shipments…</div>
+                ) : shipments.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-12">No shipments found.</div>
+                ) : (
+                  <div className="flex-1 min-h-0 flex flex-col">
                   <div className="grid grid-cols-4 gap-4 text-center mb-2">
                     <div>
                       <div className="text-xs text-muted-foreground">Total (server)</div>
@@ -180,7 +180,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                       <div className="text-base font-semibold">{kpis.totalTEU.toLocaleString()}</div>
                     </div>
                   </div>
-                  <div className="flex-1 min-h-0 overflow-auto border rounded-md">
+                    <div className="flex-1 min-h-0 overflow-auto border rounded-md">
                     <table className="min-w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -222,25 +222,23 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                         })}
                       </tbody>
                     </table>
-                  </div>
-                  <div className="flex items-center justify-between mt-3">
+                    </div>
+                    <div className="flex items-center justify-between mt-3">
                     <div className="text-xs text-muted-foreground">Page {page} • Page size {pageSize}{typeof total === 'number' ? ` • ${total} total` : ''}</div>
                     <div className="space-x-2">
                       <button className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</button>
                       <button className="px-3 py-1 border rounded disabled:opacity-50" onClick={() => setPage((p) => p + 1)} disabled={typeof total === 'number' ? page * pageSize >= total : shipments.length < pageSize}>Next</button>
                     </div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </TabsContent>
+                )}
+              </TabsContent>
 
-            <TabsContent value="contacts" className="mt-6">
-              <WatermarkGate />
-            </TabsContent>
-          </Tabs>
-        </div>
-        {/* Scroller */}
-        <div className="flex-1 min-h-0 overflow-auto px-4 pb-4" />
+              <TabsContent value="contacts" className="mt-2 p-1 sm:p-2">
+                <WatermarkGate />
+              </TabsContent>
+            </Tabs>
+          </div>
       </DialogContent>
     </Dialog>
   );
