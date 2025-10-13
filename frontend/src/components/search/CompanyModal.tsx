@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getCompanyShipmentsUnified, getCompanyDetails } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { litUI } from '@/lib/uiTokens';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import KpiGrid from './KpiGrid';
 import { computeKpis } from './computeKpis';
@@ -123,9 +124,9 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] p-0 flex flex-col">
-        <div className="px-4 pt-4">
+        <div className={`px-4 pt-4`}>
           <DialogHeader>
-            <DialogTitle className="text-2xl font-semibold">
+            <DialogTitle className="text-2xl md:text-3xl font-semibold" style={{ color: litUI.brandPrimary }}>
               {company?.company_name || 'Company'}
             </DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
@@ -133,9 +134,9 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="mt-3">
             <TabsList className="sticky top-0 bg-white z-10">
-              <TabsTrigger value="kpi">KPI</TabsTrigger>
-              <TabsTrigger value="shipments">Shipments</TabsTrigger>
-              <TabsTrigger value="contacts">Contacts</TabsTrigger>
+              <TabsTrigger value="kpi" className="data-[state=active]:text-white data-[state=active]:bg-violet-600">KPI</TabsTrigger>
+              <TabsTrigger value="shipments" className="data-[state=active]:text-white data-[state=active]:bg-violet-600">Shipments</TabsTrigger>
+              <TabsTrigger value="contacts" className="data-[state=active]:text-white data-[state=active]:bg-violet-600">Contacts</TabsTrigger>
             </TabsList>
 
             <TabsContent value="kpi" className="mt-3">
