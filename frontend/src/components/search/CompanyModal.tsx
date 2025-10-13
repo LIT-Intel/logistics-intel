@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import KpiGrid from './KpiGrid';
 import { computeKpis } from './computeKpis';
 import WatermarkGate from '@/components/ui/WatermarkGate';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 function inferTEUs(desc?: string | null, containerCount?: number | null) {
   if (!containerCount || containerCount <= 0) return null;
   const d = (desc || '').toUpperCase();
@@ -126,12 +126,28 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
       <DialogContent className="max-w-6xl h-[90vh] max-h-[90vh] p-0 flex flex-col">
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="px-4 pt-4">
-            <DialogHeader>
-              <DialogTitle className="text-2xl md:text-3xl font-semibold" style={{ color: litUI.brandPrimary }}>
-                {company?.company_name || 'Company'}
-              </DialogTitle>
-              <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
-            </DialogHeader>
+            <div className="flex items-start justify-between gap-3">
+              <DialogHeader className="p-0">
+                <DialogTitle className="text-2xl md:text-3xl font-semibold" style={{ color: litUI.brandPrimary }}>
+                  {company?.company_name || 'Company'}
+                </DialogTitle>
+                <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
+              </DialogHeader>
+              <button aria-label="Close" onClick={() => onClose(false)} className="shrink-0 rounded-full border p-2 hover:bg-neutral-50"><X className="h-4 w-4"/></button>
+            </div>
+            {/* Featured profile card */}
+            <div className="mt-3 rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50/80 to-indigo-50/80 shadow-sm p-3 sm:p-4">
+              <div className="text-sm font-medium mb-1" style={{ color: litUI.brandPrimary }}>Profile</div>
+              <div className="text-sm text-neutral-700 flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-2">
+                <span>HQ: {(details?.hq_city || details?.hq_state || details?.hq_country) ? [details?.hq_city, details?.hq_state, details?.hq_country].filter(Boolean).join(', ') : '—'}</span>
+                <span className="hidden sm:inline text-neutral-400">•</span>
+                <span>
+                  Website: {details?.website ? (
+                    <a className="text-violet-700 hover:underline" href={String(details.website)} target="_blank" rel="noreferrer">{details.website}</a>
+                  ) : '—'}
+                </span>
+              </div>
+            </div>
           </div>
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex-1 min-h-0 flex flex-col">
             <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-3 gap-2 w-full">
