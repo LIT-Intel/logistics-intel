@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getCompanyShipmentsUnified, getCompanyDetails } from '@/lib/api';
+import { getCompanyShipmentsUnified, getCompanyDetails, getCompanyKpis } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { litUI } from '@/lib/uiTokens';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -35,6 +35,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   const [details, setDetails] = useState<any>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
+  const [kpiServer, setKpiServer] = useState<any>(null);
 
   const [shipments, setShipments] = useState<any[]>([]);
   const [shipLoading, setShipLoading] = useState(false);
@@ -61,6 +62,11 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
       try {
         const res = await getCompanyDetails({ company_id: cid, fallback_name: cname });
         if (!cancelled) setDetails(res || {});
+        // also fetch server KPIs to render instantly
+        try {
+          const k = await getCompanyKpis({ company_id: cid, company_name: cid ? undefined : cname });
+          if (!cancelled) setKpiServer(k);
+        } catch {}
       } catch (e) {
         if (!cancelled) setDetails({});
       } finally {
@@ -156,18 +162,30 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               <TabsTrigger value="contacts" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Contacts</TabsTrigger>
             </TabsList>
             <TabsContent value="kpi" className="mt-2 overflow-auto p-1 sm:p-2">
-              {kpiLoading ? (
+              {/* Prefer server KPIs if available; else compute from visible shipments */}
+              {kpiServer ? (
+                <>
+                  <KpiGrid items={[
+                    { label: 'Shipments (12m)', value: kpiServer.shipments_12m ?? '—' },
+                    { label: 'Last activity', value: (kpiServer.last_activity?.value || '—') },
+                    { label: 'Top route', value: (kpiServer.top_routes?.[0] ? `${kpiServer.top_routes[0].origin_country}→${kpiServer.top_routes[0].dest_country}` : '—') },
+                    { label: 'Top carrier', value: (kpiServer.top_carriers?.[0]?.name || '—') },
+                    { label: 'Total containers', value: kpiServer.containers_12m ?? '—' },
+                    { label: 'TEUs', value: kpiServer.teus_12m ?? '—' },
+                    { label: 'Total weight (kg)', value: kpiServer.gross_weight_kg_12m ?? '—' },
+                    { label: 'Total value (USD)', value: kpiServer.value_usd_12m ?? '—' },
+                  ]} />
+                </>
+              ) : kpiLoading ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
               ) : (
-                <>
-                  <KpiGrid items={computeKpis(shipments)} />
-                  <div className="mt-3 border rounded-xl p-3">
-                    <div className="text-sm font-medium">Profile</div>
-                    <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
-                    <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
-                  </div>
-                </>
+                <KpiGrid items={computeKpis(shipments)} />
               )}
+              <div className="mt-3 border rounded-xl p-3">
+                <div className="text-sm font-medium">Profile</div>
+                <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
+                <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
+              </div>
             </TabsContent>
             <TabsContent value="shipments" className="mt-2 flex-1 min-h-0 flex flex-col p-1 sm:p-2">
               {shipLoading ? (

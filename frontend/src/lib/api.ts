@@ -258,6 +258,34 @@ export async function getFilterOptions(signal?: AbortSignal) {
   }
 }
 
+// Fast KPI endpoint (proxy-first, fallback to Gateway)
+export async function getCompanyKpis(params: { company_id?: string; company_name?: string }, signal?: AbortSignal) {
+  const qp = new URLSearchParams();
+  if (params.company_id) qp.set('company_id', params.company_id);
+  if (!params.company_id && params.company_name) qp.set('company_name', params.company_name);
+  const url = `/api/lit/public/getCompanyKpis?${qp.toString()}`;
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { accept: 'application/json' }, signal });
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || !ct.includes('application/json')) throw new Error(String(r.status));
+    return await r.json();
+  } catch {
+    // Fallback to Gateway
+    const u = `${GATEWAY_BASE_DEFAULT}/public/getCompanyKpis?${qp.toString()}`;
+    const g = await fetch(u, { method: 'GET', headers: { accept: 'application/json' }, signal });
+    if (!g.ok) return null;
+    return await g.json().catch(() => null);
+  }
+}
+
+// Saved companies list (for future UI)
+export async function getSavedCompanies(signal?: AbortSignal) {
+  const url = `/api/lit/crm/savedCompanies`;
+  const r = await fetch(url, { headers: { accept: 'application/json' }, signal });
+  if (!r.ok) return { rows: [] };
+  return r.json();
+}
+
 // --- Filters singleton cache with 10m TTL ---
 let _filtersCache: { data: any; expires: number } | null = null;
 let _filtersInflight: Promise<any> | null = null;
