@@ -26,7 +26,7 @@ function setSelected(company_id: string | null, name: string, domain?: string | 
 }
 
 export default function AddCompanyModal({ open, onClose, onSaved }: Props) {
-  const [tab, setTab] = useState<"LIT"|"LUSHA"|"APOLLO"|"MANUAL">("LIT");
+  const [tab, setTab] = useState<"LIT"|"MANUAL">("LIT");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<LitRow[] | null>(null);
@@ -76,7 +76,7 @@ export default function AddCompanyModal({ open, onClose, onSaved }: Props) {
 
         {/* Tabs */}
         <div className="px-5 pt-4 flex gap-2 border-b">
-          {["LIT","LUSHA","APOLLO","MANUAL"].map((t)=>(
+          {["LIT","MANUAL"].map((t)=>(
             <button
               key={t}
               onClick={()=>setTab(t as any)}
@@ -123,17 +123,7 @@ export default function AddCompanyModal({ open, onClose, onSaved }: Props) {
             </>
           )}
 
-          {tab === "LUSHA" && (
-            <div className="text-sm text-gray-500">
-              Provider tab placeholder. We’ll add OAuth + domain/name search next.
-            </div>
-          )}
-
-          {tab === "APOLLO" && (
-            <div className="text-sm text-gray-500">
-              Provider tab placeholder. We’ll add key-based search next.
-            </div>
-          )}
+          
 
           {tab === "MANUAL" && (
             <ManualAdd onSaved={(payload)=>{ onSaved?.(payload); onClose(); window.location.reload(); }} />
