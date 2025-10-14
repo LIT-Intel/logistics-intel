@@ -248,21 +248,4 @@ function GhostContact({ name, title }: { name: string; title: string }) {
   );
 }
 
-function KpiStrip({ kpi }: { kpi: { shipments12m: string; lastActivity: string; topLane: string; topCarrier: string } }) {
-  const items = [
-    { label: 'Shipments (12m)', value: kpi.shipments12m },
-    { label: 'Last Activity', value: kpi.lastActivity },
-    { label: 'Top Lane', value: kpi.topLane },
-    { label: 'Top Carrier', value: kpi.topCarrier },
-  ];
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {items.map(k => (
-        <Card key={k.label} className="p-4 rounded-2xl shadow-sm">
-          <div className="text-xs text-muted-foreground">{k.label}</div>
-          <div className="text-xl font-semibold">{k.value}</div>
-        </Card>
-      ))}
-    </div>
-  );
-}
+// duplicate KpiStrip removed
