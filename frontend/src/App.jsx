@@ -122,6 +122,12 @@ export default function App() {
           }
         />
         <Route
+          path="/command-center"
+          element={
+            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
+          }
+        />
+        <Route
           path="/app/companies/:id"
           element={
             <RequireAuth>
