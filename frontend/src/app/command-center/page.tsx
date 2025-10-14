@@ -6,6 +6,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ContactsGate from '@/components/search/ContactsGate';
 import AddCompanyModal from '@/components/command-center/AddCompanyModal';
 import ShipmentsTable from '@/components/command-center/ShipmentsTable';
+import SavedCompaniesPicker from '@/components/command-center/SavedCompaniesPicker';
+import { Toaster } from 'sonner';
 import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
 
 // inline LitSearchRow type removed; AddCompanyModal owns its search types
@@ -76,7 +78,8 @@ export default function CommandCenterPage() {
           <div className="ml-auto flex items-center gap-2">
             <Input className="hidden md:block w-[360px]" placeholder="Search companies, contacts, industries, etc." />
             <Button variant="outline" size="sm"><Settings2 className="mr-2 h-4 w-4" />Tools</Button>
-            <Button size="xs" variant="outline" onClick={() => setAddOpen(true)}>+ Add Company</Button>
+            <SavedCompaniesPicker onPicked={() => { /* no-op */ }} />
+            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>+ Add Company</Button>
             <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
           </div>
         </div>
@@ -172,6 +175,7 @@ export default function CommandCenterPage() {
       </div>
 
       <AddCompanyModal open={addOpen} onClose={() => setAddOpen(false)} onSaved={() => { /* no-op; reload handles */ }} />
+      <Toaster richColors position="top-center" />
     </div>
   );
 }
