@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import ContactsGate from '@/components/search/ContactsGate';
 import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
 
 type LitSearchRow = {
@@ -25,6 +27,7 @@ export default function CommandCenterPage() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<LitSearchRow[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<{ company_id: string | null; name: string; domain: string | null } | null>(null);
 
   async function runLitSearch(q: string) {
     setLoading(true);
@@ -77,6 +80,7 @@ export default function CommandCenterPage() {
   }
   useEffect(() => {
     const saved = (() => { try { return JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null'); } catch { return null; } })();
+    if (saved) setSelected(saved);
     const body = saved?.company_id ? { company_id: saved.company_id, limit: 1, offset: 0 } : { q: saved?.name || null, limit: 1, offset: 0 };
     fetch('/api/lit/public/searchCompanies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then(async (r) => {
@@ -114,11 +118,94 @@ export default function CommandCenterPage() {
         </div>
       </div>
       <div className="mx-auto max-w-[1400px] px-4 py-6">
-        <KpiStrip kpi={kpi} />
-        <Card className="p-4 rounded-2xl shadow-sm">
-          <div className="text-sm text-muted-foreground mb-2">Sanity</div>
-          <div className="text-xl font-semibold">Route sanity check OK.</div>
+        {/* Company header summary */}
+        <Card className="p-5 rounded-2xl shadow-sm mb-4">
+          <div className="flex items-start gap-4">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xl font-semibold truncate">{selected?.name || 'Select a company'}</div>
+              <div className="mt-1 text-sm text-muted-foreground flex flex-wrap items-center gap-4">
+                <span className="inline-flex items-center gap-2"><span className="text-xs rounded bg-slate-100 px-2 py-0.5">ID</span><span>{selected?.company_id || '—'}</span></span>
+                <span className="inline-flex items-center gap-2"><Link2 className="h-4 w-4" />{selected?.domain || '—'}</span>
+              </div>
+            </div>
+            <div className="hidden sm:flex items-center gap-2">
+              {selected?.domain && (
+                <a className="text-sm rounded-xl border px-3 py-1.5 hover:bg-slate-50" href={`https://${selected.domain}`} target="_blank" rel="noreferrer">Open Website</a>
+              )}
+            </div>
+          </div>
         </Card>
+
+        {/* KPI strip */}
+        <KpiStrip kpi={kpi} />
+
+        {/* Tabs + Main content */}
+        <Tabs defaultValue="overview">
+          <TabsList className="w-full grid grid-cols-3 gap-2 rounded-xl mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="shipments">Shipments</TabsTrigger>
+            <TabsTrigger value="contacts">Contacts</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Left: overview content */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card className="p-4 rounded-2xl shadow-sm">
+                  <SectionTitle title="About" />
+                  <div className="text-sm text-muted-foreground">This profile is automatically generated from recent shipment signals and public sources.</div>
+                </Card>
+                <Card className="p-4 rounded-2xl shadow-sm">
+                  <SectionTitle title="Tags" />
+                  <TagRow tags={["Shipper", "Importer", "Cold Chain"]} />
+                </Card>
+                <Card className="p-4 rounded-2xl shadow-sm">
+                  <SectionTitle title="Similar Companies" />
+                  <div className="mt-2 space-y-2">
+                    <SimilarItem name="Acme Logistics" />
+                    <SimilarItem name="Dole Food Company" />
+                    <SimilarItem name="Ocean Fresh Imports" />
+                  </div>
+                </Card>
+                <Card className="p-4 rounded-2xl shadow-sm">
+                  <SectionTitle title="Activity" />
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <FeedItem title="Shipment arrived at LAX" meta="3 days ago • 1x40’ refrigerated" />
+                    <FeedItem title="New carrier observed: Maersk" meta="7 days ago • 18% share" />
+                    <FeedItem title="New route emerging" meta="CN → US • +4 shipments" />
+                    <FeedItem title="Tariff code trend: 0803" meta="Bananas • 12 shipments this month" />
+                  </div>
+                </Card>
+              </div>
+
+              {/* Right: contacts / actions */}
+              <div className="space-y-4">
+                <ContactsGate companyName={selected?.name || 'this company'} />
+                <Card className="p-4 rounded-2xl shadow-sm">
+                  <SectionTitle title="Shortcuts" />
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline">Save to List</Button>
+                    <Button size="sm" variant="outline">Track Signals</Button>
+                    <Button size="sm" variant="outline">Export</Button>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="shipments">
+            <Card className="p-6 rounded-2xl shadow-sm">
+              <div className="text-sm text-muted-foreground mb-2">Shipments</div>
+              <div className="text-xl font-semibold">Detailed shipments table coming next.</div>
+              <div className="mt-2 text-sm text-muted-foreground">We’ll surface lanes, carriers, ports, HS codes, and filters here.</div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="contacts">
+            <ContactsGate companyName={selected?.name || 'this company'} />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {addOpen && (
