@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
+function qstr(params: Record<string, string | number | null | undefined>) {
+  const u = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && String(v).length) u.set(k, String(v));
+  });
+  return u.toString();
+}
+
 type ShipmentRow = {
   id?: string | number;
   mode?: "OCEAN" | "AIR" | string | null;
@@ -31,15 +39,13 @@ export default function ShipmentsTable() {
     (async () => {
       setLoading(true); setErr(null);
       try {
-        // proxy → gateway → search-unified (GET)
-        const params = new URLSearchParams();
-        if (company_id) params.set('company_id', String(company_id)); else if (name) params.set('q', String(name));
-        params.set('limit', String(25));
-        params.set('offset', String(0));
-        const r = await fetch(`/api/lit/public/getCompanyShipments?${params.toString()}`, {
-          method: "GET",
-          headers: { "accept": "application/json" }
+        const qs = qstr({
+          company_id: company_id || undefined,
+          q: company_id ? undefined : name,
+          limit: 25,
+          offset: 0,
         });
+        const r = await fetch(`/api/lit/public/getCompanyShipments?${qs}`);
         if (!r.ok) throw new Error(String(r.status));
         const data = await r.json();
         setRows(data?.rows || []);
@@ -58,7 +64,7 @@ export default function ShipmentsTable() {
   }
   if (loading) return <div className="text-sm text-gray-500">Loading shipments…</div>;
   if (err) return <div className="text-sm text-red-600">Error: {err}</div>;
-  if (!rows?.length) return <div className="text-sm text-gray-500">No shipments found.</div>;
+  if (!rows?.length) return <div className="text-sm text-gray-500">No shipments found{company?.company_id ? "" : " for this name"}.</div>;
 
   return (
     <div className="overflow-auto rounded-xl border">
