@@ -1,12 +1,16 @@
-export default function CompanyAvatar({ name, domain }:{ name?:string; domain?:string|null }) {
-  const logo = domain ? `https://logo.clearbit.com/${domain}` : null; // falls back if 404
-  const letter = (name?.trim()?.[0] || "?").toUpperCase();
+import * as React from 'react';
+import { Building2 } from 'lucide-react';
+export default function CompanyAvatar({ name = '', domain, src, size=56 }: {name:string; domain?:string; src?:string; size?:number}){
+  const letter = (name||'?').trim().charAt(0).toUpperCase();
   return (
-    <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center border">
-      {logo
-        ? <img src={logo} alt={name||"logo"} className="w-full h-full object-cover" onError={(e)=>((e.target as HTMLImageElement).style.display="none")} />
-        : <span className="text-sm font-semibold text-slate-600">{letter}</span>
-      }
+    <div style={{width:size,height:size}} className="relative grid place-items-center rounded-xl bg-[var(--lit-panel-2)] ring-1 ring-[var(--lit-border)] overflow-hidden">
+      {src ? (<img alt={name} src={src} className="w-full h-full object-cover" />) : (
+        <div className="grid place-items-center text-[var(--lit-primary-light)]">
+          <Building2 className="opacity-80" size={Math.max(22,Math.round(size*0.42))} />
+          <span className="sr-only">{letter}</span>
+        </div>
+      )}
+      <div className="absolute inset-0 pointer-events-none" style={{background:'var(--lit-grad-sheen)'}}/>
     </div>
   );
 }
