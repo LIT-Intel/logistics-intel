@@ -47,8 +47,9 @@ export default function CustomLoginPage({ onClose }) {
   }
 
   return (
-    <div className="flex w-full max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-xl border bg-white min-h-[480px]">
-      <div className="hidden md:flex w-1/2 bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900 text-white p-8 items-end relative">
+    <div className="min-h-screen grid place-items-center" style={{ background: 'linear-gradient(135deg, #0E1224 0%, #121835 60%, #161E43 100%)' }}>
+      <div className="flex w-full max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-xl border border-[var(--lit-border)] bg-white/95 backdrop-blur min-h-[520px]">
+        <div className="hidden md:flex w-1/2 bg-[var(--lit-panel-2)] text-white p-8 items-end relative">
         <div className="absolute top-6 left-6 flex items-center gap-2">
           <img
             src="/favicon.svg"
@@ -61,9 +62,9 @@ export default function CustomLoginPage({ onClose }) {
           <h2 className="text-2xl font-semibold mb-2">Freight Intelligence Platform</h2>
           <p className="text-white/80 text-sm">Search companies by trade activity, track shipments, and automate outreach.</p>
         </div>
-      </div>
-      <div className="w-full md:w-1/2 flex items-center">
-        <Card className="rounded-none border-0 w-full">
+        </div>
+        <div className="w-full md:w-1/2 flex items-center">
+          <Card className="rounded-none border-0 w-full bg-white">
           <CardHeader className="pb-2">
             <CardTitle className="text-xl">Sign in to LIT</CardTitle>
             {err && <p className="text-red-600 text-sm mt-1">{err}</p>}
@@ -104,7 +105,8 @@ export default function CustomLoginPage({ onClose }) {
               Don’t have an account? <button className="text-blue-600 hover:underline" onClick={() => nav('/signup')}>Start your 14‑day trial</button>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );
