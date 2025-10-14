@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ContactsGate from '@/components/search/ContactsGate';
 import AddCompanyModal from '@/components/command-center/AddCompanyModal';
+import ShipmentsTable from '@/components/command-center/ShipmentsTable';
 import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
 
 // inline LitSearchRow type removed; AddCompanyModal owns its search types
@@ -158,10 +159,9 @@ export default function CommandCenterPage() {
           </TabsContent>
 
           <TabsContent value="shipments">
-            <Card className="p-6 rounded-2xl shadow-sm">
-              <div className="text-sm text-muted-foreground mb-2">Shipments</div>
-              <div className="text-xl font-semibold">Detailed shipments table coming next.</div>
-              <div className="mt-2 text-sm text-muted-foreground">We’ll surface lanes, carriers, ports, HS codes, and filters here.</div>
+            <Card className="p-4 rounded-2xl shadow-sm">
+              <h2 className="text-sm font-semibold mb-3">Shipments</h2>
+              <ShipmentsTable />
             </Card>
           </TabsContent>
 
