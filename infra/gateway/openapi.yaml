@@ -184,9 +184,9 @@ paths:
     get:
       operationId: contacts
       x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
+        address: https://crm-api-<hash>-uc.a.run.app
         protocol: h2
-        jwt_audience: https://search-unified-187580267283.us-central1.run.app
+        jwt_audience: https://crm-api-<hash>-uc.a.run.app
         path_translation: APPEND_PATH_TO_ADDRESS
       parameters:
         - in: query
