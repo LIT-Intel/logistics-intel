@@ -9,6 +9,8 @@ import ShipmentsTable from '@/components/command-center/ShipmentsTable';
 import SavedCompaniesPicker from '@/components/command-center/SavedCompaniesPicker';
 import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
 import CampaignKpis from '@/components/command-center/CampaignKpis';
+import ContactsPanel from '@/components/command-center/ContactsPanel';
+import PreCallBriefing from '@/components/command-center/PreCallBriefing';
 import { Toaster } from 'sonner';
 import { enrichCompany } from '@/lib/litEnrich';
 import { toast } from 'sonner';
@@ -197,6 +199,10 @@ export default function CommandCenterPage() {
                   <div className="text-sm font-semibold mb-2">Campaign KPIs</div>
                   <CampaignKpis />
                 </Card>
+                <Card className="p-4 rounded-2xl shadow-sm">
+                  <ContactsPanel />
+                </Card>
+                <PreCallBriefing />
               </div>
             </div>
           </TabsContent>
