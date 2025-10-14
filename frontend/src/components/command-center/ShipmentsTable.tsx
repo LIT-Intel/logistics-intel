@@ -26,12 +26,16 @@ export default function ShipmentsTable() {
 
   useEffect(() => {
     const company_id = company?.company_id ?? null;
-    if (!company_id) { setRows([]); return; }
+    const name = company?.name ?? null;
+    if (!company_id && !name) { setRows([]); return; }
     (async () => {
       setLoading(true); setErr(null);
       try {
         // proxy → gateway → search-unified (GET)
-        const params = new URLSearchParams({ company_id: String(company_id), limit: String(25), offset: String(0) });
+        const params = new URLSearchParams();
+        if (company_id) params.set('company_id', String(company_id)); else if (name) params.set('q', String(name));
+        params.set('limit', String(25));
+        params.set('offset', String(0));
         const r = await fetch(`/api/lit/public/getCompanyShipments?${params.toString()}`, {
           method: "GET",
           headers: { "accept": "application/json" }
