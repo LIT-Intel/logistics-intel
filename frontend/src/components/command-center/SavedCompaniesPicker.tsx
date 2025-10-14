@@ -45,10 +45,10 @@ export default function SavedCompaniesPicker({ onPicked }: { onPicked?: () => vo
         <div className="absolute z-40 mt-2 w-80 rounded-2xl border bg-white shadow-xl">
           <div className="p-3 border-b text-sm font-medium">Saved Companies</div>
           <div className="max-h-64 overflow-auto">
-            {items.length === 0 && (
+            {items.filter(i=>!i.archived).length === 0 && (
               <div className="p-3 text-sm text-slate-500">No saved companies yet.</div>
             )}
-            {items.map((c, idx) => (
+            {items.filter(i=>!i.archived).map((c, idx) => (
               <button
                 key={idx}
                 onClick={() => pick(c)}

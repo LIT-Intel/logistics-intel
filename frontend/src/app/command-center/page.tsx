@@ -7,7 +7,12 @@ import ContactsGate from '@/components/search/ContactsGate';
 import AddCompanyModal from '@/components/command-center/AddCompanyModal';
 import ShipmentsTable from '@/components/command-center/ShipmentsTable';
 import SavedCompaniesPicker from '@/components/command-center/SavedCompaniesPicker';
+import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
+import CampaignKpis from '@/components/command-center/CampaignKpis';
 import { Toaster } from 'sonner';
+import { enrichCompany } from '@/lib/litEnrich';
+import { toast } from 'sonner';
+import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
 import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
 
 // inline LitSearchRow type removed; AddCompanyModal owns its search types
@@ -21,7 +26,12 @@ export default function CommandCenterPage() {
     topCarrier: '—',
   });
   const [addOpen, setAddOpen] = useState(false);
+  const [campOpen, setCampOpen] = useState(false);
   const [selected, setSelected] = useState<{ company_id: string | null; name: string; domain: string | null } | null>(null);
+  const needsEnrich = !!selected && !selected?.company_id;
+  const savedList = loadSaved();
+  const isSaved = !!selected && savedList.some(x => (x.company_id ?? x.name) === ((selected?.company_id) ?? (selected?.name || '')));
+  const isArchived = !!selected && savedList.find(x => (x.company_id ?? x.name) === ((selected?.company_id) ?? (selected?.name || '')))?.archived;
 
   // inline modal/search removed in favor of AddCompanyModal
 
@@ -79,6 +89,32 @@ export default function CommandCenterPage() {
             <Input className="hidden md:block w-[360px]" placeholder="Search companies, contacts, industries, etc." />
             <Button variant="outline" size="sm"><Settings2 className="mr-2 h-4 w-4" />Tools</Button>
             <SavedCompaniesPicker onPicked={() => { /* no-op */ }} />
+            <Button size="sm" onClick={()=>setCampOpen(true)}>Add to Campaign</Button>
+            <Button size="sm" variant="outline" onClick={()=>{
+              if(!selected){ toast.error('No company selected'); return; }
+              upsertSaved({ company_id: selected.company_id ?? null, name: selected.name, domain: selected.domain ?? null, source: selected.company_id ? 'LIT' : 'MANUAL', ts: Date.now(), archived:false });
+              toast.success('Saved to list');
+            }}>{isSaved ? 'Saved' : 'Save to List'}</Button>
+            <Button size="sm" variant="ghost" onClick={()=>{
+              if(!selected){ return; }
+              toggleArchive({ company_id: selected.company_id ?? null, name: selected.name }, !isArchived);
+              toast.info(!isArchived ? 'Archived' : 'Unarchived');
+              window.location.reload();
+            }}>{isArchived ? 'Unarchive' : 'Archive'}</Button>
+            {needsEnrich && (
+              <Button size="sm" onClick={async ()=>{
+                try{
+                  toast.info('Enriching…');
+                  const res = await enrichCompany({ name: selected?.name || '', domain: selected?.domain ?? null });
+                  localStorage.setItem('lit:selectedCompany', JSON.stringify(res));
+                  const list = JSON.parse(localStorage.getItem('lit:savedCompanies')||'[]');
+                  const next = [{ ...res, source:'LIT', ts: Date.now() }, ...list.filter((x:any)=>x.name!==(selected?.name||''))];
+                  localStorage.setItem('lit:savedCompanies', JSON.stringify(next));
+                  toast.success('Enriched');
+                  window.location.reload();
+                }catch(e:any){ toast.error(`Enrich failed: ${e?.message||e}`); }
+              }}>Enrich Now</Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>+ Add Company</Button>
             <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
           </div>
@@ -157,6 +193,10 @@ export default function CommandCenterPage() {
                     <Button size="sm" variant="outline">Export</Button>
                   </div>
                 </Card>
+                <Card className="p-4 rounded-2xl shadow-sm">
+                  <div className="text-sm font-semibold mb-2">Campaign KPIs</div>
+                  <CampaignKpis />
+                </Card>
               </div>
             </div>
           </TabsContent>
@@ -175,6 +215,7 @@ export default function CommandCenterPage() {
       </div>
 
       <AddCompanyModal open={addOpen} onClose={() => setAddOpen(false)} onSaved={() => { /* no-op; reload handles */ }} />
+      <AddToCampaignModal open={campOpen} onClose={()=>setCampOpen(false)} company={{ company_id: selected?.company_id ?? null, name: selected?.name || '' }} />
       <Toaster richColors position="top-center" />
     </div>
   );
