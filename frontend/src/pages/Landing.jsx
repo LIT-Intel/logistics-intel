@@ -117,7 +117,7 @@ const ProductShowcase = () => (
   <section className="py-20 bg-gradient-to-b from-white to-gray-50">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="text-center mb-12">
-        <h2 className="text-3xl md:text-4xl font-bold text-gray-900">See the platform in action</h2>
+        <h2 className="text-3xl md:text-4xl font-bold text-gray-900" style={{fontFamily:'Inter, ui-sans-serif'}}>See the platform in action</h2>
         <p className="text-gray-600 mt-2">Search signals, build campaigns, and manage accounts from the Command Center.</p>
       </div>
       <div className="grid lg:grid-cols-3 gap-8">
@@ -175,7 +175,7 @@ const ProductShowcase = () => (
             ].map((k)=> (
               <div key={k.label} className="rounded-lg p-3 border bg-white">
                 <div className="text-xs text-gray-500">{k.label}</div>
-                <div className="text-lg font-semibold">{k.value}</div>
+                <div className="text-lg font-semibold" style={{fontFamily:'JetBrains Mono, ui-monospace'}}>{k.value}</div>
               </div>
             ))}
           </div>
