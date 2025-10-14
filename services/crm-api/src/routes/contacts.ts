@@ -45,8 +45,8 @@ router.get('/public/contacts', async (req, res) => {
       });
 
       if (resp.ok) {
-        const json = await resp.json();
-        return res.json({ rows: mapContactsFromLusha(json), total: json?.total ?? undefined });
+        const json: any = await resp.json();
+        return res.json({ rows: mapContactsFromLusha(json), total: (json && (json as any).total) ? (json as any).total : undefined });
       }
       // fall through to empty if provider rejects
     }
