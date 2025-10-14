@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
 import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
 import CompanyAvatar from '@/components/command-center/CompanyAvatar';
+import { hasFeature } from '@/lib/access';
 
 // inline LitSearchRow type removed; AddCompanyModal owns its search types
 
@@ -36,6 +37,7 @@ export default function CommandCenterPage() {
   const savedList = loadSaved();
   const isSaved = !!selected && savedList.some(x => (x.company_id ?? x.name) === ((selected?.company_id) ?? (selected?.name || '')));
   const isArchived = !!selected && savedList.find(x => (x.company_id ?? x.name) === ((selected?.company_id) ?? (selected?.name || '')))?.archived;
+  const canViewContacts = hasFeature('contacts');
 
   // inline modal/search removed in favor of AddCompanyModal
 
@@ -197,7 +199,7 @@ export default function CommandCenterPage() {
 
               {/* Right: contacts / actions */}
               <div className="space-y-4">
-                <ContactsGate companyName={selected?.name || 'this company'} />
+                {!canViewContacts && <ContactsGate companyName={selected?.name || 'this company'} />}
                 <Card className="p-4 rounded-2xl shadow-sm">
                   <SectionTitle title="Shortcuts" />
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -226,7 +228,11 @@ export default function CommandCenterPage() {
           </TabsContent>
 
           <TabsContent value="contacts">
-            <ContactsGate companyName={selected?.name || 'this company'} />
+            {canViewContacts ? (
+              <ContactsPanel />
+            ) : (
+              <ContactsGate companyName={selected?.name || 'this company'} />
+            )}
           </TabsContent>
         </Tabs>
       </div>
