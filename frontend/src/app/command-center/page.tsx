@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
 
 type LitSearchRow = {
   company_id: string | null;
@@ -46,10 +50,29 @@ export default function CommandCenterPage() {
   }
 
   return (
-    <div style={{ padding: 16 }}>
-      <h1 style={{ fontSize: 20, marginBottom: 8 }}>Command Center</h1>
-      <p style={{ marginBottom: 12 }}>Route sanity check OK.</p>
-      <button onClick={() => setAddOpen(true)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #ddd', cursor: 'pointer' }}>+ Add Company</button>
+    <div className="min-h-screen bg-[#f7f8fb]">
+      {/* Top App Bar */}
+      <div className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur">
+        <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-3">
+          <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600" />
+          <div className="text-sm text-muted-foreground">Company Search</div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <div className="text-sm font-medium">Command Center</div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <Input className="hidden md:block w-[360px]" placeholder="Search companies, contacts, industries, etc." />
+            <Button variant="outline" size="sm"><Settings2 className="mr-2 h-4 w-4" />Tools</Button>
+            <Button size="xs" variant="outline" onClick={() => setAddOpen(true)}>+ Add Company</Button>
+            <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
+          </div>
+        </div>
+      </div>
+      <div className="mx-auto max-w-[1400px] px-4 py-6">
+        <Card className="p-4 rounded-2xl shadow-sm">
+          <div className="text-sm text-muted-foreground mb-2">Sanity</div>
+          <div className="text-xl font-semibold">Route sanity check OK.</div>
+        </Card>
+      </div>
 
       {addOpen && (
         <div style={{ position: 'fixed', inset: 0 as any, background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
@@ -61,14 +84,14 @@ export default function CommandCenterPage() {
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>LIT Search</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  style={{ flex: 1, border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', fontSize: 14 }}
+                <Input
+                  className="w-full"
                   placeholder="Search by name (e.g., Dole, Acme Robotics)…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && runLitSearch(query)}
                 />
-                <button onClick={() => runLitSearch(query)} disabled={loading} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', cursor: 'pointer' }}>{loading ? 'Searching…' : 'Search'}</button>
+                <Button onClick={() => runLitSearch(query)} disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
               </div>
               <div style={{ marginTop: 16, maxHeight: 320, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {results === null && <div style={{ fontSize: 14, color: '#6b7280' }}>Enter a query to search.</div>}
