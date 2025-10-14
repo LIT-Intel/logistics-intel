@@ -12,6 +12,7 @@ import CampaignKpis from '@/components/command-center/CampaignKpis';
 import ContactsPanel from '@/components/command-center/ContactsPanel';
 import PreCallBriefing from '@/components/command-center/PreCallBriefing';
 import { Toaster } from 'sonner';
+import { exportCommandCenterPdf } from '@/lib/exportPdf';
 import { enrichCompany } from '@/lib/litEnrich';
 import { toast } from 'sonner';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
@@ -78,7 +79,7 @@ export default function CommandCenterPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#f7f8fb]">
+    <div id="cc-root" className="min-h-screen bg-[#f7f8fb]">
       {/* Top App Bar */}
       <div className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-3">
@@ -119,6 +120,15 @@ export default function CommandCenterPage() {
             )}
             <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>+ Add Company</Button>
             <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" />Export</Button>
+            <Button size="sm" variant="outline" onClick={async ()=>{
+              try { 
+                toast.info('Generating PDF…');
+                await exportCommandCenterPdf();
+                toast.success('PDF downloaded');
+              } catch(e:any) {
+                toast.error(`Export failed: ${e?.message||e}`);
+              }
+            }}>Export PDF</Button>
           </div>
         </div>
       </div>
