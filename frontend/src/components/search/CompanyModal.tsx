@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getCompanyShipmentsUnified, getCompanyDetails } from '@/lib/api';
+import { getCompanyShipmentsUnified, getCompanyDetails, getCompanyKpis } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { litUI } from '@/lib/uiTokens';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Loader2 } from 'lucide-react';
+import KpiGrid from './KpiGrid';
+import { computeKpis } from './computeKpis';
+import ContactsGate from '@/components/search/ContactsGate';
+import { Loader2, X } from 'lucide-react';
 function inferTEUs(desc?: string | null, containerCount?: number | null) {
   if (!containerCount || containerCount <= 0) return null;
   const d = (desc || '').toUpperCase();
@@ -31,6 +35,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   const [details, setDetails] = useState<any>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
+  const [kpiServer, setKpiServer] = useState<any>(null);
 
   const [shipments, setShipments] = useState<any[]>([]);
   const [shipLoading, setShipLoading] = useState(false);
@@ -57,6 +62,11 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
       try {
         const res = await getCompanyDetails({ company_id: cid, fallback_name: cname });
         if (!cancelled) setDetails(res || {});
+        // also fetch server KPIs to render instantly
+        try {
+          const k = await getCompanyKpis({ company_id: cid, company_name: cid ? undefined : cname });
+          if (!cancelled) setKpiServer(k);
+        } catch {}
       } catch (e) {
         if (!cancelled) setDetails({});
       } finally {
@@ -119,62 +129,71 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] p-0 flex flex-col">
-        <div className="px-4 pt-4">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-semibold">
-              {company?.company_name || 'Company'}
-            </DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
-          </DialogHeader>
-
-          <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="mt-3">
-            <TabsList className="sticky top-0 bg-white z-10">
-              <TabsTrigger value="kpi">KPI</TabsTrigger>
-              <TabsTrigger value="shipments">Shipments</TabsTrigger>
-              <TabsTrigger value="contacts">Contacts</TabsTrigger>
+      <DialogContent className="max-w-6xl h-[90vh] max-h-[90vh] p-0 flex flex-col">
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="px-4 pt-4">
+            <div className="flex items-start justify-between gap-3">
+              <DialogHeader className="p-0">
+                <DialogTitle className="text-2xl md:text-3xl font-semibold" style={{ color: litUI.brandPrimary }}>
+                  {company?.company_name || 'Company'}
+                </DialogTitle>
+                <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
+              </DialogHeader>
+              <button aria-label="Close" onClick={() => onClose(false)} className="shrink-0 rounded-full border p-2 hover:bg-neutral-50"><X className="h-4 w-4"/></button>
+            </div>
+            {/* Featured profile card */}
+            <div className="mt-3 rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50/80 to-indigo-50/80 shadow-sm p-3 sm:p-4">
+              <div className="text-sm font-medium mb-1" style={{ color: litUI.brandPrimary }}>Profile</div>
+              <div className="text-sm text-neutral-700 flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-2">
+                <span>HQ: {(details?.hq_city || details?.hq_state || details?.hq_country) ? [details?.hq_city, details?.hq_state, details?.hq_country].filter(Boolean).join(', ') : '—'}</span>
+                <span className="hidden sm:inline text-neutral-400">•</span>
+                <span>
+                  Website: {details?.website ? (
+                    <a className="text-violet-700 hover:underline" href={String(details.website)} target="_blank" rel="noreferrer">{details.website}</a>
+                  ) : '—'}
+                </span>
+              </div>
+            </div>
+          </div>
+          <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex-1 min-h-0 flex flex-col">
+            <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-3 gap-2 w-full">
+              <TabsTrigger value="kpi" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">KPI</TabsTrigger>
+              <TabsTrigger value="shipments" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Shipments</TabsTrigger>
+              <TabsTrigger value="contacts" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Contacts</TabsTrigger>
             </TabsList>
-
-            <TabsContent value="kpi" className="mt-3">
-              {kpiLoading ? (
-                <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-              ) : (
+            <TabsContent value="kpi" className="mt-2 overflow-auto p-1 sm:p-2">
+              {/* Prefer server KPIs if available; else compute from visible shipments */}
+              {kpiServer ? (
                 <>
-                  <div className="grid grid-cols-4 gap-4 text-center">
-                    <div>
-                      <div className="text-sm text-muted-foreground">Shipments (12m)</div>
-                      <div className="text-xl font-semibold">{mergedKpi.shipments_12m ?? 0}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-muted-foreground">Last activity</div>
-                      <div className="text-xl font-semibold">{mergedKpi.last_activity ?? '—'}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-muted-foreground">Containers (page)</div>
-                      <div className="text-xl font-semibold">{kpis.totalContainers.toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-muted-foreground">TEU (est.)</div>
-                      <div className="text-xl font-semibold">{kpis.totalTEU.toLocaleString()}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 border rounded-md p-4">
-                    <div className="text-sm font-medium">Profile</div>
-                    <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
-                    <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
-                  </div>
+                  <KpiGrid items={[
+                    { label: 'Shipments (12m)', value: kpiServer.shipments_12m ?? '—' },
+                    { label: 'Last activity', value: (kpiServer.last_activity?.value || '—') },
+                    { label: 'Top route', value: (kpiServer.top_routes?.[0] ? `${kpiServer.top_routes[0].origin_country}→${kpiServer.top_routes[0].dest_country}` : '—') },
+                    { label: 'Top carrier', value: (kpiServer.top_carriers?.[0]?.name || '—') },
+                    { label: 'Total containers', value: kpiServer.containers_12m ?? '—' },
+                    { label: 'TEUs', value: kpiServer.teus_12m ?? '—' },
+                    { label: 'Total weight (kg)', value: kpiServer.gross_weight_kg_12m ?? '—' },
+                    { label: 'Total value (USD)', value: kpiServer.value_usd_12m ?? '—' },
+                  ]} />
                 </>
-              )}
-            </TabsContent>
-
-            <TabsContent value="shipments" className="mt-3">
-              {shipLoading ? (
-                <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading shipments…</div>
-              ) : shipments.length === 0 ? (
-                <div className="text-center text-muted-foreground py-16">No shipments found.</div>
+              ) : kpiLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
               ) : (
-                <div className="flex flex-col h-[60vh] sm:h-[65vh]">
+                <KpiGrid items={computeKpis(shipments)} />
+              )}
+              <div className="mt-3 border rounded-xl p-3">
+                <div className="text-sm font-medium">Profile</div>
+                <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
+                <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
+              </div>
+            </TabsContent>
+            <TabsContent value="shipments" className="mt-2 flex-1 min-h-0 flex flex-col p-1 sm:p-2">
+              {shipLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading shipments…</div>
+              ) : shipments.length === 0 ? (
+                <div className="text-center text-muted-foreground py-12">No shipments found.</div>
+              ) : (
+                <div className="flex-1 min-h-0 flex flex-col">
                   <div className="grid grid-cols-4 gap-4 text-center mb-2">
                     <div>
                       <div className="text-xs text-muted-foreground">Total (server)</div>
@@ -246,14 +265,16 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                 </div>
               )}
             </TabsContent>
-
-            <TabsContent value="contacts" className="mt-6">
-              <div className="text-sm text-muted-foreground">Contacts are a Pro feature. Placeholder panel ready for Phase 3.</div>
+            <TabsContent value="contacts" className="mt-2 p-1 sm:p-2">
+              <ContactsGate
+                position="center"
+                companyName={company?.company_name || 'this company'}
+                onUpgrade={() => { /* track('contacts_gate_upgrade_click') */ }}
+                onLearnMore={() => { /* track('contacts_gate_learn_more_click') */ }}
+              />
             </TabsContent>
           </Tabs>
         </div>
-        {/* Scroller */}
-        <div className="flex-1 min-h-0 overflow-auto px-4 pb-4" />
       </DialogContent>
     </Dialog>
   );
