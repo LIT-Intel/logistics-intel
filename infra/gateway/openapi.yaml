@@ -5,6 +5,15 @@ info:
 servers:
   - url: https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev
 paths:
+  /public/healthz:
+    get:
+      operationId: healthz
+      x-google-backend:
+        address: https://crm-api-gxezx63yea-uc.a.run.app
+        jwt_audience: https://crm-api-gxezx63yea-uc.a.run.app
+      responses:
+        '200':
+          description: ok
   /public/status:
     get:
       operationId: status
@@ -185,11 +194,13 @@ paths:
       operationId: contacts
       x-google-backend:
         address: https://crm-api-gxezx63yea-uc.a.run.app
+        jwt_audience: https://crm-api-gxezx63yea-uc.a.run.app
       parameters:
         - name: q
           in: query
           type: string
           required: false
+          description: Company name search
         - name: company_id
           in: query
           type: string
@@ -198,15 +209,17 @@ paths:
           in: query
           type: integer
           format: int32
+          required: false
           default: 25
         - name: offset
           in: query
           type: integer
           format: int32
+          required: false
           default: 0
       responses:
-        200:
-          description: ok
+        '200':
+          description: Contacts list
 
   /public/campaigns:
     get:
