@@ -17,6 +17,7 @@ import { enrichCompany } from '@/lib/litEnrich';
 import { toast } from 'sonner';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
 import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
+import CompanyAvatar from '@/components/command-center/CompanyAvatar';
 
 // inline LitSearchRow type removed; AddCompanyModal owns its search types
 
@@ -136,7 +137,7 @@ export default function CommandCenterPage() {
         {/* Company header summary */}
         <Card className="p-5 rounded-2xl shadow-sm mb-4">
           <div className="flex items-start gap-4">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600" />
+            <CompanyAvatar name={selected?.name || undefined} domain={selected?.domain || undefined} />
             <div className="flex-1 min-w-0">
               <div className="text-xl font-semibold truncate">{selected?.name || 'Select a company'}</div>
               <div className="mt-1 text-sm text-muted-foreground flex flex-wrap items-center gap-4">
