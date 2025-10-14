@@ -180,6 +180,31 @@ paths:
         '204': { description: CORS preflight ok }
         '200': { description: CORS preflight ok }
 
+  /public/contacts:
+    get:
+      operationId: contacts
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app
+        protocol: h2
+        jwt_audience: https://search-unified-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: company_id
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 25 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: contacts
+
   /public/campaigns:
     get:
       operationId: listCampaigns
