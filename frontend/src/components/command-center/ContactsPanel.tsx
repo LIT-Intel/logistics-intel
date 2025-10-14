@@ -31,7 +31,8 @@ export default function ContactsPanel() {
     try { return JSON.parse(localStorage.getItem("lit:selectedCompany") || "null"); } catch { return null; }
   }, []);
 
-  if (!hasFeature("contacts")) {
+  const gated = !isAdmin() && !hasFeature("contacts");
+  if (gated) {
     return (
       <div className="rounded-2xl border p-4">
         <div className="text-sm font-semibold mb-1">Contacts</div>
