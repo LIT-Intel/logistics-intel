@@ -14,6 +14,13 @@ type LitSearchRow = {
 };
 
 export default function CommandCenterPage() {
+  // --- KPI state (live) ---
+  const [kpi, setKpi] = useState({
+    shipments12m: '—',
+    lastActivity: '—',
+    topLane: '—',
+    topCarrier: '—',
+  });
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<LitSearchRow[] | null>(null);
@@ -49,6 +56,45 @@ export default function CommandCenterPage() {
     window.location.reload();
   }
 
+  // --- Fetch KPI seed from proxy searchCompanies (1 row), prefer saved company ---
+  type SearchCompanyRow = {
+    company_id: string | null;
+    company_name: string;
+    shipments_12m: number | null;
+    last_activity?: { value?: string | null } | null;
+    top_routes?: { origin_country: string | null; dest_country: string | null; shipments: number | null }[] | null;
+    top_carriers?: { name: string | null; share_pct: number | null }[] | null;
+  };
+  type SearchCompaniesResp = { meta?: { total: number }, rows?: SearchCompanyRow[], items?: SearchCompanyRow[] };
+  function fmtLane(row: SearchCompanyRow) {
+    const r = row.top_routes?.[0];
+    if (!r || !r.origin_country || !r.dest_country) return '—';
+    return `${r.origin_country} → ${r.dest_country}`;
+  }
+  function fmtCarrier(row: SearchCompanyRow) {
+    const c = row.top_carriers?.[0];
+    return c?.name ?? '—';
+  }
+  useEffect(() => {
+    const saved = (() => { try { return JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null'); } catch { return null; } })();
+    const body = saved?.company_id ? { company_id: saved.company_id, limit: 1, offset: 0 } : { q: saved?.name || null, limit: 1, offset: 0 };
+    fetch('/api/lit/public/searchCompanies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        const data = (await r.json()) as SearchCompaniesResp;
+        const rows = Array.isArray(data.rows) ? data.rows : (Array.isArray(data.items) ? data.items : []);
+        const row = rows?.[0];
+        if (!row) return;
+        setKpi({
+          shipments12m: row.shipments_12m != null ? String(row.shipments_12m) : '—',
+          lastActivity: row.last_activity?.value || '—',
+          topLane: fmtLane(row),
+          topCarrier: fmtCarrier(row),
+        });
+      })
+      .catch(() => { /* keep placeholders */ });
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#f7f8fb]">
       {/* Top App Bar */}
@@ -68,6 +114,7 @@ export default function CommandCenterPage() {
         </div>
       </div>
       <div className="mx-auto max-w-[1400px] px-4 py-6">
+        <KpiStrip kpi={kpi} />
         <Card className="p-4 rounded-2xl shadow-sm">
           <div className="text-sm text-muted-foreground mb-2">Sanity</div>
           <div className="text-xl font-semibold">Route sanity check OK.</div>
@@ -132,6 +179,25 @@ function InfoItem({ icon, label, value }: { icon: React.ReactNode; label: string
     <div className="text-xs">
       <div className="text-muted-foreground">{label}</div>
       <div className="mt-0.5 flex items-center gap-1">{icon}{value}</div>
+    </div>
+  );
+}
+
+function KpiStrip({ kpi }: { kpi: { shipments12m: string; lastActivity: string; topLane: string; topCarrier: string } }) {
+  const items = [
+    { label: 'Shipments (12m)', value: kpi.shipments12m },
+    { label: 'Last Activity', value: kpi.lastActivity },
+    { label: 'Top Lane', value: kpi.topLane },
+    { label: 'Top Carrier', value: kpi.topCarrier },
+  ];
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      {items.map((k) => (
+        <Card key={k.label} className="p-4 rounded-2xl shadow-sm">
+          <div className="text-xs text-muted-foreground">{k.label}</div>
+          <div className="text-xl font-semibold">{k.value}</div>
+        </Card>
+      ))}
     </div>
   );
 }
