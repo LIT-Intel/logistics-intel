@@ -184,26 +184,29 @@ paths:
     get:
       operationId: contacts
       x-google-backend:
-        address: https://crm-api-<hash>-uc.a.run.app
-        protocol: h2
-        jwt_audience: https://crm-api-<hash>-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
+        address: https://crm-api-gxezx63yea-uc.a.run.app
       parameters:
-        - in: query
-          name: q
-          schema: { type: string }
-        - in: query
-          name: company_id
-          schema: { type: string }
-        - in: query
-          name: limit
-          schema: { type: integer, default: 25 }
-        - in: query
-          name: offset
-          schema: { type: integer, default: 0 }
+        - name: q
+          in: query
+          type: string
+          required: false
+        - name: company_id
+          in: query
+          type: string
+          required: false
+        - name: limit
+          in: query
+          type: integer
+          format: int32
+          default: 25
+        - name: offset
+          in: query
+          type: integer
+          format: int32
+          default: 0
       responses:
-        '200':
-          description: contacts
+        200:
+          description: ok
 
   /public/campaigns:
     get:
