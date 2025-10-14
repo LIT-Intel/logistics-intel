@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { hasFeature, isAdmin } from "@/lib/access";
+import ContactAvatar from "@/components/command-center/ContactAvatar";
 
 type Contact = {
   id?: string | number;
@@ -11,11 +13,6 @@ type Contact = {
   seniority?: string | null;
   location?: string | null;
 };
-
-function isPro(): boolean {
-  // Replace with real plan check when available.
-  try { return JSON.parse(localStorage.getItem("lit:plan") || '"free"') !== "free"; } catch { return false; }
-}
 
 function qstr(params: Record<string, string | number | null | undefined>) {
   const u = new URLSearchParams();
@@ -34,7 +31,7 @@ export default function ContactsPanel() {
     try { return JSON.parse(localStorage.getItem("lit:selectedCompany") || "null"); } catch { return null; }
   }, []);
 
-  if (!isPro()) {
+  if (!hasFeature("contacts")) {
     return (
       <div className="rounded-2xl border p-4">
         <div className="text-sm font-semibold mb-1">Contacts</div>
@@ -108,7 +105,12 @@ export default function ContactsPanel() {
             <tbody className="divide-y">
               {rows.map((c, i) => (
                 <tr key={c.id ?? i} className="hover:bg-slate-50">
-                  <Td>{c.name ?? "—"}</Td>
+                  <Td>
+                    <div className="flex items-center gap-2">
+                      <ContactAvatar name={c.name} />
+                      <span>{c.name ?? "—"}</span>
+                    </div>
+                  </Td>
                   <Td>{c.title ?? "—"}</Td>
                   <Td>{c.department ?? "—"}</Td>
                   <Td>{c.seniority ?? "—"}</Td>
