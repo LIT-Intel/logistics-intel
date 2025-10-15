@@ -1,4 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
+import DotMatrixBackground from '@/components/landing/DotMatrixBackground';
+import ModuleInteractiveBanner from '@/components/landing/ModuleInteractiveBanner';
+import StatsBanner from '@/components/landing/StatsBanner';
 
 export default function LandingPage() {
   const dotContainerRef = useRef(null);
@@ -89,10 +92,13 @@ export default function LandingPage() {
     <div className="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-sans">
       <a href="#main-content" className="sr-only focus:not-sr-only p-4">Skip to content</a>
       {/* Header */}
-      <header className="sticky top-0 bg-white dark:bg-gray-800 z-50 shadow-sm">
+      <header className="sticky top-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur z-50 border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <div className="flex items-center space-x-10">
-            <div className="flex-shrink-0 text-intel font-bold text-xl">LIT</div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#3C4EF5] to-[#AB34F5]" />
+              <span className="font-semibold tracking-tight">LIT — Trade Intelligence</span>
+            </div>
             <nav className="hidden md:flex space-x-6 text-sm">
               <a href="#intelligence" className="hover:text-intel-dark">Intelligence</a>
               <a href="#trade-data" className="hover:text-intel-dark">Trade Data</a>
@@ -101,8 +107,8 @@ export default function LandingPage() {
             </nav>
           </div>
           <div className="flex items-center space-x-4">
-            <a href="/app/login" className="text-sm text-gray-600 dark:text-gray-300 hover:text-intel-dark">Log In</a>
-            <a href="/request-demo" className="px-4 py-2 text-sm bg-intel text-white rounded hover:bg-intel-dark transition">Request Demo</a>
+            <a href="/app/login" className="text-sm text-gray-700 dark:text-gray-200 hover:underline">Log In</a>
+            <a href="/request-demo" className="px-4 py-2 text-sm rounded-xl bg-gradient-to-r from-[#3C4EF5] to-[#AB34F5] text-white font-semibold hover:brightness-110 transition">Request Demo</a>
             <button
               id="mobile-menu-button"
               className="md:hidden focus:outline-none"
@@ -123,24 +129,23 @@ export default function LandingPage() {
           <a href="/pricing" className="block py-2">Pricing</a>
           <a href="/resources" className="block py-2">Resources</a>
           <a href="/app/login" className="block py-2">Log In</a>
-          <a href="/request-demo" className="block mt-2 text-white bg-intel px-4 py-2 rounded hover:bg-intel-dark">Request Demo</a>
+          <a href="/request-demo" className="block mt-2 text-white px-4 py-2 rounded-xl bg-gradient-to-r from-[#3C4EF5] to-[#AB34F5]">Request Demo</a>
         </div>
       </header>
 
       <main id="main-content" className="relative">
         {/* Hero */}
-        <section className="relative pt-24 pb-32 px-4 sm:px-6 lg:px-8 overflow-hidden">
-          <div ref={dotContainerRef} className="dot-matrix" aria-hidden="true"></div>
+        <section className="relative pt-24 pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
+          <DotMatrixBackground className="opacity-70" />
           <div className="relative z-10 text-center max-w-3xl mx-auto">
-            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">Global Commerce Intelligence Meets Contact Insight</h1>
-            <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">
-              Discover who ships what and connect with decision-makers—one platform for sales, sourcing, and market analysis.
-            </p>
+            <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">Trusted by 10,000+ teams</div>
+            <h1 className="mt-4 text-4xl md:text-5xl font-extrabold tracking-tight">Global Commerce Intelligence Meets Contact Insight</h1>
+            <p className="mt-4 text-base md:text-lg text-gray-600 dark:text-gray-300">Discover who ships what and connect with decision-makers — one platform for sales, sourcing, and market analysis.</p>
             <div className="mt-8 flex flex-col sm:flex-row justify-center gap-4">
-              <a href="/app/search" data-cta="start-free-search" className="px-6 py-3 bg-intel text-white rounded-lg hover:bg-intel-dark transition">
+              <a href="/app/search" data-cta="start-free-search" className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#3C4EF5] to-[#AB34F5] text-white text-lg font-semibold hover:brightness-110 hover:scale-105 transition">
                 Start Free Search
               </a>
-              <a href="/request-demo" className="px-6 py-3 border border-intel text-intel rounded-lg hover:bg-intel-light transition">
+              <a href="/request-demo" className="px-6 py-3 rounded-xl border border-[#3C4EF5] text-[#3C4EF5] hover:bg-indigo-50 text-lg font-semibold transition">
                 Request Demo
               </a>
             </div>
@@ -167,6 +172,25 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* Social Proof */}
+        <section className="py-10">
+          <div className="max-w-7xl mx-auto px-4">
+            <div className="text-center text-sm text-slate-600 mb-4">Trusted by 10,000+ teams</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 opacity-70">
+              <div className="h-10 rounded-lg border border-slate-200" />
+              <div className="h-10 rounded-lg border border-slate-200" />
+              <div className="h-10 rounded-lg border border-slate-200" />
+              <div className="h-10 rounded-lg border border-slate-200" />
+            </div>
+          </div>
+        </section>
+
+        {/* Interactive Module Banner */}
+        <ModuleInteractiveBanner />
+
+        {/* Stats with count-up */}
+        <StatsBanner />
+
         {/* Value Props */}
         <section id="value-props" className="bg-white dark:bg-gray-800 py-16">
           <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 px-4">
@@ -189,13 +213,13 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* CTA Band */}
-        <section className="py-20 bg-intel text-white text-center">
-          <h2 className="text-3xl font-bold mb-4">Ready to unlock global supply visibility?</h2>
-          <p className="mb-6">Start searching today — connect your sales and sourcing data with real shipping intelligence.</p>
+        {/* Final CTA Band */}
+        <section className="py-20 bg-gradient-to-r from-[#3C4EF5] to-[#AB34F5] text-white text-center">
+          <h2 className="text-3xl font-bold mb-2">Ready to unlock global supply visibility?</h2>
+          <p className="mb-6 text-white/90">Start searching today — connect sales and sourcing data with real shipping intelligence.</p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a href="/app/search" className="px-6 py-3 bg-white text-intel rounded hover:bg-gray-100 transition">Start Free Search</a>
-            <a href="/request-demo" className="px-6 py-3 border border-white text-white rounded hover:bg-white hover:text-intel transition">Request Demo</a>
+            <a href="/app/search" className="px-6 py-3 bg-white text-indigo-700 rounded-xl hover:bg-gray-100 transition">Start Free Search</a>
+            <a href="/request-demo" className="px-6 py-3 border border-white text-white rounded-xl hover:bg-white hover:text-indigo-700 transition">Request Demo</a>
           </div>
         </section>
       </main>
