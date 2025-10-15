@@ -181,12 +181,12 @@ export default function CommandCenterPage() {
             <div className="text-3xl font-extrabold">{kpi.lastActivity}</div>
           </Card>
           <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
-            <div className="flex items-center gap-3 mb-1"><MapPin className="w-4 h-4 text-red-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Top Lane</div></div>
-            <div className="text-3xl font-extrabold">{kpi.topLane}</div>
+            <div className="flex items-center gap-3 mb-1"><Layers className="w-4 h-4 text-violet-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Total TEUs</div></div>
+            <div className="text-3xl font-extrabold">{kpi.totalTeus}</div>
           </Card>
           <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
-            <div className="flex items-center gap-3 mb-1"><Truck className="w-4 h-4 text-blue-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Top Carrier</div></div>
-            <div className="text-3xl font-extrabold">{kpi.topCarrier}</div>
+            <div className="flex items-center gap-3 mb-1"><TrendingUp className="w-4 h-4 text-green-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Growth Rate</div></div>
+            <div className="text-3xl font-extrabold">{kpi.growthRate}</div>
           </Card>
         </div>
 
@@ -312,12 +312,12 @@ function InfoItem({ icon, label, value }: { icon: React.ReactNode; label: string
   );
 }
 
-function KpiStrip({ kpi }: { kpi: { shipments12m: string; lastActivity: string; topLane: string; topCarrier: string } }) {
+function KpiStrip({ kpi }: { kpi: { shipments12m: string; lastActivity: string; totalTeus: string; growthRate: string } }) {
   const items = [
     { label: 'Shipments (12m)', value: kpi.shipments12m },
     { label: 'Last Activity', value: kpi.lastActivity },
-    { label: 'Top Lane', value: kpi.topLane },
-    { label: 'Top Carrier', value: kpi.topCarrier },
+    { label: 'Total TEUs', value: kpi.totalTeus },
+    { label: 'Growth Rate', value: kpi.growthRate },
   ];
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
