@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { loadSaved as loadSavedUnified } from '@/components/command-center/storage';
 
 type SavedCompany = {
   company_id?: string | null;
@@ -7,11 +8,10 @@ type SavedCompany = {
   domain?: string | null;
   source: "LIT" | "LUSHA" | "APOLLO" | "MANUAL";
   ts: number;
+  archived?: boolean;
 };
 
-function loadSaved(): SavedCompany[] {
-  try { return JSON.parse(localStorage.getItem("lit:savedCompanies") || "[]"); } catch { return []; }
-}
+function loadSaved(): SavedCompany[] { return loadSavedUnified() as any; }
 function setSelected(c: SavedCompany) {
   localStorage.setItem("lit:selectedCompany", JSON.stringify({
     company_id: c.company_id ?? null, name: c.name, domain: c.domain ?? null
