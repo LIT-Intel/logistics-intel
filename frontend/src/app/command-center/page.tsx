@@ -82,7 +82,7 @@ export default function CommandCenterPage() {
   }, []);
 
   return (
-    <div id="cc-root" className="min-h-screen bg-[#f7f8fb]">
+    <div id="cc-root" className="min-h-screen bg-[#f7f8fb]" data-cc-build="v2.2-2025-10-15">
       {/* Top App Bar */}
       <div className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-3">
@@ -135,6 +135,8 @@ export default function CommandCenterPage() {
           </div>
         </div>
       </div>
+      {/* Build sentinel for prod verification */}
+      <div aria-label="cc-ui-version" className="sr-only">cc-ui v2.2 build 2025-10-15</div>
       <div className="mx-auto max-w-[1400px] px-4 py-6">
         {/* Top navigation row beneath header */}
         <div className="flex justify-between items-center mb-4 gap-3">
