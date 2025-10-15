@@ -71,6 +71,13 @@ export default function LITEnrichCommandCenterDemo() {
     '2025-10-07 18:05:23 — UI loaded',
     '2025-10-07 18:05:25 — Ready for enrichment',
   ]);
+  const [showSaved, setShowSaved] = useState(false);
+  function loadSaved() {
+    try { return JSON.parse(localStorage.getItem('lit:savedCompanies') || '[]'); } catch { return []; }
+  }
+  const savedCompanies = useMemo(() => {
+    try { return loadSaved().filter((c: any)=> !c.archived); } catch { return []; }
+  }, [showSaved]);
 
   const topLane = useMemo(() => company.topRoutes?.[0], [company.topRoutes]);
   function log(m: string) { setLogs(p => [m, ...p]); }
@@ -170,7 +177,70 @@ export default function LITEnrichCommandCenterDemo() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <main className="mx-auto max-w-7xl px-4 py-6">
+        {/* Top navigation row (beneath header) */}
+        <div className="relative flex justify-between items-center mb-4">
+          <div className="relative w-full max-w-xl">
+            <IconSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+            <input placeholder="Search companies or contacts..." className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+          </div>
+          <button
+            className="ml-3 text-sm text-blue-600 hover:underline"
+            onClick={() => setShowSaved(v=>!v)}
+          >
+            View Saved Companies
+          </button>
+          {showSaved && (
+            <div className="absolute top-12 right-0 bg-white shadow-lg rounded-lg p-4 w-64 z-20 border">
+              <h3 className="text-sm font-semibold mb-2">Saved Companies</h3>
+              <ul className="text-sm space-y-1 max-h-64 overflow-auto">
+                {savedCompanies.length === 0 && (
+                  <li className="text-slate-500">No saved companies</li>
+                )}
+                {savedCompanies.map((c:any, idx:number) => (
+                  <li key={idx}>
+                    <button
+                      className="w-full text-left hover:text-blue-600 cursor-pointer"
+                      onClick={() => {
+                        try {
+                          localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: c.company_id ?? null, name: c.name, domain: c.domain ?? null }));
+                        } catch {}
+                        setShowSaved(false);
+                        window.location.reload();
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => setShowSaved(false)} className="mt-3 text-xs text-gray-500 hover:underline">Close</button>
+            </div>
+          )}
+        </div>
+
+        {/* Stats Grid (Overview quick KPIs) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div className="text-xs text-slate-600">Shipments (12m)</div>
+            <div className="text-xl font-semibold">{company.shipments12m ?? '—'}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div className="text-xs text-slate-600">Trade Growth (QoQ)</div>
+            <div className="text-xl font-semibold">—</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div className="text-xs text-slate-600">Intent Signal Level</div>
+            <div className="text-xl font-semibold">{(company.shipments12m ?? 0) >= 500 ? 'High' : ((company.shipments12m ?? 0) >= 200 ? 'Medium' : 'Low')}</div>
+          </div>
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div className="text-xs text-slate-600">RFP Readiness Index</div>
+            <div className="text-xl font-semibold">{Math.min(100, Math.max(0, Math.round((company.shipments12m ?? 0) / 10)))}</div>
+          </div>
+        </div>
+
+        {/* Existing layout */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <section className="xl:col-span-1 space-y-4">
           <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm">
             <div className="flex items-start justify-between">
@@ -291,6 +361,7 @@ export default function LITEnrichCommandCenterDemo() {
             <div className="flex items-center gap-2 mt-3"><button className="px-3 py-2 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700">Generate Quote</button><button className="px-3 py-2 rounded-xl text-sm font-medium bg-slate-100 text-slate-900 hover:bg-slate-200">Export PDF</button></div>
           </div>
         </section>
+        </div>
       </main>
 
       <footer className="mx-auto max-w-7xl px-4 pb-10"><div className="text-xs text-slate-500">© 2025 Logistic Intel — Demo view. Replace stubs with live endpoints when promoting.</div></footer>
