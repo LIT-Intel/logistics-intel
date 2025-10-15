@@ -89,7 +89,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-sans">
+    <div className="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-sans" data-landing-build="v2.4-2025-10-15">
       <a href="#main-content" className="sr-only focus:not-sr-only p-4">Skip to content</a>
       {/* Header */}
       <header className="sticky top-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur z-50 border-b">
