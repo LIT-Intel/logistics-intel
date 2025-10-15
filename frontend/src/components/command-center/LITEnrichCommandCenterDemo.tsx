@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { CRM_BASE } from '@/lib/env';
-import { loadSaved } from '@/components/command-center/storage';
 
 // LIT — Command Center (LIT Enrich Service Demo, v2.1)
 // Canvas UI preserved exactly; only handler bodies wired.
@@ -73,8 +72,11 @@ export default function LITEnrichCommandCenterDemo() {
     '2025-10-07 18:05:25 — Ready for enrichment',
   ]);
   const [showSaved, setShowSaved] = useState(false);
+  function loadSaved() {
+    try { return JSON.parse(localStorage.getItem('lit:savedCompanies') || '[]'); } catch { return []; }
+  }
   const savedCompanies = useMemo(() => {
-    try { return loadSaved().filter((c)=> !c.archived); } catch { return []; }
+    try { return loadSaved().filter((c: any)=> !c.archived); } catch { return []; }
   }, [showSaved]);
 
   const topLane = useMemo(() => company.topRoutes?.[0], [company.topRoutes]);
