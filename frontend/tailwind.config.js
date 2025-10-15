@@ -11,9 +11,9 @@ module.exports = {
   		},
       		colors: {
           intel: {
-            DEFAULT: '#0073E6',
-            dark: '#005ac0',
-            light: '#F0F6FF'
+            DEFAULT: '#23135b',
+            dark: '#1a0f45',
+            light: '#EDE9FE'
           },
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
