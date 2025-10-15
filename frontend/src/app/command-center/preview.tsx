@@ -157,7 +157,23 @@ export default function CommandCenterPreview() {
     // Shipments
     try {
       const s = await getCompanyShipments({ company_id: String(sel.company_id || '') });
-      setShipments(Array.isArray(s?.rows) ? s.rows : []);
+      const rows = Array.isArray(s?.rows) ? s.rows : [];
+      setShipments(rows);
+      try {
+        if (rows.length > 0) {
+          const latest = rows.reduce((acc: any, r: any) => {
+            const d = r.shipped_on || r.depart_date || r.arrival_date || null;
+            if (!d) return acc;
+            return (!acc || new Date(d) > new Date(acc)) ? d : acc;
+          }, null);
+          setKpi(prev => ({
+            shipments12m: prev.shipments12m !== '—' ? prev.shipments12m : String(rows.length),
+            lastActivity: prev.lastActivity !== '—' ? prev.lastActivity : (latest || '—'),
+            totalTeus: prev.totalTeus,
+            growthRate: prev.growthRate,
+          }));
+        }
+      } catch {}
     } catch { setShipments([]); }
     // Contacts
     try {
