@@ -93,7 +93,7 @@ export default function CompanyPage() {
             setData((prev: any) => prev ? { ...prev, ai: { summary: (ai as any)?.summary || '', bullets: Array.isArray((ai as any)?.bullets) ? (ai as any).bullets : [] } } : prev);
           }}>Refresh Recall</button>
           <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); pdf.save('company.pdf'); }catch(e:any){ alert('PDF failed: '+ String(e?.message||e)); } }}>Save PDF</button>
-          <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const blob=pdf.output('blob'); const form=new FormData(); form.append('file', blob, 'company.pdf'); form.append('companyId', id); await fetch('/api/emailPdf', { method:'POST', body:form }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
+          <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const data = pdf.output('datauristring'); await fetch('/api/lit/crm/emailPdf', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ data, filename:'company.pdf', to:'' }) }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
         </div>
       </div>
       <section id='company-pdf-root'>
