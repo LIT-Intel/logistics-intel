@@ -4,6 +4,9 @@ import { createPageUrl } from '@/utils';
 import { Briefcase, TrendingUp, CheckCircle, Zap, BarChart, Users } from 'lucide-react';
 import { User } from '@/api/entities';
 import PublicHeader from '@/components/layout/PublicHeader';
+import DotMatrixBackground from '@/components/landing/DotMatrixBackground';
+import ModuleInteractiveBanner from '@/components/landing/ModuleInteractiveBanner';
+import StatsBanner from '@/components/landing/StatsBanner';
 import { useNavigate } from 'react-router-dom';
 
 const AIFeatures = () => (
@@ -157,27 +160,25 @@ export default function Landing() {
   return (
     <div className="bg-gray-50">
       <PublicHeader />
-      <section className="relative bg-gradient-to-br from-blue-50/50 via-white to-purple-50/50 overflow-hidden">
+      {/* Hero with dot matrix and gradient CTAs */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-white via-white to-white" />
+        <DotMatrixBackground />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
-              <span className="inline-flex items-center px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-semibold ring-1 ring-yellow-200">
-                <svg className="w-4 h-4 mr-2 text-yellow-600" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
-                Trusted by Fortune 500 Companies
-              </span>
-              <h1 className="text-4xl lg:text-6xl font-bold text-gray-900 tracking-tighter leading-tight">
-                Transform Trade Data Into <span className="text-yellow-500">Competitive Advantage</span>
+              <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
+                Trusted by 10,000+ teams
+              </div>
+              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900">
+                Global Commerce Intelligence Meets Contact Insight
               </h1>
-              <p className="text-xl text-gray-600 leading-relaxed">
-                Advanced B2B SaaS Intelligence Platform that transforms how companies discover, analyze, and engage with global trade opportunities through AI-powered data enrichment and automation.
+              <p className="text-base md:text-lg text-gray-600 leading-relaxed">
+                Discover who ships what and connect with decision-makers — one platform for sales, sourcing, and market analysis.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
-                <Button className="bg-gray-900 hover:bg-black" onClick={() => navigate('/signup')}>
-                  Start 14-day free trial
-                </Button>
-                <Button variant="outline" onClick={() => navigate('/login')}>
-                  Sign in
-                </Button>
+                <a href="/app/search" className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#3C4EF5] to-[#AB34F5] text-white text-lg font-semibold hover:brightness-110 hover:scale-105 transition">Start Free Search</a>
+                <a href="/request-demo" className="px-6 py-3 rounded-xl border border-[#3C4EF5] text-[#3C4EF5] hover:bg-indigo-50 text-lg font-semibold transition">Request a Demo</a>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <RoleCard icon={Briefcase} title="Procurement Teams" description="Supplier discovery & risk assessment" color="blue" />
@@ -190,6 +191,26 @@ export default function Landing() {
           </div>
         </div>
       </section>
+      {/* Social Proof */}
+      <section className="py-10">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="text-center text-sm text-slate-600 mb-4">Trusted by 10,000+ teams</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 opacity-70">
+            <div className="h-10 rounded-lg border border-slate-200" />
+            <div className="h-10 rounded-lg border border-slate-200" />
+            <div className="h-10 rounded-lg border border-slate-200" />
+            <div className="h-10 rounded-lg border border-slate-200" />
+          </div>
+        </div>
+      </section>
+
+      {/* Interactive Banner */}
+      <ModuleInteractiveBanner />
+
+      {/* Stats with count-up */}
+      <StatsBanner />
+
+      {/* Value Props (existing AI features moved below) */}
       <AIFeatures />
     </div>
   );
