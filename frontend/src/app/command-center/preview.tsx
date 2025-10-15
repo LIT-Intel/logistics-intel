@@ -1,9 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { 
     Package, Clock, Zap, Truck, Save, Share2, Download, Users, Plus, 
     ChevronRight, Search, Heart, MapPin, Mail, Phone, Briefcase, Archive, 
     FileText, Activity, Layers, Tag
 } from 'lucide-react';
+import {
+  searchCompanies,
+  getCompanyKpis,
+  getCompanyShipments,
+  listContacts,
+  saveCompanyToCrm,
+  saveCampaign,
+  enrichCompany,
+  kpiFrom,
+} from '@/lib/api';
+import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
+import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
 
 // --- Placeholder Data ---
 const COMPANY_DATA = {
@@ -73,17 +85,96 @@ function TagItem({ label }: { label: string }) {
 export default function CommandCenterPreview() {
   const [activeTab, setActiveTab] = useState("Overview");
   const [showSaved, setShowSaved] = useState(false);
-  const savedCompanies = ["Dole Fresh Fruit", "Acme Logistics", "Ocean Fresh", "Global Imports"];
+  const [query, setQuery] = useState('');
+  const [savedCompanies, setSavedCompanies] = useState<Array<{ company_id?: string|null; name: string; domain?: string|null; archived?: boolean }>>([]);
+  const [selected, setSelected] = useState<{ company_id?: string|null; name: string; company_name?: string; domain?: string|null } | null>(null);
+  const [kpi, setKpi] = useState<{ shipments12m: string; lastActivity: string; totalTeus: string; growthRate: string }>({ shipments12m: '—', lastActivity: '—', totalTeus: '—', growthRate: '—' });
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const isSaved = !!(selected && loadSaved().some(x => (x.company_id ?? x.name) === ((selected.company_id ?? selected.name))));
 
   const tabs = ["Overview", "Shipments", "Contacts"];
   
   // KPI Data aligned with request: Shipments (12m), Last Activity, Total TEUs, Growth Rate
   const KPI_DATA = [
-      { label: "Shipments (12m)", value: "3,120 TEU", icon: Package, color: "text-indigo-600" },
-      { label: "Last Activity", value: "3 days ago", icon: Clock, color: "text-amber-600" },
-      { label: "Total TEUs", value: "56,480", icon: Layers, color: "text-rose-600" },
-      { label: "Growth Rate", value: "+12% QoQ", icon: Activity, color: "text-emerald-600" },
+      { label: "Shipments (12m)", value: kpi.shipments12m, icon: Package, color: "text-indigo-600" },
+      { label: "Last Activity", value: kpi.lastActivity, icon: Clock, color: "text-amber-600" },
+      { label: "Total TEUs", value: kpi.totalTeus, icon: Layers, color: "text-rose-600" },
+      { label: "Growth Rate", value: kpi.growthRate, icon: Activity, color: "text-emerald-600" },
   ];
+
+  // Init: load saved & selection
+  useEffect(() => {
+    try {
+      setSavedCompanies(loadSaved());
+      const s = JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null');
+      if (s && (s.company_id || s.name)) {
+        setSelected({ company_id: s.company_id ?? null, name: s.name ?? s.company_name ?? '', company_name: s.name ?? s.company_name ?? '', domain: s.domain ?? null });
+        setQuery(s.name ?? '');
+        void hydrateForSelection({ company_id: s.company_id ?? null, name: s.name ?? s.company_name ?? '' });
+      }
+    } catch {}
+  }, []);
+
+  function persistSelection(sel: { company_id?: string|null; name: string; domain?: string|null }) {
+    try { localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: sel.company_id ?? null, name: sel.name, domain: sel.domain ?? null })); } catch {}
+  }
+
+  async function hydrateForSelection(sel: { company_id?: string|null; name: string }) {
+    // KPIs
+    try {
+      const k = await getCompanyKpis({ company_id: sel.company_id ?? undefined, company_name: sel.name });
+      if (k) {
+        setKpi({
+          shipments12m: k.shipments_12m != null ? String(k.shipments_12m) : '—',
+          lastActivity: k.last_activity?.value || k.last_activity || '—',
+          totalTeus: k.total_teus != null ? String(k.total_teus) : '—',
+          growthRate: k.growth_rate != null ? `${k.growth_rate}` : '—',
+        });
+      } else {
+        // Fallback via searchCompanies
+        const res = await searchCompanies({ q: sel.name, pageSize: 1 });
+        const item = Array.isArray(res.items) && res.items[0];
+        const kk = item ? kpiFrom(item) : { shipments12m: 0, lastActivity: null } as any;
+        setKpi({
+          shipments12m: kk.shipments12m != null ? String(kk.shipments12m) : '—',
+          lastActivity: kk.lastActivity || '—',
+          totalTeus: (item && (item.total_teus != null) ? String(item.total_teus) : '—'),
+          growthRate: (item && (item.growth_rate != null) ? `${item.growth_rate}` : '—'),
+        });
+      }
+    } catch {}
+    // Shipments
+    try {
+      const s = await getCompanyShipments({ company_id: String(sel.company_id || '') });
+      setShipments(Array.isArray(s?.rows) ? s.rows : []);
+    } catch { setShipments([]); }
+    // Contacts
+    try {
+      if (sel.company_id) {
+        const c = await listContacts(String(sel.company_id));
+        setContacts(Array.isArray(c?.contacts) ? c.contacts : (Array.isArray(c) ? c : []));
+      } else {
+        setContacts([]);
+      }
+    } catch { setContacts([]); }
+  }
+
+  async function handleSearch() {
+    if (!query.trim()) return;
+    try {
+      const res = await searchCompanies({ q: query, pageSize: 1 });
+      const item: any = (Array.isArray(res.items) && res.items[0]) || null;
+      if (!item) { alert('No match'); return; }
+      const sel = { company_id: item.company_id ?? null, name: item.company_name || item.name || query, domain: item.domain || null };
+      setSelected({ ...sel, company_name: sel.name });
+      persistSelection(sel);
+      await hydrateForSelection(sel);
+      setSavedCompanies(loadSaved());
+    } catch (e: any) {
+      alert(`Search failed: ${e?.message || e}`);
+    }
+  }
 
   // --- Tab Content Renderers ---
 
@@ -320,9 +411,12 @@ export default function CommandCenterPreview() {
                 type="text"
                 placeholder="Search company or contact..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+                value={query}
+                onChange={(e)=> setQuery(e.target.value)}
+                onKeyDown={(e)=> { if (e.key === 'Enter') handleSearch(); }}
               />
             </div>
-            <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow hover:bg-indigo-700">Search</button>
+            <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow hover:bg-indigo-700" onClick={handleSearch}>Search</button>
           </div>
           
           <button
@@ -337,12 +431,13 @@ export default function CommandCenterPreview() {
             <div className="absolute top-[50px] right-0 bg-white border border-gray-300 rounded-xl shadow-2xl p-4 w-64 z-20">
               <h3 className="text-base font-bold mb-2 border-b pb-1 text-gray-800">Saved Companies</h3>
               <ul className="space-y-1">
-                {savedCompanies.map((c) => (
+                {(savedCompanies.filter(x=>!x.archived)).map((c) => (
                   <li 
-                    key={c} 
+                    key={(c.company_id ?? c.name) as any}
                     className="p-2 hover:bg-indigo-50 rounded-lg cursor-pointer transition text-gray-700 hover:text-indigo-600 text-sm flex justify-between items-center"
+                    onClick={()=> { setSelected({ company_id: c.company_id ?? null, name: c.name, company_name: c.name, domain: c.domain ?? null }); persistSelection({ company_id: c.company_id ?? null, name: c.name, domain: c.domain ?? null }); setShowSaved(false); void hydrateForSelection({ company_id: c.company_id ?? null, name: c.name }); }}
                   >
-                    {c} <ChevronRight className="w-3 h-3"/>
+                    {c.name} <ChevronRight className="w-3 h-3"/>
                   </li>
                 ))}
               </ul>
@@ -356,25 +451,63 @@ export default function CommandCenterPreview() {
                 <div className="flex items-center gap-4 mb-4 sm:mb-0">
                     <CompanyAvatar initials={COMPANY_DATA.initials} />
                     <div>
-                      <h1 className="text-4xl font-extrabold text-gray-900">{COMPANY_DATA.name}</h1>
-                      <p className="text-sm text-gray-500 mt-1">{COMPANY_DATA.domain} • ID: {COMPANY_DATA.companyId} • {COMPANY_DATA.generated}</p>
+                      <h1 className="text-4xl font-extrabold text-gray-900">{selected?.company_name || selected?.name || COMPANY_DATA.name}</h1>
+                      <p className="text-sm text-gray-500 mt-1">{selected?.domain || COMPANY_DATA.domain} • ID: {selected?.company_id || COMPANY_DATA.companyId} • {COMPANY_DATA.generated}</p>
                     </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-3 sm:gap-2">
-                  <button className="px-4 py-2 text-sm bg-gray-200 rounded-lg font-medium hover:bg-gray-300 transition flex items-center gap-1" onClick={() => alert('Archived (wire to /crm/archive)')}>
-                    {COMPANY_DATA.isSaved ? <Archive className="w-4 h-4"/> : <Heart className="w-4 h-4"/>} 
-                    {COMPANY_DATA.isSaved ? "Archive" : "Save"}
+                  <button className="px-4 py-2 text-sm bg-gray-200 rounded-lg font-medium hover:bg-gray-300 transition flex items-center gap-1" onClick={async () => {
+                    try {
+                      if (!selected) return;
+                      if (!isSaved) {
+                        await saveCompanyToCrm({ company_id: String(selected.company_id||''), company_name: selected.company_name || selected.name });
+                        upsertSaved({ company_id: selected.company_id ?? null, name: selected.company_name || selected.name, domain: selected.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
+                      } else {
+                        toggleArchive({ company_id: selected.company_id ?? null, name: selected.company_name || selected.name }, true);
+                      }
+                      setSavedCompanies(loadSaved());
+                      alert(isSaved ? 'Archived' : 'Saved to CRM and list');
+                    } catch(e:any){ alert(`Action failed: ${e?.message||e}`); }
+                  }}>
+                    {isSaved ? <Archive className="w-4 h-4"/> : <Heart className="w-4 h-4"/>} 
+                    {isSaved ? "Archive" : "Save"}
                   </button>
-                  <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition flex items-center gap-1" onClick={() => alert('Add to Campaign (wire to /crm/campaigns)')}>
+                  <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition flex items-center gap-1" onClick={async () => {
+                    try {
+                      if (!selected) return;
+                      await saveCampaign({ name: `${selected.company_name || selected.name} — Outreach`, channel: 'email', company_ids: [String(selected.company_id||'')] });
+                      alert('Added to Campaigns');
+                    } catch(e:any){ alert(`Add to Campaign failed: ${e?.message||e}`); }
+                  }}>
                     <Plus className="w-4 h-4"/> Add to Campaign
                   </button>
-                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => alert('Enrich Now (wire to /crm/enrichCompany)')}>
+                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={async () => {
+                    try {
+                      if (!selected?.company_id) { alert('No company selected'); return; }
+                      await enrichCompany({ company_id: String(selected.company_id) });
+                      alert('Enrichment queued');
+                    } catch(e:any){ alert(`Enrich failed: ${e?.message||e}`); }
+                  }}>
                     <Zap className="w-4 h-4"/> Enrich Now
                   </button>
-                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => alert('Export CSV (wire to export endpoint)')}>
+                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => {
+                    try {
+                      if (!shipments.length) { alert('No shipments to export'); return; }
+                      const headers = ['Date','Mode','Origin','Destination','Carrier','Value (USD)','Weight (kg)'];
+                      const rows = shipments.map((r:any)=> [r.shipped_on||'', String(r.mode||''), r.origin||r.origin_country||'', r.destination||r.dest_country||'', r.carrier||'', r.value_usd||'', r.weight_kg||'']);
+                      const csv = [headers, ...rows].map(a=> a.map(v => (String(v).includes(',')?`"${String(v).replace(/"/g,'""')}"`:String(v))).join(',')).join('\n');
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url; a.download = `${(selected?.company_name||selected?.name||'company').replace(/\s+/g,'_')}_shipments.csv`; a.click(); URL.revokeObjectURL(url);
+                    } catch(e:any){ alert(`Export CSV failed: ${e?.message||e}`); }
+                  }}>
                     <Download className="w-4 h-4"/> Export CSV
                   </button>
-                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => alert('Export PDF (wire to export PDF)')}>
+                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={async () => {
+                    try {
+                      await exportCompanyPdf('company-pdf-root', `${(selected?.company_name||selected?.name||'Company')}.pdf`);
+                    } catch(e:any){ alert(`Export PDF failed: ${e?.message||e}`); }
+                  }}>
                     <FileText className="w-4 h-4"/> Export PDF
                   </button>
                 </div>
@@ -399,7 +532,9 @@ export default function CommandCenterPreview() {
         </div>
 
         {/* Tab Content */}
-        {CurrentTabContent}
+        <div id="company-pdf-root">
+          {CurrentTabContent}
+        </div>
         
       </div>
     </main>
