@@ -162,7 +162,7 @@ export default function CommandCenterPage() {
           </div>
         </Card>
 
-        {/* KPI strip */
+        {/* KPI strip */}
         <KpiStrip kpi={kpi} />
 
         {/* Stats Grid (Overview quick KPIs) */}
