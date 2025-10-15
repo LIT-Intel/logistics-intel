@@ -47,7 +47,14 @@ function CompanyAvatar({ initials }: { initials: string }) {
 }
 
 /** A visually distinct KPI card */
-function StatCard({ label, value, icon: Icon, colorClass = "text-indigo-600" }: { label: string; value: string; icon: any; colorClass?: string }) {
+function StatCard({ label, value, icon: Icon, colorClass = "text-indigo-600" }: { label: string; value: any; icon: any; colorClass?: string }) {
+  const display = ((): string => {
+    if (value == null) return '—';
+    if (typeof value === 'object') {
+      try { return String((value as any).toString ? (value as any).toString() : JSON.stringify(value)); } catch { return '—'; }
+    }
+    return String(value);
+  })();
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-lg hover:shadow-xl transition">
       <div className="flex items-center gap-3 mb-1">
@@ -56,7 +63,7 @@ function StatCard({ label, value, icon: Icon, colorClass = "text-indigo-600" }: 
         </div>
         <p className="text-xs text-gray-500 uppercase font-semibold">{label}</p>
       </div>
-      <p className="text-3xl font-extrabold mt-1 text-gray-900">{value}</p>
+      <p className="text-3xl font-extrabold mt-1 text-gray-900">{display}</p>
     </div>
   );
 }
@@ -187,8 +194,8 @@ export default function CommandCenterPreview() {
         
         {/* KPI Strip */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {KPI_DATA.map((kpi, index) => (
-              <StatCard key={index} label={kpi.label} value={kpi.value} icon={kpi.icon} colorClass={kpi.color} />
+          {KPI_DATA.map((stat, index) => (
+              <StatCard key={index} label={stat.label} value={stat.value} icon={stat.icon} colorClass={stat.color} />
           ))}
         </div>
         
