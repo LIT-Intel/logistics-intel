@@ -28,7 +28,7 @@ const Signup         = lazy(() => import("@/pages/signup/Signup"));
 const Transactions   = lazy(() => import("@/pages/Transactions"));
 const Widgets        = lazy(() => import("@/pages/Widgets"));
 const Company        = lazy(() => import("@/pages/Company"));
-const CommandCenterPage = lazy(() => import("@/app/command-center/page"));
+const CommandCenterPage = lazy(() => import("@/app/command-center/minimal"));
 const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany    = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
