@@ -33,8 +33,8 @@ export default function PublicHeader() {
         </nav>
 
         <div className="hidden md:flex items-center gap-2">
-          <Button variant="outline" onClick={() => nav("/contact")} className="border-slate-200 text-slate-800">Contact</Button>
-          <Button onClick={gotoLogin} className="bg-[#6C47FF] hover:bg-[#4F29F8] text-white">Sign in</Button>
+          <button className="text-sm text-slate-700 hover:underline" onClick={gotoLogin}>Log In</button>
+          <a href="/request-demo" className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#3C4EF5] to-[#AB34F5] text-white text-sm font-semibold hover:brightness-110">Request Demo</a>
         </div>
 
         <button
@@ -53,9 +53,9 @@ export default function PublicHeader() {
             <Link to="/solutions" className="block py-1" onClick={() => setMobileOpen(false)}>Solutions</Link>
             <Link to="/pricing" className="block py-1" onClick={() => setMobileOpen(false)}>Pricing</Link>
             <Link to="/resources" className="block py-1" onClick={() => setMobileOpen(false)}>Resources</Link>
-            <Button className="w-full bg-[#6C47FF] hover:bg-[#4F29F8] text-white" onClick={() => { setMobileOpen(false); gotoLogin(); }}>
-              Sign in
-            </Button>
+            <button className="w-full text-sm text-slate-700 underline" onClick={() => { setMobileOpen(false); gotoLogin(); }}>
+              Log In
+            </button>
           </div>
         </div>
       )}
