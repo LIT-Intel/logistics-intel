@@ -1,0 +1,78 @@
+name: Deploy Preview (Firebase Hosting channel)
+
+on:
+  push:
+    branches:
+      - chore/**
+  workflow_dispatch: {}
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        env:
+          VITE_PROXY_BASE: /api/public
+        run: npm run build
+
+      - name: Authenticate to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/187580267283/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-actions-deployer@logistics-intel.iam.gserviceaccount.com
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install Firebase CLI
+        run: npm i -g firebase-tools
+
+      - name: Compute channel ID
+        id: meta
+        shell: bash
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          CHANNEL_ID="$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//' | cut -c1-28)"
+          if [ -z "$CHANNEL_ID" ]; then CHANNEL_ID=preview; fi
+          echo "channel_id=$CHANNEL_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to preview channel
+        id: deploy
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -eo pipefail
+          firebase hosting:channel:deploy "${{ steps.meta.outputs.channel_id }}" \
+            --project logistics-intel \
+            --config firebase.json \
+            --non-interactive \
+            --expires 7d | tee ../deploy.log
+
+      - name: Extract Preview URL
+        id: url
+        shell: bash
+        run: |
+          url=$(grep -Eo 'https?://[^ ]+web\.app[^ ]*' deploy.log | tail -1 || true)
+          if [ -z "$url" ]; then url="(check job logs for Channel URL)"; fi
+          echo "preview_url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "Preview URL: ${{ steps.url.outputs.preview_url }}"
