@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { getPool, audit } from '../db.js';
 
 const r = Router();
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 
 const LogOutreach = z.object({
   companyId: z.number().int(),
@@ -14,7 +16,7 @@ const LogOutreach = z.object({
   meta: z.any().optional(),
 });
 
-r.post('/crm/outreach', async (req, res, next) => {
+r.post('/crm/outreach', limiter, async (req, res, next) => {
   try {
     const body = LogOutreach.parse(req.body ?? {});
     const p = await getPool();

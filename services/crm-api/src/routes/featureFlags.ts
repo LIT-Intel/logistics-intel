@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { getPool } from '../db.js';
 
 const r = Router();
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
 
-r.get('/crm/feature-flags', async (_req, res, next) => {
+r.get('/crm/feature-flags', limiter, async (_req, res, next) => {
   try {
     const p = await getPool();
     const rows = await p.query(`SELECT key, enabled, plan FROM feature_flags ORDER BY key ASC`);

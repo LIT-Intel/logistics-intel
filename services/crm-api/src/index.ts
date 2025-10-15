@@ -1,5 +1,6 @@
 import express from 'express';
 import bodyParser from 'body-parser';
+import rateLimit from 'express-rate-limit';
 import publicRouter from './routes/public.js';
 import health from './routes/health.js';
 import companies from './routes/companies.js';
@@ -12,6 +13,17 @@ import { initSchema } from './db.js';
 const app = express();
 app.disable('x-powered-by');
 app.use(bodyParser.json({ limit: '1mb' }));
+
+// Basic API rate limiting: 100 requests per 15 minutes per IP
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+// Apply to CRM and public proxy routes
+app.use(['/crm', '/api', '/api/public'], apiLimiter);
 
 // CORS for Gateway/browser
 app.use((req: any, res: any, next: any) => {
