@@ -1,5 +1,7 @@
 {
-  "buildCommand": "npm run build --prefix frontend",
+  "framework": "vite",
+  "ignoreCommand": "echo no",
+  "buildCommand": "cd frontend && npm ci && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
     { "source": "/api/lit/(.*)", "destination": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev/$1" },
