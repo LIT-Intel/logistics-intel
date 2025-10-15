@@ -101,8 +101,8 @@ export default function LandingPage() {
             </nav>
           </div>
           <div className="flex items-center space-x-4">
-            <a href="#login" className="text-sm text-gray-600 dark:text-gray-300 hover:text-intel-dark">Log In</a>
-            <a href="#request-demo" className="px-4 py-2 text-sm bg-intel text-white rounded hover:bg-intel-dark transition">Request Demo</a>
+            <a href="/app/login" className="text-sm text-gray-600 dark:text-gray-300 hover:text-intel-dark">Log In</a>
+            <a href="/request-demo" className="px-4 py-2 text-sm bg-intel text-white rounded hover:bg-intel-dark transition">Request Demo</a>
             <button
               id="mobile-menu-button"
               className="md:hidden focus:outline-none"
@@ -118,12 +118,12 @@ export default function LandingPage() {
           </div>
         </div>
         <div id="mobile-menu" className="hidden md:hidden bg-white dark:bg-gray-800 px-4 py-4 border-t border-gray-100 dark:border-gray-700">
-          <a href="#intelligence" className="block py-2">Intelligence</a>
-          <a href="#trade-data" className="block py-2">Trade Data</a>
-          <a href="#pricing" className="block py-2">Pricing</a>
-          <a href="#resources" className="block py-2">Resources</a>
-          <a href="#login" className="block py-2">Log In</a>
-          <a href="#request-demo" className="block mt-2 text-white bg-intel px-4 py-2 rounded hover:bg-intel-dark">Request Demo</a>
+          <a href="/app/dashboard" className="block py-2">Platform</a>
+          <a href="/solutions" className="block py-2">Solutions</a>
+          <a href="/pricing" className="block py-2">Pricing</a>
+          <a href="/resources" className="block py-2">Resources</a>
+          <a href="/app/login" className="block py-2">Log In</a>
+          <a href="/request-demo" className="block mt-2 text-white bg-intel px-4 py-2 rounded hover:bg-intel-dark">Request Demo</a>
         </div>
       </header>
 
@@ -137,10 +137,10 @@ export default function LandingPage() {
               Discover who ships what and connect with decision-makers—one platform for sales, sourcing, and market analysis.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row justify-center gap-4">
-              <a href="#start-search" data-cta="start-free-search" className="px-6 py-3 bg-intel text-white rounded-lg hover:bg-intel-dark transition">
+              <a href="/app/search" data-cta="start-free-search" className="px-6 py-3 bg-intel text-white rounded-lg hover:bg-intel-dark transition">
                 Start Free Search
               </a>
-              <a href="#request-demo" className="px-6 py-3 border border-intel text-intel rounded-lg hover:bg-intel-light transition">
+              <a href="/request-demo" className="px-6 py-3 border border-intel text-intel rounded-lg hover:bg-intel-light transition">
                 Request Demo
               </a>
             </div>
@@ -194,8 +194,8 @@ export default function LandingPage() {
           <h2 className="text-3xl font-bold mb-4">Ready to unlock global supply visibility?</h2>
           <p className="mb-6">Start searching today — connect your sales and sourcing data with real shipping intelligence.</p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a href="#start-search" className="px-6 py-3 bg-white text-intel rounded hover:bg-gray-100 transition">Start Free Search</a>
-            <a href="#request-demo" className="px-6 py-3 border border-white text-white rounded hover:bg-white hover:text-intel transition">Request Demo</a>
+            <a href="/app/search" className="px-6 py-3 bg-white text-intel rounded hover:bg-gray-100 transition">Start Free Search</a>
+            <a href="/request-demo" className="px-6 py-3 border border-white text-white rounded hover:bg-white hover:text-intel transition">Request Demo</a>
           </div>
         </section>
       </main>
