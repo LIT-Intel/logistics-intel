@@ -108,12 +108,12 @@ export default function BlogList({ data }) {
                   {post.title}
                 </h3>
                 
-                <div 
-                  className="text-gray-600 text-sm mb-4 line-clamp-3"
-                  dangerouslySetInnerHTML={{ 
-                    __html: post.content_markdown?.substring(0, 120) + '...' || '' 
-                  }}
-                />
+                <div className="text-gray-600 text-sm mb-4 line-clamp-3">
+                  {(post.content_markdown || '')
+                    .replace(/<[^>]*>/g, '')
+                    .substring(0, 120)}
+                  ...
+                </div>
 
                 {post.tags && post.tags.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-4">

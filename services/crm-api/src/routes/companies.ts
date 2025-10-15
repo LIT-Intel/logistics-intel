@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { getPool, audit } from '../db.js';
 
 const r = Router();
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 
 const CreateCompany = z.object({
   name: z.string().min(1),
@@ -11,7 +13,7 @@ const CreateCompany = z.object({
   external_ref: z.string().optional(),
 });
 
-r.post('/crm/companies', async (req, res, next) => {
+r.post('/crm/companies', limiter, async (req, res, next) => {
   try {
     const body = CreateCompany.parse(req.body ?? {});
     const p = await getPool();
@@ -35,7 +37,7 @@ r.post('/crm/companies', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-r.get('/crm/companies/:id', async (req, res, next) => {
+r.get('/crm/companies/:id', limiter, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'bad_id' });
