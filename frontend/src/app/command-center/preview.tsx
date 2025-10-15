@@ -313,13 +313,16 @@ export default function CommandCenterPreview() {
         
         {/* Search + Saved (Always at top) */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 relative z-10">
-          <div className="relative flex-grow max-w-lg w-full">
-            <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search company or contact..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
-            />
+          <div className="relative flex-grow max-w-lg w-full flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search company or contact..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+              />
+            </div>
+            <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow hover:bg-indigo-700">Search</button>
           </div>
           
           <button
@@ -358,20 +361,20 @@ export default function CommandCenterPreview() {
                     </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-3 sm:gap-2">
-                  <button className="px-4 py-2 text-sm bg-gray-200 rounded-lg font-medium hover:bg-gray-300 transition flex items-center gap-1">
+                  <button className="px-4 py-2 text-sm bg-gray-200 rounded-lg font-medium hover:bg-gray-300 transition flex items-center gap-1" onClick={() => alert('Archived (wire to /crm/archive)')}>
                     {COMPANY_DATA.isSaved ? <Archive className="w-4 h-4"/> : <Heart className="w-4 h-4"/>} 
                     {COMPANY_DATA.isSaved ? "Archive" : "Save"}
                   </button>
-                  <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition flex items-center gap-1">
+                  <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition flex items-center gap-1" onClick={() => alert('Add to Campaign (wire to /crm/campaigns)')}>
                     <Plus className="w-4 h-4"/> Add to Campaign
                   </button>
-                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1">
+                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => alert('Enrich Now (wire to /crm/enrichCompany)')}>
                     <Zap className="w-4 h-4"/> Enrich Now
                   </button>
-                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1">
+                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => alert('Export CSV (wire to export endpoint)')}>
                     <Download className="w-4 h-4"/> Export CSV
                   </button>
-                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1">
+                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => alert('Export PDF (wire to export PDF)')}>
                     <FileText className="w-4 h-4"/> Export PDF
                   </button>
                 </div>
