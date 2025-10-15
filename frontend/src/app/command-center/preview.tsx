@@ -12,6 +12,7 @@ import {
   saveCompanyToCrm,
   saveCampaign,
   enrichCompany,
+  createCompany,
   kpiFrom,
 } from '@/lib/api';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
@@ -92,6 +93,8 @@ export default function CommandCenterPreview() {
   const [shipments, setShipments] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
   const isSaved = !!(selected && loadSaved().some(x => (x.company_id ?? x.name) === ((selected.company_id ?? selected.name))));
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<{ name: string; website?: string; street?: string; city?: string; state?: string; postal?: string; country?: string }>({ name: '' });
 
   const tabs = ["Overview", "Shipments", "Contacts"];
   
@@ -425,6 +428,12 @@ export default function CommandCenterPreview() {
           >
             <Heart className="w-4 h-4" /> Saved Companies
           </button>
+          <button
+            className="text-white bg-indigo-600 hover:bg-indigo-700 text-sm font-medium px-3 py-2 rounded-xl shadow-sm transition"
+            onClick={() => { setAddForm({ name: '', website: '', street: '', city: '', state: '', postal: '', country: '' }); setAddOpen(true); }}
+          >
+            Add Company
+          </button>
           
           {/* Saved Companies Dropdown */}
           {showSaved && (
@@ -537,6 +546,64 @@ export default function CommandCenterPreview() {
         </div>
         
       </div>
+
+      {/* Add Company Modal */}
+      {addOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={()=> setAddOpen(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl border border-gray-200 w-[min(560px,92vw)] p-5">
+            <div className="text-lg font-semibold mb-3">Add Company</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-sm">
+                <div className="text-gray-600 mb-1">Name</div>
+                <input className="w-full border rounded-lg px-3 py-2" value={addForm.name} onChange={(e)=> setAddForm(f=> ({ ...f, name: e.target.value }))} placeholder="Acme Robotics, Inc." />
+              </label>
+              <label className="text-sm">
+                <div className="text-gray-600 mb-1">Website</div>
+                <input className="w-full border rounded-lg px-3 py-2" value={addForm.website||''} onChange={(e)=> setAddForm(f=> ({ ...f, website: e.target.value }))} placeholder="acme.com" />
+              </label>
+              <label className="text-sm">
+                <div className="text-gray-600 mb-1">Street</div>
+                <input className="w-full border rounded-lg px-3 py-2" value={addForm.street||''} onChange={(e)=> setAddForm(f=> ({ ...f, street: e.target.value }))} placeholder="123 Market St" />
+              </label>
+              <label className="text-sm">
+                <div className="text-gray-600 mb-1">City</div>
+                <input className="w-full border rounded-lg px-3 py-2" value={addForm.city||''} onChange={(e)=> setAddForm(f=> ({ ...f, city: e.target.value }))} placeholder="San Francisco" />
+              </label>
+              <label className="text-sm">
+                <div className="text-gray-600 mb-1">State</div>
+                <input className="w-full border rounded-lg px-3 py-2" value={addForm.state||''} onChange={(e)=> setAddForm(f=> ({ ...f, state: e.target.value }))} placeholder="CA" />
+              </label>
+              <label className="text-sm">
+                <div className="text-gray-600 mb-1">Postal</div>
+                <input className="w-full border rounded-lg px-3 py-2" value={addForm.postal||''} onChange={(e)=> setAddForm(f=> ({ ...f, postal: e.target.value }))} placeholder="94103" />
+              </label>
+              <label className="text-sm sm:col-span-2">
+                <div className="text-gray-600 mb-1">Country</div>
+                <input className="w-full border rounded-lg px-3 py-2" value={addForm.country||''} onChange={(e)=> setAddForm(f=> ({ ...f, country: e.target.value }))} placeholder="USA" />
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="px-3 py-2 text-sm border rounded-lg" onClick={()=> setAddOpen(false)}>Cancel</button>
+              <button className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white" onClick={async ()=>{
+                try {
+                  if (!addForm.name.trim()) { alert('Name is required'); return; }
+                  const res = await createCompany({ name: addForm.name.trim(), domain: addForm.website?.trim() || undefined, street: addForm.street?.trim() || undefined, city: addForm.city?.trim() || undefined, state: addForm.state?.trim() || undefined, postal: addForm.postal?.trim() || undefined, country: addForm.country?.trim() || undefined });
+                  const id = String(res?.id || res?.company_id || '').trim();
+                  const sel = { company_id: id || null, name: addForm.name.trim(), domain: addForm.website?.trim() || null };
+                  upsertSaved({ company_id: sel.company_id ?? null, name: sel.name, domain: sel.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
+                  setSavedCompanies(loadSaved());
+                  setSelected({ ...sel, company_name: sel.name });
+                  persistSelection(sel);
+                  setAddOpen(false);
+                  if (id) { try { await enrichCompany({ company_id: id }); } catch {} }
+                  await hydrateForSelection(sel);
+                } catch(e:any){ alert(`Create failed: ${e?.message||e}`); }
+              }}>Create & Enrich</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
