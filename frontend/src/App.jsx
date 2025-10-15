@@ -91,6 +91,10 @@ export default function App() {
           }
         />
         <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
+        {/* Alias: /app/login → login page */}
+        <Route path="/app/login" element={<CustomLoginPage onClose={() => {}} />} />
+        {/* Alias: /request-demo → signup (temporary) */}
+        <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
         <Route path="/signup" element={<Layout currentPageName="Signup"><Signup /></Layout>} />
         {/* App (protected) */}
         <Route
