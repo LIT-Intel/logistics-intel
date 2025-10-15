@@ -18,13 +18,12 @@ import { toast } from 'sonner';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
 import { 
   ChevronRight, Download, Link2, Settings2,
-  Package as PackageIcon, Clock, Zap, Truck, Save as SaveIcon, Share2, Users,
-  Plus, Search as SearchIcon, Heart, MapPin, Mail, Phone, Briefcase, Archive,
+  Package as PackageIcon, Clock, TrendingUp, Save as SaveIcon, Share2, Users,
+  Plus, Search as SearchIcon, Heart, Mail, Phone, Briefcase, Archive,
   FileText, Activity, Layers, Tag
 } from 'lucide-react';
 import CompanyAvatar from '@/components/command-center/CompanyAvatar';
 import { hasFeature } from '@/lib/access';
-import { searchCompanies, getCompanyKpis, kpiFrom } from '@/lib/api';
 
 // inline LitSearchRow type removed; AddCompanyModal owns its search types
 
@@ -33,14 +32,12 @@ export default function CommandCenterPage() {
   const [kpi, setKpi] = useState({
     shipments12m: '—',
     lastActivity: '—',
-    topLane: '—',
-    topCarrier: '—',
+    totalTeus: '—',
+    growthRate: '—',
   });
   const [addOpen, setAddOpen] = useState(false);
   const [campOpen, setCampOpen] = useState(false);
   const [selected, setSelected] = useState<{ company_id: string | null; name: string; domain: string | null } | null>(null);
-  const [query, setQuery] = useState<string>('');
-  const [typeahead, setTypeahead] = useState<Array<{ company_id: string|null; name: string; domain?: string|null }>>([]);
   const needsEnrich = !!selected && !selected?.company_id;
   const savedList = loadSaved();
   const isSaved = !!selected && savedList.some(x => (x.company_id ?? x.name) === ((selected?.company_id) ?? (selected?.name || '')));
@@ -59,84 +56,31 @@ export default function CommandCenterPage() {
     top_carriers?: { name: string | null; share_pct: number | null }[] | null;
   };
   type SearchCompaniesResp = { meta?: { total: number }, rows?: SearchCompanyRow[], items?: SearchCompanyRow[] };
-  function fmtLane(row: SearchCompanyRow) {
-    const r = row.top_routes?.[0];
-    if (!r || !r.origin_country || !r.dest_country) return '—';
-    return `${r.origin_country} → ${r.dest_country}`;
-  }
-  function fmtCarrier(row: SearchCompanyRow) {
-    const c = row.top_carriers?.[0];
-    return c?.name ?? '—';
-  }
+  // growth/teus sourced from API when available; otherwise keep placeholders
   useEffect(() => {
     const saved = (() => { try { return JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null'); } catch { return null; } })();
     if (saved) setSelected(saved);
-    (async () => {
-      try {
-        // Prefer direct KPI endpoint for accuracy; fallback to search summary
-        if (saved?.company_id || saved?.name) {
-          const direct = await getCompanyKpis({ company_id: saved?.company_id ?? undefined, company_name: saved?.name ?? undefined });
-          if (direct) {
-            setKpi({
-              shipments12m: direct.shipments_12m != null ? String(direct.shipments_12m) : '—',
-              lastActivity: direct.last_activity?.value || direct.last_activity || '—',
-              topLane: '—',
-              topCarrier: '—',
-            });
-            return;
-          }
-        }
-        const { items } = await searchCompanies({ q: saved?.name || null, pageSize: 1 });
-        const row = Array.isArray(items) ? items[0] : null;
+    const body = saved?.company_id ? { company_id: saved.company_id, limit: 1, offset: 0 } : { q: saved?.name || null, limit: 1, offset: 0 };
+    fetch('/api/lit/public/searchCompanies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        const data = (await r.json()) as SearchCompaniesResp;
+        const rows = Array.isArray(data.rows) ? data.rows : (Array.isArray(data.items) ? data.items : []);
+        const row = rows?.[0];
         if (!row) return;
-        const kk = kpiFrom(row as any);
         setKpi({
-          shipments12m: kk.shipments12m != null ? String(kk.shipments12m) : '—',
-          lastActivity: kk.lastActivity || '—',
-          topLane: (row.top_routes?.[0] ? `${row.top_routes[0].origin_country} → ${row.top_routes[0].dest_country}` : '—'),
-          topCarrier: (row.top_carriers?.[0]?.name || row.top_carriers?.[0]?.carrier || '—'),
+          shipments12m: row.shipments_12m != null ? String(row.shipments_12m) : '—',
+          lastActivity: row.last_activity?.value || '—',
+          totalTeus: (row as any).total_teus != null ? String((row as any).total_teus) : '—',
+          growthRate: (row as any).growth_rate != null ? `${(row as any).growth_rate}` : '—',
         });
-      } catch {/* noop */}
-    })();
+      })
+      .catch(() => { /* keep placeholders */ });
   }, []);
-
-  // Typeahead: search by name and list variations for selection
-  useEffect(() => {
-    const q = (query || '').trim();
-    if (!q) { setTypeahead([]); return; }
-    const ac = new AbortController();
-    const id = setTimeout(async () => {
-      try {
-        const { items } = await searchCompanies({ q, pageSize: 8 }, ac.signal);
-        const mapped = (Array.isArray(items) ? items : []).map((it: any) => ({
-          company_id: it.company_id ?? null,
-          name: it.company_name ?? it.name ?? q,
-          domain: it.domain ?? null,
-        }));
-        setTypeahead(mapped);
-      } catch { setTypeahead([]); }
-    }, 220);
-    return () => { clearTimeout(id); ac.abort(); };
-  }, [query]);
-
-  async function onPickCompany(c: { company_id: string|null; name: string; domain?: string|null }) {
-    const sel = { company_id: c.company_id, name: c.name, domain: c.domain ?? null } as const;
-    setSelected(sel);
-    try { localStorage.setItem('lit:selectedCompany', JSON.stringify(sel)); } catch {}
-    try {
-      const k = await getCompanyKpis({ company_id: sel.company_id ?? undefined, company_name: sel.name });
-      if (k) setKpi({
-        shipments12m: k.shipments_12m != null ? String(k.shipments_12m) : '—',
-        lastActivity: k.last_activity?.value || k.last_activity || '—',
-        topLane: '—',
-        topCarrier: '—',
-      });
-    } catch {}
-  }
 
   return (
     <div id="cc-root" className="min-h-screen bg-[#f7f8fb]" data-cc-build="v2.2-2025-10-15">
-      {/* Top App Bar */}
+      {/* Top App Bar (legacy global search removed from this page) */}
       <div className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-3">
           <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600" />
@@ -144,22 +88,10 @@ export default function CommandCenterPage() {
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
           <div className="text-sm font-medium">Command Center</div>
 
-          <div className="ml-auto flex items-center gap-2 relative">
-            <div className="hidden md:block w-[360px] relative">
-              <Input value={query} onChange={(e)=> setQuery(e.target.value)} placeholder="Search companies by name…" />
-              {typeahead.length > 0 && (
-                <div className="absolute z-30 mt-1 w-full rounded-xl border bg-white shadow">
-                  {typeahead.map((c, i) => (
-                    <button key={i} onClick={()=> onPickCompany(c)} className="w-full text-left px-3 py-2 hover:bg-slate-50">
-                      <div className="text-sm font-medium">{c.name}</div>
-                      <div className="text-xs text-slate-500">{c.company_id || c.domain || '—'}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm"><Settings2 className="mr-2 h-4 w-4" />Tools</Button>
-            <SavedCompaniesPicker onPicked={() => { /* no-op */ }} />
+            {/* New Saved Companies pill */}
+            <SavedCompaniesPicker onPicked={() => { /* hydrate */ }} />
             <Button size="sm" onClick={()=>setCampOpen(true)}>Add to Campaign</Button>
             <Button size="sm" variant="outline" onClick={()=>{
               if(!selected){ toast.error('No company selected'); return; }
@@ -203,22 +135,10 @@ export default function CommandCenterPage() {
       {/* Build sentinel for prod verification */}
       <div aria-label="cc-ui-version" className="sr-only">cc-ui v2.2 build 2025-10-15</div>
       <div className="mx-auto max-w-[1400px] px-4 py-6">
-        {/* Top navigation row beneath header */}
+        {/* Single page search input above company header (keep only this) */}
         <div className="flex justify-between items-center mb-4 gap-3">
-          <div className="w-full max-w-xl relative">
-            <Input value={query} onChange={(e)=> setQuery(e.target.value)} placeholder="Search companies by name…" />
-            {typeahead.length > 0 && (
-              <div className="absolute z-30 mt-1 w-full rounded-xl border bg-white shadow">
-                {typeahead.map((c, i) => (
-                  <button key={i} onClick={()=> onPickCompany(c)} className="w-full text-left px-3 py-2 hover:bg-slate-50">
-                    <div className="text-sm font-medium">{c.name}</div>
-                    <div className="text-xs text-slate-500">{c.company_id || c.domain || '—'}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <SavedCompaniesPicker onPicked={() => { /* hydration handled by picker */ }} />
+          <Input className="w-full max-w-xl" placeholder="Search companies or contacts..." />
+          {/* Saved Companies already in top bar; avoid duplicate here */}
         </div>
         {/* Company header summary */}
         <Card className="p-5 rounded-2xl shadow-sm mb-4">
@@ -239,8 +159,16 @@ export default function CommandCenterPage() {
           </div>
         </Card>
 
-        {/* KPI strip */}
-        <KpiStrip kpi={kpi} />
+        {/* Tabs first as per spec */}
+        <Tabs defaultValue="overview">
+          <TabsList className="w-full grid grid-cols-3 gap-2 rounded-xl mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="shipments">Shipments</TabsTrigger>
+            <TabsTrigger value="contacts">Contacts</TabsTrigger>
+          </TabsList>
+
+          {/* KPI strip below tabs */}
+          <KpiStrip kpi={kpi} />
 
         {/* Stats Grid (Overview quick KPIs) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
@@ -253,22 +181,16 @@ export default function CommandCenterPage() {
             <div className="text-3xl font-extrabold">{kpi.lastActivity}</div>
           </Card>
           <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
-            <div className="flex items-center gap-3 mb-1"><MapPin className="w-4 h-4 text-red-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Top Lane</div></div>
-            <div className="text-3xl font-extrabold">{kpi.topLane}</div>
+            <div className="flex items-center gap-3 mb-1"><Layers className="w-4 h-4 text-violet-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Total TEUs</div></div>
+            <div className="text-3xl font-extrabold">{kpi.totalTeus}</div>
           </Card>
           <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
-            <div className="flex items-center gap-3 mb-1"><Truck className="w-4 h-4 text-blue-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Top Carrier</div></div>
-            <div className="text-3xl font-extrabold">{kpi.topCarrier}</div>
+            <div className="flex items-center gap-3 mb-1"><TrendingUp className="w-4 h-4 text-green-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Growth Rate</div></div>
+            <div className="text-3xl font-extrabold">{kpi.growthRate}</div>
           </Card>
         </div>
 
-        {/* Tabs + Main content */}
-        <Tabs defaultValue="overview">
-          <TabsList className="w-full grid grid-cols-3 gap-2 rounded-xl mb-4">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="shipments">Shipments</TabsTrigger>
-            <TabsTrigger value="contacts">Contacts</TabsTrigger>
-          </TabsList>
+          {/* Main content */}
 
           <TabsContent value="overview">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -390,12 +312,12 @@ function InfoItem({ icon, label, value }: { icon: React.ReactNode; label: string
   );
 }
 
-function KpiStrip({ kpi }: { kpi: { shipments12m: string; lastActivity: string; topLane: string; topCarrier: string } }) {
+function KpiStrip({ kpi }: { kpi: { shipments12m: string; lastActivity: string; totalTeus: string; growthRate: string } }) {
   const items = [
     { label: 'Shipments (12m)', value: kpi.shipments12m },
     { label: 'Last Activity', value: kpi.lastActivity },
-    { label: 'Top Lane', value: kpi.topLane },
-    { label: 'Top Carrier', value: kpi.topCarrier },
+    { label: 'Total TEUs', value: kpi.totalTeus },
+    { label: 'Growth Rate', value: kpi.growthRate },
   ];
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
