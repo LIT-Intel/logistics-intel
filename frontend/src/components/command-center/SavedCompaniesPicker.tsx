@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Heart } from "lucide-react";
 
 type SavedCompany = {
   company_id?: string | null;
@@ -37,13 +38,13 @@ export default function SavedCompaniesPicker({ onPicked }: { onPicked?: () => vo
     <div className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="px-2.5 py-1.5 text-xs rounded-lg border hover:bg-slate-50"
+        className="px-3 py-1.5 text-xs rounded-full border border-violet-300 text-violet-700 hover:bg-violet-50 flex items-center gap-1 shadow-sm"
       >
-        ⭐ Saved Companies
+        <Heart className="w-3.5 h-3.5" /> Saved Companies
       </button>
       {open && (
-        <div className="absolute z-40 mt-2 w-80 rounded-2xl border bg-white shadow-xl">
-          <div className="p-3 border-b text-sm font-medium">Saved Companies</div>
+        <div className="absolute z-40 mt-2 w-80 rounded-2xl border bg-white shadow-xl right-0">
+          <div className="p-3 border-b text-sm font-semibold">Saved Companies</div>
           <div className="max-h-64 overflow-auto">
             {items.filter(i=>!i.archived).length === 0 && (
               <div className="p-3 text-sm text-slate-500">No saved companies yet.</div>
