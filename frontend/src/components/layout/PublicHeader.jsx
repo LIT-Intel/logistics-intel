@@ -7,8 +7,8 @@ export default function PublicHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const gotoLogin = () => {
-    // hard switch to our login route
-    nav("/login");
+    // route to app login
+    nav("/app/login");
   };
 
   return (
