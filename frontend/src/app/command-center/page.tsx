@@ -136,6 +136,11 @@ export default function CommandCenterPage() {
         </div>
       </div>
       <div className="mx-auto max-w-[1400px] px-4 py-6">
+        {/* Top navigation row beneath header */}
+        <div className="flex justify-between items-center mb-4 gap-3">
+          <Input className="w-full max-w-xl" placeholder="Search companies or contacts..." />
+          <SavedCompaniesPicker onPicked={() => { /* hydration handled by picker */ }} />
+        </div>
         {/* Company header summary */}
         <Card className="p-5 rounded-2xl shadow-sm mb-4">
           <div className="flex items-start gap-4">
@@ -155,8 +160,28 @@ export default function CommandCenterPage() {
           </div>
         </Card>
 
-        {/* KPI strip */}
+        {/* KPI strip */
         <KpiStrip kpi={kpi} />
+
+        {/* Stats Grid (Overview quick KPIs) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <Card className="p-4 rounded-2xl shadow-sm">
+            <div className="text-xs text-muted-foreground">Shipments (12m)</div>
+            <div className="text-xl font-semibold">{kpi.shipments12m}</div>
+          </Card>
+          <Card className="p-4 rounded-2xl shadow-sm">
+            <div className="text-xs text-muted-foreground">Trade Growth (QoQ)</div>
+            <div className="text-xl font-semibold">—</div>
+          </Card>
+          <Card className="p-4 rounded-2xl shadow-sm">
+            <div className="text-xs text-muted-foreground">Intent Signal Level</div>
+            <div className="text-xl font-semibold">{(Number(kpi.shipments12m) || 0) >= 500 ? 'High' : ((Number(kpi.shipments12m) || 0) >= 200 ? 'Medium' : 'Low')}</div>
+          </Card>
+          <Card className="p-4 rounded-2xl shadow-sm">
+            <div className="text-xs text-muted-foreground">RFP Readiness Index</div>
+            <div className="text-xl font-semibold">{(() => { const v = Number(kpi.shipments12m) || 0; return Math.min(100, Math.max(0, Math.round(v / 10))); })()}</div>
+          </Card>
+        </div>
 
         {/* Tabs + Main content */}
         <Tabs defaultValue="overview">
