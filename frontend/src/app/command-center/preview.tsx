@@ -402,7 +402,7 @@ export default function CommandCenterPreview() {
 
 
   return (
-    <main className="bg-gray-100 min-h-screen p-6 text-gray-800 relative font-sans">
+    <main data-cc-build="preview-v2.5-2025-10-15-15:32" className="bg-gray-100 min-h-screen p-6 text-gray-800 relative font-sans">
       <div className="max-w-7xl mx-auto">
         
         {/* Search + Saved (Always at top) */}
