@@ -99,7 +99,7 @@ export default function CommandCenterPreview() {
   const [kpi, setKpi] = useState<{ shipments12m: string; lastActivity: string; totalTeus: string; growthRate: string }>({ shipments12m: '—', lastActivity: '—', totalTeus: '—', growthRate: '—' });
   const [shipments, setShipments] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
-  const isSaved = !!(selected && loadSaved().some(x => (x.company_id ?? x.name) === ((selected.company_id ?? selected.name))));
+  const isSaved = !!(selected && loadSaved().some(x => !x.archived && ((x.company_id ?? x.name) === ((selected.company_id ?? selected.name)))));
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState<{ name: string; website?: string; street?: string; city?: string; state?: string; postal?: string; country?: string }>({ name: '' });
 
@@ -179,6 +179,7 @@ export default function CommandCenterPreview() {
       const sel = { company_id: item.company_id ?? null, name: item.company_name || item.name || query, domain: item.domain || null };
       setSelected({ ...sel, company_name: sel.name });
       persistSelection(sel);
+      try { upsertSaved({ company_id: sel.company_id ?? null, name: sel.name, domain: sel.domain ?? null, source: 'LIT', ts: Date.now(), archived: false }); } catch {}
       await hydrateForSelection(sel);
       setSavedCompanies(loadSaved());
     } catch (e: any) {
@@ -473,21 +474,27 @@ export default function CommandCenterPreview() {
                     </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-3 sm:gap-2">
-                  <button className="px-4 py-2 text-sm bg-gray-200 rounded-lg font-medium hover:bg-gray-300 transition flex items-center gap-1" onClick={async () => {
+                  <button className="px-4 py-2 text-sm bg-gray-200 rounded-lg font-medium hover:bg-gray-300 transition flex items-center gap-1 disabled:opacity-60" disabled={isSaved} onClick={async () => {
                     try {
                       if (!selected) return;
-                      if (!isSaved) {
-                        await saveCompanyToCrm({ company_id: String(selected.company_id||''), company_name: selected.company_name || selected.name });
-                        upsertSaved({ company_id: selected.company_id ?? null, name: selected.company_name || selected.name, domain: selected.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
-                      } else {
-                        toggleArchive({ company_id: selected.company_id ?? null, name: selected.company_name || selected.name }, true);
-                      }
+                      await saveCompanyToCrm({ company_id: String(selected.company_id||''), company_name: selected.company_name || selected.name });
+                      upsertSaved({ company_id: selected.company_id ?? null, name: selected.company_name || selected.name, domain: selected.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
                       setSavedCompanies(loadSaved());
-                      alert(isSaved ? 'Archived' : 'Saved to CRM and list');
-                    } catch(e:any){ alert(`Action failed: ${e?.message||e}`); }
+                      alert('Saved to CRM and list');
+                    } catch(e:any){ alert(`Save failed: ${e?.message||e}`); }
                   }}>
-                    {isSaved ? <Archive className="w-4 h-4"/> : <Heart className="w-4 h-4"/>} 
-                    {isSaved ? "Archive" : "Save"}
+                    <Heart className="w-4 h-4"/> 
+                    {isSaved ? "Saved" : "Save"}
+                  </button>
+                  <button className="px-4 py-2 text-sm rounded-lg border bg-white hover:bg-gray-50 transition flex items-center gap-1" onClick={() => {
+                    try {
+                      if (!selected) return;
+                      toggleArchive({ company_id: selected.company_id ?? null, name: selected.company_name || selected.name }, true);
+                      setSavedCompanies(loadSaved());
+                      alert('Archived');
+                    } catch(e:any){ alert(`Archive failed: ${e?.message||e}`); }
+                  }}>
+                    <Archive className="w-4 h-4"/> Archive
                   </button>
                   <button className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg font-semibold shadow-md hover:bg-indigo-700 transition flex items-center gap-1" onClick={async () => {
                     try {
@@ -506,19 +513,6 @@ export default function CommandCenterPreview() {
                     } catch(e:any){ alert(`Enrich failed: ${e?.message||e}`); }
                   }}>
                     <Zap className="w-4 h-4"/> Enrich Now
-                  </button>
-                  <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={() => {
-                    try {
-                      if (!shipments.length) { alert('No shipments to export'); return; }
-                      const headers = ['Date','Mode','Origin','Destination','Carrier','Value (USD)','Weight (kg)'];
-                      const rows = shipments.map((r:any)=> [r.shipped_on||'', String(r.mode||''), r.origin||r.origin_country||'', r.destination||r.dest_country||'', r.carrier||'', r.value_usd||'', r.weight_kg||'']);
-                      const csv = [headers, ...rows].map(a=> a.map(v => (String(v).includes(',')?`"${String(v).replace(/"/g,'""')}"`:String(v))).join(',')).join('\n');
-                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a'); a.href = url; a.download = `${(selected?.company_name||selected?.name||'company').replace(/\s+/g,'_')}_shipments.csv`; a.click(); URL.revokeObjectURL(url);
-                    } catch(e:any){ alert(`Export CSV failed: ${e?.message||e}`); }
-                  }}>
-                    <Download className="w-4 h-4"/> Export CSV
                   </button>
                   <button className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition flex items-center gap-1" onClick={async () => {
                     try {
