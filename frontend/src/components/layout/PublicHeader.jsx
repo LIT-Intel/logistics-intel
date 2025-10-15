@@ -7,12 +7,12 @@ export default function PublicHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const gotoLogin = () => {
-    // hard switch to our login route
-    nav("/login");
+    // route to app login
+    nav("/app/login");
   };
 
   return (
-    <header className="w-full sticky top-0 z-30 bg-white/70 backdrop-blur border-b">
+    <header className="w-full sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-slate-200 text-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link to="/" className="flex items-center gap-2">
@@ -22,10 +22,10 @@ export default function PublicHeader() {
         </div>
 
         <nav className="hidden md:flex items-center gap-6 text-sm">
-          <Link to="#intelligence" className="hover:text-black text-gray-600">Intelligence</Link>
-          <Link to="#trade-data" className="hover:text-black text-gray-600">Trade Data</Link>
-          <Link to="#pricing" className="hover:text-black text-gray-600">Pricing</Link>
-          <Link to="#resources" className="hover:text-black text-gray-600">Resources</Link>
+          <Link to="#intelligence" className="text-slate-600 hover:text-slate-900">Intelligence</Link>
+          <Link to="#trade-data" className="text-slate-600 hover:text-slate-900">Trade Data</Link>
+          <Link to="#pricing" className="text-slate-600 hover:text-slate-900">Pricing</Link>
+          <Link to="#resources" className="text-slate-600 hover:text-slate-900">Resources</Link>
         </nav>
 
         <div className="hidden md:flex items-center gap-2">
@@ -43,7 +43,7 @@ export default function PublicHeader() {
       </div>
 
       {mobileOpen && (
-        <div className="md:hidden border-t bg-white">
+        <div className="md:hidden border-t bg-white text-slate-800">
           <div className="px-4 py-3 space-y-2">
             <a href="#intelligence" className="block py-1" onClick={() => setMobileOpen(false)}>Intelligence</a>
             <a href="#trade-data" className="block py-1" onClick={() => setMobileOpen(false)}>Trade Data</a>

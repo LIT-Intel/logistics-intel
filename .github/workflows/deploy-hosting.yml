@@ -34,7 +34,8 @@ jobs:
         with:
           workload_identity_provider: projects/187580267283/locations/global/workloadIdentityPools/github/providers/github
           service_account: github-actions-deployer@logistics-intel.iam.gserviceaccount.com
-          export_default_credentials: true
+          create_credentials_file: true
+          export_environment_variables: true
 
       - name: Deploy to Firebase Hosting
         working-directory: frontend

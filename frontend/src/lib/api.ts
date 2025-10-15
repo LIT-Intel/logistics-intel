@@ -127,6 +127,8 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
+const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+
 export async function searchCompanies(
   input: {
     q?: string | null;
@@ -147,12 +149,26 @@ export async function searchCompanies(
   const url = String(directBase || '').trim()
     ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
     : '/api/lit/public/searchCompanies';
-  const res = await fetch(url, {
+  const params = buildSearchParams(input);
+  // Try proxy first; on failure, fall back to Gateway directly
+  const tryProxy = () => fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(input ?? {}),
+    body: JSON.stringify(params ?? {}),
     signal,
   });
+  const tryGateway = () => fetch(`${GATEWAY_BASE_DEFAULT}/public/searchCompanies`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
+  });
+
+  let res: Response | null = null;
+  try {
+    res = await tryProxy();
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok || !ct.includes('application/json')) throw new Error(`proxy_bad_${res.status}`);
+  } catch {
+    res = await tryGateway();
+  }
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
   const data = await res.json().catch(() => ({}));
   // Adapter: accept {items,total} or {rows,meta}
@@ -163,6 +179,16 @@ export async function searchCompanies(
     ? data.total
     : (data?.meta?.total ?? items.length);
   return { items, total } as { items: any[]; total: number };
+}
+
+export function buildSearchParams(raw: Record<string, any>) {
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string' && value.trim() === '') continue;
+    cleaned[key] = value;
+  }
+  return cleaned;
 }
 
 export type SearchCompaniesBody = {
@@ -184,10 +210,80 @@ export async function getCompanyShipments(params: { company_id: string; limit?: 
   return res.json();
 }
 
+// New helpers per patch: getCompanyDetails, getCompanyShipments (unified signature)
+export async function getCompanyDetails(params: { company_id?: string; fallback_name?: string }) {
+  const q = new URLSearchParams();
+  if (params.company_id) q.set('company_id', params.company_id);
+  const url = `/api/lit/public/getCompanyDetails?${q.toString()}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`getCompanyDetails ${r.status}`);
+  return r.json();
+}
+
+export async function getCompanyShipmentsUnified(params: { company_id?: string; company_name?: string; origin?: string; dest?: string; hs?: string; limit?: number; offset?: number }) {
+  const q = new URLSearchParams();
+  if (params.company_id) q.set('company_id', params.company_id);
+  if (params.company_name) q.set('company_name', params.company_name);
+  if (params.origin) q.set('origin', params.origin);
+  if (params.dest) q.set('dest', params.dest);
+  if (params.hs) q.set('hs', params.hs);
+  q.set('limit', String(params.limit ?? 50));
+  q.set('offset', String(params.offset ?? 0));
+  const url = `/api/lit/public/getCompanyShipments?${q.toString()}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
+  const data = await r.json();
+  return { rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [], total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0) };
+}
+
 export async function getFilterOptions(signal?: AbortSignal) {
-  const res = await fetch(`/api/lit/public/getFilterOptions`, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${res.status} ${t}`); }
-  return res.json();
+  // Try Vercel proxy first; if 404 or non-JSON, fall back to Gateway (GET then POST)
+  const proxyUrl = `/api/lit/public/getFilterOptions`;
+  try {
+    const r = await fetch(proxyUrl, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || !ct.includes('application/json')) throw new Error(String(r.status));
+    return await r.json();
+  } catch {
+    // Gateway fallback
+    const u = `${GATEWAY_BASE_DEFAULT}/public/getFilterOptions`;
+    let g = await fetch(u, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
+    let ct = g.headers.get('content-type') || '';
+    if (!g.ok || !ct.includes('application/json')) {
+      // Some upstreams expose it as POST; try that
+      g = await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify({}), signal });
+    }
+    if (!g.ok) { const t = await g.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${g.status} ${t}`); }
+    return await g.json();
+  }
+}
+
+// Fast KPI endpoint (proxy-first, fallback to Gateway)
+export async function getCompanyKpis(params: { company_id?: string; company_name?: string }, signal?: AbortSignal) {
+  const qp = new URLSearchParams();
+  if (params.company_id) qp.set('company_id', params.company_id);
+  if (!params.company_id && params.company_name) qp.set('company_name', params.company_name);
+  const url = `/api/lit/public/getCompanyKpis?${qp.toString()}`;
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { accept: 'application/json' }, signal });
+    const ct = r.headers.get('content-type') || '';
+    if (!r.ok || !ct.includes('application/json')) throw new Error(String(r.status));
+    return await r.json();
+  } catch {
+    // Fallback to Gateway
+    const u = `${GATEWAY_BASE_DEFAULT}/public/getCompanyKpis?${qp.toString()}`;
+    const g = await fetch(u, { method: 'GET', headers: { accept: 'application/json' }, signal });
+    if (!g.ok) return null;
+    return await g.json().catch(() => null);
+  }
+}
+
+// Saved companies list (for future UI)
+export async function getSavedCompanies(signal?: AbortSignal) {
+  const url = `/api/lit/crm/savedCompanies`;
+  const r = await fetch(url, { headers: { accept: 'application/json' }, signal });
+  if (!r.ok) return { rows: [] };
+  return r.json();
 }
 
 // --- Filters singleton cache with 10m TTL ---
@@ -239,15 +335,15 @@ export function buildCompanyShipmentsUrl(
   limit = 50,
   offset = 0
 ) {
-  const id = row.company_id?.trim()
-    ? row.company_id
-    : `name:${row.company_name.toLowerCase()}`;
-  const qs = new URLSearchParams({
-    company_id: id,
-    limit: String(limit),
-    offset: String(offset),
-  }).toString();
-  return `/api/lit/public/getCompanyShipments?${qs}`;
+  const params = new URLSearchParams();
+  if (row.company_id && row.company_id.trim()) {
+    params.set('company_id', row.company_id.trim());
+  } else {
+    params.set('company_name', row.company_name);
+  }
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  return `/api/lit/public/getCompanyShipments?${params.toString()}`;
 }
 
 export function getCompanyKey(row: { company_id?: string; company_name: string }) {

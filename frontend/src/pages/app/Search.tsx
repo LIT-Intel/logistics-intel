@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -129,6 +129,7 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
           <Avatar className="h-10 w-10"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
           <div className="flex-1">
             <CardTitle className="text-base font-semibold tracking-tight text-slate-900">{row.company_name}</CardTitle>
+            <div className="mt-0.5 text-[11px] text-slate-500" title={row.company_id || '—'}>ID: {row.company_id || '—'}</div>
             <div className="mt-1 flex flex-wrap gap-2">
               {(row.tags||[]).map((t: string, i: number) => (
                 <Badge key={i} variant="outline" className={cn(brand.chip, 'border-indigo-200 text-slate-600')}>{t}</Badge>
@@ -144,8 +145,8 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
           </div>
         </CardHeader>
         <CardContent className="pt-0 flex-1 flex flex-col">
-          <div className="grid grid-cols-3 gap-4">
-            <KPI value={row.shipments_12m} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <KPI value={row.shipments_12m ?? 0} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
             <KPI value={(typeof row.last_activity === 'object' ? (row.last_activity?.value || '—') : (row.last_activity ?? '—'))} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
             <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
           </div>
@@ -190,10 +191,11 @@ function SearchAppPage() {
 
   // Load filter options once, non-blocking
   const [filterOptionsReady, setFilterOptionsReady] = useState(false);
+  const [filterOptions, setFilterOptions] = useState<any>(null);
   useEffect(() => {
     const ac = new AbortController();
     getFilterOptionsOnce((signal?: AbortSignal) => getFilterOptions(signal), ac.signal)
-      .then(() => setFilterOptionsReady(true))
+      .then((data) => { setFilterOptions(data); setFilterOptionsReady(true); })
       .catch(() => setFilterOptionsReady(true));
     return () => ac.abort();
   }, []);
@@ -202,6 +204,12 @@ function SearchAppPage() {
   const lastSigRef = useRef<string>('');
   const hydratedRef = useRef<boolean>(false);
   const sig = JSON.stringify({ q: (q || '').trim() || null, filters });
+  const triggerSearchNow = useCallback(() => {
+    // Guard identical params: set signature first to prevent the effect from double-firing
+    lastSigRef.current = sig;
+    run(true);
+  }, [sig, run]);
+
   useEffect(() => {
     // Guard initial mount to avoid flip-flop if UI shows 'Any'
     if (!hydratedRef.current) {
@@ -213,7 +221,7 @@ function SearchAppPage() {
         lastSigRef.current = sig;
         run(true);
       }
-    }, 400);
+    }, 325);
     return () => clearTimeout(id);
   }, [sig, run, filterOptionsReady]);
 
@@ -354,17 +362,20 @@ function SearchAppPage() {
                 <FiltersDrawer
                   open={Boolean(filtersOpen)}
                   onOpenChange={(v) => setFiltersOpen(v)}
-                  filters={{}}
-                  values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined }}
+                  filters={filterOptions || {}}
+                  values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined, date_start: filters.date_start ?? undefined, date_end: filters.date_end ?? undefined, year: filters.year ?? undefined }}
                   onChange={(patch) => {
                     setFilters((prev) => ({
                       origin: typeof patch.origin === 'string' ? patch.origin : (patch.origin === undefined ? null : prev.origin),
                       destination: typeof patch.destination === 'string' ? patch.destination : (patch.destination === undefined ? null : prev.destination),
                       hs: prev.hs,
                       mode: typeof patch.mode === 'string' ? (patch.mode as any) : (patch.mode === undefined ? null : prev.mode),
+                      date_start: typeof patch.date_start === 'string' ? patch.date_start : (patch.date_start === undefined ? null : prev.date_start),
+                      date_end: typeof patch.date_end === 'string' ? patch.date_end : (patch.date_end === undefined ? null : prev.date_end),
+                      year: typeof patch.year === 'string' ? patch.year : (patch.year === undefined ? null : prev.year),
                     }));
                   }}
-                  onApply={() => run(true)}
+                  onApply={() => { triggerSearchNow(); setFiltersOpen(false); }}
                 />
                 {/* Build tag removed */}
 
@@ -460,9 +471,7 @@ function SearchAppPage() {
           {/* Empty states handled via SearchEmpty (idle vs no-results) */}
         </div>
 
-        {modal && (
-          <CompanyModal company={modal} shipmentsUrl={buildCompanyShipmentsUrl(modal, 50, 0)} onClose={() => setModal(null)} />
-        )}
+        <CompanyModal company={modal} open={Boolean(modal)} onClose={(open)=>{ if(!open) setModal(null); }} />
       </div>
     </TooltipProvider>
   );

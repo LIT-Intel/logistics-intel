@@ -5,7 +5,7 @@ import CustomLoginPage from "@/components/layout/CustomLoginPage";
 import { useAuth } from "@/auth/AuthProvider";
 
 // Lazy-load primary pages
-const Landing        = lazy(() => import("@/pages/Landing"));
+const Landing        = lazy(() => import("@/pages/LandingPage"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
 const Search         = lazy(() => import("@/pages/app/Search"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
@@ -28,7 +28,7 @@ const Signup         = lazy(() => import("@/pages/signup/Signup"));
 const Transactions   = lazy(() => import("@/pages/Transactions"));
 const Widgets        = lazy(() => import("@/pages/Widgets"));
 const Company        = lazy(() => import("@/pages/Company"));
-const CommandCenterPage = lazy(() => import("@/pages/command-center"));
+const CommandCenterPage = lazy(() => import("@/app/command-center/page"));
 const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany    = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
@@ -118,9 +118,13 @@ export default function App() {
         <Route
           path="/app/command-center"
           element={
-            <RequireAuth>
-              <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
-            </RequireAuth>
+            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
+          }
+        />
+        <Route
+          path="/command-center"
+          element={
+            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
           }
         />
         <Route

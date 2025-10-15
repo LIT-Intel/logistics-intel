@@ -9,7 +9,12 @@ module.exports = {
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
-  		colors: {
+      		colors: {
+          intel: {
+            DEFAULT: '#23135b',
+            dark: '#1a0f45',
+            light: '#EDE9FE'
+          },
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

@@ -159,6 +159,18 @@ button:focus-visible {
   }
 }
 
+/* Brand utility classes (non-intrusive, opt-in) */
+.lit-card{background:var(--lit-panel);border:1px solid var(--lit-border);border-radius:18px;box-shadow:0 6px 18px rgba(20,24,56,.35)}
+.lit-card--elevated{background:var(--lit-panel-2);box-shadow:0 0 0 1px rgba(108,71,255,.35),0 8px 30px rgba(108,71,255,.25)}
+.lit-kpi{background:var(--lit-panel);position:relative;overflow:hidden}
+.lit-kpi::before{content:"";position:absolute;inset:-1px;background:var(--lit-grad-kpi);pointer-events:none;mix-blend:screen}
+.btn-brand{background:var(--lit-grad-primary);color:#fff;border-radius:12px;padding:.6rem .9rem;box-shadow:0 0 0 1px rgba(108,71,255,.35),0 8px 30px rgba(108,71,255,.25)}
+.btn-ghost{background:transparent;border:1px solid var(--lit-border);color:#E6EAFF;border-radius:12px;padding:.6rem .9rem}
+
+/* LandingPage dot matrix */
+.dot-matrix{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:-1}
+.dot{position:absolute;width:4px;height:4px;border-radius:50%;background-color:#0073E6;opacity:.15;will-change:transform,opacity}
+
 /* Companies: active card + watermark */
 .company-card.active {
   border: 2px solid var(--brand-accent);
