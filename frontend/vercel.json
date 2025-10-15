@@ -1,0 +1,20 @@
+{
+  "framework": "vite",
+  "ignoreCommand": "",
+  "buildCommand": "npm ci && npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/lit/(.*)", "destination": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/lit/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
+    }
+  ]
+}
