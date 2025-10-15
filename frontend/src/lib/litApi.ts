@@ -1,4 +1,5 @@
-const BASE = (process.env.NEXT_PUBLIC_API_BASE || (import.meta as any)?.env?.VITE_API_BASE || '').replace(/\/$/, '');
+// Force all browser calls through Vercel proxy to ensure consistent CORS and routing
+const BASE = '/api/lit';
 
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
