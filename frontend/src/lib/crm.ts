@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? "https://lit-caller-gw-2e68g4k3.uc.gateway.dev";
+// Always use Vercel proxy in browser to avoid CORS and ensure consistent routing
+const API_BASE = '/api/lit';
 
 async function handle(res: Response) {
   if (!res.ok) throw new Error(`${res.status}`);
