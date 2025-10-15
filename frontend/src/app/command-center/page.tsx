@@ -251,7 +251,7 @@ export default function CommandCenterPage() {
 
               {/* Right: contacts / actions */}
               <div className="space-y-6">
-                {!canViewContacts && <ContactsGate companyName={selected?.name || 'this company'} />}
+                {/* {!canViewContacts && <ContactsGate companyName={selected?.name || 'this company'} />} */}
                 {/* Shortcuts */}
                 <Card className="p-6 rounded-xl shadow-md border">
                   <div className="text-xl font-bold mb-3 flex items-center gap-2 text-slate-800 border-b pb-2"><SaveIcon className="w-5 h-5 text-indigo-500"/>Shortcuts</div>
