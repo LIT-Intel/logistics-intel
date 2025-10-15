@@ -61,7 +61,13 @@ function Stat({ label, value, hint }: { label: string; value: string|number; hin
 function Tag({ children }: { children: React.ReactNode }) { return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] px-2 py-1 border border-emerald-200"><IconShield className="w-3 h-3" /> {children}</span>; }
 function Pill({ children }: { children: React.ReactNode }) { return <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-700 text-xs px-2 py-1">{children}</span>; }
 
+// Deprecated demo shell: keep exported but render null in production to avoid legacy UI serving
 export default function LITEnrichCommandCenterDemo() {
+  if (typeof window !== 'undefined') {
+    // Hint: route now lives at /app/command-center (new shell)
+  }
+  return null;
+}
   const [company, setCompany] = useState<Company>(demoCompany);
   const [contacts, setContacts] = useState<Contact[]>(demoContacts);
   const [primaryId, setPrimaryId] = useState<string | null>(demoContacts.find(c=>c.isPrimary)?.id ?? null);
