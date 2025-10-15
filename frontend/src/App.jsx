@@ -5,7 +5,7 @@ import CustomLoginPage from "@/components/layout/CustomLoginPage";
 import { useAuth } from "@/auth/AuthProvider";
 
 // Lazy-load primary pages
-const Landing        = lazy(() => import("@/pages/Landing"));
+const Landing        = lazy(() => import("@/pages/LandingPage"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
 const Search         = lazy(() => import("@/pages/app/Search"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
