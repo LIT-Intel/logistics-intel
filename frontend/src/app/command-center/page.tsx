@@ -16,7 +16,12 @@ import { exportCommandCenterPdf } from '@/lib/exportPdf';
 import { enrichCompany } from '@/lib/litEnrich';
 import { toast } from 'sonner';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
-import { ChevronRight, Download, Link2, Settings2 } from 'lucide-react';
+import { 
+  ChevronRight, Download, Link2, Settings2,
+  Package as PackageIcon, Clock, Zap, Truck, Save as SaveIcon, Share2, Users,
+  Plus, Search as SearchIcon, Heart, MapPin, Mail, Phone, Briefcase, Archive,
+  FileText, Activity, Layers, Tag
+} from 'lucide-react';
 import CompanyAvatar from '@/components/command-center/CompanyAvatar';
 import { hasFeature } from '@/lib/access';
 
@@ -167,21 +172,21 @@ export default function CommandCenterPage() {
 
         {/* Stats Grid (Overview quick KPIs) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <Card className="p-4 rounded-2xl shadow-sm">
-            <div className="text-xs text-muted-foreground">Shipments (12m)</div>
-            <div className="text-xl font-semibold">{kpi.shipments12m}</div>
+          <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
+            <div className="flex items-center gap-3 mb-1"><PackageIcon className="w-4 h-4 text-indigo-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Shipments (12m)</div></div>
+            <div className="text-3xl font-extrabold">{kpi.shipments12m}</div>
           </Card>
-          <Card className="p-4 rounded-2xl shadow-sm">
-            <div className="text-xs text-muted-foreground">Trade Growth (QoQ)</div>
-            <div className="text-xl font-semibold">—</div>
+          <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
+            <div className="flex items-center gap-3 mb-1"><Clock className="w-4 h-4 text-amber-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Last Activity</div></div>
+            <div className="text-3xl font-extrabold">{kpi.lastActivity}</div>
           </Card>
-          <Card className="p-4 rounded-2xl shadow-sm">
-            <div className="text-xs text-muted-foreground">Intent Signal Level</div>
-            <div className="text-xl font-semibold">{(Number(kpi.shipments12m) || 0) >= 500 ? 'High' : ((Number(kpi.shipments12m) || 0) >= 200 ? 'Medium' : 'Low')}</div>
+          <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
+            <div className="flex items-center gap-3 mb-1"><MapPin className="w-4 h-4 text-red-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Top Lane</div></div>
+            <div className="text-3xl font-extrabold">{kpi.topLane}</div>
           </Card>
-          <Card className="p-4 rounded-2xl shadow-sm">
-            <div className="text-xs text-muted-foreground">RFP Readiness Index</div>
-            <div className="text-xl font-semibold">{(() => { const v = Number(kpi.shipments12m) || 0; return Math.min(100, Math.max(0, Math.round(v / 10))); })()}</div>
+          <Card className="p-5 rounded-xl shadow-lg border border-slate-200">
+            <div className="flex items-center gap-3 mb-1"><Truck className="w-4 h-4 text-blue-600"/><div className="text-xs text-muted-foreground uppercase font-semibold">Top Carrier</div></div>
+            <div className="text-3xl font-extrabold">{kpi.topCarrier}</div>
           </Card>
         </div>
 
@@ -196,43 +201,65 @@ export default function CommandCenterPage() {
           <TabsContent value="overview">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Left: overview content */}
-              <div className="lg:col-span-2 space-y-4">
-                <Card className="p-4 rounded-2xl shadow-sm">
-                  <SectionTitle title="About" />
-                  <div className="text-sm text-muted-foreground">This profile is automatically generated from recent shipment signals and public sources.</div>
+              <div className="lg:col-span-2 space-y-6">
+                {/* About */}
+                <Card className="p-6 rounded-xl shadow-md border">
+                  <div className="text-xl font-bold mb-2 flex items-center gap-2 text-slate-800 border-b pb-2"><FileText className="w-5 h-5 text-indigo-500"/>About</div>
+                  <div className="text-sm text-slate-700 leading-relaxed">Dole Fresh Fruit Co. is a leading global producer, marketer, and distributor of fresh fruit, primarily bananas and pineapples. Their logistics profile is characterized by high-volume, time-sensitive refrigerated shipping (Reefer), predominantly operating on high-frequency, dedicated lanes from Central and South America to major US and European ports.</div>
                 </Card>
-                <Card className="p-4 rounded-2xl shadow-sm">
-                  <SectionTitle title="Tags" />
-                  <TagRow tags={["Shipper", "Importer", "Cold Chain"]} />
-                </Card>
-                <Card className="p-4 rounded-2xl shadow-sm">
-                  <SectionTitle title="Similar Companies" />
-                  <div className="mt-2 space-y-2">
-                    <SimilarItem name="Acme Logistics" />
-                    <SimilarItem name="Dole Food Company" />
-                    <SimilarItem name="Ocean Fresh Imports" />
+                {/* Tags */}
+                <Card className="p-6 rounded-xl shadow-md border">
+                  <div className="text-xl font-bold mb-2 flex items-center gap-2 text-slate-800 border-b pb-2"><Tag className="w-5 h-5 text-indigo-500"/>Tags & Categories</div>
+                  <div className="flex flex-wrap gap-2">
+                    {["Shipper","Cold Chain Logistics","Global Importer","Fruit & Produce"].map(t => (
+                      <span key={t} className="inline-flex items-center px-3 py-1 text-sm font-medium bg-slate-100 text-slate-700 rounded-full border border-slate-200">{t}</span>
+                    ))}
                   </div>
                 </Card>
-                <Card className="p-4 rounded-2xl shadow-sm">
-                  <SectionTitle title="Activity" />
-                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <FeedItem title="Shipment arrived at LAX" meta="3 days ago • 1x40’ refrigerated" />
-                    <FeedItem title="New carrier observed: Maersk" meta="7 days ago • 18% share" />
-                    <FeedItem title="New route emerging" meta="CN → US • +4 shipments" />
-                    <FeedItem title="Tariff code trend: 0803" meta="Bananas • 12 shipments this month" />
+                {/* Similar Companies */}
+                <Card className="p-6 rounded-xl shadow-md border">
+                  <div className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800 border-b pb-2"><Users className="w-5 h-5 text-indigo-500"/>Similar Trade Profiles</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {["Chiquita Brands Intl","Fyffes Group","Del Monte Foods"].map(name => (
+                      <div key={name} className="bg-slate-50 border border-slate-200 rounded-lg p-4 hover:shadow transition">
+                        <div className="font-semibold text-slate-800">{name}</div>
+                        <div className="text-xs text-slate-500 mt-1 flex items-center justify-between"><span>Trade Profile Match: 88%</span><ChevronRight className="w-4 h-4 text-indigo-500"/></div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+                {/* Activity */}
+                <Card className="p-6 rounded-xl shadow-md border">
+                  <div className="text-xl font-bold mb-2 flex items-center gap-2 text-slate-800 border-b pb-2"><Activity className="w-5 h-5 text-indigo-500"/>Activity Feed</div>
+                  <div className="mt-2 space-y-3">
+                    {[
+                      { t: 'Shipment', d: 'New container shipment from Costa Rica (CR)', when: '2 hours ago' },
+                      { t: 'Tariff Trend', d: 'Tariff analysis completed; 2% projected rise in HS 0803', when: 'yesterday' },
+                      { t: 'Carrier Change', d: 'Switched top carrier from CMA CGM to Maersk', when: '3 days ago' },
+                    ].map((x,i)=> (
+                      <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                        <Layers className="w-5 h-5 text-amber-500"/>
+                        <div>
+                          <div className="font-medium text-slate-800"><span className="text-indigo-600 font-bold mr-1">{x.t}:</span>{x.d}</div>
+                          <div className="text-xs text-slate-500">{x.when}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </Card>
               </div>
 
               {/* Right: contacts / actions */}
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {!canViewContacts && <ContactsGate companyName={selected?.name || 'this company'} />}
-                <Card className="p-4 rounded-2xl shadow-sm">
-                  <SectionTitle title="Shortcuts" />
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline">Save to List</Button>
-                    <Button size="sm" variant="outline">Track Signals</Button>
-                    <Button size="sm" variant="outline">Export</Button>
+                {/* Shortcuts */}
+                <Card className="p-6 rounded-xl shadow-md border">
+                  <div className="text-xl font-bold mb-3 flex items-center gap-2 text-slate-800 border-b pb-2"><SaveIcon className="w-5 h-5 text-indigo-500"/>Shortcuts</div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <button className="flex items-center gap-2 p-3 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition border border-indigo-200"><Heart className="w-4 h-4"/>Save</button>
+                    <button className="flex items-center gap-2 p-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition border border-slate-300"><PackageIcon className="w-4 h-4"/>Track Shipments</button>
+                    <button className="flex items-center gap-2 p-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition border border-slate-300"><Download className="w-4 h-4"/>Export CSV</button>
+                    <button className="flex items-center gap-2 p-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition border border-slate-300"><FileText className="w-4 h-4"/>Export PDF</button>
                   </div>
                 </Card>
                 <Card className="p-4 rounded-2xl shadow-sm">
