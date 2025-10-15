@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { 
     Package, Clock, Zap, Truck, Save, Share2, Download, Users, Plus, 
     ChevronRight, Search, Heart, MapPin, Mail, Phone, Briefcase, Archive, 
@@ -402,6 +402,7 @@ export default function CommandCenterPreview() {
 
 
   return (
+    <ErrorBoundary>
     <main data-cc-build="preview-v2.6-2025-10-15-16:05" className="bg-gray-100 min-h-screen p-6 text-gray-800 relative font-sans">
       <div className="max-w-7xl mx-auto">
         
@@ -605,5 +606,36 @@ export default function CommandCenterPreview() {
         </div>
       )}
     </main>
+    </ErrorBoundary>
   );
+}
+
+// Simple error boundary to prevent blank page on render exceptions
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; detail?: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, detail: String(error?.message || error) };
+  }
+  componentDidCatch(error: any, info: any) {
+    // eslint-disable-next-line no-console
+    console.error('[CommandCenter Error]', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="max-w-lg w-full bg-white border border-gray-200 rounded-xl shadow p-6 text-center">
+            <div className="text-lg font-semibold text-gray-900">Something went wrong</div>
+            <div className="mt-2 text-sm text-gray-600">Reload the page or try another company. If this persists, share the console error.</div>
+            <div className="mt-3 text-xs text-gray-400 break-all">{this.state.detail}</div>
+            <button className="mt-4 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg" onClick={()=> window.location.reload()}>Reload</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children as any;
+  }
 }
