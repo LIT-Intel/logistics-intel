@@ -18,8 +18,8 @@ import { toast } from 'sonner';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
 import { 
   ChevronRight, Download, Link2, Settings2,
-  Package as PackageIcon, Clock, Zap, Truck, Save as SaveIcon, Share2, Users,
-  Plus, Search as SearchIcon, Heart, MapPin, Mail, Phone, Briefcase, Archive,
+  Package as PackageIcon, Clock, TrendingUp, Save as SaveIcon, Share2, Users,
+  Plus, Search as SearchIcon, Heart, Mail, Phone, Briefcase, Archive,
   FileText, Activity, Layers, Tag
 } from 'lucide-react';
 import CompanyAvatar from '@/components/command-center/CompanyAvatar';
@@ -32,8 +32,8 @@ export default function CommandCenterPage() {
   const [kpi, setKpi] = useState({
     shipments12m: '—',
     lastActivity: '—',
-    topLane: '—',
-    topCarrier: '—',
+    totalTeus: '—',
+    growthRate: '—',
   });
   const [addOpen, setAddOpen] = useState(false);
   const [campOpen, setCampOpen] = useState(false);
@@ -56,15 +56,7 @@ export default function CommandCenterPage() {
     top_carriers?: { name: string | null; share_pct: number | null }[] | null;
   };
   type SearchCompaniesResp = { meta?: { total: number }, rows?: SearchCompanyRow[], items?: SearchCompanyRow[] };
-  function fmtLane(row: SearchCompanyRow) {
-    const r = row.top_routes?.[0];
-    if (!r || !r.origin_country || !r.dest_country) return '—';
-    return `${r.origin_country} → ${r.dest_country}`;
-  }
-  function fmtCarrier(row: SearchCompanyRow) {
-    const c = row.top_carriers?.[0];
-    return c?.name ?? '—';
-  }
+  // growth/teus sourced from API when available; otherwise keep placeholders
   useEffect(() => {
     const saved = (() => { try { return JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null'); } catch { return null; } })();
     if (saved) setSelected(saved);
@@ -79,8 +71,8 @@ export default function CommandCenterPage() {
         setKpi({
           shipments12m: row.shipments_12m != null ? String(row.shipments_12m) : '—',
           lastActivity: row.last_activity?.value || '—',
-          topLane: fmtLane(row),
-          topCarrier: fmtCarrier(row),
+          totalTeus: (row as any).total_teus != null ? String((row as any).total_teus) : '—',
+          growthRate: (row as any).growth_rate != null ? `${(row as any).growth_rate}` : '—',
         });
       })
       .catch(() => { /* keep placeholders */ });
@@ -88,7 +80,7 @@ export default function CommandCenterPage() {
 
   return (
     <div id="cc-root" className="min-h-screen bg-[#f7f8fb]" data-cc-build="v2.2-2025-10-15">
-      {/* Top App Bar */}
+      {/* Top App Bar (legacy global search removed from this page) */}
       <div className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-[1400px] px-4 py-3 flex items-center gap-3">
           <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600" />
@@ -97,9 +89,9 @@ export default function CommandCenterPage() {
           <div className="text-sm font-medium">Command Center</div>
 
           <div className="ml-auto flex items-center gap-2">
-            <Input className="hidden md:block w-[360px]" placeholder="Search companies, contacts, industries, etc." />
             <Button variant="outline" size="sm"><Settings2 className="mr-2 h-4 w-4" />Tools</Button>
-            <SavedCompaniesPicker onPicked={() => { /* no-op */ }} />
+            {/* New Saved Companies pill */}
+            <SavedCompaniesPicker onPicked={() => { /* hydrate */ }} />
             <Button size="sm" onClick={()=>setCampOpen(true)}>Add to Campaign</Button>
             <Button size="sm" variant="outline" onClick={()=>{
               if(!selected){ toast.error('No company selected'); return; }
@@ -143,10 +135,10 @@ export default function CommandCenterPage() {
       {/* Build sentinel for prod verification */}
       <div aria-label="cc-ui-version" className="sr-only">cc-ui v2.2 build 2025-10-15</div>
       <div className="mx-auto max-w-[1400px] px-4 py-6">
-        {/* Top navigation row beneath header */}
+        {/* Single page search input above company header (keep only this) */}
         <div className="flex justify-between items-center mb-4 gap-3">
           <Input className="w-full max-w-xl" placeholder="Search companies or contacts..." />
-          <SavedCompaniesPicker onPicked={() => { /* hydration handled by picker */ }} />
+          {/* Saved Companies already in top bar; avoid duplicate here */}
         </div>
         {/* Company header summary */}
         <Card className="p-5 rounded-2xl shadow-sm mb-4">
@@ -167,8 +159,16 @@ export default function CommandCenterPage() {
           </div>
         </Card>
 
-        {/* KPI strip */}
-        <KpiStrip kpi={kpi} />
+        {/* Tabs first as per spec */}
+        <Tabs defaultValue="overview">
+          <TabsList className="w-full grid grid-cols-3 gap-2 rounded-xl mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="shipments">Shipments</TabsTrigger>
+            <TabsTrigger value="contacts">Contacts</TabsTrigger>
+          </TabsList>
+
+          {/* KPI strip below tabs */}
+          <KpiStrip kpi={kpi} />
 
         {/* Stats Grid (Overview quick KPIs) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
@@ -190,13 +190,7 @@ export default function CommandCenterPage() {
           </Card>
         </div>
 
-        {/* Tabs + Main content */}
-        <Tabs defaultValue="overview">
-          <TabsList className="w-full grid grid-cols-3 gap-2 rounded-xl mb-4">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="shipments">Shipments</TabsTrigger>
-            <TabsTrigger value="contacts">Contacts</TabsTrigger>
-          </TabsList>
+          {/* Main content */}
 
           <TabsContent value="overview">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
