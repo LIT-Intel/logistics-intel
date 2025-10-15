@@ -77,12 +77,12 @@ export default function CommandCenterPreview() {
 
   const tabs = ["Overview", "Shipments", "Contacts"];
   
-  // KPI Data aligned with new request: Shipments (12m), Last Activity, Top Lane, Top Carrier
+  // KPI Data aligned with request: Shipments (12m), Last Activity, Total TEUs, Growth Rate
   const KPI_DATA = [
       { label: "Shipments (12m)", value: "3,120 TEU", icon: Package, color: "text-indigo-600" },
       { label: "Last Activity", value: "3 days ago", icon: Clock, color: "text-amber-600" },
-      { label: "Top Lane", value: "CR - US (East)", icon: MapPin, color: "text-red-600" },
-      { label: "Top Carrier", value: "Maersk", icon: Truck, color: "text-blue-600" },
+      { label: "Total TEUs", value: "56,480", icon: Layers, color: "text-rose-600" },
+      { label: "Growth Rate", value: "+12% QoQ", icon: Activity, color: "text-emerald-600" },
   ];
 
   // --- Tab Content Renderers ---
