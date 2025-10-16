@@ -111,7 +111,10 @@ export function kpiFrom(item: CompanyItem) {
   const shipments12m = Number(
     item.shipments12m ?? item.shipments_12m ?? item.shipments ?? 0
   );
-  const lastActivity = (item.lastActivity ?? item.last_activity ?? item.lastShipmentDate) || null;
+  const rawLast: any = (item as any).lastActivity ?? (item as any).last_activity ?? (item as any).lastShipmentDate;
+  const lastActivity = (rawLast && typeof rawLast === 'object' && 'value' in rawLast)
+    ? (rawLast.value ?? null)
+    : (rawLast ?? null);
   const originsTop   = item.originsTop   ?? item.origins_top   ?? [];
   const destsTop     = item.destsTop     ?? item.dests_top     ?? [];
   const carriersTop  = item.carriersTop  ?? item.carriers_top  ?? [];
