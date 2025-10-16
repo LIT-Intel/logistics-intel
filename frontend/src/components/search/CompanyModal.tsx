@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getCompanyShipmentsUnified, getCompanyDetails, getCompanyKpis } from '@/lib/api';
+import { getCompanyShipmentsUnified, getCompanyDetails, getCompanyKpis, saveCompanyToCrm, getCompanyKey } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { litUI } from '@/lib/uiTokens';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -130,6 +130,32 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   const subscribedBriefing = hasFeature('briefing');
   const subscribedContacts = hasFeature('contacts');
+  async function handleSaveToCommandCenter() {
+    try {
+      const cname = String(company?.company_name || '');
+      const cid = getCompanyKey({ company_id: company?.company_id || undefined, company_name: cname });
+      try { await saveCompanyToCrm({ company_id: cid, company_name: cname, source: 'search' }); } catch {}
+      const lsKey = 'lit_companies';
+      const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
+      if (!existing.find((c: any)=> String(c?.id||'') === cid)) {
+        const cardLast = (typeof company?.last_activity === 'object' && (company as any)?.last_activity?.value)
+          ? (company as any).last_activity.value
+          : ((company as any)?.last_activity ?? null);
+        const kpis = {
+          shipments12m: (company as any)?.shipments_12m || 0,
+          lastActivity: cardLast,
+          originsTop: Array.isArray((company as any)?.top_routes) ? (company as any).top_routes.map((r: any)=> r.origin_country) : [],
+          destsTop: Array.isArray((company as any)?.top_routes) ? (company as any).top_routes.map((r: any)=> r.dest_country) : [],
+          carriersTop: Array.isArray((company as any)?.top_carriers) ? (company as any).top_carriers.map((c: any)=> c.carrier) : [],
+        };
+        const fresh = { id: cid, name: cname, kpis };
+        localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
+        try { window.dispatchEvent(new StorageEvent('storage', { key: lsKey } as any)); } catch {}
+      }
+    } catch (e) {
+      // silent fail; UI remains
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -141,9 +167,26 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                 <DialogTitle className="text-2xl md:text-3xl font-semibold" style={{ color: litUI.brandPrimary }}>
                   {company?.company_name || 'Company'}
                 </DialogTitle>
-                <p className="text-sm text-muted-foreground mt-1">ID: {company?.company_id || '—'}</p>
+                <div className="text-sm text-muted-foreground mt-1 flex flex-wrap gap-3">
+                  <span>ID: {company?.company_id || '—'}</span>
+                  <span>
+                    Domain: {(() => {
+                      const raw = (details?.website as string) || '';
+                      const host = raw.replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+                      return host || '—';
+                    })()}
+                  </span>
+                  <span>
+                    Website: {details?.website ? (
+                      <a className="text-violet-700 hover:underline" href={String(details.website)} target="_blank" rel="noreferrer">{String(details.website).replace(/^https?:\/\//,'')}</a>
+                    ) : '—'}
+                  </span>
+                </div>
               </DialogHeader>
-              <button aria-label="Close" onClick={() => onClose(false)} className="shrink-0 rounded-full border p-2 hover:bg-neutral-50"><X className="h-4 w-4"/></button>
+              <div className="flex items-center gap-2">
+                <button onClick={handleSaveToCommandCenter} className="rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50">Save to Command Center</button>
+                <button aria-label="Close" onClick={() => onClose(false)} className="shrink-0 rounded-full border p-2 hover:bg-neutral-50"><X className="h-4 w-4"/></button>
+              </div>
             </div>
             {/* Featured profile card */}
             <div className="mt-3 rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50/80 to-indigo-50/80 shadow-sm p-3 sm:p-4">
