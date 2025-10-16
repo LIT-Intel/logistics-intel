@@ -1,0 +1,141 @@
+preview	Install deps	2025-10-16T00:20:06.1599433Z npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+preview	Install deps	2025-10-16T00:20:06.1599766Z npm warn EBADENGINE }
+preview	Install deps	2025-10-16T00:20:06.1600059Z npm warn EBADENGINE Unsupported engine {
+preview	Install deps	2025-10-16T00:20:06.1600456Z npm warn EBADENGINE   package: '@firebase/storage@0.14.0',
+preview	Install deps	2025-10-16T00:20:06.1600863Z npm warn EBADENGINE   required: { node: '>=20.0.0' },
+preview	Install deps	2025-10-16T00:20:06.1601531Z npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+preview	Install deps	2025-10-16T00:20:06.1601884Z npm warn EBADENGINE }
+preview	Install deps	2025-10-16T00:20:06.1602166Z npm warn EBADENGINE Unsupported engine {
+preview	Install deps	2025-10-16T00:20:06.1602585Z npm warn EBADENGINE   package: '@firebase/storage-compat@0.4.0',
+preview	Install deps	2025-10-16T00:20:06.1603022Z npm warn EBADENGINE   required: { node: '>=20.0.0' },
+preview	Install deps	2025-10-16T00:20:06.1603473Z npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+preview	Install deps	2025-10-16T00:20:06.1603831Z npm warn EBADENGINE }
+preview	Install deps	2025-10-16T00:20:06.1604121Z npm warn EBADENGINE Unsupported engine {
+preview	Install deps	2025-10-16T00:20:06.1604514Z npm warn EBADENGINE   package: '@firebase/util@1.13.0',
+preview	Install deps	2025-10-16T00:20:06.1604918Z npm warn EBADENGINE   required: { node: '>=20.0.0' },
+preview	Install deps	2025-10-16T00:20:06.1605364Z npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+preview	Install deps	2025-10-16T00:20:06.1605704Z npm warn EBADENGINE }
+preview	Install deps	2025-10-16T00:20:06.1606762Z npm warn EBADENGINE Unsupported engine {
+preview	Install deps	2025-10-16T00:20:06.1607432Z npm warn EBADENGINE   package: '@firebase/auth@1.11.0',
+preview	Install deps	2025-10-16T00:20:06.1607926Z npm warn EBADENGINE   required: { node: '>=20.0.0' },
+preview	Install deps	2025-10-16T00:20:06.1608375Z npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+preview	Install deps	2025-10-16T00:20:06.1608722Z npm warn EBADENGINE }
+preview	Install deps	2025-10-16T00:20:06.1621422Z npm warn EBADENGINE Unsupported engine {
+preview	Install deps	2025-10-16T00:20:06.1622100Z npm warn EBADENGINE   package: 'react-router@7.8.2',
+preview	Install deps	2025-10-16T00:20:06.1622663Z npm warn EBADENGINE   required: { node: '>=20.0.0' },
+preview	Install deps	2025-10-16T00:20:06.1623731Z npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+preview	Install deps	2025-10-16T00:20:06.1624090Z npm warn EBADENGINE }
+preview	Install deps	2025-10-16T00:20:06.1624393Z npm warn EBADENGINE Unsupported engine {
+preview	Install deps	2025-10-16T00:20:06.1624807Z npm warn EBADENGINE   package: 'react-router-dom@7.8.2',
+preview	Install deps	2025-10-16T00:20:06.1625223Z npm warn EBADENGINE   required: { node: '>=20.0.0' },
+preview	Install deps	2025-10-16T00:20:06.1625667Z npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
+preview	Install deps	2025-10-16T00:20:06.1626001Z npm warn EBADENGINE }
+preview	Install deps	2025-10-16T00:20:09.1128293Z npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+preview	Install deps	2025-10-16T00:20:18.4244101Z 
+preview	Install deps	2025-10-16T00:20:18.4244915Z added 763 packages, and audited 764 packages in 17s
+preview	Install deps	2025-10-16T00:20:18.4245351Z 
+preview	Install deps	2025-10-16T00:20:18.4245613Z 238 packages are looking for funding
+preview	Install deps	2025-10-16T00:20:18.4246109Z   run `npm fund` for details
+preview	Install deps	2025-10-16T00:20:18.4291348Z 
+preview	Install deps	2025-10-16T00:20:18.4292512Z 3 vulnerabilities (2 moderate, 1 high)
+preview	Install deps	2025-10-16T00:20:18.4293859Z 
+preview	Install deps	2025-10-16T00:20:18.4294373Z To address all issues possible (including breaking changes), run:
+preview	Install deps	2025-10-16T00:20:18.4295021Z   npm audit fix --force
+preview	Install deps	2025-10-16T00:20:18.4295265Z 
+preview	Install deps	2025-10-16T00:20:18.4295598Z Some issues need review, and may require choosing
+preview	Install deps	2025-10-16T00:20:18.4296157Z a different dependency.
+preview	Install deps	2025-10-16T00:20:18.4296406Z 
+preview	Install deps	2025-10-16T00:20:18.4296605Z Run `npm audit` for details.
+preview	Build	﻿2025-10-16T00:20:18.4923404Z ##[group]Run npm run build
+preview	Build	2025-10-16T00:20:18.4923715Z [36;1mnpm run build[0m
+preview	Build	2025-10-16T00:20:18.4964932Z shell: /usr/bin/bash -e {0}
+preview	Build	2025-10-16T00:20:18.4965173Z env:
+preview	Build	2025-10-16T00:20:18.4965360Z   VITE_PROXY_BASE: /api/public
+preview	Build	2025-10-16T00:20:18.4965597Z ##[endgroup]
+preview	Build	2025-10-16T00:20:18.6387436Z 
+preview	Build	2025-10-16T00:20:18.6387818Z > Lit-App@0.0.2 build
+preview	Build	2025-10-16T00:20:18.6388219Z > vite build
+preview	Build	2025-10-16T00:20:18.6388407Z 
+preview	Build	2025-10-16T00:20:18.9671526Z [36mvite v6.3.6 [32mbuilding for production...[36m[39m
+preview	Build	2025-10-16T00:20:19.2817300Z transforming...
+preview	Build	2025-10-16T00:20:20.6293006Z 
+preview	Build	2025-10-16T00:20:20.6294647Z /assets/watermark-lit.svg referenced in /assets/watermark-lit.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+preview	Build	2025-10-16T00:20:30.3395451Z [32m✓[39m 3617 modules transformed.
+preview	Build	2025-10-16T00:20:31.0453295Z rendering chunks...
+preview	Build	2025-10-16T00:20:31.5281336Z computing gzip size...
+preview	Build	2025-10-16T00:20:31.5693678Z [2mdist/[22m[32mindex.html                             [39m[1m[2m  0.61 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+preview	Build	2025-10-16T00:20:31.5695481Z [2mdist/[22m[2massets/[22m[35mSettings-DZrYvFpI.css           [39m[1m[2m 22.05 kB[22m[1m[22m[2m │ gzip:   3.51 kB[22m
+preview	Build	2025-10-16T00:20:31.5696956Z [2mdist/[22m[2massets/[22m[35mindex-5Fm3jd7i.css              [39m[1m[2m124.49 kB[22m[1m[22m[2m │ gzip:  19.97 kB[22m
+preview	Build	2025-10-16T00:20:31.5700020Z [2mdist/[22m[2massets/[22m[36muiTokens-BGqF-iAw.js            [39m[1m[2m  0.26 kB[22m[1m[22m[2m │ gzip:   0.17 kB[22m
+preview	Build	2025-10-16T00:20:31.5701803Z [2mdist/[22m[2massets/[22m[36mbase44Client-C-YMJfZQ.js        [39m[1m[2m  0.28 kB[22m[1m[22m[2m │ gzip:   0.23 kB[22m
+preview	Build	2025-10-16T00:20:31.5703391Z [2mdist/[22m[2massets/[22m[36mchevron-right-2jh7-tOb.js       [39m[1m[2m  0.30 kB[22m[1m[22m[2m │ gzip:   0.25 kB[22m
+preview	Build	2025-10-16T00:20:31.5704962Z [2mdist/[22m[2massets/[22m[36mloader-circle-DDYK2pvM.js       [39m[1m[2m  0.32 kB[22m[1m[22m[2m │ gzip:   0.26 kB[22m
+preview	Build	2025-10-16T00:20:31.5706492Z [2mdist/[22m[2massets/[22m[36mplus-CQx51_Q4.js                [39m[1m[2m  0.33 kB[22m[1m[22m[2m │ gzip:   0.26 kB[22m
+preview	Build	2025-10-16T00:20:31.5707972Z [2mdist/[22m[2massets/[22m[36marrow-right-uMl_BO9m.js         [39m[1m[2m  0.34 kB[22m[1m[22m[2m │ gzip:   0.27 kB[22m
+preview	Build	2025-10-16T00:20:31.5709523Z [2mdist/[22m[2massets/[22m[36mmessage-square-BNRkwj9Y.js      [39m[1m[2m  0.35 kB[22m[1m[22m[2m │ gzip:   0.27 kB[22m
+preview	Build	2025-10-16T00:20:31.5711087Z [2mdist/[22m[2massets/[22m[36mclock-BSwkcanf.js               [39m[1m[2m  0.36 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+preview	Build	2025-10-16T00:20:31.5712977Z [2mdist/[22m[2massets/[22m[36mcircle-check-big-BABxrl_X.js    [39m[1m[2m  0.37 kB[22m[1m[22m[2m │ gzip:   0.29 kB[22m
+preview	Build	2025-10-16T00:20:31.5714522Z [2mdist/[22m[2massets/[22m[36muser-CSCuCwOi.js                [39m[1m[2m  0.37 kB[22m[1m[22m[2m │ gzip:   0.29 kB[22m
+preview	Build	2025-10-16T00:20:31.5715994Z [2mdist/[22m[2massets/[22m[36mlock-pMXmgKk4.js                [39m[1m[2m  0.38 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+preview	Build	2025-10-16T00:20:31.5717536Z [2mdist/[22m[2massets/[22m[36mLitPageHeader-BkwjWQDi.js       [39m[1m[2m  0.39 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+preview	Build	2025-10-16T00:20:31.5719093Z [2mdist/[22m[2massets/[22m[36mdollar-sign-B_qLNB3E.js         [39m[1m[2m  0.39 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+preview	Build	2025-10-16T00:20:31.5720617Z [2mdist/[22m[2massets/[22m[36mcircle-alert-8Z0GxO3X.js        [39m[1m[2m  0.42 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+preview	Build	2025-10-16T00:20:31.5722302Z [2mdist/[22m[2massets/[22m[36mmap-pin-D4RGK4qc.js             [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:   0.33 kB[22m
+preview	Build	2025-10-16T00:20:31.5723772Z [2mdist/[22m[2massets/[22m[36mzap-BNrsHhTh.js                 [39m[1m[2m  0.44 kB[22m[1m[22m[2m │ gzip:   0.31 kB[22m
+preview	Build	2025-10-16T00:20:31.5725244Z [2mdist/[22m[2massets/[22m[36mdownload-doW97WD2.js            [39m[1m[2m  0.44 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+preview	Build	2025-10-16T00:20:31.5727296Z [2mdist/[22m[2massets/[22m[36mtriangle-alert-DBtBc8uz.js      [39m[1m[2m  0.44 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+preview	Build	2025-10-16T00:20:31.5728858Z [2mdist/[22m[2massets/[22m[36mLitSidebar-DOmelCFg.js          [39m[1m[2m  0.45 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+preview	Build	2025-10-16T00:20:31.5730409Z [2mdist/[22m[2massets/[22m[36mindex-DR9D_4bA.js               [39m[1m[2m  0.45 kB[22m[1m[22m[2m │ gzip:   0.31 kB[22m
+preview	Build	2025-10-16T00:20:31.5732464Z [2mdist/[22m[2massets/[22m[36mtextarea-Dbt7WuIX.js            [39m[1m[2m  0.46 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+preview	Build	2025-10-16T00:20:31.5734085Z [2mdist/[22m[2massets/[22m[36msend-jvHQePQY.js                [39m[1m[2m  0.46 kB[22m[1m[22m[2m │ gzip:   0.34 kB[22m
+preview	Build	2025-10-16T00:20:31.5735650Z [2mdist/[22m[2massets/[22m[36musers-DiLeidZD.js               [39m[1m[2m  0.48 kB[22m[1m[22m[2m │ gzip:   0.33 kB[22m
+preview	Build	2025-10-16T00:20:31.5737289Z [2mdist/[22m[2massets/[22m[36mtrash-2-LmKQSZzX.js             [39m[1m[2m  0.53 kB[22m[1m[22m[2m │ gzip:   0.36 kB[22m
+preview	Build	2025-10-16T00:20:31.5738911Z [2mdist/[22m[2massets/[22m[36mindex-W6RR1_ng.js               [39m[1m[2m  0.54 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+preview	Build	2025-10-16T00:20:31.5740540Z [2mdist/[22m[2massets/[22m[36minput-k1T7gFYL.js               [39m[1m[2m  0.56 kB[22m[1m[22m[2m │ gzip:   0.35 kB[22m
+preview	Build	2025-10-16T00:20:31.5742474Z [2mdist/[22m[2massets/[22m[36mentities-imA0WwTL.js            [39m[1m[2m  0.58 kB[22m[1m[22m[2m │ gzip:   0.29 kB[22m
+preview	Build	2025-10-16T00:20:31.5744147Z [2mdist/[22m[2massets/[22m[36mlabel-DzdUirAM.js               [39m[1m[2m  0.59 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+preview	Build	2025-10-16T00:20:31.5745778Z [2mdist/[22m[2massets/[22m[36mstar-ByLloy2d.js                [39m[1m[2m  0.65 kB[22m[1m[22m[2m │ gzip:   0.41 kB[22m
+preview	Build	2025-10-16T00:20:31.5747411Z [2mdist/[22m[2massets/[22m[36msparkles-BO2i4nvK.js            [39m[1m[2m  0.68 kB[22m[1m[22m[2m │ gzip:   0.40 kB[22m
+preview	Build	2025-10-16T00:20:31.5749042Z [2mdist/[22m[2massets/[22m[36mbadge-B-MvcCW6.js               [39m[1m[2m  0.72 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
+preview	Build	2025-10-16T00:20:31.5750722Z [2mdist/[22m[2massets/[22m[36mLitWatermark-B0nHtBHc.js        [39m[1m[2m  0.76 kB[22m[1m[22m[2m │ gzip:   0.46 kB[22m
+preview	Build	2025-10-16T00:20:31.5752644Z [2mdist/[22m[2massets/[22m[36mLitKpi-QahWFL89.js              [39m[1m[2m  0.84 kB[22m[1m[22m[2m │ gzip:   0.49 kB[22m
+preview	Build	2025-10-16T00:20:31.5754303Z [2mdist/[22m[2massets/[22m[36malert-vpTK7x79.js               [39m[1m[2m  0.93 kB[22m[1m[22m[2m │ gzip:   0.47 kB[22m
+preview	Build	2025-10-16T00:20:31.5755999Z [2mdist/[22m[2massets/[22m[36mCompany-68mStN2R.js             [39m[1m[2m  1.23 kB[22m[1m[22m[2m │ gzip:   0.59 kB[22m
+preview	Build	2025-10-16T00:20:31.5757712Z [2mdist/[22m[2massets/[22m[36mCampaignBuilder-BIdTpgrV.js     [39m[1m[2m  1.37 kB[22m[1m[22m[2m │ gzip:   0.72 kB[22m
+preview	Build	2025-10-16T00:20:31.5759192Z [2mdist/[22m[2massets/[22m[36mprogress-DtlfjYvA.js            [39m[1m[2m  1.97 kB[22m[1m[22m[2m │ gzip:   0.97 kB[22m
+preview	Build	2025-10-16T00:20:31.5760156Z [2mdist/[22m[2massets/[22m[36mtable-W8TXUBgi.js               [39m[1m[2m  1.99 kB[22m[1m[22m[2m │ gzip:   0.75 kB[22m
+preview	Build	2025-10-16T00:20:31.5760996Z [2mdist/[22m[2massets/[22m[36mindex-BbajsYQA.js               [39m[1m[2m  2.13 kB[22m[1m[22m[2m │ gzip:   0.95 kB[22m
+preview	Build	2025-10-16T00:20:31.5762105Z [2mdist/[22m[2massets/[22m[36mindex-D6Jb7t5t.js               [39m[1m[2m  2.29 kB[22m[1m[22m[2m │ gzip:   1.15 kB[22m
+preview	Build	2025-10-16T00:20:31.5762960Z [2mdist/[22m[2massets/[22m[36mSearchPanel-CmaD4PpC.js         [39m[1m[2m  2.31 kB[22m[1m[22m[2m │ gzip:   1.00 kB[22m
+preview	Build	2025-10-16T00:20:31.5763840Z [2mdist/[22m[2massets/[22m[36mAdminSettings-NKgpjMm7.js       [39m[1m[2m  2.72 kB[22m[1m[22m[2m │ gzip:   0.96 kB[22m
+preview	Build	2025-10-16T00:20:31.5764715Z [2mdist/[22m[2massets/[22m[36mContactsGate-BRIJTjcD.js        [39m[1m[2m  2.92 kB[22m[1m[22m[2m │ gzip:   1.13 kB[22m
+preview	Build	2025-10-16T00:20:31.5765810Z [2mdist/[22m[2massets/[22m[36mlitApi-CujGpQT4.js              [39m[1m[2m  3.14 kB[22m[1m[22m[2m │ gzip:   0.92 kB[22m
+preview	Build	2025-10-16T00:20:31.5766676Z [2mdist/[22m[2massets/[22m[36mTransactions-XAGnXjIy.js        [39m[1m[2m  3.14 kB[22m[1m[22m[2m │ gzip:   0.77 kB[22m
+preview	Build	2025-10-16T00:20:31.5767532Z [2mdist/[22m[2massets/[22m[36mcompany-DFlC5fWa.js             [39m[1m[2m  4.06 kB[22m[1m[22m[2m │ gzip:   1.82 kB[22m
+preview	Build	2025-10-16T00:20:31.5768493Z [2mdist/[22m[2massets/[22m[36mindex-Gd6e5oJ4.js               [39m[1m[2m  4.16 kB[22m[1m[22m[2m │ gzip:   1.78 kB[22m
+preview	Build	2025-10-16T00:20:31.5769326Z [2mdist/[22m[2massets/[22m[36mWidgets-CZcmdGcY.js             [39m[1m[2m  4.61 kB[22m[1m[22m[2m │ gzip:   1.80 kB[22m
+preview	Build	2025-10-16T00:20:31.5770175Z [2mdist/[22m[2massets/[22m[36mDiagnostic-C8SFm7fj.js          [39m[1m[2m  4.80 kB[22m[1m[22m[2m │ gzip:   1.94 kB[22m
+preview	Build	2025-10-16T00:20:31.5771020Z [2mdist/[22m[2massets/[22m[36mBilling-C3EbzobB.js             [39m[1m[2m  4.90 kB[22m[1m[22m[2m │ gzip:   1.92 kB[22m
+preview	Build	2025-10-16T00:20:31.5772242Z [2mdist/[22m[2massets/[22m[36mSignup-BZt6OZWT.js              [39m[1m[2m  5.21 kB[22m[1m[22m[2m │ gzip:   1.77 kB[22m
+preview	Build	2025-10-16T00:20:31.5773140Z [2mdist/[22m[2massets/[22m[36mPreCallBriefing-CtWjwxfQ.js     [39m[1m[2m  5.82 kB[22m[1m[22m[2m │ gzip:   2.19 kB[22m
+preview	Build	2025-10-16T00:20:31.5774015Z [2mdist/[22m[2massets/[22m[36mtabs-DKFI2T-B.js                [39m[1m[2m  6.67 kB[22m[1m[22m[2m │ gzip:   2.65 kB[22m
+preview	Build	2025-10-16T00:20:31.5774864Z [2mdist/[22m[2massets/[22m[36mDashboard-D-IoAvxp.js           [39m[1m[2m  7.13 kB[22m[1m[22m[2m │ gzip:   2.40 kB[22m
+preview	Build	2025-10-16T00:20:31.5776117Z [2mdist/[22m[2massets/[22m[36mdialog-13hAjQmG.js              [39m[1m[2m  7.61 kB[22m[1m[22m[2m │ gzip:   2.87 kB[22m
+preview	Build	2025-10-16T00:20:31.5777815Z [2mdist/[22m[2massets/[22m[36mCMSManager-D8cRWHl1.js          [39m[1m[2m  9.55 kB[22m[1m[22m[2m │ gzip:   2.91 kB[22m
+preview	Build	2025-10-16T00:20:31.5779540Z [2mdist/[22m[2massets/[22m[36mapi-DpLsiJYm.js                 [39m[1m[2m 11.57 kB[22m[1m[22m[2m │ gzip:   2.76 kB[22m
+preview	Build	2025-10-16T00:20:31.5781450Z [2mdist/[22m[2massets/[22m[36mLeadProspecting-Cu94Rb-5.js     [39m[1m[2m 11.83 kB[22m[1m[22m[2m │ gzip:   4.23 kB[22m
+preview	Build	2025-10-16T00:20:31.5783281Z [2mdist/[22m[2massets/[22m[36mAffiliateDashboard-DxiR8gKb.js  [39m[1m[2m 11.90 kB[22m[1m[22m[2m │ gzip:   3.36 kB[22m
+preview	Build	2025-10-16T00:20:31.5784996Z [2mdist/[22m[2massets/[22m[36mfunctions-De0xyWLb.js           [39m[1m[2m 13.86 kB[22m[1m[22m[2m │ gzip:   4.38 kB[22m
+preview	Build	2025-10-16T00:20:31.5786715Z [2mdist/[22m[2massets/[22m[36mAdminDashboard-vbBUH-DR.js      [39m[1m[2m 16.89 kB[22m[1m[22m[2m │ gzip:   5.22 kB[22m
+preview	Build	2025-10-16T00:20:31.5788357Z [2mdist/[22m[2massets/[22m[36misEqual-l1K1tC93.js             [39m[1m[2m 17.66 kB[22m[1m[22m[2m │ gzip:   6.52 kB[22m
+preview	Build	2025-10-16T00:20:31.5790005Z [2mdist/[22m[2massets/[22m[36mLandingPage-DXqrK9q2.js         [39m[1m[2m 18.69 kB[22m[1m[22m[2m │ gzip:   4.58 kB[22m
+preview	Build	2025-10-16T00:20:31.5791879Z [2mdist/[22m[2massets/[22m[36mformat-DIePDvv_.js              [39m[1m[2m 20.22 kB[22m[1m[22m[2m │ gzip:   5.71 kB[22m
+preview	Build	2025-10-16T00:20:31.5793584Z [2mdist/[22m[2massets/[22m[36mselect-DNMovQwH.js              [39m[1m[2m 21.78 kB[22m[1m[22m[2m │ gzip:   7.61 kB[22m
+preview	Build	2025-10-16T00:20:31.5795353Z [2mdist/[22m[2massets/[22m[36mCampaigns-C9FVnhar.js           [39m[1m[2m 22.02 kB[22m[1m[22m[2m │ gzip:   6.79 kB[22m
+preview	Build	2025-10-16T00:20:31.5796520Z [2mdist/[22m[2massets/[22m[36mpurify.es-aGzT-_H7.js           [39m[1m[2m 22.15 kB[22m[1m[22m[2m │ gzip:   8.67 kB[22m
+preview	Build	2025-10-16T00:20:31.5797421Z [2mdist/[22m[2massets/[22m[36mdropdown-menu-DoxFHOlD.js       [39m[1m[2m 22.77 kB[22m[1m[22m[2m │ gzip:   6.81 kB[22m
+preview	Build	2025-10-16T00:20:31.5798519Z [2mdist/[22m[2massets/[22m[36mEmailCenter-DzaMiGeA.js         [39m[1m[2m 27.74 kB[22m[1m[22m[2m │ gzip:   7.63 kB[22m
+preview	Build	2025-10-16T00:20:31.5799390Z [2mdist/[22m[2massets/[22m[36mRFPStudio-BdXMkVBG.js           [39m[1m[2m 34.52 kB[22m[1m[22m[2m │ gzip:   9.82 kB[22m
+preview	Build	2025-10-16T00:20:31.5800287Z [2mdist/[22m[2massets/[22m[36mCompanyDetailModal-CwoSNbcb.js  [39m[1m[2m 36.97 kB[22m[1m[22m[2m │ gzip:  10.13 kB[22m
+preview	Build	2025-10-16T00:20:31.5801537Z [2mdist/[22m[2massets/[22m[36mCombination-CgZeotSx.js         [39m[1m[2m 48.70 kB[22m[1m[22m[2m │ gzip:  17.84 kB[22m
+preview	Build	2025-10-16T00:20:31.5802402Z [2mdist/[22m[2massets/[22m[36mSearch-D_brVAPt.js              [39m[1m[2m 53.52 kB[22m[1m[22m[2m │ gzip:  16.04 kB[22m
