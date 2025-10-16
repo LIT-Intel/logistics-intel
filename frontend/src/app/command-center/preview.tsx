@@ -18,14 +18,14 @@ import {
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
 import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
 
-// --- Placeholder Data ---
+// --- Placeholder Data (blank defaults; selected company drives display) ---
 const COMPANY_DATA = {
-    name: "Dole Fresh Fruit Co.",
-    initials: "DF", // Added initials for avatar
-    domain: "dole.com",
-    companyId: "CMP-48392",
-    generated: "Generated via trade signals",
-    isSaved: true,
+    name: "",
+    initials: "",
+    domain: "",
+    companyId: "",
+    generated: "",
+    isSaved: false,
 };
 
 const TAGS_DATA = ["Shipper", "Cold Chain Logistics", "Global Importer", "Fruit & Produce"];
@@ -130,6 +130,25 @@ export default function CommandCenterPreview() {
     try { localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: sel.company_id ?? null, name: sel.name, domain: sel.domain ?? null })); } catch {}
   }
 
+  function deriveInitials(name?: string|null) {
+    const n = (name||'').trim();
+    if (!n) return '';
+    const parts = n.split(/\s+/).filter(Boolean);
+    const letters = (parts[0]?.[0]||'') + (parts[1]?.[0]||'');
+    return letters.toUpperCase();
+  }
+
+  function readLegacyKpis(key: { company_id?: string|null; name: string }) {
+    try {
+      const raw = localStorage.getItem('lit_companies');
+      const arr = raw ? JSON.parse(raw) : [];
+      const idKey = String(key.company_id || '').trim();
+      const nameKey = String(key.name || '').toLowerCase();
+      const rec = Array.isArray(arr) ? arr.find((c:any)=> String(c?.id||'')===idKey || String(c?.name||'').toLowerCase()===nameKey) : null;
+      return rec?.kpis || null;
+    } catch { return null; }
+  }
+
   async function hydrateForSelection(sel: { company_id?: string|null; name: string }) {
     // KPIs
     try {
@@ -152,6 +171,18 @@ export default function CommandCenterPreview() {
           totalTeus: (item && (item.total_teus != null) ? String(item.total_teus) : '—'),
           growthRate: (item && (item.growth_rate != null) ? `${item.growth_rate}` : '—'),
         });
+      }
+    } catch {}
+    // Overlay with locally saved KPIs from Search (if any)
+    try {
+      const loc = readLegacyKpis({ company_id: sel.company_id ?? null, name: sel.name });
+      if (loc) {
+        setKpi(prev => ({
+          shipments12m: loc.shipments12m != null ? String(loc.shipments12m) : prev.shipments12m,
+          lastActivity: loc.lastActivity || prev.lastActivity,
+          totalTeus: prev.totalTeus,
+          growthRate: prev.growthRate,
+        }));
       }
     } catch {}
     // Shipments
@@ -278,7 +309,7 @@ export default function CommandCenterPreview() {
         <Section title="Shortcuts" icon={Save}>
             <div className="grid grid-cols-2 gap-2 text-sm">
                 <button className="flex items-center gap-2 p-3 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition border border-indigo-200">
-                    <Heart className="w-4 h-4" /> {COMPANY_DATA.isSaved ? "Saved" : "Save"}
+                    <Heart className="w-4 h-4" /> {isSaved ? 'Saved' : 'Save'}
                 </button>
                 <button className="flex items-center gap-2 p-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition border border-gray-300">
                     <Package className="w-4 h-4" /> Track Shipments
@@ -381,25 +412,25 @@ export default function CommandCenterPreview() {
               <FullContactCard 
                   name="Jane Doe" 
                   role="VP Supply Chain" 
-                  email="jane.doe@dole.com" 
+                  email={selected?.domain ? `contact@${selected.domain}` : '—'} 
                   phone="(555) 123-4567"
               />
               <FullContactCard 
                   name="Luis Zhang" 
                   role="Director of Operations" 
-                  email="luis.zhang@dole.com" 
+                  email={selected?.domain ? `ops@${selected.domain}` : '—'} 
                   phone="(555) 987-6543"
               />
               <FullContactCard 
                   name="Marcus Hill" 
                   role="Logistics Manager" 
-                  email="marcus.hill@dole.com" 
+                  email={selected?.domain ? `logistics@${selected.domain}` : '—'} 
                   phone="(555) 345-7890"
               />
               <FullContactCard 
                   name="Sarah Connor" 
                   role="Global Procurement Lead" 
-                  email="sarah.connor@dole.com" 
+                  email={selected?.domain ? `procurement@${selected.domain}` : '—'} 
                   phone="(555) 678-1234"
               />
           </div>
@@ -483,10 +514,10 @@ export default function CommandCenterPreview() {
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-200">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                 <div className="flex items-center gap-4 mb-4 sm:mb-0">
-                    <CompanyAvatar initials={COMPANY_DATA.initials} />
+                    <CompanyAvatar initials={deriveInitials(selected?.company_name || selected?.name || '')} />
                     <div>
-                      <h1 className="text-4xl font-extrabold text-gray-900">{selected?.company_name || selected?.name || COMPANY_DATA.name}</h1>
-                      <p className="text-sm text-gray-500 mt-1">{selected?.domain || COMPANY_DATA.domain} • ID: {selected?.company_id || COMPANY_DATA.companyId} • {COMPANY_DATA.generated}</p>
+                      <h1 className="text-4xl font-extrabold text-gray-900">{selected?.company_name || selected?.name || 'Select a company'}</h1>
+                      <p className="text-sm text-gray-500 mt-1">{selected?.domain || '—'} • ID: {selected?.company_id || '—'}</p>
                     </div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-3 sm:gap-2">
