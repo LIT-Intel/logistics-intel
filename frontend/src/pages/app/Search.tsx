@@ -93,7 +93,7 @@ function SaveButton({ row }: { row: any }) {
   );
 }
 
-function KPI({ value, label, icon }: { value: number | string | null; label: string; icon: React.ReactNode }) {
+  function KPI({ value, label, icon }: { value: number | string | null; label: string; icon: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3">
       <div className="rounded-xl p-2 shadow-sm border bg-white/80">{icon}</div>
@@ -125,7 +125,7 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
       <Card className={cn('group transition-shadow rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm hover:shadow-md min-h-[260px] flex flex-col', selected ? 'ring-2 ring-indigo-500 ring-offset-1' : '')}>
         <div className="h-1 w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-fuchsia-600 rounded-t-2xl" />
-        <CardHeader className="pb-2 flex flex-row items-center gap-4">
+        <CardHeader className="pb-2 flex flex-row items-start gap-4">
           <Avatar className="h-10 w-10"><AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-white">{initials}</AvatarFallback></Avatar>
           <div className="flex-1">
             <CardTitle className="text-base font-semibold tracking-tight text-slate-900">{row.company_name}</CardTitle>
@@ -138,17 +138,18 @@ function CompanyCard({ row, onOpen, selected }: { row: any; onOpen: (r: any) => 
                 <Badge variant="secondary" className="rounded-full bg-emerald-50 border-emerald-200 text-emerald-700">Saved</Badge>
               )}
             </div>
+            <div className="mt-2"><SaveButton row={row} /></div>
           </div>
-          <div className="flex items-center gap-2">
-            <SaveButton row={row} />
+          <div className="flex items-center gap-2 mt-1">
             <Button variant="secondary" size="sm" onClick={() => onOpen(row)} className="rounded-xl">View Details <ChevronRight className="ml-1 h-4 w-4" /></Button>
           </div>
         </CardHeader>
         <CardContent className="pt-0 flex-1 flex flex-col">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <KPI value={row.shipments_12m ?? 0} label="Shipments (12m)" icon={<TrendingUp className={brand.kpiIcon} />} />
-            <KPI value={(typeof row.last_activity === 'object' ? (row.last_activity?.value || '—') : (row.last_activity ?? '—'))} label="Last activity" icon={<Calendar className={brand.kpiIcon} />} />
-            <KPI value={row.top_routes?.[0]?.dest_country ?? '—'} label="Top destination" icon={<MapPin className={brand.kpiIcon} />} />
+            <KPI value={(typeof row.last_activity === 'object' ? (row.last_activity?.value || '—') : (row.last_activity ?? '—'))} label="Last Activity" icon={<Calendar className={brand.kpiIcon} />} />
+            <KPI value={(row as any)?.total_teus ?? '—'} label="Total TEUs" icon={<Package className={brand.kpiIcon} />} />
+            <KPI value={(row as any)?.growth_rate ?? '—'} label="Growth Rate" icon={<TrendingUp className={brand.kpiIcon} />} />
           </div>
           <Separator className="my-4" />
           <div className="mt-auto">
@@ -288,9 +289,12 @@ function SearchAppPage() {
       const lsKey = 'lit_companies';
       const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
       if (!existing.find((c: any)=> String(c?.id||'') === cid)) {
+        const lastActivityVal = (row?.last_activity && typeof row.last_activity === 'object' && 'value' in row.last_activity)
+          ? (row.last_activity.value as any)
+          : (row?.last_activity ?? null);
         const kpis = {
           shipments12m: row?.shipments_12m || 0,
-          lastActivity: row?.last_activity || null,
+          lastActivity: lastActivityVal,
           originsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.origin_country) : [],
           destsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.dest_country) : [],
           carriersTop: Array.isArray(row?.top_carriers) ? row.top_carriers.map((c: any)=> c.carrier) : [],
