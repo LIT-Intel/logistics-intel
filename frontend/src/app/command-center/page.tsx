@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import CompanyAvatar from '@/components/command-center/CompanyAvatar';
 import { hasFeature } from '@/lib/access';
+import { searchCompanies, getCompanyKpis, kpiFrom } from '@/lib/api';
 
 // inline LitSearchRow type removed; AddCompanyModal owns its search types
 
@@ -38,6 +39,8 @@ export default function CommandCenterPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [campOpen, setCampOpen] = useState(false);
   const [selected, setSelected] = useState<{ company_id: string | null; name: string; domain: string | null } | null>(null);
+  const [query, setQuery] = useState('');
+  const [typeahead, setTypeahead] = useState<Array<{ company_id: string|null; name: string; domain?: string|null }>>([]);
   const needsEnrich = !!selected && !selected?.company_id;
   const savedList = loadSaved();
   const isSaved = !!selected && savedList.some(x => (x.company_id ?? x.name) === ((selected?.company_id) ?? (selected?.name || '')));
@@ -46,7 +49,7 @@ export default function CommandCenterPage() {
 
   // inline modal/search removed in favor of AddCompanyModal
 
-  // --- Fetch KPI seed from proxy searchCompanies (1 row), prefer saved company ---
+  // --- Fetch KPI seed from fast KPI endpoint (fallback to search summary) ---
   type SearchCompanyRow = {
     company_id: string | null;
     company_name: string;
@@ -56,27 +59,81 @@ export default function CommandCenterPage() {
     top_carriers?: { name: string | null; share_pct: number | null }[] | null;
   };
   type SearchCompaniesResp = { meta?: { total: number }, rows?: SearchCompanyRow[], items?: SearchCompanyRow[] };
-  // growth/teus sourced from API when available; otherwise keep placeholders
   useEffect(() => {
     const saved = (() => { try { return JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null'); } catch { return null; } })();
-    if (saved) setSelected(saved);
-    const body = saved?.company_id ? { company_id: saved.company_id, limit: 1, offset: 0 } : { q: saved?.name || null, limit: 1, offset: 0 };
-    fetch('/api/lit/public/searchCompanies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(String(r.status));
-        const data = (await r.json()) as SearchCompaniesResp;
-        const rows = Array.isArray(data.rows) ? data.rows : (Array.isArray(data.items) ? data.items : []);
-        const row = rows?.[0];
-        if (!row) return;
-        setKpi({
-          shipments12m: row.shipments_12m != null ? String(row.shipments_12m) : '—',
-          lastActivity: row.last_activity?.value || '—',
-          totalTeus: (row as any).total_teus != null ? String((row as any).total_teus) : '—',
-          growthRate: (row as any).growth_rate != null ? `${(row as any).growth_rate}` : '—',
-        });
-      })
-      .catch(() => { /* keep placeholders */ });
+    if (saved) {
+      setSelected(saved);
+      setQuery(saved?.name || '');
+      void hydrateForSelection(saved);
+    }
   }, []);
+
+  async function hydrateForSelection(sel: { company_id: string | null; name: string; domain?: string | null }) {
+    try {
+      const fast = await getCompanyKpis({ company_id: sel.company_id ?? undefined, company_name: sel.name });
+      if (fast) {
+        setKpi({
+          shipments12m: fast.shipments_12m != null ? String(fast.shipments_12m) : '—',
+          lastActivity: (fast.last_activity && (fast.last_activity as any).value) ? (fast.last_activity as any).value : (fast.last_activity || '—'),
+          totalTeus: (fast as any).total_teus != null ? String((fast as any).total_teus) : '—',
+          growthRate: (fast as any).growth_rate != null ? `${(fast as any).growth_rate}` : '—',
+        });
+        return;
+      }
+    } catch {}
+    try {
+      const { items } = await searchCompanies({ q: sel.name, pageSize: 1 });
+      const row: any = Array.isArray(items) ? items[0] : null;
+      if (row) {
+        const kk = kpiFrom(row);
+        setKpi({
+          shipments12m: kk.shipments12m != null ? String(kk.shipments12m) : '—',
+          lastActivity: kk.lastActivity || '—',
+          totalTeus: row.total_teus != null ? String(row.total_teus) : '—',
+          growthRate: row.growth_rate != null ? `${row.growth_rate}` : '—',
+        });
+      }
+    } catch {}
+  }
+
+  function persistSelection(sel: { company_id: string | null; name: string; domain?: string | null }) {
+    try { localStorage.setItem('lit:selectedCompany', JSON.stringify(sel)); } catch {}
+  }
+
+  // Typeahead over search input
+  useEffect(() => {
+    const q = (query || '').trim();
+    if (!q) { setTypeahead([]); return; }
+    const ac = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const { items } = await searchCompanies({ q, pageSize: 8 }, ac.signal);
+        const mapped = (Array.isArray(items) ? items : []).map((it: any) => ({ company_id: it.company_id ?? null, name: it.company_name ?? it.name ?? q, domain: it.domain ?? null }));
+        setTypeahead(mapped);
+      } catch { setTypeahead([]); }
+    }, 220);
+    return () => { clearTimeout(t); ac.abort(); };
+  }, [query]);
+
+  async function onPickCompany(c: { company_id: string|null; name: string; domain?: string|null }) {
+    const sel = { company_id: c.company_id ?? null, name: c.name, domain: c.domain ?? null } as const;
+    setSelected(sel);
+    persistSelection(sel);
+    setQuery(sel.name);
+    await hydrateForSelection(sel);
+    setTypeahead([]);
+  }
+
+  async function onPickedFromSaved() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('lit:selectedCompany') ?? 'null');
+      if (saved && (saved.company_id || saved.name)) {
+        setSelected({ company_id: saved.company_id ?? null, name: saved.name, domain: saved.domain ?? null });
+        setQuery(saved.name || '');
+        await hydrateForSelection({ company_id: saved.company_id ?? null, name: saved.name, domain: saved.domain ?? null });
+      }
+    } catch {}
+  }
 
   return (
     <div id="cc-root" className="min-h-screen bg-[#f7f8fb]" data-cc-build="v2.2-2025-10-15">
@@ -91,7 +148,7 @@ export default function CommandCenterPage() {
           <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm"><Settings2 className="mr-2 h-4 w-4" />Tools</Button>
             {/* New Saved Companies pill */}
-            <SavedCompaniesPicker onPicked={() => { /* hydrate */ }} />
+            <SavedCompaniesPicker onPicked={() => { void onPickedFromSaved(); }} />
             <Button size="sm" onClick={()=>setCampOpen(true)}>Add to Campaign</Button>
             <Button size="sm" variant="outline" onClick={()=>{
               if(!selected){ toast.error('No company selected'); return; }
@@ -137,7 +194,19 @@ export default function CommandCenterPage() {
       <div className="mx-auto max-w-[1400px] px-4 py-6">
         {/* Single page search input above company header (keep only this) */}
         <div className="flex justify-between items-center mb-4 gap-3">
-          <Input className="w-full max-w-xl" placeholder="Search companies or contacts..." />
+          <div className="w-full max-w-xl relative">
+            <Input value={query} onChange={(e)=> setQuery(e.target.value)} placeholder="Search companies by name…" />
+            {typeahead.length > 0 && (
+              <div className="absolute z-30 mt-1 w-full rounded-xl border bg-white shadow">
+                {typeahead.map((c, i) => (
+                  <button key={i} onClick={()=> void onPickCompany(c)} className="w-full text-left px-3 py-2 hover:bg-slate-50">
+                    <div className="text-sm font-medium">{c.name}</div>
+                    <div className="text-xs text-slate-500">{c.company_id || c.domain || '—'}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Saved Companies already in top bar; avoid duplicate here */}
         </div>
         {/* Company header summary */}
