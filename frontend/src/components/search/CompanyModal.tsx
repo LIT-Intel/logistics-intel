@@ -6,7 +6,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import KpiGrid from './KpiGrid';
 import { computeKpis } from './computeKpis';
 import ContactsGate from '@/components/search/ContactsGate';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, Sparkles } from 'lucide-react';
+import { hasFeature } from '@/lib/access';
 function inferTEUs(desc?: string | null, containerCount?: number | null) {
   if (!containerCount || containerCount <= 0) return null;
   const d = (desc || '').toUpperCase();
@@ -31,7 +32,7 @@ type ModalProps = {
 };
 
 export default function CompanyModal({ company, open, onClose }: ModalProps) {
-  const [activeTab, setActiveTab] = useState<'kpi' | 'shipments' | 'contacts'>('kpi');
+  const [activeTab, setActiveTab] = useState<'profile' | 'kpi' | 'shipments' | 'contacts'>('profile');
 
   const [details, setDetails] = useState<any>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
@@ -127,6 +128,9 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
     } as { shipments_12m: number; last_activity: string | null; top_routes: any[]; top_carriers: any[] };
   }, [details, company]);
 
+  const subscribedBriefing = hasFeature('briefing');
+  const subscribedContacts = hasFeature('contacts');
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl h-[90vh] max-h-[90vh] p-0 flex flex-col">
@@ -156,11 +160,36 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             </div>
           </div>
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex-1 min-h-0 flex flex-col">
-            <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-3 gap-2 w-full">
+            <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-4 gap-2 w-full">
+              <TabsTrigger value="profile" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Profile</TabsTrigger>
               <TabsTrigger value="kpi" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">KPI</TabsTrigger>
               <TabsTrigger value="shipments" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Shipments</TabsTrigger>
               <TabsTrigger value="contacts" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Contacts</TabsTrigger>
             </TabsList>
+            <TabsContent value="profile" className="mt-2 overflow-auto p-3 sm:p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div><span className="text-neutral-500">Company ID:</span> <span className="font-medium">{company?.company_id || '—'}</span></div>
+                <div><span className="text-neutral-500">Website:</span> {details?.website ? (
+                  <a className="text-violet-700 hover:underline font-medium" href={String(details.website)} target="_blank" rel="noreferrer">{String(details.website).replace(/^https?:\/\//,'')}</a>
+                ) : '—'}</div>
+                <div><span className="text-neutral-500">HQ:</span> <span className="font-medium">{(details?.hq_city || details?.hq_state || details?.hq_country) ? [details?.hq_city, details?.hq_state, details?.hq_country].filter(Boolean).join(', ') : '—'}</span></div>
+              </div>
+              {!subscribedBriefing && (
+                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 flex items-start gap-2">
+                  <Sparkles className="w-4 h-4 text-violet-600 mt-0.5" />
+                  <div className="text-sm">
+                    <div className="font-medium text-violet-800">AI Summary is available on Pro</div>
+                    <div className="text-violet-700">Subscribe to unlock AI-generated company summaries and insights.</div>
+                  </div>
+                </div>
+              )}
+              {subscribedBriefing && (
+                <div className="mt-4 rounded-xl border p-3">
+                  <div className="text-sm font-medium">AI Summary</div>
+                  <div className="text-sm text-muted-foreground mt-1">Coming soon.</div>
+                </div>
+              )}
+            </TabsContent>
             <TabsContent value="kpi" className="mt-2 overflow-auto p-1 sm:p-2">
               {/* Prefer server KPIs if available; else compute from visible shipments */}
               {kpiServer ? (
@@ -266,12 +295,16 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               )}
             </TabsContent>
             <TabsContent value="contacts" className="mt-2 p-1 sm:p-2">
-              <ContactsGate
-                position="center"
-                companyName={company?.company_name || 'this company'}
-                onUpgrade={() => { /* track('contacts_gate_upgrade_click') */ }}
-                onLearnMore={() => { /* track('contacts_gate_learn_more_click') */ }}
-              />
+              {subscribedContacts ? (
+                <div className="rounded-2xl border p-3 text-sm text-muted-foreground text-center">Contacts list will appear here.</div>
+              ) : (
+                <ContactsGate
+                  position="center"
+                  companyName={company?.company_name || 'this company'}
+                  onUpgrade={() => { /* tracking hook */ }}
+                  onLearnMore={() => { /* tracking hook */ }}
+                />
+              )}
             </TabsContent>
           </Tabs>
         </div>
