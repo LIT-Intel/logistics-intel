@@ -30,10 +30,10 @@ function kLastActivity(v: any): string {
 
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
+    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[88px] flex flex-col items-center justify-center">
       <div className="flex items-center justify-center mb-1">{icon}</div>
-      <div className="text-xl font-semibold text-gray-900">{value ?? '—'}</div>
-      <div className="text-[11px] uppercase text-gray-500 font-medium mt-1">{label}</div>
+      <div className="text-xl font-semibold text-gray-900 truncate max-w-[140px]" title={String(value ?? '—')}>{value ?? '—'}</div>
+      <div className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate max-w-[140px]" title={label}>{label}</div>
     </div>
   );
 }
@@ -97,7 +97,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[13px] text-slate-500">Company</div>
-          <div className="truncate text-lg font-semibold tracking-tight text-slate-900">{name}</div>
+          <div className="truncate text-lg font-semibold tracking-tight text-slate-900" title={name}>{name}</div>
           <div className="mt-1 text-xs text-slate-400 truncate" title={id}>ID: {id}</div>
           <div className="mt-2"><SaveToCommandCenterButton row={r} /></div>
         </div>
@@ -117,7 +117,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           <div className="hidden sm:flex items-center text-xs font-semibold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
             <Sparkles className="w-3 h-3 mr-1" /> AI Ready
           </div>
-          <Button variant="secondary" size="sm" onClick={() => onOpen(r)} className="rounded-xl">View Details</Button>
+          <Button size="sm" onClick={() => onOpen(r)} className="rounded-xl text-white" style={{ backgroundColor: STYLES.brandPurple }}>View Details</Button>
         </div>
       </div>
     </div>
@@ -134,7 +134,27 @@ function ResultsCards({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void })
   );
 }
 
-function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) {
+function ResultsList({ rows, onOpen, selectedKey }: { rows: any[]; onOpen: (r: any)=>void; selectedKey?: string | null }) {
+  const [savedSet, setSavedSet] = useState<Set<string>>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+      const s = new Set<string>();
+      for (const c of Array.isArray(arr) ? arr : []) { if (c?.id) s.add(String(c.id)); }
+      return s;
+    } catch { return new Set<string>(); }
+  });
+  useEffect(() => {
+    const onStorage = () => {
+      try {
+        const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+        const s = new Set<string>();
+        for (const c of Array.isArray(arr) ? arr : []) { if (c?.id) s.add(String(c.id)); }
+        setSavedSet(s);
+      } catch {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   return (
     <div className="overflow-x-auto rounded-xl shadow-lg border border-gray-200">
       <table className="min-w-full divide-y divide-gray-200">
@@ -149,10 +169,11 @@ function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) 
           {rows.map((r) => {
             const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
             const top = r.top_routes?.[0];
+            const isSaved = savedSet.has(key);
             return (
-              <tr key={key} className="hover:bg-gray-50 transition">
+              <tr key={key} className={cn("hover:bg-gray-50 transition", selectedKey === key ? "ring-2 ring-indigo-500 ring-offset-1" : "") }>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <p className="font-medium text-gray-900">{r.company_name}</p>
+                  <p className="font-medium text-gray-900 truncate max-w-[360px]" title={r.company_name}>{r.company_name}</p>
                   <p className="text-xs text-gray-500">ID: {r.company_id || '—'}</p>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.shipments_12m ?? '—'}</td>
@@ -163,6 +184,9 @@ function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) 
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <SaveToCommandCenterButton row={r} />
                   <Button variant="ghost" size="sm" className="ml-2" onClick={() => onOpen(r)}>Details</Button>
+                  {isSaved && (
+                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 align-middle">Saved</span>
+                  )}
                 </td>
               </tr>
             );
@@ -176,7 +200,7 @@ function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) 
 export default function SearchPage() {
   // Keep existing search hook (wires to /api/lit/public/searchCompanies)
   const { q, setQ, rows, loading, run, next, prev, page, filters, setFilters } = useSearch();
-  const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('Cards');
+  const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
   const [filterOptionsReady, setFilterOptionsReady] = useState(false);
@@ -274,7 +298,13 @@ export default function SearchPage() {
         {rows.length > 0 && (
           <div className="pt-2">
             {view === 'Cards' && <ResultsCards rows={dedupedRows} onOpen={(r)=> setModal(r)} />}
-            {view === 'List' && <ResultsList rows={dedupedRows} onOpen={(r)=> setModal(r)} />}
+            {view === 'List' && (
+              <ResultsList
+                rows={dedupedRows}
+                onOpen={(r)=> setModal(r)}
+                selectedKey={modal ? getCompanyKey({ company_id: modal?.company_id, company_name: modal?.company_name }) : null}
+              />
+            )}
           </div>
         )}
       </div>
