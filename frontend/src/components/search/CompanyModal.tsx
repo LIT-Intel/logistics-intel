@@ -48,6 +48,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [total, setTotal] = useState<number | null>(null);
+  const [trend, setTrend] = useState<number[]>([]); // last 12 months counts
 
   const cid = company?.company_id || undefined;
   const cname = company?.company_name || '';
@@ -72,6 +73,27 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
         try {
           const k = await getCompanyKpis({ company_id: cid, company_name: cid ? undefined : cname });
           if (!cancelled) setKpiServer(k);
+        } catch {}
+        // Fetch shipments for monthly trend (12 months)
+        try {
+          const { rows } = await getCompanyShipmentsUnified({ company_id: cid, company_name: cid ? undefined : cname, limit: 500, offset: 0 });
+          if (!cancelled) {
+            const counts = new Array(12).fill(0);
+            const now = new Date();
+            const idxFor = (d: Date) => {
+              const monthsDiff = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+              return monthsDiff;
+            };
+            for (const r of rows || []) {
+              const s = (r as any)?.date?.value || (r as any)?.shipment_date?.value || (r as any)?.shipped_on || null;
+              if (!s) continue;
+              const dt = new Date(String(s));
+              if (isNaN(dt.getTime())) continue;
+              const diff = idxFor(dt);
+              if (diff >= 0 && diff < 12) counts[11 - diff] += 1; // left->right oldest to latest
+            }
+            setTrend(counts);
+          }
         } catch {}
       } catch (e) {
         if (!cancelled) setDetails({});
@@ -136,6 +158,12 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const subscribedBriefing = hasFeature('briefing');
   const subscribedContacts = hasFeature('contacts');
   const isWhitelisted = String(user?.email||'').toLowerCase() === 'vraymond@logisticintel.com';
+  const [showUpsell, setShowUpsell] = useState(false);
+  async function handleSaveGuarded() {
+    const allowed = isWhitelisted || hasFeature('crm');
+    if (!allowed) { setShowUpsell(true); return; }
+    await handleSaveToCommandCenter();
+  }
   async function handleSaveToCommandCenter() {
     try {
       const cname = String(company?.company_name || '');
@@ -190,7 +218,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                 </div>
               </DialogHeader>
               <div className="flex items-center gap-2">
-                <button onClick={handleSaveToCommandCenter} className="rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50">Save to Command Center</button>
+                <button onClick={handleSaveGuarded} className="rounded-xl px-3 py-2 text-sm text-white" style={{ backgroundColor: '#7F3DFF' }}>Save to Command Center</button>
                 <button aria-label="Close" onClick={() => onClose(false)} className="shrink-0 rounded-full border p-2 hover:bg-neutral-50"><X className="h-4 w-4"/></button>
               </div>
             </div>
@@ -228,10 +256,12 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               <div className="mt-2 rounded-xl border border-violet-200 bg-violet-50 p-3">
                 <div className="text-sm font-medium text-violet-800 mb-2">Shipments (last 12 months)</div>
                 <div className="h-40 flex items-end gap-1">
-                  {/* Placeholder bars; keeping style only */}
-                  {Array.from({ length: 12 }).map((_, i) => (
-                    <div key={i} className="flex-1 rounded-t bg-violet-600" style={{ height: `${20 + (i%6)*10}px` }} />
-                  ))}
+                  {(() => {
+                    const max = Math.max(1, ...trend);
+                    return (trend.length ? trend : new Array(12).fill(0)).map((v, i) => (
+                      <div key={i} className="flex-1 rounded-t bg-violet-600" style={{ height: `${Math.max(4, Math.round((v / max) * 160))}px` }} title={`${v} shipments`} />
+                    ));
+                  })()}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -332,7 +362,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                       <p className="text-sm text-gray-700 truncate">email@example.com</p>
                       <p className="text-sm text-gray-700 truncate">(555) 000-0000</p>
                     </div>
-                    <Button size="sm" className="px-3 py-1 text-xs text-white rounded" style={{ backgroundColor: '#7F3DFF' }}>Save to Command Center</Button>
+                    <Button size="sm" className="px-3 py-1 text-xs text-white rounded" style={{ backgroundColor: '#7F3DFF' }} onClick={handleSaveGuarded}>Save to Command Center</Button>
                   </div>
                 ))}
               </div>
@@ -341,6 +371,18 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
           </Tabs>
         </div>
       </DialogContent>
+      {showUpsell && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-violet-200 shadow-2xl p-5">
+            <div className="flex items-center gap-2 mb-2"><div className="h-8 w-8 rounded-xl bg-violet-600 text-white flex items-center justify-center">★</div><div className="text-lg font-semibold" style={{ color: '#7F3DFF' }}>Subscribe to Save</div></div>
+            <div className="text-sm text-gray-700">Saving companies to Command Center requires a Pro subscription. Upgrade to unlock CRM, contacts enrichment, and alerts.</div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="px-3 py-2 text-sm rounded-xl border" onClick={()=> setShowUpsell(false)}>Close</button>
+              <button className="px-3 py-2 text-sm rounded-xl text-white" style={{ backgroundColor: '#7F3DFF' }} onClick={()=> setShowUpsell(false)}>View Plans</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }
