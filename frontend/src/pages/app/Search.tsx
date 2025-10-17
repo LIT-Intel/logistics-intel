@@ -30,10 +30,10 @@ function kLastActivity(v: any): string {
 
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[88px] flex flex-col items-center justify-center">
-      <div className="flex items-center justify-center mb-1">{icon}</div>
-      <div className="text-xl font-semibold text-gray-900 truncate max-w-[140px]" title={String(value ?? '—')}>{value ?? '—'}</div>
-      <div className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate max-w-[140px]" title={label}>{label}</div>
+    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[92px] flex flex-col items-center justify-center w-full overflow-hidden">
+      <div className="flex items-center justify-center mb-1 shrink-0">{icon}</div>
+      <div className="text-xl font-semibold text-gray-900 truncate w-full max-w-full" title={String(value ?? '—')}>{value ?? '—'}</div>
+      <div className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate w-full max-w-full" title={label}>{label}</div>
     </div>
   );
 }
@@ -92,6 +92,24 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const totalTeus = (r as any)?.total_teus ?? '—';
   const growthRate = (r as any)?.growth_rate ?? '—';
   const initials = (name||'').split(' ').map((p: string)=>p[0]).join('').slice(0,2).toUpperCase();
+  const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+  const [saved, setSaved] = useState<boolean>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+      return Array.isArray(arr) && arr.some((c: any) => String(c?.id||'') === key);
+    } catch { return false; }
+  });
+  useEffect(() => {
+    const onStorage = () => {
+      try {
+        const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+        setSaved(Array.isArray(arr) && arr.some((c: any) => String(c?.id||'') === key));
+      } catch {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [key]);
+
   return (
     <div className="rounded-xl shadow-sm bg-white p-5 hover:shadow-lg transition border border-gray-200 cursor-default">
       <div className="flex items-start justify-between gap-4">
@@ -99,7 +117,12 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           <div className="text-[13px] text-slate-500">Company</div>
           <div className="truncate text-lg font-semibold tracking-tight text-slate-900" title={name}>{name}</div>
           <div className="mt-1 text-xs text-slate-400 truncate" title={id}>ID: {id}</div>
-          <div className="mt-2"><SaveToCommandCenterButton row={r} /></div>
+          <div className="mt-2 flex items-center gap-2">
+            <SaveToCommandCenterButton row={r} />
+            {saved && (
+              <span className="inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5">Saved</span>
+            )}
+          </div>
         </div>
         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-semibold select-none">{initials}</div>
       </div>
