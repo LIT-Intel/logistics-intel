@@ -32,9 +32,9 @@ function kLastActivity(v: any): string {
 
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[100px] flex flex-col items-center justify-center w-full overflow-hidden">
+    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[96px] flex flex-col items-center justify-center w-full overflow-hidden">
       <div className="flex items-center justify-center mb-1 shrink-0">{icon}</div>
-      <div className="text-2xl font-bold text-gray-900 truncate w-full max-w-full" title={String(value ?? '—')}>{value ?? '—'}</div>
+      <div className="text-xl font-bold text-gray-900 truncate w-full max-w-full" title={String(value ?? '—')}>{value ?? '—'}</div>
       <div className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate w-full max-w-full" title={label}>{label}</div>
     </div>
   );
@@ -55,7 +55,7 @@ function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'
     if (saving || saved) return;
     // Gating: require subscription unless whitelisted email
     const email = String(user?.email || '').toLowerCase();
-    const allowed = email === 'vraymond@logisticintel.com' || hasFeature('crm');
+    const allowed = email === 'vraymond@logisticintel.com' || email === 'support@logisticintel.com' || hasFeature('crm');
     if (!allowed) { setShowUpsell(true); return; }
     setSaving(true);
     try {
