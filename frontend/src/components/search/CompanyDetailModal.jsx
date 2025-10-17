@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Building2, Globe, Bookmark, BookmarkCheck, Mail, X, Ship, Plane, Truck, Train, Lock, Loader2, Sparkles
+  Building2, Globe, Bookmark, BookmarkCheck, Mail, X, Ship, Plane, Truck, Train, Lock, Loader2, TrendingUp, Box
 } from 'lucide-react';
+import { BarChart as RBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 import { Contact, Note } from '@/api/entities';
 import { createPageUrl } from '@/utils';
 import { postSearchCompanies, getCompanyShipments, enrichCompany } from '@/lib/api';
 import { hasFeature } from '@/lib/access';
 
-import OverviewTab from './detail_tabs/OverviewTab';
+// Replaced OverviewTab with inline Profile content per spec
 import ShipmentsTab from './detail_tabs/ShipmentsTab';
 import ContactsTab from './detail_tabs/ContactsTab';
 // Removed KPI/AI enrichment and Notes per new spec
@@ -27,9 +28,10 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
+  const isWhitelisted = String(user?.email || '').toLowerCase() === 'vraymond@logisticintel.com' || String(user?.email || '').toLowerCase() === 'support@logisticintel.com';
   
   const companyId = company?.id;
-  const canViewContacts = hasFeature('contacts');
+  const canViewContacts = hasFeature('contacts') || isWhitelisted;
 
   const loadRelatedData = useCallback(async () => {
     if (!companyId) return;
@@ -51,8 +53,14 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
         const mapped = {
           id: ovRaw.company_id,
           name: ovRaw.company_name || 'Unknown',
-          shipments_12m: ovRaw.shipments || 0,
-          last_seen: ovRaw.lastShipmentDate || null,
+          shipments_12m: ovRaw.shipments_12m ?? ovRaw.shipments ?? 0,
+          last_seen: (ovRaw.last_activity && ovRaw.last_activity.value) || ovRaw.lastShipmentDate || null,
+          total_teus: ovRaw.total_teus ?? null,
+          growth_rate: ovRaw.growth_rate ?? null,
+          hq_city: ovRaw.hq_city || null,
+          hq_state: ovRaw.hq_state || null,
+          domain: ovRaw.domain || null,
+          website: ovRaw.website || null,
           top_route: (Array.isArray(ovRaw.originsTop) && Array.isArray(ovRaw.destsTop))
             ? `${ovRaw.originsTop[0]?.v || ''} → ${ovRaw.destsTop[0]?.v || ''}`
             : undefined,
@@ -165,18 +173,59 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const modeIcons = getModeIcons(currentCompanyDetails?.mode_breakdown);
   const displayCompany = currentCompanyDetails || company;
 
+  // Build 12-month shipments bar series
+  const monthlySeries = useMemo(() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months.push({ key, label: d.toLocaleString(undefined, { month: 'short' }), count: 0 });
+    }
+    const buckets = new Map(months.map((m) => [m.key, m]));
+    for (const r of Array.isArray(shipments) ? shipments : []) {
+      const raw = r.shipped_on || r.date || r.snapshot_date || r.shipment_date;
+      if (!raw) continue;
+      const dt = new Date(String(raw));
+      if (isNaN(dt.getTime())) continue;
+      const k = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+      if (buckets.has(k)) buckets.get(k).count += 1;
+    }
+    // Set bar colors: last month brand purple
+    const result = months.map((m, idx) => ({ ...m, fill: idx === months.length - 1 ? '#7F3DFF' : '#A97EFF' }));
+    return result;
+  }, [shipments]);
+
+  function KpiTile({ icon: Icon, label, value }) {
+    return (
+      <div className="p-4 text-center rounded-xl border border-gray-200 bg-white min-h-[128px] flex flex-col items-center justify-center overflow-hidden">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-gray-500 truncate w-full max-w-full">
+          <Icon className="w-3.5 h-3.5 text-[#7F3DFF]" />
+          <span>{label}</span>
+        </div>
+        <div className="mt-1 text-3xl font-bold text-gray-900 truncate w-full max-w-full">{value}</div>
+      </div>
+    );
+  }
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose?.(); }}>
-        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 md:rounded-2xl rounded-none md:inset-auto inset-0">
+        <DialogContent className="max-w-4xl h-[95vh] flex flex-col p-0 md:rounded-2xl rounded-none md:inset-auto inset-0">
           <DialogHeader className="p-6 border-b">
             <div className="flex justify-between items-start gap-4">
               <div>
-                <DialogTitle className="text-2xl font-bold text-gray-900">{displayCompany.name}</DialogTitle>
-                <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                <DialogTitle className="text-2xl font-bold" style={{ color: '#7F3DFF' }}>{displayCompany.name}</DialogTitle>
+                <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
                   <div className="flex items-center gap-1.5"><Building2 className="w-4 h-4" /><span>ID: {companyId}</span></div>
-                  {displayCompany.domain && (
-                    <div className="flex items-center gap-1.5"><Globe className="w-4 h-4" /><a className="text-blue-600 hover:underline" href={`https://${String(displayCompany.domain).replace(/^https?:\/\//, '')}`} target="_blank" rel="noopener noreferrer">{String(displayCompany.domain)}</a></div>
+                  {(displayCompany.hq_city || displayCompany.hq_state) && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-4 h-4 inline-block rounded-full bg-gray-200" />
+                      <span>HQ: {[displayCompany.hq_city, displayCompany.hq_state].filter(Boolean).join(', ')}</span>
+                    </div>
+                  )}
+                  {(displayCompany.website || displayCompany.domain) && (
+                    <div className="flex items-center gap-1.5"><Globe className="w-4 h-4" /><a className="text-blue-600 hover:underline" href={`https://${String((displayCompany.website || displayCompany.domain) || '').replace(/^https?:\/\//, '')}`} target="_blank" rel="noopener noreferrer">{String(displayCompany.website || displayCompany.domain)}</a></div>
                   )}
                 </div>
                 {modeIcons.length > 0 && (
@@ -195,10 +244,10 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                 )}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Button size="sm" onClick={handleSave} variant="outline" className="flex items-center gap-2" disabled={isSaving || isSavedByUser}>
+                <Button size="sm" onClick={handleSave} className="flex items-center gap-2 bg-[#7F3DFF] hover:bg-[#6d2fff] text-white" disabled={isSaving || isSavedByUser}>
                   {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {isSavedByUser ? <BookmarkCheck className="w-4 h-4 text-blue-600" /> : <Bookmark className="w-4 h-4" />}
-                  {isSavedByUser ? 'Saved' : 'Save'}
+                  {isSavedByUser ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+                  {isSavedByUser ? 'Saved' : 'Save to Command Center'}
                 </Button>
                 <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={handleStartOutreach}>
                   <Mail className="w-4 h-4 mr-2" /> 
@@ -222,8 +271,32 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
               </div>
               <div className="flex-grow overflow-auto">
                 <TabsContent value="overview" className="p-6">
-                  {/* Profile tab includes KPI cards (OverviewTab already shows KPIs) */}
-                  <OverviewTab company={currentCompanyDetails} shipments={shipments} isLoading={isLoading} />
+                  {/* KPI grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    <KpiTile icon={Ship} label="Shipments (12m)" value={Number(displayCompany.shipments_12m || 0).toLocaleString()} />
+                    <KpiTile icon={TrendingUp} label="Last Activity" value={displayCompany.last_seen ? new Date(displayCompany.last_seen).toLocaleDateString() : '—'} />
+                    <KpiTile icon={Box} label="Total TEUs" value={displayCompany.total_teus != null ? Number(displayCompany.total_teus).toLocaleString() : '—'} />
+                    <KpiTile icon={TrendingUp} label="Growth Rate" value={displayCompany.growth_rate != null ? `${Math.round(Number(displayCompany.growth_rate) * 100)}%` : '—'} />
+                  </div>
+
+                  {/* 12-month shipments bar chart */}
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="h-[150px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RBarChart data={monthlySeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                          <Tooltip formatter={(v) => [v, 'Shipments']} labelClassName="text-gray-700" />
+                          <Bar dataKey="count" radius={[4,4,0,0]}>
+                            {monthlySeries.map((entry, index) => (
+                              <Bar key={`bar-${index}`} dataKey="count" fill={entry.fill} x={0} />
+                            ))}
+                          </Bar>
+                        </RBarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 </TabsContent>
                 <TabsContent value="shipments" className="p-6">
                   <ShipmentsTab

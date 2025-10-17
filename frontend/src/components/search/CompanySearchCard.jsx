@@ -105,36 +105,19 @@ export default function CompanySearchCard({
         </Button>
       </div>
 
-      {/* KPI tiles below actions */}
+      {/* KPI tiles below actions - uniform squares compact */}
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="bg-blue-50 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-xs text-blue-600 font-medium mb-1">
-            <TrendingUp className="w-3 h-3" />
-            Shipments (12M)
+        {[
+          { label: 'Shipments (12M)', value: formatShipments(shipments12m) },
+          { label: 'Last Activity', value: lastActivity ? format(new Date(lastActivity), 'MMM d') : '—' },
+          { label: 'Total TEUs', value: teus != null ? Number(teus).toLocaleString() : '—' },
+          { label: 'Growth Rate', value: growth != null ? `${Math.round(Number(growth) * 100)}%` : '—' },
+        ].map((k, i) => (
+          <div key={i} className="rounded-xl border border-gray-200 bg-white min-h-[96px] p-3 flex flex-col items-center justify-center">
+            <div className="text-[11px] uppercase tracking-wide text-gray-500 truncate w-full text-center">{k.label}</div>
+            <div className="mt-1 text-xl font-bold text-gray-900 truncate w-full text-center">{k.value}</div>
           </div>
-          <div className="text-lg font-bold text-blue-900">{formatShipments(shipments12m)}</div>
-        </div>
-        <div className="bg-purple-50 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-xs text-purple-600 font-medium mb-1">
-            <Calendar className="w-3 h-3" />
-            Last Activity
-          </div>
-          <div className="text-sm font-bold text-purple-900">{lastActivity ? format(new Date(lastActivity), 'MMM d') : '—'}</div>
-        </div>
-        <div className="bg-violet-50 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-xs text-violet-700 font-medium mb-1">
-            <Layers className="w-3 h-3" />
-            Total TEUs
-          </div>
-          <div className="text-lg font-bold text-violet-900">{teus != null ? Number(teus).toLocaleString() : '—'}</div>
-        </div>
-        <div className="bg-emerald-50 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-xs text-emerald-700 font-medium mb-1">
-            <TrendingUp className="w-3 h-3" />
-            Growth Rate
-          </div>
-          <div className="text-lg font-bold text-emerald-900">{growth != null ? `${growth}` : '—'}</div>
-        </div>
+        ))}
       </div>
 
       <div className="space-y-2 mb-4 text-sm">

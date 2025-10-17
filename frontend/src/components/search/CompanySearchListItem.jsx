@@ -85,7 +85,7 @@ export default function CompanySearchListItem({
               <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Shipments (12M): <b className="text-gray-900 ml-1">{formatShipments(shipments12m)}</b></span>
               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{lastActivity ? format(new Date(lastActivity), 'MMM d') : '—'}</b></span>
               <span className="flex items-center gap-1"><Layers className="w-3 h-3" /> TEUs: <b className="text-gray-900 ml-1">{teus != null ? Number(teus).toLocaleString() : '—'}</b></span>
-              <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Growth: <b className="text-gray-900 ml-1">{growth != null ? `${growth}` : '—'}</b></span>
+              <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Growth: <b className="text-gray-900 ml-1">{growth != null ? `${Math.round(Number(growth) * 100)}%` : '—'}</b></span>
               <span className="hidden md:flex items-center gap-1"><Ship className="w-3 h-3" /> Route: <b className="text-gray-900 ml-1 truncate max-w-[220px]">{originsTop?.[0] || company.top_route || 'Various'}</b></span>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, postSearchCompanies, saveCompanyToCrm } from "@/lib/api";
+import { hasFeature } from "@/lib/access";
 import { upsertSaved } from "@/components/command-center/storage";
 import CompanyDrawer from "@/components/company/CompanyDrawer";
 import { useAuth } from "@/auth/AuthProvider";
@@ -138,6 +139,9 @@ export default function Search() {
             company_id: item.company_id || null,
             name,
             domain: item.domain || null,
+            website: item.website || null,
+            hq_city: item.hq_city || null,
+            hq_state: item.hq_state || null,
             shipments_12m: shipments12m,
             last_seen: lastSeen,
             top_route: topRoute,
@@ -248,6 +252,9 @@ export default function Search() {
           company_id: item.company_id || null,
           name,
           domain: item.domain || null,
+          website: item.website || null,
+          hq_city: item.hq_city || null,
+          hq_state: item.hq_state || null,
           shipments_12m: shipments12m,
           last_seen: lastSeen,
           top_route: topRoute,
@@ -280,7 +287,8 @@ export default function Search() {
   const handleCompanySelect = useCallback((company) => {
     setSelectedCompany(company);
     setDrawerId(String(company?.id || company?.company_id || ""));
-    setDrawerOpen(true);
+    setDrawerOpen(false);
+    setShowDetailModal(true);
   }, []);
 
   const handleSaveCompany = async (company) => {
@@ -299,6 +307,17 @@ export default function Search() {
     setSavedCompanyIds(optimisticNewIds);
 
     try {
+      // Subscription gate for CRM save (with whitelist bypass)
+      const email = String(user?.email || '').toLowerCase();
+      const allowed = email === 'vraymond@logisticintel.com' || email === 'support@logisticintel.com' || hasFeature('crm');
+      if (!allowed) {
+        setUpgradeFeature('crm');
+        setShowUpgradePrompt(true);
+        // rollback optimistic UI
+        setSavedCompanyIds(originalSavedIds);
+        setSavingCompanyId(null);
+        return;
+      }
       const res = await saveCompanyToCrm({
         company_id: String(company.company_id || company.id || ""),
         company_name: String(company.name || company.company_name || "Unknown"),
