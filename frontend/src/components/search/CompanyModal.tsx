@@ -6,7 +6,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import KpiGrid from './KpiGrid';
 import { computeKpis } from './computeKpis';
 import ContactsGate from '@/components/search/ContactsGate';
-import { Loader2, X, Sparkles } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Box, Clock, TrendingUp, Ship } from 'lucide-react';
+import { hasFeature } from '@/lib/access';
+import { useAuth } from '@/auth/AuthProvider';
 import { hasFeature } from '@/lib/access';
 function inferTEUs(desc?: string | null, containerCount?: number | null) {
   if (!containerCount || containerCount <= 0) return null;
@@ -32,6 +36,7 @@ type ModalProps = {
 };
 
 export default function CompanyModal({ company, open, onClose }: ModalProps) {
+  const { user } = useAuth() as any;
   const [activeTab, setActiveTab] = useState<'profile' | 'shipments' | 'contacts'>('profile');
 
   const [details, setDetails] = useState<any>(null);
@@ -130,6 +135,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   const subscribedBriefing = hasFeature('briefing');
   const subscribedContacts = hasFeature('contacts');
+  const isWhitelisted = String(user?.email||'').toLowerCase() === 'vraymond@logisticintel.com';
   async function handleSaveToCommandCenter() {
     try {
       const cname = String(company?.company_name || '');
@@ -211,12 +217,22 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             <TabsContent value="profile" className="mt-2 overflow-auto p-3 sm:p-4">
               {/* KPI cards at top of Profile */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                <KpiGrid items={kpiServer ? [
-                  { label: 'Shipments (12m)', value: kpiServer.shipments_12m ?? '—' },
-                  { label: 'Last activity', value: (kpiServer.last_activity?.value || '—') },
-                  { label: 'TEUs', value: kpiServer.teus_12m ?? '—' },
-                  { label: 'Growth Rate', value: (kpiServer.growth_rate ?? '—') },
-                ] : computeKpis([])} />
+                <KpiGrid items={[
+                  { label: 'Shipments (12m)', value: kpiServer?.shipments_12m ?? (company?.shipments_12m ?? '—') },
+                  { label: 'Last activity', value: (kpiServer?.last_activity?.value ?? (typeof company?.last_activity === 'string' ? company?.last_activity : (company as any)?.last_activity?.value) ?? '—') },
+                  { label: 'TEUs', value: (kpiServer?.teus_12m ?? '—') },
+                  { label: 'Growth Rate', value: (kpiServer?.growth_rate ?? '—') },
+                ]} />
+              </div>
+              {/* Bar chart placeholder for 12 months shipments */}
+              <div className="mt-2 rounded-xl border border-violet-200 bg-violet-50 p-3">
+                <div className="text-sm font-medium text-violet-800 mb-2">Shipments (last 12 months)</div>
+                <div className="h-40 flex items-end gap-1">
+                  {/* Placeholder bars; keeping style only */}
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <div key={i} className="flex-1 rounded-t bg-violet-600" style={{ height: `${20 + (i%6)*10}px` }} />
+                  ))}
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div><span className="text-neutral-500">Company ID:</span> <span className="font-medium">{company?.company_id || '—'}</span></div>
@@ -305,16 +321,22 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               )}
             </TabsContent>
             <TabsContent value="contacts" className="mt-2 p-1 sm:p-2">
-              {subscribedContacts ? (
-                <div className="rounded-2xl border p-3 text-sm text-muted-foreground text-center">Contacts list will appear here.</div>
-              ) : (
-                <ContactsGate
-                  position="center"
-                  companyName={company?.company_name || 'this company'}
-                  onUpgrade={() => { /* tracking hook */ }}
-                  onLearnMore={() => { /* tracking hook */ }}
-                />
-              )}
+              {/* Always show business-card style preview with CTA per spec */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {Array.from({ length: 2 }).map((_, idx) => (
+                  <div key={idx} className="rounded-lg shadow-sm border border-gray-200 p-4 flex items-start gap-4 bg-white">
+                    <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-900 truncate">Decision Maker</p>
+                      <p className="text-xs text-gray-600 mb-1 truncate">Title</p>
+                      <p className="text-sm text-gray-700 truncate">email@example.com</p>
+                      <p className="text-sm text-gray-700 truncate">(555) 000-0000</p>
+                    </div>
+                    <Button size="sm" className="px-3 py-1 text-xs text-white rounded" style={{ backgroundColor: '#7F3DFF' }}>Save to Command Center</Button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-xs text-gray-500">These are sample cards. Save the company to Command Center to view real contacts and enrichment.</div>
             </TabsContent>
           </Tabs>
         </div>

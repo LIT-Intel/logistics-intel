@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, List as ListIcon, Sliders, TrendingUp, Ship, Clock, Box, Zap, X, MapPin, Search as SearchIcon, Sparkles, Bookmark, Bell } from 'lucide-react';
+import { LayoutGrid, List as ListIcon, Sliders, TrendingUp, Ship, Clock, Box, Zap, X, MapPin, Search as SearchIcon, Bookmark, Bell } from 'lucide-react';
+import { useAuth } from '@/auth/AuthProvider';
+import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
 import { useSearch } from '@/app/search/useSearch';
@@ -39,6 +41,7 @@ function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: strin
 }
 
 function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'|'md' }) {
+  const { user } = useAuth() as any;
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(() => {
     try {
@@ -47,8 +50,13 @@ function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'
       return Array.isArray(a) && a.some((c: any) => String(c?.id||'') === key);
     } catch { return false; }
   });
+  const [showUpsell, setShowUpsell] = useState(false);
   const onClick = async () => {
     if (saving || saved) return;
+    // Gating: require subscription unless whitelisted email
+    const email = String(user?.email || '').toLowerCase();
+    const allowed = email === 'vraymond@logisticintel.com' || hasFeature('crm');
+    if (!allowed) { setShowUpsell(true); return; }
     setSaving(true);
     try {
       const cname = String(row?.company_name || '');
@@ -72,14 +80,28 @@ function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'
     } finally { setSaving(false); }
   };
   return (
-    <button
-      onClick={onClick}
-      disabled={saving || saved}
-      className={cn('px-4 py-2 text-sm text-white rounded-lg transition', saved ? 'opacity-70 cursor-default' : 'hover:opacity-90')}
-      style={{ backgroundColor: STYLES.brandPurple }}
-    >
-      {saved ? 'Saved' : (saving ? 'Saving…' : 'Save')}
-    </button>
+    <>
+      <button
+        onClick={onClick}
+        disabled={saving || saved}
+        className={cn('px-4 py-2 text-sm text-white rounded-lg transition', saved ? 'opacity-70 cursor-default' : 'hover:opacity-90')}
+        style={{ backgroundColor: STYLES.brandPurple }}
+      >
+        {saved ? 'Saved' : (saving ? 'Saving…' : 'Save')}
+      </button>
+      {showUpsell && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-violet-200 shadow-2xl p-5">
+            <div className="flex items-center gap-2 mb-2"><div className="h-8 w-8 rounded-xl bg-violet-600 text-white flex items-center justify-center">★</div><div className="text-lg font-semibold" style={{ color: STYLES.brandPurple }}>Subscribe to Save</div></div>
+            <div className="text-sm text-gray-700">Saving companies to Command Center requires a Pro subscription. Upgrade to unlock CRM, contacts enrichment, and alerts.</div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="px-3 py-2 text-sm rounded-xl border" onClick={()=> setShowUpsell(false)}>Close</button>
+              <button className="px-3 py-2 text-sm rounded-xl text-white" style={{ backgroundColor: STYLES.brandPurple }} onClick={()=> setShowUpsell(false)}>View Plans</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -137,9 +159,6 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           {top ? (<><MapPin className="w-3.5 h-3.5 text-red-500" />{top.origin_country} → {top.dest_country}</>) : 'No route data'}
         </div>
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center text-xs font-semibold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
-            <Sparkles className="w-3 h-3 mr-1" /> AI Ready
-          </div>
           <Button size="sm" onClick={() => onOpen(r)} className="rounded-xl text-white" style={{ backgroundColor: STYLES.brandPurple }}>View Details</Button>
         </div>
       </div>
