@@ -15,8 +15,7 @@ import { hasFeature } from '@/lib/access';
 import OverviewTab from './detail_tabs/OverviewTab';
 import ShipmentsTab from './detail_tabs/ShipmentsTab';
 import ContactsTab from './detail_tabs/ContactsTab';
-import EnrichmentTab from './detail_tabs/EnrichmentTab';
-import NotesTab from './detail_tabs/NotesTab';
+// Removed KPI/AI enrichment and Notes per new spec
 import { useFeatureFlags } from '@/store/featureFlags';
 
 export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user, isSaved = false }) {
@@ -30,7 +29,6 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const [isEnriching, setIsEnriching] = useState(false);
   
   const companyId = company?.id;
-  const canViewAi = hasFeature('briefing');
   const canViewContacts = hasFeature('contacts');
 
   const loadRelatedData = useCallback(async () => {
@@ -211,12 +209,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
           </DialogHeader>
 
           <div className="flex-grow overflow-hidden">
-            {/* Tab order: Profile (Overview) → KPI (AI Insights renamed to KPI strip if needed) → Shipments → Contacts */}
+            {/* Tab order: Profile → Shipments → Contacts (KPI moved into Profile) */}
             <Tabs defaultValue="overview" className="h-full flex flex-col">
               <div className="px-6 border-b">
                 <TabsList>
                   <TabsTrigger value="overview">Profile</TabsTrigger>
-                  <TabsTrigger value="ai_insights">KPI</TabsTrigger>
                   <TabsTrigger value="shipments">Shipments ({shipments.length})</TabsTrigger>
                   {companyDrawerPremium ? (
                     <TabsTrigger value="contacts" disabled={!isSavedByUser || !canViewContacts}>{(!isSavedByUser || !canViewContacts) && <Lock className="w-3 h-3 mr-1.5" />}Contacts</TabsTrigger>
@@ -225,27 +222,8 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
               </div>
               <div className="flex-grow overflow-auto">
                 <TabsContent value="overview" className="p-6">
+                  {/* Profile tab includes KPI cards (OverviewTab already shows KPIs) */}
                   <OverviewTab company={currentCompanyDetails} shipments={shipments} isLoading={isLoading} />
-                </TabsContent>
-                <TabsContent value="ai_insights" className="p-6">
-                  {canViewAi ? (
-                    <EnrichmentTab 
-                      company={currentCompanyDetails || company}
-                      onCompanyUpdate={setCurrentCompanyDetails}
-                      user={user} 
-                      isGated={false}
-                      onUnlock={handleSave} 
-                      isLoading={isSaving}
-                      onEnrich={handleEnrichCompany}
-                      isEnriching={isEnriching}
-                    />
-                  ) : (
-                    <div className="rounded-2xl border p-6 text-sm text-gray-700 bg-white">
-                      <div className="flex items-center gap-2 font-medium"><Sparkles className="w-4 h-4 text-violet-600"/> AI Summary</div>
-                      <div className="mt-2">Upgrade to view AI insights and summaries for this company.</div>
-                      <div className="mt-3"><Button size="sm" onClick={handleSave} variant="outline">Save & Upgrade</Button></div>
-                    </div>
-                  )}
                 </TabsContent>
                 <TabsContent value="shipments" className="p-6">
                   <ShipmentsTab

@@ -50,7 +50,7 @@ export default function Search() {
   const [savedCompanyIds, setSavedCompanyIds] = useState(new Set());
   const [savingCompanyId, setSavingCompanyId] = useState(null);
   const [searchError, setSearchError] = useState(null);
-  const [viewMode, setViewMode] = useState("grid");
+  const [viewMode, setViewMode] = useState("list");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerId, setDrawerId] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -465,6 +465,7 @@ export default function Search() {
             savingCompanyId={savingCompanyId}
             viewMode={viewMode}
             setViewMode={setViewMode}
+            selectedId={drawerId}
             currentPage={currentPage}
             totalPages={Math.max(
               1,
