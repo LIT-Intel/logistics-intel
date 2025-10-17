@@ -32,7 +32,7 @@ type ModalProps = {
 };
 
 export default function CompanyModal({ company, open, onClose }: ModalProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'kpi' | 'shipments' | 'contacts'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'shipments' | 'contacts'>('profile');
 
   const [details, setDetails] = useState<any>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
@@ -49,7 +49,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   useEffect(() => {
     if (!open || !company) return;
-    setActiveTab('kpi');
+    setActiveTab('profile');
     setShipments([]);
     setPage(1);
     setTotal(null);
@@ -203,60 +203,27 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             </div>
           </div>
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex-1 min-h-0 flex flex-col">
-            <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-4 gap-2 w-full">
+            <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-3 gap-2 w-full">
               <TabsTrigger value="profile" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Profile</TabsTrigger>
-              <TabsTrigger value="kpi" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">KPI</TabsTrigger>
               <TabsTrigger value="shipments" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Shipments</TabsTrigger>
               <TabsTrigger value="contacts" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Contacts</TabsTrigger>
             </TabsList>
             <TabsContent value="profile" className="mt-2 overflow-auto p-3 sm:p-4">
+              {/* KPI cards at top of Profile */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                <KpiGrid items={kpiServer ? [
+                  { label: 'Shipments (12m)', value: kpiServer.shipments_12m ?? '—' },
+                  { label: 'Last activity', value: (kpiServer.last_activity?.value || '—') },
+                  { label: 'TEUs', value: kpiServer.teus_12m ?? '—' },
+                  { label: 'Growth Rate', value: (kpiServer.growth_rate ?? '—') },
+                ] : computeKpis([])} />
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div><span className="text-neutral-500">Company ID:</span> <span className="font-medium">{company?.company_id || '—'}</span></div>
                 <div><span className="text-neutral-500">Website:</span> {details?.website ? (
                   <a className="text-violet-700 hover:underline font-medium" href={String(details.website)} target="_blank" rel="noreferrer">{String(details.website).replace(/^https?:\/\//,'')}</a>
                 ) : '—'}</div>
                 <div><span className="text-neutral-500">HQ:</span> <span className="font-medium">{(details?.hq_city || details?.hq_state || details?.hq_country) ? [details?.hq_city, details?.hq_state, details?.hq_country].filter(Boolean).join(', ') : '—'}</span></div>
-              </div>
-              {!subscribedBriefing && (
-                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 flex items-start gap-2">
-                  <Sparkles className="w-4 h-4 text-violet-600 mt-0.5" />
-                  <div className="text-sm">
-                    <div className="font-medium text-violet-800">AI Summary is available on Pro</div>
-                    <div className="text-violet-700">Subscribe to unlock AI-generated company summaries and insights.</div>
-                  </div>
-                </div>
-              )}
-              {subscribedBriefing && (
-                <div className="mt-4 rounded-xl border p-3">
-                  <div className="text-sm font-medium">AI Summary</div>
-                  <div className="text-sm text-muted-foreground mt-1">Coming soon.</div>
-                </div>
-              )}
-            </TabsContent>
-            <TabsContent value="kpi" className="mt-2 overflow-auto p-1 sm:p-2">
-              {/* Prefer server KPIs if available; else compute from visible shipments */}
-              {kpiServer ? (
-                <>
-                  <KpiGrid items={[
-                    { label: 'Shipments (12m)', value: kpiServer.shipments_12m ?? '—' },
-                    { label: 'Last activity', value: (kpiServer.last_activity?.value || '—') },
-                    { label: 'Top route', value: (kpiServer.top_routes?.[0] ? `${kpiServer.top_routes[0].origin_country}→${kpiServer.top_routes[0].dest_country}` : '—') },
-                    { label: 'Top carrier', value: (kpiServer.top_carriers?.[0]?.name || '—') },
-                    { label: 'Total containers', value: kpiServer.containers_12m ?? '—' },
-                    { label: 'TEUs', value: kpiServer.teus_12m ?? '—' },
-                    { label: 'Total weight (kg)', value: kpiServer.gross_weight_kg_12m ?? '—' },
-                    { label: 'Total value (USD)', value: kpiServer.value_usd_12m ?? '—' },
-                  ]} />
-                </>
-              ) : kpiLoading ? (
-                <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-              ) : (
-                <KpiGrid items={computeKpis(shipments)} />
-              )}
-              <div className="mt-3 border rounded-xl p-3">
-                <div className="text-sm font-medium">Profile</div>
-                <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
-                <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
               </div>
             </TabsContent>
             <TabsContent value="shipments" className="mt-2 flex-1 min-h-0 flex flex-col p-1 sm:p-2">
