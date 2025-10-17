@@ -6,7 +6,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import KpiGrid from './KpiGrid';
 import { computeKpis } from './computeKpis';
 import ContactsGate from '@/components/search/ContactsGate';
-import { Loader2, X, Sparkles } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Box, Clock, TrendingUp, Ship } from 'lucide-react';
+import { hasFeature } from '@/lib/access';
+import { useAuth } from '@/auth/AuthProvider';
 import { hasFeature } from '@/lib/access';
 function inferTEUs(desc?: string | null, containerCount?: number | null) {
   if (!containerCount || containerCount <= 0) return null;
@@ -32,7 +36,8 @@ type ModalProps = {
 };
 
 export default function CompanyModal({ company, open, onClose }: ModalProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'kpi' | 'shipments' | 'contacts'>('profile');
+  const { user } = useAuth() as any;
+  const [activeTab, setActiveTab] = useState<'profile' | 'shipments' | 'contacts'>('profile');
 
   const [details, setDetails] = useState<any>(null);
   const [kpiLoading, setKpiLoading] = useState(false);
@@ -43,13 +48,14 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [total, setTotal] = useState<number | null>(null);
+  const [trend, setTrend] = useState<number[]>([]); // last 12 months counts
 
   const cid = company?.company_id || undefined;
   const cname = company?.company_name || '';
 
   useEffect(() => {
     if (!open || !company) return;
-    setActiveTab('kpi');
+    setActiveTab('profile');
     setShipments([]);
     setPage(1);
     setTotal(null);
@@ -67,6 +73,27 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
         try {
           const k = await getCompanyKpis({ company_id: cid, company_name: cid ? undefined : cname });
           if (!cancelled) setKpiServer(k);
+        } catch {}
+        // Fetch shipments for monthly trend (12 months)
+        try {
+          const { rows } = await getCompanyShipmentsUnified({ company_id: cid, company_name: cid ? undefined : cname, limit: 500, offset: 0 });
+          if (!cancelled) {
+            const counts = new Array(12).fill(0);
+            const now = new Date();
+            const idxFor = (d: Date) => {
+              const monthsDiff = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+              return monthsDiff;
+            };
+            for (const r of rows || []) {
+              const s = (r as any)?.date?.value || (r as any)?.shipment_date?.value || (r as any)?.shipped_on || null;
+              if (!s) continue;
+              const dt = new Date(String(s));
+              if (isNaN(dt.getTime())) continue;
+              const diff = idxFor(dt);
+              if (diff >= 0 && diff < 12) counts[11 - diff] += 1; // left->right oldest to latest
+            }
+            setTrend(counts);
+          }
         } catch {}
       } catch (e) {
         if (!cancelled) setDetails({});
@@ -130,6 +157,13 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   const subscribedBriefing = hasFeature('briefing');
   const subscribedContacts = hasFeature('contacts');
+  const isWhitelisted = String(user?.email||'').toLowerCase() === 'vraymond@logisticintel.com';
+  const [showUpsell, setShowUpsell] = useState(false);
+  async function handleSaveGuarded() {
+    const allowed = isWhitelisted || hasFeature('crm');
+    if (!allowed) { setShowUpsell(true); return; }
+    await handleSaveToCommandCenter();
+  }
   async function handleSaveToCommandCenter() {
     try {
       const cname = String(company?.company_name || '');
@@ -184,7 +218,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                 </div>
               </DialogHeader>
               <div className="flex items-center gap-2">
-                <button onClick={handleSaveToCommandCenter} className="rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50">Save to Command Center</button>
+                <button onClick={handleSaveGuarded} className="rounded-xl px-3 py-2 text-sm text-white" style={{ backgroundColor: '#7F3DFF' }}>Save to Command Center</button>
                 <button aria-label="Close" onClick={() => onClose(false)} className="shrink-0 rounded-full border p-2 hover:bg-neutral-50"><X className="h-4 w-4"/></button>
               </div>
             </div>
@@ -203,60 +237,39 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
             </div>
           </div>
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex-1 min-h-0 flex flex-col">
-            <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-4 gap-2 w-full">
+            <TabsList className="sticky top-0 z-10 bg-white grid grid-cols-3 gap-2 w-full">
               <TabsTrigger value="profile" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Profile</TabsTrigger>
-              <TabsTrigger value="kpi" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">KPI</TabsTrigger>
               <TabsTrigger value="shipments" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Shipments</TabsTrigger>
               <TabsTrigger value="contacts" className="w-full justify-center rounded-xl py-2 text-sm font-medium border data-[state=active]:bg-violet-600 data-[state=active]:text-white">Contacts</TabsTrigger>
             </TabsList>
             <TabsContent value="profile" className="mt-2 overflow-auto p-3 sm:p-4">
+              {/* KPI cards at top of Profile */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                <KpiGrid items={[
+                  { label: 'Shipments (12m)', value: kpiServer?.shipments_12m ?? (company?.shipments_12m ?? '—') },
+                  { label: 'Last activity', value: (kpiServer?.last_activity?.value ?? (typeof company?.last_activity === 'string' ? company?.last_activity : (company as any)?.last_activity?.value) ?? '—') },
+                  { label: 'TEUs', value: (kpiServer?.teus_12m ?? '—') },
+                  { label: 'Growth Rate', value: (kpiServer?.growth_rate ?? '—') },
+                ]} />
+              </div>
+              {/* Bar chart placeholder for 12 months shipments */}
+              <div className="mt-2 rounded-xl border border-violet-200 bg-violet-50 p-3">
+                <div className="text-sm font-medium text-violet-800 mb-2">Shipments (last 12 months)</div>
+                <div className="h-40 flex items-end gap-1">
+                  {(() => {
+                    const max = Math.max(1, ...trend);
+                    return (trend.length ? trend : new Array(12).fill(0)).map((v, i) => (
+                      <div key={i} className="flex-1 rounded-t bg-violet-600" style={{ height: `${Math.max(4, Math.round((v / max) * 160))}px` }} title={`${v} shipments`} />
+                    ));
+                  })()}
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div><span className="text-neutral-500">Company ID:</span> <span className="font-medium">{company?.company_id || '—'}</span></div>
                 <div><span className="text-neutral-500">Website:</span> {details?.website ? (
                   <a className="text-violet-700 hover:underline font-medium" href={String(details.website)} target="_blank" rel="noreferrer">{String(details.website).replace(/^https?:\/\//,'')}</a>
                 ) : '—'}</div>
                 <div><span className="text-neutral-500">HQ:</span> <span className="font-medium">{(details?.hq_city || details?.hq_state || details?.hq_country) ? [details?.hq_city, details?.hq_state, details?.hq_country].filter(Boolean).join(', ') : '—'}</span></div>
-              </div>
-              {!subscribedBriefing && (
-                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 flex items-start gap-2">
-                  <Sparkles className="w-4 h-4 text-violet-600 mt-0.5" />
-                  <div className="text-sm">
-                    <div className="font-medium text-violet-800">AI Summary is available on Pro</div>
-                    <div className="text-violet-700">Subscribe to unlock AI-generated company summaries and insights.</div>
-                  </div>
-                </div>
-              )}
-              {subscribedBriefing && (
-                <div className="mt-4 rounded-xl border p-3">
-                  <div className="text-sm font-medium">AI Summary</div>
-                  <div className="text-sm text-muted-foreground mt-1">Coming soon.</div>
-                </div>
-              )}
-            </TabsContent>
-            <TabsContent value="kpi" className="mt-2 overflow-auto p-1 sm:p-2">
-              {/* Prefer server KPIs if available; else compute from visible shipments */}
-              {kpiServer ? (
-                <>
-                  <KpiGrid items={[
-                    { label: 'Shipments (12m)', value: kpiServer.shipments_12m ?? '—' },
-                    { label: 'Last activity', value: (kpiServer.last_activity?.value || '—') },
-                    { label: 'Top route', value: (kpiServer.top_routes?.[0] ? `${kpiServer.top_routes[0].origin_country}→${kpiServer.top_routes[0].dest_country}` : '—') },
-                    { label: 'Top carrier', value: (kpiServer.top_carriers?.[0]?.name || '—') },
-                    { label: 'Total containers', value: kpiServer.containers_12m ?? '—' },
-                    { label: 'TEUs', value: kpiServer.teus_12m ?? '—' },
-                    { label: 'Total weight (kg)', value: kpiServer.gross_weight_kg_12m ?? '—' },
-                    { label: 'Total value (USD)', value: kpiServer.value_usd_12m ?? '—' },
-                  ]} />
-                </>
-              ) : kpiLoading ? (
-                <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-              ) : (
-                <KpiGrid items={computeKpis(shipments)} />
-              )}
-              <div className="mt-3 border rounded-xl p-3">
-                <div className="text-sm font-medium">Profile</div>
-                <div className="text-sm text-muted-foreground mt-1">HQ: {details?.hq_city || '—'}, {details?.hq_state || '—'}, {details?.hq_country || '—'}</div>
-                <div className="text-sm text-muted-foreground">Website: {details?.website || '—'}</div>
               </div>
             </TabsContent>
             <TabsContent value="shipments" className="mt-2 flex-1 min-h-0 flex flex-col p-1 sm:p-2">
@@ -338,20 +351,38 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               )}
             </TabsContent>
             <TabsContent value="contacts" className="mt-2 p-1 sm:p-2">
-              {subscribedContacts ? (
-                <div className="rounded-2xl border p-3 text-sm text-muted-foreground text-center">Contacts list will appear here.</div>
-              ) : (
-                <ContactsGate
-                  position="center"
-                  companyName={company?.company_name || 'this company'}
-                  onUpgrade={() => { /* tracking hook */ }}
-                  onLearnMore={() => { /* tracking hook */ }}
-                />
-              )}
+              {/* Always show business-card style preview with CTA per spec */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {Array.from({ length: 2 }).map((_, idx) => (
+                  <div key={idx} className="rounded-lg shadow-sm border border-gray-200 p-4 flex items-start gap-4 bg-white">
+                    <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-900 truncate">Decision Maker</p>
+                      <p className="text-xs text-gray-600 mb-1 truncate">Title</p>
+                      <p className="text-sm text-gray-700 truncate">email@example.com</p>
+                      <p className="text-sm text-gray-700 truncate">(555) 000-0000</p>
+                    </div>
+                    <Button size="sm" className="px-3 py-1 text-xs text-white rounded" style={{ backgroundColor: '#7F3DFF' }} onClick={handleSaveGuarded}>Save to Command Center</Button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-xs text-gray-500">These are sample cards. Save the company to Command Center to view real contacts and enrichment.</div>
             </TabsContent>
           </Tabs>
         </div>
       </DialogContent>
+      {showUpsell && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-violet-200 shadow-2xl p-5">
+            <div className="flex items-center gap-2 mb-2"><div className="h-8 w-8 rounded-xl bg-violet-600 text-white flex items-center justify-center">★</div><div className="text-lg font-semibold" style={{ color: '#7F3DFF' }}>Subscribe to Save</div></div>
+            <div className="text-sm text-gray-700">Saving companies to Command Center requires a Pro subscription. Upgrade to unlock CRM, contacts enrichment, and alerts.</div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="px-3 py-2 text-sm rounded-xl border" onClick={()=> setShowUpsell(false)}>Close</button>
+              <button className="px-3 py-2 text-sm rounded-xl text-white" style={{ backgroundColor: '#7F3DFF' }} onClick={()=> setShowUpsell(false)}>View Plans</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }

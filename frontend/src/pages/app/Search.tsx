@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, List as ListIcon, Sliders, TrendingUp, Ship, Clock, Box, Zap, X, MapPin, Search as SearchIcon, Sparkles, Bookmark, Bell } from 'lucide-react';
+import { LayoutGrid, List as ListIcon, Sliders, TrendingUp, Ship, Clock, Box, Zap, X, MapPin, Search as SearchIcon, Bookmark, Bell } from 'lucide-react';
+import { useAuth } from '@/auth/AuthProvider';
+import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
 import { useSearch } from '@/app/search/useSearch';
@@ -30,15 +32,16 @@ function kLastActivity(v: any): string {
 
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
-      <div className="flex items-center justify-center mb-1">{icon}</div>
-      <div className="text-xl font-semibold text-gray-900">{value ?? '—'}</div>
-      <div className="text-[11px] uppercase text-gray-500 font-medium mt-1">{label}</div>
+    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[92px] flex flex-col items-center justify-center w-full overflow-hidden">
+      <div className="flex items-center justify-center mb-1 shrink-0">{icon}</div>
+      <div className="text-xl font-semibold text-gray-900 truncate w-full max-w-full" title={String(value ?? '—')}>{value ?? '—'}</div>
+      <div className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate w-full max-w-full" title={label}>{label}</div>
     </div>
   );
 }
 
 function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'|'md' }) {
+  const { user } = useAuth() as any;
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(() => {
     try {
@@ -47,8 +50,13 @@ function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'
       return Array.isArray(a) && a.some((c: any) => String(c?.id||'') === key);
     } catch { return false; }
   });
+  const [showUpsell, setShowUpsell] = useState(false);
   const onClick = async () => {
     if (saving || saved) return;
+    // Gating: require subscription unless whitelisted email
+    const email = String(user?.email || '').toLowerCase();
+    const allowed = email === 'vraymond@logisticintel.com' || hasFeature('crm');
+    if (!allowed) { setShowUpsell(true); return; }
     setSaving(true);
     try {
       const cname = String(row?.company_name || '');
@@ -72,14 +80,28 @@ function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'
     } finally { setSaving(false); }
   };
   return (
-    <button
-      onClick={onClick}
-      disabled={saving || saved}
-      className={cn('px-4 py-2 text-sm text-white rounded-lg transition', saved ? 'opacity-70 cursor-default' : 'hover:opacity-90')}
-      style={{ backgroundColor: STYLES.brandPurple }}
-    >
-      {saved ? 'Saved' : (saving ? 'Saving…' : 'Save')}
-    </button>
+    <>
+      <button
+        onClick={onClick}
+        disabled={saving || saved}
+        className={cn('px-4 py-2 text-sm text-white rounded-lg transition', saved ? 'opacity-70 cursor-default' : 'hover:opacity-90')}
+        style={{ backgroundColor: STYLES.brandPurple }}
+      >
+        {saved ? 'Saved' : (saving ? 'Saving…' : 'Save')}
+      </button>
+      {showUpsell && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-violet-200 shadow-2xl p-5">
+            <div className="flex items-center gap-2 mb-2"><div className="h-8 w-8 rounded-xl bg-violet-600 text-white flex items-center justify-center">★</div><div className="text-lg font-semibold" style={{ color: STYLES.brandPurple }}>Subscribe to Save</div></div>
+            <div className="text-sm text-gray-700">Saving companies to Command Center requires a Pro subscription. Upgrade to unlock CRM, contacts enrichment, and alerts.</div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="px-3 py-2 text-sm rounded-xl border" onClick={()=> setShowUpsell(false)}>Close</button>
+              <button className="px-3 py-2 text-sm rounded-xl text-white" style={{ backgroundColor: STYLES.brandPurple }} onClick={()=> setShowUpsell(false)}>View Plans</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -92,14 +114,37 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const totalTeus = (r as any)?.total_teus ?? '—';
   const growthRate = (r as any)?.growth_rate ?? '—';
   const initials = (name||'').split(' ').map((p: string)=>p[0]).join('').slice(0,2).toUpperCase();
+  const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+  const [saved, setSaved] = useState<boolean>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+      return Array.isArray(arr) && arr.some((c: any) => String(c?.id||'') === key);
+    } catch { return false; }
+  });
+  useEffect(() => {
+    const onStorage = () => {
+      try {
+        const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+        setSaved(Array.isArray(arr) && arr.some((c: any) => String(c?.id||'') === key));
+      } catch {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [key]);
+
   return (
     <div className="rounded-xl shadow-sm bg-white p-5 hover:shadow-lg transition border border-gray-200 cursor-default">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[13px] text-slate-500">Company</div>
-          <div className="truncate text-lg font-semibold tracking-tight text-slate-900">{name}</div>
+          <div className="truncate text-lg font-semibold tracking-tight text-slate-900" title={name}>{name}</div>
           <div className="mt-1 text-xs text-slate-400 truncate" title={id}>ID: {id}</div>
-          <div className="mt-2"><SaveToCommandCenterButton row={r} /></div>
+          <div className="mt-2 flex items-center gap-2">
+            <SaveToCommandCenterButton row={r} />
+            {saved && (
+              <span className="inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5">Saved</span>
+            )}
+          </div>
         </div>
         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-semibold select-none">{initials}</div>
       </div>
@@ -114,10 +159,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           {top ? (<><MapPin className="w-3.5 h-3.5 text-red-500" />{top.origin_country} → {top.dest_country}</>) : 'No route data'}
         </div>
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center text-xs font-semibold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
-            <Sparkles className="w-3 h-3 mr-1" /> AI Ready
-          </div>
-          <Button variant="secondary" size="sm" onClick={() => onOpen(r)} className="rounded-xl">View Details</Button>
+          <Button size="sm" onClick={() => onOpen(r)} className="rounded-xl text-white" style={{ backgroundColor: STYLES.brandPurple }}>View Details</Button>
         </div>
       </div>
     </div>
@@ -134,7 +176,27 @@ function ResultsCards({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void })
   );
 }
 
-function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) {
+function ResultsList({ rows, onOpen, selectedKey }: { rows: any[]; onOpen: (r: any)=>void; selectedKey?: string | null }) {
+  const [savedSet, setSavedSet] = useState<Set<string>>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+      const s = new Set<string>();
+      for (const c of Array.isArray(arr) ? arr : []) { if (c?.id) s.add(String(c.id)); }
+      return s;
+    } catch { return new Set<string>(); }
+  });
+  useEffect(() => {
+    const onStorage = () => {
+      try {
+        const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+        const s = new Set<string>();
+        for (const c of Array.isArray(arr) ? arr : []) { if (c?.id) s.add(String(c.id)); }
+        setSavedSet(s);
+      } catch {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   return (
     <div className="overflow-x-auto rounded-xl shadow-lg border border-gray-200">
       <table className="min-w-full divide-y divide-gray-200">
@@ -149,10 +211,11 @@ function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) 
           {rows.map((r) => {
             const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
             const top = r.top_routes?.[0];
+            const isSaved = savedSet.has(key);
             return (
-              <tr key={key} className="hover:bg-gray-50 transition">
+              <tr key={key} className={cn("hover:bg-gray-50 transition", selectedKey === key ? "ring-2 ring-indigo-500 ring-offset-1" : "") }>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <p className="font-medium text-gray-900">{r.company_name}</p>
+                  <p className="font-medium text-gray-900 truncate max-w-[360px]" title={r.company_name}>{r.company_name}</p>
                   <p className="text-xs text-gray-500">ID: {r.company_id || '—'}</p>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.shipments_12m ?? '—'}</td>
@@ -163,6 +226,9 @@ function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) 
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <SaveToCommandCenterButton row={r} />
                   <Button variant="ghost" size="sm" className="ml-2" onClick={() => onOpen(r)}>Details</Button>
+                  {isSaved && (
+                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 align-middle">Saved</span>
+                  )}
                 </td>
               </tr>
             );
@@ -176,7 +242,7 @@ function ResultsList({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) 
 export default function SearchPage() {
   // Keep existing search hook (wires to /api/lit/public/searchCompanies)
   const { q, setQ, rows, loading, run, next, prev, page, filters, setFilters } = useSearch();
-  const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('Cards');
+  const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
   const [filterOptionsReady, setFilterOptionsReady] = useState(false);
@@ -274,7 +340,13 @@ export default function SearchPage() {
         {rows.length > 0 && (
           <div className="pt-2">
             {view === 'Cards' && <ResultsCards rows={dedupedRows} onOpen={(r)=> setModal(r)} />}
-            {view === 'List' && <ResultsList rows={dedupedRows} onOpen={(r)=> setModal(r)} />}
+            {view === 'List' && (
+              <ResultsList
+                rows={dedupedRows}
+                onOpen={(r)=> setModal(r)}
+                selectedKey={modal ? getCompanyKey({ company_id: modal?.company_id, company_name: modal?.company_name }) : null}
+              />
+            )}
           </div>
         )}
       </div>

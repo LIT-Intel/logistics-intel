@@ -10,12 +10,12 @@ import {
 import { Contact, Note } from '@/api/entities';
 import { createPageUrl } from '@/utils';
 import { postSearchCompanies, getCompanyShipments, enrichCompany } from '@/lib/api';
+import { hasFeature } from '@/lib/access';
 
 import OverviewTab from './detail_tabs/OverviewTab';
 import ShipmentsTab from './detail_tabs/ShipmentsTab';
 import ContactsTab from './detail_tabs/ContactsTab';
-import EnrichmentTab from './detail_tabs/EnrichmentTab';
-import NotesTab from './detail_tabs/NotesTab';
+// Removed KPI/AI enrichment and Notes per new spec
 import { useFeatureFlags } from '@/store/featureFlags';
 
 export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user, isSaved = false }) {
@@ -29,6 +29,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const [isEnriching, setIsEnriching] = useState(false);
   
   const companyId = company?.id;
+  const canViewContacts = hasFeature('contacts');
 
   const loadRelatedData = useCallback(async () => {
     if (!companyId) return;
@@ -174,7 +175,9 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                 <DialogTitle className="text-2xl font-bold text-gray-900">{displayCompany.name}</DialogTitle>
                 <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                   <div className="flex items-center gap-1.5"><Building2 className="w-4 h-4" /><span>ID: {companyId}</span></div>
-                  <div className="flex items-center gap-1.5"><Globe className="w-4 h-4" /><span>Trade Data Available</span></div>
+                  {displayCompany.domain && (
+                    <div className="flex items-center gap-1.5"><Globe className="w-4 h-4" /><a className="text-blue-600 hover:underline" href={`https://${String(displayCompany.domain).replace(/^https?:\/\//, '')}`} target="_blank" rel="noopener noreferrer">{String(displayCompany.domain)}</a></div>
+                  )}
                 </div>
                 {modeIcons.length > 0 && (
                   <div className="flex items-center gap-2 mt-3">
@@ -206,22 +209,20 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
           </DialogHeader>
 
           <div className="flex-grow overflow-hidden">
+            {/* Tab order: Profile → Shipments → Contacts (KPI moved into Profile) */}
             <Tabs defaultValue="overview" className="h-full flex flex-col">
               <div className="px-6 border-b">
                 <TabsList>
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
+                  <TabsTrigger value="overview">Profile</TabsTrigger>
                   <TabsTrigger value="shipments">Shipments ({shipments.length})</TabsTrigger>
                   {companyDrawerPremium ? (
-                    <TabsTrigger value="contacts" disabled={!isSavedByUser}>{!isSavedByUser && <Lock className="w-3 h-3 mr-1.5" />}Contacts</TabsTrigger>
+                    <TabsTrigger value="contacts" disabled={!isSavedByUser || !canViewContacts}>{(!isSavedByUser || !canViewContacts) && <Lock className="w-3 h-3 mr-1.5" />}Contacts</TabsTrigger>
                   ) : null}
-                  <TabsTrigger value="ai_insights">
-                    <Sparkles className="w-3 h-3 mr-1.5" />AI Insights
-                  </TabsTrigger>
-                  <TabsTrigger value="notes" disabled={!isSavedByUser}>Notes ({notes.length})</TabsTrigger>
                 </TabsList>
               </div>
               <div className="flex-grow overflow-auto">
                 <TabsContent value="overview" className="p-6">
+                  {/* Profile tab includes KPI cards (OverviewTab already shows KPIs) */}
                   <OverviewTab company={currentCompanyDetails} shipments={shipments} isLoading={isLoading} />
                 </TabsContent>
                 <TabsContent value="shipments" className="p-6">
@@ -232,7 +233,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   />
                 </TabsContent>
                 <TabsContent value="contacts" className="p-6">
-                  {isSavedByUser ? (
+                  {isSavedByUser && canViewContacts ? (
                     <ContactsTab 
                       contacts={contacts} 
                       companyId={companyId} 
@@ -243,35 +244,9 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                       isLoading={isSaving} 
                     />
                   ) : (
-                    <div className="text-sm text-gray-600">
-                      Save this company to manage contacts.
-                      <div className="mt-3">
-                        <Button size="sm" variant="outline" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save Company'}</Button>
-                      </div>
-                    </div>
-                  )}
-                </TabsContent>
-                <TabsContent value="ai_insights" className="p-6">
-                  <EnrichmentTab 
-                    company={currentCompanyDetails || company}
-                    onCompanyUpdate={setCurrentCompanyDetails}
-                    user={user} 
-                    isGated={false}
-                    onUnlock={handleSave} 
-                    isLoading={isSaving}
-                    onEnrich={handleEnrichCompany}
-                    isEnriching={isEnriching}
-                  />
-                </TabsContent>
-                <TabsContent value="notes" className="p-6">
-                  {isSavedByUser ? (
-                    <NotesTab notes={notes} onAddNote={handleAddNote} isLoading={isLoading} />
-                  ) : (
-                    <div className="text-sm text-gray-600">
-                      Save this company to add and view notes.
-                      <div className="mt-3">
-                        <Button size="sm" variant="outline" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save Company'}</Button>
-                      </div>
+                    <div className="rounded-2xl border p-6 bg-white">
+                      <div className="text-sm text-gray-700">Save this company to Command Center and upgrade to Pro to unlock verified contacts.</div>
+                      <div className="mt-3"><Button size="sm" variant="outline" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save & Enrich'}</Button></div>
                     </div>
                   )}
                 </TabsContent>
