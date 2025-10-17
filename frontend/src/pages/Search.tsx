@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, postSearchCompanies, saveCompanyToCrm } from "@/lib/api";
+import { upsertSaved } from "@/components/command-center/storage";
 import CompanyDrawer from "@/components/company/CompanyDrawer";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -136,10 +137,13 @@ export default function Search() {
             id,
             company_id: item.company_id || null,
             name,
+            domain: item.domain || null,
             shipments_12m: shipments12m,
             last_seen: lastSeen,
             top_route: topRoute,
             top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
+            total_teus: item.total_teus ?? null,
+            growth_rate: item.growth_rate ?? null,
           };
         });
 
@@ -243,10 +247,13 @@ export default function Search() {
           id,
           company_id: item.company_id || null,
           name,
+          domain: item.domain || null,
           shipments_12m: shipments12m,
           last_seen: lastSeen,
           top_route: topRoute,
           top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
+          total_teus: item.total_teus ?? null,
+          growth_rate: item.growth_rate ?? null,
         };
       });
       const seen = new Set();
@@ -300,6 +307,9 @@ export default function Search() {
       if (!res || !(res.status === "created" || res.status === "exists")) {
         throw new Error("Save failed");
       }
+      try {
+        upsertSaved({ company_id: String(company.company_id || company.id || ""), name: String(company.name || company.company_name || "Company"), domain: company.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
+      } catch {}
       navigate("/companies");
     } catch (error) {
       try {
@@ -324,6 +334,9 @@ export default function Search() {
           },
         };
         localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
+        try {
+          upsertSaved({ company_id: id || null, name, domain: company.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
+        } catch {}
         navigate("/companies");
       } catch (e) {
         console.error("Failed to save company:", error);

@@ -9,8 +9,8 @@ import {
   TrendingUp,
   Bookmark,
   BookmarkCheck,
-  Mail,
-  Loader2
+  Loader2,
+  Layers,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { kpiFrom } from '@/lib/api';
@@ -52,6 +52,9 @@ export default function CompanySearchListItem({
     carriersTop: company.carriersTop,
   });
 
+  const teus = company.total_teus ?? null;
+  const growth = company.growth_rate ?? null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -73,7 +76,9 @@ export default function CompanySearchListItem({
             </p>
             <div className="flex flex-wrap gap-4 text-xs text-gray-600">
               <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Shipments (12M): <b className="text-gray-900 ml-1">{formatShipments(shipments12m)}</b></span>
-              <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{lastActivity ? format(new Date(lastActivity), 'MMM d') : 'N/A'}</b></span>
+              <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Last: <b className="text-gray-900 ml-1">{lastActivity ? format(new Date(lastActivity), 'MMM d') : '—'}</b></span>
+              <span className="flex items-center gap-1"><Layers className="w-3 h-3" /> TEUs: <b className="text-gray-900 ml-1">{teus != null ? Number(teus).toLocaleString() : '—'}</b></span>
+              <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Growth: <b className="text-gray-900 ml-1">{growth != null ? `${growth}` : '—'}</b></span>
               <span className="hidden md:flex items-center gap-1"><Ship className="w-3 h-3" /> Route: <b className="text-gray-900 ml-1 truncate max-w-[220px]">{originsTop?.[0] || company.top_route || 'Various'}</b></span>
             </div>
           </div>

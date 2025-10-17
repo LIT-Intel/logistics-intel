@@ -9,9 +9,8 @@ import {
   TrendingUp,
   Bookmark,
   BookmarkCheck,
-  Mail,
-  FileText,
-  Loader2
+  Loader2,
+  Layers,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { kpiFrom } from '@/lib/api';
@@ -53,6 +52,9 @@ export default function CompanySearchCard({
     carriersTop: company.carriersTop,
   });
 
+  const teus = company.total_teus ?? null;
+  const growth = company.growth_rate ?? null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -69,9 +71,9 @@ export default function CompanySearchCard({
         </div>
       )}
 
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex justify-between items-start mb-2">
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-gray-900 truncate text-lg mb-1">
+          <h3 className="font-bold text-gray-900 truncate text-lg">
             {company.name}
           </h3>
           <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -81,6 +83,29 @@ export default function CompanySearchCard({
         </div>
       </div>
 
+      {/* Actions directly under name */}
+      <div className="flex gap-2 mt-3 mb-4" onClick={(e) => e.stopPropagation()}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onSave(company)}
+          disabled={isCurrentlySaving || isSaved}
+          className="flex-1"
+        >
+          {isCurrentlySaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+          {isSaved ? <BookmarkCheck className="w-3 h-3 mr-1 text-blue-600" /> : <Bookmark className="w-3 h-3 mr-1" />}
+          {isSaved ? 'Saved' : 'Save'}
+        </Button>
+        <Button
+          size="sm"
+          onClick={(e) => { e.stopPropagation(); if (isSaved) { window.location.href = `/app/companies/${company.id || company.company_id}`; } else { onSelect(company); } }}
+          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          View Details
+        </Button>
+      </div>
+
+      {/* KPI tiles below actions */}
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="bg-blue-50 rounded-lg p-3">
           <div className="flex items-center gap-2 text-xs text-blue-600 font-medium mb-1">
@@ -94,7 +119,21 @@ export default function CompanySearchCard({
             <Calendar className="w-3 h-3" />
             Last Activity
           </div>
-          <div className="text-sm font-bold text-purple-900">{lastActivity ? format(new Date(lastActivity), 'MMM d') : 'N/A'}</div>
+          <div className="text-sm font-bold text-purple-900">{lastActivity ? format(new Date(lastActivity), 'MMM d') : '—'}</div>
+        </div>
+        <div className="bg-violet-50 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-xs text-violet-700 font-medium mb-1">
+            <Layers className="w-3 h-3" />
+            Total TEUs
+          </div>
+          <div className="text-lg font-bold text-violet-900">{teus != null ? Number(teus).toLocaleString() : '—'}</div>
+        </div>
+        <div className="bg-emerald-50 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-xs text-emerald-700 font-medium mb-1">
+            <TrendingUp className="w-3 h-3" />
+            Growth Rate
+          </div>
+          <div className="text-lg font-bold text-emerald-900">{growth != null ? `${growth}` : '—'}</div>
         </div>
       </div>
 
@@ -115,26 +154,7 @@ export default function CompanySearchCard({
         </div>
       </div>
 
-      <div className="flex gap-2 mt-1" onClick={(e) => e.stopPropagation()}>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => onSave(company)}
-          disabled={isCurrentlySaving || isSaved}
-          className="flex-1"
-        >
-          {isCurrentlySaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
-          {isSaved ? <BookmarkCheck className="w-3 h-3 mr-1 text-blue-600" /> : <Bookmark className="w-3 h-3 mr-1" />}
-          {isSaved ? 'Saved' : 'Save'}
-        </Button>
-        <Button
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); if (isSaved) { window.location.href = `/app/companies/${company.id || company.company_id}`; } else { onSelect(company); } }}
-          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          View
-        </Button>
-      </div>
+      {/* Meta (route/carrier) */}
     </motion.div>
   );
 }
