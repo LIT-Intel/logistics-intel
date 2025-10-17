@@ -121,7 +121,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const shipments12m = r.shipments_12m ?? 0;
   const lastActivity = kLastActivity(r.last_activity);
   const totalTeus = (r as any)?.total_teus ?? '—';
-  const growthRate = (r as any)?.growth_rate ?? '—';
+  const growthRate = (r as any)?.growth_rate == null ? '—' : `${Math.round(Number((r as any)?.growth_rate) * 100)}%`;
   const initials = (name||'').split(' ').map((p: string)=>p[0]).join('').slice(0,2).toUpperCase();
   const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
   const [saved, setSaved] = useState<boolean>(() => {
