@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, List as ListIcon, Sliders, TrendingUp, Ship, Clock, Box, Zap, X, MapPin, Search as SearchIcon, Bookmark, Bell } from 'lucide-react';
+import { LayoutGrid, List as ListIcon, Sliders, TrendingUp, Ship, Clock, Box, Zap, X, MapPin, Search as SearchIcon, Bookmark, Bell, ArrowRight, Lock, DollarSign } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { hasFeature } from '@/lib/access';
 
@@ -32,9 +32,9 @@ function kLastActivity(v: any): string {
 
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[92px] flex flex-col items-center justify-center w-full overflow-hidden">
+    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[100px] flex flex-col items-center justify-center w-full overflow-hidden">
       <div className="flex items-center justify-center mb-1 shrink-0">{icon}</div>
-      <div className="text-xl font-semibold text-gray-900 truncate w-full max-w-full" title={String(value ?? '—')}>{value ?? '—'}</div>
+      <div className="text-2xl font-bold text-gray-900 truncate w-full max-w-full" title={String(value ?? '—')}>{value ?? '—'}</div>
       <div className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate w-full max-w-full" title={label}>{label}</div>
     </div>
   );
@@ -84,19 +84,28 @@ function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'
       <button
         onClick={onClick}
         disabled={saving || saved}
-        className={cn('px-4 py-2 text-sm text-white rounded-lg transition', saved ? 'opacity-70 cursor-default' : 'hover:opacity-90')}
-        style={{ backgroundColor: STYLES.brandPurple }}
+        className={cn('px-4 py-2 text-sm text-white rounded-lg transition hover:opacity-90')}
+        style={{ backgroundColor: saved ? '#10B981' : STYLES.brandPurple }}
       >
         {saved ? 'Saved' : (saving ? 'Saving…' : 'Save')}
       </button>
       {showUpsell && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-2xl bg-white border border-violet-200 shadow-2xl p-5">
-            <div className="flex items-center gap-2 mb-2"><div className="h-8 w-8 rounded-xl bg-violet-600 text-white flex items-center justify-center">★</div><div className="text-lg font-semibold" style={{ color: STYLES.brandPurple }}>Subscribe to Save</div></div>
-            <div className="text-sm text-gray-700">Saving companies to Command Center requires a Pro subscription. Upgrade to unlock CRM, contacts enrichment, and alerts.</div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button className="px-3 py-2 text-sm rounded-xl border" onClick={()=> setShowUpsell(false)}>Close</button>
-              <button className="px-3 py-2 text-sm rounded-xl text-white" style={{ backgroundColor: STYLES.brandPurple }} onClick={()=> setShowUpsell(false)}>View Plans</button>
+        <div className="fixed inset-0 z-50 bg-gray-900/75 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl p-5">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#EEE6FF' }}>
+                <Lock className="w-5 h-5" style={{ color: STYLES.brandPurple }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xl font-bold mb-1" style={{ color: STYLES.textPrimary }}>Command Center Access</div>
+                <div className="text-sm text-gray-700">Saving companies requires a Pro subscription. Upgrade to unlock saving, contacts enrichment, and alerts.</div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button className="px-3 py-2 text-sm rounded-lg text-gray-700 hover:bg-gray-100" onClick={()=> setShowUpsell(false)}>Not right now</button>
+                  <button className="px-3 py-2 text-sm rounded-lg text-white inline-flex items-center gap-1" style={{ backgroundColor: STYLES.brandPurple }} onClick={()=> setShowUpsell(false)}>
+                    <DollarSign className="w-4 h-4"/> Upgrade Now
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -132,24 +141,23 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
     return () => window.removeEventListener('storage', onStorage);
   }, [key]);
 
+  const topBorder = { borderTop: `4px solid ${STYLES.brandPurple}` } as const;
+  const alias = (r as any)?.domain || '';
   return (
-    <div className="rounded-xl shadow-sm bg-white p-5 hover:shadow-lg transition border border-gray-200 cursor-default">
+    <div className="rounded-xl bg-white p-5 min-h-[220px] shadow-md hover:shadow-lg transition border border-gray-200 cursor-default" style={topBorder}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[13px] text-slate-500">Company</div>
-          <div className="truncate text-lg font-semibold tracking-tight text-slate-900" title={name}>{name}</div>
-          <div className="mt-1 text-xs text-slate-400 truncate" title={id}>ID: {id}</div>
+          <div className="truncate text-xl font-bold text-gray-900" title={name}>{name}</div>
+          <div className="text-sm text-gray-500 truncate">{alias || `ID: ${id}`}</div>
           <div className="mt-2 flex items-center gap-2">
             <SaveToCommandCenterButton row={r} />
-            {saved && (
-              <span className="inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5">Saved</span>
-            )}
           </div>
         </div>
         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-semibold select-none">{initials}</div>
       </div>
-      <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-        <ResultKPI icon={<TrendingUp className="w-4 h-4" style={{ color: STYLES.brandPurple }}/>} label="Shipments (12m)" value={shipments12m} />
+      <div className="mt-4 border-t border-b border-gray-200 py-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <ResultKPI icon={<Ship className="w-4 h-4" style={{ color: STYLES.brandPurple }}/>} label="Shipments (12m)" value={shipments12m} />
         <ResultKPI icon={<Clock className="w-4 h-4 text-gray-500" />} label="Last Activity" value={lastActivity} />
         <ResultKPI icon={<Box className="w-4 h-4 text-gray-500" />} label="Total TEUs" value={totalTeus} />
         <ResultKPI icon={<TrendingUp className="w-4 h-4 text-gray-500" />} label="Growth Rate" value={growthRate} />
@@ -158,9 +166,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
         <div className="flex items-center gap-2 text-xs text-gray-600">
           {top ? (<><MapPin className="w-3.5 h-3.5 text-red-500" />{top.origin_country} → {top.dest_country}</>) : 'No route data'}
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => onOpen(r)} className="rounded-xl text-white" style={{ backgroundColor: STYLES.brandPurple }}>View Details</Button>
-        </div>
+        <button onClick={() => onOpen(r)} className="text-sm text-gray-700 hover:text-gray-900 font-medium inline-flex items-center">Details <ArrowRight className="w-4 h-4 ml-1"/></button>
       </div>
     </div>
   );
