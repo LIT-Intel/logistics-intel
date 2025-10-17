@@ -53,7 +53,7 @@ export default function CompanySearchCard({
   });
 
   const teus = company.total_teus ?? null;
-  const growth = company.growth_rate ?? null;
+  const growth = company.growth_rate == null ? null : `${Math.round(Number(company.growth_rate) * 100)}%`;
 
   return (
     <motion.div
@@ -111,7 +111,7 @@ export default function CompanySearchCard({
           { label: 'Shipments (12M)', value: formatShipments(shipments12m) },
           { label: 'Last Activity', value: lastActivity ? format(new Date(lastActivity), 'MMM d') : '—' },
           { label: 'Total TEUs', value: teus != null ? Number(teus).toLocaleString() : '—' },
-          { label: 'Growth Rate', value: growth != null ? `${Math.round(Number(growth) * 100)}%` : '—' },
+          { label: 'Growth Rate', value: growth != null ? growth : '—' },
         ].map((k, i) => (
           <div key={i} className="rounded-xl border border-gray-200 bg-white min-h-[96px] p-3 flex flex-col items-center justify-center">
             <div className="text-[11px] uppercase tracking-wide text-gray-500 truncate w-full text-center">{k.label}</div>
