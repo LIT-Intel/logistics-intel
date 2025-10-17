@@ -25,6 +25,7 @@ export default function CompanySearchListItem({
   onStartOutreach,
   onDraftRFP,
   savingCompanyId,
+  selectedId,
   index = 0
 }) {
   const formatShipments = (count) => {
@@ -55,15 +56,21 @@ export default function CompanySearchListItem({
   const teus = company.total_teus ?? null;
   const growth = company.growth_rate ?? null;
 
+  const isSelected = selectedId && (selectedId === (company.id || company.company_id));
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="rounded-xl p-[1px] mb-3 cursor-pointer bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-700 hover:from-indigo-600 hover:to-blue-600 transition-shadow shadow-sm hover:shadow-md"
+      className={[
+        'rounded-xl p-[1px] mb-3 cursor-pointer transition-shadow shadow-sm',
+        'bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-700',
+        'hover:from-indigo-600 hover:to-blue-600',
+        isSelected ? 'ring-2 ring-offset-2 ring-indigo-500' : '',
+      ].join(' ')}
       onClick={() => onSelect(company)}
     >
-      <div className="rounded-xl bg-white p-4">
+      <div className="rounded-xl bg-white p-4 hover:bg-slate-50">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0 pr-4">
             <div className="flex items-center gap-2 mb-1">
@@ -91,6 +98,11 @@ export default function CompanySearchListItem({
             <Button size="sm" onClick={() => { isSaved ? (window.location.href = `/app/companies/${company.id || company.company_id}`) : onSelect(company); }} className="bg-blue-600 hover:bg-blue-700 text-white">
               View
             </Button>
+            {isSaved && (
+              <span className="ml-1 inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5">
+                Saved
+              </span>
+            )}
           </div>
         </div>
       </div>
