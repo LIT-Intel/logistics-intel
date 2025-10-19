@@ -329,7 +329,21 @@ export default function Search() {
       try {
         upsertSaved({ company_id: String(company.company_id || company.id || ""), name: String(company.name || company.company_name || "Company"), domain: company.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
       } catch {}
-      navigate("/companies");
+      // Persist selection + active filters for Command Center hydration
+      try {
+        const cid = String(company.company_id || company.id || "");
+        const cname = String(company.name || company.company_name || "Company");
+        const saved = {
+          company_id: cid,
+          name: cname,
+          savedAt: new Date().toISOString(),
+          filters: normalizeFilters(filters),
+        } as any;
+        localStorage.setItem('cc:savedCompany', JSON.stringify(saved));
+        localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: cid, name: cname, domain: company.domain ?? null }));
+        localStorage.setItem('cc:activeFilters', JSON.stringify(saved.filters));
+      } catch {}
+      navigate("/app/command-center");
     } catch (error) {
       try {
         const id = String(
@@ -356,7 +370,19 @@ export default function Search() {
         try {
           upsertSaved({ company_id: id || null, name, domain: company.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
         } catch {}
-        navigate("/companies");
+        // Persist selection + active filters and redirect
+        try {
+          const saved = {
+            company_id: id,
+            name,
+            savedAt: new Date().toISOString(),
+            filters: normalizeFilters(filters),
+          } as any;
+          localStorage.setItem('cc:savedCompany', JSON.stringify(saved));
+          localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: id, name, domain: company.domain ?? null }));
+          localStorage.setItem('cc:activeFilters', JSON.stringify(saved.filters));
+        } catch {}
+        navigate("/app/command-center");
       } catch (e) {
         console.error("Failed to save company:", error);
         setSavedCompanyIds(originalSavedIds);
