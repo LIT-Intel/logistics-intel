@@ -185,17 +185,17 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   );
 }
 
-function ResultsCards({ rows, onOpen }: { rows: any[]; onOpen: (r: any)=>void }) {
+function ResultsCards({ rows, onOpen, filters }: { rows: any[]; onOpen: (r: any)=>void; filters: any }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       {rows.map((r) => (
-        <ResultCard key={getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })} r={r} onOpen={onOpen} />
+        <ResultCard key={getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })} r={r} onOpen={onOpen} filters={filters} />
       ))}
     </div>
   );
 }
 
-function ResultsList({ rows, onOpen, selectedKey }: { rows: any[]; onOpen: (r: any)=>void; selectedKey?: string | null }) {
+function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOpen: (r: any)=>void; selectedKey?: string | null; filters: any }) {
   const [savedSet, setSavedSet] = useState<Set<string>>(() => {
     try {
       const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
@@ -243,7 +243,7 @@ function ResultsList({ rows, onOpen, selectedKey }: { rows: any[]; onOpen: (r: a
                   <MapPin className="w-4 h-4 mr-1 text-red-500" /> {top ? `${top.origin_country} → ${top.dest_country}` : '—'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <SaveToCommandCenterButton row={r} />
+                  <SaveToCommandCenterButton row={r} activeFilters={filters} />
                   <Button variant="ghost" size="sm" className="ml-2" onClick={() => onOpen(r)}>Details</Button>
                   {isSaved && (
                     <span className="ml-2 inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 align-middle">Saved</span>
@@ -290,6 +290,8 @@ export default function SearchPage() {
   }, [rows]);
 
   const doSearch = useCallback((e?: React.FormEvent) => { if (e) e.preventDefault(); run(true); }, [run]);
+  // Persist filters for Command Center handoff
+  useEffect(() => { try { localStorage.setItem('cc:activeFilters', JSON.stringify(normalizeFilters(filters))); } catch {} }, [filters]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: STYLES.neutralGrayLight }}>
@@ -358,12 +360,13 @@ export default function SearchPage() {
 
         {rows.length > 0 && (
           <div className="pt-2">
-            {view === 'Cards' && <ResultsCards rows={dedupedRows} onOpen={(r)=> setModal(r)} />}
+            {view === 'Cards' && <ResultsCards rows={dedupedRows} onOpen={(r)=> setModal(r)} filters={filters} />}
             {view === 'List' && (
               <ResultsList
                 rows={dedupedRows}
                 onOpen={(r)=> setModal(r)}
                 selectedKey={modal ? getCompanyKey({ company_id: modal?.company_id, company_name: modal?.company_name }) : null}
+                filters={filters}
               />
             )}
           </div>
