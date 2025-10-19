@@ -8,6 +8,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon } from "lucide-react";
+import AutocompleteInput from "@/components/search/AutocompleteInput";
 import { useNavigate } from "react-router-dom";
 // @ts-nocheck
 import LitPageHeader from "../components/ui/LitPageHeader";
