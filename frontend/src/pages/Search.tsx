@@ -457,6 +457,7 @@ export default function Search() {
   onSelect={(s) => { setSearchQuery(s.name); handleSearch(1); }}
   fetchSuggestions={fetchSuggestions}
   placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
+  minChars={2}
 />
             </div>
 
