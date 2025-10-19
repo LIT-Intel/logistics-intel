@@ -15,6 +15,7 @@ import {
   createCompany,
   kpiFrom,
 } from '@/lib/api';
+import ShipmentsTable from '@/components/command-center/ShipmentsTable';
 import { loadSaved, upsertSaved, toggleArchive } from '@/components/command-center/storage';
 import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
 
@@ -377,11 +378,9 @@ export default function CommandCenterPreview() {
   );
 
   const ShipmentsTab = () => (
-      <Section title="Company Shipments" icon={Truck}>
-          <p className="text-sm text-gray-600 p-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
-              Placeholder for the interactive Shipments Table. Data would be loaded from <code className="font-mono text-indigo-600">GET /api/lit/public/getCompanyShipments</code>.
-          </p>
-      </Section>
+    <Section title="Company Shipments" icon={Truck}>
+      <ShipmentsTable />
+    </Section>
   );
   
   // Refactored Contact Card for use in the dedicated tab
