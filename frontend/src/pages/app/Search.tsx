@@ -40,7 +40,7 @@ function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: strin
   );
 }
 
-function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'|'md' }) {
+function SaveToCommandCenterButton({ row, size = 'sm', activeFilters }: { row: any; size?: 'sm'|'md'; activeFilters?: any }) {
   const { user } = useAuth() as any;
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(() => {
@@ -76,6 +76,19 @@ function SaveToCommandCenterButton({ row, size = 'sm' }: { row: any; size?: 'sm'
         localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
         try { window.dispatchEvent(new StorageEvent('storage', { key: lsKey } as any)); } catch {}
       }
+      // Persist selection for Command Center hydration with filters
+      try {
+        const cc = {
+          company_id: cid,
+          name: cname,
+          savedAt: new Date().toISOString(),
+          filters: normalizeFilters(activeFilters || {})
+        };
+        localStorage.setItem('cc:savedCompany', JSON.stringify(cc));
+        localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: cid, name: cname, domain: (row as any)?.domain ?? null }));
+      } catch {}
+      // Navigate to Command Center
+      try { window.location.href = '/app/command-center'; } catch {}
       setSaved(true);
     } finally { setSaving(false); }
   };
@@ -361,4 +374,18 @@ export default function SearchPage() {
       <CompanyModal company={modal} open={Boolean(modal)} onClose={(open)=>{ if (!open) setModal(null); }} />
     </div>
   );
+}
+
+// Map current search filters to persistent payload for Command Center
+function normalizeFilters(f: any) {
+  const out: any = {
+    startDate: f?.date_start ?? null,
+    endDate: f?.date_end ?? null,
+    origin_country: f?.origin ? [String(f.origin).toUpperCase()] : [],
+    dest_country: f?.destination ? [String(f.destination).toUpperCase()] : [],
+    origin_city: [], origin_state: [], origin_postal: [], origin_port: [],
+    dest_city: [], dest_state: [], dest_postal: [], dest_port: [],
+    hs: f?.hs ? String(f.hs).split(',').map((s:string)=> s.trim()).filter(Boolean) : [],
+  };
+  return out;
 }
