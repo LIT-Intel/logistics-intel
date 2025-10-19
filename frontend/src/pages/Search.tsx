@@ -27,6 +27,33 @@ export default function Search() {
   const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const fetchSuggestions = async (q: string) => {
+    try {
+      // Try GET first
+      const resp = await api.get(`/search/companies?q=${encodeURIComponent(q)}&limit=8`);
+      const list = (resp && resp.data && (resp.data.results || resp.data)) || [];
+      return (list || []).map((r: any) => ({
+        id: String(r.id ?? r.company_id ?? r.ticker ?? r.name ?? q),
+        name: String(r.name ?? r.company ?? r.alias ?? q),
+        website: r.website ?? r.domain ?? null,
+      }));
+    } catch (e) {
+      try {
+        // Fallback: POST (same service used by main search)
+        const body:any = { q, page: 1, limit: 8 };
+        const resp = await postSearchCompanies(body);
+        const raw = Array.isArray(resp?.items) ? resp.items : (Array.isArray(resp?.rows) ? resp.rows : []);
+        return (raw || []).slice(0,8).map((r: any) => ({
+          id: String(r.company_id ?? r.id ?? r.ticker ?? r.company_name ?? q),
+          name: String(r.company_name ?? r.name ?? r.company ?? r.alias ?? q),
+          website: r.domain ?? r.website ?? null,
+        }));
+      } catch {
+        return [];
+      }
+    }
+  };
+
   const [filters, setFilters] = useState({
     mode: "any",
     origin: "",
@@ -424,16 +451,13 @@ export default function Search() {
         <LitPanel>
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 relative">
-              <Input data-test="search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by company name or alias (e.g., UPS, Maersk)..."
-                className="pl-4 pr-12 py-3 text-base md:text-lg bg-gray-50 border-0 rounded-xl"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { try{ console.debug('[Search] enter submit'); }catch{} handleSearch(1); }
-                }}
-              />
-              <SearchIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <AutocompleteInput
+  value={searchQuery}
+  onChange={setSearchQuery}
+  onSelect={(s) => { setSearchQuery(s.name); handleSearch(1); }}
+  fetchSuggestions={fetchSuggestions}
+  placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
+/>
             </div>
 
             <Button data-test="search-button"
