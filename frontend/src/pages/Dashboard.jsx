@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useAuth } from "@/auth/AuthProvider";
 import DashboardKPICards from "@/components/dashboard/DashboardKPICards";
 import DashboardHeroCards from "@/components/dashboard/DashboardHeroCards";
 import RecentCompanies from "@/components/dashboard/RecentCompanies";
@@ -26,6 +27,7 @@ const safeSummary = {
 };
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState(safeSummary);
   const [loading, setLoading] = useState(true);
 
