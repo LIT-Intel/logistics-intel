@@ -8,6 +8,7 @@ import RecentCompaniesSkeleton from "@/components/dashboard/RecentCompanies.skel
 import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
 import LitPageHeader from "../components/ui/LitPageHeader";
+import WelcomeBanner from "@/components/WelcomeBanner";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
 import LitKpi from "../components/ui/LitKpi";
@@ -43,6 +44,7 @@ export default function Dashboard() {
       <LitWatermark />
       <div className="max-w-7xl mx-auto">
         <LitPageHeader title="LIT Dashboard" />
+        <WelcomeBanner userName={String((user?.displayName)||'there')} lastLoginIso={null} />
         {loading ? (
           <div className="space-y-6">
             <DashboardKPICardsSkeleton />
