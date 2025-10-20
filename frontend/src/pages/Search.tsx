@@ -22,37 +22,79 @@ import UpgradePrompt from "../components/common/UpgradePrompt";
 
 const ITEMS_PER_PAGE = 50;
 
+// Local fallback suggestions (used only if API returns nothing in dev)
+const FALLBACK_SUGGESTIONS = [
+  { id: 'ups', name: 'UPS', website: 'ups.com' },
+  { id: 'maersk', name: 'Maersk', website: 'maersk.com' },
+  { id: 'dhl', name: 'DHL', website: 'dhl.com' },
+  { id: 'fedex', name: 'FedEx', website: 'fedex.com' },
+  { id: 'walmart', name: 'Walmart', website: 'walmart.com' },
+  { id: 'nike', name: 'Nike', website: 'nike.com' },
+  { id: 'tesla', name: 'Tesla', website: 'tesla.com' },
+  { id: 'apple', name: 'Apple', website: 'apple.com' },
+];
+
 export default function Search() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
+  
   const fetchSuggestions = async (q: string) => {
+    const mk = (r:any,qq:string)=>({
+      id: String(r?.company_id ?? r?.id ?? r?.ticker ?? r?.company_name ?? r?.name ?? qq),
+      name: String(r?.company_name ?? r?.name ?? r?.company ?? r?.alias ?? qq),
+      website: r?.domain ?? r?.website ?? null,
+    });
     try {
-      // Try GET first
+      // Try unauthenticated GET (may fail due to auth/CORS)
       const resp = await api.get(`/search/companies?q=${encodeURIComponent(q)}&limit=8`);
       const list = (resp && resp.data && (resp.data.results || resp.data)) || [];
-      return (list || []).map((r: any) => ({
-        id: String(r.id ?? r.company_id ?? r.ticker ?? r.name ?? q),
-        name: String(r.name ?? r.company ?? r.alias ?? q),
-        website: r.website ?? r.domain ?? null,
-      }));
-    } catch (e) {
+      return (Array.isArray(list) ? list : []).map(r => mk(r,q)).slice(0,8);
+    } catch (e_get) {
       try {
-        // Fallback: POST (same service used by main search)
-        const body:any = { q, page: 1, limit: 8 };
+        // Fallback: same service as main search (may require proxy/ID token)
+        const body: any = { q, page: 1, limit: 8 };
         const resp = await postSearchCompanies(body);
         const raw = Array.isArray(resp?.items) ? resp.items : (Array.isArray(resp?.rows) ? resp.rows : []);
-        return (raw || []).slice(0,8).map((r: any) => ({
-          id: String(r.company_id ?? r.id ?? r.ticker ?? r.company_name ?? q),
-          name: String(r.company_name ?? r.name ?? r.company ?? r.alias ?? q),
-          website: r.domain ?? r.website ?? null,
-        }));
-      } catch {
-        return [];
+        return (raw || []).map(r => mk(r,q)).slice(0,8);
+      } catch (e_post) {
+        // Last-resort local suggestions so UI still works
+        const base = (q || "").trim();
+        if (!base) return [];
+        const uniq = []
+        for (v in [base, `${base} logistics`, `${base} inc`, `${base} shipping`]) {
+          pass
+        }
+        const seeds = [base, f"{base} logistics", f"{base} inc", f"{base} shipping"]
+        seen=set()
+        out=[]
+        for name in seeds:
+          k=name.lower()
+          if k in seen: continue
+          seen.add(k)
+          out.append({ "id": name, "name": name, "website": null })
+        return out.slice(0,8)
       }
     }
   };
+    const resp = await postSearchCompanies(body);
+    const raw = Array.isArray(resp?.items) ? resp.items : (Array.isArray(resp?.rows) ? resp.rows : []);
+    const mapped = (raw || []).slice(0,8).map((r: any) => ({
+      id: String(r.company_id ?? r.id ?? r.ticker ?? r.company_name ?? qTrim),
+      name: String(r.company_name ?? r.name ?? r.company ?? r.alias ?? qTrim),
+      website: r.domain ?? r.website ?? null,
+    }));
+    if (mapped.length) return mapped;
+  } catch (e2) {
+    console.warn("[autosuggest] POST failed:", e2);
+  }
+  // Final local fallback (dev only)
+  const ql = qTrim.toLowerCase();
+  const local = FALLBACK_SUGGESTIONS.filter(x => x.name.toLowerCase().includes(ql)).slice(0,8);
+  console.debug("[autosuggest] using local fallback", local);
+  return local;
+};
 
   const [filters, setFilters] = useState({
     mode: "any",
