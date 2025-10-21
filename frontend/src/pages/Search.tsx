@@ -1,4 +1,4 @@
-3900&import { searchCompanies as searchCompaniesApi } from "@/lib/api";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, postSearchCompanies, saveCompanyToCrm } from "@/lib/api";
 import { hasFeature } from "@/lib/access";
