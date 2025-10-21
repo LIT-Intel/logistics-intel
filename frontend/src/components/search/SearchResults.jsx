@@ -21,7 +21,6 @@ export default function SearchResults({
   savingCompanyId,
   viewMode,
   setViewMode,
-  selectedId,
   currentPage,
   totalPages,
   onPageChange
@@ -144,7 +143,6 @@ export default function SearchResults({
                   onStartOutreach={onStartOutreach}
                   onDraftRFP={onDraftRFP}
                   savingCompanyId={savingCompanyId}
-                  selectedId={selectedId}
                 />
               );
             })}
