@@ -1,17 +1,16 @@
-
 import React from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { AlertCircle, LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
-import CompanySearchCard from './CompanySearchCard';
+import CompanyCardCompact from "./CompanyCardCompact";
 import CompanySearchListItem from './CompanySearchListItem';
 
 export default function SearchResults({
   searchResults,
   totalResults,
   isLoading,
-  onCompanySelect,
+  onCompanySelect, // <- used for card Details
   onSave,
   onStartOutreach,
   onDraftRFP,
@@ -21,6 +20,7 @@ export default function SearchResults({
   savingCompanyId,
   viewMode,
   setViewMode,
+  selectedId,
   currentPage,
   totalPages,
   onPageChange
@@ -46,7 +46,7 @@ export default function SearchResults({
             <Button
               size="sm"
               variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-              onClick={() => setViewMode('grid')}
+              onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setViewMode && setViewMode('grid'); }}
               className="h-8 px-3"
             >
               <LayoutGrid className="w-4 h-4 mr-1" />
@@ -55,7 +55,7 @@ export default function SearchResults({
             <Button
               size="sm"
               variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              onClick={() => setViewMode('list')}
+              onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setViewMode && setViewMode('list'); }}
               className="h-8 px-3"
             >
               <List className="w-4 h-4 mr-1" />
@@ -69,7 +69,7 @@ export default function SearchResults({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange(currentPage - 1)}
+                onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onPageChange && onPageChange(Math.max(1, currentPage - 1)); }}
                 disabled={currentPage === 1 || isLoading}
                 className="h-8"
               >
@@ -81,7 +81,7 @@ export default function SearchResults({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange(currentPage + 1)}
+                onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onPageChange && onPageChange(Math.min(totalPages, currentPage + 1)); }}
                 disabled={currentPage >= totalPages || isLoading}
                 className="h-8"
               >
@@ -94,7 +94,7 @@ export default function SearchResults({
 
       {/* Results */}
       {isLoading ? (
-        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1'}`}>
+        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 items-stretch' : 'grid-cols-1'}`}>
           {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="bg-white p-6 rounded-2xl shadow-sm animate-pulse">
               <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -109,27 +109,19 @@ export default function SearchResults({
           ))}
         </div>
       ) : hasResults ? (
-        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1'}`}>
+        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 items-stretch' : 'grid-cols-1'}`}>
           <AnimatePresence>
             {searchResults.map((company) => {
-              // FIX: Ensure consistent ID checking
               const companyId = company.company_id || company.id;
               const isSaving = savingCompanyId === companyId;
               const isSaved = savedCompanyIds.has(companyId);
-              const isNew = newShipperEvents.includes(companyId);
 
               return viewMode === 'grid' ? (
-                <CompanySearchCard
+                <CompanyCardCompact
                   key={companyId}
                   company={company}
-                  onSelect={onCompanySelect}
+                  onView={onCompanySelect}
                   onSave={onSave}
-                  isSaving={isSaving}
-                  isSaved={isSaved}
-                  isNew={isNew}
-                  onStartOutreach={onStartOutreach}
-                  onDraftRFP={onDraftRFP}
-                  savingCompanyId={savingCompanyId}
                 />
               ) : (
                 <CompanySearchListItem
@@ -139,23 +131,27 @@ export default function SearchResults({
                   onSave={onSave}
                   isSaving={isSaving}
                   isSaved={isSaved}
-                  isNew={isNew}
-                  onStartOutreach={onStartOutreach}
-                  onDraftRFP={onDraftRFP}
-                  savingCompanyId={savingCompanyId}
+                  selectedId={companyId}
                 />
               );
             })}
           </AnimatePresence>
+
           {/* Load More */}
           {currentPage < totalPages && (
             <div className="col-span-full flex justify-center mt-2">
-              <Button variant="outline" onClick={() => onPageChange(currentPage + 1)} disabled={isLoading}>Load More</Button>
+              <Button
+                variant="outline"
+                onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onPageChange && onPageChange(currentPage + 1); }}
+                disabled={isLoading}
+              >
+                Load More
+              </Button>
             </div>
           )}
         </div>
       ) : (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-300"

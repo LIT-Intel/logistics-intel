@@ -1,3 +1,4 @@
+import FiltersDrawer from "@/components/search/FiltersDrawer";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, postSearchCompanies, saveCompanyToCrm } from "@/lib/api";
@@ -27,6 +28,41 @@ export default function Search() {
   const { user } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const fetchSuggestions = async (q: string) => {
+  const FALLBACK = ["Dole","Del Monte","Maersk","MSC","CMA CGM","Tesla","UPS","Walmart","Target","Amazon"];
+  const qq = (q || "").trim();
+  if (qq.length < 2) return [];
+  try {
+    // Try GET first
+    const r = await api.get(`/search/companies?q=${encodeURIComponent(qq)}&limit=8`);
+    const list: any[] = (r?.data?.results ?? r?.data ?? []);
+    return (list || []).slice(0,8).map((x: any) => ({
+      id: String(x.id ?? x.company_id ?? x.ticker ?? x.name ?? qq),
+      name: String(x.name ?? x.company ?? x.alias ?? qq),
+      website: x.website ?? x.domain ?? null,
+    }));
+  } catch (_e) {
+    try {
+      // Fallback to POST
+      const body: any = { q: qq, page: 1, limit: 8 };
+      const resp: any = await postSearchCompanies(body);
+      const raw: any[] = Array.isArray(resp?.items) ? resp.items
+                    : (Array.isArray(resp?.rows) ? resp.rows : []);
+      return (raw || []).slice(0,8).map((x: any) => ({
+        id: String(x.company_id ?? x.id ?? x.ticker ?? x.company_name ?? qq),
+        name: String(x.company_name ?? x.name ?? x.company ?? x.alias ?? qq),
+        website: x.domain ?? x.website ?? null,
+      }));
+    } catch {
+      // Last resort: local list
+      return FALLBACK
+        .filter(n => n.toLowerCase().includes(qq.toLowerCase()))
+        .slice(0,8)
+        .map((name, i) => ({ id: String(i+1), name, website: null }));
+    }
+  }
+};
+
   const [filters, setFilters] = useState({
     mode: "any",
     origin: "",
@@ -74,6 +110,8 @@ export default function Search() {
   const totalPages = useMemo(() => {
     return Math.max(1, Math.ceil((totalResults || 0) / ITEMS_PER_PAGE));
   }, [totalResults]);
+
+  const handleView = (c) => { setSelectedCompany(c); setShowDetailModal(true); };
 
   const handleSearch = useCallback(
     async (page) => {
@@ -424,16 +462,13 @@ export default function Search() {
         <LitPanel>
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 relative">
-              <Input data-test="search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by company name or alias (e.g., UPS, Maersk)..."
-                className="pl-4 pr-12 py-3 text-base md:text-lg bg-gray-50 border-0 rounded-xl"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { try{ console.debug('[Search] enter submit'); }catch{} handleSearch(1); }
-                }}
-              />
-              <SearchIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <AutocompleteInput
+  value={searchQuery}
+  onChange={setSearchQuery}
+  onSelect={(s) => { setSearchQuery(s.name); handleSearch(1); }}
+  fetchSuggestions={fetchSuggestions}
+  placeholder="Search by company name or alias (e.g., UPS, Maersk)… [TEST]"
+/>
             </div>
 
             <Button data-test="search-button"
