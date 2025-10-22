@@ -306,7 +306,7 @@ export default function SearchPage() {
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
-              placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
+              data-test="search-input" placeholder="Test — Search by company name or alias (e.g., UPS, Maersk)…"
               className="pl-9 h-12 text-base rounded-lg"
               value={q}
               onChange={(e) => setQ(e.target.value)}
