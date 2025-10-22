@@ -1,70 +1,51 @@
-import React from "react";
-import { Bookmark, Clock, MapPin, ArrowRight } from "lucide-react";
+import React from 'react';
+import { Bookmark } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-const CompanyCardCompact = ({ company, onView, onSave, isSaved, isReady }) => {
+export default function CompanyCardCompact({ company, onView, onSave }) {
+  // 🔐 Prevent rendering unnamed/empty companies
+  if (!company || (!company.company_name && !company.name)) return null;
+
   const {
+    company_id,
+    company_name,
     name,
-    alias,
-    domain,
-    total_shipments,
-    last_activity,
-    top_route,
-    id
+    total_shipments_12m,
+    activity_level,
+    top_origin,
+    top_destination
   } = company;
 
+  const displayName = company_name || name || 'Unnamed Co.';
+  const shipmentsText = total_shipments_12m ? `${total_shipments_12m.toLocaleString()} Shipments (12m)` : `-- Shipments (12m)`;
+  const activityText = activity_level || '--';
+  const topRouteText = top_origin && top_destination ? `${top_origin} → ${top_destination}` : '';
+
   return (
-    <div className="bg-white rounded-xl p-5 border-t-4 border-[#7F3DFF] shadow-md hover:shadow-lg transition">
-      <div className="flex justify-between items-start mb-2">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">{name}</h2>
-          <p className="text-sm text-gray-500">
-            {alias} {domain ? `| ${domain}` : ""}
-          </p>
+    <div className="bg-white p-6 rounded-2xl shadow-sm flex flex-col justify-between">
+      <div>
+        <div className="flex justify-between items-start mb-4">
+          <h3 className="text-lg font-semibold text-gray-800 leading-snug">{displayName}</h3>
+          <Button variant="ghost" size="sm" className="text-purple-600" onClick={(e) => { e.preventDefault(); onSave?.(company); }}>
+            <Bookmark className="w-4 h-4 mr-1" />
+            Save
+          </Button>
         </div>
-        <button
-          onClick={onSave}
-          className={`text-white text-sm px-3 py-1 rounded-full ${
-            isSaved ? "bg-green-500" : "bg-[#7F3DFF]"
-          }`}
-        >
-          {isSaved ? "Saved" : "Save"}
-        </button>
-      </div>
 
-      <div className="border-y border-gray-200 py-3 grid grid-cols-2 gap-4 text-sm text-gray-600">
-        <div className="flex items-center gap-2">
-          <Bookmark size={16} className="text-[#7F3DFF]" />
-          <span>
-            {total_shipments?.toLocaleString() ?? "--"} Shipments (12m)
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Clock size={16} className="text-gray-500" />
-          <span>Activity: {last_activity ?? "--"}</span>
-        </div>
-        <div className="col-span-2 flex items-center gap-2 mt-2">
-          <MapPin size={16} className="text-gray-500" />
-          <span className="text-sm">
-            Top Route: {top_route || "--"}
-          </span>
+        <div className="text-sm text-gray-600 space-y-1">
+          <p>📦 {shipmentsText}</p>
+          <p>🕒 Activity: {activityText}</p>
+          {topRouteText && (
+            <p>📍 Top Route: {topRouteText}</p>
+          )}
         </div>
       </div>
 
-      <div className="flex justify-between items-center mt-4">
-        {isReady && (
-          <span className="text-xs bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5">
-            Ready
-          </span>
-        )}
-        <button
-          onClick={onView}
-          className="text-gray-700 text-sm flex items-center gap-1 ml-auto"
-        >
-          Details <ArrowRight size={16} />
-        </button>
+      <div className="mt-4 text-right">
+        <Button variant="link" className="text-purple-600 text-sm" onClick={(e) => { e.preventDefault(); onView?.(company); }}>
+          Details →
+        </Button>
       </div>
     </div>
   );
-};
-
-export default CompanyCardCompact;
+}
