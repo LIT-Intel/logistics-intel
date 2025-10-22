@@ -14,6 +14,8 @@ export default function CompanyCardCompact({ company, onView, onSave }) {
   const formatValue = (value) =>
     value != null ? value : <span className="text-gray-400">—</span>;
 
+  const hasRoute = top_route_origin || top_route_destination;
+
   return (
     <div className="bg-white border-4 border-[#7F3DFF] rounded-xl shadow-md hover:shadow-lg p-5 flex flex-col justify-between h-full">
       {/* Company Name */}
@@ -24,21 +26,22 @@ export default function CompanyCardCompact({ company, onView, onSave }) {
         {/* Shipments */}
         <div className="flex items-center gap-2">
           <Bookmark className="w-5 h-5 text-purple-600" />
-          <span>{formatValue(total_shipments_12m)}</span>
+          {formatValue(total_shipments_12m)}
         </div>
+
         {/* Activity */}
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-purple-600" />
-          <span>{formatValue(activity_score)}</span>
+          {formatValue(activity_score)}
         </div>
+
         {/* Top Route */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 whitespace-nowrap overflow-hidden">
           <MapPin className="w-5 h-5 text-purple-600" />
-          <span>
-            {(top_route_origin || top_route_destination)
-              ? \`\${top_route_origin || '—'} → \${top_route_destination || '—'}\`
-              : <span className="text-gray-400">—</span>}
-          </span>
+          {hasRoute
+            ? `${top_route_origin || '—'} → ${top_route_destination || '—'}`
+            : <span className="text-gray-400">—</span>
+          }
         </div>
       </div>
 
