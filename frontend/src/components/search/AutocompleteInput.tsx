@@ -1,129 +1,154 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { debounce } from "@/utils/debounce";
+import React, { useEffect, useRef, useState } from "react";
 
-type Suggestion = { company_id: string; company_name: string; shipments_12m?: number };
-const GW_DEFAULT = "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
+type Props = {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit?: () => void;
+  placeholder?: string;
+  className?: string;
+  minChars?: number;     // default 2
+  limit?: number;        // default 6
+};
 
-function findSearchButton(): HTMLButtonElement | null {
-  return document.querySelector('[data-test="search-button"]') as HTMLButtonElement | null;
-}
-function findSearchInput(): HTMLInputElement | null {
-  // Strong selectors first
-  const s1 = document.querySelector('input[data-test="search-input"]') as HTMLInputElement | null;
-  if (s1) return s1;
-  const s2 = document.querySelector('input[name="keyword"]') as HTMLInputElement | null;
-  if (s2) return s2;
-  const s3 = document.querySelector('input[placeholder*="Search" i]') as HTMLInputElement | null;
-  if (s3) return s3;
-  // Fallback: near the button
-  const btn = findSearchButton();
-  const root = (btn?.closest("form") || btn?.closest("div") || document.body) as HTMLElement;
-  const s4 = root.querySelector('input[type="search"], input[type="text"]') as HTMLInputElement | null;
-  return s4 || null;
-}
-
-// Programmatically set value on a React-controlled input so React sees it
-function setReactInputValue(input: HTMLInputElement, v: string) {
-  const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
-  const setter = desc?.set;
-  if (setter) setter.call(input, v);
-  else (input.value = v);
-  // Fire proper events so React updates state
-  input.dispatchEvent(new InputEvent("input", { bubbles: true, data: v, inputType: "insertText" } as any));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-}
-
-function submitSearch(withValue: string) {
-  const input = findSearchInput();
-  if (input) setReactInputValue(input, withValue);
-
-  // Prefer form submission (works with form handlers)
-  const form = input?.closest("form") as HTMLFormElement | null;
-  if (form && typeof (form as any).requestSubmit === "function") {
-    (form as any).requestSubmit();
-    return;
-  }
-
-  // Fallback to clicking the existing Search button
-  const b = findSearchButton();
-  if (b) b.click();
-}
-
+/**
+ * Debounced input with live suggestions backed by /api/lit/public/searchCompanies.
+ * - Keeps keyboard "Enter" -> hard submit.
+ * - Clicking a suggestion fills input and triggers onSubmit (if provided).
+ */
 export default function AutocompleteInput({
+  value,
+  onChange,
+  onSubmit,
+  placeholder = "Search by company name or alias (e.g., UPS, Maersk)…",
+  className = "",
   minChars = 2,
-  placeholder = "Search companies…",
-}: { minChars?: number; placeholder?: string; }) {
-  const [q, setQ] = useState("");
+  limit = 6,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
-  const API_BASE = (import.meta as any).env?.VITE_LIT_GATEWAY_BASE || GW_DEFAULT;
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const suggest = useMemo(() => debounce(async (query: string) => {
-    if (!query || query.length < minChars) { setSuggestions([]); setOpen(false); return; }
-    setLoading(true);
-    try {
-      const body = { keyword: query, limit: 6, offset: 0 };
-
-      // Try proxy first (local / server), then gateway (prod-safe)
-      let r = await fetch("/api/lit/public/searchCompanies", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-      });
-      if (!r.ok) {
-        r = await fetch(`${String(API_BASE).replace(/\/$/, "")}/public/searchCompanies`, {
-          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-        });
-      }
-      if (!r.ok) throw new Error(String(r.status));
-      const data = await r.json();
-      setSuggestions((data?.rows || data?.results || []).slice(0, 6));
-      setOpen(true);
-    } catch (e) {
-      console.error("suggest error:", e);
-      setSuggestions([]); setOpen(false);
-    } finally {
-      setLoading(false);
-    }
-  }, 250), [API_BASE, minChars]);
-
-  useEffect(() => { suggest(q); }, [q, suggest]);
-
+  // Debounced fetch
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (!ref.current) return; if (!ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+    const term = (value || "").trim();
+    if (term.length < minChars) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+
+    const h = setTimeout(async () => {
+      try {
+        if (abortRef.current) abortRef.current.abort();
+        const ac = new AbortController();
+        abortRef.current = ac;
+
+        setLoading(true);
+        const res = await fetch("/api/lit/public/searchCompanies", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ q: term, limit, offset: 0 }),
+          signal: ac.signal,
+        });
+
+        if (!res.ok) throw new Error(`suggestions ${res.status}`);
+        const data = await res.json();
+        const rows: any[] = data?.results || data?.rows || [];
+        setSuggestions(rows.slice(0, limit));
+        setOpen(true);
+      } catch (e) {
+        setSuggestions([]);
+        setOpen(false);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(h);
+  }, [value, minChars, limit]);
+
+  // Close on outside click
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-autocomplete-root="1"]')) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={`relative ${className}`} data-autocomplete-root="1">
       <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); const v = q.trim(); if (v) { setOpen(false); submitSearch(v); } }
-          if (e.key === "Escape") setOpen(false);
-        }}
-        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        data-test="search-input"
+        className="flex w-full border border-input bg-transparent px-3 py-1 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pl-9 h-12 text-base rounded-lg"
         placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            setOpen(false);
+            onSubmit?.();
+          }
+        }}
       />
-      {open && (loading || suggestions.length > 0) && (
-        <div className="absolute z-30 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
-          {loading && <div className="px-3 py-2 text-xs text-gray-500">Searching…</div>}
-          {!loading && suggestions.map((s) => (
-            <button
-              key={s.company_id}
-              onClick={() => { setQ(s.company_name); setOpen(false); submitSearch(s.company_name); }}
-              className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-50"
-            >
-              <div className="truncate">
-                <div className="text-sm font-medium text-gray-900 truncate">{s.company_name}</div>
-                {typeof s.shipments_12m === "number" && (
-                  <div className="text-xs text-gray-500">{s.shipments_12m} shipments (12m)</div>
-                )}
-              </div>
-              <span className="text-[10px] text-gray-400">Enter ↵</span>
-            </button>
-          ))}
+
+      {/* search icon */}
+      <svg
+        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="11" cy="11" r="8"></circle>
+        <path d="m21 21-4.3-4.3"></path>
+      </svg>
+
+      {/* Suggestions popover */}
+      {(value || "").trim().length >= minChars && (
+        <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="px-4 py-3 text-sm text-gray-600 flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-indigo-600" />
+            Live suggestions
+            {loading && <span className="ml-2 text-gray-400">· loading…</span>}
+          </div>
+
+          {!open || suggestions.length === 0 ? (
+            <div className="px-4 pb-4 text-gray-500 text-sm">No live matches yet</div>
+          ) : (
+            <ul className="pb-2 max-h-72 overflow-auto">
+              {suggestions.map((s, i) => {
+                const name = s?.company_name || s?.name || "(unknown)";
+                const id = s?.company_id || s?.id || "";
+                return (
+                  <li key={`${id || name}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(name);
+                        setOpen(false);
+                        onSubmit?.();
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
+                    >
+                      <span className="truncate">{name}</span>
+                      {id && (
+                        <span className="ml-3 text-xs text-gray-400">ID: {id}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
     </div>
