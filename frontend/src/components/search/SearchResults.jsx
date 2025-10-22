@@ -10,7 +10,7 @@ export default function SearchResults({
   searchResults,
   totalResults,
   isLoading,
-  onCompanySelect, // <- used for card Details
+  onCompanySelect,
   onSave,
   onStartOutreach,
   onDraftRFP,
@@ -111,30 +111,32 @@ export default function SearchResults({
       ) : hasResults ? (
         <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 items-stretch' : 'grid-cols-1'}`}>
           <AnimatePresence>
-            {searchResults.map((company) => {
-              const companyId = company.company_id || company.id;
-              const isSaving = savingCompanyId === companyId;
-              const isSaved = savedCompanyIds.has(companyId);
+            {searchResults
+              .filter((c) => c && (c.company_name || c.name)) // ✅ Filter out empty/unnamed companies
+              .map((company) => {
+                const companyId = company.company_id || company.id;
+                const isSaving = savingCompanyId === companyId;
+                const isSaved = savedCompanyIds.has(companyId);
 
-              return viewMode === 'grid' ? (
-                <CompanyCardCompact
-                  key={companyId}
-                  company={company}
-                  onView={onCompanySelect}
-                  onSave={onSave}
-                />
-              ) : (
-                <CompanySearchListItem
-                  key={companyId}
-                  company={company}
-                  onSelect={onCompanySelect}
-                  onSave={onSave}
-                  isSaving={isSaving}
-                  isSaved={isSaved}
-                  selectedId={companyId}
-                />
-              );
-            })}
+                return viewMode === 'grid' ? (
+                  <CompanyCardCompact
+                    key={companyId}
+                    company={company}
+                    onView={onCompanySelect}
+                    onSave={onSave}
+                  />
+                ) : (
+                  <CompanySearchListItem
+                    key={companyId}
+                    company={company}
+                    onSelect={onCompanySelect}
+                    onSave={onSave}
+                    isSaving={isSaving}
+                    isSaved={isSaved}
+                    selectedId={companyId}
+                  />
+                );
+              })}
           </AnimatePresence>
 
           {/* Load More */}
