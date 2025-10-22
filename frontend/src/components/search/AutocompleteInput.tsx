@@ -1,102 +1,154 @@
 import React, { useEffect, useRef, useState } from "react";
 
-type Suggestion = { id: string; name: string; website?: string | null };
-
 type Props = {
   value: string;
   onChange: (v: string) => void;
-  onSelect: (s: Suggestion) => void;
-  // optional: falls back to local list if this fails or is omitted
-  fetchSuggestions?: (q: string) => Promise<Suggestion[]>;
+  onSubmit?: () => void;
   placeholder?: string;
-  minChars?: number;
+  className?: string;
+  minChars?: number;     // default 2
+  limit?: number;        // default 6
 };
 
-const LOCAL = ["Dole", "Del Monte", "Maersk", "MSC", "CMA CGM", "Tesla", "UPS", "Walmart", "Target", "Amazon"];
-
+/**
+ * Debounced input with live suggestions backed by /api/lit/public/searchCompanies.
+ * - Keeps keyboard "Enter" -> hard submit.
+ * - Clicking a suggestion fills input and triggers onSubmit (if provided).
+ */
 export default function AutocompleteInput({
   value,
   onChange,
-  onSelect,
-  fetchSuggestions,
-  placeholder = "Search by company name… [AC HARD TEST]",
-  minChars = 1,
+  onSubmit,
+  placeholder = "Search by company name or alias (e.g., UPS, Maersk)…",
+  className = "",
+  minChars = 2,
+  limit = 6,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<Suggestion[]>([]);
-  const [highlight, setHighlight] = useState(0);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
-  async function load(q: string) {
-    const qq = (q || "").trim();
-    if (qq.length < minChars) {
-      setItems([]); setOpen(false); return;
-    }
-    if (fetchSuggestions) {
-      try {
-        const rows = await fetchSuggestions(qq);
-        if (Array.isArray(rows) && rows.length) {
-          setItems(rows); setOpen(true); return;
-        }
-      } catch (_) { /* fall through */ }
-    }
-    const rows = LOCAL
-      .filter(n => n.toLowerCase().includes(qq.toLowerCase()))
-      .slice(0, 8)
-      .map((name, i) => ({ id: String(i+1), name, website: null }));
-    setItems(rows); setOpen(true);
-  }
-
-  useEffect(() => { load(value); }, [value]);
-
+  // Debounced fetch
   useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!boxRef.current) return;
-      if (!boxRef.current.contains(e.target as Node)) setOpen(false);
+    const term = (value || "").trim();
+    if (term.length < minChars) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
     }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+
+    const h = setTimeout(async () => {
+      try {
+        if (abortRef.current) abortRef.current.abort();
+        const ac = new AbortController();
+        abortRef.current = ac;
+
+        setLoading(true);
+        const res = await fetch("/api/lit/public/searchCompanies", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ q: term, limit, offset: 0 }),
+          signal: ac.signal,
+        });
+
+        if (!res.ok) throw new Error(`suggestions ${res.status}`);
+        const data = await res.json();
+        const rows: any[] = data?.results || data?.rows || [];
+        setSuggestions(rows.slice(0, limit));
+        setOpen(true);
+      } catch (e) {
+        setSuggestions([]);
+        setOpen(false);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(h);
+  }, [value, minChars, limit]);
+
+  // Close on outside click
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-autocomplete-root="1"]')) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  function choose(i: number) {
-    const s = items[i];
-    if (!s) return;
-    onSelect(s);
-    setOpen(false);
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open || !items.length) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight(h => Math.min(h+1, items.length-1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight(h => Math.max(h-1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); choose(highlight); }
-    else if (e.key === "Escape") { setOpen(false); }
-  }
-
   return (
-    <div ref={boxRef} className="relative">
+    <div className={`relative ${className}`} data-autocomplete-root="1">
       <input
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => { if (items.length) setOpen(true); }}
-        onKeyDown={onKeyDown}
+        data-test="search-input"
+        className="flex w-full border border-input bg-transparent px-3 py-1 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pl-9 h-12 text-base rounded-lg"
         placeholder={placeholder}
-        className="w-full pl-4 pr-12 py-3 text-base md:text-lg bg-white border border-blue-300 ring-2 ring-blue-400 rounded-xl"
-        data-test="ac-hard"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            setOpen(false);
+            onSubmit?.();
+          }
+        }}
       />
-      {open && items.length > 0 && (
-        <div className="absolute left-0 right-0 mt-2 bg-white border rounded-xl shadow-xl z-50 max-h-72 overflow-auto">
-          {items.map((s, i) => (
-            <button
-              key={s.id}
-              onMouseDown={(e) => { e.preventDefault(); choose(i); }}
-              onMouseEnter={() => setHighlight(i)}
-              className={`w-full text-left px-3 py-2 ${i === highlight ? "bg-blue-50" : ""}`}
-            >
-              <div className="text-sm font-medium">{s.name}</div>
-              {s.website ? <div className="text-xs text-gray-500 truncate">{s.website}</div> : null}
-            </button>
-          ))}
+
+      {/* search icon */}
+      <svg
+        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="11" cy="11" r="8"></circle>
+        <path d="m21 21-4.3-4.3"></path>
+      </svg>
+
+      {/* Suggestions popover */}
+      {(value || "").trim().length >= minChars && (
+        <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="px-4 py-3 text-sm text-gray-600 flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-indigo-600" />
+            Live suggestions
+            {loading && <span className="ml-2 text-gray-400">· loading…</span>}
+          </div>
+
+          {!open || suggestions.length === 0 ? (
+            <div className="px-4 pb-4 text-gray-500 text-sm">No live matches yet</div>
+          ) : (
+            <ul className="pb-2 max-h-72 overflow-auto">
+              {suggestions.map((s, i) => {
+                const name = s?.company_name || s?.name || "(unknown)";
+                const id = s?.company_id || s?.id || "";
+                return (
+                  <li key={`${id || name}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(name);
+                        setOpen(false);
+                        onSubmit?.();
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
+                    >
+                      <span className="truncate">{name}</span>
+                      {id && (
+                        <span className="ml-3 text-xs text-gray-400">ID: {id}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
     </div>
