@@ -470,6 +470,9 @@ export default function Search() {
   placeholder="Search by company name or alias (e.g., UPS, Maersk)… [TEST]"
 />
             </div>
+  {/* Autocomplete (preview-only; interop w/ React-controlled input) */}
+  <div className="mb-3"><AutocompleteInput minChars={2} /></div>
+
 
             <Button data-test="search-button"
               onClick={() => { try{ console.debug('[Search] click submit'); }catch{} handleSearch(1); }}
