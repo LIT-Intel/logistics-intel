@@ -1,597 +1,749 @@
-import FiltersDrawer from "@/components/search/FiltersDrawer";
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api, postSearchCompanies, saveCompanyToCrm } from "@/lib/api";
-import { hasFeature } from "@/lib/access";
-import { upsertSaved } from "@/components/command-center/storage";
-import CompanyDrawer from "@/components/company/CompanyDrawer";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  LayoutGrid,
+  List as ListIcon,
+  Sliders,
+  TrendingUp,
+  Ship,
+  Clock,
+  Box,
+  Zap,
+  MapPin,
+  Search as SearchIcon,
+  Lock,
+  DollarSign,
+  ArrowRight,
+} from "lucide-react";
+
+import { useDebouncedCallback } from "use-debounce";
+
 import { useAuth } from "@/auth/AuthProvider";
+import { hasFeature } from "@/lib/access";
+
+// Keep existing app wiring and proxies intact
+import { useSearch } from "@/app/search/useSearch";
+import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey } from "@/lib/api";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search as SearchIcon } from "lucide-react";
-import AutocompleteInput from "@/components/search/AutocompleteInput";
-import { useNavigate } from "react-router-dom";
-// @ts-nocheck
-import LitPageHeader from "../components/ui/LitPageHeader";
-import LitPanel from "../components/ui/LitPanel";
-import LitWatermark from "../components/ui/LitWatermark";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import CompanyModal from "@/components/search/CompanyModal";
+import { FiltersDrawer } from "@/components/FiltersDrawer";
+import SearchEmpty from "@/components/SearchEmpty";
 
-import SearchFilters from "@/components/search/SearchFilters";
-import CompanyDetailModal from "../components/search/CompanyDetailModal";
-import SearchResults from "../components/search/SearchResults";
-import UpgradePrompt from "../components/common/UpgradePrompt";
-
-const ITEMS_PER_PAGE = 50;
-
-export default function Search() {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const fetchSuggestions = async (q: string) => {
-  const FALLBACK = ["Dole","Del Monte","Maersk","MSC","CMA CGM","Tesla","UPS","Walmart","Target","Amazon"];
-  const qq = (q || "").trim();
-  if (qq.length < 2) return [];
-  try {
-    // Try GET first
-    const r = await api.get(`/search/companies?q=${encodeURIComponent(qq)}&limit=8`);
-    const list: any[] = (r?.data?.results ?? r?.data ?? []);
-    return (list || []).slice(0,8).map((x: any) => ({
-      id: String(x.id ?? x.company_id ?? x.ticker ?? x.name ?? qq),
-      name: String(x.name ?? x.company ?? x.alias ?? qq),
-      website: x.website ?? x.domain ?? null,
-    }));
-  } catch (_e) {
-    try {
-      // Fallback to POST
-      const body: any = { q: qq, page: 1, limit: 8 };
-      const resp: any = await postSearchCompanies(body);
-      const raw: any[] = Array.isArray(resp?.items) ? resp.items
-                    : (Array.isArray(resp?.rows) ? resp.rows : []);
-      return (raw || []).slice(0,8).map((x: any) => ({
-        id: String(x.company_id ?? x.id ?? x.ticker ?? x.company_name ?? qq),
-        name: String(x.company_name ?? x.name ?? x.company ?? x.alias ?? qq),
-        website: x.domain ?? x.website ?? null,
-      }));
-    } catch {
-      // Last resort: local list
-      return FALLBACK
-        .filter(n => n.toLowerCase().includes(qq.toLowerCase()))
-        .slice(0,8)
-        .map((name, i) => ({ id: String(i+1), name, website: null }));
-    }
-  }
+// --- Design Tokens (UI only; no API impact) ---
+const STYLES = {
+  brandPurple: "#7F3DFF",
+  neutralGrayLight: "#F9FAFB",
+  textPrimary: "#111827",
 };
 
-  const [filters, setFilters] = useState({
-    mode: "any",
-    origin: "",
-    destination: "",
-    carrier: "",
-    hs: [],
-    date_start: null,
-    date_end: null,
-  });
+// --- Helpers ---
+function kLastActivity(v: any): string {
+  if (!v) return "—";
+  if (typeof v === "object" && "value" in v) return String((v as any).value || "—");
+  return String(v);
+}
 
-  const [searchResults, setSearchResults] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [selectedCompany, setSelectedCompany] = useState(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-
-  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
-  const [upgradeFeature, setUpgradeFeature] = useState("");
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalResults, setTotalResults] = useState(0);
-
-  const [savedCompanyIds, setSavedCompanyIds] = useState(new Set());
-  const [savingCompanyId, setSavingCompanyId] = useState(null);
-  const [searchError, setSearchError] = useState(null);
-  const [viewMode, setViewMode] = useState("list");
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerId, setDrawerId] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-
-  const [hasSearched, setHasSearched] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
-    return () => clearTimeout(t);
-  }, [searchQuery]);
-
-  useEffect(() => {
-    if (hasSearched) {
-      handleSearch(1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQuery, filters]);
-
-  const totalPages = useMemo(() => {
-    return Math.max(1, Math.ceil((totalResults || 0) / ITEMS_PER_PAGE));
-  }, [totalResults]);
-
-  const handleView = (c) => { setSelectedCompany(c); setShowDetailModal(true); };
-
-  const handleSearch = useCallback(
-    async (page) => {
-      const p = page || 1;
-      try { console.debug('[Search] handleSearch called', { q: searchQuery, page: p }); } catch {}
-      setIsLoading(true);
-      setSearchError(null);
-      setCurrentPage(p);
-      setHasSearched(true);
-
-      try {
-        const offset = (p - 1) * ITEMS_PER_PAGE;
-        const sanitize = (s) => String(s).replace(/["']/g, "").trim();
-        const hsText = (filters.hs_text || "")
-          .split(",")
-          .map(sanitize)
-          .filter(Boolean);
-        const hsMerged = Array.isArray(filters.hs)
-          ? Array.from(new Set([...filters.hs, ...hsText]))
-          : hsText;
-        const hs_codes = (hsMerged || [])
-          .map((s) => s.replace(/[^0-9]/g, ""))
-          .filter(Boolean);
-        const mode =
-          filters.mode && filters.mode !== "any"
-            ? filters.mode === "air"
-              ? "air"
-              : "ocean"
-            : undefined;
-        const originArr = filters.origin ? [sanitize(filters.origin)] : [];
-        const destArr = filters.destination ? [sanitize(filters.destination)] : [];
-
-        const qSanitized = sanitize(searchQuery || "");
-        const body = {
-          ...(qSanitized ? { q: qSanitized } : {}),
-          ...(mode ? { mode } : {}),
-          origin: originArr,
-          dest: destArr,
-          hs: hs_codes,
-          limit: ITEMS_PER_PAGE,
-          offset,
-        };
-
-        const resp = await postSearchCompanies(body);
-        try { console.debug('[Search] postSearchCompanies ok', { payload: body, resp }); } catch {}
-        const raw = Array.isArray(resp?.items) ? resp.items : (Array.isArray(resp?.rows) ? resp.rows : []);
-        const total = typeof resp?.total === 'number' ? resp.total : (Array.isArray(raw) ? raw.length : 0);
-
-        const mapped = (raw || []).map((item) => {
-          const id =
-            item.company_id ||
-            item.id ||
-            (item.company_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-          const name = item.company_name || item.name || "Unknown";
-          const topRoute = Array.isArray(item.top_routes)
-            ? `${item.top_routes?.[0]?.origin_country || ""} → ${item.top_routes?.[0]?.dest_country || ""}`.trim()
-            : (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
-                ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
-                : undefined);
-          const shipments12m = item.shipments_12m ?? item.shipments ?? 0;
-          const lastSeen = (item.last_activity && item.last_activity.value) || item.lastShipmentDate || null;
-          return {
-            id,
-            company_id: item.company_id || null,
-            name,
-            domain: item.domain || null,
-            website: item.website || null,
-            hq_city: item.hq_city || null,
-            hq_state: item.hq_state || null,
-            shipments_12m: shipments12m,
-            last_seen: lastSeen,
-            top_route: topRoute,
-            top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
-            total_teus: item.total_teus ?? null,
-            growth_rate: item.growth_rate ?? null,
-          };
-        });
-
-        const seen = new Set();
-        const results = [];
-        for (const row of mapped) {
-          const key = row.company_id || `name:${row.name}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          results.push(row);
-          if (results.length >= ITEMS_PER_PAGE) break;
-        }
-
-        setSearchResults(results);
-        setTotalResults(total);
-      } catch (error) {
-        console.error("Search error:", error);
-        const msg = String(error?.message || "internal error");
-        if (msg.includes("searchCompanies.sql") || msg.includes("ENOENT")) {
-          setSearchError("Search service is updating. Please retry in a moment.");
-        } else {
-          setSearchError(msg);
-        }
-        setSearchResults([]);
-        setTotalResults(0);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [searchQuery, filters]
-  );
-
-  const payload = useMemo(() => {
-    const sanitize = (s) => String(s).replace(/["']/g, "").trim();
-    const hsText = (filters.hs_text || "")
-      .split(",")
-      .map(sanitize)
-      .filter(Boolean);
-    const hsMerged = Array.isArray(filters.hs)
-      ? Array.from(new Set([...filters.hs, ...hsText]))
-      : hsText;
-    const hs_codes = (hsMerged || [])
-      .map((s) => s.replace(/[^0-9]/g, ""))
-      .filter(Boolean);
-    const mode =
-      filters.mode && filters.mode !== "any"
-        ? filters.mode === "air"
-          ? "AIR"
-          : "OCEAN"
-        : undefined;
-    const origin = filters.origin ? [sanitize(filters.origin)] : undefined;
-    const dest = filters.destination ? [sanitize(filters.destination)] : undefined;
-    const qSanitized = sanitize(searchQuery || "");
-    return {
-      ...(qSanitized ? { q: qSanitized } : {}),
-      ...(mode ? { mode } : {}),
-      ...(origin ? { origin } : {}),
-      ...(dest ? { dest } : {}),
-      ...(hs_codes.length ? { hs: hs_codes } : {}),
-      limit: ITEMS_PER_PAGE,
-      offset: (currentPage - 1) * ITEMS_PER_PAGE,
-    };
-  }, [filters, currentPage, searchQuery]);
-
-  const resultsQuery = useQuery({
-    queryKey: ["searchCompanies", payload],
-    queryFn: async () => {
-      let resp;
-      try {
-        resp = await postSearchCompanies(payload);
-      } catch (e) {
-        // Fallback: always use proxy path to avoid CORS and HTML responses
-        const r = await fetch(
-          `/api/lit/public/searchCompanies`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(payload),
-          }
-        );
-        if (!r.ok) {
-          const t = await r.text().catch(() => "");
-          throw new Error(
-            `Search failed. Please try again. (${r.status}) ${t.slice(0, 160)}`
-          );
-        }
-        resp = await r.json();
-      }
-      const raw = Array.isArray(resp?.items) ? resp.items : (Array.isArray(resp?.rows) ? resp.rows : []);
-      const mapped = raw.map((item) => {
-        const name = item.company_name || item.name || "Unknown";
-        const id = item.company_id || name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-        const shipments12m = item.shipments_12m ?? item.shipments ?? 0;
-        const lastSeen = (item.last_activity && item.last_activity.value) || item.lastShipmentDate || null;
-        const topRoute = Array.isArray(item.top_routes)
-          ? `${item.top_routes?.[0]?.origin_country || ""} → ${item.top_routes?.[0]?.dest_country || ""}`.trim()
-          : (Array.isArray(item.originsTop) && Array.isArray(item.destsTop)
-              ? `${item.originsTop[0]?.v || ""} → ${item.destsTop[0]?.v || ""}`.trim()
-              : undefined);
-        return {
-          id,
-          company_id: item.company_id || null,
-          name,
-          domain: item.domain || null,
-          website: item.website || null,
-          hq_city: item.hq_city || null,
-          hq_state: item.hq_state || null,
-          shipments_12m: shipments12m,
-          last_seen: lastSeen,
-          top_route: topRoute,
-          top_carrier: Array.isArray(item.carriersTop) ? (item.carriersTop[0]?.v || undefined) : undefined,
-          total_teus: item.total_teus ?? null,
-          growth_rate: item.growth_rate ?? null,
-        };
-      });
-      const seen = new Set();
-      const rows = [];
-      for (const row of mapped) {
-        const key = row.company_id || `name:${row.name}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        rows.push(row);
-        if (rows.length >= ITEMS_PER_PAGE) break;
-      }
-      return {
-        rows,
-        meta: {
-          total: resp?.total || rows.length,
-          page: currentPage,
-          page_size: ITEMS_PER_PAGE,
-        },
-      };
-    },
-    enabled: hasSearched,
-  });
-
-  const handleCompanySelect = useCallback((company) => {
-    setSelectedCompany(company);
-    setDrawerId(String(company?.id || company?.company_id || ""));
-    setDrawerOpen(false);
-    setShowDetailModal(true);
-  }, []);
-
-  const handleSaveCompany = async (company) => {
-    if (savingCompanyId) return;
-
-    const companyId = company.id;
-    setSavingCompanyId(companyId);
-
-    const originalSavedIds = new Set(savedCompanyIds);
-    const isCurrentlySaved = originalSavedIds.has(companyId);
-
-    const optimisticNewIds = new Set(originalSavedIds);
-    if (!isCurrentlySaved) {
-      optimisticNewIds.add(companyId);
-    }
-    setSavedCompanyIds(optimisticNewIds);
-
-    try {
-      // Subscription gate for CRM save (with whitelist bypass)
-      const email = String(user?.email || '').toLowerCase();
-      const allowed = email === 'vraymond@logisticintel.com' || email === 'support@logisticintel.com' || hasFeature('crm');
-      if (!allowed) {
-        setUpgradeFeature('crm');
-        setShowUpgradePrompt(true);
-        // rollback optimistic UI
-        setSavedCompanyIds(originalSavedIds);
-        setSavingCompanyId(null);
-        return;
-      }
-      const res = await saveCompanyToCrm({
-        company_id: String(company.company_id || company.id || ""),
-        company_name: String(company.name || company.company_name || "Unknown"),
-        source: "search",
-      });
-      if (!res || !(res.status === "created" || res.status === "exists")) {
-        throw new Error("Save failed");
-      }
-      try {
-        upsertSaved({ company_id: String(company.company_id || company.id || ""), name: String(company.name || company.company_name || "Company"), domain: company.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
-      } catch {}
-      // Persist selection + active filters for Command Center hydration
-      try {
-        const cid = String(company.company_id || company.id || "");
-        const cname = String(company.name || company.company_name || "Company");
-        const saved = {
-          company_id: cid,
-          name: cname,
-          savedAt: new Date().toISOString(),
-          filters: normalizeFilters(filters),
-        } as any;
-        localStorage.setItem('cc:savedCompany', JSON.stringify(saved));
-        localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: cid, name: cname, domain: company.domain ?? null }));
-        localStorage.setItem('cc:activeFilters', JSON.stringify(saved.filters));
-      } catch {}
-      navigate("/app/command-center");
-    } catch (error) {
-      try {
-        const id = String(
-          company.company_id ||
-            company.id ||
-            "comp_" + Math.random().toString(36).slice(2, 8)
-        );
-        const lsKey = "lit_companies";
-        const raw = localStorage.getItem(lsKey);
-        const existing = raw ? JSON.parse(raw) : [];
-        const name = String(company.name || company.company_name || "Company");
-        const fresh = {
-          id,
-          name,
-          kpis: {
-            shipments12m: company.shipments_12m || 0,
-            lastActivity: company.last_seen || null,
-            originsTop: [],
-            destsTop: [],
-            carriersTop: [],
-          },
-        };
-        localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
-        try {
-          upsertSaved({ company_id: id || null, name, domain: company.domain ?? null, source: 'LIT', ts: Date.now(), archived: false });
-        } catch {}
-        // Persist selection + active filters and redirect
-        try {
-          const saved = {
-            company_id: id,
-            name,
-            savedAt: new Date().toISOString(),
-            filters: normalizeFilters(filters),
-          } as any;
-          localStorage.setItem('cc:savedCompany', JSON.stringify(saved));
-          localStorage.setItem('lit:selectedCompany', JSON.stringify({ company_id: id, name, domain: company.domain ?? null }));
-          localStorage.setItem('cc:activeFilters', JSON.stringify(saved.filters));
-        } catch {}
-        navigate("/app/command-center");
-      } catch (e) {
-        console.error("Failed to save company:", error);
-        setSavedCompanyIds(originalSavedIds);
-        alert("Failed to save company. Please try again.");
-      }
-    } finally {
-      setSavingCompanyId(null);
-    }
-  };
-
-  const handleStartOutreach = (company) => {
-    try {
-      navigate("/campaigns/new");
-    } catch {
-      // noop
-    }
-  };
-
-  const handleDraftRFP = (company) => {
-    try {
-      navigate("/rfp/new");
-    } catch {
-      // noop
-    }
-  };
-
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-    handleSearch(page);
-  };
-
+function ResultKPI({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+}) {
   return (
-    <div className="relative px-2 md:px-5 py-3 min-h-screen">
-      <LitWatermark />
-      <div className="max-w-7xl mx-auto">
-        <LitPageHeader title="Search" />
-
-        <LitPanel>
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 relative">
-              <AutocompleteInput
-  value={searchQuery}
-  onChange={setSearchQuery}
-  onSelect={(s) => { setSearchQuery(s.name); handleSearch(1); }}
-  fetchSuggestions={fetchSuggestions}
-  placeholder="Search by company name or alias (e.g., UPS, Maersk)… [TEST]"
-/>
-            </div>
-  {/* Autocomplete (preview-only; interop w/ React-controlled input) */}
-  <div className="mb-3"><AutocompleteInput minChars={2} /></div>
-
-
-            <Button data-test="search-button"
-              onClick={() => { try{ console.debug('[Search] click submit'); }catch{} handleSearch(1); }}
-              disabled={isLoading}
-              className="px-6 md:px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl"
-            >
-              {isLoading ? "Searching..." : "Search"}
-            </Button>
-          </div>
-        </LitPanel>
-
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-sm text-slate-700">Filters</div>
-          <button
-            className="text-sm px-3 py-1.5 rounded border bg-white hover:bg-slate-50"
-            onClick={() => setShowFilters((v) => !v)}
-          >
-            {showFilters ? "Hide Filters" : "Show Filters"}
-          </button>
-        </div>
-        {showFilters && (
-          <div className="mb-6">
-            <LitPanel title="Filters">
-              <SearchFilters
-                value={{
-                  origin: filters.origin ? String(filters.origin) : null,
-                  destination: filters.destination ? String(filters.destination) : null,
-                  hs: (filters.hs_text ? String(filters.hs_text) : null),
-                  mode: (filters.mode === 'air' || filters.mode === 'ocean') ? filters.mode : null,
-                }}
-                onChange={(next) => {
-                  setFilters((prev) => ({
-                    ...prev,
-                    origin: next.origin ?? '',
-                    destination: next.destination ?? '',
-                    hs_text: next.hs ?? '',
-                    mode: next.mode ?? 'any',
-                  }));
-                }}
-              />
-            </LitPanel>
-          </div>
-        )}
-
-        {searchError && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-            <div className="flex items-center gap-2 text-red-800">
-              <span className="font-semibold">Search Error:</span>
-              <span>{searchError}</span>
-            </div>
-          </div>
-        )}
-
-        {hasSearched ? (
-          <SearchResults
-            searchResults={
-              resultsQuery.data?.rows && resultsQuery.data.rows.length > 0
-                ? resultsQuery.data.rows
-                : searchResults
-            }
-            totalResults={
-              resultsQuery.data?.meta?.total && resultsQuery.data.meta.total > 0
-                ? resultsQuery.data.meta.total
-                : totalResults
-            }
-            isLoading={isLoading || resultsQuery.isLoading}
-            onCompanySelect={handleCompanySelect}
-            onSave={handleSaveCompany}
-            onStartOutreach={handleStartOutreach}
-            onDraftRFP={handleDraftRFP}
-            user={user}
-            newShipperEvents={[]}
-            savedCompanyIds={savedCompanyIds}
-            savingCompanyId={savingCompanyId}
-            viewMode={viewMode}
-            setViewMode={setViewMode}
-            selectedId={drawerId}
-            currentPage={currentPage}
-            totalPages={Math.max(
-              1,
-              Math.ceil(
-                ((resultsQuery.data?.meta?.total &&
-                  resultsQuery.data.meta.total > 0
-                  ? resultsQuery.data.meta.total
-                  : totalResults) /
-                  ITEMS_PER_PAGE) || 1
-              )
-            )}
-            onPageChange={handlePageChange}
-          />
-        ) : (
-          <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
-            <SearchIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-slate-900 mb-2">
-              Ready to Search
-            </h3>
-            <p className="text-sm text-slate-500 max-w-sm mx-auto">
-              Enter a company name or use the filters above to search for trade
-              intelligence data.
-            </p>
-          </div>
-        )}
-
-        <UpgradePrompt
-          isOpen={showUpgradePrompt}
-          onClose={() => setShowUpgradePrompt(false)}
-          feature={upgradeFeature}
-          currentPlan={user?.plan}
-        />
-
-        <CompanyDetailModal
-          company={selectedCompany}
-          isOpen={showDetailModal}
-          onClose={() => setShowDetailModal(false)}
-          onSave={handleSaveCompany}
-          user={user}
-          isSaved={savedCompanyIds.has(selectedCompany?.id)}
-        />
+    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[96px] flex flex-col items-center justify-center w-full overflow-hidden">
+      <div className="flex items-center justify-center mb-1 shrink-0">{icon}</div>
+      <div
+        className="text-xl font-bold text-gray-900 truncate w-full max-w-full"
+        title={String(value ?? "—")}
+      >
+        {value ?? "—"}
+      </div>
+      <div
+        className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate w-full max-w-full"
+        title={label}
+      >
+        {label}
       </div>
     </div>
   );
+}
+
+function SaveToCommandCenterButton({
+  row,
+  size = "sm",
+  activeFilters,
+}: {
+  row: any;
+  size?: "sm" | "md";
+  activeFilters?: any;
+}) {
+  const { user } = useAuth() as any;
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(() => {
+    try {
+      const a = JSON.parse(localStorage.getItem("lit_companies") || "[]");
+      const key = getCompanyKey({ company_id: row?.company_id, company_name: row?.company_name });
+      return Array.isArray(a) && a.some((c: any) => String(c?.id || "") === key);
+    } catch {
+      return false;
+    }
+  });
+  const [showUpsell, setShowUpsell] = useState(false);
+
+  const onClick = async () => {
+    if (saving || saved) return;
+
+    // Gating: require subscription unless whitelisted email
+    const email = String(user?.email || "").toLowerCase();
+    const allowed =
+      email === "vraymond@logisticintel.com" ||
+      email === "support@logisticintel.com" ||
+      hasFeature("crm");
+
+    if (!allowed) {
+      setShowUpsell(true);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const cname = String(row?.company_name || "");
+      const cid = getCompanyKey({ company_id: row?.company_id, company_name: cname });
+
+      try {
+        await saveCompanyToCrm({ company_id: cid, company_name: cname, source: "search" });
+      } catch {}
+
+      const lsKey = "lit_companies";
+      const existing = JSON.parse(localStorage.getItem(lsKey) || "[]");
+      if (!existing.find((c: any) => String(c?.id || "") === cid)) {
+        const kpis = {
+          shipments12m: row?.shipments_12m || 0,
+          lastActivity: kLastActivity(row?.last_activity),
+          originsTop: Array.isArray(row?.top_routes)
+            ? row.top_routes.map((r: any) => r.origin_country)
+            : [],
+          destsTop: Array.isArray(row?.top_routes)
+            ? row.top_routes.map((r: any) => r.dest_country)
+            : [],
+          carriersTop: Array.isArray(row?.top_carriers)
+            ? row.top_carriers.map((c: any) => c.carrier)
+            : [],
+        };
+        const fresh = { id: cid, name: cname, kpis, savedAt: Date.now() };
+        localStorage.setItem(lsKey, JSON.stringify([fresh, ...existing]));
+        try {
+          window.dispatchEvent(new StorageEvent("storage", { key: lsKey } as any));
+        } catch {}
+      }
+
+      // Persist selection for Command Center hydration with filters
+      try {
+        const cc = {
+          company_id: cid,
+          name: cname,
+          savedAt: new Date().toISOString(),
+          filters: normalizeFilters(activeFilters || {}),
+        };
+        localStorage.setItem("cc:savedCompany", JSON.stringify(cc));
+        localStorage.setItem(
+          "lit:selectedCompany",
+          JSON.stringify({ company_id: cid, name: cname, domain: (row as any)?.domain ?? null })
+        );
+      } catch {}
+
+      // Navigate to Command Center
+      try {
+        window.location.href = "/app/command-center";
+      } catch {}
+
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        onClick={onClick}
+        disabled={saving || saved}
+        className={cn("px-4 py-2 text-sm text-white rounded-lg transition hover:opacity-90")}
+        style={{ backgroundColor: saved ? "#10B981" : STYLES.brandPurple }}
+      >
+        {saved ? "Saved" : saving ? "Saving…" : "Save"}
+      </button>
+
+      {showUpsell && (
+        <div
+          className="fixed inset-0 z-50 bg-gray-900/75 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl p-5">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ background: "#EEE6FF" }}>
+                <Lock className="w-5 h-5" style={{ color: STYLES.brandPurple }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xl font-bold mb-1" style={{ color: STYLES.textPrimary }}>
+                  Command Center Access
+                </div>
+                <div className="text-sm text-gray-700">
+                  Saving companies requires a Pro subscription. Upgrade to unlock saving, contacts enrichment, and alerts.
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    className="px-3 py-2 text-sm rounded-lg text-gray-700 hover:bg-gray-100"
+                    onClick={() => setShowUpsell(false)}
+                  >
+                    Not right now
+                  </button>
+                  <button
+                    className="px-3 py-2 text-sm rounded-lg text-white inline-flex items-center gap-1"
+                    style={{ backgroundColor: STYLES.brandPurple }}
+                    onClick={() => setShowUpsell(false)}
+                  >
+                    <DollarSign className="w-4 h-4" /> Upgrade Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
+  const top = r.top_routes?.[0];
+  const name = r.company_name;
+  const id = r.company_id || "—";
+  const shipments12m = r.shipments_12m ?? 0;
+  const lastActivity = kLastActivity(r.last_activity);
+  const totalTeus = (r as any)?.total_teus ?? "—";
+  const growthRate =
+    (r as any)?.growth_rate == null ? "—" : `${Math.round(Number((r as any)?.growth_rate) * 100)}%`;
+  const initials = (name || "")
+    .split(" ")
+    .map((p: string) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+
+  const topBorder = { borderTop: `4px solid ${STYLES.brandPurple}` } as const;
+  const alias = (r as any)?.domain || "";
+
+  return (
+    <div
+      className="rounded-xl bg-white p-5 min-h-[220px] shadow-md hover:shadow-lg transition border border-gray-200 cursor-default"
+      style={topBorder}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[13px] text-slate-500">Company</div>
+          <div className="truncate text-xl font-bold text-gray-900" title={name}>
+            {name}
+          </div>
+          <div className="text-sm text-gray-500 truncate">{alias || `ID: ${id}`}</div>
+          <div className="mt-2 flex items-center gap-2">
+            <SaveToCommandCenterButton row={r} />
+          </div>
+        </div>
+        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-semibold select-none">
+          {initials}
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-b border-gray-200 py-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <ResultKPI
+          icon={<Ship className="w-4 h-4" style={{ color: STYLES.brandPurple }} />}
+          label="Shipments (12m)"
+          value={shipments12m}
+        />
+        <ResultKPI icon={<Clock className="w-4 h-4 text-gray-500" />} label="Last Activity" value={lastActivity} />
+        <ResultKPI icon={<Box className="w-4 h-4 text-gray-500" />} label="Total TEUs" value={totalTeus} />
+        <ResultKPI icon={<TrendingUp className="w-4 h-4 text-gray-500" />} label="Growth Rate" value={growthRate} />
+      </div>
+
+      <div className="flex justify-between items-center mt-3">
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          {top ? (
+            <>
+              <MapPin className="w-3.5 h-3.5 text-red-500" />
+              {top.origin_country} → {top.dest_country}
+            </>
+          ) : (
+            "No route data"
+          )}
+        </div>
+        <button
+          onClick={() => onOpen(r)}
+          className="text-sm text-gray-700 hover:text-gray-900 font-medium inline-flex items-center"
+        >
+          Details <ArrowRight className="w-4 h-4 ml-1" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResultsCards({ rows, onOpen, filters }: { rows: any[]; onOpen: (r: any) => void; filters: any }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      {rows.map((r) => (
+        <ResultCard
+          key={getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })}
+          r={r}
+          onOpen={onOpen}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ResultsList({
+  rows,
+  onOpen,
+  selectedKey,
+  filters,
+}: {
+  rows: any[];
+  onOpen: (r: any) => void;
+  selectedKey?: string | null;
+  filters: any;
+}) {
+  const [savedSet, setSavedSet] = useState<Set<string>>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem("lit_companies") || "[]");
+      const s = new Set<string>();
+      for (const c of Array.isArray(arr) ? arr : []) {
+        if (c?.id) s.add(String(c.id));
+      }
+      return s;
+    } catch {
+      return new Set<string>();
+    }
+  });
+
+  useEffect(() => {
+    const onStorage = () => {
+      try {
+        const arr = JSON.parse(localStorage.getItem("lit_companies") || "[]");
+        const s = new Set<string>();
+        for (const c of Array.isArray(arr) ? arr : []) {
+          if (c?.id) s.add(String(c.id));
+        }
+        setSavedSet(s);
+      } catch {}
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  return (
+    <div className="overflow-x-auto rounded-xl shadow-lg border border-gray-200">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead>
+          <tr>
+            {["Company", "Shipments (12m)", "Last Activity", "Top Route", "Actions"].map((col) => (
+              <th
+                key={col}
+                className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-50"
+              >
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {rows.map((r) => {
+            const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+            const top = r.top_routes?.[0];
+            const isSaved = savedSet.has(key);
+            return (
+              <tr
+                key={key}
+                className={cn(
+                  "hover:bg-gray-50 transition",
+                  selectedKey === key ? "ring-2 ring-indigo-500 ring-offset-1" : ""
+                )}
+              >
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <p className="font-medium text-gray-900 truncate max-w-[360px]" title={r.company_name}>
+                    {r.company_name}
+                  </p>
+                  <p className="text-xs text-gray-500">ID: {r.company_id || "—"}</p>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {r.shipments_12m ?? "—"}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {kLastActivity(r.last_activity)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center">
+                  <MapPin className="w-4 h-4 mr-1 text-red-500" />{" "}
+                  {top ? `${top.origin_country} → ${top.dest_country}` : "—"}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <SaveToCommandCenterButton row={r} activeFilters={filters} />
+                  <Button variant="ghost" size="sm" className="ml-2" onClick={() => onOpen(r)}>
+                    Details
+                  </Button>
+                  {isSaved && (
+                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 align-middle">
+                      Saved
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ------------------------------
+// PAGE
+// ------------------------------
+export default function SearchPage() {
+  // Keep existing search hook (wires to /api/lit/public/searchCompanies)
+  const { q, setQ, rows, loading, run, next, prev, page, filters, setFilters } = useSearch();
+
+  const [view, setView] = useState<"Cards" | "List" | "Filters" | "Explore">("List");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [modal, setModal] = useState<any | null>(null);
+  const [filterOptionsReady, setFilterOptionsReady] = useState(false);
+  const [filterOptions, setFilterOptions] = useState<any>(null);
+
+  // soft autocomplete state
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSug, setShowSug] = useState(false);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    getFilterOptionsOnce((signal?: AbortSignal) => getFilterOptions(signal), ac.signal)
+      .then((data) => {
+        setFilterOptions(data);
+        setFilterOptionsReady(true);
+      })
+      .catch(() => setFilterOptionsReady(true));
+    return () => ac.abort();
+  }, []);
+
+  const hasSearched = (q || "").trim().length > 0;
+
+  const dedupedRows = useMemo(() => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const r of rows) {
+      const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+    return out;
+  }, [rows]);
+
+  // Hard search
+  const doSearch = useCallback(
+    (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      run(true);
+      setShowSug(false);
+    },
+    [run]
+  );
+
+  // Persist filters for Command Center handoff
+  useEffect(() => {
+    try {
+      localStorage.setItem("cc:activeFilters", JSON.stringify(normalizeFilters(filters)));
+    } catch {}
+  }, [filters]);
+
+  // Debounced suggestions
+  const debouncedSuggest = useDebouncedCallback(async (query: string) => {
+    const str = (query || "").trim();
+    if (str.length < 2) {
+      setSuggestions([]);
+      setShowSug(false);
+      return;
+    }
+    try {
+      const body = { q: str, page: 1, pageSize: 10 };
+      const r = await fetch(`/api/lit/public/searchCompanies`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`suggest ${r.status}`);
+      const data = await r.json();
+      const items = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+      setSuggestions(items);
+      setShowSug(items.length > 0);
+    } catch (e) {
+      console.warn("autocomplete suggest failed:", e);
+      setSuggestions([]);
+      setShowSug(false);
+    }
+  }, 250);
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: STYLES.neutralGrayLight }}>
+      <div className="mx-auto px-4 sm:px-6 lg:px-8 max-w-[1400px] py-6">
+        <header className="mb-6">
+          <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Search</h1>
+          <p className="text-base text-gray-600 mb-6">Find shippers & receivers. Use filters for origin/dest/HS.</p>
+        </header>
+
+        {/* Search Bar (with soft autocomplete) */}
+        <div className="relative mb-6">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              doSearch();
+            }}
+            className="flex gap-3"
+          >
+            <div className="relative flex-1">
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
+                className="pl-9 h-12 text-base rounded-lg"
+                value={q}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setQ(v);
+                  debouncedSuggest(v);
+                }}
+                onFocus={() => {
+                  if ((q || "").trim().length >= 2 && suggestions.length > 0) setShowSug(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setShowSug(false);
+                  } else if (e.key === "ArrowDown") {
+                    const first = document.querySelector<HTMLButtonElement>('[data-sug-item="0"]');
+                    first?.focus();
+                    e.preventDefault();
+                  } else if (e.key === "Escape") {
+                    setShowSug(false);
+                  }
+                }}
+                aria-autocomplete="list"
+                aria-controls="search-suggestions"
+                aria-expanded={showSug ? "true" : "false"}
+              />
+
+              {/* Suggestions dropdown */}
+              {showSug && suggestions.length > 0 && (
+                <div
+                  id="search-suggestions"
+                  role="listbox"
+                  className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-72 overflow-auto"
+                >
+                  {suggestions.slice(0, 10).map((s, i) => {
+                    const label =
+                      s.company_name || s.name || s.domain || s.company_id || s.title || String(s);
+                    return (
+                      <button
+                        key={`${s.company_id || s.domain || label}-${i}`}
+                        type="button"
+                        role="option"
+                        data-sug-item={i}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+                        onClick={() => {
+                          setQ(label);
+                          setShowSug(false);
+                          run(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            setQ(label);
+                            setShowSug(false);
+                            run(true);
+                          } else if (e.key === "ArrowDown") {
+                            const next = document.querySelector<HTMLButtonElement>(
+                              `[data-sug-item="${i + 1}"]`
+                            );
+                            (
+                              next ||
+                              document.querySelector<HTMLButtonElement>('[data-test="search-button"]')
+                            )?.focus();
+                            e.preventDefault();
+                          } else if (e.key === "ArrowUp") {
+                            if (i === 0) {
+                              (e.currentTarget
+                                .closest("form")
+                                ?.querySelector("input") as HTMLInputElement)?.focus();
+                            } else {
+                              const prev = document.querySelector<HTMLButtonElement>(
+                                `[data-sug-item="${i - 1}"]`
+                              );
+                              prev?.focus();
+                            }
+                            e.preventDefault();
+                          } else if (e.key === "Escape") {
+                            setShowSug(false);
+                            (e.currentTarget
+                              .closest("form")
+                              ?.querySelector("input") as HTMLInputElement)?.focus();
+                          }
+                        }}
+                        title={label}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="truncate">{label}</span>
+                          {s.domain && (
+                            <span className="ml-2 text-xs text-gray-500 truncate">{s.domain}</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <Button data-test="search-button" type="submit" className="h-12 px-6 rounded-lg">
+              <SearchIcon className="w-4 h-4 mr-2" /> Search
+            </Button>
+          </form>
+        </div>
+
+        {/* View Toggle */}
+        <div className="flex gap-3 mb-6">
+          {["Cards", "List", "Filters", "Explore"].map((opt) => (
+            <button
+              key={opt}
+              onClick={() => setView(opt as any)}
+              className={cn(
+                "px-4 py-2 text-sm rounded-lg font-semibold transition flex items-center gap-1.5",
+                view === opt ? "bg-white text-indigo-700 shadow-md" : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+              )}
+            >
+              {opt === "Cards" && <LayoutGrid className="w-4 h-4" />}
+              {opt === "List" && <ListIcon className="w-4 h-4" />}
+              {opt === "Filters" && <Sliders className="w-4 h-4" />}
+              {opt === "Explore" && <Zap className="w-4 h-4" />}
+              {opt}
+            </button>
+          ))}
+          {loading && <span className="text-xs text-gray-500 self-center">Searching…</span>}
+        </div>
+
+        {/* Filters Drawer */}
+        <FiltersDrawer
+          open={Boolean(view === "Filters" || filtersOpen)}
+          onOpenChange={(v) => {
+            setFiltersOpen(v);
+            if (!v && view === "Filters") setView("Cards");
+          }}
+          filters={filterOptions || {}}
+          values={{
+            origin: filters.origin ?? undefined,
+            destination: filters.destination ?? undefined,
+            mode: filters.mode ?? undefined,
+            date_start: filters.date_start ?? undefined,
+            date_end: filters.date_end ?? undefined,
+            year: filters.year ?? undefined,
+          }}
+          onChange={(patch) => {
+            setFilters((prev) => ({
+              origin:
+                typeof patch.origin === "string"
+                  ? patch.origin
+                  : patch.origin === undefined
+                  ? null
+                  : prev.origin,
+              destination:
+                typeof patch.destination === "string"
+                  ? patch.destination
+                  : patch.destination === undefined
+                  ? null
+                  : prev.destination,
+              hs: prev.hs,
+              mode:
+                typeof patch.mode === "string" ? (patch.mode as any) : patch.mode === undefined ? null : prev.mode,
+              date_start:
+                typeof patch.date_start === "string"
+                  ? patch.date_start
+                  : patch.date_start === undefined
+                  ? null
+                  : prev.date_start,
+              date_end:
+                typeof patch.date_end === "string"
+                  ? patch.date_end
+                  : patch.date_end === undefined
+                  ? null
+                  : prev.date_end,
+              year:
+                typeof patch.year === "string" ? patch.year : patch.year === undefined ? null : prev.year,
+            }));
+          }}
+          onApply={() => {
+            run(true);
+            setFiltersOpen(false);
+            if (view === "Filters") setView("Cards");
+          }}
+        />
+
+        {/* Results */}
+        {!hasSearched && rows.length === 0 && <SearchEmpty state="idle" />}
+        {hasSearched && rows.length === 0 && !loading && <SearchEmpty state="no-results" />}
+
+        {rows.length > 0 && (
+          <div className="pt-2">
+            {view === "Cards" && (
+              <ResultsCards rows={dedupedRows} onOpen={(r) => setModal(r)} filters={filters} />
+            )}
+            {view === "List" && (
+              <ResultsList
+                rows={dedupedRows}
+                onOpen={(r) => setModal(r)}
+                selectedKey={
+                  modal ? getCompanyKey({ company_id: modal?.company_id, company_name: modal?.company_name }) : null
+                }
+                filters={filters}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Detail Modal */}
+      <CompanyModal company={modal} open={Boolean(modal)} onClose={(open) => !open && setModal(null)} />
+    </div>
+  );
+}
+
+// Map current search filters to persistent payload for Command Center
+function normalizeFilters(f: any) {
+  const out: any = {
+    startDate: f?.date_start ?? null,
+    endDate: f?.date_end ?? null,
+    origin_country: f?.origin ? [String(f.origin).toUpperCase()] : [],
+    dest_country: f?.destination ? [String(f.destination).toUpperCase()] : [],
+    origin_city: [],
+    origin_state: [],
+    origin_postal: [],
+    origin_port: [],
+    dest_city: [],
+    dest_state: [],
+    dest_postal: [],
+    dest_port: [],
+    hs: f?.hs ? String(f.hs).split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+  };
+  return out;
 }
