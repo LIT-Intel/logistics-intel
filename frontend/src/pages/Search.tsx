@@ -25,6 +25,62 @@ import UpgradePrompt from "../components/common/UpgradePrompt";
 const ITEMS_PER_PAGE = 50;
 
 export default function Search() {
+
+  /* LIT:auto-search-on-type */
+  // Debounced auto-submit when 2+ chars are typed in the search input.
+  // Works even if Search uses controlled React state; we trigger the existing form/button.
+  const __lit_auto_search_ref = React.useRef(false);
+  React.useEffect(() => {
+    if (__lit_auto_search_ref.current) return; // run once
+    __lit_auto_search_ref.current = true;
+
+    function findInput() {
+      return (
+        document.querySelector("input[data-test=\"search-input\"]") ||
+        document.querySelector("input[name=\"keyword\"]") ||
+        document.querySelector("input[type=\"search\"]") ||
+        document.querySelector("input[placeholder*=\"Search\" i]")
+      );
+    }
+    function findButton() {
+      return document.querySelector("[data-test=\"search-button\"]");
+    }
+
+    let t; // debounce timer
+    function onInput(e) {
+      const v = (e?.target?.value ?? "").trim();
+      if (v.length < 2) return;
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const input = e.target;
+        // Ensure React sees the value (for controlled inputs)
+        const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+        desc?.set?.call(input, v);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+
+        // Prefer form.requestSubmit; fallback to clicking existing button
+        const form = input.closest("form");
+        if (form && typeof form.requestSubmit === "function") { form.requestSubmit(); return; }
+        const btn = findButton(); if (btn) (btn as HTMLButtonElement).click();
+      }, 300);
+    }
+
+    // Attach
+    let input = findInput();
+    if (!input) {
+      const obs = new MutationObserver(() => {
+        input = findInput();
+        if (input) { input.addEventListener("input", onInput); obs.disconnect(); }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+      return () => obs.disconnect();
+    } else {
+      input.addEventListener("input", onInput);
+      return () => input && input.removeEventListener("input", onInput);
+    }
+  }, []);
+
   const navigate = useNavigate();
   const { user } = useAuth();
 
