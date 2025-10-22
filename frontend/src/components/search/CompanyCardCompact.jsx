@@ -6,57 +6,50 @@ export default function CompanyCardCompact({ company, onView, onSave }) {
   const {
     name = 'Unnamed Co.',
     total_shipments_12m,
+    activity_summary_12m,
     top_route_origin,
     top_route_destination,
-    activity_summary_12m,
-    isSaved,
   } = company || {};
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
-      {/* Name */}
-      <h3 className="text-lg font-semibold text-gray-800 mb-2">
-        {name}
-      </h3>
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between h-full">
+      {/* Company Name */}
+      <h3 className="text-lg font-semibold text-gray-800 mb-3">{name}</h3>
 
-      {/* Metrics */}
-      <div className="flex items-center text-sm text-gray-600 space-x-6 mb-3">
+      {/* Metrics Row */}
+      <div className="grid grid-cols-3 text-sm text-gray-700 gap-2 mb-4">
         {/* TEUs */}
-        {total_shipments_12m != null && (
-          <div className="flex items-center gap-1">
-            <Bookmark className="h-4 w-4 text-purple-500" />
-            <span>{total_shipments_12m}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-1 whitespace-nowrap">
+          <Bookmark className="h-4 w-4 text-purple-500" />
+          {total_shipments_12m ?? '—'}
+        </div>
 
         {/* Activity */}
-        {activity_summary_12m?.length > 0 && (
-          <div className="flex items-center gap-1">
-            <Clock className="h-4 w-4 text-purple-500" />
-            <span>{activity_summary_12m.join(', ')}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-1 whitespace-nowrap">
+          <Clock className="h-4 w-4 text-purple-500" />
+          {activity_summary_12m?.length ? activity_summary_12m.join(', ') : '—'}
+        </div>
 
         {/* Top Route */}
-        {(top_route_origin || top_route_destination) && (
-          <div className="flex items-center gap-1">
-            <MapPin className="h-4 w-4 text-purple-500" />
-            <span>
+        <div className="flex items-center gap-1 whitespace-nowrap">
+          <MapPin className="h-4 w-4 text-purple-500" />
+          {(top_route_origin || top_route_destination) ? (
+            <>
               {top_route_origin || ''} {top_route_origin && top_route_destination ? '→' : ''} {top_route_destination || ''}
-            </span>
-          </div>
-        )}
+            </>
+          ) : '—'}
+        </div>
       </div>
 
       {/* Footer: Save + View */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center mt-auto">
         <Button
           size="sm"
           variant="outline"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            onSave && onSave(company);
+            onSave?.(company);
           }}
           className="text-purple-600 border-purple-600 hover:bg-purple-50"
         >
@@ -70,7 +63,7 @@ export default function CompanyCardCompact({ company, onView, onSave }) {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            onView && onView(company);
+            onView?.(company);
           }}
         >
           Details →
