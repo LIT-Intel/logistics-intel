@@ -1,152 +1,156 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { searchCompanies as searchCompaniesApi } from "@/lib/api";
 
-type Props = {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit?: () => void;
-  placeholder?: string;
-  className?: string;
-  minChars?: number;     // default 2
-  limit?: number;        // default 6
+type Suggestion = {
+  company_id?: string | number;
+  company_name: string;
+  domain?: string | null;
 };
 
-/**
- * Debounced input with live suggestions backed by /api/lit/public/searchCompanies.
- * - Keeps keyboard "Enter" -> hard submit.
- * - Clicking a suggestion fills input and triggers onSubmit (if provided).
- */
+function useDebounced<T>(value: T, delay = 250) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return v;
+}
+
 export default function AutocompleteInput({
   value,
   onChange,
   onSubmit,
   placeholder = "Search by company name or alias (e.g., UPS, Maersk)…",
-  className = "",
   minChars = 2,
-  limit = 6,
-}: Props) {
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onSubmit: () => void;
+  placeholder?: string;
+  minChars?: number;
+}) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const abortRef = useRef<AbortController | null>(null);
+  const [items, setItems] = useState<Suggestion[]>([]);
+  const debouncedQ = useDebounced(value, 250);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Debounced fetch
+  // load suggestions
   useEffect(() => {
-    const term = (value || "").trim();
-    if (term.length < minChars) {
-      setSuggestions([]);
-      setOpen(false);
-      return;
-    }
-
-    const h = setTimeout(async () => {
-      try {
-        if (abortRef.current) abortRef.current.abort();
-        const ac = new AbortController();
-        abortRef.current = ac;
-
-        setLoading(true);
-        const res = await fetch("/api/lit/public/searchCompanies", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ q: term, limit, offset: 0 }),
-          signal: ac.signal,
-        });
-
-        if (!res.ok) throw new Error(`suggestions ${res.status}`);
-        const data = await res.json();
-        const rows: any[] = data?.results || data?.rows || [];
-        setSuggestions(rows.slice(0, limit));
-        setOpen(true);
-      } catch (e) {
-        setSuggestions([]);
+    let cancelled = false;
+    (async () => {
+      const q = (debouncedQ || "").trim();
+      if (q.length < minChars) {
+        setItems([]);
         setOpen(false);
-      } finally {
-        setLoading(false);
+        return;
       }
-    }, 300);
+      setLoading(true);
+      try {
+        // use the robust API helper (handles proxy/gateway fallbacks)
+        const res = await searchCompaniesApi({
+          q,
+          pageSize: 6,
+          limit: 6,
+          // keep filters empty for suggestion speed
+        });
+        if (cancelled) return;
+        const rows = Array.isArray((res as any)?.results)
+          ? (res as any).results
+          : Array.isArray((res as any)?.rows)
+          ? (res as any).rows
+          : [];
+        const mapped: Suggestion[] = rows
+          .map((r: any) => ({
+            company_id: r?.company_id ?? r?.id,
+            company_name: String(r?.company_name ?? r?.name ?? "").trim(),
+            domain: r?.domain ?? null,
+          }))
+          .filter((r: Suggestion) => r.company_name);
+        setItems(mapped);
+        setOpen(true);
+      } catch {
+        if (!cancelled) {
+          setItems([]);
+          setOpen(false);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQ, minChars]);
 
-    return () => clearTimeout(h);
-  }, [value, minChars, limit]);
-
-  // Close on outside click
+  // close on outside click / escape
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('[data-autocomplete-root="1"]')) {
-        setOpen(false);
-      }
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onEsc);
+    };
   }, []);
 
   return (
-    <div className={`relative ${className}`} data-autocomplete-root="1">
+    <div ref={wrapRef} className="relative">
       <input
-        data-test="search-input"
-        className="flex w-full border border-input bg-transparent px-3 py-1 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pl-9 h-12 text-base rounded-lg"
-        placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          onChange(e.target.value);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
-            e.preventDefault();
             setOpen(false);
-            onSubmit?.();
+            onSubmit();
           }
         }}
+        placeholder={placeholder}
+        className="flex w-full border border-input bg-transparent px-3 py-1 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pl-9 h-12 text-base rounded-lg"
+        data-test="search-input"
+        type="search"
+        autoComplete="off"
+        spellCheck={false}
       />
 
-      {/* search icon */}
-      <svg
-        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <circle cx="11" cy="11" r="8"></circle>
-        <path d="m21 21-4.3-4.3"></path>
-      </svg>
-
-      {/* Suggestions popover */}
-      {(value || "").trim().length >= minChars && (
-        <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="px-4 py-3 text-sm text-gray-600 flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-indigo-600" />
-            Live suggestions
-            {loading && <span className="ml-2 text-gray-400">· loading…</span>}
+      {/* dropdown */}
+      {open && (
+        <div
+          className="absolute z-40 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
+          role="listbox"
+        >
+          <div className="px-3 py-2 text-xs font-medium text-gray-600">
+            {loading ? "Loading…" : "Live suggestions"}
           </div>
-
-          {!open || suggestions.length === 0 ? (
-            <div className="px-4 pb-4 text-gray-500 text-sm">No live matches yet</div>
+          <div className="border-t border-gray-100" />
+          {items.length === 0 && !loading ? (
+            <div className="px-3 py-3 text-sm text-gray-500">No live matches yet</div>
           ) : (
-            <ul className="pb-2 max-h-72 overflow-auto">
-              {suggestions.map((s, i) => {
-                const name = s?.company_name || s?.name || "(unknown)";
-                const id = s?.company_id || s?.id || "";
-                return (
-                  <li key={`${id || name}-${i}`}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onChange(name);
-                        setOpen(false);
-                        onSubmit?.();
-                      }}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
-                    >
-                      <span className="truncate">{name}</span>
-                      {id && (
-                        <span className="ml-3 text-xs text-gray-400">ID: {id}</span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+            <ul className="max-h-72 overflow-auto">
+              {items.map((s, idx) => (
+                <li
+                  key={`${s.company_id ?? idx}-${s.company_name}`}
+                  className="px-3 py-3 text-sm cursor-pointer hover:bg-gray-50"
+                  onClick={() => {
+                    onChange(s.company_name);
+                    setOpen(false);
+                    onSubmit();
+                  }}
+                >
+                  <div className="font-medium text-gray-900">{s.company_name}</div>
+                  {s.domain ? (
+                    <div className="text-xs text-gray-500">{s.domain}</div>
+                  ) : null}
+                </li>
+              ))}
             </ul>
           )}
         </div>
