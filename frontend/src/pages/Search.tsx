@@ -524,7 +524,7 @@ export default function Search() {
   onChange={setSearchQuery}
   onSelect={(s) => { setSearchQuery(s.name); handleSearch(1); }}
   fetchSuggestions={fetchSuggestions}
-  placeholder="Search by company name or alias (e.g., UPS, Maersk)… [TEST]"
+  placeholder="Test — Search by company name or alias (e.g., UPS, Maersk)… [TEST]"
 />
             </div>
 
