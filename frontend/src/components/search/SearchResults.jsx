@@ -3,11 +3,11 @@ import { AnimatePresence } from 'framer-motion';
 import { AlertCircle, LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
-import CompanyCardCompact from "./CompanyCardCompact";
+import CompanyCardCompact from './CompanyCardCompact';
 import CompanySearchListItem from './CompanySearchListItem';
 
 export default function SearchResults({
-  searchResults,
+  searchResults = [],
   totalResults,
   isLoading,
   onCompanySelect,
@@ -16,7 +16,7 @@ export default function SearchResults({
   onDraftRFP,
   user,
   newShipperEvents,
-  savedCompanyIds,
+  savedCompanyIds = new Set(),
   savingCompanyId,
   viewMode,
   setViewMode,
@@ -25,28 +25,32 @@ export default function SearchResults({
   totalPages,
   onPageChange
 }) {
-  const hasResults = searchResults && searchResults.length > 0;
+  const validResults = Array.isArray(searchResults)
+    ? searchResults.filter((c) => !!(c?.company_name || c?.name || c?.id || c?.company_id))
+    : [];
+
+  const hasResults = validResults.length > 0;
 
   return (
     <div>
-      {/* Header with View Toggle and Pagination */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <div>
           <h2 className="text-xl font-semibold text-gray-800">Search Results</h2>
           {!isLoading && (
             <p className="text-gray-500 text-sm mt-1">
-              Found {Number(totalResults || 0).toLocaleString()} companies • Showing {searchResults?.length || 0} on this page
+              Found {Number(totalResults || 0).toLocaleString()} companies • Showing {validResults.length} on this page
             </p>
           )}
         </div>
 
         <div className="flex items-center gap-4">
-          {/* View Mode Toggle */}
+          {/* View Toggle */}
           <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
             <Button
               size="sm"
               variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-              onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setViewMode && setViewMode('grid'); }}
+              onClick={() => setViewMode?.('grid')}
               className="h-8 px-3"
             >
               <LayoutGrid className="w-4 h-4 mr-1" />
@@ -55,7 +59,7 @@ export default function SearchResults({
             <Button
               size="sm"
               variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setViewMode && setViewMode('list'); }}
+              onClick={() => setViewMode?.('list')}
               className="h-8 px-3"
             >
               <List className="w-4 h-4 mr-1" />
@@ -69,7 +73,7 @@ export default function SearchResults({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onPageChange && onPageChange(Math.max(1, currentPage - 1)); }}
+                onClick={() => onPageChange?.(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1 || isLoading}
                 className="h-8"
               >
@@ -81,7 +85,7 @@ export default function SearchResults({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onPageChange && onPageChange(Math.min(totalPages, currentPage + 1)); }}
+                onClick={() => onPageChange?.(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage >= totalPages || isLoading}
                 className="h-8"
               >
@@ -92,9 +96,9 @@ export default function SearchResults({
         </div>
       </div>
 
-      {/* Results */}
+      {/* Result Grid */}
       {isLoading ? (
-        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 items-stretch' : 'grid-cols-1'}`}>
+        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
           {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="bg-white p-6 rounded-2xl shadow-sm animate-pulse">
               <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
@@ -109,34 +113,32 @@ export default function SearchResults({
           ))}
         </div>
       ) : hasResults ? (
-        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 items-stretch' : 'grid-cols-1'}`}>
+        <div className={`grid gap-4 md:gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}>
           <AnimatePresence>
-            {searchResults
-              .filter((c) => c && (c.company_name || c.name)) // ✅ Filter out empty/unnamed companies
-              .map((company) => {
-                const companyId = company.company_id || company.id;
-                const isSaving = savingCompanyId === companyId;
-                const isSaved = savedCompanyIds.has(companyId);
+            {validResults.map((company) => {
+              const companyId = company.company_id || company.id;
+              const isSaving = savingCompanyId === companyId;
+              const isSaved = savedCompanyIds.has(companyId);
 
-                return viewMode === 'grid' ? (
-                  <CompanyCardCompact
-                    key={companyId}
-                    company={company}
-                    onView={onCompanySelect}
-                    onSave={onSave}
-                  />
-                ) : (
-                  <CompanySearchListItem
-                    key={companyId}
-                    company={company}
-                    onSelect={onCompanySelect}
-                    onSave={onSave}
-                    isSaving={isSaving}
-                    isSaved={isSaved}
-                    selectedId={companyId}
-                  />
-                );
-              })}
+              return viewMode === 'grid' ? (
+                <CompanyCardCompact
+                  key={companyId}
+                  company={company}
+                  onView={onCompanySelect}
+                  onSave={onSave}
+                />
+              ) : (
+                <CompanySearchListItem
+                  key={companyId}
+                  company={company}
+                  onSelect={onCompanySelect}
+                  onSave={onSave}
+                  isSaving={isSaving}
+                  isSaved={isSaved}
+                  selectedId={companyId}
+                />
+              );
+            })}
           </AnimatePresence>
 
           {/* Load More */}
@@ -144,7 +146,7 @@ export default function SearchResults({
             <div className="col-span-full flex justify-center mt-2">
               <Button
                 variant="outline"
-                onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onPageChange && onPageChange(currentPage + 1); }}
+                onClick={() => onPageChange?.(currentPage + 1)}
                 disabled={isLoading}
               >
                 Load More
