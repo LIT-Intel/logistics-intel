@@ -1,62 +1,63 @@
 import React from 'react';
-import { MapPin, Clock, Ship } from 'lucide-react';
+import { Bookmark, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function CompanyCardCompact({ company, onView, onSave }) {
-  console.log('CompanyCardCompact data:', company);
-
   const {
-    name,
-    shipments_12m,
-    activity_level,
-    top_route,
-    company_id,
-    id,
+    name = 'Unnamed Co.',
+    total_shipments_12m,
+    activity_score,
+    top_route_origin,
+    top_route_destination,
   } = company || {};
 
-  const displayId = company_id || id;
-  const location = top_route?.destination;
-  const origin = top_route?.origin;
+  const formatValue = (value) =>
+    value != null ? value : <span className="text-gray-400">—</span>;
 
   return (
-    <div className="bg-white border rounded-2xl p-4 shadow-sm flex flex-col justify-between h-full">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900">{name}</h3>
+    <div className="bg-white border-4 border-[#7F3DFF] rounded-xl shadow-md hover:shadow-lg p-5 flex flex-col justify-between h-full">
+      {/* Company Name */}
+      <h3 className="text-xl font-bold text-gray-900">{name}</h3>
 
-        <div className="mt-3 space-y-2 text-sm text-gray-700">
-          {shipments_12m !== undefined && shipments_12m !== null && (
-            <div className="flex items-center gap-2">
-              <Ship className="w-4 h-4 text-gray-500" />
-              {shipments_12m.toLocaleString()}
-            </div>
-          )}
-
-          {activity_level && (
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-gray-500" />
-              {activity_level}
-            </div>
-          )}
-
-          {(origin || location) && (
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-700">{origin || '—'} → {location || '—'}</span>
-            </div>
-          )}
+      {/* KPI Metrics */}
+      <div className="mt-4 grid grid-cols-3 gap-4 text-sm text-gray-700">
+        {/* Shipments */}
+        <div className="flex items-center gap-2">
+          <Bookmark className="w-5 h-5 text-purple-600" />
+          <span>{formatValue(total_shipments_12m)}</span>
+        </div>
+        {/* Activity */}
+        <div className="flex items-center gap-2">
+          <Clock className="w-5 h-5 text-purple-600" />
+          <span>{formatValue(activity_score)}</span>
+        </div>
+        {/* Top Route */}
+        <div className="flex items-center gap-2">
+          <MapPin className="w-5 h-5 text-purple-600" />
+          <span>
+            {(top_route_origin || top_route_destination)
+              ? \`\${top_route_origin || '—'} → \${top_route_destination || '—'}\`
+              : <span className="text-gray-400">—</span>}
+          </span>
         </div>
       </div>
 
-      <div className="mt-4 flex justify-between items-center">
+      {/* Footer Buttons */}
+      <div className="mt-5 flex justify-between items-center">
         <Button
+          size="sm"
           variant="outline"
-          onClick={() => onSave && onSave(displayId)}
+          className="text-[#7F3DFF] border-[#7F3DFF] hover:bg-purple-50"
+          onClick={() => onSave && onSave(company)}
         >
           + Save
         </Button>
-        <Button variant="link" onClick={() => onView && onView(displayId)}>
+        <button
+          onClick={() => onView && onView(company)}
+          className="text-gray-700 text-sm font-medium"
+        >
           Details →
-        </Button>
+        </button>
       </div>
     </div>
   );
