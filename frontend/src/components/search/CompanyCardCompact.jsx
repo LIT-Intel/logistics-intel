@@ -1,73 +1,83 @@
 import React from 'react';
-import { Bookmark, Clock, MapPin, Plus } from 'lucide-react';
+import { Building, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function CompanyCardCompact({ company, onView, onSave }) {
   const {
-    name = 'Unnamed Co.',
+    name,
+    id,
+    company_id,
     total_shipments_12m,
-    activity_summary_12m,
+    activity_score,
     top_route_origin,
     top_route_destination,
-  } = company || {};
+  } = company;
+
+  const safeName = name || 'Unnamed Co.';
+  const companyId = company_id || id;
+
+  const formatMetric = (value) =>
+    value || value === 0 ? value : <span className="text-gray-400">—</span>;
+
+  const showShipments = total_shipments_12m || total_shipments_12m === 0;
+  const showActivity = activity_score || activity_score === 0;
+  const showTopRoute = top_route_origin || top_route_destination;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between h-full">
-      {/* Company Name */}
-      <h3 className="text-lg font-semibold text-gray-800 mb-3">{name}</h3>
+    <div className="bg-white border rounded-2xl shadow-sm p-5 flex flex-col justify-between">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">{safeName}</h3>
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-3 text-sm text-gray-700 gap-2 mb-4">
-        {/* TEUs */}
-        <div className="flex items-center gap-1 whitespace-nowrap">
-          <Bookmark className="h-4 w-4 text-purple-500" />
-          {total_shipments_12m ?? '—'}
-        </div>
+        <div className="flex flex-col gap-2 text-sm text-gray-600">
+          {showShipments && (
+            <div className="flex items-center gap-2">
+              <Building className="w-4 h-4 text-gray-500" />
+              {formatMetric(total_shipments_12m)}
+            </div>
+          )}
 
-        {/* Activity */}
-        <div className="flex items-center gap-1 whitespace-nowrap">
-          <Clock className="h-4 w-4 text-purple-500" />
-          {activity_summary_12m?.length ? activity_summary_12m.join(', ') : '—'}
-        </div>
+          {showActivity && (
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-gray-500" />
+              {formatMetric(activity_score)}
+            </div>
+          )}
 
-        {/* Top Route */}
-        <div className="flex items-center gap-1 whitespace-nowrap">
-          <MapPin className="h-4 w-4 text-purple-500" />
-          {(top_route_origin || top_route_destination) ? (
-            <>
-              {top_route_origin || ''} {top_route_origin && top_route_destination ? '→' : ''} {top_route_destination || ''}
-            </>
-          ) : '—'}
+          {showTopRoute && (
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-gray-500" />
+              <span>
+                {top_route_origin || <span className="text-gray-400">—</span>} →{' '}
+                {top_route_destination || <span className="text-gray-400">—</span>}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Footer: Save + View */}
-      <div className="flex justify-between items-center mt-auto">
+      <div className="flex justify-between items-center mt-4">
         <Button
           size="sm"
           variant="outline"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            onSave?.(company);
+            onSave && onSave(companyId);
           }}
-          className="text-purple-600 border-purple-600 hover:bg-purple-50"
         >
-          <Plus className="w-4 h-4 mr-1" />
-          Save
+          + Save
         </Button>
 
-        <Button
-          size="sm"
-          variant="link"
+        <button
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            onView?.(company);
+            onView && onView(company);
           }}
+          className="text-sm text-primary font-medium"
         >
           Details →
-        </Button>
+        </button>
       </div>
     </div>
   );
