@@ -1,63 +1,66 @@
 import React from 'react';
-import { Bookmark, Clock, MapPin } from 'lucide-react';
+import { BookOpen, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export default function CompanyCardCompact({ company, onView, onSave }) {
+export default function CompanyCardCompact({ company, onView, onSave, isSaved }) {
   const {
-    name = 'Unnamed Co.',
-    total_shipments_12m,
-    activity_score,
+    name,
+    alias,
+    domain,
+    shipments_12m,
+    last_activity,
     top_route_origin,
     top_route_destination,
+    is_ready,
   } = company || {};
 
-  const formatValue = (value) =>
-    value != null ? value : <span className="text-gray-400">—</span>;
-
-  const hasRoute = top_route_origin || top_route_destination;
+  const displayName = name || 'Unnamed Co.';
+  const subtitle = alias || domain || '';
+  const shipmentText = shipments_12m != null ? shipments_12m.toLocaleString() : null;
+  const activityText = last_activity || null;
+  const routeText = (top_route_origin || top_route_destination)
+    ? `${top_route_origin || '—'} → ${top_route_destination || '—'}`
+    : null;
 
   return (
-    <div className="bg-white border-4 border-[#7F3DFF] rounded-xl shadow-md hover:shadow-lg p-5 flex flex-col justify-between h-full">
-      {/* Company Name */}
-      <h3 className="text-xl font-bold text-gray-900">{name}</h3>
+    <div className="w-full bg-white rounded-xl shadow-md hover:shadow-lg p-5 flex flex-col justify-between min-h-[220px]">
+      <div>
+        <h3 className="text-xl font-bold text-gray-900">{displayName}</h3>
+        {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
 
-      {/* KPI Metrics */}
-      <div className="mt-4 grid grid-cols-3 gap-4 text-sm text-gray-700">
-        {/* Shipments */}
-        <div className="flex items-center gap-2">
-          <Bookmark className="w-5 h-5 text-purple-600" />
-          {formatValue(total_shipments_12m)}
-        </div>
+        <div className="border-t border-b border-gray-200 py-4 mt-4 grid grid-cols-3 gap-4 text-sm">
+          {/* Shipments KPI */}
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-[#7F3DFF]" />
+            <span className="text-gray-900">{shipmentText != null ? shipmentText : <span className="text-gray-400">—</span>}</span>
+          </div>
 
-        {/* Activity */}
-        <div className="flex items-center gap-2">
-          <Clock className="w-5 h-5 text-purple-600" />
-          {formatValue(activity_score)}
-        </div>
+          {/* Activity KPI */}
+          <div className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-gray-500" />
+            <span>{activityText != null ? activityText : <span classClassName="text-gray-400">—</span>}</span>
+          </div>
 
-        {/* Top Route */}
-        <div className="flex items-center gap-2 whitespace-nowrap overflow-hidden">
-          <MapPin className="w-5 h-5 text-purple-600" />
-          {hasRoute
-            ? `${top_route_origin || '—'} → ${top_route_destination || '—'}`
-            : <span className="text-gray-400">—</span>
-          }
+          {/* Top Route KPI */}
+          <div className="flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-gray-500" />
+            <span>{routeText != null ? routeText : <span className="text-gray-400">—</span>}</span>
+          </div>
         </div>
       </div>
 
-      {/* Footer Buttons */}
-      <div className="mt-5 flex justify-between items-center">
+      <div className="mt-4 flex justify-between items-center">
         <Button
           size="sm"
-          variant="outline"
-          className="text-[#7F3DFF] border-[#7F3DFF] hover:bg-purple-50"
-          onClick={() => onSave && onSave(company)}
+          className={isSaved ? "bg-green-500 text-white px-3 py-1 rounded-full" : "bg-[#7F3DFF] text-white px-3 py-1 rounded-full"}
+          onClick={(e) => { e.stopPropagation(); onSave && onSave(company); }}
         >
-          + Save
+          {isSaved ? "Saved" : "Save"}
         </Button>
+
         <button
-          onClick={() => onView && onView(company)}
-          className="text-gray-700 text-sm font-medium"
+          onClick={(e) => { e.stopPropagation(); onView && onView(company); }}
+          className="text-gray-700 flex items-center gap-1 text-sm"
         >
           Details →
         </button>
