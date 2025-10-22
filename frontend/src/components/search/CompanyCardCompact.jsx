@@ -2,7 +2,7 @@ import React from 'react';
 import { Building, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export default function CompanyCardCompact({ company, onView, onSave }) {
+export default function CompanyCardCompact(props) { console.log('CompanyCardCompact data:', props.company); const company = props.company;({ company, onView, onSave }) {
   const {
     name,
     id,
