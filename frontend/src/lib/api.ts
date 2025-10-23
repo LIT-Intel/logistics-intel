@@ -470,3 +470,37 @@ export const api = {
 };
 
 // The exported searchCompanies above already points to the proxy-backed implementation
+
+// --- Lusha wrappers via Vercel proxy → Gateway → Cloud Run ---
+export async function getCompanyProfileLushia(q: { company_id?: string; domain?: string; company_name?: string }) {
+  const params = new URLSearchParams();
+  if (q.company_id) params.set('company_id', q.company_id);
+  if (q.domain) params.set('domain', q.domain);
+  if (q.company_name) params.set('company_name', q.company_name);
+  const res = await fetch(`/api/lit/public/lushia/company?${params.toString()}`, { method: 'GET' });
+  return res.ok ? res.json() : { error: await res.text(), status: res.status } as any;
+}
+
+export async function enrichCompanyLushia(body: { company_id?: string; domain?: string; company_name?: string }) {
+  const res = await fetch(`/api/lit/public/lushia/enrichCompany`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return res.ok ? res.json() : { error: await res.text(), status: res.status } as any;
+}
+
+export async function listContactsLushia(
+  who: { company_id?: string; domain?: string; company_name?: string },
+  opts?: { dept?: string; limit?: number; offset?: number }
+) {
+  const params = new URLSearchParams();
+  if (who.company_id) params.set('company_id', who.company_id);
+  if (who.domain) params.set('domain', who.domain);
+  if (who.company_name) params.set('company_name', who.company_name);
+  if (opts?.dept) params.set('dept', opts.dept);
+  if (opts?.limit != null) params.set('limit', String(opts.limit));
+  if (opts?.offset != null) params.set('offset', String(opts.offset));
+  const res = await fetch(`/api/lit/public/lushia/contacts?${params.toString()}`, { method: 'GET' });
+  return res.ok ? res.json() : { error: await res.text(), status: res.status } as any;
+}
