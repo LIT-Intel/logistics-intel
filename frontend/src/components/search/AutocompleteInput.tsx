@@ -46,6 +46,7 @@ export default function AutocompleteInput({
         return;
       }
       setLoading(true);
+      setOpen(true); // show the dropdown immediately with a loading state
       try {
         // use the robust API helper (handles proxy/gateway fallbacks)
         const res = await searchCompaniesApi({
@@ -59,6 +60,8 @@ export default function AutocompleteInput({
           ? (res as any).results
           : Array.isArray((res as any)?.rows)
           ? (res as any).rows
+          : Array.isArray((res as any)?.items)
+          ? (res as any).items
           : [];
         const mapped: Suggestion[] = rows
           .map((r: any) => ({
@@ -68,7 +71,8 @@ export default function AutocompleteInput({
           }))
           .filter((r: Suggestion) => r.company_name);
         setItems(mapped);
-        setOpen(true);
+        // Keep open only if we have results
+        setOpen(mapped.length > 0);
       } catch {
         if (!cancelled) {
           setItems([]);
@@ -124,16 +128,14 @@ export default function AutocompleteInput({
       {/* dropdown */}
       {open && (
         <div
-          className="absolute z-40 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
+          className="absolute z-50 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
           role="listbox"
         >
           <div className="px-3 py-2 text-xs font-medium text-gray-600">
             {loading ? "Loading…" : "Live suggestions"}
           </div>
           <div className="border-t border-gray-100" />
-          {items.length === 0 && !loading ? (
-            <div className="px-3 py-3 text-sm text-gray-500">No live matches yet</div>
-          ) : (
+          {
             <ul className="max-h-72 overflow-auto">
               {items.map((s, idx) => (
                 <li
@@ -152,7 +154,7 @@ export default function AutocompleteInput({
                 </li>
               ))}
             </ul>
-          )}
+          }
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { searchCompanies as searchCompaniesHelper } from '@/lib/api';
+import { searchCompanies as searchCompaniesHelper, postSearchCompanies } from '@/lib/api';
 
 export type SearchRow = {
   company_id?: string;
@@ -19,6 +19,11 @@ export type SearchFilters = {
   date_start?: string | null;
   date_end?: string | null;
   year?: string | null;
+  origin_city?: string | null;
+  dest_city?: string | null;
+  dest_state?: string | null;
+  dest_postal?: string | null;
+  dest_port?: string | null;
 };
 
 const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
@@ -30,8 +35,23 @@ export function useSearch() {
   const [page, setPage] = useState(1);
   const pagesRef = useRef<Page[]>([]);
   const abortRef = useRef<AbortController | null>(null);
-  const LIMIT = 25;
-  const [filters, setFilters] = useState<SearchFilters>({ origin: null, destination: null, hs: null, mode: null, date_start: null, date_end: null, year: null });
+  const [limit, setLimit] = useState<number>(25);
+  const [hasNext, setHasNext] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
+  const [filters, setFilters] = useState<SearchFilters>({
+    origin: null,
+    destination: null,
+    hs: null,
+    mode: null,
+    date_start: null,
+    date_end: null,
+    year: null,
+    origin_city: null,
+    dest_city: null,
+    dest_state: null,
+    dest_postal: null,
+    dest_port: null,
+  });
 
   const tokens = useMemo(() => {
     const trimmed = q.trim();
@@ -49,12 +69,29 @@ export function useSearch() {
       mode: f.mode,
       date_start: f.date_start ?? null,
       date_end: f.date_end ?? null,
-      page: Math.floor(offset / LIMIT) + 1,
-      pageSize: LIMIT,
+      origin_city: f.origin_city ?? null,
+      dest_city: f.dest_city ?? null,
+      dest_state: f.dest_state ?? null,
+      dest_postal: f.dest_postal ?? null,
+      dest_port: f.dest_port ?? null,
+      page: Math.floor(offset / limit) + 1,
+      pageSize: limit,
     }, signal);
-    const got: SearchRow[] = data?.items ?? [];
-    const total = data?.total ?? got.length;
-    const nextOffset = offset + LIMIT >= total ? -1 : offset + LIMIT;
+    let got: SearchRow[] = data?.items ?? [];
+    let total = data?.total ?? got.length;
+    // Fallback: if nothing returned, try legacy POST body with limit/offset only
+    if (!Array.isArray(got) || got.length === 0) {
+      try {
+        const legacy = await postSearchCompanies({ q: token ?? null, limit, offset });
+        const items = Array.isArray(legacy?.items)
+          ? legacy.items
+          : (Array.isArray(legacy?.rows) ? legacy.rows : (Array.isArray(legacy?.results) ? legacy.results : []));
+        const tot = typeof legacy?.total === 'number' ? legacy.total : (legacy?.meta?.total ?? legacy?.count ?? items.length);
+        got = items as any;
+        total = tot as any;
+      } catch {}
+    }
+    const nextOffset = offset + limit >= total ? -1 : offset + limit;
     return { rows: got, nextOffset, token: String(token ?? '') } as Page;
   };
 
@@ -79,14 +116,21 @@ export function useSearch() {
           if (!dedup.has(key)) dedup.set(key, r);
         }
       }
-      setRows(Array.from(dedup.values()).slice(0, LIMIT));
+      setRows(Array.from(dedup.values()).slice(0, limit));
+      // set hasNext based on any page having more
+      setHasNext(firstPages.some(p => p.nextOffset !== -1));
+      // best-effort total: if single token use API total, else use dedup seen so far
+      const firstTotal = (firstPages.length === 1) ? (await Promise.resolve(0), (pagesRef.current as any), (firstPages[0] as any)) : null;
+      if (firstPages.length === 1) setTotal(total);
+      else setTotal(dedup.size);
     } catch (err) {
       console.error('[useSearch] run error', err);
       setRows([]);
+      setHasNext(false);
     } finally {
       setLoading(false);
     }
-  }, [tokens, filters]);
+  }, [tokens, filters, limit]);
 
   const next = useCallback(async () => {
     setLoading(true);
@@ -111,13 +155,14 @@ export function useSearch() {
       }
       const pageNum = page + 1;
       setPage(pageNum);
-      setRows(Array.from(dedup.values()).slice((pageNum-1)*LIMIT, pageNum*LIMIT));
+      setRows(Array.from(dedup.values()).slice((pageNum-1)*limit, pageNum*limit));
+      setHasNext(advanced.some(p => p.nextOffset !== -1));
     } catch (err) {
       console.error('[useSearch] next error', err);
     } finally {
       setLoading(false);
     }
-  }, [page, filters]);
+  }, [page, filters, limit]);
 
   const prev = useCallback(() => {
     if (page <= 1) return;
@@ -132,8 +177,9 @@ export function useSearch() {
       }, new Map<string, SearchRow>())
     ).map(([, v]) => v);
     setPage(pageNum);
-    setRows(all.slice((pageNum-1)*LIMIT, pageNum*LIMIT));
-  }, [page]);
+    setRows(all.slice((pageNum-1)*limit, pageNum*limit));
+    setHasNext(pagesRef.current.some(p => p.nextOffset !== -1));
+  }, [page, limit]);
 
-  return { q, setQ, rows, loading, run, next, prev, page, limit: LIMIT, filters, setFilters };
+  return { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext, total };
 }

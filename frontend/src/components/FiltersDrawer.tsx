@@ -12,8 +12,8 @@ export function FiltersDrawer({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   filters: any;
-  values: { origin?: string; destination?: string; mode?: string; date_start?: string; date_end?: string; year?: string };
-  onChange: (patch: Partial<{ origin: string | undefined; destination: string | undefined; mode: string | undefined; date_start: string | undefined; date_end: string | undefined; year: string | undefined }>) => void;
+  values: { origin?: string; destination?: string; mode?: string; date_start?: string; date_end?: string; year?: string; origin_city?: string; dest_city?: string; dest_state?: string; dest_postal?: string; dest_port?: string };
+  onChange: (patch: Partial<{ origin: string | undefined; destination: string | undefined; mode: string | undefined; date_start: string | undefined; date_end: string | undefined; year: string | undefined; origin_city: string | undefined; dest_city: string | undefined; dest_state: string | undefined; dest_postal: string | undefined; dest_port: string | undefined }>) => void;
   onApply: () => void;
 }) {
   const countries: string[] =
@@ -43,6 +43,15 @@ export function FiltersDrawer({
               placeholder="Type a country…"
               value={values.origin ?? ''}
               onChange={(e) => onChange({ origin: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-600">Origin City</label>
+            <input
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              placeholder="City"
+              value={values.origin_city ?? ''}
+              onChange={(e) => onChange({ origin_city: e.target.value.trim() ? e.target.value : undefined })}
             />
           </div>
           <div className="md:col-span-1">
@@ -83,6 +92,42 @@ export function FiltersDrawer({
               placeholder="Type a country…"
               value={values.destination ?? ''}
               onChange={(e) => onChange({ destination: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-600">Destination City</label>
+            <input
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              placeholder="City"
+              value={values.dest_city ?? ''}
+              onChange={(e) => onChange({ dest_city: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-600">Destination State</label>
+            <input
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              placeholder="State / Province"
+              value={values.dest_state ?? ''}
+              onChange={(e) => onChange({ dest_state: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-600">Destination Postal / Zip</label>
+            <input
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              placeholder="Postal / Zip"
+              value={values.dest_postal ?? ''}
+              onChange={(e) => onChange({ dest_postal: e.target.value.trim() ? e.target.value : undefined })}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-600">Destination Port</label>
+            <input
+              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
+              placeholder="UN/LOCODE or Name"
+              value={values.dest_port ?? ''}
+              onChange={(e) => onChange({ dest_port: e.target.value.trim() ? e.target.value : undefined })}
             />
           </div>
           <div>
