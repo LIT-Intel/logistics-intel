@@ -35,7 +35,7 @@ export function useSearch() {
   const [page, setPage] = useState(1);
   const pagesRef = useRef<Page[]>([]);
   const abortRef = useRef<AbortController | null>(null);
-  const LIMIT = 25;
+  const [limit, setLimit] = useState<number>(25);
   const [filters, setFilters] = useState<SearchFilters>({
     origin: null,
     destination: null,
@@ -72,12 +72,12 @@ export function useSearch() {
       dest_state: f.dest_state ?? null,
       dest_postal: f.dest_postal ?? null,
       dest_port: f.dest_port ?? null,
-      page: Math.floor(offset / LIMIT) + 1,
-      pageSize: LIMIT,
+      page: Math.floor(offset / limit) + 1,
+      pageSize: limit,
     }, signal);
     const got: SearchRow[] = data?.items ?? [];
     const total = data?.total ?? got.length;
-    const nextOffset = offset + LIMIT >= total ? -1 : offset + LIMIT;
+    const nextOffset = offset + limit >= total ? -1 : offset + limit;
     return { rows: got, nextOffset, token: String(token ?? '') } as Page;
   };
 
@@ -102,14 +102,14 @@ export function useSearch() {
           if (!dedup.has(key)) dedup.set(key, r);
         }
       }
-      setRows(Array.from(dedup.values()).slice(0, LIMIT));
+      setRows(Array.from(dedup.values()).slice(0, limit));
     } catch (err) {
       console.error('[useSearch] run error', err);
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [tokens, filters]);
+  }, [tokens, filters, limit]);
 
   const next = useCallback(async () => {
     setLoading(true);
@@ -134,13 +134,13 @@ export function useSearch() {
       }
       const pageNum = page + 1;
       setPage(pageNum);
-      setRows(Array.from(dedup.values()).slice((pageNum-1)*LIMIT, pageNum*LIMIT));
+      setRows(Array.from(dedup.values()).slice((pageNum-1)*limit, pageNum*limit));
     } catch (err) {
       console.error('[useSearch] next error', err);
     } finally {
       setLoading(false);
     }
-  }, [page, filters]);
+  }, [page, filters, limit]);
 
   const prev = useCallback(() => {
     if (page <= 1) return;
@@ -155,8 +155,8 @@ export function useSearch() {
       }, new Map<string, SearchRow>())
     ).map(([, v]) => v);
     setPage(pageNum);
-    setRows(all.slice((pageNum-1)*LIMIT, pageNum*LIMIT));
-  }, [page]);
+    setRows(all.slice((pageNum-1)*limit, pageNum*limit));
+  }, [page, limit]);
 
-  return { q, setQ, rows, loading, run, next, prev, page, limit: LIMIT, filters, setFilters };
+  return { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters };
 }

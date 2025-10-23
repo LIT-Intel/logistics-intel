@@ -306,7 +306,7 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
 
 export default function SearchPage() {
   // Keep existing search hook (wires to /api/lit/public/searchCompanies)
-  const { q, setQ, rows, loading, run, next, prev, page, filters, setFilters } = useSearch();
+  const { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters } = useSearch();
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
@@ -363,8 +363,8 @@ export default function SearchPage() {
           <Button data-test="search-button" type="submit" className="h-12 px-6 rounded-lg"><SearchIcon className="w-4 h-4 mr-2" /> Search</Button>
         </form>
 
-        {/* View Toggle */}
-        <div className="flex gap-3 mb-6">
+        {/* View Toggle + Page Size */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
           {['Cards','List','Filters','Explore'].map((opt) => (
             <button
               key={opt}
@@ -379,6 +379,16 @@ export default function SearchPage() {
             </button>
           ))}
           {loading && <span className="text-xs text-gray-500 self-center">Searching…</span>}
+          <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
+            <span>Per page</span>
+            <select
+              className="h-9 rounded-lg border border-gray-300 px-2"
+              value={limit}
+              onChange={(e)=> { setLimit(Number(e.target.value)); run(true); }}
+            >
+              {[20,30,50].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* Filters Drawer */}
@@ -433,6 +443,12 @@ export default function SearchPage() {
                 filters={filters}
               />
             )}
+            {/* Pagination controls */}
+            <div className="mt-4 flex items-center justify-between">
+              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={prev} disabled={page <= 1}>Prev</button>
+              <div className="text-sm text-gray-600">Page {page}</div>
+              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={next} disabled={rows.length < Number(limit)}>Next</button>
+            </div>
           </div>
         )}
       </div>
