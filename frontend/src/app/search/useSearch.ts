@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { searchCompanies as searchCompaniesHelper } from '@/lib/api';
+import { searchCompanies as searchCompaniesHelper, postSearchCompanies } from '@/lib/api';
 
 export type SearchRow = {
   company_id?: string;
@@ -77,8 +77,20 @@ export function useSearch() {
       page: Math.floor(offset / limit) + 1,
       pageSize: limit,
     }, signal);
-    const got: SearchRow[] = data?.items ?? [];
-    const total = data?.total ?? got.length;
+    let got: SearchRow[] = data?.items ?? [];
+    let total = data?.total ?? got.length;
+    // Fallback: if nothing returned, try legacy POST body with limit/offset only
+    if (!Array.isArray(got) || got.length === 0) {
+      try {
+        const legacy = await postSearchCompanies({ q: token ?? null, limit, offset });
+        const items = Array.isArray(legacy?.items)
+          ? legacy.items
+          : (Array.isArray(legacy?.rows) ? legacy.rows : (Array.isArray(legacy?.results) ? legacy.results : []));
+        const tot = typeof legacy?.total === 'number' ? legacy.total : (legacy?.meta?.total ?? legacy?.count ?? items.length);
+        got = items as any;
+        total = tot as any;
+      } catch {}
+    }
     const nextOffset = offset + limit >= total ? -1 : offset + limit;
     return { rows: got, nextOffset, token: String(token ?? '') } as Page;
   };
