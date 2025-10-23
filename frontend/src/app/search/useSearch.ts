@@ -36,6 +36,8 @@ export function useSearch() {
   const pagesRef = useRef<Page[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const [limit, setLimit] = useState<number>(25);
+  const [hasNext, setHasNext] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
   const [filters, setFilters] = useState<SearchFilters>({
     origin: null,
     destination: null,
@@ -103,9 +105,16 @@ export function useSearch() {
         }
       }
       setRows(Array.from(dedup.values()).slice(0, limit));
+      // set hasNext based on any page having more
+      setHasNext(firstPages.some(p => p.nextOffset !== -1));
+      // best-effort total: if single token use API total, else use dedup seen so far
+      const firstTotal = (firstPages.length === 1) ? (await Promise.resolve(0), (pagesRef.current as any), (firstPages[0] as any)) : null;
+      if (firstPages.length === 1) setTotal(total);
+      else setTotal(dedup.size);
     } catch (err) {
       console.error('[useSearch] run error', err);
       setRows([]);
+      setHasNext(false);
     } finally {
       setLoading(false);
     }
@@ -135,6 +144,7 @@ export function useSearch() {
       const pageNum = page + 1;
       setPage(pageNum);
       setRows(Array.from(dedup.values()).slice((pageNum-1)*limit, pageNum*limit));
+      setHasNext(advanced.some(p => p.nextOffset !== -1));
     } catch (err) {
       console.error('[useSearch] next error', err);
     } finally {
@@ -156,7 +166,8 @@ export function useSearch() {
     ).map(([, v]) => v);
     setPage(pageNum);
     setRows(all.slice((pageNum-1)*limit, pageNum*limit));
+    setHasNext(pagesRef.current.some(p => p.nextOffset !== -1));
   }, [page, limit]);
 
-  return { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters };
+  return { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext, total };
 }

@@ -306,7 +306,7 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
 
 export default function SearchPage() {
   // Keep existing search hook (wires to /api/lit/public/searchCompanies)
-  const { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters } = useSearch();
+  const { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext } = useSearch();
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
@@ -345,7 +345,7 @@ export default function SearchPage() {
     <div className="min-h-screen" style={{ backgroundColor: STYLES.neutralGrayLight }}>
       <div className="mx-auto px-4 sm:px-6 lg:px-8 max-w-[1400px] py-6">
         <header className="mb-6">
-          <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Search</h1>
+          <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 mb-2">Search</h1>
           <p className="text-base text-gray-600 mb-6">Find shippers & receivers. Use filters for origin/dest/HS.</p>
         </header>
 
@@ -447,7 +447,7 @@ export default function SearchPage() {
             <div className="mt-4 flex items-center justify-between">
               <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={prev} disabled={page <= 1}>Prev</button>
               <div className="text-sm text-gray-600">Page {page}</div>
-              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={next} disabled={rows.length < Number(limit)}>Next</button>
+              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={next} disabled={!hasNext}>Next</button>
             </div>
           </div>
         )}

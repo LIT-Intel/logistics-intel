@@ -35,6 +35,15 @@ export default function Dashboard() {
   const [q, setQ] = useState("");
   const [seedRows, setSeedRows] = useState([]);
 
+  // Load saved companies count + featured companies from localStorage/proxy
+  useEffect(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
+      const savedCount = Array.isArray(arr) ? arr.length : 0;
+      setData((d) => ({ ...d, savedCompanies: savedCount }));
+    } catch {}
+  }, []);
+
   useEffect(() => {
     let alive = true;
     // Temporarily disable remote fetch to avoid 404/CORS noise. Fall back to safe defaults.
@@ -70,8 +79,8 @@ export default function Dashboard() {
             <div className="mb-6">
               <LitPanel>
                 <div className="p-4">
-                  <div className="mb-3 text-sm text-gray-600">Quick company search</div>
-                  <div className="relative max-w-2xl">
+                  <div className="mb-3 text-sm text-gray-600 text-center">Quick company search</div>
+                  <div className="relative max-w-2xl mx-auto">
                     <AutocompleteInput
                       value={q}
                       onChange={setQ}
@@ -79,7 +88,7 @@ export default function Dashboard() {
                       placeholder="Type a company name…"
                     />
                   </div>
-                  <div className="mt-4 text-xs text-gray-500">Select a suggestion to jump into the Search page to view company details.</div>
+                  <div className="mt-4 text-xs text-gray-500 text-center">Select a suggestion to jump into the Search page to view company details.</div>
                 </div>
               </LitPanel>
             </div>
