@@ -9,6 +9,7 @@ import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey
 import { searchCompanies as searchCompaniesApi } from "@/lib/api"; // <-- soft autocomplete uses the lib client
 import { Button } from '@/components/ui/button';
 import AutocompleteInput from '@/components/search/AutocompleteInput';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import CompanyModal from '@/components/search/CompanyModal';
 import { FiltersDrawer } from '@/components/FiltersDrawer';
@@ -174,6 +175,9 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           <div className="text-sm text-gray-500 truncate">{alias || `ID: ${id}`}</div>
           <div className="mt-2 flex items-center gap-2">
             <SaveToCommandCenterButton row={r} />
+            <span className="inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 text-[11px] px-2 py-0.5">
+              Ready
+            </span>
           </div>
         </div>
         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-semibold select-none">{initials}</div>
@@ -196,7 +200,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
 
 function ResultsCards({ rows, onOpen, filters }: { rows: any[]; onOpen: (r: any)=>void; filters: any }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {rows.map((r) => (
         <ResultCard key={getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })} r={r} onOpen={onOpen} filters={filters} />
       ))}

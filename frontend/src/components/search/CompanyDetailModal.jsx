@@ -110,18 +110,16 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
 
   function KpiInfo({ icon: Icon, label, value, link = false }) {
     return (
-      <div className="relative z-50 mx-auto w-full max-w-4xl max-h-[95vh] overflow-y-auto overflow-hidden       btn-brand max-w-4xl max-h-[95vh] bg-white rounded-xl shadow-lg overflow-y-auto">
-        <Icon className="btn-brand" />
-        <div className="btn-brand">
-          <div className="btn-brand">{label}</div>
-          {link ? (
-            <a href={value ? String(value) : '#'} target="_blank" rel="noopener noreferrer" className="btn-brand">
-              {value ? String(value).replace(/^https?:\/\//,'') : '—'}
-            </a>
-          ) : (
-            <div className="btn-brand">{value || '—'}</div>
-          )}
-        </div>
+      <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[96px] flex flex-col items-center justify-center">
+        <Icon className="w-5 h-5 mb-1" style={{ color: '#7F3DFF' }} />
+        <div className="text-xl font-bold text-gray-900">{value || '—'}</div>
+        {link ? (
+          <a href={value ? String(value) : '#'} target="_blank" rel="noopener noreferrer" className="text-[11px] uppercase text-gray-500 font-medium mt-1">
+            {value ? String(value).replace(/^https?:\/\//,'') : '—'}
+          </a>
+        ) : (
+          <div className="text-[11px] uppercase text-gray-500 font-medium mt-1">{label}</div>
+        )}
       </div>
     );
   }
@@ -136,91 +134,104 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose?.(); }}>
-      <DialogContent className="btn-brand">
-        <DialogHeader className="btn-brand">
-          <div className="btn-brand">
-            <div className="btn-brand">
-              <DialogTitle className="btn-brand" style={{ color: '#7F3DFF' }} title={name}>{name}</DialogTitle>
-              <div className="btn-brand">
-                <div>ID: {String(companyId)}</div>
-                {hqText && <div>HQ: {hqText}</div>}
+      <DialogContent className="max-w-4xl max-h-[95vh] bg-white rounded-xl">
+        <DialogHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <DialogTitle className="text-2xl font-bold" style={{ color: '#111827' }} title={name}>{name}</DialogTitle>
+              <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                <span>ID: {String(companyId)}</span>
+                {hqText && <span>• HQ: {hqText}</span>}
                 {website && (
-                  <div className="btn-brand"><Globe className="w-4 h-4" />
-                    <a href={`https://${String(website).replace(/^https?:\/\//,'')}`} target="_blank" rel="noopener noreferrer" className="btn-brand">
+                  <span className="inline-flex items-center gap-1"><Globe className="w-4 h-4" />
+                    <a href={`https://${String(website).replace(/^https?:\/\//,'')}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
                       {String(website)}
                     </a>
-                  </div>
+                  </span>
                 )}
               </div>
             </div>
-            <div className="btn-brand">
-              <Button size="sm" onClick={handleSave} disabled={saving || isSaved} className="btn-brand" style={{ backgroundColor: '#7F3DFF' }}>{isSaved ? 'Saved' : (saving ? 'Saving…' : 'Save to Command Center')}</Button>
-              <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close" className="btn-brand">
-                <X className="btn-brand" />
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={handleSave} disabled={saving || isSaved} className="text-white" style={{ backgroundColor: '#7F3DFF' }}>{isSaved ? 'Saved' : (saving ? 'Saving…' : 'Save to Command Center')}</Button>
+              <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close" className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
               </Button>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="btn-brand">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="btn-brand">
-            <div className="btn-brand">
-              <TabsList className="btn-brand">
-                <TabsTrigger value="overview" className="btn-brand">Overview</TabsTrigger>
-                <TabsTrigger value="summary" className="btn-brand">Shipment Summary</TabsTrigger>
-                <TabsTrigger value="shipments" className="btn-brand">Shipments</TabsTrigger>
-                <TabsTrigger value="contacts" className="btn-brand" onClick={() => { if (!isSaved || !canViewContacts) setShowGate(true); }}>Contacts</TabsTrigger>
+        <div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <div>
+              <TabsList>
+                <TabsTrigger value="overview" className="data-[state=active]:text-[#7F3DFF]">Overview</TabsTrigger>
+                <TabsTrigger value="summary" className="data-[state=active]:text-[#7F3DFF]">Shipment Summary</TabsTrigger>
+                <TabsTrigger value="shipments" className="data-[state=active]:text-[#7F3DFF]">Shipments</TabsTrigger>
+                <TabsTrigger value="contacts" className="data-[state=active]:text-[#7F3DFF]" onClick={() => { if (!isSaved || !canViewContacts) setShowGate(true); }}>Contacts</TabsTrigger>
               </TabsList>
             </div>
-            <div className="btn-brand">
+            <div>
               {/* Overview */}
-              <TabsContent value="overview" className="btn-brand">
-                <h3 className="btn-brand">Company Profile</h3>
-                <div className="btn-brand">
+              <TabsContent value="overview">
+                <h3 className="text-lg font-semibold mb-3">Company Profile</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <KpiInfo icon={Database} label="Company ID" value={companyId} />
                   <KpiInfo icon={LinkIcon} label="Website" value={website} link />
                   <KpiInfo icon={Ship} label="Total Shipments (12m)" value={(company?.shipments_12m ?? '—')} />
                   <KpiInfo icon={Box} label="Total TEUs (12m)" value={company?.total_teus != null ? Number(company.total_teus).toLocaleString() : '—'} />
                   <KpiInfo icon={MapPin} label="Top Trade Route" value={topRoute} />
                 </div>
-                <div className="btn-brand">
-                  <h4 className="btn-brand"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> Sales Intelligence Available</h4>
-                  <p className="btn-brand">Access real-time contacts and AI-enriched insights about this company's supply chain strategy by saving them to your Command Center.</p>
+                <div className="mt-6">
+                  <h4 className="flex items-center text-base font-semibold text-gray-900"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> Sales Intelligence Available</h4>
+                  <p className="text-sm text-gray-600 mt-1">Access real-time contacts and AI-enriched insights about this company's supply chain strategy by saving them to your Command Center.</p>
                 </div>
               </TabsContent>
 
               {/* Shipment Summary */}
-              <TabsContent value="summary" className="btn-brand">
-                <div className="btn-brand">
-                  <div className="btn-brand"><Ship className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{company?.shipments_12m ?? '—'}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Total Shipments (12m)</div></div>
-                  <div className="btn-brand"><Box className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{company?.total_teus != null ? Number(company.total_teus).toLocaleString() : '—'}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Total TEUs (12m)</div></div>
-                  <div className="btn-brand"><TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{company?.growth_rate != null ? `${Math.round(Number(company.growth_rate) * 100)}%` : '—'}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Growth Rate (YoY)</div></div>
-                  <div className="btn-brand"><MapPin className="w-6 h-6 mx-auto mb-2 text-red-500"/><div className="text-lg font-bold">{topRoute}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Primary Route</div></div>
+              <TabsContent value="summary">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
+                    <Ship className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/>
+                    <div className="text-2xl font-bold">{company?.shipments_12m ?? '—'}</div>
+                    <div className="text-xs uppercase text-gray-500 font-medium mt-1">Total Shipments (12m)</div>
+                  </div>
+                  <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
+                    <Box className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/>
+                    <div className="text-2xl font-bold">{company?.total_teus != null ? Number(company.total_teus).toLocaleString() : '—'}</div>
+                    <div className="text-xs uppercase text-gray-500 font-medium mt-1">Total TEUs (12m)</div>
+                  </div>
+                  <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
+                    <TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/>
+                    <div className="text-2xl font-bold">{company?.growth_rate != null ? `${Math.round(Number(company.growth_rate) * 100)}%` : '—'}</div>
+                    <div className="text-xs uppercase text-gray-500 font-medium mt-1">Growth Rate (YoY)</div>
+                  </div>
+                  <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
+                    <MapPin className="w-6 h-6 mx-auto mb-2 text-red-500"/>
+                    <div className="text-lg font-bold">{topRoute}</div>
+                    <div className="text-xs uppercase text-gray-500 font-medium mt-1">Primary Route</div>
+                  </div>
                 </div>
-                <div className="btn-brand">
-                  <h3 className="btn-brand"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> 12-Month Shipment Volume (TEU Equivalent)</h3>
-                  <div className="btn-brand" style={{ height: '150px' }}>
-                    <div className="btn-brand" />
-                    <div className="btn-brand" />
-                    <div className="btn-brand" />
-                    <div className="btn-brand">
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold flex items-center"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> 12-Month Shipment Volume (TEU Equivalent)</h3>
+                  <div className="border border-gray-200 rounded-xl p-4 mt-2 bg-white" style={{ height: '150px' }}>
+                    <div className="flex items-end gap-2 h-full">
                       {(() => {
                         const max = Math.max(1, ...monthlyVolumes.map(v => v.volume));
                         return monthlyVolumes.map((v, idx) => {
                           const barH = Math.max(5, Math.round((v.volume / max) * 150));
                           const color = idx === monthlyVolumes.length - 1 ? '#7F3DFF' : '#A97EFF';
                           return (
-                            <div key={v.key} className="btn-brand" style={{ minWidth: '20px' }}>
-                              <div className="btn-brand">{v.volume.toLocaleString()}</div>
-                              <div className="btn-brand" style={{ height: `${barH}px`, background: `linear-gradient(180deg, ${color} 0%, ${color} 60%, #5f2fd1 100%)` }} />
-                              <div className="btn-brand">{v.month}</div>
+                            <div key={v.key} className="flex flex-col items-center justify-end" style={{ minWidth: '20px' }}>
+                              <div className="text-[10px] text-gray-500 mb-1">{v.volume.toLocaleString()}</div>
+                              <div className="w-4 rounded-t" style={{ height: `${barH}px`, background: `linear-gradient(180deg, ${color} 0%, ${color} 60%, #5f2fd1 100%)` }} />
+                              <div className="text-[10px] text-gray-500 mt-1">{v.month}</div>
                             </div>
                           );
                         });
                       })()}
                     </div>
                   </div>
-                  <p className="btn-brand">Data represents estimated monthly shipment volume over the last 12 months.</p>
+                  <p className="text-xs text-gray-500 mt-2">Data represents estimated monthly shipment volume over the last 12 months.</p>
                 </div>
               </TabsContent>
 
