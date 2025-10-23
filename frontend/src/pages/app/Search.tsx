@@ -5,7 +5,7 @@ import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
 import { useSearch } from '@/app/search/useSearch';
-import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey } from '@/lib/api';
+import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
 import { searchCompanies as searchCompaniesApi } from "@/lib/api"; // <-- soft autocomplete uses the lib client
 import { Button } from '@/components/ui/button';
 import AutocompleteInput from '@/components/search/AutocompleteInput';
@@ -137,14 +137,47 @@ function SaveToCommandCenterButton({ row, size = 'sm', activeFilters }: { row: a
   );
 }
 
+const KPI_CACHE = new Map<string, { teus12m: number | null; growthRate: number | null }>();
+
 function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const top = r.top_routes?.[0];
   const name = r.company_name;
   const id = r.company_id || '—';
   const shipments12m = r.shipments_12m ?? 0;
   const lastActivity = kLastActivity(r.last_activity);
-  const totalTeus = (r as any)?.total_teus ?? '—';
-  const growthRate = (r as any)?.growth_rate == null ? '—' : `${Math.round(Number((r as any)?.growth_rate) * 100)}%`;
+  const [teus12m, setTeus12m] = useState<number | null>(null);
+  const [growthRate, setGrowthRate] = useState<number | null>(null);
+  useEffect(() => {
+    const cid = String(r?.company_id || '').trim();
+    const cacheKey = cid || `name:${String(r?.company_name || '').toLowerCase()}`;
+    if (KPI_CACHE.has(cacheKey)) {
+      const k = KPI_CACHE.get(cacheKey)!;
+      setTeus12m(k.teus12m); setGrowthRate(k.growthRate); return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data: any = await getCompanyKpis({ company_id: cid || undefined, company_name: cid ? undefined : String(r?.company_name || '') });
+        if (cancelled || !data) return;
+        const rawTeu = data.total_teus_12m ?? data.teus_12m ?? data.total_teus ?? null;
+        const rawGrowth = data.growth_rate ?? data.growthRate ?? null;
+        const teuVal = rawTeu != null ? Number(rawTeu) : null;
+        const growthVal = rawGrowth != null ? Number(rawGrowth) : null;
+        KPI_CACHE.set(cacheKey, { teus12m: teuVal, growthRate: growthVal });
+        setTeus12m(teuVal); setGrowthRate(growthVal);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [r?.company_id, r?.company_name]);
+  const totalTeusDisplay = teus12m != null ? teus12m.toLocaleString() : ((r as any)?.total_teus != null ? Number((r as any)?.total_teus).toLocaleString() : '—');
+  const growthRateDisplay = (() => {
+    const val = growthRate ?? (r as any)?.growth_rate;
+    if (val == null || isNaN(Number(val))) return '—';
+    const n = Number(val);
+    const pct = Math.abs(n) <= 1 ? n * 100 : n;
+    const rounded = Math.round(pct);
+    return `${n >= 0 ? '+' : ''}${rounded}%`;
+  })();
   const initials = (name||'').split(' ').map((p: string)=>p[0]).join('').slice(0,2).toUpperCase();
   const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
   const [saved, setSaved] = useState<boolean>(() => {
@@ -185,8 +218,8 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
       <div className="mt-4 border-t border-b border-gray-200 py-3 grid grid-cols-2 md:grid-cols-4 gap-3">
         <ResultKPI icon={<Ship className="w-4 h-4" style={{ color: STYLES.brandPurple }}/>} label="Shipments (12m)" value={shipments12m} />
         <ResultKPI icon={<Clock className="w-4 h-4 text-gray-500" />} label="Last Activity" value={lastActivity} />
-        <ResultKPI icon={<Box className="w-4 h-4 text-gray-500" />} label="Total TEUs" value={totalTeus} />
-        <ResultKPI icon={<TrendingUp className="w-4 h-4 text-gray-500" />} label="Growth Rate" value={growthRate} />
+        <ResultKPI icon={<Box className="w-4 h-4 text-gray-500" />} label="Total TEUs" value={totalTeusDisplay} />
+        <ResultKPI icon={<TrendingUp className="w-4 h-4 text-gray-500" />} label="Growth Rate" value={growthRateDisplay} />
       </div>
       <div className="flex justify-between items-center mt-3">
         <div className="flex items-center gap-2 text-xs text-gray-600">

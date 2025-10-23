@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, Globe, Ship, TrendingUp, Box, Clock, Lock, MapPin, Database, Link as LinkIcon, BarChart as BarChartIcon } from 'lucide-react';
-import { getCompanyShipments } from '@/lib/api';
+import { getCompanyShipments, getCompanyKpis } from '@/lib/api';
 import { hasFeature } from '@/lib/access';
 
 export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user, isSaved = false }) {
@@ -17,6 +17,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [showGate, setShowGate] = useState(false);
+  const [kpis, setKpis] = useState({ teus12m: null, growthRate: null });
 
   const companyId = company?.company_id || company?.id || null;
   const name = company?.company_name || company?.name || 'Company';
@@ -39,6 +40,15 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
         // Load first page for table
         const first = await getCompanyShipments({ company_id: String(companyId), limit: 50, offset: 0 });
         if (!abort) setTableRows(Array.isArray(first?.rows) ? first.rows : []);
+        // Load KPIs (TEU + Growth)
+        try {
+          const k = await getCompanyKpis({ company_id: String(companyId) });
+          if (!abort && k) {
+            const teuVal = k.total_teus_12m ?? k.teus_12m ?? k.total_teus ?? null;
+            const growthVal = k.growth_rate ?? null;
+            setKpis({ teus12m: teuVal != null ? Number(teuVal) : null, growthRate: growthVal != null ? Number(growthVal) : null });
+          }
+        } catch {}
       } catch (e) {
         if (!abort) {
           setAllRows([]);
@@ -87,6 +97,20 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
     }
     return months;
   }, [allRows]);
+
+  const displayTeus = useMemo(() => {
+    if (kpis.teus12m != null) return Number(kpis.teus12m).toLocaleString();
+    const fallback = company?.total_teus != null ? Number(company.total_teus) : null;
+    return fallback != null ? fallback.toLocaleString() : '—';
+  }, [kpis, company]);
+
+  const displayGrowth = useMemo(() => {
+    const raw = kpis.growthRate != null ? Number(kpis.growthRate) : (company?.growth_rate != null ? Number(company.growth_rate) : null);
+    if (raw == null || Number.isNaN(raw)) return '—';
+    const pct = Math.abs(raw) <= 1 ? raw * 100 : raw;
+    const rounded = Math.round(pct);
+    return `${raw >= 0 ? '+' : ''}${rounded}%`;
+  }, [kpis, company]);
 
   // Filter and paginate table rows client-side by date
   const filteredRows = useMemo(() => {
@@ -178,7 +202,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   <KpiInfo icon={Database} label="Company ID" value={companyId} />
                   <KpiInfo icon={LinkIcon} label="Website" value={website} link />
                   <KpiInfo icon={Ship} label="Total Shipments (12m)" value={(company?.shipments_12m ?? '—')} />
-                  <KpiInfo icon={Box} label="Total TEUs (12m)" value={company?.total_teus != null ? Number(company.total_teus).toLocaleString() : '—'} />
+                  <KpiInfo icon={Box} label="Total TEUs (12m)" value={displayTeus} />
                   <KpiInfo icon={MapPin} label="Top Trade Route" value={topRoute} />
                 </div>
                 <div className="mt-6">
@@ -197,12 +221,12 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   </div>
                   <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
                     <Box className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/>
-                    <div className="text-2xl font-bold">{company?.total_teus != null ? Number(company.total_teus).toLocaleString() : '—'}</div>
+                    <div className="text-2xl font-bold">{displayTeus}</div>
                     <div className="text-xs uppercase text-gray-500 font-medium mt-1">Total TEUs (12m)</div>
                   </div>
                   <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
                     <TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/>
-                    <div className="text-2xl font-bold">{company?.growth_rate != null ? `${Math.round(Number(company.growth_rate) * 100)}%` : '—'}</div>
+                    <div className="text-2xl font-bold">{displayGrowth}</div>
                     <div className="text-xs uppercase text-gray-500 font-medium mt-1">Growth Rate (YoY)</div>
                   </div>
                   <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
