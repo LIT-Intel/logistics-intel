@@ -179,13 +179,15 @@ export async function searchCompanies(
   }
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
   const data = await res.json().catch(() => ({}));
-  // Adapter: accept {items,total} or {rows,meta}
+  // Adapter: accept {items,total} or {rows,meta} or {results,count}
   const items = Array.isArray(data?.items)
     ? data.items
-    : (Array.isArray(data?.rows) ? data.rows : []);
+    : (Array.isArray(data?.rows)
+      ? data.rows
+      : (Array.isArray(data?.results) ? data.results : []));
   const total = typeof data?.total === 'number'
     ? data.total
-    : (data?.meta?.total ?? items.length);
+    : (data?.meta?.total ?? data?.count ?? items.length);
   return { items, total } as { items: any[]; total: number };
 }
 
