@@ -139,6 +139,11 @@ export async function searchCompanies(
     destination?: string | null;
     hs?: string | null;
     mode?: 'air' | 'ocean' | null;
+    origin_city?: string | null;
+    dest_city?: string | null;
+    dest_state?: string | null;
+    dest_postal?: string | null;
+    dest_port?: string | null;
     page?: number;
     pageSize?: number;
   },

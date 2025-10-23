@@ -382,11 +382,23 @@ export default function SearchPage() {
         </div>
 
         {/* Filters Drawer */}
-        <FiltersDrawer
+          <FiltersDrawer
           open={Boolean(view === 'Filters' || filtersOpen)}
           onOpenChange={(v) => { setFiltersOpen(v); if (!v && view === 'Filters') setView('Cards'); }}
           filters={filterOptions || {}}
-          values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined, date_start: filters.date_start ?? undefined, date_end: filters.date_end ?? undefined, year: filters.year ?? undefined }}
+          values={{
+            origin: filters.origin ?? undefined,
+            destination: filters.destination ?? undefined,
+            mode: filters.mode ?? undefined,
+            date_start: filters.date_start ?? undefined,
+            date_end: filters.date_end ?? undefined,
+            year: filters.year ?? undefined,
+            origin_city: filters.origin_city ?? undefined,
+            dest_city: filters.dest_city ?? undefined,
+            dest_state: filters.dest_state ?? undefined,
+            dest_postal: filters.dest_postal ?? undefined,
+            dest_port: filters.dest_port ?? undefined,
+          }}
           onChange={(patch) => {
             setFilters((prev) => ({
               origin: typeof patch.origin === 'string' ? patch.origin : (patch.origin === undefined ? null : prev.origin),
@@ -396,6 +408,11 @@ export default function SearchPage() {
               date_start: typeof patch.date_start === 'string' ? patch.date_start : (patch.date_start === undefined ? null : prev.date_start),
               date_end: typeof patch.date_end === 'string' ? patch.date_end : (patch.date_end === undefined ? null : prev.date_end),
               year: typeof patch.year === 'string' ? patch.year : (patch.year === undefined ? null : prev.year),
+              origin_city: typeof patch.origin_city === 'string' ? patch.origin_city : (patch.origin_city === undefined ? null : prev.origin_city),
+              dest_city: typeof patch.dest_city === 'string' ? patch.dest_city : (patch.dest_city === undefined ? null : prev.dest_city),
+              dest_state: typeof patch.dest_state === 'string' ? patch.dest_state : (patch.dest_state === undefined ? null : prev.dest_state),
+              dest_postal: typeof patch.dest_postal === 'string' ? patch.dest_postal : (patch.dest_postal === undefined ? null : prev.dest_postal),
+              dest_port: typeof patch.dest_port === 'string' ? patch.dest_port : (patch.dest_port === undefined ? null : prev.dest_port),
             }));
           }}
           onApply={() => { run(true); setFiltersOpen(false); if (view === 'Filters') setView('Cards'); }}

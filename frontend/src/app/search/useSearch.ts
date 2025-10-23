@@ -19,6 +19,11 @@ export type SearchFilters = {
   date_start?: string | null;
   date_end?: string | null;
   year?: string | null;
+  origin_city?: string | null;
+  dest_city?: string | null;
+  dest_state?: string | null;
+  dest_postal?: string | null;
+  dest_port?: string | null;
 };
 
 const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
@@ -31,7 +36,20 @@ export function useSearch() {
   const pagesRef = useRef<Page[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const LIMIT = 25;
-  const [filters, setFilters] = useState<SearchFilters>({ origin: null, destination: null, hs: null, mode: null, date_start: null, date_end: null, year: null });
+  const [filters, setFilters] = useState<SearchFilters>({
+    origin: null,
+    destination: null,
+    hs: null,
+    mode: null,
+    date_start: null,
+    date_end: null,
+    year: null,
+    origin_city: null,
+    dest_city: null,
+    dest_state: null,
+    dest_postal: null,
+    dest_port: null,
+  });
 
   const tokens = useMemo(() => {
     const trimmed = q.trim();
@@ -49,6 +67,11 @@ export function useSearch() {
       mode: f.mode,
       date_start: f.date_start ?? null,
       date_end: f.date_end ?? null,
+      origin_city: f.origin_city ?? null,
+      dest_city: f.dest_city ?? null,
+      dest_state: f.dest_state ?? null,
+      dest_postal: f.dest_postal ?? null,
+      dest_port: f.dest_port ?? null,
       page: Math.floor(offset / LIMIT) + 1,
       pageSize: LIMIT,
     }, signal);
