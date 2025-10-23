@@ -68,7 +68,8 @@ export default function AutocompleteInput({
           }))
           .filter((r: Suggestion) => r.company_name);
         setItems(mapped);
-        setOpen(true);
+        // Only open the dropdown if we have at least one suggestion
+        setOpen(mapped.length > 0);
       } catch {
         if (!cancelled) {
           setItems([]);
@@ -131,9 +132,7 @@ export default function AutocompleteInput({
             {loading ? "Loading…" : "Live suggestions"}
           </div>
           <div className="border-t border-gray-100" />
-          {items.length === 0 && !loading ? (
-            <div className="px-3 py-3 text-sm text-gray-500">No live matches yet</div>
-          ) : (
+          {
             <ul className="max-h-72 overflow-auto">
               {items.map((s, idx) => (
                 <li
@@ -152,7 +151,7 @@ export default function AutocompleteInput({
                 </li>
               ))}
             </ul>
-          )}
+          }
         </div>
       )}
     </div>

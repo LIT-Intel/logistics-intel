@@ -8,8 +8,7 @@ import { useSearch } from '@/app/search/useSearch';
 import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey } from '@/lib/api';
 import { searchCompanies as searchCompaniesApi } from "@/lib/api"; // <-- soft autocomplete uses the lib client
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import AutocompleteInput from '@/components/search/AutocompleteInput';
 import { cn } from '@/lib/utils';
 import CompanyModal from '@/components/search/CompanyModal';
 import { FiltersDrawer } from '@/components/FiltersDrawer';
@@ -277,28 +276,7 @@ export default function SearchPage() {
   const [filterOptionsReady, setFilterOptionsReady] = useState(false);
   const [filterOptions, setFilterOptions] = useState<any>(null);
 
-  // ---- NEW: soft autocomplete state ----
-  const [softQuery, setSoftQuery] = useState<string>("");
-  const [isSoftLoading, setIsSoftLoading] = useState(false);
-  const [softRows, setSoftRows] = useState<any[] | null>(null);
-
-  const debouncedSoftFetch = useDebounced(async (qq: string) => {
-    const v = (qq || "").trim();
-    if (v.length < 2) { setSoftRows(null); return; } // 2+ chars
-    try {
-      setIsSoftLoading(true);
-      const res = await searchCompaniesApi({ q: v, pageSize: 12, page: 1 });
-      const list = (res?.rows || res?.results || res?.data || []).slice(0, 12);
-      setSoftRows(list);
-    } catch (e) {
-      console.warn("[soft] autocomplete error:", e);
-      setSoftRows(null);
-    } finally {
-      setIsSoftLoading(false);
-    }
-  }, 300);
-
-  useEffect(() => { debouncedSoftFetch(softQuery); }, [softQuery]);
+  // Autocomplete handled by <AutocompleteInput/>; no inline panel
 
   useEffect(() => {
     const ac = new AbortController();
@@ -335,58 +313,18 @@ export default function SearchPage() {
         </header>
 
         {/* Search Bar */}
-        <form onSubmit={doSearch} className="flex gap-3 mb-2">
+        <form onSubmit={doSearch} className="flex gap-3 mb-4">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input
-              data-test="search-input"
-              placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
-              className="pl-9 h-12 text-base rounded-lg"
+            <AutocompleteInput
               value={q}
-              onChange={(e) => { setQ(e.target.value); setSoftQuery(e.target.value); }}   // <-- drives soft suggestions too
-              onKeyDown={(e) => { if (e.key === 'Enter') doSearch(); }}
+              onChange={setQ}
+              onSubmit={() => doSearch()}
+              placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
             />
           </div>
           <Button data-test="search-button" type="submit" className="h-12 px-6 rounded-lg"><SearchIcon className="w-4 h-4 mr-2" /> Search</Button>
         </form>
-
-        {/* Soft suggestions panel (appears on 2+ chars) */}
-        {softQuery.trim().length >= 2 && (
-          <div className="mb-6 rounded-lg border border-gray-200 bg-white p-3">
-            <div className="text-xs text-gray-500 mb-2 flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-indigo-500" />
-              {isSoftLoading ? "Searching…" : "Live suggestions"}
-            </div>
-            {softRows?.length ? (
-              <ul className="divide-y">
-                {softRows.map((r: any, i: number) => {
-                  const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
-                  return (
-                    <li
-                      key={key || i}
-                      className="py-2 px-1 cursor-pointer hover:bg-indigo-50 rounded"
-                      onClick={() => {
-                        const name = r?.company_name || r?.name || softQuery;
-                        setQ(name);
-                        setSoftQuery(name);
-                        setSoftRows(null);
-                        // optional: auto-run a hard search after selection
-                        run(true);
-                      }}
-                    >
-                      <div className="font-medium">{r?.company_name || r?.name || "—"}</div>
-                      <div className="text-xs text-gray-500">
-                        {(r?.shipments_12m ?? r?.shipments ?? "—")} shipments • {(r?.company_id || r?.id || "—")}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="text-sm text-gray-500">{isSoftLoading ? "…" : "No live matches yet"}</div>
-            )}
-          </div>
-        )}
 
         {/* View Toggle */}
         <div className="flex gap-3 mb-6">
