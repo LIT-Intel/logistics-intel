@@ -32,7 +32,8 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
     (async () => {
       if (!open || !company) return;
       try {
-        const { items } = await fetchCompanyShipments({ company: cname || '', limit: 1000, offset: 0 });
+        const data = await fetchCompanyShipments({ company: cname || '', limit: 1000, offset: 0 });
+        const rows = (data?.items || data?.rows || []) as any[];
         if (!cancelled) setChartRows(Array.isArray(rows) ? rows : []);
       } catch {
         if (!cancelled) setChartRows([]);
