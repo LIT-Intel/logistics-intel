@@ -5,10 +5,6 @@ import CompanyCard from './CompanyCard';
 // Wraps the existing TypeScript CompanyCard with a JS-friendly interface
 export default function CompanyCardCompact({ company, onView, onSave }) {
   return (
-    <CompanyCard
-      row={company}
-      onOpen={onView}
-      onSave={onSave}
-    />
+    <CompanyCard row={company} onOpen={onView} onSave={onSave} />
   );
 }
