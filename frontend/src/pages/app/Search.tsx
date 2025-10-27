@@ -5,14 +5,24 @@ import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
 import { useSearch } from '@/app/search/useSearch';
-import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey } from '@/lib/api';
+import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
+import { searchCompanies as searchCompaniesApi } from "@/lib/api"; // <-- soft autocomplete uses the lib client
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import AutocompleteInput from '@/components/search/AutocompleteInput';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import CompanyModal from '@/components/search/CompanyModal';
 import { FiltersDrawer } from '@/components/FiltersDrawer';
 import SearchEmpty from '@/components/SearchEmpty';
+
+// --- tiny debounce helper (no external deps) ---
+const useDebounced = <T extends any[]>(fn: (...args: T) => void, delay = 300) => {
+  const t = useRef<number | null>(null);
+  return (...args: T) => {
+    if (t.current) window.clearTimeout(t.current);
+    t.current = window.setTimeout(() => fn(...args), delay);
+  };
+};
 
 // --- Design Tokens (UI only; no API impact) ---
 const STYLES = {
@@ -127,14 +137,47 @@ function SaveToCommandCenterButton({ row, size = 'sm', activeFilters }: { row: a
   );
 }
 
+const KPI_CACHE = new Map<string, { teus12m: number | null; growthRate: number | null }>();
+
 function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const top = r.top_routes?.[0];
   const name = r.company_name;
   const id = r.company_id || '—';
   const shipments12m = r.shipments_12m ?? 0;
   const lastActivity = kLastActivity(r.last_activity);
-  const totalTeus = (r as any)?.total_teus ?? '—';
-  const growthRate = (r as any)?.growth_rate == null ? '—' : `${Math.round(Number((r as any)?.growth_rate) * 100)}%`;
+  const [teus12m, setTeus12m] = useState<number | null>(null);
+  const [growthRate, setGrowthRate] = useState<number | null>(null);
+  useEffect(() => {
+    const cid = String(r?.company_id || '').trim();
+    const cacheKey = cid || `name:${String(r?.company_name || '').toLowerCase()}`;
+    if (KPI_CACHE.has(cacheKey)) {
+      const k = KPI_CACHE.get(cacheKey)!;
+      setTeus12m(k.teus12m); setGrowthRate(k.growthRate); return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data: any = await getCompanyKpis({ company_id: cid || undefined, company_name: cid ? undefined : String(r?.company_name || '') });
+        if (cancelled || !data) return;
+        const rawTeu = data.total_teus_12m ?? data.teus_12m ?? data.total_teus ?? null;
+        const rawGrowth = data.growth_rate ?? data.growthRate ?? null;
+        const teuVal = rawTeu != null ? Number(rawTeu) : null;
+        const growthVal = rawGrowth != null ? Number(rawGrowth) : null;
+        KPI_CACHE.set(cacheKey, { teus12m: teuVal, growthRate: growthVal });
+        setTeus12m(teuVal); setGrowthRate(growthVal);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [r?.company_id, r?.company_name]);
+  const totalTeusDisplay = teus12m != null ? teus12m.toLocaleString() : ((r as any)?.total_teus != null ? Number((r as any)?.total_teus).toLocaleString() : '—');
+  const growthRateDisplay = (() => {
+    const val = growthRate ?? (r as any)?.growth_rate;
+    if (val == null || isNaN(Number(val))) return '—';
+    const n = Number(val);
+    const pct = Math.abs(n) <= 1 ? n * 100 : n;
+    const rounded = Math.round(pct);
+    return `${n >= 0 ? '+' : ''}${rounded}%`;
+  })();
   const initials = (name||'').split(' ').map((p: string)=>p[0]).join('').slice(0,2).toUpperCase();
   const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
   const [saved, setSaved] = useState<boolean>(() => {
@@ -165,6 +208,9 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           <div className="text-sm text-gray-500 truncate">{alias || `ID: ${id}`}</div>
           <div className="mt-2 flex items-center gap-2">
             <SaveToCommandCenterButton row={r} />
+            <span className="inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 text-[11px] px-2 py-0.5">
+              Ready
+            </span>
           </div>
         </div>
         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-semibold select-none">{initials}</div>
@@ -172,8 +218,8 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
       <div className="mt-4 border-t border-b border-gray-200 py-3 grid grid-cols-2 md:grid-cols-4 gap-3">
         <ResultKPI icon={<Ship className="w-4 h-4" style={{ color: STYLES.brandPurple }}/>} label="Shipments (12m)" value={shipments12m} />
         <ResultKPI icon={<Clock className="w-4 h-4 text-gray-500" />} label="Last Activity" value={lastActivity} />
-        <ResultKPI icon={<Box className="w-4 h-4 text-gray-500" />} label="Total TEUs" value={totalTeus} />
-        <ResultKPI icon={<TrendingUp className="w-4 h-4 text-gray-500" />} label="Growth Rate" value={growthRate} />
+        <ResultKPI icon={<Box className="w-4 h-4 text-gray-500" />} label="Total TEUs" value={totalTeusDisplay} />
+        <ResultKPI icon={<TrendingUp className="w-4 h-4 text-gray-500" />} label="Growth Rate" value={growthRateDisplay} />
       </div>
       <div className="flex justify-between items-center mt-3">
         <div className="flex items-center gap-2 text-xs text-gray-600">
@@ -187,7 +233,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
 
 function ResultsCards({ rows, onOpen, filters }: { rows: any[]; onOpen: (r: any)=>void; filters: any }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {rows.map((r) => (
         <ResultCard key={getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name })} r={r} onOpen={onOpen} filters={filters} />
       ))}
@@ -260,12 +306,14 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
 
 export default function SearchPage() {
   // Keep existing search hook (wires to /api/lit/public/searchCompanies)
-  const { q, setQ, rows, loading, run, next, prev, page, filters, setFilters } = useSearch();
+  const { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext } = useSearch();
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
   const [filterOptionsReady, setFilterOptionsReady] = useState(false);
   const [filterOptions, setFilterOptions] = useState<any>(null);
+
+  // Autocomplete handled by <AutocompleteInput/>; no inline panel
 
   useEffect(() => {
     const ac = new AbortController();
@@ -297,27 +345,32 @@ export default function SearchPage() {
     <div className="min-h-screen" style={{ backgroundColor: STYLES.neutralGrayLight }}>
       <div className="mx-auto px-4 sm:px-6 lg:px-8 max-w-[1400px] py-6">
         <header className="mb-6">
-          <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Search</h1>
+          <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 mb-2">Search</h1>
           <p className="text-base text-gray-600 mb-6">Find shippers & receivers. Use filters for origin/dest/HS.</p>
         </header>
 
         {/* Search Bar */}
-        <form onSubmit={doSearch} className="flex gap-3 mb-6">
+        <form onSubmit={doSearch} className="flex gap-3 mb-4">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+<<<<<<< HEAD
             <Input
               data-test="search-input" placeholder="Test — Search by company name or alias (e.g., UPS, Maersk)…"
               className="pl-9 h-12 text-base rounded-lg"
+=======
+            <AutocompleteInput
+>>>>>>> origin/main
               value={q}
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') doSearch(); }}
+              onChange={setQ}
+              onSubmit={() => doSearch()}
+              placeholder="Search by company name or alias (e.g., UPS, Maersk)…"
             />
           </div>
-          <Button type="submit" className="h-12 px-6 rounded-lg"><SearchIcon className="w-4 h-4 mr-2" /> Search</Button>
+          <Button data-test="search-button" type="submit" className="h-12 px-6 rounded-lg"><SearchIcon className="w-4 h-4 mr-2" /> Search</Button>
         </form>
 
-        {/* View Toggle */}
-        <div className="flex gap-3 mb-6">
+        {/* View Toggle + Page Size */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
           {['Cards','List','Filters','Explore'].map((opt) => (
             <button
               key={opt}
@@ -332,14 +385,36 @@ export default function SearchPage() {
             </button>
           ))}
           {loading && <span className="text-xs text-gray-500 self-center">Searching…</span>}
+          <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
+            <span>Per page</span>
+            <select
+              className="h-9 rounded-lg border border-gray-300 px-2"
+              value={limit}
+              onChange={(e)=> { setLimit(Number(e.target.value)); run(true); }}
+            >
+              {[20,30,50].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* Filters Drawer */}
-        <FiltersDrawer
+          <FiltersDrawer
           open={Boolean(view === 'Filters' || filtersOpen)}
           onOpenChange={(v) => { setFiltersOpen(v); if (!v && view === 'Filters') setView('Cards'); }}
           filters={filterOptions || {}}
-          values={{ origin: filters.origin ?? undefined, destination: filters.destination ?? undefined, mode: filters.mode ?? undefined, date_start: filters.date_start ?? undefined, date_end: filters.date_end ?? undefined, year: filters.year ?? undefined }}
+          values={{
+            origin: filters.origin ?? undefined,
+            destination: filters.destination ?? undefined,
+            mode: filters.mode ?? undefined,
+            date_start: filters.date_start ?? undefined,
+            date_end: filters.date_end ?? undefined,
+            year: filters.year ?? undefined,
+            origin_city: filters.origin_city ?? undefined,
+            dest_city: filters.dest_city ?? undefined,
+            dest_state: filters.dest_state ?? undefined,
+            dest_postal: filters.dest_postal ?? undefined,
+            dest_port: filters.dest_port ?? undefined,
+          }}
           onChange={(patch) => {
             setFilters((prev) => ({
               origin: typeof patch.origin === 'string' ? patch.origin : (patch.origin === undefined ? null : prev.origin),
@@ -349,6 +424,11 @@ export default function SearchPage() {
               date_start: typeof patch.date_start === 'string' ? patch.date_start : (patch.date_start === undefined ? null : prev.date_start),
               date_end: typeof patch.date_end === 'string' ? patch.date_end : (patch.date_end === undefined ? null : prev.date_end),
               year: typeof patch.year === 'string' ? patch.year : (patch.year === undefined ? null : prev.year),
+              origin_city: typeof patch.origin_city === 'string' ? patch.origin_city : (patch.origin_city === undefined ? null : prev.origin_city),
+              dest_city: typeof patch.dest_city === 'string' ? patch.dest_city : (patch.dest_city === undefined ? null : prev.dest_city),
+              dest_state: typeof patch.dest_state === 'string' ? patch.dest_state : (patch.dest_state === undefined ? null : prev.dest_state),
+              dest_postal: typeof patch.dest_postal === 'string' ? patch.dest_postal : (patch.dest_postal === undefined ? null : prev.dest_postal),
+              dest_port: typeof patch.dest_port === 'string' ? patch.dest_port : (patch.dest_port === undefined ? null : prev.dest_port),
             }));
           }}
           onApply={() => { run(true); setFiltersOpen(false); if (view === 'Filters') setView('Cards'); }}
@@ -369,6 +449,12 @@ export default function SearchPage() {
                 filters={filters}
               />
             )}
+            {/* Pagination controls */}
+            <div className="mt-4 flex items-center justify-between">
+              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={prev} disabled={page <= 1}>Prev</button>
+              <div className="text-sm text-gray-600">Page {page}</div>
+              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={next} disabled={!hasNext}>Next</button>
+            </div>
           </div>
         )}
       </div>

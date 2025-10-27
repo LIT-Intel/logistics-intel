@@ -1,102 +1,160 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { searchCompanies as searchCompaniesApi } from "@/lib/api";
 
-type Suggestion = { id: string; name: string; website?: string | null };
-
-type Props = {
-  value: string;
-  onChange: (v: string) => void;
-  onSelect: (s: Suggestion) => void;
-  // optional: falls back to local list if this fails or is omitted
-  fetchSuggestions?: (q: string) => Promise<Suggestion[]>;
-  placeholder?: string;
-  minChars?: number;
+type Suggestion = {
+  company_id?: string | number;
+  company_name: string;
+  domain?: string | null;
 };
 
-const LOCAL = ["Dole", "Del Monte", "Maersk", "MSC", "CMA CGM", "Tesla", "UPS", "Walmart", "Target", "Amazon"];
+function useDebounced<T>(value: T, delay = 250) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return v;
+}
 
 export default function AutocompleteInput({
   value,
   onChange,
-  onSelect,
-  fetchSuggestions,
-  placeholder = "Search by company name… [AC HARD TEST]",
-  minChars = 1,
-}: Props) {
+  onSubmit,
+  placeholder = "Search by company name or alias (e.g., UPS, Maersk)…",
+  minChars = 2,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onSubmit: () => void;
+  placeholder?: string;
+  minChars?: number;
+}) {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Suggestion[]>([]);
-  const [highlight, setHighlight] = useState(0);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const debouncedQ = useDebounced(value, 250);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  async function load(q: string) {
-    const qq = (q || "").trim();
-    if (qq.length < minChars) {
-      setItems([]); setOpen(false); return;
-    }
-    if (fetchSuggestions) {
-      try {
-        const rows = await fetchSuggestions(qq);
-        if (Array.isArray(rows) && rows.length) {
-          setItems(rows); setOpen(true); return;
-        }
-      } catch (_) { /* fall through */ }
-    }
-    const rows = LOCAL
-      .filter(n => n.toLowerCase().includes(qq.toLowerCase()))
-      .slice(0, 8)
-      .map((name, i) => ({ id: String(i+1), name, website: null }));
-    setItems(rows); setOpen(true);
-  }
-
-  useEffect(() => { load(value); }, [value]);
-
+  // load suggestions
   useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!boxRef.current) return;
-      if (!boxRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    let cancelled = false;
+    (async () => {
+      const q = (debouncedQ || "").trim();
+      if (q.length < minChars) {
+        setItems([]);
+        setOpen(false);
+        return;
+      }
+      setLoading(true);
+      setOpen(true); // show the dropdown immediately with a loading state
+      try {
+        // use the robust API helper (handles proxy/gateway fallbacks)
+        const res = await searchCompaniesApi({
+          q,
+          pageSize: 6,
+          limit: 6,
+          // keep filters empty for suggestion speed
+        });
+        if (cancelled) return;
+        const rows = Array.isArray((res as any)?.results)
+          ? (res as any).results
+          : Array.isArray((res as any)?.rows)
+          ? (res as any).rows
+          : Array.isArray((res as any)?.items)
+          ? (res as any).items
+          : [];
+        const mapped: Suggestion[] = rows
+          .map((r: any) => ({
+            company_id: r?.company_id ?? r?.id,
+            company_name: String(r?.company_name ?? r?.name ?? "").trim(),
+            domain: r?.domain ?? null,
+          }))
+          .filter((r: Suggestion) => r.company_name);
+        setItems(mapped);
+        // Keep open only if we have results
+        setOpen(mapped.length > 0);
+      } catch {
+        if (!cancelled) {
+          setItems([]);
+          setOpen(false);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQ, minChars]);
+
+  // close on outside click / escape
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onEsc);
+    };
   }, []);
 
-  function choose(i: number) {
-    const s = items[i];
-    if (!s) return;
-    onSelect(s);
-    setOpen(false);
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open || !items.length) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight(h => Math.min(h+1, items.length-1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight(h => Math.max(h-1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); choose(highlight); }
-    else if (e.key === "Escape") { setOpen(false); }
-  }
-
   return (
-    <div ref={boxRef} className="relative">
+    <div ref={wrapRef} className="relative">
       <input
         value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => { if (items.length) setOpen(true); }}
-        onKeyDown={onKeyDown}
+        onChange={(e) => {
+          onChange(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            setOpen(false);
+            onSubmit();
+          }
+        }}
         placeholder={placeholder}
-        className="w-full pl-4 pr-12 py-3 text-base md:text-lg bg-white border border-blue-300 ring-2 ring-blue-400 rounded-xl"
-        data-test="ac-hard"
+        className="flex w-full border border-input bg-transparent px-3 py-1 shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pl-9 h-12 text-base rounded-lg"
+        data-test="search-input"
+        type="search"
+        autoComplete="off"
+        spellCheck={false}
       />
-      {open && items.length > 0 && (
-        <div className="absolute left-0 right-0 mt-2 bg-white border rounded-xl shadow-xl z-50 max-h-72 overflow-auto">
-          {items.map((s, i) => (
-            <button
-              key={s.id}
-              onMouseDown={(e) => { e.preventDefault(); choose(i); }}
-              onMouseEnter={() => setHighlight(i)}
-              className={`w-full text-left px-3 py-2 ${i === highlight ? "bg-blue-50" : ""}`}
-            >
-              <div className="text-sm font-medium">{s.name}</div>
-              {s.website ? <div className="text-xs text-gray-500 truncate">{s.website}</div> : null}
-            </button>
-          ))}
+
+      {/* dropdown */}
+      {open && (
+        <div
+          className="absolute z-50 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
+          role="listbox"
+        >
+          <div className="px-3 py-2 text-xs font-medium text-gray-600">
+            {loading ? "Loading…" : "Live suggestions"}
+          </div>
+          <div className="border-t border-gray-100" />
+          {
+            <ul className="max-h-72 overflow-auto">
+              {items.map((s, idx) => (
+                <li
+                  key={`${s.company_id ?? idx}-${s.company_name}`}
+                  className="px-3 py-3 text-sm cursor-pointer hover:bg-gray-50"
+                  onClick={() => {
+                    onChange(s.company_name);
+                    setOpen(false);
+                    onSubmit();
+                  }}
+                >
+                  <div className="font-medium text-gray-900">{s.company_name}</div>
+                  {s.domain ? (
+                    <div className="text-xs text-gray-500">{s.domain}</div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          }
         </div>
       )}
     </div>
