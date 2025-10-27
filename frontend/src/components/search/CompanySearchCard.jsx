@@ -14,9 +14,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { kpiFrom } from '@/lib/api';
-import dynamic from 'next/dynamic';
-
-const CompanyLanesPanel = dynamic(() => import('@/components/CompanyLanesPanel'), { ssr: false });
+import CompanyLanesPanel from '@/components/CompanyLanesPanel';
 
 export default function CompanySearchCard({
   company,
