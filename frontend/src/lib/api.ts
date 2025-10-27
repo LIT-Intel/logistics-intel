@@ -464,4 +464,52 @@ export const api = {
   kpiFrom,
 };
 
+// New API helpers for Company Lanes and Shipments drill-down via direct service
+export async function fetchCompanyLanes(params: {
+  company: string;
+  month?: string;      // YYYY-MM-01
+  origin?: string;
+  dest?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const base = (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_SEARCH_UNIFIED_URL)
+    || (typeof window !== 'undefined' && (window as any).__SEARCH_UNIFIED__)
+    || '';
+  const serviceBase = String(base || '').replace(/\/$/, '');
+  const res = await fetch(`${serviceBase}/public/companyLanes`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`companyLanes ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCompanyShipments(params: {
+  company: string;
+  name_norm?: string;
+  mode?: "air"|"ocean";
+  origin?: string;
+  dest?: string;
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
+  limit?: number;
+  offset?: number;
+}) {
+  const base = (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_SEARCH_UNIFIED_URL)
+    || (typeof window !== 'undefined' && (window as any).__SEARCH_UNIFIED__)
+    || '';
+  const serviceBase = String(base || '').replace(/\/$/, '');
+  const res = await fetch(`${serviceBase}/public/companyShipments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`companyShipments ${res.status}`);
+  return res.json();
+}
+
 // The exported searchCompanies above already points to the proxy-backed implementation

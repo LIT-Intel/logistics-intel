@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { getCompanyShipmentsUnified } from '@/lib/api';
+import { getCompanyShipmentsUnified, fetchCompanyShipments } from '@/lib/api';
 import { X, Ship, Box, TrendingUp, MapPin, Globe, Database, Link as LinkIcon, Lock, BarChart as BarChartIcon } from 'lucide-react';
 
 type Company = { company_id?: string | null; company_name?: string; domain?: string | null; website?: string | null };
@@ -17,6 +17,9 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const [loadingTable, setLoadingTable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview'|'summary'|'shipments'|'contacts'>('overview');
+  const [mode, setMode] = useState<'air'|'ocean'|''>('');
+  const [origin, setOrigin] = useState<string>('');
+  const [dest, setDest] = useState<string>('');
   const [dateStart, setDateStart] = useState<string>('');
   const [dateEnd, setDateEnd] = useState<string>('');
   const [showGate, setShowGate] = useState(false);
@@ -29,7 +32,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
     (async () => {
       if (!open || !company) return;
       try {
-        const { rows } = await getCompanyShipmentsUnified({ company_id: cid, company_name: cid ? undefined : cname, limit: 1000, offset: 0 });
+        const { items } = await fetchCompanyShipments({ company: cname || '', limit: 1000, offset: 0 });
         if (!cancelled) setChartRows(Array.isArray(rows) ? rows : []);
       } catch {
         if (!cancelled) setChartRows([]);
@@ -44,8 +47,10 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
       if (!open || !company || activeTab !== 'shipments') return;
       setLoadingTable(true); setError(null);
       try {
-        const { rows, total } = await getCompanyShipmentsUnified({ company_id: cid, company_name: cid ? undefined : cname, limit: 50, offset: (page - 1) * 50 });
-        if (!cancelled) { setTableRows(Array.isArray(rows) ? rows : []); setTotal(Number(total || 0)); }
+        const data = await fetchCompanyShipments({ company: cname || '', mode: mode || undefined, origin: origin || undefined, dest: dest || undefined, startDate: dateStart || undefined, endDate: dateEnd || undefined, limit: 50, offset: (page - 1) * 50 });
+        const rows = (data?.items || data?.rows || []) as any[];
+        const total = Number(data?.total || rows.length || 0);
+        if (!cancelled) { setTableRows(Array.isArray(rows) ? rows : []); setTotal(total); }
       } catch (e: any) {
         if (!cancelled) { setTableRows([]); setTotal(0); setError('Failed to load shipments'); }
       } finally {
@@ -53,7 +58,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [open, activeTab, page, cid, cname, company]);
+  }, [open, activeTab, page, cid, cname, company, mode, origin, dest, dateStart, dateEnd]);
 
   const website = (company?.website || company?.domain || '')?.toString();
 
@@ -196,6 +201,22 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                   <div>
                     <div className="text-xs text-gray-600 mb-1">End date</div>
                     <input type="date" className="border rounded px-3 py-2 text-sm" value={dateEnd} onChange={(e)=> { setPage(1); setDateEnd(e.target.value); }} />
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Mode</div>
+                    <select className="border rounded px-3 py-2 text-sm" value={mode} onChange={(e)=> { setPage(1); setMode(e.target.value as any); }}>
+                      <option value="">Any</option>
+                      <option value="ocean">Ocean</option>
+                      <option value="air">Air</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Origin</div>
+                    <input className="border rounded px-3 py-2 text-sm" value={origin} onChange={(e)=> { setPage(1); setOrigin(e.target.value); }} placeholder="CN" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Destination</div>
+                    <input className="border rounded px-3 py-2 text-sm" value={dest} onChange={(e)=> { setPage(1); setDest(e.target.value); }} placeholder="US" />
                   </div>
                   <div className="text-sm text-gray-600 sm:ml-auto">Page {page} · 50 per page {total ? `· ${total} total` : ''}</div>
                 </div>

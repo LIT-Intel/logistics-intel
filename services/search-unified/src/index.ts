@@ -3,6 +3,7 @@ import health from "./routes/health.js";
 import getFilterOptions from "./routes/getFilterOptions.js";
 import searchCompanies from "./routes/searchCompanies.js";
 import getCompanyShipments from "./routes/getCompanyShipments.js";
+import companyShipments from "./routes/companyShipments.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -34,6 +35,7 @@ app.get('/', (_req, res) => {
 app.use(getFilterOptions);
 app.use(searchCompanies);
 app.use(getCompanyShipments);
+app.use(companyShipments);
 
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err);
