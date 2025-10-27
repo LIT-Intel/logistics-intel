@@ -353,13 +353,7 @@ export default function SearchPage() {
         <form onSubmit={doSearch} className="flex gap-3 mb-4">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-<<<<<<< HEAD
-            <Input
-              data-test="search-input" placeholder="Test — Search by company name or alias (e.g., UPS, Maersk)…"
-              className="pl-9 h-12 text-base rounded-lg"
-=======
             <AutocompleteInput
->>>>>>> origin/main
               value={q}
               onChange={setQ}
               onSubmit={() => doSearch()}
