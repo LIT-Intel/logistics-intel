@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { kpiFrom } from '@/lib/api';
+import CompanyLanesPanel from '@/components/CompanyLanesPanel';
 
 export default function CompanySearchCard({
   company,
@@ -26,6 +27,7 @@ export default function CompanySearchCard({
   onDraftRFP,
   savingCompanyId
 }) {
+  const [showLanes, setShowLanes] = useState(false);
   const formatShipments = (count) => {
     if (!count) return '0';
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -103,6 +105,14 @@ export default function CompanySearchCard({
         >
           View Details
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowLanes((v) => !v)}
+          className="flex-1"
+        >
+          {showLanes ? 'Hide Lanes' : 'Lanes'}
+        </Button>
       </div>
 
       {/* KPI tiles below actions - uniform squares compact */}
@@ -136,6 +146,13 @@ export default function CompanySearchCard({
           </span>
         </div>
       </div>
+
+      {/* Lanes Panel Toggle */}
+      {showLanes && (
+        <div className="mt-3" onClick={(e)=> e.stopPropagation()}>
+          <CompanyLanesPanel company={company.name || company.company_name || ''} />
+        </div>
+      )}
 
       {/* Meta (route/carrier) */}
     </motion.div>
