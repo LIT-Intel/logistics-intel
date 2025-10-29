@@ -1,0 +1,8 @@
+/* Minimal global styles; Tailwind classes assumed in components.
+   If Tailwind is not configured for this app, these classes will be ignored. */
+:root { color-scheme: light; }
+html, body { height: 100%; }
+body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+
+/* Safe defaults for section spacing when Tailwind is unavailable */
+section { display: block; }
