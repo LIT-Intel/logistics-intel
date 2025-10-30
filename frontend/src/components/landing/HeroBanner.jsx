@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import InteractivePins from "@/components/landing/InteractivePins";
+import FluidHoverSkin from "@/components/ui/FluidHoverSkin";
 
 export default function HeroBanner() {
   const stats = [
@@ -11,57 +12,62 @@ export default function HeroBanner() {
   ];
 
   return (
-    <section className="relative overflow-hidden rounded-xl bg-gradient-to-b from-white to-gray-50 border border-gray-200">
-      <div className="absolute inset-0">
+    <FluidHoverSkin
+      as="section"
+      className="relative rounded-2xl border border-gray-200 bg-gradient-to-b from-white via-white/70 to-gray-50 shadow-[0_40px_70px_rgba(15,23,42,0.08)]"
+      colors={["#3C4EF5", "#AB34F5", "#22D3EE"]}
+      intensity={0.9}
+    >
+      <div className="absolute inset-0 opacity-90">
         <InteractivePins
-          className="w-full h-full"
+          className="h-full w-full"
           baseColor="#d1d5db"
           activeColor="#22d3ee"
-          hoverRadius={140}
-          dotSpacing={26}
+          hoverRadius={160}
+          dotSpacing={24}
           dotRadius={2}
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-white/70 via-white/40 to-white/10 pointer-events-none" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/80 via-white/55 to-white/20" />
       </div>
 
       <div className="relative px-6 py-16 lg:px-12 lg:py-24">
-        <div className="max-w-5xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-sm text-gray-600 shadow-sm backdrop-blur">
+        <div className="mx-auto max-w-5xl text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/70 px-3 py-1 text-sm text-slate-600 shadow-sm backdrop-blur">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
             Real-time company intelligence for logistics teams
           </div>
-          <h1 className="mt-6 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
+          <h1 className="mt-6 text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
             Find and qualify companies in seconds
           </h1>
-          <p className="mt-4 text-lg text-gray-600">
+          <p className="mt-4 text-lg text-slate-600">
             Search 12 months of import/export activity to reveal top routes, carriers, and decision-makers.
           </p>
 
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
               to="/search"
-              className="inline-flex items-center justify-center rounded-lg bg-gray-900 px-6 py-3 text-white shadow hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2"
+              className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-[#3C4EF5] via-[#4F46E5] to-[#22D3EE] px-6 py-3 text-white shadow-lg shadow-[#3C4EF5]/25 transition hover:shadow-xl hover:shadow-[#22D3EE]/30 focus:outline-none focus:ring-2 focus:ring-[#22D3EE] focus:ring-offset-2"
             >
               Start Searching
             </Link>
             <a
               href="#demo"
-              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-gray-900 shadow-sm hover:bg-gray-50"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white/90 px-6 py-3 text-slate-900 shadow-sm transition hover:bg-slate-50"
             >
               Get a Demo
             </a>
           </div>
 
-          <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-4 text-left">
+          <div className="mt-10 grid grid-cols-2 gap-4 text-left sm:grid-cols-4">
             {stats.map((stat) => (
-              <div key={stat.label} className="rounded-lg border border-gray-200 bg-white/80 p-4 backdrop-blur">
-                <div className="text-xs uppercase text-gray-500">{stat.label}</div>
-                <div className="mt-1 text-2xl font-semibold text-gray-900">{stat.value}</div>
+              <div key={stat.label} className="rounded-xl border border-white/60 bg-white/80 p-4 shadow-inner backdrop-blur">
+                <div className="text-xs uppercase tracking-wide text-slate-500">{stat.label}</div>
+                <div className="mt-1 text-2xl font-semibold text-slate-900">{stat.value}</div>
               </div>
             ))}
           </div>
         </div>
       </div>
-    </section>
+    </FluidHoverSkin>
   );
 }

@@ -1,10 +1,10 @@
 // frontend/src/components/layout/CustomLoginPage.jsx
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { loginWithGoogle, loginWithMicrosoft, loginWithEmailPassword } from "@/auth/firebaseClient"; // ✅ ensure this line exists
+import { loginWithGoogle, loginWithMicrosoft, loginWithEmailPassword } from "@/auth/firebaseClient";
 import { useAuth } from "@/auth/AuthProvider";
+import FluidHoverSkin from "@/components/ui/FluidHoverSkin";
 
 export default function CustomLoginPage({ onClose }) {
   const nav = useNavigate();
@@ -60,69 +60,164 @@ export default function CustomLoginPage({ onClose }) {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center" style={{ background: 'linear-gradient(135deg, #0E1224 0%, #121835 60%, #161E43 100%)' }}>
-      <div className="flex w-full max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-xl border border-[var(--lit-border)] bg-white/95 backdrop-blur min-h-[560px]">
-        <div className="hidden md:flex w-1/2 bg-[var(--lit-panel-2)] text-white p-8 items-end relative">
-        <div className="absolute top-6 left-6 flex items-center gap-2">
-          <img
-            src="/favicon.svg"
-            alt="LIT"
-            className="w-8 h-8 rounded"
-          />
-          <span className="font-semibold tracking-tight">LIT — Trade Intelligence</span>
+    <div className="relative min-h-screen overflow-hidden bg-[#0c1129] px-4 py-12">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#1a2048_0%,rgba(11,15,34,0.85)_55%,rgba(8,11,26,0.96)_100%)]" />
+        <div className="absolute -left-24 top-[-10%] h-80 w-80 rounded-full bg-[#3C4EF5]/30 blur-3xl" />
+        <div className="absolute right-[-15%] bottom-[-10%] h-[420px] w-[420px] rounded-full bg-[#22D3EE]/25 blur-[120px]" />
+        <div className="absolute left-1/2 top-1/4 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-[#AB34F5]/12 blur-[140px]" />
+      </div>
+
+      <FluidHoverSkin
+        className="relative z-10 w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl shadow-[0_40px_120px_rgba(5,8,22,0.55)] transition-transform duration-700 md:grid md:grid-cols-[1.05fr,1fr]"
+        colors={["rgba(60,78,245,0.6)", "rgba(171,52,245,0.55)", "rgba(34,211,238,0.45)"]}
+        intensity={0.8}
+      >
+        <div className="relative hidden overflow-hidden md:flex md:flex-col md:justify-between">
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/8 via-white/5 to-transparent" />
+          <div className="pointer-events-none absolute inset-5 rounded-3xl border border-white/10" />
+
+          <div className="relative flex h-full flex-col gap-10 px-10 py-12 text-white">
+            <div className="flex items-center gap-3 text-white/80">
+              <img src="/logo.png" alt="Logistics Intel logo" className="h-10 w-10 rounded-lg border border-white/20 bg-white/10 p-1" loading="lazy" />
+              <span className="text-sm uppercase tracking-[0.35em] text-white/50">Logistics Intel</span>
+            </div>
+
+            <div className="space-y-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.45em] text-white/40">Account Access</p>
+              {welcomeName ? (
+                <>
+                  <h2 className="text-4xl font-bold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-[#3C4EF5] to-fuchsia-300">
+                    {welcomeName}
+                  </h2>
+                  <p className="max-w-sm text-base text-white/70">
+                    Welcome back. Your saved searches, shipment alerts, and prospect queues are ready whenever you are.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-4xl font-semibold leading-tight">Freight Intelligence Platform</h2>
+                  <p className="max-w-sm text-base text-white/70">
+                    Search companies by trade activity, track shipments, and automate outreach from one unified workspace.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <dl className="mt-auto grid gap-6 text-sm text-white/60 sm:grid-cols-2">
+              <div>
+                <dt className="uppercase tracking-[0.3em] text-white/40">Coverage</dt>
+                <dd className="text-lg font-semibold text-white">3.2M+ companies</dd>
+              </div>
+              <div>
+                <dt className="uppercase tracking-[0.3em] text-white/40">Signals</dt>
+                <dd className="text-lg font-semibold text-white">Daily shipment updates</dd>
+              </div>
+            </dl>
+          </div>
         </div>
-        <div>
-            <h2 className="text-2xl font-semibold mb-2">
-              {welcomeName ? `Welcome back, ${welcomeName}` : 'Freight Intelligence Platform'}
-            </h2>
-          <p className="text-white/80 text-sm">Search companies by trade activity, track shipments, and automate outreach.</p>
-        </div>
-        </div>
-        <div className="w-full md:w-1/2 flex items-center">
-          <Card className="rounded-none border-0 w-full bg-white">
-          <CardHeader className="pb-2">
-              <CardTitle className="text-xl">{welcomeName ? `Welcome back, ${welcomeName}` : 'Sign in to LIT'}</CardTitle>
-            {err && <p className="text-red-600 text-sm mt-1">{err}</p>}
-          </CardHeader>
-          <CardContent className="space-y-4 pt-0">
-            <form onSubmit={handleEmailPassword} className="grid grid-cols-1 gap-3">
-              <input
-                type="email"
-                className="border rounded px-3 py-2"
-                placeholder="Work email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-              <input
-                type="password"
-                className="border rounded px-3 py-2"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white">
+
+        <div className="relative bg-white/96 px-8 py-10 sm:px-10">
+          <div className="absolute -left-6 top-10 hidden h-24 w-24 rounded-full bg-[#3C4EF5]/10 blur-2xl sm:block" />
+          <div className="relative">
+            <div className="mb-8 space-y-3">
+              {welcomeName ? (
+                <>
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                    Welcome Back
+                  </span>
+                  <h1 className="text-3xl font-black leading-tight text-transparent bg-clip-text bg-gradient-to-r from-[#3C4EF5] via-[#22D3EE] to-[#AB34F5]">
+                    {welcomeName}
+                  </h1>
+                  <p className="text-sm text-slate-500">
+                    We saved your workspace so you can pick up your outreach and account intel instantly.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                    Access Portal
+                  </span>
+                  <h1 className="text-3xl font-bold leading-tight text-slate-900">Sign in to Logistics Intel</h1>
+                  <p className="text-sm text-slate-500">
+                    Use your business credentials to access shipment intelligence, company profiles, and outreach tools.
+                  </p>
+                </>
+              )}
+            </div>
+
+            {err && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                {err}
+              </div>
+            )}
+
+            <form onSubmit={handleEmailPassword} className="grid grid-cols-1 gap-4">
+              <label className="space-y-2 text-sm font-medium text-slate-600">
+                <span>Work email</span>
+                <input
+                  type="email"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-slate-900 shadow-sm focus:border-[#3C4EF5] focus:outline-none focus:ring-2 focus:ring-[#3C4EF5]/30"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="space-y-2 text-sm font-medium text-slate-600">
+                <span>Password</span>
+                <input
+                  type="password"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-slate-900 shadow-sm focus:border-[#3C4EF5] focus:outline-none focus:ring-2 focus:ring-[#3C4EF5]/30"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </label>
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-[#3C4EF5] focus:ring-[#3C4EF5]" />
+                  Remember this device
+                </label>
+                <button type="button" className="font-medium text-[#3C4EF5] hover:underline" onClick={() => nav("/request-demo")}>Need help?</button>
+              </div>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#3C4EF5] via-[#4F46E5] to-[#22D3EE] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#3C4EF5]/30 transition focus:outline-none focus:ring-2 focus:ring-[#22D3EE] focus:ring-offset-2 focus:ring-offset-white disabled:opacity-70"
+              >
                 {loading ? "Signing in…" : "Sign in"}
               </Button>
             </form>
-            <div className="flex flex-col gap-2">
-              <Button variant="outline" onClick={handleGoogle} className="justify-start gap-3">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-4 h-4" />
-                <span>Continue with Google</span>
-              </Button>
-              <Button variant="outline" onClick={handleMicrosoft} className="justify-start gap-3">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" alt="Microsoft" className="w-4 h-4" />
-                <span>Continue with Microsoft</span>
-              </Button>
+
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-3 text-xs uppercase tracking-[0.3em] text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                <span>or continue with</span>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <div className="grid gap-3">
+                <Button variant="outline" onClick={handleGoogle} className="group inline-flex items-center justify-center gap-3 rounded-xl border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300">
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="h-4 w-4" />
+                  <span className="group-hover:text-slate-700">Continue with Google</span>
+                </Button>
+                <Button variant="outline" onClick={handleMicrosoft} className="group inline-flex items-center justify-center gap-3 rounded-xl border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" alt="Microsoft" className="h-4 w-4" />
+                  <span className="group-hover:text-slate-700">Continue with Microsoft</span>
+                </Button>
+              </div>
             </div>
-            <div className="text-sm text-gray-500 pt-2">
-              Don’t have an account? <button className="text-blue-600 hover:underline" onClick={() => nav('/signup')}>Start your 14‑day trial</button>
+
+            <div className="mt-8 text-sm text-slate-500">
+              Don’t have an account?{" "}
+              <button className="font-semibold text-[#3C4EF5] hover:underline" type="button" onClick={() => nav("/signup")}>
+                Start your 14‑day trial
+              </button>
             </div>
-          </CardContent>
-          </Card>
+          </div>
         </div>
-      </div>
+      </FluidHoverSkin>
     </div>
   );
 }
