@@ -28,7 +28,9 @@ export default function WelcomeBanner({ userName = 'there', lastLoginIso = null 
   const text = useMemo(() => getWelcomeMessage(userName, lastLoginIso), [userName, lastLoginIso]);
   return (
     <div className="mb-4 rounded-xl bg-white border p-4 flex items-center gap-3">
-      <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500" />
+      <div className="relative flex h-10 w-10 items-center justify-center">
+        <img src="/logo.png" alt="Logistics Intel logo" className="h-10 w-10 rounded-md shadow-sm ring-1 ring-gray-200" loading="lazy" />
+      </div>
       <div>
         <p className="font-semibold leading-tight">{text}</p>
         <p className="text-xs text-gray-500">Here are your latest insights and activity.</p>
