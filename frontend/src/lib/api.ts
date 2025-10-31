@@ -47,18 +47,6 @@ import { auth } from '@/auth/firebaseClient';
 // Gateway base (env override → default)
 const GW = '/api/lit';
 
-function resolveSearchUnifiedBase() {
-  let env = '';
-  try {
-    env = typeof process !== 'undefined' && process.env ? String(process.env.NEXT_PUBLIC_SEARCH_UNIFIED_URL ?? '') : '';
-  } catch {
-    env = '';
-  }
-  const client = typeof window !== 'undefined' ? String((window as any).__SEARCH_UNIFIED__ ?? '') : '';
-  const base = (env || client || '').trim();
-  return base ? base.replace(/\/$/, '') : '';
-}
-
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
   if (!r.ok) {
@@ -135,7 +123,7 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const res = await fetch(`/api/lit/public/searchCompanies`, {
+  const res = await fetch(`/api/lit/public/searchCompanies2`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {})
   });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
@@ -158,71 +146,45 @@ export async function searchCompanies(
     dest_port?: string | null;
     page?: number;
     pageSize?: number;
-    limit?: number;
-    offset?: number;
   },
   signal?: AbortSignal
 ) {
-  const limit = Math.max(1, Math.min(100, Number(input?.pageSize ?? input?.limit ?? 30)));
-  const offsetSource = input?.offset ?? (input?.page != null ? Number(input.page) * limit : 0);
-  const offset = Math.max(0, Number(offsetSource ?? 0));
-  const qNorm = (input?.q ?? '').trim();
+  // TEMP: prefer direct Gateway if configured; fallback to proxy
+  const directBase = (typeof window !== 'undefined' && (window as any).__LIT_BASE__)
+    || (typeof import_meta !== 'undefined' && (import_meta as any)?.env?.VITE_API_BASE)
+    || (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_API_BASE)
+    || '';
+  const url = String(directBase || '').trim()
+    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies2`
+    : '/api/lit/public/searchCompanies2';
+  const params = buildSearchParams(input);
+  // Try proxy first; on failure, fall back to Gateway directly
+  const tryProxy = () => fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(params ?? {}),
+    signal,
+  });
+  const tryGateway = () => fetch(`${GATEWAY_BASE_DEFAULT}/public/searchCompanies2`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
+  });
 
-  const payload: Record<string, any> = { ...input };
-  delete payload.page;
-  delete payload.pageSize;
-  payload.q = qNorm;
-  payload.limit = limit;
-  payload.offset = offset;
-
-  for (const key of Object.keys(payload)) {
-    const value = payload[key];
-    if (value === undefined || value === null) {
-      delete payload[key];
-      continue;
-    }
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        delete payload[key];
-        continue;
-      }
-      payload[key] = trimmed;
-    }
+  let res: Response | null = null;
+  try {
+    res = await tryProxy();
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok || !ct.includes('application/json')) throw new Error(`proxy_bad_${res.status}`);
+  } catch {
+    res = await tryGateway();
   }
-
-  const body = JSON.stringify(payload);
-  const directBase = resolveSearchUnifiedBase();
-  const directUrl = directBase ? `${directBase}/public/searchCompanies` : null;
-
-  const request = (url: string, includeCredentials: boolean) =>
-    fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-      signal,
-      credentials: includeCredentials ? 'include' : 'same-origin',
-    });
-
-  let res: Response;
-  if (directUrl) {
-    res = await request(directUrl, true);
-    if (!res.ok) {
-      res = await request('/api/lit/public/searchCompanies', false);
-    }
-  } else {
-    res = await request('/api/lit/public/searchCompanies', false);
-  }
-
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
   const data = await res.json().catch(() => ({}));
+  // Adapter: accept {items,total} or {rows,meta} or {results,count}
   const items = Array.isArray(data?.items)
     ? data.items
-    : Array.isArray(data?.rows)
+    : (Array.isArray(data?.rows)
       ? data.rows
-      : Array.isArray(data?.results)
-        ? data.results
-        : [];
+      : (Array.isArray(data?.results) ? data.results : []));
   const total = typeof data?.total === 'number'
     ? data.total
     : (data?.meta?.total ?? data?.count ?? items.length);
@@ -510,161 +472,49 @@ export const api = {
 };
 
 // New API helpers for Company Lanes and Shipments drill-down via direct service
-type CompanyLanesParams = {
-  company_id?: string | null;
-  company?: string | null;
-  month?: string;
+export async function fetchCompanyLanes(params: {
+  company: string;
+  month?: string;      // YYYY-MM-01
   origin?: string;
   dest?: string;
   limit?: number;
   offset?: number;
-};
-
-export async function fetchCompanyLanes(
-  companyOrParams: string | CompanyLanesParams,
-  overrides?: { month?: string; origin?: string; dest?: string; limit?: number; offset?: number }
-) {
-  const payload: CompanyLanesParams = typeof companyOrParams === 'string'
-    ? { company_id: companyOrParams, ...overrides }
-    : { ...companyOrParams, ...overrides };
-
-  const companyIdRaw = payload.company_id ?? null;
-  const companyNameRaw = payload.company ?? null;
-  const companyId = companyIdRaw != null ? String(companyIdRaw).trim() : '';
-  const companyName = companyNameRaw != null ? String(companyNameRaw).trim() : '';
-
-  if (!companyId && !companyName) {
-    return { rows: [] as any[] };
-  }
-
-  const bodyObj: Record<string, any> = {
-    ...(companyId ? { company_id: companyId } : {}),
-    ...(companyName ? { company: companyName, name_norm: companyName } : {}),
-    origin: payload.origin,
-    dest: payload.dest,
-    month: payload.month,
-    limit: payload.limit ?? 10,
-    offset: payload.offset ?? 0,
-  };
-
-  for (const key of Object.keys(bodyObj)) {
-    const value = bodyObj[key];
-    if (value === undefined || value === null) {
-      delete bodyObj[key];
-    } else if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed && key !== 'company_id') {
-        delete bodyObj[key];
-      } else {
-        bodyObj[key] = trimmed;
-      }
-    }
-  }
-
-  const body = JSON.stringify(bodyObj);
-  const directBase = resolveSearchUnifiedBase();
-  const directUrl = directBase ? `${directBase}/public/companyLanes` : null;
-
-  const request = (url: string, includeCredentials: boolean) =>
-    fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-      credentials: includeCredentials ? 'include' : 'same-origin',
-    });
-
-  let res: Response;
-  if (directUrl) {
-    res = await request(directUrl, true);
-    if (!res.ok) {
-      res = await request('/api/lit/public/companyLanes', false);
-    }
-  } else {
-    res = await request('/api/lit/public/companyLanes', false);
-  }
-
+}) {
+  const base = (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_SEARCH_UNIFIED_URL)
+    || (typeof window !== 'undefined' && (window as any).__SEARCH_UNIFIED__)
+    || '';
+  const serviceBase = String(base || '').replace(/\/$/, '');
+  const res = await fetch(`${serviceBase}/public/companyLanes`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(params),
+  });
   if (!res.ok) throw new Error(`companyLanes ${res.status}`);
   return res.json();
 }
 
-type CompanyShipmentsParams = {
-  company_id?: string | null;
-  company?: string | null;
-  name_norm?: string | null;
-  mode?: 'air' | 'ocean';
-  origin?: string | null;
-  dest?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
+export async function fetchCompanyShipments(params: {
+  company: string;
+  name_norm?: string;
+  mode?: "air"|"ocean";
+  origin?: string;
+  dest?: string;
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
   limit?: number;
   offset?: number;
-};
-
-export async function fetchCompanyShipments(
-  companyOrParams: string | CompanyShipmentsParams,
-  overrides?: { mode?: 'air' | 'ocean'; origin?: string; dest?: string; startDate?: string; endDate?: string; limit?: number; offset?: number }
-) {
-  const payload: CompanyShipmentsParams = typeof companyOrParams === 'string'
-    ? { company_id: companyOrParams, ...overrides }
-    : { ...companyOrParams, ...overrides };
-
-  const companyIdRaw = payload.company_id ?? null;
-  const companyNameRaw = payload.company ?? payload.name_norm ?? null;
-  const companyId = companyIdRaw != null ? String(companyIdRaw).trim() : '';
-  const companyName = companyNameRaw != null ? String(companyNameRaw).trim() : '';
-
-  if (!companyId && !companyName) {
-    return { rows: [] as any[] };
-  }
-
-  const bodyObj: Record<string, any> = {
-    ...(companyId ? { company_id: companyId } : {}),
-    ...(companyName ? { company: companyName, name_norm: companyName } : {}),
-    mode: payload.mode,
-    origin: payload.origin,
-    dest: payload.dest,
-    startDate: payload.startDate,
-    endDate: payload.endDate,
-    limit: payload.limit ?? 25,
-    offset: payload.offset ?? 0,
-  };
-
-  for (const key of Object.keys(bodyObj)) {
-    const value = bodyObj[key];
-    if (value === undefined || value === null) {
-      delete bodyObj[key];
-    } else if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed && key !== 'company_id') {
-        delete bodyObj[key];
-      } else {
-        bodyObj[key] = trimmed;
-      }
-    }
-  }
-
-  const body = JSON.stringify(bodyObj);
-  const directBase = resolveSearchUnifiedBase();
-  const directUrl = directBase ? `${directBase}/public/companyShipments` : null;
-
-  const request = (url: string, includeCredentials: boolean) =>
-    fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-      credentials: includeCredentials ? 'include' : 'same-origin',
-    });
-
-  let res: Response;
-  if (directUrl) {
-    res = await request(directUrl, true);
-    if (!res.ok) {
-      res = await request('/api/lit/public/companyShipments', false);
-    }
-  } else {
-    res = await request('/api/lit/public/companyShipments', false);
-  }
-
+}) {
+  const base = (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_SEARCH_UNIFIED_URL)
+    || (typeof window !== 'undefined' && (window as any).__SEARCH_UNIFIED__)
+    || '';
+  const serviceBase = String(base || '').replace(/\/$/, '');
+  const res = await fetch(`${serviceBase}/public/companyShipments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(params),
+  });
   if (!res.ok) throw new Error(`companyShipments ${res.status}`);
   return res.json();
 }
