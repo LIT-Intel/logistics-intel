@@ -403,9 +403,9 @@ export default function CommandCenter() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100 text-slate-900 p-[5px]">
+    <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100 p-[5px] text-slate-900">
       <header className="sticky top-0 z-20 mx-[5px] mt-[5px] rounded-xl border border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between md:px-6 md:py-4">
+        <div className="flex w-full flex-col gap-3 px-[5px] py-[5px] sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-base font-semibold tracking-tight sm:text-xl">LIT Command Center</h1>
             <p className="text-xs text-slate-500 sm:text-sm">ZoomInfo-style two-pane workflow · Search → Select → Act</p>
@@ -430,8 +430,8 @@ export default function CommandCenter() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-[5px] py-3 md:px-6 md:py-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12 md:gap-4">
+      <div className="px-[5px] py-[5px]">
+        <div className="grid grid-cols-1 gap-[5px] md:grid-cols-12">
           <aside className="md:col-span-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-3 md:p-4">
               <div className="flex flex-wrap gap-2 text-xs text-slate-500">
