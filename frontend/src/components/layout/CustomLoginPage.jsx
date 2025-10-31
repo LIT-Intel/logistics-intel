@@ -218,7 +218,7 @@ export default function CustomLoginPage({ onClose }) {
             </div>
           </div>
         </div>
-      </FluidHoverSkin>
+      </div>
     </div>
   );
 }
