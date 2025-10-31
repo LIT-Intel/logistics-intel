@@ -132,62 +132,60 @@ export async function postSearchCompanies(payload: any) {
 
 const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
 
-export async function searchCompanies(
-  input: {
-    q?: string | null;
-    origin?: string | null;
-    destination?: string | null;
-    hs?: string | null;
-    mode?: 'air' | 'ocean' | null;
-    origin_city?: string | null;
-    dest_city?: string | null;
-    dest_state?: string | null;
-    dest_postal?: string | null;
-    dest_port?: string | null;
-    page?: number;
-    pageSize?: number;
-  },
-  signal?: AbortSignal
-) {
-  // TEMP: prefer direct Gateway if configured; fallback to proxy
-  const directBase = (typeof window !== 'undefined' && (window as any).__LIT_BASE__)
-    || (typeof import_meta !== 'undefined' && (import_meta as any)?.env?.VITE_API_BASE)
-    || (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_API_BASE)
-    || '';
-  const url = String(directBase || '').trim()
-    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies2`
-    : '/api/lit/public/searchCompanies2';
-  const params = buildSearchParams(input);
-  // Try proxy first; on failure, fall back to Gateway directly
-  const tryProxy = () => fetch(url, {
+const ENV_DIRECT_SEARCH_BASE = (() => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      const raw = process.env.NEXT_PUBLIC_SEARCH_UNIFIED_URL ?? '';
+      return raw ? String(raw).trim().replace(/\/$/, '') : '';
+    }
+  } catch {
+    /* ignore */
+  }
+  return '';
+})();
+
+export async function searchCompanies(body: { q?: string; limit?: number; offset?: number }, signal?: AbortSignal) {
+  const payload = {
+    q: (body?.q ?? '').trim(),
+    limit: Math.max(1, Math.min(100, Number(body?.limit ?? 20))),
+    offset: Math.max(0, Number(body?.offset ?? 0)),
+  };
+
+  const requestInit: RequestInit = {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(params ?? {}),
+    body: JSON.stringify(payload),
     signal,
-  });
-  const tryGateway = () => fetch(`${GATEWAY_BASE_DEFAULT}/public/searchCompanies2`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
-  });
+  };
+
+  const envDirectBase = ENV_DIRECT_SEARCH_BASE;
+  const BASE = envDirectBase || '/api/lit';
+  const directCandidate = isRunDirectEnabled() ? (resolveSearchUnifiedBase() || envDirectBase) : '';
+  const directUrl = directCandidate ? `${directCandidate}/public/searchCompanies2` : null;
+  const proxyBase = directUrl ? '/api/lit' : (BASE === '/api/lit' ? BASE : '/api/lit');
+  const proxyUrl = `${proxyBase}/public/searchCompanies2`;
 
   let res: Response | null = null;
-  try {
-    res = await tryProxy();
-    const ct = res.headers.get('content-type') || '';
-    if (!res.ok || !ct.includes('application/json')) throw new Error(`proxy_bad_${res.status}`);
-  } catch {
-    res = await tryGateway();
+  if (directUrl) {
+    try {
+      res = await fetch(directUrl, requestInit);
+    } catch {
+      res = null;
+    }
+    if (!res || !res.ok) {
+      res = await fetch(proxyUrl, requestInit);
+    }
+  } else {
+    res = await fetch(proxyUrl, requestInit);
   }
-  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-  const data = await res.json().catch(() => ({}));
-  // Adapter: accept {items,total} or {rows,meta} or {results,count}
-  const items = Array.isArray(data?.items)
-    ? data.items
-    : (Array.isArray(data?.rows)
-      ? data.rows
-      : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.total === 'number'
-    ? data.total
-    : (data?.meta?.total ?? data?.count ?? items.length);
+
+  if (!res.ok) {
+    throw new Error(`searchCompanies2 failed ${res.status}`);
+  }
+
+  const data = await res.json().catch(() => ({ items: [], total: 0 }));
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const total = typeof data?.total === 'number' ? data.total : items.length;
   return { items, total } as { items: any[]; total: number };
 }
 

@@ -1,79 +1,164 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { fetchCompanyLanes, fetchCompanyShipments } from '@/lib/api';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Card, CardContent } from '@/components/ui/card';
 
-export default function CompanyDrawer({ id, open, onOpenChange }) {
-  const details = useQuery({
-    queryKey: ['companyDetails', id],
-    queryFn: () => api.get(`/public/getCompanyDetails?company_id=${id}`),
-    enabled: open && !!id,
-  });
+function formatNumber(value: unknown) {
+  const num = typeof value === 'number' ? value : value == null ? null : Number(value);
+  if (num == null || Number.isNaN(num)) return '—';
+  return new Intl.NumberFormat().format(num);
+}
 
-  const shipments = useQuery({
-    queryKey: ['companyShipments', id],
-    queryFn: () => api.get(`/public/getCompanyShipments?company_id=${id}&limit=25&offset=0`),
-    enabled: open && !!id,
-  });
+function formatDate(value: unknown) {
+  if (!value) return '—';
+  const date = new Date(String((value as any)?.value ?? value));
+  if (Number.isNaN(date.getTime())) return String((value as any)?.value ?? value);
+  return date.toLocaleDateString();
+}
 
-  const kpis = details.data?.kpis || { shipments_12m: 0, last_activity: '—', top_route: undefined, top_carrier: undefined };
+export default function CompanyDrawer({ company, open, onOpenChange }: { company: any | null; open: boolean; onOpenChange: (open: boolean) => void }) {
+  if (!open || !company) {
+    return null;
+  }
+
+  const companyId = company?.company_id ? String(company.company_id) : '';
+  const [lanes, setLanes] = useState<any[]>([]);
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [loadingLanes, setLoadingLanes] = useState(false);
+  const [loadingShipments, setLoadingShipments] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!open || !companyId) {
+      setLanes([]);
+      return;
+    }
+    setLoadingLanes(true);
+    setLanes([]);
+    fetchCompanyLanes({ company_id: companyId, limit: 3 })
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.items) ? data.items : []);
+        setLanes(rows.slice(0, 3));
+      })
+      .catch(() => {
+        if (!cancelled) setLanes([]);
+      })
+      .finally(() => { if (!cancelled) setLoadingLanes(false); });
+    return () => { cancelled = true; };
+  }, [open, companyId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!open || !companyId) {
+      setShipments([]);
+      return;
+    }
+    setLoadingShipments(true);
+    setShipments([]);
+    fetchCompanyShipments(companyId, { limit: 50, offset: 0 })
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.items) ? data.items : []);
+        setShipments(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setShipments([]);
+      })
+      .finally(() => { if (!cancelled) setLoadingShipments(false); });
+    return () => { cancelled = true; };
+  }, [open, companyId]);
+
+  const lastActivity = useMemo(() => {
+    const raw = company?.last_activity;
+    if (!raw) return '—';
+    if (typeof raw === 'object' && raw !== null && 'value' in raw) return formatDate(raw.value);
+    return formatDate(raw);
+  }, [company]);
+
+  const lanesContent = lanes.length ? lanes.map((lane, idx) => {
+    const origin = lane.origin_country || lane.origin || lane.origin_label || 'Unknown';
+    const dest = lane.dest_country || lane.dest || lane.dest_label || 'Unknown';
+    const count = lane.cnt || lane.shipments || lane.count || 0;
+    return (
+      <span key={`${origin}-${dest}-${idx}`} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+        {origin || 'Unknown'} → {dest || 'Unknown'}
+        <span className="rounded-full bg-indigo-100 px-2 py-px text-[10px] text-indigo-500">{formatNumber(count)}</span>
+      </span>
+    );
+  }) : <span className="text-sm text-slate-500">{loadingLanes ? 'Loading lanes…' : 'No lane data yet.'}</span>;
 
   return (
     <div className={`fixed inset-0 z-50 ${open ? '' : 'hidden'}`}>
       <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="absolute right-0 top-0 h-full w-full md:w-[720px] bg-white rounded-l-2xl shadow-xl overflow-auto">
-        <div className="p-4 border-b">
-          <div className="text-lg font-semibold truncate">{details.data?.name || id}</div>
-          <div className="text-xs text-gray-500">Last activity {kpis.last_activity || '—'}</div>
+      <div className="absolute right-0 top-0 h-full w-full overflow-auto bg-white shadow-2xl md:w-[680px]">
+        <div className="border-b px-5 py-4">
+          <div className="text-lg font-semibold text-slate-900 truncate">{company?.company_name || companyId || 'Company Detail'}</div>
+          <div className="mt-1 text-xs text-slate-500">Last activity {lastActivity}</div>
         </div>
-        <div className="p-4">
-          <Tabs defaultValue="overview">
+        <div className="p-5 space-y-5">
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Shipments (12m)" value={formatNumber(company?.shipments_12m)} />
+            <Stat label="Total TEUs (12m)" value={formatNumber(company?.total_teus)} />
+            <Stat label="Growth" value="—" />
+            <Stat label="Company ID" value={companyId || '—'} />
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800 mb-2">Top Routes</h3>
+            <div className="flex flex-wrap gap-2">{lanesContent}</div>
+          </div>
+
+          <Tabs defaultValue="shipments" className="w-full">
             <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="shipments">Shipments</TabsTrigger>
-              <TabsTrigger value="ai">AI Insights</TabsTrigger>
             </TabsList>
-            <TabsContent value="overview">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Card><CardContent className="p-4"><div className="text-xs text-gray-500">Shipments (12m)</div><div className="text-xl font-bold">{kpis.shipments_12m?.toLocaleString?.() || 0}</div></CardContent></Card>
-                <Card><CardContent className="p-4"><div className="text-xs text-gray-500">Top Route</div><div className="text-sm font-medium">{kpis.top_route || '—'}</div></CardContent></Card>
-                <Card><CardContent className="p-4"><div className="text-xs text-gray-500">Top Carrier</div><div className="text-sm font-medium">{kpis.top_carrier || '—'}</div></CardContent></Card>
-              </div>
-            </TabsContent>
             <TabsContent value="shipments">
-              <div className="overflow-auto rounded border">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-white">
-                    <tr className="[&>th]:py-2 [&>th]:text-left">
-                      <th>Date</th><th>Mode</th><th>Origin</th><th>Destination</th><th>Carrier</th><th>Value (USD)</th><th>Weight (kg)</th>
+              <div className="overflow-auto rounded-xl border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Date</th>
+                      <th className="px-3 py-2 text-left">Origin</th>
+                      <th className="px-3 py-2 text-left">Destination</th>
+                      <th className="px-3 py-2 text-left">Carrier</th>
+                      <th className="px-3 py-2 text-right">TEU</th>
+                      <th className="px-3 py-2 text-right">Value (USD)</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {shipments.data?.rows?.map((r, i) => (
-                      <tr key={i} className="border-t">
-                        <td>{r.shipped_on}</td>
-                        <td className="capitalize">{String(r.mode || '').toLowerCase()}</td>
-                        <td>{r.origin}</td>
-                        <td>{r.destination}</td>
-                        <td>{r.carrier || '—'}</td>
-                        <td>{(typeof r.value_usd === 'number' || (typeof r.value_usd === 'string' && r.value_usd)) ? Number(r.value_usd).toLocaleString() : '—'}</td>
-                        <td>{(typeof r.weight_kg === 'number' || (typeof r.weight_kg === 'string' && r.weight_kg)) ? Number(r.weight_kg).toLocaleString() : '—'}</td>
+                  <tbody className="divide-y divide-slate-100">
+                    {shipments.map((row, index) => (
+                      <tr key={`${row.shipment_id || row.id || index}-${index}`} className="bg-white">
+                        <td className="px-3 py-2 text-slate-700">{formatDate(row.shipped_on ?? row.date)}</td>
+                        <td className="px-3 py-2 text-slate-600">{cleanLabel(row.origin_country || row.origin || row.origin_city)}</td>
+                        <td className="px-3 py-2 text-slate-600">{cleanLabel(row.dest_country || row.destination || row.dest_city)}</td>
+                        <td className="px-3 py-2 text-slate-600">{cleanCarrier(row.carrier)}</td>
+                        <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.teu)}</td>
+                        <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.value_usd)}</td>
                       </tr>
                     ))}
-                    {!shipments.data?.rows?.length && (
-                      <tr><td colSpan={7} className="py-8 text-center text-gray-500">No shipments for this range.</td></tr>
+                    {!shipments.length && (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">
+                          {loadingShipments ? 'Loading shipments…' : 'No shipments found.'}
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </TabsContent>
-            <TabsContent value="ai">
-              <div className="text-sm text-gray-600">Generate briefing coming soon.</div>
-            </TabsContent>
           </Tabs>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-lg font-semibold text-slate-900">{value}</div>
     </div>
   );
 }

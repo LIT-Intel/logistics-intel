@@ -19,37 +19,11 @@ export default async function handler(req: any, res: any) {
   }
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    // Build upstream payload, normalizing field names to backend contract
-    const hs_codes = (() => {
-      if (Array.isArray(body.hs_codes)) return body.hs_codes.join(',');
-      if (Array.isArray(body.hs)) return body.hs.join(',');
-      if (typeof body.hs_codes === 'string') return body.hs_codes;
-      if (typeof body.hs === 'string') return body.hs;
-      if (typeof body.hsCodes === 'string') return body.hsCodes;
-      return undefined;
-    })();
-
-    const payload: Record<string, any> = {};
-    const assign = (k: string, v: any) => { if (v !== undefined && v !== null && (typeof v !== 'string' || v.trim() !== '')) payload[k] = v; };
-    assign('q', body.q ?? null);
-    assign('mode', body.mode ?? null);
-    assign('origin', body.origin ?? body.origin_country ?? null);
-    assign('destination', body.destination ?? body.dest ?? body.dest_country ?? null);
-    assign('origin_city', body.origin_city);
-    assign('origin_state', body.origin_state);
-    assign('origin_zip', body.origin_zip);
-    assign('dest_city', body.dest_city);
-    assign('dest_state', body.dest_state);
-    assign('dest_zip', body.dest_zip);
-    assign('carrier', body.carrier);
-    assign('hs_codes', hs_codes);
-    assign('date_start', body.date_start);
-    assign('date_end', body.date_end);
-    assign('min_value_usd', body.min_value_usd);
-    assign('max_value_usd', body.max_value_usd);
-    assign('page', body.page ?? 1);
-    assign('page_size', body.page_size ?? body.pageSize ?? 24);
-
+    const payload = {
+      q: String(body.q ?? '').trim(),
+      limit: Math.max(1, Math.min(100, Number(body.limit ?? body.page_size ?? body.pageSize ?? 20))),
+      offset: Math.max(0, Number(body.offset ?? ((body.page ? Number(body.page) - 1 : 0) * Number(body.page_size ?? body.pageSize ?? 20))))
+    };
     const upstream = await fetch(`${String(TARGET_BASE_URL).replace(/\/$/, '')}/public/searchCompanies2`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

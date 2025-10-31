@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutGrid, List as ListIcon, Sliders, TrendingUp, Ship, Clock, Box, Zap, X, MapPin, Search as SearchIcon, Bookmark, Bell, ArrowRight, Lock, DollarSign } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { hasFeature } from '@/lib/access';
@@ -6,23 +6,13 @@ import { hasFeature } from '@/lib/access';
 // Keep existing app wiring and proxies intact
 import { useSearch } from '@/app/search/useSearch';
 import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
-import { searchCompanies as searchCompaniesApi } from "@/lib/api"; // <-- soft autocomplete uses the lib client
 import { Button } from '@/components/ui/button';
 import AutocompleteInput from '@/components/search/AutocompleteInput';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import CompanyModal from '@/components/search/CompanyModal';
+import CompanyDrawer from '@/components/company/CompanyDrawer';
 import { FiltersDrawer } from '@/components/FiltersDrawer';
 import SearchEmpty from '@/components/SearchEmpty';
-
-// --- tiny debounce helper (no external deps) ---
-const useDebounced = <T extends any[]>(fn: (...args: T) => void, delay = 300) => {
-  const t = useRef<number | null>(null);
-  return (...args: T) => {
-    if (t.current) window.clearTimeout(t.current);
-    t.current = window.setTimeout(() => fn(...args), delay);
-  };
-};
 
 // --- Design Tokens (UI only; no API impact) ---
 const STYLES = {
@@ -61,7 +51,8 @@ function SaveToCommandCenterButton({ row, size = 'sm', activeFilters }: { row: a
     } catch { return false; }
   });
   const [showUpsell, setShowUpsell] = useState(false);
-  const onClick = async () => {
+  const onClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     if (saving || saved) return;
     // Gating: require subscription unless whitelisted email
     const email = String(user?.email || '').toLowerCase();
@@ -200,7 +191,11 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const topBorder = { borderTop: `4px solid ${STYLES.brandPurple}` } as const;
   const alias = (r as any)?.domain || '';
   return (
-    <div className="rounded-xl bg-white p-5 min-h-[220px] shadow-md hover:shadow-lg transition border border-gray-200 cursor-default" style={topBorder}>
+    <div
+      className="rounded-xl bg-white p-5 min-h-[220px] shadow-md hover:shadow-lg transition border border-gray-200 cursor-pointer"
+      style={topBorder}
+      onClick={() => onOpen(r)}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[13px] text-slate-500">Company</div>
@@ -208,7 +203,7 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           <div className="text-sm text-gray-500 truncate">{alias || `ID: ${id}`}</div>
           <div className="mt-2 flex items-center gap-2">
             <SaveToCommandCenterButton row={r} />
-            <span className="inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 text-[11px] px-2 py-0.5">
+            <span className="inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 text-[11px] px-2 py-0.5" onClick={(event) => event.stopPropagation()}>
               Ready
             </span>
           </div>
@@ -225,7 +220,12 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
         <div className="flex items-center gap-2 text-xs text-gray-600">
           {top ? (<><MapPin className="w-3.5 h-3.5 text-red-500" />{top.origin_country} → {top.dest_country}</>) : 'No route data'}
         </div>
-        <button onClick={() => onOpen(r)} className="text-sm text-gray-700 hover:text-gray-900 font-medium inline-flex items-center">Details <ArrowRight className="w-4 h-4 ml-1"/></button>
+        <button
+          onClick={(event) => { event.stopPropagation(); onOpen(r); }}
+          className="text-sm text-gray-700 hover:text-gray-900 font-medium inline-flex items-center"
+        >
+          Details <ArrowRight className="w-4 h-4 ml-1"/>
+        </button>
       </div>
     </div>
   );
@@ -290,7 +290,7 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <SaveToCommandCenterButton row={r} activeFilters={filters} />
-                  <Button variant="ghost" size="sm" className="ml-2" onClick={() => onOpen(r)}>Details</Button>
+                  <Button variant="ghost" size="sm" className="ml-2" onClick={(event) => { event.stopPropagation(); onOpen(r); }}>Details</Button>
                   {isSaved && (
                     <span className="ml-2 inline-flex items-center justify-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] px-2 py-0.5 align-middle">Saved</span>
                   )}
@@ -306,7 +306,22 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
 
 export default function SearchPage() {
   // Keep existing search hook (wires to /api/lit/public/searchCompanies)
-  const { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext } = useSearch();
+  const {
+    q,
+    setQ,
+    rows,
+    loading,
+    run,
+    next,
+    prev,
+    page,
+    limit,
+    setLimit,
+    filters,
+    setFilters,
+    hasNext,
+    initialized,
+  } = useSearch();
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
@@ -322,8 +337,6 @@ export default function SearchPage() {
       .catch(() => setFilterOptionsReady(true));
     return () => ac.abort();
   }, []);
-
-  const hasSearched = (q || '').trim().length > 0;
 
   const dedupedRows = useMemo(() => {
     const seen = new Set<string>();
@@ -429,10 +442,10 @@ export default function SearchPage() {
         />
 
         {/* Results */}
-        {!hasSearched && rows.length === 0 && <SearchEmpty state="idle" />}
-        {hasSearched && rows.length === 0 && !loading && <SearchEmpty state="no-results" />}
+        {!initialized && loading && <SearchEmpty state="idle" />}
+        {initialized && !loading && dedupedRows.length === 0 && <SearchEmpty state="no-results" />}
 
-        {rows.length > 0 && (
+        {dedupedRows.length > 0 && (
           <div className="pt-2">
             {view === 'Cards' && <ResultsCards rows={dedupedRows} onOpen={(r)=> setModal(r)} filters={filters} />}
             {view === 'List' && (
@@ -454,7 +467,13 @@ export default function SearchPage() {
       </div>
 
       {/* Detail Modal */}
-      <CompanyModal company={modal} open={Boolean(modal)} onClose={(open)=>{ if (!open) setModal(null); }} />
+      <CompanyDrawer
+        company={modal}
+        open={Boolean(modal)}
+        onOpenChange={(open) => {
+          if (!open) setModal(null);
+        }}
+      />
     </div>
   );
 }
