@@ -47,8 +47,6 @@ import { auth } from '@/auth/firebaseClient';
 // Gateway base (env override → default)
 const GW = '/api/lit';
 
-<<<<<<< HEAD
-=======
 function isRunDirectEnabled(): boolean {
   try {
     if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_USE_RUN_DIRECT != null) {
@@ -75,8 +73,6 @@ function resolveSearchUnifiedBase() {
   const base = (env || client || '').trim();
   return base ? base.replace(/\/$/, '') : '';
 }
-
->>>>>>> 941444a (Refactor: Improve data cleaning and API routing)
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
   if (!r.ok) {
