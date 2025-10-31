@@ -50,7 +50,7 @@ export default async function handler(req: any, res: any) {
     assign('page', body.page ?? 1);
     assign('page_size', body.page_size ?? body.pageSize ?? 24);
 
-    const upstream = await fetch(`${String(TARGET_BASE_URL).replace(/\/$/, '')}/public/searchCompanies`, {
+    const upstream = await fetch(`${String(TARGET_BASE_URL).replace(/\/$/, '')}/public/searchCompanies2`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
