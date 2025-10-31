@@ -67,7 +67,7 @@ export default function CompanyLanesPanel({ companyId, limit = 3 }: Props) {
             <span>{origin}</span>
             <span className="text-slate-400">→</span>
             <span>{dest}</span>
-            <span className="ml-1 rounded-full bg-indigo-100 px-2 py-px text-[10px] text-indigo-500">{new Intl.NumberFormat().format(count)}</span>
+            <span className="text-indigo-500">({formatCount(count)})</span>
           </span>
         );
       })}
@@ -81,4 +81,10 @@ function cleanLabel(value: unknown) {
   if (!text) return 'Unknown';
   if (text.toLowerCase() === 'none' || text === '-') return 'Unknown';
   return text;
+}
+
+function formatCount(value: unknown) {
+  const num = typeof value === 'number' ? value : value == null ? null : Number(value);
+  if (num == null || Number.isNaN(num)) return '0';
+  return new Intl.NumberFormat().format(num);
 }

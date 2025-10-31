@@ -47,6 +47,36 @@ import { auth } from '@/auth/firebaseClient';
 // Gateway base (env override → default)
 const GW = '/api/lit';
 
+<<<<<<< HEAD
+=======
+function isRunDirectEnabled(): boolean {
+  try {
+    if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_USE_RUN_DIRECT != null) {
+      return process.env.NEXT_PUBLIC_USE_RUN_DIRECT === 'true';
+    }
+  } catch {
+    /* ignore */
+  }
+  if (typeof window !== 'undefined' && (window as any).__USE_RUN_DIRECT__ != null) {
+    return Boolean((window as any).__USE_RUN_DIRECT__);
+  }
+  return false;
+}
+
+function resolveSearchUnifiedBase() {
+  if (!isRunDirectEnabled()) return '';
+  let env = '';
+  try {
+    env = typeof process !== 'undefined' && process.env ? String(process.env.NEXT_PUBLIC_SEARCH_UNIFIED_URL ?? '') : '';
+  } catch {
+    env = '';
+  }
+  const client = typeof window !== 'undefined' ? String((window as any).__SEARCH_UNIFIED__ ?? '') : '';
+  const base = (env || client || '').trim();
+  return base ? base.replace(/\/$/, '') : '';
+}
+
+>>>>>>> 941444a (Refactor: Improve data cleaning and API routing)
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
   if (!r.ok) {

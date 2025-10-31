@@ -13,11 +13,31 @@ function formatNumber(value: unknown) {
 }
 
 function formatDate(value: unknown) {
-  if (!value) return '—';
+  if (!value) return 'Unknown';
   const source = (value as any)?.value ?? value;
-  const date = new Date(String(source));
-  if (Number.isNaN(date.getTime())) return String(source);
+  const text = String(source).trim();
+  if (!text || text === '-' || text.toLowerCase() === 'none' || text.toLowerCase() === 'unknown') {
+    return 'Unknown';
+  }
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
   return date.toLocaleDateString();
+}
+
+function cleanLabel(value: unknown) {
+  if (value == null) return 'Unknown';
+  const text = String(value).trim();
+  if (!text) return 'Unknown';
+  const lowered = text.toLowerCase();
+  return lowered === 'none' || lowered === 'unknown' || text === '-' ? 'Unknown' : text;
+}
+
+function cleanCarrier(value: unknown) {
+  if (value == null) return 'Unknown';
+  const text = String(value).trim();
+  if (!text || text === '-' || text === '—') return 'Unknown';
+  const lowered = text.toLowerCase();
+  return lowered === 'none' || lowered === 'unknown' ? 'Unknown' : text;
 }
 
 export default function CompanyShipmentsPanel({ companyId, limit = 50 }: Props) {
@@ -82,9 +102,9 @@ export default function CompanyShipmentsPanel({ companyId, limit = 50 }: Props) 
           {rows.map((row, index) => (
             <tr key={`${row.shipment_id || row.id || index}-${index}`} className="bg-white">
               <td className="px-3 py-2 text-slate-700">{formatDate(row.shipped_on ?? row.date)}</td>
-              <td className="px-3 py-2 text-slate-600">{row.origin_country || row.origin || 'Unknown'}</td>
-              <td className="px-3 py-2 text-slate-600">{row.dest_country || row.destination || 'Unknown'}</td>
-              <td className="px-3 py-2 text-slate-600">{row.carrier || '—'}</td>
+              <td className="px-3 py-2 text-slate-600">{cleanLabel(row.origin_country || row.origin || row.origin_city)}</td>
+              <td className="px-3 py-2 text-slate-600">{cleanLabel(row.dest_country || row.destination || row.dest_city)}</td>
+              <td className="px-3 py-2 text-slate-600">{cleanCarrier(row.carrier)}</td>
               <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.teu)}</td>
               <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.value_usd)}</td>
             </tr>

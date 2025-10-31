@@ -9,9 +9,14 @@ function formatNumber(value: unknown) {
 }
 
 function formatDate(value: unknown) {
-  if (!value) return '—';
-  const date = new Date(String((value as any)?.value ?? value));
-  if (Number.isNaN(date.getTime())) return String((value as any)?.value ?? value);
+  if (!value) return 'Unknown';
+  const source = (value as any)?.value ?? value;
+  const text = String(source).trim();
+  if (!text || text === '-' || text.toLowerCase() === 'none' || text.toLowerCase() === 'unknown') {
+    return 'Unknown';
+  }
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
   return date.toLocaleDateString();
 }
 
@@ -76,19 +81,18 @@ export default function CompanyDrawer({ company, open, onOpenChange }: { company
   }, [company]);
 
   const lanesContent = lanes.length ? lanes.map((lane, idx) => {
-    const origin = lane.origin_country || lane.origin || lane.origin_label || 'Unknown';
-    const dest = lane.dest_country || lane.dest || lane.dest_label || 'Unknown';
+    const origin = cleanLabel(lane.origin_country || lane.origin || lane.origin_label);
+    const dest = cleanLabel(lane.dest_country || lane.dest || lane.dest_label);
     const count = lane.cnt || lane.shipments || lane.count || 0;
     return (
       <span key={`${origin}-${dest}-${idx}`} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
-        {origin || 'Unknown'} → {dest || 'Unknown'}
-        <span className="rounded-full bg-indigo-100 px-2 py-px text-[10px] text-indigo-500">{formatNumber(count)}</span>
+        {origin} → {dest} <span className="text-indigo-500">({formatNumber(count)})</span>
       </span>
     );
   }) : <span className="text-sm text-slate-500">{loadingLanes ? 'Loading lanes…' : 'No lane data yet.'}</span>;
 
   return (
-    <div className={`fixed inset-0 z-50 ${open ? '' : 'hidden'}`}>
+    <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
       <div className="absolute right-0 top-0 h-full w-full overflow-auto bg-white shadow-2xl md:w-[680px]">
         <div className="border-b px-5 py-4">
@@ -161,5 +165,21 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="text-lg font-semibold text-slate-900">{value}</div>
     </div>
   );
+}
+
+function cleanLabel(value: unknown) {
+  if (value == null) return 'Unknown';
+  const text = String(value).trim();
+  if (!text) return 'Unknown';
+  const lowered = text.toLowerCase();
+  return lowered === 'none' || lowered === 'unknown' || text === '-' ? 'Unknown' : text;
+}
+
+function cleanCarrier(value: unknown) {
+  if (value == null) return 'Unknown';
+  const text = String(value).trim();
+  if (!text || text === '-' || text === '—') return 'Unknown';
+  const lowered = text.toLowerCase();
+  return lowered === 'none' || lowered === 'unknown' ? 'Unknown' : text;
 }
 
