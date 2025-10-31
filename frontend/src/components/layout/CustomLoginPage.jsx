@@ -60,7 +60,7 @@ export default function CustomLoginPage({ onClose }) {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0c1129] px-4 py-12">
+    <div className="relative min-h-screen overflow-hidden bg-[#0c1129] px-4 py-12 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#1a2048_0%,rgba(11,15,34,0.85)_55%,rgba(8,11,26,0.96)_100%)]" />
         <div className="absolute -left-24 top-[-10%] h-80 w-80 rounded-full bg-[#3C4EF5]/30 blur-3xl" />
@@ -69,13 +69,13 @@ export default function CustomLoginPage({ onClose }) {
       </div>
 
       <FluidHoverSkin
-        className="relative z-10 w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl shadow-[0_40px_120px_rgba(5,8,22,0.55)] transition-transform duration-700 md:grid md:grid-cols-[1.05fr,1fr]"
+        className="relative z-10 mx-auto w-full max-w-5xl overflow-hidden rounded-[36px] border border-white/10 bg-white/6 backdrop-blur-[28px] shadow-[0_40px_120px_rgba(5,8,22,0.55)] transition-transform duration-700 md:grid md:grid-cols-[1.05fr,1fr]"
         colors={["rgba(60,78,245,0.6)", "rgba(171,52,245,0.55)", "rgba(34,211,238,0.45)"]}
         intensity={0.8}
       >
         <div className="relative hidden overflow-hidden md:flex md:flex-col md:justify-between">
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/8 via-white/5 to-transparent" />
-          <div className="pointer-events-none absolute inset-5 rounded-3xl border border-white/10" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#3037a8]/35 via-transparent to-[#ab34f5]/25" />
+          <div className="pointer-events-none absolute inset-[18px] rounded-[28px] border border-white/15" />
 
           <div className="relative flex h-full flex-col gap-10 px-10 py-12 text-white">
             <div className="flex items-center gap-3 text-white/80">
@@ -117,8 +117,8 @@ export default function CustomLoginPage({ onClose }) {
           </div>
         </div>
 
-        <div className="relative bg-white/96 px-8 py-10 sm:px-10">
-          <div className="absolute -left-6 top-10 hidden h-24 w-24 rounded-full bg-[#3C4EF5]/10 blur-2xl sm:block" />
+        <div className="relative bg-white/98 px-8 py-10 sm:px-10">
+          <div className="absolute -left-9 top-12 hidden h-28 w-28 rounded-full bg-[#3C4EF5]/12 blur-3xl sm:block" />
           <div className="relative">
             <div className="mb-8 space-y-3">
               {welcomeName ? (

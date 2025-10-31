@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import InteractivePins from "@/components/landing/InteractivePins";
+import PlusField from "@/components/landing/PlusField";
 import FluidHoverSkin from "@/components/ui/FluidHoverSkin";
 
 export default function HeroBanner() {
@@ -14,25 +14,18 @@ export default function HeroBanner() {
   return (
     <FluidHoverSkin
       as="section"
-      className="relative rounded-2xl border border-gray-200 bg-gradient-to-b from-white via-white/70 to-gray-50 shadow-[0_40px_70px_rgba(15,23,42,0.08)]"
+      className="relative m-[5px] rounded-2xl border border-gray-200 bg-gradient-to-b from-white via-white/70 to-gray-50 shadow-[0_40px_70px_rgba(15,23,42,0.08)]"
       colors={["#3C4EF5", "#AB34F5", "#22D3EE"]}
       intensity={0.9}
     >
       <div className="absolute inset-0 opacity-90">
-        <InteractivePins
-          className="h-full w-full"
-          baseColor="#d1d5db"
-          activeColor="#22d3ee"
-          hoverRadius={160}
-          dotSpacing={24}
-          dotRadius={2}
-        />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/80 via-white/55 to-white/20" />
+        <PlusField className="h-full w-full" baseColor="#d9ddff" activeColor="#4b57ff" hoverRadius={160} gap={28} strokeWidth={1.4} />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/90 via-white/60 to-white/15" />
       </div>
 
       <div className="relative px-6 py-16 lg:px-12 lg:py-24">
         <div className="mx-auto max-w-5xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/70 px-3 py-1 text-sm text-slate-600 shadow-sm backdrop-blur">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/80 px-3 py-1 text-sm text-slate-600 shadow-sm backdrop-blur">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
             Real-time company intelligence for logistics teams
           </div>
