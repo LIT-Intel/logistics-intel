@@ -1,12 +1,18 @@
 {
   "dependencies": {
+    "google-auth-library": "^9.14.1",
     "react-router-dom": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "vitest": "^2.1.9"
   },
   "engines": {
     "node": "22.x"
   },
   "scripts": {
     "build": "npm run build --prefix frontend",
-    "lint": "npm run lint --prefix frontend"
+    "lint": "npm run lint --prefix frontend",
+    "test:sim": "vitest run"
   }
 }

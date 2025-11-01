@@ -149,8 +149,10 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const res = await fetch(`/api/lit/public/searchCompanies`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {})
+  const res = await fetch(`/api/searchCompanies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload || {}),
   });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
   return res.json(); // { items, total }
@@ -172,53 +174,35 @@ const ENV_DIRECT_SEARCH_BASE = (() => {
 
 export async function searchCompanies(body: { q?: string; limit?: number; offset?: number }, signal?: AbortSignal) {
   const payload = {
-    q: (body?.q ?? '').trim(),
+    q: (body?.q ?? '').trim() || null,
+    origin: null,
+    dest: null,
+    hs: null,
     limit: Math.max(1, Math.min(100, Number(body?.limit ?? 20))),
     offset: Math.max(0, Number(body?.offset ?? 0)),
   };
 
-  const requestInit: RequestInit = {
+  const res = await fetch('/api/searchCompanies', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
     signal,
-  };
-
-  const envDirectBase = ENV_DIRECT_SEARCH_BASE;
-  const BASE = envDirectBase || '/api/lit';
-  const directCandidate = isRunDirectEnabled() ? (resolveSearchUnifiedBase() || envDirectBase) : '';
-  const directUrl = directCandidate ? `${directCandidate}/public/searchCompanies` : null;
-  const proxyBase = directUrl ? '/api/lit' : (BASE === '/api/lit' ? BASE : '/api/lit');
-  const proxyUrl = `${proxyBase}/public/searchCompanies`;
-
-  let res: Response | null = null;
-  if (directUrl) {
-    try {
-      res = await fetch(directUrl, requestInit);
-    } catch {
-      res = null;
-    }
-    if (!res || !res.ok) {
-      res = await fetch(proxyUrl, requestInit);
-    }
-  } else {
-    res = await fetch(proxyUrl, requestInit);
-  }
+  });
 
   if (!res.ok) {
     throw new Error(`searchCompanies failed ${res.status}`);
   }
 
-  const data = await res.json().catch(() => ({ items: [], total: 0 }));
-  const items = Array.isArray(data?.items)
-    ? data.items
-    : (Array.isArray(data?.rows)
-      ? data.rows
+  const data = await res.json().catch(() => ({ rows: [], meta: { total: 0 } }));
+  const rows = Array.isArray(data?.rows)
+    ? data.rows
+    : (Array.isArray(data?.items)
+      ? data.items
       : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.total === 'number'
-    ? data.total
-    : (data?.meta?.total ?? data?.count ?? items.length);
-  return { items, total } as { items: any[]; total: number };
+  const total = typeof data?.meta?.total === 'number'
+    ? data.meta.total
+    : (typeof data?.total === 'number' ? data.total : rows.length);
+  return { items: rows, total } as { items: any[]; total: number };
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
