@@ -119,7 +119,7 @@ exports.searchCompanies = onRequest({ cors: true }, async (req, res) => {
   try {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     const authz = await idToken(RUN_BASE);
-    const r = await fetch(`${RUN_BASE}/public/searchCompanies2`, {
+    const r = await fetch(`${RUN_BASE}/public/searchCompanies`, {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'Authorization': authz },
       body: JSON.stringify(req.body || {})

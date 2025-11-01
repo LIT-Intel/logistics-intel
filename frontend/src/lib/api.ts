@@ -123,7 +123,7 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const res = await fetch(`/api/lit/public/searchCompanies2`, {
+  const res = await fetch(`/api/lit/public/searchCompanies`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {})
   });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
@@ -155,8 +155,8 @@ export async function searchCompanies(
     || (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_API_BASE)
     || '';
   const url = String(directBase || '').trim()
-    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies2`
-    : '/api/lit/public/searchCompanies2';
+    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
+    : '/api/lit/public/searchCompanies';
   const params = buildSearchParams(input);
   // Try proxy first; on failure, fall back to Gateway directly
   const tryProxy = () => fetch(url, {
@@ -165,7 +165,7 @@ export async function searchCompanies(
     body: JSON.stringify(params ?? {}),
     signal,
   });
-  const tryGateway = () => fetch(`${GATEWAY_BASE_DEFAULT}/public/searchCompanies2`, {
+  const tryGateway = () => fetch("/api/lit/public/searchCompanies", {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
   });
 
