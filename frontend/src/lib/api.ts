@@ -42,7 +42,6 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
 // Back-compat names expected by some pages
 export const searchCompaniesProxyCompat = searchCompaniesProxy;
 export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
-import { auth } from '@/auth/firebaseClient';
 
 // Gateway base (env override → default)
 const GW = '/api/lit';
@@ -192,6 +191,13 @@ export async function searchCompanies(body: {
     ? data.total
     : (data?.meta?.total ?? data?.count ?? items.length);
   return { items, total } as { items: any[]; total: number };
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
+  return res.json();
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
