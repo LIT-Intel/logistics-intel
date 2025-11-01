@@ -1,5 +1,5 @@
 import React from 'react';
-import type { SearchRow } from '@/app/search/useSearch';
+import type { SearchRow } from '@/lib/types';
 
 function Kpi({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (

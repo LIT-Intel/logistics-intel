@@ -150,7 +150,7 @@ export default function CompanySearchCard({
       {/* Lanes Panel Toggle */}
       {showLanes && (
         <div className="mt-3" onClick={(e)=> e.stopPropagation()}>
-          <CompanyLanesPanel company={company.name || company.company_name || ''} />
+          <CompanyLanesPanel companyId={company.company_id || company.id || ''} />
         </div>
       )}
 

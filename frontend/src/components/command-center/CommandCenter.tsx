@@ -3,17 +3,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   searchCompanies,
-  fetchCompanyLanes,
-  fetchCompanyShipments,
   kpiFrom,
   CompanyItem,
   getCompanyKey,
 } from "@/lib/api";
+import CompanyLanesPanel from "@/components/CompanyLanesPanel";
+import CompanyShipmentsPanel from "@/components/company/CompanyShipmentsPanel";
 import { Loader2, Search } from "lucide-react";
 
 type TabKey = "Overview" | "Shipments" | "Contacts" | "Campaigns" | "RFP";
-type LaneRow = Record<string, any>;
-type ShipmentRow = Record<string, any>;
 
 const TABS: TabKey[] = ["Overview", "Shipments", "Contacts", "Campaigns", "RFP"];
 
@@ -72,24 +70,6 @@ function deriveGrowth(company: Record<string, any>) {
   return formatted;
 }
 
-function normaliseLanes(data: any): LaneRow[] {
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data.rows)) return data.rows;
-  if (Array.isArray(data.items)) return data.items;
-  if (Array.isArray(data.lanes)) return data.lanes;
-  return [];
-}
-
-function normaliseShipments(data: any): ShipmentRow[] {
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data.rows)) return data.rows;
-  if (Array.isArray(data.items)) return data.items;
-  if (Array.isArray(data.shipments)) return data.shipments;
-  return [];
-}
-
 export default function CommandCenter() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -97,10 +77,6 @@ export default function CommandCenter() {
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [lanes, setLanes] = useState<LaneRow[]>([]);
-  const [shipments, setShipments] = useState<ShipmentRow[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("Overview");
 
   useEffect(() => {
@@ -146,53 +122,11 @@ export default function CommandCenter() {
     return companies.find((item) => getCompanyKey(item) === selectedKey) ?? null;
   }, [companies, selectedKey]);
 
-  const loadDetails = useCallback(async (company: CompanyItem | null) => {
-    if (!company) {
-      setLanes([]);
-      setShipments([]);
-      return;
-    }
-    const companyId = (company.company_id ?? (company as any).id ?? "").toString().trim();
-    const companyName = (company.company_name ?? (company as any).name ?? "").toString().trim();
-    if (!companyId && !companyName) {
-      setLanes([]);
-      setShipments([]);
-      return;
-    }
-
-    setDetailLoading(true);
-    setDetailError(null);
-    try {
-      const [lanesResponse, shipmentsResponse] = await Promise.all([
-        fetchCompanyLanes({ company_id: companyId || undefined, company: companyName || undefined, limit: 10 }),
-        fetchCompanyShipments(
-          companyId ? companyId : { company: companyName, name_norm: companyName },
-          { limit: 25, offset: 0 }
-        ),
-      ]);
-      setLanes(normaliseLanes(lanesResponse));
-      setShipments(normaliseShipments(shipmentsResponse));
-    } catch (error: any) {
-      setLanes([]);
-      setShipments([]);
-      setDetailError(error?.message ?? "Failed to load company detail");
-    } finally {
-      setDetailLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await loadDetails(selectedCompany);
-      if (!cancelled && typeof window !== "undefined" && window.innerWidth < 768) {
-        document.getElementById("command-center-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCompany, loadDetails]);
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      document.getElementById("command-center-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [selectedCompany]);
 
   const derivedKpis = useMemo(() => {
     if (!selectedCompany) return DEFAULT_KPIS;
@@ -211,43 +145,19 @@ export default function CommandCenter() {
     };
   }, [selectedCompany]);
 
-  const topLanes = useMemo(() => lanes.slice(0, 5), [lanes]);
+  const selectedCompanyId = selectedCompany?.company_id ? String(selectedCompany.company_id) : null;
 
   const overviewContent = (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4">
-      <div className="md:col-span-7 rounded-2xl border bg-white p-4 md:p-5 shadow-sm">
+    <div className="grid grid-cols-1 gap-[5px] md:grid-cols-12">
+      <div className="md:col-span-7 rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-800">Top Lanes</h3>
-          {detailLoading && <span className="text-xs text-slate-400">Updating…</span>}
         </div>
-        {topLanes.length ? (
-          <ul className="mt-3 space-y-2 text-sm">
-            {topLanes.map((lane, index) => (
-              <li
-                key={`${lane.origin || lane.origin_label || "origin"}-${lane.dest || lane.dest_label || "dest"}-${index}`}
-                className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
-              >
-                <div>
-                  <div className="font-medium text-slate-800">
-                    {(lane.origin_label || lane.origin || lane.origin_country || "—").toString()} → {" "}
-                    {(lane.dest_label || lane.dest || lane.dest_country || "—").toString()}
-                  </div>
-                  <div className="text-xs text-slate-500">Mode: {(lane.mode || lane.mode_name || "—").toString()}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-900">{formatNumber(lane.shipments ?? lane.count)}</div>
-                  <div className="text-xs text-slate-500">TEU {formatNumber(lane.teu)}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="mt-3 rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-            {detailLoading ? "Loading lanes…" : "No lane analytics available for this company."}
-          </div>
-        )}
+        <div className="mt-3">
+          <CompanyLanesPanel companyId={selectedCompanyId} limit={3} />
+        </div>
       </div>
-      <div className="md:col-span-5 rounded-2xl border bg-white p-4 md:p-5 shadow-sm">
+      <div className="md:col-span-5 rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-800">At a Glance</h3>
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
@@ -276,52 +186,11 @@ export default function CommandCenter() {
   );
 
   const shipmentsContent = (
-    <div className="rounded-2xl border bg-white p-4 md:p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-800">Recent Shipments</h3>
-        {detailLoading && <span className="text-xs text-slate-400">Updating…</span>}
       </div>
-      {shipments.length ? (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2">Shipment</th>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Mode</th>
-                <th className="px-3 py-2">Origin</th>
-                <th className="px-3 py-2">Destination</th>
-                <th className="px-3 py-2 text-right">TEU</th>
-                <th className="px-3 py-2 text-right">Value</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {shipments.map((row, index) => {
-                const shipmentId = row.shipment_id ?? row.id ?? `row-${index}`;
-                const date = row.shipped_on ?? row.departure_date ?? row.arrival_date ?? row.eta ?? null;
-                const origin = row.origin_label ?? row.origin_port ?? row.origin ?? row.origin_country ?? "—";
-                const destination = row.dest_label ?? row.dest_port ?? row.dest ?? row.dest_country ?? "—";
-                const mode = (row.mode ?? row.transport_mode ?? row.service ?? "—").toString();
-                return (
-                  <tr key={shipmentId} className="bg-white">
-                    <td className="px-3 py-2 font-medium text-slate-800">{shipmentId}</td>
-                    <td className="px-3 py-2 text-slate-600">{formatDate(date)}</td>
-                    <td className="px-3 py-2 text-slate-600 capitalize">{mode}</td>
-                    <td className="px-3 py-2 text-slate-600">{origin}</td>
-                    <td className="px-3 py-2 text-slate-600">{destination}</td>
-                    <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.teu ?? row.teus)}</td>
-                    <td className="px-3 py-2 text-right text-slate-800">{formatCurrency(row.value_usd ?? row.value)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-          {detailLoading ? "Loading shipments…" : "No shipments available for this company."}
-        </div>
-      )}
+      <CompanyShipmentsPanel companyId={selectedCompanyId} limit={50} />
     </div>
   );
 
@@ -403,35 +272,35 @@ export default function CommandCenter() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100 p-[5px] text-slate-900">
-      <header className="sticky top-0 z-20 mx-[5px] mt-[5px] rounded-xl border border-slate-200 bg-white/80 backdrop-blur">
-        <div className="flex w-full flex-col gap-3 px-[5px] py-[5px] sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-base font-semibold tracking-tight sm:text-xl">LIT Command Center</h1>
-            <p className="text-xs text-slate-500 sm:text-sm">ZoomInfo-style two-pane workflow · Search → Select → Act</p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <div className="relative flex-1 sm:w-72">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search companies"
-                className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
+    <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100 text-slate-900">
+      <main className="mx-[5px] my-[5px] sm:mx-2 sm:my-2">
+        <header className="sticky top-0 z-20 rounded-xl border border-slate-200 bg-white/80 backdrop-blur">
+          <div className="flex w-full flex-col gap-3 px-[5px] py-[5px] sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-base font-semibold tracking-tight sm:text-xl">LIT Command Center</h1>
+              <p className="text-xs text-slate-500 sm:text-sm">ZoomInfo-style two-pane workflow · Search → Select → Act</p>
             </div>
-            <div className="hidden gap-2 sm:flex">
-              <button className="rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">Export PDF</button>
-              <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700">
-                New Campaign
-              </button>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <div className="relative flex-1 sm:w-72">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Search companies"
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+              </div>
+              <div className="hidden gap-2 sm:flex">
+                <button className="rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">Export PDF</button>
+                <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700">
+                  New Campaign
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="px-[5px] py-[5px]">
-        <div className="grid grid-cols-1 gap-[5px] md:grid-cols-12">
+        <div className="mt-[5px] grid grid-cols-1 gap-[5px] md:grid-cols-12">
           <aside className="md:col-span-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-3 md:p-4">
               <div className="flex flex-wrap gap-2 text-xs text-slate-500">
@@ -543,17 +412,12 @@ export default function CommandCenter() {
                 ))}
               </div>
               <div className="pt-4">
-                {detailError && (
-                  <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
-                    {detailError}
-                  </div>
-                )}
                 {tabContent}
               </div>
             </section>
           </main>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

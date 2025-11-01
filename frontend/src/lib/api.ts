@@ -132,21 +132,7 @@ export async function postSearchCompanies(payload: any) {
 
 const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
 
-export async function searchCompanies(
-  input: {
-    q?: string | null;
-    origin?: string | null;
-    destination?: string | null;
-    hs?: string | null;
-    mode?: 'air' | 'ocean' | null;
-    origin_city?: string | null;
-    dest_city?: string | null;
-    dest_state?: string | null;
-    dest_postal?: string | null;
-    dest_port?: string | null;
-    page?: number;
-    pageSize?: number;
-  },
+export async function searchCompanies(body: { q: string|null, origin: string[]|null, dest: string[]|null, hs: string[]|null, limit: number, offset: number }) {  return fetch("/api/lit/public/searchCompanies", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" }).then(r=>{ if(!r.ok) throw new Error(`searchCompanies failed ${r.status}`); return r.json(); });}
   signal?: AbortSignal
 ) {
   // TEMP: prefer direct Gateway if configured; fallback to proxy
