@@ -2,15 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { fetchCompanyLanes, fetchCompanyShipments } from '@/lib/api';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
-function formatNumber(value: unknown) {
+function formatNumber(value) {
   const num = typeof value === 'number' ? value : value == null ? null : Number(value);
   if (num == null || Number.isNaN(num)) return '—';
   return new Intl.NumberFormat().format(num);
 }
 
-function formatDate(value: unknown) {
+function formatDate(value) {
   if (!value) return 'Unknown';
-  const source = (value as any)?.value ?? value;
+  const source = (typeof value === 'object' && value !== null && 'value' in value) ? value.value : value;
   const text = String(source).trim();
   if (!text || text === '-' || text.toLowerCase() === 'none' || text.toLowerCase() === 'unknown') {
     return 'Unknown';
@@ -20,14 +20,14 @@ function formatDate(value: unknown) {
   return date.toLocaleDateString();
 }
 
-export default function CompanyDrawer({ company, open, onOpenChange }: { company: any | null; open: boolean; onOpenChange: (open: boolean) => void }) {
+export default function CompanyDrawer({ company, open, onOpenChange }) {
   if (!open || !company) {
     return null;
   }
 
   const companyId = company?.company_id ? String(company.company_id) : '';
-  const [lanes, setLanes] = useState<any[]>([]);
-  const [shipments, setShipments] = useState<any[]>([]);
+  const [lanes, setLanes] = useState([]);
+  const [shipments, setShipments] = useState([]);
   const [loadingLanes, setLoadingLanes] = useState(false);
   const [loadingShipments, setLoadingShipments] = useState(false);
 
@@ -158,7 +158,7 @@ export default function CompanyDrawer({ company, open, onOpenChange }: { company
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
       <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
@@ -167,7 +167,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function cleanLabel(value: unknown) {
+function cleanLabel(value) {
   if (value == null) return 'Unknown';
   const text = String(value).trim();
   if (!text) return 'Unknown';
@@ -175,7 +175,7 @@ function cleanLabel(value: unknown) {
   return lowered === 'none' || lowered === 'unknown' || text === '-' ? 'Unknown' : text;
 }
 
-function cleanCarrier(value: unknown) {
+function cleanCarrier(value) {
   if (value == null) return 'Unknown';
   const text = String(value).trim();
   if (!text || text === '-' || text === '—') return 'Unknown';
