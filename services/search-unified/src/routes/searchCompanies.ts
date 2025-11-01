@@ -53,7 +53,7 @@ agg AS (
     ANY_VALUE(company_name_display) AS company_name,
     COUNT(*) AS shipments_12m,
     MAX(date) AS last_activity,
-    SAFE_SUM(teu) AS total_teus,
+    IFNULL(SUM(teu),0) AS total_teus,
     ARRAY(SELECT AS STRUCT route FROM UNNEST(ARRAY_AGG(route_raw)) route GROUP BY route ORDER BY COUNT(*) DESC LIMIT 3) AS top_routes,
     ARRAY(SELECT AS STRUCT carrier FROM UNNEST(ARRAY_AGG(carrier_raw)) carrier GROUP BY carrier ORDER BY COUNT(*) DESC LIMIT 3) AS top_carriers
   FROM filtered
