@@ -4,7 +4,6 @@
   "buildCommand": "npm ci && npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/lit/(.*)", "destination": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

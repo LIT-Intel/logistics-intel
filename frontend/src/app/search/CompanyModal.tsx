@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { SearchRow } from '@/app/search/useSearch';
+import type { SearchRow } from '@/lib/types';
 import { buildCompanyShipmentsUrl } from '@/lib/api';
 
 export default function CompanyModal({

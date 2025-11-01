@@ -50,6 +50,7 @@
     "embla-carousel-react": "^8.5.2",
     "firebase": "^12.2.1",
     "framer-motion": "^12.4.7",
+    "google-auth-library": "^9.14.2",
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "jspdf": "^3.0.3",
