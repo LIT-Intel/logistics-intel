@@ -1,4 +1,4 @@
-const API_BASE = 'https://lit-caller-187580267283.us-central1.run.app';
+const API_BASE = '/api/lit/public';
 
 export type CompanyRow = {
   company_id: string;
@@ -63,7 +63,7 @@ function normalizePayload(f: SearchFilters) {
 
 export async function searchCompanies(filters: SearchFilters): Promise<SearchCompaniesResponse> {
   const payload = normalizePayload(filters);
-  const res = await fetch(`${API_BASE}/api/searchCompanies`, {
+  const res = await fetch(`${API_BASE}/searchCompanies`, {
     method: "POST",
     headers: { "content-type": "application/json", "accept": "application/json" },
     body: JSON.stringify(payload),
@@ -97,7 +97,7 @@ export async function getCompanyShipments(input: GetCompanyShipmentsInput) {
   if (input.hs) params.set('hs', input.hs);
   if (typeof input.limit === 'number') params.set('limit', String(input.limit));
   if (typeof input.offset === 'number') params.set('offset', String(input.offset));
-  const res = await fetch(`${API_BASE}/api/getCompanyShipments?${params.toString()}`, { headers: { 'accept': 'application/json' } });
+  const res = await fetch(`${API_BASE}/getCompanyShipments?${params.toString()}`, { headers: { 'accept': 'application/json' } });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`getCompanyShipments failed: ${res.status} ${text}`);
