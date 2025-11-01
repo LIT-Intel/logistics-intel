@@ -46,6 +46,15 @@ export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
 // Gateway base (env override → default)
 const GW = '/api/lit';
 
+async function j<T>(p: Promise<Response>): Promise<T> {
+  const r = await p;
+  if (!r.ok) {
+    const text = await r.text().catch(() => String(r.status));
+    throw new Error(text || String(r.status));
+  }
+  return r.json() as Promise<T>;
+}
+
 // Widgets compatibility endpoints
 export async function calcTariff(input: { hsCode?: string; origin?: string; destination?: string; valueUsd?: number }) {
   const res = await fetch(`${GW}/widgets/tariff/calc`, {
@@ -131,6 +140,57 @@ export async function searchCompanies(body: {
   offset: number;
 }) {
   const res = await fetch('/api/lit/public/searchCompanies', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
+  return res.json();
+}
+, body: JSON.stringify(body), cache: "no-store" }).then(r=>{ if(!r.ok) throw new Error(`searchCompanies failed ${r.status}`); return r.json(); });}
+
+) {
+  // TEMP: prefer direct Gateway if configured; fallback to proxy
+  const directBase = (typeof window !== 'undefined' && (window as any).__LIT_BASE__)
+    || (typeof import_meta !== 'undefined' && (import_meta as any)?.env?.VITE_API_BASE)
+    || (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_API_BASE)
+    || '';
+  const url = String(directBase || '').trim()
+    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
+    : '/api/lit/public/searchCompanies';
+  const params = buildSearchParams(input);
+  // Try proxy first; on failure, fall back to Gateway directly
+  const tryProxy = () => fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(params ?? {}),
+    signal,
+  });
+  const tryGateway = () => fetch("/api/lit/public/searchCompanies", {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
+  });
+
+  let res: Response | null = null;
+  try {
+    res = await tryProxy();
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok || !ct.includes('application/json')) throw new Error(`proxy_bad_${res.status}`);
+  } catch {
+    res = await tryGateway();
+  }
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  // Adapter: accept {items,total} or {rows,meta} or {results,count}
+  const items = Array.isArray(data?.items)
+    ? data.items
+    : (Array.isArray(data?.rows)
+      ? data.rows
+      : (Array.isArray(data?.results) ? data.results : []));
+  const total = typeof data?.total === 'number'
+    ? data.total
+    : (data?.meta?.total ?? data?.count ?? items.length);
+  return { items, total } as { items: any[]; total: number };
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
