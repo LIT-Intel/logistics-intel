@@ -132,71 +132,34 @@ export async function postSearchCompanies(payload: any) {
 const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
 
 export async function searchCompanies(body: {
-  q: string|null;
-  origin: string[]|null;
-  dest: string[]|null;
-  hs: string[]|null;
-  limit: number;
-  offset: number;
-}) {
+  q?: string | null;
+  origin?: string[] | null;
+  dest?: string[] | null;
+  hs?: string[] | null;
+  limit?: number;
+  offset?: number;
+}, signal?: AbortSignal) {
+  const payload = {
+    q: body?.q ?? null,
+    origin: body?.origin ?? null,
+    dest: body?.dest ?? null,
+    hs: body?.hs ?? null,
+    limit: Math.max(1, Math.min(100, Number(body?.limit ?? 20))),
+    offset: Math.max(0, Number(body?.offset ?? 0)),
+  };
+
   const res = await fetch('/api/lit/public/searchCompanies', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
-  return res.json();
-}
-, body: JSON.stringify(body), cache: "no-store" }).then(r=>{ if(!r.ok) throw new Error(`searchCompanies failed ${r.status}`); return r.json(); });}
-
-) {
-  // TEMP: prefer direct Gateway if configured; fallback to proxy
-  const directBase = (typeof window !== 'undefined' && (window as any).__LIT_BASE__)
-    || (typeof import_meta !== 'undefined' && (import_meta as any)?.env?.VITE_API_BASE)
-    || (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_API_BASE)
-    || '';
-  const url = String(directBase || '').trim()
-    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
-    : '/api/lit/public/searchCompanies';
-  const params = buildSearchParams(input);
-  // Try proxy first; on failure, fall back to Gateway directly
-  const tryProxy = () => fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(params ?? {}),
+    body: JSON.stringify(payload),
     signal,
-  });
-  const tryGateway = () => fetch("/api/lit/public/searchCompanies", {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
-  });
-
-  let res: Response | null = null;
-  try {
-    res = await tryProxy();
-    const ct = res.headers.get('content-type') || '';
-    if (!res.ok || !ct.includes('application/json')) throw new Error(`proxy_bad_${res.status}`);
-  } catch {
-    res = await tryGateway();
-  }
-  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-  const data = await res.json().catch(() => ({}));
-  // Adapter: accept {items,total} or {rows,meta} or {results,count}
-  const items = Array.isArray(data?.items)
-    ? data.items
-    : (Array.isArray(data?.rows)
-      ? data.rows
-      : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.total === 'number'
-    ? data.total
-    : (data?.meta?.total ?? data?.count ?? items.length);
-  return { items, total } as { items: any[]; total: number };
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
     cache: 'no-store',
   });
-  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
+
+  if (!res.ok) {
+    throw new Error(`searchCompanies failed ${res.status}`);
+  }
+
   return res.json();
 }
 
