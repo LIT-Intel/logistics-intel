@@ -210,8 +210,14 @@ export async function searchCompanies(body: { q?: string; limit?: number; offset
   }
 
   const data = await res.json().catch(() => ({ items: [], total: 0 }));
-  const items = Array.isArray(data?.items) ? data.items : [];
-  const total = typeof data?.total === 'number' ? data.total : items.length;
+  const items = Array.isArray(data?.items)
+    ? data.items
+    : (Array.isArray(data?.rows)
+      ? data.rows
+      : (Array.isArray(data?.results) ? data.results : []));
+  const total = typeof data?.total === 'number'
+    ? data.total
+    : (data?.meta?.total ?? data?.count ?? items.length);
   return { items, total } as { items: any[]; total: number };
 }
 
