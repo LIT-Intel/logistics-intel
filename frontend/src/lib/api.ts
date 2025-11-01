@@ -132,8 +132,25 @@ export async function postSearchCompanies(payload: any) {
 
 const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
 
-export async function searchCompanies(body: { q: string|null, origin: string[]|null, dest: string[]|null, hs: string[]|null, limit: number, offset: number }) {  return fetch("/api/lit/public/searchCompanies", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" }).then(r=>{ if(!r.ok) throw new Error(`searchCompanies failed ${r.status}`); return r.json(); });}
-  signal?: AbortSignal
+export async function searchCompanies(body: {
+  q: string|null;
+  origin: string[]|null;
+  dest: string[]|null;
+  hs: string[]|null;
+  limit: number;
+  offset: number;
+}) {
+  const res = await fetch('/api/lit/public/searchCompanies', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
+  return res.json();
+}
+, body: JSON.stringify(body), cache: "no-store" }).then(r=>{ if(!r.ok) throw new Error(`searchCompanies failed ${r.status}`); return r.json(); });}
+
 ) {
   // TEMP: prefer direct Gateway if configured; fallback to proxy
   const directBase = (typeof window !== 'undefined' && (window as any).__LIT_BASE__)
