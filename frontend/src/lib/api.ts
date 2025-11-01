@@ -42,45 +42,9 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
 // Back-compat names expected by some pages
 export const searchCompaniesProxyCompat = searchCompaniesProxy;
 export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
-import { auth } from '@/auth/firebaseClient';
 
 // Gateway base (env override → default)
 const GW = '/api/lit';
-
-function isRunDirectEnabled(): boolean {
-  try {
-    if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_USE_RUN_DIRECT != null) {
-      return process.env.NEXT_PUBLIC_USE_RUN_DIRECT === 'true';
-    }
-  } catch {
-    /* ignore */
-  }
-  if (typeof window !== 'undefined' && (window as any).__USE_RUN_DIRECT__ != null) {
-    return Boolean((window as any).__USE_RUN_DIRECT__);
-  }
-  return false;
-}
-
-function resolveSearchUnifiedBase() {
-  if (!isRunDirectEnabled()) return '';
-  let env = '';
-  try {
-    env = typeof process !== 'undefined' && process.env ? String(process.env.NEXT_PUBLIC_SEARCH_UNIFIED_URL ?? '') : '';
-  } catch {
-    env = '';
-  }
-  const client = typeof window !== 'undefined' ? String((window as any).__SEARCH_UNIFIED__ ?? '') : '';
-  const base = (env || client || '').trim();
-  return base ? base.replace(/\/$/, '') : '';
-}
-async function j<T>(p: Promise<Response>): Promise<T> {
-  const r = await p;
-  if (!r.ok) {
-    const text = await r.text().catch(() => String(r.status));
-    throw new Error(text || String(r.status));
-  }
-  return r.json() as Promise<T>;
-}
 
 // Widgets compatibility endpoints
 export async function calcTariff(input: { hsCode?: string; origin?: string; destination?: string; valueUsd?: number }) {
@@ -158,67 +122,22 @@ export async function postSearchCompanies(payload: any) {
 
 const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
 
-const ENV_DIRECT_SEARCH_BASE = (() => {
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      const raw = process.env.NEXT_PUBLIC_SEARCH_UNIFIED_URL ?? '';
-      return raw ? String(raw).trim().replace(/\/$/, '') : '';
-    }
-  } catch {
-    /* ignore */
-  }
-  return '';
-})();
-
-export async function searchCompanies(body: { q?: string; limit?: number; offset?: number }, signal?: AbortSignal) {
-  const payload = {
-    q: (body?.q ?? '').trim(),
-    limit: Math.max(1, Math.min(100, Number(body?.limit ?? 20))),
-    offset: Math.max(0, Number(body?.offset ?? 0)),
-  };
-
-  const requestInit: RequestInit = {
+export async function searchCompanies(body: {
+  q: string|null;
+  origin: string[]|null;
+  dest: string[]|null;
+  hs: string[]|null;
+  limit: number;
+  offset: number;
+}) {
+  const res = await fetch('/api/lit/public/searchCompanies', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal,
-  };
-
-  const envDirectBase = ENV_DIRECT_SEARCH_BASE;
-  const BASE = envDirectBase || '/api/lit';
-  const directCandidate = isRunDirectEnabled() ? (resolveSearchUnifiedBase() || envDirectBase) : '';
-  const directUrl = directCandidate ? `${directCandidate}/public/searchCompanies` : null;
-  const proxyBase = directUrl ? '/api/lit' : (BASE === '/api/lit' ? BASE : '/api/lit');
-  const proxyUrl = `${proxyBase}/public/searchCompanies`;
-
-  let res: Response | null = null;
-  if (directUrl) {
-    try {
-      res = await fetch(directUrl, requestInit);
-    } catch {
-      res = null;
-    }
-    if (!res || !res.ok) {
-      res = await fetch(proxyUrl, requestInit);
-    }
-  } else {
-    res = await fetch(proxyUrl, requestInit);
-  }
-
-  if (!res.ok) {
-    throw new Error(`searchCompanies failed ${res.status}`);
-  }
-
-  const data = await res.json().catch(() => ({ items: [], total: 0 }));
-  const items = Array.isArray(data?.items)
-    ? data.items
-    : (Array.isArray(data?.rows)
-      ? data.rows
-      : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.total === 'number'
-    ? data.total
-    : (data?.meta?.total ?? data?.count ?? items.length);
-  return { items, total } as { items: any[]; total: number };
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
+  return res.json();
 }
 
 export function buildSearchParams(raw: Record<string, any>) {

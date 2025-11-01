@@ -19,8 +19,17 @@ export default function CompanyPage() {
       setLoading(true);
       setErr(null);
       try {
-        const res = await searchCompanies({ limit: 50, offset: 0 });
-        const match = (res as any).items?.find((x: any) => x.company_id === id) || (res as any).items?.[0];
+        const res = await searchCompanies({
+          q: null,
+          origin: null,
+          dest: null,
+          hs: null,
+          limit: 50,
+          offset: 0,
+        });
+        const rawItems = (res as any)?.items ?? (res as any)?.rows ?? (res as any)?.results ?? [];
+        const items = Array.isArray(rawItems) ? rawItems : [];
+        const match = items.find((x: any) => x?.company_id === id) ?? items[0];
         setCompany(match || null);
         const s = await getCompanyShipments(id, 20, 0);
         setShip(s.rows || []);

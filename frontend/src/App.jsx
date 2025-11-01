@@ -7,7 +7,7 @@ import { useAuth } from "@/auth/AuthProvider";
 // Lazy-load primary pages
 const Landing        = lazy(() => import("@/pages/LandingPage"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
-const Search         = lazy(() => import("@/app/search/page.tsx"));
+const Search         = lazy(() => import("@/pages/search"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
 const Companies      = lazy(() => import("@/pages/companies/index"));
 const Campaigns      = lazy(() => import("@/pages/Campaigns"));
