@@ -1,123 +1,87 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useState } from 'react';
+import { searchCompanies } from '@/lib/api';
 
-type SearchRequest = {
-  q: string | null;
-  origin: string[] | null;
-  dest: string[] | null;
-  hs: string[] | null;
-  limit: number;
-  offset: number;
-};
-
-type SearchResponse = {
-  meta: { total: number; page: number; page_size: number };
-  rows: Array<{ company_id?: string; company_name: string; shipments_12m?: number; last_activity?: { value?: string } | string | null }>;
+type Row = {
+  company_id: string;
+  company_name: string;
+  shipments_12m: number | null;
+  last_activity: string | null;
 };
 
 export default function SearchPage() {
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SearchResponse | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const runSearch = useCallback(async (payload: SearchRequest) => {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    const res = await fetch('/api/lit/public/searchCompanies', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: ac.signal,
-      cache: 'no-store',
-    });
-    if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
-    return res.json() as Promise<SearchResponse>;
-  }, []);
-
-  const onSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  async function runSearch(offset = 0) {
     setLoading(true);
     setError(null);
     try {
-      const payload: SearchRequest = {
-        q: query.trim() || null,
-        origin: null,
-        dest: null,
-        hs: null,
-        limit: 20,
-        offset: 0,
-      };
-      const json = await runSearch(payload);
-      setResult(json);
+      const { items } = await searchCompanies({ q: q || null, limit: 20, offset });
+      setRows(Array.isArray(items) ? (items as Row[]) : []);
     } catch (err: any) {
-      setError(err?.message || 'Search failed');
-      setResult(null);
+      setError(err?.message ?? 'Search failed');
+      setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [query, runSearch]);
+  }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-10">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold text-slate-900">Search Companies</h1>
-        <p className="text-sm text-slate-600">Proxying through <code>/api/lit/public/searchCompanies</code> with POST.</p>
-      </header>
+    <div className="mx-auto max-w-screen-xl px-4 py-10">
+      <h1 className="text-3xl font-semibold text-slate-900">Search</h1>
+      <p className="mt-1 text-slate-600">
+        Query the logistics intelligence index with filters for origin, destination, and HS codes.
+      </p>
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by company name"
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-        />
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-400"
-        >
-          {loading ? 'Searching…' : 'Search'}
-        </button>
-      </form>
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Keyword
+          <input
+            value={q}
+            onChange={(event) => setQ(event.target.value)}
+            placeholder="Search companies…"
+            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          />
+        </label>
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={() => runSearch(0)}
+            disabled={loading}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-400"
+          >
+            {loading ? 'Searching…' : 'Search'}
+          </button>
+        </div>
+      </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      {loading && !result && !error && (
-        <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center text-sm text-slate-500">
-          Running search…
+      {rows.length > 0 && (
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {rows.map((row) => (
+            <div key={row.company_id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-slate-900">{row.company_name}</div>
+                <span className="text-[11px] uppercase tracking-wide text-slate-500">{row.company_id}</span>
+              </div>
+              <div className="mt-2 text-sm text-slate-600">Shipments (12m): {row.shipments_12m ?? '—'}</div>
+              <div className="text-sm text-slate-600">Last Activity: {row.last_activity ?? '—'}</div>
+            </div>
+          ))}
         </div>
       )}
 
-      {result && result.rows.length === 0 && !loading && (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-          No companies matched this query.
-        </div>
-      )}
-
-      {result && result.rows.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-sm text-slate-500">
-            Showing {result.rows.length} of {result.meta.total} companies (page {result.meta.page}).
-          </p>
-          <ul className="space-y-3">
-            {result.rows.map((row) => (
-              <li key={row.company_id ?? row.company_name} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="text-base font-semibold text-slate-900">{row.company_name}</div>
-                <div className="text-xs text-slate-500">ID: {row.company_id ?? '—'}</div>
-                <div className="mt-2 text-sm text-slate-600">Shipments (12m): {row.shipments_12m ?? '—'}</div>
-                <div className="text-sm text-slate-600">Last activity: {typeof row.last_activity === 'string' ? row.last_activity : row.last_activity?.value ?? '—'}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {loading && <div className="mt-6 text-sm text-slate-500">Loading…</div>}
+      {!loading && !error && rows.length === 0 && (
+        <div className="mt-6 text-sm text-slate-500">Run a search to see results.</div>
       )}
     </div>
   );

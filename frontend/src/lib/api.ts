@@ -2,6 +2,18 @@ export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
 
+function resolveSearchGatewayBase(): string {
+  const viteEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
+  const base =
+    viteEnv.NEXT_PUBLIC_API_BASE ??
+    viteEnv.VITE_API_BASE ??
+    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
+    '';
+  return base || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
+}
+
+const SEARCH_GATEWAY_BASE = resolveSearchGatewayBase();
+
 export type SearchPayload = {
   q: string | null;
   origin?: string[];
@@ -20,7 +32,18 @@ export async function searchCompaniesProxy(payload: SearchPayload){
     limit: Number(payload.limit ?? 12),
     offset: Number(payload.offset ?? 0)
   } as const;
-  const r = await fetch(`${API_BASE}/api/searchCompanies`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      q: body.q,
+      origin: null,
+      dest: null,
+      hs: null,
+      limit: body.limit,
+      offset: body.offset,
+    }),
+  });
   if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
   return r.json();
 }
@@ -149,14 +172,23 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const res = await fetch(`/api/lit/public/searchCompanies`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {})
+  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      q: payload?.q ?? null,
+      origin: payload?.origin ?? null,
+      dest: payload?.dest ?? null,
+      hs: payload?.hs ?? null,
+      limit: payload?.limit ?? 20,
+      offset: payload?.offset ?? 0,
+    }),
   });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
   return res.json(); // { items, total }
 }
 
-const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+const GATEWAY_BASE_DEFAULT = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
 
 const ENV_DIRECT_SEARCH_BASE = (() => {
   try {
@@ -170,55 +202,38 @@ const ENV_DIRECT_SEARCH_BASE = (() => {
   return '';
 })();
 
-export async function searchCompanies(body: { q?: string; limit?: number; offset?: number }, signal?: AbortSignal) {
+export async function searchCompanies(body: { q?: string | null; origin?: string | null; dest?: string | null; hs?: string | null; limit?: number; offset?: number }, signal?: AbortSignal) {
   const payload = {
-    q: (body?.q ?? '').trim(),
+    q: body?.q ?? null,
+    origin: body?.origin ?? null,
+    dest: body?.dest ?? null,
+    hs: body?.hs ?? null,
     limit: Math.max(1, Math.min(100, Number(body?.limit ?? 20))),
     offset: Math.max(0, Number(body?.offset ?? 0)),
   };
 
-  const requestInit: RequestInit = {
+  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
     signal,
-  };
-
-  const envDirectBase = ENV_DIRECT_SEARCH_BASE;
-  const BASE = envDirectBase || '/api/lit';
-  const directCandidate = isRunDirectEnabled() ? (resolveSearchUnifiedBase() || envDirectBase) : '';
-  const directUrl = directCandidate ? `${directCandidate}/public/searchCompanies` : null;
-  const proxyBase = directUrl ? '/api/lit' : (BASE === '/api/lit' ? BASE : '/api/lit');
-  const proxyUrl = `${proxyBase}/public/searchCompanies`;
-
-  let res: Response | null = null;
-  if (directUrl) {
-    try {
-      res = await fetch(directUrl, requestInit);
-    } catch {
-      res = null;
-    }
-    if (!res || !res.ok) {
-      res = await fetch(proxyUrl, requestInit);
-    }
-  } else {
-    res = await fetch(proxyUrl, requestInit);
-  }
+  });
 
   if (!res.ok) {
     throw new Error(`searchCompanies failed ${res.status}`);
   }
 
-  const data = await res.json().catch(() => ({ items: [], total: 0 }));
-  const items = Array.isArray(data?.items)
-    ? data.items
-    : (Array.isArray(data?.rows)
-      ? data.rows
+  const data = await res.json().catch(() => ({ rows: [], meta: { total: 0 } }));
+  const items = Array.isArray(data?.rows)
+    ? data.rows
+    : (Array.isArray(data?.items)
+      ? data.items
       : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.total === 'number'
-    ? data.total
-    : (data?.meta?.total ?? data?.count ?? items.length);
-  return { items, total } as { items: any[]; total: number };
+  const total = typeof data?.meta?.total === 'number'
+    ? data.meta.total
+    : (typeof data?.total === 'number' ? data.total : items.length);
+
+  return { items, total, meta: data?.meta, raw: data } as { items: any[]; total: number; meta?: unknown; raw: unknown };
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
