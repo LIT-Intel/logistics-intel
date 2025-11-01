@@ -21,11 +21,8 @@ function formatDate(value) {
 }
 
 export default function CompanyDrawer({ company, open, onOpenChange }) {
-  if (!open || !company) {
-    return null;
-  }
-
   const companyId = company?.company_id ? String(company.company_id) : '';
+  const isOpen = Boolean(open && companyId);
   const [lanes, setLanes] = useState([]);
   const [shipments, setShipments] = useState([]);
   const [loadingLanes, setLoadingLanes] = useState(false);
@@ -33,7 +30,7 @@ export default function CompanyDrawer({ company, open, onOpenChange }) {
 
   useEffect(() => {
     let cancelled = false;
-    if (!open || !companyId) {
+    if (!isOpen) {
       setLanes([]);
       return;
     }
@@ -50,11 +47,11 @@ export default function CompanyDrawer({ company, open, onOpenChange }) {
       })
       .finally(() => { if (!cancelled) setLoadingLanes(false); });
     return () => { cancelled = true; };
-  }, [open, companyId]);
+  }, [isOpen, companyId]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!open || !companyId) {
+    if (!isOpen) {
       setShipments([]);
       return;
     }
@@ -71,7 +68,7 @@ export default function CompanyDrawer({ company, open, onOpenChange }) {
       })
       .finally(() => { if (!cancelled) setLoadingShipments(false); });
     return () => { cancelled = true; };
-  }, [open, companyId]);
+  }, [isOpen, companyId]);
 
   const lastActivity = useMemo(() => {
     const raw = company?.last_activity;
@@ -90,6 +87,10 @@ export default function CompanyDrawer({ company, open, onOpenChange }) {
       </span>
     );
   }) : <span className="text-sm text-slate-500">{loadingLanes ? 'Loading lanes…' : 'No lane data yet.'}</span>;
+
+  if (!isOpen || !company) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50">
