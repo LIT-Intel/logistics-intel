@@ -21,6 +21,7 @@ NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS=false # optional, keep off until advanced fi
 
 Notes:
 - The browser calls `/api/public/*` only.
+- For Vite builds, mirror the gateway URL into `VITE_API_BASE`; for Next.js builds use `NEXT_PUBLIC_API_BASE`. Either variable works with the shared resolver.
 - Firebase Hosting rewrites `/api/**` to the private Cloud Run `api-proxy` service in `us-central1`, which injects the required header to API Gateway.
 - No secrets are present in client code.
 

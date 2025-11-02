@@ -9,6 +9,7 @@ import LitWatermark from '@/components/ui/LitWatermark';
 import CardPanel from '@/components/lit/CardPanel';
 import { litUI } from '@/lib/uiTokens';
 import { litApi } from '@/lib/litApi';
+import { getGatewayBase } from '@/lib/env';
 import ProfileSettings from '@/components/settings/ProfileSettings';
 import BrandingSettings from '@/components/settings/BrandingSettings';
 import EmailProviderSettings from '@/components/settings/EmailProviderSettings';
@@ -18,7 +19,7 @@ export default function SettingsUserCampaignStyled() {
   const [teamsUrl, setTeamsUrl] = useState('');
   const [alerts, setAlerts] = useState({ newLeads: true, weeklyDigest: true, kpiDrops: false });
 
-  const oauthBase = useMemo(() => (import.meta.env.VITE_API_BASE || '').replace(/\/$/, ''), []);
+  const oauthBase = useMemo(() => getGatewayBase(), []);
 
   return (
     <div className={`relative ${litUI.pagePadding} min-h-screen`}>
