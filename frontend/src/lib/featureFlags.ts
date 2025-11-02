@@ -1,4 +1,6 @@
-const BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE) || '/api/lit';
+import { getGatewayBase } from '@/lib/env';
+
+const PROXY_BASE = '/api/lit';
 
 export type FeatureFlags = {
   pro?: boolean;
@@ -14,7 +16,21 @@ export type FeatureFlags = {
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
   try {
-    const res = await fetch(`${BASE}/crm/feature-flags`, { method: 'GET' });
+    let base: string;
+    try {
+      base = getGatewayBase();
+    } catch {
+      base = PROXY_BASE;
+    }
+
+    const res = await fetch(`${base}/crm/feature-flags`, { method: 'GET' });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ...data, _source: 'remote' as const };
+    }
+  } catch {}
+  try {
+    const res = await fetch(`${PROXY_BASE}/crm/feature-flags`, { method: 'GET' });
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
       return { ...data, _source: 'remote' as const };

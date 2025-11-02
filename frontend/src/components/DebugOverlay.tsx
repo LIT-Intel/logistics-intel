@@ -1,5 +1,6 @@
 'use client';
 import React from 'react';
+import { getGatewayBase } from '@/lib/env';
 
 function useDebugEnabled() {
   const [on, setOn] = React.useState(false);
@@ -26,7 +27,12 @@ export default function DebugOverlay() {
     // @ts-ignore
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const reqUrl = typeof input === 'string' ? input : (input as any).url;
-      const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE || '';
+      let base = '';
+      try {
+        base = getGatewayBase();
+      } catch {
+        base = '';
+      }
       const isApi = typeof reqUrl === 'string' && base && reqUrl.startsWith(base);
       let reqSnapshot: any = undefined;
       if (isApi) {

@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import ReactMarkdown from "react-markdown";
 
-const VITE_BASE = (typeof import.meta !== 'undefined' && import.meta && import.meta.env && import.meta.env.VITE_API_BASE) ? import.meta.env.VITE_API_BASE : "";
-const API_BASE = VITE_BASE || ((typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE) ? process.env.NEXT_PUBLIC_API_BASE : "");
+const API_BASE = '/api/lit';
 function redactHeaders(headers) {
   const out = {};
   Object.entries(headers || {}).forEach(([k, v]) => {

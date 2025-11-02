@@ -3,6 +3,7 @@ import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
 import CommandIcon from '@/components/common/CommandIcon';
 import PreCallBriefing from '@/components/company/PreCallBriefing';
 import { searchCompanies, getCompanyShipments, recallCompany, kpiFrom, CompanyItem } from '@/lib/api';
+import { getGatewayBase } from '@/lib/env';
 import { buildPreCallPrompt } from '@/lib/ai';
 
 export default function CompanyPage() {
@@ -19,8 +20,16 @@ export default function CompanyPage() {
       setLoading(true);
       setErr(null);
       try {
-        const res = await searchCompanies({ limit: 50, offset: 0 });
-        const match = (res as any).items?.find((x: any) => x.company_id === id) || (res as any).items?.[0];
+        const res = await searchCompanies({
+          q: null,
+          origin: null,
+          dest: null,
+          hs: null,
+          limit: 50,
+          offset: 0,
+        });
+        const items = Array.isArray((res as any)?.rows) ? (res as any).rows : [];
+        const match = items.find((x: any) => x?.company_id === id) ?? items[0];
         setCompany(match || null);
         const s = await getCompanyShipments(id, 20, 0);
         setShip(s.rows || []);
@@ -76,12 +85,12 @@ export default function CompanyPage() {
         </div>
         <div className='flex gap-2'>
           <button className='rounded border px-3 py-1.5 text-sm' onClick={async () => {
-            const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE;
+            const base = getGatewayBase();
             await fetch(`${base}/crm/saveCompany`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: id, company_name: data.name, source: 'company' }) });
             alert('Saved to CRM');
           }}>Save to CRM</button>
           <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-sm' onClick={async () => {
-            const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE;
+            const base = getGatewayBase();
             await fetch(`${base}/crm/enrich`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: id }) });
             alert('Enrichment queued');
           }}>Enrich Now</button>
