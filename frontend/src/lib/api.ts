@@ -1,6 +1,20 @@
+import { getGatewayBase } from '@/lib/env';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
+
+export type SearchCompaniesParams = {
+  q?: string | null;
+  mode?: 'air' | 'ocean';
+  hs?: string | string[] | null;
+  origin?: string[] | null;
+  dest?: string[] | null;
+  carrier?: string[] | null;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+};
 
 export type SearchPayload = {
   q: string | null;
@@ -10,6 +24,26 @@ export type SearchPayload = {
   limit?: number;
   offset?: number;
 };
+
+function normalizeQ(q: unknown) {
+  return (q ?? '').toString().trim();
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const pathname = (() => {
+      try {
+        return new URL(url).pathname;
+      } catch {
+        return url;
+      }
+    })();
+    throw new Error(`${pathname} ${res.status}: ${text || res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
 
 export async function searchCompaniesProxy(payload: SearchPayload){
   const body = {
@@ -129,75 +163,60 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
-const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+export async function searchCompanies(params: SearchCompaniesParams = {}) {
+  const {
+    q,
+    mode,
+    hs,
+    origin,
+    dest,
+    carrier,
+    startDate,
+    endDate,
+    limit = 20,
+    offset = 0,
+  } = params;
 
-export async function searchCompanies(body: {
-  q: string|null;
-  origin: string[]|null;
-  dest: string[]|null;
-  hs: string[]|null;
-  limit: number;
-  offset: number;
-}) {
-  const res = await fetch('/api/lit/public/searchCompanies', {
+  const BASE = getGatewayBase();
+
+  const body: Record<string, any> = {
+    q: normalizeQ(q),
+    limit: Math.max(1, Math.min(50, Number(limit))),
+    offset: Math.max(0, Number(offset)),
+  };
+  if (mode) body.mode = mode;
+  if (typeof hs === 'string' ? hs.trim() : Array.isArray(hs) && hs.length) body.hs = hs;
+  if (origin?.length) body.origin = origin;
+  if (dest?.length) body.dest = dest;
+  if (carrier?.length) body.carrier = carrier;
+  if (startDate) body.startDate = startDate;
+  if (endDate) body.endDate = endDate;
+
+  return fetchJson<{
+    meta: { total: number; page: number; page_size: number };
+    rows: Array<{
+      company_id: string;
+      company_name: string;
+      shipments_12m: number | null;
+      last_activity: string | null;
+      top_routes?: Array<{ route?: string }>;
+      top_carriers?: Array<{ carrier?: string }>;
+    }>;
+  }>(`${BASE}/public/searchCompanies`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    cache: 'no-store',
   });
-  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
-  return res.json();
 }
-, body: JSON.stringify(body), cache: "no-store" }).then(r=>{ if(!r.ok) throw new Error(`searchCompanies failed ${r.status}`); return r.json(); });}
 
-) {
-  // TEMP: prefer direct Gateway if configured; fallback to proxy
-  const directBase = (typeof window !== 'undefined' && (window as any).__LIT_BASE__)
-    || (typeof import_meta !== 'undefined' && (import_meta as any)?.env?.VITE_API_BASE)
-    || (typeof process !== 'undefined' && (process as any)?.env?.NEXT_PUBLIC_API_BASE)
-    || '';
-  const url = String(directBase || '').trim()
-    ? `${String(directBase).replace(/\/$/, '')}/public/searchCompanies`
-    : '/api/lit/public/searchCompanies';
-  const params = buildSearchParams(input);
-  // Try proxy first; on failure, fall back to Gateway directly
-  const tryProxy = () => fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(params ?? {}),
-    signal,
-  });
-  const tryGateway = () => fetch("/api/lit/public/searchCompanies", {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params ?? {}), signal,
-  });
-
-  let res: Response | null = null;
-  try {
-    res = await tryProxy();
-    const ct = res.headers.get('content-type') || '';
-    if (!res.ok || !ct.includes('application/json')) throw new Error(`proxy_bad_${res.status}`);
-  } catch {
-    res = await tryGateway();
-  }
-  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-  const data = await res.json().catch(() => ({}));
-  // Adapter: accept {items,total} or {rows,meta} or {results,count}
-  const items = Array.isArray(data?.items)
-    ? data.items
-    : (Array.isArray(data?.rows)
-      ? data.rows
-      : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.total === 'number'
-    ? data.total
-    : (data?.meta?.total ?? data?.count ?? items.length);
-  return { items, total } as { items: any[]; total: number };
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`searchCompanies failed ${res.status}`);
-  return res.json();
+export async function getFilterOptions() {
+  const BASE = getGatewayBase();
+  return fetchJson<{
+    origin_countries: string[];
+    dest_countries: string[];
+    modes: string[];
+    hs_top?: string[];
+  }>(`${BASE}/public/getFilterOptions`);
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
@@ -255,28 +274,6 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
   return { rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [], total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0) };
 }
 
-export async function getFilterOptions(signal?: AbortSignal) {
-  // Try Vercel proxy first; if 404 or non-JSON, fall back to Gateway (GET then POST)
-  const proxyUrl = `/api/lit/public/getFilterOptions`;
-  try {
-    const r = await fetch(proxyUrl, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-    const ct = r.headers.get('content-type') || '';
-    if (!r.ok || !ct.includes('application/json')) throw new Error(String(r.status));
-    return await r.json();
-  } catch {
-    // Gateway fallback
-    const u = `${GATEWAY_BASE_DEFAULT}/public/getFilterOptions`;
-    let g = await fetch(u, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-    let ct = g.headers.get('content-type') || '';
-    if (!g.ok || !ct.includes('application/json')) {
-      // Some upstreams expose it as POST; try that
-      g = await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify({}), signal });
-    }
-    if (!g.ok) { const t = await g.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${g.status} ${t}`); }
-    return await g.json();
-  }
-}
-
 // Fast KPI endpoint (proxy-first, fallback to Gateway)
 export async function getCompanyKpis(params: { company_id?: string; company_name?: string }, signal?: AbortSignal) {
   const qp = new URLSearchParams();
@@ -290,7 +287,8 @@ export async function getCompanyKpis(params: { company_id?: string; company_name
     return await r.json();
   } catch {
     // Fallback to Gateway
-    const u = `${GATEWAY_BASE_DEFAULT}/public/getCompanyKpis?${qp.toString()}`;
+    const base = getGatewayBase();
+    const u = `${base}/public/getCompanyKpis?${qp.toString()}`;
     const g = await fetch(u, { method: 'GET', headers: { accept: 'application/json' }, signal });
     if (!g.ok) return null;
     return await g.json().catch(() => null);

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import type { ServerOptions } from 'http-proxy'
 
-const GWHOST = 'https://lit-gw-2e68g4k3.uc.gateway.dev'
+const GWHOST = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev'
 
 export default defineConfig({
   plugins: [react()],
