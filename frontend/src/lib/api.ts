@@ -29,7 +29,7 @@ function normalizeQ(q: unknown) {
   return (q ?? '').toString().trim();
 }
 
-async function fetchJson(url: string, init?: RequestInit) {
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -42,7 +42,7 @@ async function fetchJson(url: string, init?: RequestInit) {
     })();
     throw new Error(`${pathname} ${res.status}: ${text || res.statusText}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 export async function searchCompaniesProxy(payload: SearchPayload){
@@ -163,7 +163,7 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
-export async function searchCompanies(params: SearchCompaniesParams = {}, signal?: AbortSignal) {
+export async function searchCompanies(params: SearchCompaniesParams = {}) {
   const {
     q,
     mode,
@@ -185,34 +185,38 @@ export async function searchCompanies(params: SearchCompaniesParams = {}, signal
     offset: Math.max(0, Number(offset)),
   };
   if (mode) body.mode = mode;
-  if (typeof hs === 'string') {
-    const trimmed = hs.trim();
-    if (trimmed) body.hs = trimmed;
-  } else if (Array.isArray(hs) && hs.length) {
-    body.hs = hs;
-  }
-  if (Array.isArray(origin) && origin.length) body.origin = origin;
-  if (Array.isArray(dest) && dest.length) body.dest = dest;
-  if (Array.isArray(carrier) && carrier.length) body.carrier = carrier;
+  if (typeof hs === 'string' ? hs.trim() : Array.isArray(hs) && hs.length) body.hs = hs;
+  if (origin?.length) body.origin = origin;
+  if (dest?.length) body.dest = dest;
+  if (carrier?.length) body.carrier = carrier;
   if (startDate) body.startDate = startDate;
   if (endDate) body.endDate = endDate;
 
-  return fetchJson(`${BASE}/public/searchCompanies`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  }) as Promise<{
+  return fetchJson<{
     meta: { total: number; page: number; page_size: number };
     rows: Array<{
       company_id: string;
       company_name: string;
       shipments_12m: number | null;
       last_activity: string | null;
-      top_routes?: Array<{ route?: string; origin_country?: string; dest_country?: string }>;
+      top_routes?: Array<{ route?: string }>;
       top_carriers?: Array<{ carrier?: string }>;
     }>;
-  }>;
+  }>(`${BASE}/public/searchCompanies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getFilterOptions() {
+  const BASE = getGatewayBase();
+  return fetchJson<{
+    origin_countries: string[];
+    dest_countries: string[];
+    modes: string[];
+    hs_top?: string[];
+  }>(`${BASE}/public/getFilterOptions`);
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
@@ -268,16 +272,6 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
   if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
   const data = await r.json();
   return { rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [], total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0) };
-}
-
-export async function getFilterOptions(signal?: AbortSignal) {
-  const BASE = getGatewayBase();
-  return fetchJson(`${BASE}/public/getFilterOptions`, { signal }) as Promise<{
-    origin_countries: string[];
-    dest_countries: string[];
-    modes: string[];
-    hs_top?: string[];
-  }>;
 }
 
 // Fast KPI endpoint (proxy-first, fallback to Gateway)
