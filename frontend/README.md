@@ -15,6 +15,8 @@ Environment:
 
 ```
 VITE_PROXY_BASE=/api/public
+NEXT_PUBLIC_API_BASE=https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev
+NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS=false # optional, keep off until advanced filters launch
 ```
 
 Notes:

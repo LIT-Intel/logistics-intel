@@ -178,8 +178,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
               limit: 50,
               offset: 0,
             });
-            const rawItems = (res as any)?.items ?? (res as any)?.rows ?? (res as any)?.results ?? [];
-            const items = Array.isArray(rawItems) ? rawItems : [];
+            const items = Array.isArray((res as any)?.rows) ? (res as any).rows : [];
             match = items.find((x: any) => String(x?.company_id) === String(activeId)) || null;
           }
         } catch {}

@@ -100,8 +100,8 @@ export default function CommandCenter() {
           offset: 0,
         });
         if (cancelled) return;
-        const rawItems = (data as any)?.items ?? (data as any)?.rows ?? (data as any)?.results ?? [];
-        const typed = (Array.isArray(rawItems) ? rawItems : []) as CompanyItem[];
+        const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : [];
+        const typed = rows as CompanyItem[];
         setCompanies(typed);
         setSelectedKey((prev) => {
           if (!typed.length) return null;

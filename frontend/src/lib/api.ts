@@ -2,6 +2,26 @@ export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
 
+const DEFAULT_GATEWAY_BASE = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
+const GATEWAY_BASE = (
+  (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE)
+  || (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.NEXT_PUBLIC_API_BASE)
+  || DEFAULT_GATEWAY_BASE
+).replace(/\/$/, '');
+
+export type SearchCompaniesParams = {
+  q?: string | null;
+  mode?: 'air' | 'ocean';
+  hs?: string | string[] | null;
+  origin?: string[] | null;
+  dest?: string[] | null;
+  carrier?: string[] | null;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+};
+
 export type SearchPayload = {
   q: string | null;
   origin?: string[];
@@ -129,38 +149,63 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
-const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+const GATEWAY_BASE_DEFAULT = DEFAULT_GATEWAY_BASE;
 
-export async function searchCompanies(body: {
-  q?: string | null;
-  origin?: string[] | null;
-  dest?: string[] | null;
-  hs?: string[] | null;
-  limit?: number;
-  offset?: number;
-}, signal?: AbortSignal) {
-  const payload = {
-    q: body?.q ?? null,
-    origin: body?.origin ?? null,
-    dest: body?.dest ?? null,
-    hs: body?.hs ?? null,
-    limit: Math.max(1, Math.min(100, Number(body?.limit ?? 20))),
-    offset: Math.max(0, Number(body?.offset ?? 0)),
+export async function searchCompanies(params: SearchCompaniesParams = {}, signal?: AbortSignal) {
+  const {
+    q,
+    mode,
+    hs,
+    origin,
+    dest,
+    carrier,
+    startDate,
+    endDate,
+    limit = 20,
+    offset = 0,
+  } = params;
+
+  const body: Record<string, any> = {
+    q: (q ?? '').toString().trim(),
+    limit: Math.max(1, Math.min(100, Number(limit))),
+    offset: Math.max(0, Number(offset)),
   };
+  if (mode) body.mode = mode;
+  if (typeof hs === 'string') {
+    const trimmed = hs.trim();
+    if (trimmed) body.hs = trimmed;
+  } else if (Array.isArray(hs) && hs.length) {
+    body.hs = hs;
+  }
+  if (Array.isArray(origin) && origin.length) body.origin = origin;
+  if (Array.isArray(dest) && dest.length) body.dest = dest;
+  if (Array.isArray(carrier) && carrier.length) body.carrier = carrier;
+  if (startDate) body.startDate = startDate;
+  if (endDate) body.endDate = endDate;
 
-  const res = await fetch('/api/lit/public/searchCompanies', {
+  const res = await fetch(`${GATEWAY_BASE}/public/searchCompanies`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
     signal,
-    cache: 'no-store',
   });
 
   if (!res.ok) {
-    throw new Error(`searchCompanies failed ${res.status}`);
+    const text = await res.text().catch(() => '');
+    throw new Error(`searchCompanies ${res.status}: ${text}`);
   }
 
-  return res.json();
+  return res.json() as Promise<{
+    meta: { total: number; page: number; page_size: number };
+    rows: Array<{
+      company_id: string;
+      company_name: string;
+      shipments_12m: number | null;
+      last_activity: string | null;
+      top_routes?: Array<{ route?: string; origin_country?: string; dest_country?: string }>;
+      top_carriers?: Array<{ carrier?: string }>;
+    }>;
+  }>;
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
@@ -219,25 +264,16 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
 }
 
 export async function getFilterOptions(signal?: AbortSignal) {
-  // Try Vercel proxy first; if 404 or non-JSON, fall back to Gateway (GET then POST)
-  const proxyUrl = `/api/lit/public/getFilterOptions`;
-  try {
-    const r = await fetch(proxyUrl, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-    const ct = r.headers.get('content-type') || '';
-    if (!r.ok || !ct.includes('application/json')) throw new Error(String(r.status));
-    return await r.json();
-  } catch {
-    // Gateway fallback
-    const u = `${GATEWAY_BASE_DEFAULT}/public/getFilterOptions`;
-    let g = await fetch(u, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-    let ct = g.headers.get('content-type') || '';
-    if (!g.ok || !ct.includes('application/json')) {
-      // Some upstreams expose it as POST; try that
-      g = await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify({}), signal });
-    }
-    if (!g.ok) { const t = await g.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${g.status} ${t}`); }
-    return await g.json();
+  const res = await fetch(`${GATEWAY_BASE}/public/getFilterOptions`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`getFilterOptions ${res.status}: ${text}`);
   }
+  return res.json();
 }
 
 // Fast KPI endpoint (proxy-first, fallback to Gateway)

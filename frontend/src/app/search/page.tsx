@@ -22,8 +22,8 @@ export default function SearchPage() {
     setLoading(true);
     setError(null);
     try {
-      const { items } = await searchCompanies({ q: q || null, limit: 20, offset });
-      setRows(Array.isArray(items) ? (items as Row[]) : []);
+      const data = await searchCompanies({ q: q || null, limit: 20, offset });
+      setRows(Array.isArray(data?.rows) ? (data.rows as Row[]) : []);
     } catch (err: any) {
       setError(err?.message ?? 'Search failed');
       setRows([]);
