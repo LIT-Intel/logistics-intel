@@ -26,10 +26,6 @@ r.post("/public/searchCompanies", async (req, res, next) => {
     const offset = Number(body.offset ?? 0);
 
     const sql = `
-DECLARE q STRING DEFAULT @q;
-DECLARE limit_int INT64 DEFAULT @limit;
-DECLARE offset_int INT64 DEFAULT @offset;
-
 WITH base AS (
   SELECT
     LOWER(REGEXP_REPLACE(COALESCE(company_name, party_name, consignee_name, shipper_name), r'\\s+', ' ')) AS name_norm,
@@ -45,7 +41,7 @@ filtered AS (
   SELECT *
   FROM base
   WHERE name_norm IS NOT NULL AND name_norm <> ''
-    AND (q IS NULL OR q = '' OR LOWER(company_name_display) LIKE CONCAT('%', LOWER(q), '%'))
+    AND (@q IS NULL OR @q = '' OR LOWER(company_name_display) LIKE CONCAT('%', LOWER(@q), '%'))
 ),
 agg AS (
   SELECT
@@ -54,8 +50,22 @@ agg AS (
     COUNT(*) AS shipments_12m,
     MAX(date) AS last_activity,
     IFNULL(SUM(teu),0) AS total_teus,
-    ARRAY(SELECT AS STRUCT route FROM UNNEST(ARRAY_AGG(route_raw)) route GROUP BY route ORDER BY COUNT(*) DESC LIMIT 3) AS top_routes,
-    ARRAY(SELECT AS STRUCT carrier FROM UNNEST(ARRAY_AGG(carrier_raw)) carrier GROUP BY carrier ORDER BY COUNT(*) DESC LIMIT 3) AS top_carriers
+    (SELECT ARRAY_AGG(STRUCT(route) ORDER BY freq DESC LIMIT 3)
+         FROM (
+           SELECT route_raw AS route, COUNT(*) AS freq
+           FROM filtered f2
+           WHERE f2.name_norm = name_norm
+           GROUP BY route_raw
+         )
+      ) AS top_routes,
+      (SELECT ARRAY_AGG(STRUCT(carrier) ORDER BY freq DESC LIMIT 3)
+         FROM (
+           SELECT carrier_raw AS carrier, COUNT(*) AS freq
+           FROM filtered f3
+           WHERE f3.name_norm = name_norm
+           GROUP BY carrier_raw
+         )
+      ) AS top_carriers
   FROM filtered
   GROUP BY name_norm
 )
@@ -68,7 +78,7 @@ SELECT
   top_carriers
 FROM agg
 ORDER BY shipments_12m DESC
-LIMIT limit_int OFFSET offset_int;
+LIMIT @limit OFFSET @offset;
 `;
 
     const [rows] = await bq.query({ query: sql, params: { q, limit, offset } });
