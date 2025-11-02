@@ -1,6 +1,6 @@
 // Cross-runtime resolver with a safe production default.
 // This keeps the app working even if NEXT_PUBLIC_API_BASE isn't set.
-const DEFAULT_BASE = "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
+const DEFAULT_BASE = " + ;
 
 export function getGatewayBase(): string {
   // Next.js runtime
