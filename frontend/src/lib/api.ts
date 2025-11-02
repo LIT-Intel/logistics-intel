@@ -1,13 +1,7 @@
+import { getGatewayBase } from '@/lib/env';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
-
-const DEFAULT_GATEWAY_BASE = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
-const GATEWAY_BASE = (
-  (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE)
-  || (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.NEXT_PUBLIC_API_BASE)
-  || DEFAULT_GATEWAY_BASE
-).replace(/\/$/, '');
 
 export type SearchCompaniesParams = {
   q?: string | null;
@@ -30,6 +24,26 @@ export type SearchPayload = {
   limit?: number;
   offset?: number;
 };
+
+function normalizeQ(q: unknown) {
+  return (q ?? '').toString().trim();
+}
+
+async function fetchJson(url: string, init?: RequestInit) {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const pathname = (() => {
+      try {
+        return new URL(url).pathname;
+      } catch {
+        return url;
+      }
+    })();
+    throw new Error(`${pathname} ${res.status}: ${text || res.statusText}`);
+  }
+  return res.json();
+}
 
 export async function searchCompaniesProxy(payload: SearchPayload){
   const body = {
@@ -149,8 +163,6 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
-const GATEWAY_BASE_DEFAULT = DEFAULT_GATEWAY_BASE;
-
 export async function searchCompanies(params: SearchCompaniesParams = {}, signal?: AbortSignal) {
   const {
     q,
@@ -165,9 +177,11 @@ export async function searchCompanies(params: SearchCompaniesParams = {}, signal
     offset = 0,
   } = params;
 
+  const BASE = getGatewayBase();
+
   const body: Record<string, any> = {
-    q: (q ?? '').toString().trim(),
-    limit: Math.max(1, Math.min(100, Number(limit))),
+    q: normalizeQ(q),
+    limit: Math.max(1, Math.min(50, Number(limit))),
     offset: Math.max(0, Number(offset)),
   };
   if (mode) body.mode = mode;
@@ -183,19 +197,12 @@ export async function searchCompanies(params: SearchCompaniesParams = {}, signal
   if (startDate) body.startDate = startDate;
   if (endDate) body.endDate = endDate;
 
-  const res = await fetch(`${GATEWAY_BASE}/public/searchCompanies`, {
+  return fetchJson(`${BASE}/public/searchCompanies`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     signal,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`searchCompanies ${res.status}: ${text}`);
-  }
-
-  return res.json() as Promise<{
+  }) as Promise<{
     meta: { total: number; page: number; page_size: number };
     rows: Array<{
       company_id: string;
@@ -264,16 +271,13 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
 }
 
 export async function getFilterOptions(signal?: AbortSignal) {
-  const res = await fetch(`${GATEWAY_BASE}/public/getFilterOptions`, {
-    method: 'GET',
-    headers: { accept: 'application/json' },
-    signal,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`getFilterOptions ${res.status}: ${text}`);
-  }
-  return res.json();
+  const BASE = getGatewayBase();
+  return fetchJson(`${BASE}/public/getFilterOptions`, { signal }) as Promise<{
+    origin_countries: string[];
+    dest_countries: string[];
+    modes: string[];
+    hs_top?: string[];
+  }>;
 }
 
 // Fast KPI endpoint (proxy-first, fallback to Gateway)
@@ -289,7 +293,8 @@ export async function getCompanyKpis(params: { company_id?: string; company_name
     return await r.json();
   } catch {
     // Fallback to Gateway
-    const u = `${GATEWAY_BASE_DEFAULT}/public/getCompanyKpis?${qp.toString()}`;
+    const base = getGatewayBase();
+    const u = `${base}/public/getCompanyKpis?${qp.toString()}`;
     const g = await fetch(u, { method: 'GET', headers: { accept: 'application/json' }, signal });
     if (!g.ok) return null;
     return await g.json().catch(() => null);

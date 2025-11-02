@@ -30,6 +30,7 @@ export default function SearchPage() {
   const [rows, setRows] = useState<SearchRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +94,13 @@ export default function SearchPage() {
         >
           View Trends
         </a>
+        <button
+          type="button"
+          onClick={() => setShowFilters((prev) => !prev)}
+          className="inline-flex items-center px-3 py-2 rounded-xl border text-slate-700 hover:bg-slate-50"
+        >
+          {showFilters ? "Hide Filters" : "Show Filters"}
+        </button>
       </div>
 
       <div className="rounded-2xl border p-4 bg-white space-y-3">
@@ -106,7 +114,8 @@ export default function SearchPage() {
           />
         </div>
 
-        <div className="grid md:grid-cols-2 gap-3">
+        {showFilters && (
+          <div className="grid md:grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-semibold block mb-1">MODE</label>
             <select
@@ -161,9 +170,10 @@ export default function SearchPage() {
               ))}
             </select>
           </div>
-        </div>
+          </div>
+        )}
 
-        {ENABLE_ADV && (
+        {showFilters && ENABLE_ADV && (
           <div className="opacity-60 pointer-events-none">
             <div className="text-xs font-semibold">Advanced (coming soon)</div>
             <div className="grid md:grid-cols-3 gap-3 mt-2">
@@ -188,7 +198,7 @@ export default function SearchPage() {
       </div>
 
       {err && (
-        <div className="mt-4 rounded-xl bg-red-50 text-red-700 border border-red-200 p-3 text-sm">
+        <div className="mt-4 rounded-xl bg-red-50 text-red-700 border border-red-200 p-3 text-sm break-all">
           {err}
         </div>
       )}
