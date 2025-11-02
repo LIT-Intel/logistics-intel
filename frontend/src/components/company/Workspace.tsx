@@ -170,8 +170,16 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
         try {
           const mod = await import('../../lib/api');
           if ((mod as any).searchCompanies) {
-            const res = await (mod as any).searchCompanies({ limit: 50, offset: 0 });
-            match = (res as any).items?.find((x: any) => String(x.company_id) === String(activeId)) || null;
+            const res = await (mod as any).searchCompanies({
+              q: null,
+              origin: null,
+              dest: null,
+              hs: null,
+              limit: 50,
+              offset: 0,
+            });
+            const items = Array.isArray((res as any)?.rows) ? (res as any).rows : [];
+            match = items.find((x: any) => String(x?.company_id) === String(activeId)) || null;
           }
         } catch {}
 

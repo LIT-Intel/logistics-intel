@@ -1,6 +1,20 @@
+import { getGatewayBase } from '@/lib/env';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
+
+export type SearchCompaniesParams = {
+  q?: string | null;
+  mode?: 'air' | 'ocean';
+  hs?: string | string[] | null;
+  origin?: string[] | null;
+  dest?: string[] | null;
+  carrier?: string[] | null;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+};
 
 export type SearchPayload = {
   q: string | null;
@@ -10,6 +24,26 @@ export type SearchPayload = {
   limit?: number;
   offset?: number;
 };
+
+function normalizeQ(q: unknown) {
+  return (q ?? '').toString().trim();
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const pathname = (() => {
+      try {
+        return new URL(url).pathname;
+      } catch {
+        return url;
+      }
+    })();
+    throw new Error(`${pathname} ${res.status}: ${text || res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
 
 export async function searchCompaniesProxy(payload: SearchPayload){
   const body = {
@@ -42,37 +76,10 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
 // Back-compat names expected by some pages
 export const searchCompaniesProxyCompat = searchCompaniesProxy;
 export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
-import { auth } from '@/auth/firebaseClient';
 
 // Gateway base (env override → default)
 const GW = '/api/lit';
 
-function isRunDirectEnabled(): boolean {
-  try {
-    if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_USE_RUN_DIRECT != null) {
-      return process.env.NEXT_PUBLIC_USE_RUN_DIRECT === 'true';
-    }
-  } catch {
-    /* ignore */
-  }
-  if (typeof window !== 'undefined' && (window as any).__USE_RUN_DIRECT__ != null) {
-    return Boolean((window as any).__USE_RUN_DIRECT__);
-  }
-  return false;
-}
-
-function resolveSearchUnifiedBase() {
-  if (!isRunDirectEnabled()) return '';
-  let env = '';
-  try {
-    env = typeof process !== 'undefined' && process.env ? String(process.env.NEXT_PUBLIC_SEARCH_UNIFIED_URL ?? '') : '';
-  } catch {
-    env = '';
-  }
-  const client = typeof window !== 'undefined' ? String((window as any).__SEARCH_UNIFIED__ ?? '') : '';
-  const base = (env || client || '').trim();
-  return base ? base.replace(/\/$/, '') : '';
-}
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
   if (!r.ok) {
@@ -260,28 +267,6 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
   return { rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [], total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0) };
 }
 
-export async function getFilterOptions(signal?: AbortSignal) {
-  // Try Vercel proxy first; if 404 or non-JSON, fall back to Gateway (GET then POST)
-  const proxyUrl = `/api/lit/public/getFilterOptions`;
-  try {
-    const r = await fetch(proxyUrl, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-    const ct = r.headers.get('content-type') || '';
-    if (!r.ok || !ct.includes('application/json')) throw new Error(String(r.status));
-    return await r.json();
-  } catch {
-    // Gateway fallback
-    const u = `${GATEWAY_BASE_DEFAULT}/public/getFilterOptions`;
-    let g = await fetch(u, { method: 'GET', headers: { 'accept': 'application/json' }, signal });
-    let ct = g.headers.get('content-type') || '';
-    if (!g.ok || !ct.includes('application/json')) {
-      // Some upstreams expose it as POST; try that
-      g = await fetch(u, { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify({}), signal });
-    }
-    if (!g.ok) { const t = await g.text().catch(()=> ''); throw new Error(`getFilterOptions failed: ${g.status} ${t}`); }
-    return await g.json();
-  }
-}
-
 // Fast KPI endpoint (proxy-first, fallback to Gateway)
 export async function getCompanyKpis(params: { company_id?: string; company_name?: string }, signal?: AbortSignal) {
   const qp = new URLSearchParams();
@@ -295,7 +280,8 @@ export async function getCompanyKpis(params: { company_id?: string; company_name
     return await r.json();
   } catch {
     // Fallback to Gateway
-    const u = `${GATEWAY_BASE_DEFAULT}/public/getCompanyKpis?${qp.toString()}`;
+    const base = getGatewayBase();
+    const u = `${base}/public/getCompanyKpis?${qp.toString()}`;
     const g = await fetch(u, { method: 'GET', headers: { accept: 'application/json' }, signal });
     if (!g.ok) return null;
     return await g.json().catch(() => null);

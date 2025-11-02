@@ -91,9 +91,17 @@ export default function CommandCenter() {
     setListError(null);
     (async () => {
       try {
-        const { items } = await searchCompanies({ q: debouncedSearch, limit: 30, offset: 0 }, controller.signal);
+        const data = await searchCompanies({
+          q: debouncedSearch || null,
+          origin: null,
+          dest: null,
+          hs: null,
+          limit: 30,
+          offset: 0,
+        });
         if (cancelled) return;
-        const typed = (Array.isArray(items) ? items : []) as CompanyItem[];
+        const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : [];
+        const typed = rows as CompanyItem[];
         setCompanies(typed);
         setSelectedKey((prev) => {
           if (!typed.length) return null;
