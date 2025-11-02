@@ -7,6 +7,7 @@ const GWHOST = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev'
 
 export default defineConfig({
   plugins: [react()],
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

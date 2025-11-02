@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
 
+const API_BASE = (() => {
+  const env = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
+  const raw =
+    env.NEXT_PUBLIC_API_BASE ??
+    env.VITE_API_BASE ??
+    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
+    '';
+  return (raw || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').replace(/\/$/, '');
+})();
+
 type LitRow = {
   company_id: string | null;
   company_name: string;
@@ -37,7 +47,7 @@ export default function AddCompanyModal({ open, onClose, onSaved }: Props) {
   async function runLitSearch() {
     setLoading(true); setError(null); setRows(null);
     try {
-      const r = await fetch("/api/lit/public/searchCompanies", {
+      const r = await fetch(`${API_BASE}/public/searchCompanies`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ q: q || null, limit: 10, offset: 0 }),

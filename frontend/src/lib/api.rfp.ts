@@ -1,4 +1,13 @@
-const BASE = '/api/lit';
+const BASE = (() => {
+  const env = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
+  const raw =
+    env.NEXT_PUBLIC_API_BASE ??
+    env.VITE_API_BASE ??
+    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
+    '';
+  return (raw || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').replace(/\/$/, '');
+})();
+
 const HDRS: Record<string,string> = {
   'content-type': 'application/json',
   'accept': 'application/json',
@@ -41,4 +50,3 @@ export async function rfpExportPdf(body:any){
 export async function rfpAddToCampaign(body:{ companyId:string; title:string; html:string; pdfUrl?:string; }) {
   return fetch(`${BASE}/campaigns/createFromRfp`, { method:'POST', headers: HDRS, body: JSON.stringify(body) }).then(ok);
 }
-
