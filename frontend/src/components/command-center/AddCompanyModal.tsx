@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { searchCompanies } from '@/lib/api';
 
 type LitRow = {
   company_id: string | null;
@@ -37,14 +38,8 @@ export default function AddCompanyModal({ open, onClose, onSaved }: Props) {
   async function runLitSearch() {
     setLoading(true); setError(null); setRows(null);
     try {
-      const r = await fetch("/api/lit/public/searchCompanies", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ q: q || null, limit: 10, offset: 0 }),
-      });
-      if (!r.ok) throw new Error(String(r.status));
-      const data = await r.json();
-      setRows(data?.rows || []);
+      const data = await searchCompanies({ q: q || null, limit: 10, offset: 0 });
+      setRows(Array.isArray((data as any)?.items) ? (data as any).items : (Array.isArray((data as any)?.rows) ? (data as any).rows : []));
     } catch (e:any) {
       setError(e?.message || "Search failed");
       setRows([]);
