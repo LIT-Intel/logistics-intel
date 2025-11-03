@@ -30,6 +30,24 @@ function kLastActivity(v: any): string {
   return String(v);
 }
 
+function normalizeSearchRow(item: any) {
+  if (!item || typeof item !== 'object') return item;
+  const company_id = item.company_id ?? item.id ?? null;
+  const company_name = item.company_name ?? item.name ?? '';
+  const shipments_12m = item.shipments_12m ?? item.kpis?.shipments_12m ?? item.kpis?.shipments ?? null;
+  const last_activity = item.last_activity ?? item.kpis?.last_activity ?? null;
+  const top_routes = item.top_routes ?? item.kpis?.top_routes ?? item.routes ?? [];
+
+  return {
+    ...item,
+    company_id,
+    company_name,
+    shipments_12m,
+    last_activity,
+    top_routes,
+  };
+}
+
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[96px] flex flex-col items-center justify-center w-full overflow-hidden">
@@ -300,12 +318,13 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
-  const [hasNext, setHasNext] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
   const [filterOptions, setFilterOptions] = useState<any>(null);
+  const [resultsMeta, setResultsMeta] = useState<{ total: number; offset: number; limit: number } | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const [filters, setFilters] = useState({
     origin: null as string | null,
     destination: null as string | null,
@@ -394,6 +413,7 @@ export default function SearchPage() {
       const { body, offset, limitValue, safePage } = buildSearchPayload(targetPage, targetLimit);
       setLoading(true);
       setError(null);
+      setHasSearched(true);
       try {
         const resp = await searchCompanies(body);
         if (!resp.ok) {
@@ -409,14 +429,22 @@ export default function SearchPage() {
           : (typeof data?.total === 'number'
             ? data.total
             : (typeof data?.count === 'number' ? data.count : resultRows.length));
+        const normalizedRows = Array.isArray(resultRows) ? resultRows.map(normalizeSearchRow) : [];
 
-        setRows(resultRows);
+        const metaFromApi = data?.meta ?? {};
+        const nextMeta = {
+          total: Number(metaFromApi.total ?? totalValue ?? normalizedRows.length ?? 0),
+          offset: Number(metaFromApi.offset ?? offset ?? 0),
+          limit: Number(metaFromApi.limit ?? limitValue ?? normalizedRows.length ?? 0),
+        };
+
+        setRows(normalizedRows);
         setPage(safePage);
         setLimit(limitValue);
-        setHasNext(offset + limitValue < totalValue);
+        setResultsMeta(nextMeta);
       } catch (err) {
         setRows([]);
-        setHasNext(false);
+        setResultsMeta(null);
         setError(err instanceof Error && err.message ? err.message : `POST ${API_BASE}/public/searchCompanies - unknown error`);
       } finally {
         setLoading(false);
@@ -433,18 +461,20 @@ export default function SearchPage() {
   );
 
   const next = useCallback(() => {
-    if (loading || !hasNext) return;
+    if (loading || !resultsMeta) return;
+    if (resultsMeta.offset + resultsMeta.limit >= resultsMeta.total) return;
     void fetchResults(page + 1);
-  }, [fetchResults, loading, hasNext, page]);
+  }, [fetchResults, loading, page, resultsMeta]);
 
   const prev = useCallback(() => {
-    if (loading || page <= 1) return;
+    if (loading || !resultsMeta) return;
+    if (resultsMeta.offset === 0 || page <= 1) return;
     void fetchResults(page - 1);
-  }, [fetchResults, loading, page]);
+  }, [fetchResults, loading, page, resultsMeta]);
 
   // Autocomplete handled by <AutocompleteInput/>; no inline panel
 
-  const hasSearched = (q || '').trim().length > 0;
+  const hasNextPage = resultsMeta ? resultsMeta.offset + resultsMeta.limit < resultsMeta.total : false;
 
   const dedupedRows = useMemo(() => {
     const seen = new Set<string>();
@@ -508,27 +538,30 @@ export default function SearchPage() {
               {opt === 'Explore' && <Zap className="w-4 h-4" />}
               {opt}
             </button>
-          ))}
-          {loading && <span className="text-xs text-gray-500 self-center">Searching…</span>}
-          <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
-            <span>Per page</span>
-            <select
-              className="h-9 rounded-lg border border-gray-300 px-2"
-              value={limit}
-              onChange={(e)=> {
-                const nextLimit = Number(e.target.value);
-                setLimit(nextLimit);
-                run(true, nextLimit);
-              }}
-              disabled={loading}
-            >
-              {[20,30,50].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            ))}
+            {loading && <span className="text-xs text-gray-500 self-center">Searching…</span>}
+            <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
+              <span>Per page</span>
+              <select
+                className="h-9 rounded-lg border border-gray-300 px-2"
+                value={limit}
+                onChange={(e)=> {
+                  const nextLimit = Number(e.target.value);
+                  setLimit(nextLimit);
+                  run(true, nextLimit);
+                }}
+                disabled={loading}
+              >
+                {[20,30,50].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              {resultsMeta && (
+                <span className="ml-2 text-xs text-gray-500">Total: {resultsMeta.total.toLocaleString()}</span>
+              )}
+            </div>
           </div>
-        </div>
 
         {/* Filters Drawer */}
-          <FiltersDrawer
+        <FiltersDrawer
           open={Boolean(view === 'Filters' || filtersOpen)}
           onOpenChange={(v) => { setFiltersOpen(v); if (!v && view === 'Filters') setView('Cards'); }}
           filters={filterOptions || {}}
@@ -581,9 +614,9 @@ export default function SearchPage() {
             )}
             {/* Pagination controls */}
             <div className="mt-4 flex items-center justify-between">
-              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={prev} disabled={loading || page <= 1}>Prev</button>
+                <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={prev} disabled={loading || !resultsMeta || resultsMeta.offset === 0}>Prev</button>
               <div className="text-sm text-gray-600">Page {page}</div>
-              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={next} disabled={loading || !hasNext}>Next</button>
+                <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={next} disabled={loading || !hasNextPage}>Next</button>
             </div>
           </div>
         )}
