@@ -1,10 +1,10 @@
-import { getGatewayBase } from '@/lib/env';
+import { API_BASE as RESOLVED_API_BASE } from './env';
 
+export { RESOLVED_API_BASE as API_BASE };
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
-// Always call via Vercel proxy from the browser to avoid CORS
-export const API_BASE = '/api/lit';
 
-const SEARCH_GATEWAY_BASE = getGatewayBase();
+const POST_SEARCH = `${RESOLVED_API_BASE}/public/searchCompanies`;
+const GET_FILTERS = `${RESOLVED_API_BASE}/public/getFilterOptions`;
 
 export type SearchPayload = {
   q: string | null;
@@ -24,17 +24,10 @@ export async function searchCompaniesProxy(payload: SearchPayload){
     limit: Number(payload.limit ?? 12),
     offset: Number(payload.offset ?? 0)
   } as const;
-  const r = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+  const r = await fetch(POST_SEARCH, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      q: (body.q ?? '').toString().trim(),
-      origin: body.origin,
-      dest: body.dest,
-      hs: body.hs,
-      limit: Math.max(1, Math.min(50, body.limit)),
-      offset: Math.max(0, body.offset),
-    })
+    body: JSON.stringify(body)
   });
   if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
   return r.json();
@@ -49,7 +42,7 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
   if(params.hs?.length) qp.set('hs', params.hs.join(','));
   qp.set('limit', String(params.limit ?? 20));
   qp.set('offset', String(params.offset ?? 0));
-  const r = await fetch(`${SEARCH_GATEWAY_BASE}/public/getCompanyShipments?${qp.toString()}`);
+  const r = await fetch(`${RESOLVED_API_BASE}/public/getCompanyShipments?${qp.toString()}`);
   if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
   return r.json();
 }
@@ -60,7 +53,7 @@ export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
 import { auth } from '@/auth/firebaseClient';
 
 // Gateway base (env override → default)
-const GW = '/api/lit';
+const GW = RESOLVED_API_BASE;
 
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
@@ -138,14 +131,14 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+  const res = await fetch(POST_SEARCH, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {})
   });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
-  return res.json(); // { items, total }
+  return res.json();
 }
 
-const GATEWAY_BASE_DEFAULT = 'https://lit-gw-2e68g4k3.uc.gateway.dev';
+const GATEWAY_BASE_DEFAULT = RESOLVED_API_BASE;
 
 export async function searchCompanies(
   input: {
@@ -205,7 +198,7 @@ export async function searchCompanies(
   const carrier = (input as any)?.carrier;
   if (carrier) body.carrier = Array.isArray(carrier) ? carrier : [carrier].filter(Boolean);
 
-  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+  const res = await fetch(POST_SEARCH, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -285,8 +278,7 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
 }
 
 export async function getFilterOptions(signal?: AbortSignal) {
-  const url = `${SEARCH_GATEWAY_BASE}/public/getFilterOptions`;
-  const res = await fetch(url, { method: 'GET', headers: { accept: 'application/json' }, signal });
+  const res = await fetch(GET_FILTERS, { method: 'GET', headers: { accept: 'application/json' }, signal });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`getFilterOptions failed: ${res.status}${text ? ` — ${text}` : ''}`);
