@@ -107,8 +107,16 @@ export default function CommandCenter() {
     setListError(null);
     (async () => {
       try {
-        const { rows } = await searchCompanies({ q: debouncedSearch, limit: 30, offset: 0 }, controller.signal);
+        const resp = await searchCompanies({ q: debouncedSearch, limit: 30, offset: 0 }, controller.signal);
         if (cancelled) return;
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`POST /public/searchCompanies — ${resp.status} ${text}`);
+        }
+        const data = await resp.json();
+        const rows = Array.isArray(data?.rows)
+          ? data.rows
+          : (Array.isArray(data?.items) ? data.items : (Array.isArray(data?.results) ? data.results : []));
         const typed = (Array.isArray(rows) ? rows : []) as CompanyItem[];
         setCompanies(typed);
         setSelectedKey((prev) => {

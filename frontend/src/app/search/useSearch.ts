@@ -61,14 +61,14 @@ export function useSearch() {
   }, [q]);
 
   const fetchTokenPage = async (token: string | null, f: SearchFilters, offset = 0, signal?: AbortSignal) => {
-    const data = await searchCompaniesHelper({
+    const resp = await searchCompaniesHelper({
       q: token ?? null,
       origin: f.origin,
-      destination: f.destination,
+      dest: f.destination,
       hs: f.hs,
       mode: f.mode,
-      date_start: f.date_start ?? null,
-      date_end: f.date_end ?? null,
+      startDate: f.date_start ?? null,
+      endDate: f.date_end ?? null,
       origin_city: f.origin_city ?? null,
       dest_city: f.dest_city ?? null,
       dest_state: f.dest_state ?? null,
@@ -77,8 +77,17 @@ export function useSearch() {
       page: Math.floor(offset / limit) + 1,
       pageSize: limit,
     }, signal);
-    let got: SearchRow[] = data?.items ?? [];
-    let total = data?.total ?? got.length;
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`POST /public/searchCompanies ? ${resp.status} ${text}`);
+    }
+    const data = await resp.json();
+    let got: SearchRow[] = Array.isArray(data?.items)
+      ? data.items
+      : (Array.isArray(data?.rows) ? data.rows : []);
+    let total = typeof data?.total === 'number'
+      ? data.total
+      : (typeof data?.meta?.total === 'number' ? data.meta.total : got.length);
     // Fallback: if nothing returned, try legacy POST body with limit/offset only
     if (!Array.isArray(got) || got.length === 0) {
       try {

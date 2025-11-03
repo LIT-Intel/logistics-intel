@@ -224,8 +224,13 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
         try {
           const mod = await import('../../lib/api');
           if ((mod as any).searchCompanies) {
-            const res = await (mod as any).searchCompanies({ limit: 50, offset: 0 });
-            match = (res as any).items?.find((x: any) => String(x.company_id) === String(activeId)) || null;
+            const resp = await (mod as any).searchCompanies({ limit: 50, offset: 0 });
+            if (resp?.ok) {
+              const data = await resp.json();
+              match = (data as any)?.items?.find((x: any) => String(x.company_id) === String(activeId))
+                || (data as any)?.rows?.find((x: any) => String(x.company_id) === String(activeId))
+                || null;
+            }
           }
         } catch {}
 

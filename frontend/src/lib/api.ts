@@ -15,22 +15,35 @@ export type SearchPayload = {
   offset?: number;
 };
 
+type SearchBody = {
+  q?: string | null;
+  mode?: 'air' | 'ocean';
+  hs?: string[] | null;
+  origin?: string[] | null;
+  dest?: string[] | null;
+  carrier?: string[] | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  origin_city?: string | null;
+  dest_city?: string | null;
+  dest_state?: string | null;
+  dest_postal?: string | null;
+  dest_port?: string | null;
+  limit?: number;
+  offset?: number;
+};
+
 export async function searchCompaniesProxy(payload: SearchPayload){
-  const body = {
-    q: payload.q ?? null,
-    origin: Array.isArray(payload.origin) ? payload.origin : [],
-    dest: Array.isArray(payload.dest) ? payload.dest : [],
-    hs: Array.isArray(payload.hs) ? payload.hs : [],
-    limit: Number(payload.limit ?? 12),
-    offset: Number(payload.offset ?? 0)
-  } as const;
-  const r = await fetch(POST_SEARCH, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+  const resp = await searchCompanies({
+    q: payload.q,
+    origin: payload.origin ?? [],
+    dest: payload.dest ?? [],
+    hs: payload.hs ?? [],
+    limit: payload.limit,
+    offset: payload.offset,
   });
-  if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
-  return r.json();
+  if (!resp.ok) throw new Error(`searchCompanies ${resp.status}`);
+  return resp.json();
 }
 
 export async function getCompanyShipmentsProxy(params: {company_id?: string; company_name?: string; origin?: string[]; dest?: string[]; hs?: string[]; limit?: number; offset?: number;}){
@@ -131,95 +144,66 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const res = await fetch(POST_SEARCH, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {})
-  });
+  const res = await searchCompanies(payload);
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
   return res.json();
 }
 
 const GATEWAY_BASE_DEFAULT = RESOLVED_API_BASE;
 
-export async function searchCompanies(
-  input: {
-    q?: string | null;
-    origin?: string | null;
-    destination?: string | null;
-    hs?: string | null;
-    mode?: 'air' | 'ocean' | null;
-    origin_city?: string | null;
-    dest_city?: string | null;
-    dest_state?: string | null;
-    dest_postal?: string | null;
-    dest_port?: string | null;
-    page?: number;
-    pageSize?: number;
-  },
-  signal?: AbortSignal
-) {
-  const limit = Math.max(1, Math.min(50, Number(input?.pageSize ?? 20)));
-  const offset = input?.page != null
-    ? Math.max(0, (Number(input.page) - 1) * limit)
-    : Math.max(0, Number((input as any)?.offset ?? 0));
+export async function searchCompanies(body: SearchBody = {}, signal?: AbortSignal) {
+  const payload: Record<string, any> = {};
 
-  const body: Record<string, any> = {
-    q: (input?.q ?? '').toString().trim(),
-    limit,
-    offset,
+  if (body.q !== undefined && body.q !== null) {
+    payload.q = String(body.q ?? '').trim();
+  }
+
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+  const limit = clamp(Number(body.limit ?? 20), 1, 50);
+  const offset = Math.max(Number(body.offset ?? 0), 0);
+  payload.limit = limit;
+  payload.offset = offset;
+
+  const toArray = (value: string[] | string | null | undefined) => {
+    if (value == null) return undefined;
+    if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+    return String(value)
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
   };
 
-  const origin = input?.origin ?? (input as any)?.origin_country ?? null;
-  if (origin) body.origin = Array.isArray(origin) ? origin.filter(Boolean) : [origin].filter(Boolean);
-
-  const destination = input?.destination ?? (input as any)?.dest ?? null;
-  if (destination) body.dest = Array.isArray(destination) ? destination.filter(Boolean) : [destination].filter(Boolean);
-
-  const hsRaw = input?.hs ?? null;
-  if (hsRaw) {
-    body.hs = Array.isArray(hsRaw)
-      ? hsRaw
-      : String(hsRaw)
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
+  const mode = body.mode ? String(body.mode).toLowerCase() : undefined;
+  if (mode === 'air' || mode === 'ocean') {
+    payload.mode = mode;
   }
 
-  const mode = input?.mode;
-  if (mode) {
-    const normalized = String(mode).toLowerCase();
-    if (normalized === 'air' || normalized === 'ocean') body.mode = normalized;
-  }
+  const hs = toArray(body.hs ?? null);
+  if (hs && hs.length) payload.hs = hs;
 
-  const startDate = (input as any)?.date_start ?? (input as any)?.startDate ?? null;
-  const endDate = (input as any)?.date_end ?? (input as any)?.endDate ?? null;
-  if (startDate) body.startDate = startDate;
-  if (endDate) body.endDate = endDate;
+  const origin = toArray(body.origin ?? null);
+  if (origin && origin.length) payload.origin = origin;
 
-  const carrier = (input as any)?.carrier;
-  if (carrier) body.carrier = Array.isArray(carrier) ? carrier : [carrier].filter(Boolean);
+  const dest = toArray(body.dest ?? null);
+  if (dest && dest.length) payload.dest = dest;
 
-  const res = await fetch(POST_SEARCH, {
+  const carrier = toArray(body.carrier ?? null);
+  if (carrier && carrier.length) payload.carrier = carrier;
+
+  if (body.startDate) payload.startDate = body.startDate;
+  if (body.endDate) payload.endDate = body.endDate;
+  if (body.origin_city) payload.origin_city = body.origin_city;
+  if (body.dest_city) payload.dest_city = body.dest_city;
+  if (body.dest_state) payload.dest_state = body.dest_state;
+  if (body.dest_postal) payload.dest_postal = body.dest_postal;
+  if (body.dest_port) payload.dest_port = body.dest_port;
+
+  return fetch(POST_SEARCH, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
     signal,
   });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Search failed: ${res.status}${text ? ` — ${text}` : ''}`);
-  }
-
-  const data = await res.json().catch(() => ({}));
-  const items = Array.isArray(data?.rows)
-    ? data.rows
-    : (Array.isArray(data?.items)
-      ? data.items
-      : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.meta?.total === 'number'
-    ? data.meta.total
-    : (typeof data?.total === 'number' ? data.total : items.length);
-  return { items, total } as { items: any[]; total: number };
 }
 
 export function buildSearchParams(raw: Record<string, any>) {

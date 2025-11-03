@@ -23,3 +23,5 @@ export const API_BASE =
     readEnv() ??
       "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev"
   );
+
+export const getGatewayBase = () => API_BASE;
