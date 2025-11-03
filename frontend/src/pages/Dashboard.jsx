@@ -14,7 +14,6 @@ import WelcomeBanner from "@/components/WelcomeBanner";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
 import LitKpi from "../components/ui/LitKpi";
-import { searchCompanies as searchCompaniesApi } from "@/lib/api";
 
 const safeSummary = {
   shipments90d: 0,

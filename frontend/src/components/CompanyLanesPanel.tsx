@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchCompanyLanes } from '@/lib/api';
+import { searchCompanies } from '@/lib/api';
 
 type Props = {
   companyId?: string | null;
@@ -21,11 +21,14 @@ export default function CompanyLanesPanel({ companyId, limit = 3 }: Props) {
     }
     setLoading(true);
     setError(null);
-    fetchCompanyLanes({ company_id: companyId, limit })
+    searchCompanies({ q: companyId, limit: 5, offset: 0 }, undefined)
       .then((data) => {
         if (cancelled) return;
-        const items = (data?.rows || data?.items || data?.lanes || []) as any[];
-        setRows(Array.isArray(items) ? items.slice(0, limit) : []);
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
+        const matched = rows.find((row: any) => String(row?.company_id || '').trim() === companyId.trim());
+        const fallback = rows[0];
+        const lanes = (matched?.top_routes ?? fallback?.top_routes ?? []) as any[];
+        setRows(Array.isArray(lanes) ? lanes.slice(0, limit) : []);
       })
       .catch((err: any) => {
         if (!cancelled) {

@@ -1,17 +1,33 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  searchCompanies,
-  kpiFrom,
-  CompanyItem,
-  getCompanyKey,
-} from "@/lib/api";
+import { searchCompanies } from "@/lib/api";
+import { kpiFrom } from "@/lib/kpi";
 import CompanyLanesPanel from "@/components/CompanyLanesPanel";
 import CompanyShipmentsPanel from "@/components/company/CompanyShipmentsPanel";
 import { Loader2, Search } from "lucide-react";
 
 type TabKey = "Overview" | "Shipments" | "Contacts" | "Campaigns" | "RFP";
+
+type CompanyItem = {
+  company_id?: string | null;
+  company_name: string;
+  shipments_12m?: number | null;
+  last_activity?: string | { value?: string } | null;
+  top_routes?: Array<{ origin_country?: string; dest_country?: string }>;
+  top_carriers?: Array<{ carrier?: string }>;
+  origins_top?: string[];
+  dests_top?: string[];
+  carriers_top?: string[];
+  total_teus?: number | null;
+  total_value_usd?: number | null;
+};
+
+function getCompanyKey(item: CompanyItem) {
+  const explicit = item.company_id ? String(item.company_id).trim() : "";
+  if (explicit) return explicit;
+  return `name:${item.company_name.toLowerCase()}`;
+}
 
 const TABS: TabKey[] = ["Overview", "Shipments", "Contacts", "Campaigns", "RFP"];
 
@@ -91,9 +107,9 @@ export default function CommandCenter() {
     setListError(null);
     (async () => {
       try {
-        const { items } = await searchCompanies({ q: debouncedSearch, limit: 30, offset: 0 }, controller.signal);
+        const { rows } = await searchCompanies({ q: debouncedSearch, limit: 30, offset: 0 }, controller.signal);
         if (cancelled) return;
-        const typed = (Array.isArray(items) ? items : []) as CompanyItem[];
+        const typed = (Array.isArray(rows) ? rows : []) as CompanyItem[];
         setCompanies(typed);
         setSelectedKey((prev) => {
           if (!typed.length) return null;

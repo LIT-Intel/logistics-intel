@@ -79,7 +79,7 @@ export function useSearch(): SearchState {
       const ac = new AbortController();
       abortRef.current = ac;
 
-      const { items, total } = await searchCompaniesHelper({
+      const response = await searchCompaniesHelper({
         q: q.trim() || null,
         origin: filters.origin,
         dest: filters.destination,
@@ -91,8 +91,9 @@ export function useSearch(): SearchState {
         offset: normalizedOffset,
       }, ac.signal);
 
-      const list = Array.isArray(items) ? (items as SearchRow[]) : [];
-      const totalCount = typeof total === 'number' ? total : list.length;
+      const list = Array.isArray(response?.rows) ? (response.rows as SearchRow[]) : [];
+      const meta = response?.meta ?? { total: list.length, page_size: limit };
+      const totalCount = typeof meta?.total === 'number' ? meta.total : list.length;
 
       setRows(list);
       setTotal(totalCount);
@@ -100,7 +101,9 @@ export function useSearch(): SearchState {
       setOffset(normalizedOffset);
       setPage(Math.floor(normalizedOffset / limit) + 1);
     } catch (err) {
-      console.error('[useSearch] fetch error', err);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[useSearch] fetch error', err);
+      }
       setRows([]);
       setHasNext(false);
       if (initialized) {

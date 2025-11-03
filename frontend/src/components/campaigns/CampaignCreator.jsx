@@ -7,7 +7,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { User } from '@/api/entities';
 import { X, Plus, FileText, Trash2, Mail, UserPlus, MessageSquare } from 'lucide-react';
 import TemplateSelector from './TemplateSelector';
-import { api } from '@/lib/api';
+
+const API_BASE = '/api/lit';
+
+async function apiGet(path) {
+  const res = await fetch(`${API_BASE}${path}`, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function apiPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
 
 export default function CampaignCreator({ campaign, onClose, onSave }) {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
@@ -46,7 +63,7 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
     const loadContacts = async () => {
       setIsLoading(true);
       try {
-        const res = await api.get('/crm/leads?limit=100');
+        const res = await apiGet('/crm/leads?limit=100');
         const rows = Array.isArray(res?.rows) ? res.rows : (Array.isArray(res) ? res : []);
         setAvailableContacts(rows.map(l => ({ email: l.email, full_name: l.contact_name })));
       } catch (error) {
@@ -82,7 +99,7 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
         created_by: user?.email || undefined,
       };
 
-      await api.post('/crm/campaigns', payload);
+      await apiPost('/crm/campaigns', payload);
       onSave && onSave(payload);
       onClose && onClose();
     } catch (error) {

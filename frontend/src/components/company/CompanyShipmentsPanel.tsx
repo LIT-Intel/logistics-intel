@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchCompanyShipments } from '@/lib/api';
+import { getGatewayBase } from '@/lib/env';
 
 type Props = {
   companyId?: string | null;
@@ -53,7 +53,16 @@ export default function CompanyShipmentsPanel({ companyId, limit = 50 }: Props) 
     }
     setLoading(true);
     setError(null);
-    fetchCompanyShipments(companyId, { limit, offset: 0 })
+    const base = getGatewayBase();
+    const params = new URLSearchParams({ company_id: companyId, limit: String(limit), offset: '0' });
+    fetch(`${base}/public/getCompanyShipments?${params.toString()}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        return res.json();
+      })
       .then((data) => {
         if (cancelled) return;
         const items = (data?.rows || data?.items || data?.shipments || []) as any[];

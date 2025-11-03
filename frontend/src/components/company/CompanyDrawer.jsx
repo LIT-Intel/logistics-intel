@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { fetchCompanyLanes, fetchCompanyShipments } from '@/lib/api';
+import React, { useMemo } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import CompanyShipmentsPanel from '@/components/company/CompanyShipmentsPanel';
 
 function formatNumber(value) {
   const num = typeof value === 'number' ? value : value == null ? null : Number(value);
-  if (num == null || Number.isNaN(num)) return '—';
+  if (num == null || Number.isNaN(num)) return '?';
   return new Intl.NumberFormat().format(num);
 }
 
@@ -26,70 +26,25 @@ export default function CompanyDrawer({ company, open, onOpenChange }) {
   }
 
   const companyId = company?.company_id ? String(company.company_id) : '';
-  const [lanes, setLanes] = useState([]);
-  const [shipments, setShipments] = useState([]);
-  const [loadingLanes, setLoadingLanes] = useState(false);
-  const [loadingShipments, setLoadingShipments] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!open || !companyId) {
-      setLanes([]);
-      return;
-    }
-    setLoadingLanes(true);
-    setLanes([]);
-    fetchCompanyLanes({ company_id: companyId, limit: 3 })
-      .then((data) => {
-        if (cancelled) return;
-        const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.items) ? data.items : []);
-        setLanes(rows.slice(0, 3));
-      })
-      .catch(() => {
-        if (!cancelled) setLanes([]);
-      })
-      .finally(() => { if (!cancelled) setLoadingLanes(false); });
-    return () => { cancelled = true; };
-  }, [open, companyId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!open || !companyId) {
-      setShipments([]);
-      return;
-    }
-    setLoadingShipments(true);
-    setShipments([]);
-    fetchCompanyShipments(companyId, { limit: 50, offset: 0 })
-      .then((data) => {
-        if (cancelled) return;
-        const rows = Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.items) ? data.items : []);
-        setShipments(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setShipments([]);
-      })
-      .finally(() => { if (!cancelled) setLoadingShipments(false); });
-    return () => { cancelled = true; };
-  }, [open, companyId]);
 
   const lastActivity = useMemo(() => {
     const raw = company?.last_activity;
-    if (!raw) return '—';
+    if (!raw) return '?';
     if (typeof raw === 'object' && raw !== null && 'value' in raw) return formatDate(raw.value);
     return formatDate(raw);
   }, [company]);
 
+  const lanes = Array.isArray(company?.top_routes) ? company.top_routes.slice(0, 3) : [];
   const lanesContent = lanes.length ? lanes.map((lane, idx) => {
     const origin = cleanLabel(lane.origin_country || lane.origin || lane.origin_label);
     const dest = cleanLabel(lane.dest_country || lane.dest || lane.dest_label);
     const count = lane.cnt || lane.shipments || lane.count || 0;
     return (
       <span key={`${origin}-${dest}-${idx}`} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
-        {origin} → {dest} <span className="text-indigo-500">({formatNumber(count)})</span>
+        {origin} ? {dest} <span className="text-indigo-500">({formatNumber(count)})</span>
       </span>
     );
-  }) : <span className="text-sm text-slate-500">{loadingLanes ? 'Loading lanes…' : 'No lane data yet.'}</span>;
+  }) : <span className="text-sm text-slate-500">No lane data yet.</span>;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -103,8 +58,8 @@ export default function CompanyDrawer({ company, open, onOpenChange }) {
           <div className="grid grid-cols-2 gap-3">
             <Stat label="Shipments (12m)" value={formatNumber(company?.shipments_12m)} />
             <Stat label="Total TEUs (12m)" value={formatNumber(company?.total_teus)} />
-            <Stat label="Growth" value="—" />
-            <Stat label="Company ID" value={companyId || '—'} />
+            <Stat label="Growth" value="?" />
+            <Stat label="Company ID" value={companyId || '?'} />
           </div>
 
           <div>
@@ -117,39 +72,7 @@ export default function CompanyDrawer({ company, open, onOpenChange }) {
               <TabsTrigger value="shipments">Shipments</TabsTrigger>
             </TabsList>
             <TabsContent value="shipments">
-              <div className="overflow-auto rounded-xl border">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Date</th>
-                      <th className="px-3 py-2 text-left">Origin</th>
-                      <th className="px-3 py-2 text-left">Destination</th>
-                      <th className="px-3 py-2 text-left">Carrier</th>
-                      <th className="px-3 py-2 text-right">TEU</th>
-                      <th className="px-3 py-2 text-right">Value (USD)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {shipments.map((row, index) => (
-                      <tr key={`${row.shipment_id || row.id || index}-${index}`} className="bg-white">
-                        <td className="px-3 py-2 text-slate-700">{formatDate(row.shipped_on ?? row.date)}</td>
-                        <td className="px-3 py-2 text-slate-600">{cleanLabel(row.origin_country || row.origin || row.origin_city)}</td>
-                        <td className="px-3 py-2 text-slate-600">{cleanLabel(row.dest_country || row.destination || row.dest_city)}</td>
-                        <td className="px-3 py-2 text-slate-600">{cleanCarrier(row.carrier)}</td>
-                        <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.teu)}</td>
-                        <td className="px-3 py-2 text-right text-slate-800">{formatNumber(row.value_usd)}</td>
-                      </tr>
-                    ))}
-                    {!shipments.length && (
-                      <tr>
-                        <td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">
-                          {loadingShipments ? 'Loading shipments…' : 'No shipments found.'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <CompanyShipmentsPanel companyId={companyId} limit={50} />
             </TabsContent>
           </Tabs>
         </div>
@@ -174,12 +97,3 @@ function cleanLabel(value) {
   const lowered = text.toLowerCase();
   return lowered === 'none' || lowered === 'unknown' || text === '-' ? 'Unknown' : text;
 }
-
-function cleanCarrier(value) {
-  if (value == null) return 'Unknown';
-  const text = String(value).trim();
-  if (!text || text === '-' || text === '—') return 'Unknown';
-  const lowered = text.toLowerCase();
-  return lowered === 'none' || lowered === 'unknown' ? 'Unknown' : text;
-}
-

@@ -3,11 +3,38 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { calcTariff, generateQuote } from "@/lib/api";
 import { sendEmail } from "@/api/functions";
 import LitPageHeader from "../components/ui/LitPageHeader";
 import LitPanel from "../components/ui/LitPanel";
 import LitWatermark from "../components/ui/LitWatermark";
+
+const API_BASE = '/api/lit';
+
+async function calcTariffRequest(input) {
+  const res = await fetch(`${API_BASE}/widgets/tariff/calc`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function generateQuoteRequest(input) {
+  const res = await fetch(`${API_BASE}/widgets/quote/generate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 export default function Widgets() {
   // Tariff state
@@ -42,7 +69,7 @@ export default function Widgets() {
               <Input placeholder="Origin (Country)" value={tariffInput.origin} onChange={(e) => setTariffInput(v => ({ ...v, origin: e.target.value }))} />
               <Input placeholder="Destination (Country)" value={tariffInput.destination} onChange={(e) => setTariffInput(v => ({ ...v, destination: e.target.value }))} />
             </div>
-            <Button onClick={async () => { try { setTariffLoading(true); const res = await calcTariff({ ...tariffInput, valueUsd: Number(tariffInput.valueUsd) || 0 }); setTariffResult(res); } finally { setTariffLoading(false); } }} disabled={tariffLoading} className="bg-blue-600 text-white hover:bg-blue-700">{tariffLoading ? 'Calculating…' : 'Calculate'}</Button>
+            <Button onClick={async () => { try { setTariffLoading(true); const res = await calcTariffRequest({ ...tariffInput, valueUsd: Number(tariffInput.valueUsd) || 0 }); setTariffResult(res); } finally { setTariffLoading(false); } }} disabled={tariffLoading} className="bg-blue-600 text-white hover:bg-blue-700">{tariffLoading ? 'Calculating…' : 'Calculate'}</Button>
             {tariffResult && (
               <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto">{JSON.stringify(tariffResult, null, 2)}</pre>
             )}
@@ -72,7 +99,7 @@ export default function Widgets() {
             </div>
             <Input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
             <div className="flex gap-2">
-              <Button onClick={async () => { try { setQuoteLoading(true); const res = await generateQuote({ companyId, lanes, notes }); setQuoteResult(res); } finally { setQuoteLoading(false); } }} disabled={quoteLoading} className="bg-green-600 text-white hover:bg-green-700">{quoteLoading ? 'Generating…' : 'Generate Quote'}</Button>
+              <Button onClick={async () => { try { setQuoteLoading(true); const res = await generateQuoteRequest({ companyId, lanes, notes }); setQuoteResult(res); } finally { setQuoteLoading(false); } }} disabled={quoteLoading} className="bg-green-600 text-white hover:bg-green-700">{quoteLoading ? 'Generating…' : 'Generate Quote'}</Button>
               {quoteResult && (
                 <>
                   <Button variant="outline" onClick={() => { const blob = new Blob([quoteHtml], { type: 'text/html' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `quote-${quoteResult?.quoteId || 'draft'}.html`; a.click(); URL.revokeObjectURL(url); }}>Download HTML</Button>

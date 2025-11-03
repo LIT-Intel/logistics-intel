@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { getFilterOptions, postSearchCompanies, searchCompanies } from '@/lib/api';
+import { getFilterOptions, searchCompanies } from '@/lib/api';
 
 export default function SearchPanel() {
   const [q, setQ] = useState("");
@@ -21,7 +21,7 @@ export default function SearchPanel() {
   async function onLoadFilters() {
     try {
       setError(null); setLoading(true);
-      const data = await getFilterOptions({});
+      const data = await getFilterOptions();
       setFilters(data);
     } catch (e) {
       setError(e?.message || 'Failed to load filters');
@@ -35,13 +35,13 @@ export default function SearchPanel() {
       setError(null); setLoading(true);
       const body = {
         ...(q ? { q } : {}),
-        ...(mode && mode !== 'all' ? { mode: mode === 'air' ? 'AIR' : 'OCEAN' } : {}),
+        ...(mode && mode !== 'all' ? { mode: mode === 'air' ? 'air' : 'ocean' } : {}),
         ...(hsArray.length ? { hs: hsArray } : {}),
         limit: 10,
         offset: 0,
       };
-      const data = await postSearchCompanies(body);
-      setResults(data?.items || []);
+      const data = await searchCompanies(body);
+      setResults(Array.isArray(data?.rows) ? data.rows : []);
     } catch (e) {
       setError(e?.message || 'Search failed');
     } finally {

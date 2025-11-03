@@ -1,105 +1,114 @@
 import { useEffect, useState } from 'react';
-import { exportCompanyPdf } from '@/components/pdf/exportCompanyPdf';
-import CommandIcon from '@/components/common/CommandIcon';
-import PreCallBriefing from '@/components/company/PreCallBriefing';
-import { searchCompanies, getCompanyShipments, recallCompany, kpiFrom, CompanyItem } from '@/lib/api';
-import { buildPreCallPrompt } from '@/lib/ai';
+import CompanyShipmentsPanel from '@/components/company/CompanyShipmentsPanel';
+import { getGatewayBase } from '@/lib/env';
+
+type CompanySummary = {
+  company_id?: string | null;
+  company_name?: string;
+  shipments_12m?: number | null;
+  last_activity?: string | { value?: string } | null;
+  top_routes?: Array<{ origin_country?: string; dest_country?: string }>;
+};
+
+function formatNumber(value?: number | null) {
+  if (value == null || Number.isNaN(Number(value))) return '?';
+  return Number(value).toLocaleString();
+}
+
+function formatDate(value: CompanySummary['last_activity']) {
+  if (!value) return '?';
+  const raw = typeof value === 'object' && value !== null && 'value' in value ? value.value : value;
+  const date = new Date(String(raw));
+  if (Number.isNaN(date.getTime())) return String(raw);
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
 
 export default function CompanyPage() {
-  const id = String((typeof window !== 'undefined' && (window as any).location?.pathname?.split?.('/').pop()) || '');
-  const [company, setCompany] = useState<CompanyItem | null>(null);
-  const [ship, setShip] = useState<any[]>([]);
-  const [data, setData] = useState<any | null>(null);
+  const id = typeof window !== 'undefined' ? window.location.pathname.split('/').pop() ?? '' : '';
+  const [company, setCompany] = useState<CompanySummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      if (!id) return;
-      setLoading(true);
-      setErr(null);
-      try {
-        const res = await searchCompanies({ limit: 50, offset: 0 });
-        const match = (res as any).items?.find((x: any) => x.company_id === id) || (res as any).items?.[0];
-        setCompany(match || null);
-        const s = await getCompanyShipments(id, 20, 0);
-        setShip(s.rows || []);
-        if (match) {
-          const k = kpiFrom(match);
-          const prompt = buildPreCallPrompt({
-            company: {
-              id,
-              name: match.company_name || 'Unknown',
-              shipments12m: k.shipments12m,
-              lastActivity: k.lastActivity as any,
-              originsTop: k.originsTop,
-              destsTop: k.destsTop,
-              carriersTop: k.carriersTop,
-            },
-            shipments: s.rows || [],
-          });
-          const ai = await recallCompany({ company_id: id, questions: [prompt] });
-          const theme = (match.company_name || '').toLowerCase().includes('pride') ? 'pride' : ((match.company_name || '').toLowerCase().includes('wahoo') ? 'wahoo' : 'default');
-          setData({
-            name: match.company_name || 'Company',
-            theme,
-            kpis: k,
-            charts: {
-              growth: [{ y: 100, x: '2013' }, { y: 150, x: '2014' }, { y: 220, x: '2015' }, { y: 335, x: '2016' }],
-              ecosystem: [{ label: 'Indoor', value: 35 }, { label: 'Outdoor', value: 30 }, { label: 'Monitoring', value: 15 }, { label: 'Software', value: 20 }],
-              competition: [{ k: 'Hardware', [match.company_name || 'Co']: 8, Market: 7 }, { k: 'Software', [match.company_name || 'Co']: 7, Market: 8 }, { k: 'Pro Adoption', [match.company_name || 'Co']: 9, Market: 7 }, { k: 'Value', [match.company_name || 'Co']: 7, Market: 8 }, { k: 'Brand', [match.company_name || 'Co']: 8, Market: 8 }],
-              sourcing: (k.originsTop?.length ? (k.originsTop as any[]).map((c: string, i: number) => ({ country: c, pct: [60, 25, 15, 10, 8][i] || 10 })) : [{ country: 'CN', pct: 50 }, { country: 'VN', pct: 35 }, { country: 'KR', pct: 15 }]),
-            },
-            ai: { summary: (ai as any)?.summary || '', bullets: Array.isArray((ai as any)?.bullets) ? (ai as any).bullets : [] },
-          });
+    if (!id) return;
+    const ac = new AbortController();
+    const base = getGatewayBase();
+    setLoading(true);
+    setError(null);
+    fetch(`${base}/public/searchCompanies`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ q: id, limit: 5, offset: 0 })
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || `HTTP ${res.status}`);
         }
-      } catch (e: any) {
-        setErr(String(e?.message ?? e));
-      } finally {
-        setLoading(false);
-      }
-    })();
+        return res.json();
+      })
+      .then((data) => {
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
+        const found = rows.find((row: any) => String(row?.company_id || '').trim() === id.trim());
+        setCompany(found ?? rows[0] ?? null);
+      })
+      .catch((err: any) => {
+        if (!ac.signal.aborted) setError(err?.message || 'Failed to load company');
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setLoading(false);
+      });
+    return () => ac.abort();
   }, [id]);
 
-  if (err) return <div className='p-6 text-red-700'>Error: {err}</div>;
-  if (loading || !company || !data) return <div className='p-6'>Loading…</div>;
+  if (!id) {
+    return <div className="p-6 text-sm text-slate-600">No company selected.</div>;
+  }
+
+  if (loading) {
+    return <div className="p-6 text-sm text-slate-600">Loading company?</div>;
+  }
+
+  if (error) {
+    return <div className="p-6 text-sm text-red-600">{error}</div>;
+  }
+
+  if (!company) {
+    return <div className="p-6 text-sm text-slate-600">Company not found.</div>;
+  }
+
+  const topRoutes = Array.isArray(company.top_routes) ? company.top_routes.slice(0, 5) : [];
 
   return (
-    <div className='max-w-6xl mx-auto p-6 space-y-4'>
-      <div className='flex items-center justify-between gap-4 flex-wrap'>
-        <div>
-          <h1 className='text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 uppercase flex items-center gap-2'>
-            <CommandIcon />
-            <span>LIT Command Center</span>
-          </h1>
-          <div className='text-xs opacity-60'>ID: {id}</div>
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+      <header className="flex flex-col gap-2 border-b border-slate-200 pb-4">
+        <h1 className="text-3xl font-bold text-slate-900">{company.company_name || 'Company'}</h1>
+        <div className="text-sm text-slate-600">ID: {id}</div>
+        <div className="flex flex-wrap gap-4 text-sm text-slate-700">
+          <span>Shipments (12m): {formatNumber(company.shipments_12m)}</span>
+          <span>Last Activity: {formatDate(company.last_activity)}</span>
         </div>
-        <div className='flex gap-2'>
-          <button className='rounded border px-3 py-1.5 text-sm' onClick={async () => {
-            const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE;
-            await fetch(`${base}/crm/saveCompany`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: id, company_name: data.name, source: 'company' }) });
-            alert('Saved to CRM');
-          }}>Save to CRM</button>
-          <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-sm' onClick={async () => {
-            const base = (import.meta as any)?.env?.VITE_API_BASE || process.env.NEXT_PUBLIC_API_BASE;
-            await fetch(`${base}/crm/enrich`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ company_id: id }) });
-            alert('Enrichment queued');
-          }}>Enrich Now</button>
-          <button className='rounded border px-3 py-1.5 text-sm' onClick={async () => {
-            const k = kpiFrom(company!);
-            const s = await getCompanyShipments(id, 20, 0);
-            const prompt = buildPreCallPrompt({ company: { id, name: data.name, shipments12m: k.shipments12m, lastActivity: k.lastActivity as any, originsTop: k.originsTop, destsTop: k.destsTop, carriersTop: k.carriersTop }, shipments: s.rows || [] });
-            const ai = await recallCompany({ company_id: id, questions: [prompt] });
-            setData((prev: any) => prev ? { ...prev, ai: { summary: (ai as any)?.summary || '', bullets: Array.isArray((ai as any)?.bullets) ? (ai as any).bullets : [] } } : prev);
-          }}>Refresh Recall</button>
-          <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); pdf.save('company.pdf'); }catch(e:any){ alert('PDF failed: '+ String(e?.message||e)); } }}>Save PDF</button>
-          <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const data = pdf.output('datauristring'); await fetch('/api/lit/crm/emailPdf', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ data, filename:'company.pdf', to:'' }) }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
-        </div>
-      </div>
-      <section id='company-pdf-root'>
-        <PreCallBriefing company={{ name: data.name, kpis: data.kpis, charts: data.charts, ai: data.ai }} />
+      </header>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold text-slate-800">Top Routes</h2>
+        {topRoutes.length ? (
+          <ul className="list-disc pl-5 text-sm text-slate-700">
+            {topRoutes.map((route, idx) => (
+              <li key={`${route.origin_country || idx}-${idx}`}>
+                {(route.origin_country || '?')} ? {(route.dest_country || '?')}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-sm text-slate-500">No route data available.</div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-slate-800">Recent Shipments</h2>
+        <CompanyShipmentsPanel companyId={id} limit={50} />
       </section>
     </div>
   );
 }
-

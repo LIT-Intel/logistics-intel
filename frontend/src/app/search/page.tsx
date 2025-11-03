@@ -1,4 +1,6 @@
-import LegacySearchView from "@/app/search/LegacySearchView";
+"use client";
+
+import LegacySearchView from "./LegacySearchView";
 
 export default function SearchPage() {
   return <LegacySearchView />;

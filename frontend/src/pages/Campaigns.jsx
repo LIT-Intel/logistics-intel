@@ -10,7 +10,14 @@ import LockedFeature from '../components/common/LockedFeature';
 import { checkFeatureAccess } from '@/components/utils/planLimits';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from '@/auth/AuthProvider';
-import { api } from '@/lib/api';
+
+const API_BASE = '/api/lit';
+
+async function apiGet(path) {
+  const res = await fetch(`${API_BASE}${path}`, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import LitPageHeader from '@/components/ui/LitPageHeader';
 import LitPanel from '@/components/ui/LitPanel';
@@ -64,7 +71,7 @@ export default function CampaignsPage() {
         setHasAccess(true);
         // Load campaigns via Gateway
         try {
-          const resp = await api.get('/crm/campaigns');
+          const resp = await apiGet('/crm/campaigns');
           setCampaigns(asArray(resp));
           setDebugInfo(prev => prev + `\nLoaded ${asArray(resp).length} campaigns.`);
         } catch (campaignError) {
@@ -115,7 +122,7 @@ export default function CampaignsPage() {
     setEditingCampaign(null);
     setIsLoading(true); // Indicate loading while re-fetching campaigns
     try {
-      const resp = await api.get('/crm/campaigns');
+      const resp = await apiGet('/crm/campaigns');
       setCampaigns(asArray(resp));
       setError(null);
     } catch (_e) {
@@ -134,7 +141,7 @@ export default function CampaignsPage() {
     // Placeholder: DELETE via Gateway when available, then re-fetch
     setIsLoading(true);
     try {
-      const resp = await api.get('/crm/campaigns');
+      const resp = await apiGet('/crm/campaigns');
       setCampaigns(asArray(resp));
       setError(null);
     } catch (_e) {
@@ -242,7 +249,7 @@ export default function CampaignsPage() {
             </div>
             <div className="mt-6">
               <LitPanel title="Recent Activity">
-                <p className="text-sm text-slate-600">Recent activity timeline will appear here…</p>
+                <p className="text-sm text-slate-600">Recent activity timeline will appear here?</p>
               </LitPanel>
             </div>
           </TabsContent>
@@ -252,9 +259,9 @@ export default function CampaignsPage() {
               {(() => {
                 const currentId = activeId || (campaigns[0] && campaigns[0].id);
                 const seq = sequenceById[currentId] || [
-                  { channel:'email', subject:'Intro', message:'Quick intro about savings…', wait:2 },
+                  { channel:'email', subject:'Intro', message:'Quick intro about savings?', wait:2 },
                   { channel:'linkedin', subject:'', message:'Connect note', wait:3 },
-                  { channel:'email', subject:'Follow-up', message:'Just floating this back…', wait:4 },
+                  { channel:'email', subject:'Follow-up', message:'Just floating this back?', wait:4 },
                 ];
                 const updateSeq = (next) => setSequenceById(prev => ({ ...prev, [currentId]: next }));
                 const onChange = (idx, key, val) => {
@@ -294,8 +301,8 @@ export default function CampaignsPage() {
               const currentId = activeId || (campaigns[0] && campaigns[0].id);
               const preset = tpl==='Logistics Buyer Intro'
                 ? [
-                    { channel:'email', subject:'Intro', message:'We help reduce freight costs by 12–18%…', wait:2 },
-                    { channel:'linkedin', subject:'', message:'Exploring ways to streamline freight ops…', wait:3 },
+                    { channel:'email', subject:'Intro', message:'We help reduce freight costs by 12?18%?', wait:2 },
+                    { channel:'linkedin', subject:'', message:'Exploring ways to streamline freight ops?', wait:3 },
                   ]
                 : [ { channel:'email', subject: tpl, message:`Template: ${tpl}`, wait:2 } ];
               setSequenceById(prev => ({ ...prev, [currentId]: preset }));

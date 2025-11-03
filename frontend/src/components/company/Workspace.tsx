@@ -4,14 +4,68 @@ import PreCallBriefing from '../company/PreCallBriefing';
 import CompanyFirmographics from './CompanyFirmographics';
 import { exportCompanyPdf } from '../pdf/exportCompanyPdf';
 import { buildPreCallPrompt } from '../../lib/ai';
-import {
-  getCompanyShipments,
-  kpiFrom,
-  recallCompany,
-  saveCampaign,
-  saveCompanyToCrm,
-  enrichCompany,
-} from '../../lib/api';
+import { kpiFrom } from '@/lib/kpi';
+import { getGatewayBase } from '@/lib/env';
+
+const API_BASE = '/api/lit';
+
+async function fetchJson(url: string, init?: RequestInit) {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }) {
+  const base = getGatewayBase();
+  const qs = new URLSearchParams({
+    company_id: params.company_id,
+    limit: String(Math.max(1, Math.min(100, params.limit ?? 50))),
+    offset: String(Math.max(0, params.offset ?? 0)),
+  });
+  return fetchJson(`${base}/public/getCompanyShipments?${qs.toString()}`);
+}
+
+async function recallCompany(payload: { company_id: string; questions?: string[] }) {
+  return fetchJson(`${API_BASE}/ai/recall`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch(async (err) => {
+    const base = getGatewayBase();
+    return fetchJson(`${base}/public/getCompanyRecall`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  });
+}
+
+async function saveCampaign(payload: { name: string; channel: string; company_ids: string[] }) {
+  return fetchJson(`${API_BASE}/crm/campaigns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function saveCompanyToCrm(payload: { company_id: string; company_name: string; source?: string }) {
+  return fetchJson(`${API_BASE}/crm/saveCompany`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function enrichCompany(payload: { company_id: string }) {
+  return fetchJson(`${API_BASE}/crm/enrichCompany`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
 
 function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
   const s = Math.max(0, Number(shipments12m||0));

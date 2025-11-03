@@ -1,6 +1,20 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { saveCampaign } from '@/lib/api';
+
+const API_BASE = '/api/lit';
+
+async function saveCampaign(body) {
+  const res = await fetch(`${API_BASE}/crm/campaigns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 export default function CampaignBuilder() {
   const [name, setName] = useState('Search Audience');

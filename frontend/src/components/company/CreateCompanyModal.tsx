@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { createCompany } from '@/lib/api';
+
+const API_BASE = '/api/lit';
+
+async function createCompany(body: { name: string; domain?: string; city?: string; state?: string; country?: string }) {
+  const res = await fetch(`${API_BASE}/crm/company.create`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 export default function CreateCompanyModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (id: string, name: string) => void }) {
   const [form, setForm] = useState({ name: '', domain: '', city: '', state: '', country: 'US' });

@@ -13,7 +13,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { kpiFrom } from '@/lib/api';
+import { kpiFrom } from '@/lib/kpi';
 import CompanyLanesPanel from '@/components/CompanyLanesPanel';
 
 export default function CompanySearchCard({
