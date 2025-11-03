@@ -13,7 +13,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { kpiFrom } from '@/lib/kpi';
+import { kpiFrom } from '@/lib/api';
 
 export default function CompanySearchListItem({
   company,

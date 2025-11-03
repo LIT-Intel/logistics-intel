@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { searchCompanies as searchCompaniesHelper } from '@/lib/api';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { searchCompanies as searchCompaniesHelper, postSearchCompanies } from '@/lib/api';
 
-type SearchRow = {
+export type SearchRow = {
   company_id?: string;
   company_name: string;
-  shipments_12m?: number | null;
-  last_activity?: string | { value?: string } | null;
+  shipments_12m?: number;
+  last_activity?: { value?: string };
   top_routes?: Array<{ origin_country?: string; dest_country?: string; shipments?: number }>;
-  top_carriers?: Array<{ carrier?: string }>;
 };
 
-type SearchFilters = {
+type Page = { rows: SearchRow[]; nextOffset: number; token: string };
+
+export type SearchFilters = {
   origin: string | null;
   destination: string | null;
   hs: string | null;
@@ -25,138 +26,160 @@ type SearchFilters = {
   dest_port?: string | null;
 };
 
-type SearchState = {
-  q: string;
-  setQ: (value: string) => void;
-  rows: SearchRow[];
-  loading: boolean;
-  run: (reset?: boolean) => void;
-  next: () => void;
-  prev: () => void;
-  page: number;
-  limit: number;
-  setLimit: (value: number) => void;
-  filters: SearchFilters;
-  setFilters: (updater: (prev: SearchFilters) => SearchFilters) => void;
-  hasNext: boolean;
-  total: number | null;
-  initialized: boolean;
-};
+const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
 
-const DEFAULT_FILTERS: SearchFilters = {
-  origin: null,
-  destination: null,
-  hs: null,
-  mode: null,
-  date_start: null,
-  date_end: null,
-  year: null,
-  origin_city: null,
-  dest_city: null,
-  dest_state: null,
-  dest_postal: null,
-  dest_port: null,
-};
-
-export function useSearch(): SearchState {
+export function useSearch() {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<SearchRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState<number>(20);
+  const pagesRef = useRef<Page[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
+  const [limit, setLimit] = useState<number>(25);
   const [hasNext, setHasNext] = useState(false);
   const [total, setTotal] = useState<number | null>(null);
-  const [offset, setOffset] = useState(0);
-  const [initialized, setInitialized] = useState(false);
-  const [filters, setFiltersState] = useState<SearchFilters>(DEFAULT_FILTERS);
-  const abortRef = useRef<AbortController | null>(null);
+  const [filters, setFilters] = useState<SearchFilters>({
+    origin: null,
+    destination: null,
+    hs: null,
+    mode: null,
+    date_start: null,
+    date_end: null,
+    year: null,
+    origin_city: null,
+    dest_city: null,
+    dest_state: null,
+    dest_postal: null,
+    dest_port: null,
+  });
 
-  const fetchAt = useCallback(async (targetOffset: number) => {
-    const normalizedOffset = Math.max(0, targetOffset);
+  const tokens = useMemo(() => {
+    const trimmed = q.trim();
+    if (!trimmed) return [];
+    const t = trimmed.split(RE_SPLIT).map(s => s.trim()).filter(Boolean);
+    return t.length ? t.slice(0, 4) : [trimmed];
+  }, [q]);
+
+  const fetchTokenPage = async (token: string | null, f: SearchFilters, offset = 0, signal?: AbortSignal) => {
+    const data = await searchCompaniesHelper({
+      q: token ?? null,
+      origin: f.origin,
+      destination: f.destination,
+      hs: f.hs,
+      mode: f.mode,
+      date_start: f.date_start ?? null,
+      date_end: f.date_end ?? null,
+      origin_city: f.origin_city ?? null,
+      dest_city: f.dest_city ?? null,
+      dest_state: f.dest_state ?? null,
+      dest_postal: f.dest_postal ?? null,
+      dest_port: f.dest_port ?? null,
+      page: Math.floor(offset / limit) + 1,
+      pageSize: limit,
+    }, signal);
+    let got: SearchRow[] = data?.items ?? [];
+    let total = data?.total ?? got.length;
+    // Fallback: if nothing returned, try legacy POST body with limit/offset only
+    if (!Array.isArray(got) || got.length === 0) {
+      try {
+        const legacy = await postSearchCompanies({ q: token ?? null, limit, offset });
+        const items = Array.isArray(legacy?.items)
+          ? legacy.items
+          : (Array.isArray(legacy?.rows) ? legacy.rows : (Array.isArray(legacy?.results) ? legacy.results : []));
+        const tot = typeof legacy?.total === 'number' ? legacy.total : (legacy?.meta?.total ?? legacy?.count ?? items.length);
+        got = items as any;
+        total = tot as any;
+      } catch {}
+    }
+    const nextOffset = offset + limit >= total ? -1 : offset + limit;
+    return { rows: got, nextOffset, token: String(token ?? '') } as Page;
+  };
+
+  const run = useCallback(async (reset = true, filtersOverride?: SearchFilters) => {
+    const f = filtersOverride ?? filters;
+    if (reset) { pagesRef.current = []; setPage(1); }
     setLoading(true);
     try {
-      abortRef.current?.abort();
+      // cancel in-flight
+      if (abortRef.current) abortRef.current.abort();
       const ac = new AbortController();
       abortRef.current = ac;
 
-      const response = await searchCompaniesHelper({
-        q: q.trim() || null,
-        origin: filters.origin,
-        dest: filters.destination,
-        hs: filters.hs,
-        mode: filters.mode || undefined,
-        startDate: filters.date_start || undefined,
-        endDate: filters.date_end || undefined,
-        limit,
-        offset: normalizedOffset,
-      }, ac.signal);
-
-      const list = Array.isArray(response?.rows) ? (response.rows as SearchRow[]) : [];
-      const meta = response?.meta ?? { total: list.length, page_size: limit };
-      const totalCount = typeof meta?.total === 'number' ? meta.total : list.length;
-
-      setRows(list);
-      setTotal(totalCount);
-      setHasNext(normalizedOffset + limit < totalCount);
-      setOffset(normalizedOffset);
-      setPage(Math.floor(normalizedOffset / limit) + 1);
-    } catch (err) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('[useSearch] fetch error', err);
+      const firstPages = tokens.length > 0
+        ? await Promise.all(tokens.map(t => fetchTokenPage(t, f, 0, ac.signal)))
+        : [await fetchTokenPage(null, f, 0, ac.signal)];
+      pagesRef.current = firstPages;
+      const dedup = new Map<string, SearchRow>();
+      for (const p of firstPages) {
+        for (const r of p.rows) {
+          const key = (r.company_id?.trim() || `name:${r.company_name.toLowerCase()}`);
+          if (!dedup.has(key)) dedup.set(key, r);
+        }
       }
+      setRows(Array.from(dedup.values()).slice(0, limit));
+      // set hasNext based on any page having more
+      setHasNext(firstPages.some(p => p.nextOffset !== -1));
+      // best-effort total: if single token use API total, else use dedup seen so far
+      const firstTotal = (firstPages.length === 1) ? (await Promise.resolve(0), (pagesRef.current as any), (firstPages[0] as any)) : null;
+      if (firstPages.length === 1) setTotal(total);
+      else setTotal(dedup.size);
+    } catch (err) {
+      console.error('[useSearch] run error', err);
       setRows([]);
       setHasNext(false);
-      if (initialized) {
-        setTotal(0);
-      }
     } finally {
       setLoading(false);
-      setInitialized(true);
     }
-  }, [q, filters, limit, initialized]);
+  }, [tokens, filters, limit]);
 
-  const run = useCallback((reset = true) => {
-    if (reset) {
-      fetchAt(0);
-    } else {
-      fetchAt(offset);
+  const next = useCallback(async () => {
+    setLoading(true);
+    try {
+      const ac = new AbortController();
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = ac;
+
+      const advanced = await Promise.all(
+        pagesRef.current.map(async p => {
+          if (p.nextOffset === -1) return p;
+          return fetchTokenPage(p.token, filters, p.nextOffset, ac.signal);
+        })
+      );
+      pagesRef.current = advanced;
+      const dedup = new Map<string, SearchRow>();
+      for (const p of advanced) {
+        for (const r of p.rows) {
+          const key = (r.company_id?.trim() || `name:${r.company_name.toLowerCase()}`);
+          if (!dedup.has(key)) dedup.set(key, r);
+        }
+      }
+      const pageNum = page + 1;
+      setPage(pageNum);
+      setRows(Array.from(dedup.values()).slice((pageNum-1)*limit, pageNum*limit));
+      setHasNext(advanced.some(p => p.nextOffset !== -1));
+    } catch (err) {
+      console.error('[useSearch] next error', err);
+    } finally {
+      setLoading(false);
     }
-  }, [fetchAt, offset]);
-
-  const next = useCallback(() => {
-    if (total != null && offset + limit >= total) return;
-    fetchAt(offset + limit);
-  }, [fetchAt, offset, limit, total]);
+  }, [page, filters, limit]);
 
   const prev = useCallback(() => {
-    if (offset === 0) return;
-    fetchAt(Math.max(0, offset - limit));
-  }, [fetchAt, offset, limit]);
+    if (page <= 1) return;
+    const pageNum = page - 1;
+    const all = Array.from(
+      pagesRef.current.reduce((acc, p) => {
+        for (const r of p.rows) {
+          const key = (r.company_id?.trim() || `name:${r.company_name.toLowerCase()}`);
+          if (!acc.has(key)) acc.set(key, r);
+        }
+        return acc;
+      }, new Map<string, SearchRow>())
+    ).map(([, v]) => v);
+    setPage(pageNum);
+    setRows(all.slice((pageNum-1)*limit, pageNum*limit));
+    setHasNext(pagesRef.current.some(p => p.nextOffset !== -1));
+  }, [page, limit]);
 
-  useEffect(() => {
-    fetchAt(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const setFilters = useCallback((updater: (prev: SearchFilters) => SearchFilters) => {
-    setFiltersState((prev) => updater({ ...prev }));
-  }, []);
-
-  return {
-    q,
-    setQ,
-    rows,
-    loading,
-    run,
-    next,
-    prev,
-    page,
-    limit,
-    setLimit,
-    filters,
-    setFilters,
-    hasNext,
-    total,
-    initialized,
-  };
+  return { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext, total };
 }

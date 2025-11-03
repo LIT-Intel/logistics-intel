@@ -13,7 +13,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { kpiFrom } from '@/lib/kpi';
+import { kpiFrom } from '@/lib/api';
 import CompanyLanesPanel from '@/components/CompanyLanesPanel';
 
 export default function CompanySearchCard({
@@ -150,7 +150,7 @@ export default function CompanySearchCard({
       {/* Lanes Panel Toggle */}
       {showLanes && (
         <div className="mt-3" onClick={(e)=> e.stopPropagation()}>
-          <CompanyLanesPanel companyId={company.company_id || company.id || ''} />
+          <CompanyLanesPanel company={company.name || company.company_name || ''} />
         </div>
       )}
 

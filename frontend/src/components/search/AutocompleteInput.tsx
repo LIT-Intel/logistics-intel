@@ -7,7 +7,7 @@ type Suggestion = {
   domain?: string | null;
 };
 
-function useDebounced<T>(value: T, delay = 300) {
+function useDebounced<T>(value: T, delay = 250) {
   const [v, setV] = useState(value);
   useEffect(() => {
     const id = setTimeout(() => setV(value), delay);
@@ -20,14 +20,12 @@ export default function AutocompleteInput({
   value,
   onChange,
   onSubmit,
-  onSelect,
   placeholder = "Search by company name or alias (e.g., UPS, Maersk)…",
   minChars = 2,
 }: {
   value: string;
   onChange: (next: string) => void;
   onSubmit: () => void;
-  onSelect?: (next: string) => void;
   placeholder?: string;
   minChars?: number;
 }) {
@@ -53,31 +51,25 @@ export default function AutocompleteInput({
         // use the robust API helper (handles proxy/gateway fallbacks)
         const res = await searchCompaniesApi({
           q,
+          pageSize: 6,
           limit: 6,
-          offset: 0,
+          // keep filters empty for suggestion speed
         });
         if (cancelled) return;
-        const rows = Array.isArray((res as any)?.rows)
-          ? (res as any).rows
-          : Array.isArray((res as any)?.results)
+        const rows = Array.isArray((res as any)?.results)
           ? (res as any).results
+          : Array.isArray((res as any)?.rows)
+          ? (res as any).rows
           : Array.isArray((res as any)?.items)
           ? (res as any).items
           : [];
-        const seen = new Set<string>();
         const mapped: Suggestion[] = rows
           .map((r: any) => ({
             company_id: r?.company_id ?? r?.id,
             company_name: String(r?.company_name ?? r?.name ?? "").trim(),
             domain: r?.domain ?? null,
           }))
-          .filter((r: Suggestion) => {
-            if (!r.company_name) return false;
-            const key = `${r.company_name}`.toLowerCase();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
+          .filter((r: Suggestion) => r.company_name);
         setItems(mapped);
         // Keep open only if we have results
         setOpen(mapped.length > 0);
@@ -152,11 +144,7 @@ export default function AutocompleteInput({
                   onClick={() => {
                     onChange(s.company_name);
                     setOpen(false);
-                    if (onSelect) {
-                      onSelect(s.company_name);
-                    } else {
-                      onSubmit();
-                    }
+                    onSubmit();
                   }}
                 >
                   <div className="font-medium text-gray-900">{s.company_name}</div>

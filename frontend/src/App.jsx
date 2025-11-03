@@ -7,8 +7,7 @@ import { useAuth } from "@/auth/AuthProvider";
 // Lazy-load primary pages
 const Landing        = lazy(() => import("@/pages/LandingPage"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
-const Search         = lazy(() => import("@/pages/search/index"));
-const SearchTrends   = lazy(() => import("@/pages/search/trends"));
+const Search         = lazy(() => import("@/pages/Search"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
 const Companies      = lazy(() => import("@/pages/companies/index"));
 const Campaigns      = lazy(() => import("@/pages/Campaigns"));
@@ -111,14 +110,6 @@ export default function App() {
           element={
             <RequireAuth>
               <Layout currentPageName="Search"><Search /></Layout>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/app/search/trends"
-          element={
-            <RequireAuth>
-              <Layout currentPageName="Search Trends"><SearchTrends /></Layout>
             </RequireAuth>
           }
         />
