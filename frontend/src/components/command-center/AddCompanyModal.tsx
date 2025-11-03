@@ -38,13 +38,8 @@ export default function AddCompanyModal({ open, onClose, onSaved }: Props) {
   async function runLitSearch() {
     setLoading(true); setError(null); setRows(null);
     try {
-      const resp = await searchCompanies({ q: q || null, limit: 10, offset: 0 });
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`POST /public/searchCompanies — ${resp.status} ${text}`);
-      }
-      const data = await resp.json();
-      setRows(Array.isArray((data as any)?.items) ? (data as any).items : (Array.isArray((data as any)?.rows) ? (data as any).rows : []));
+      const result = await searchCompanies({ q: q || null, limit: 10, offset: 0 });
+      setRows(Array.isArray(result?.rows) ? result.rows : (Array.isArray(result?.items) ? result.items : []));
     } catch (e:any) {
       setError(e?.message || "Search failed");
       setRows([]);

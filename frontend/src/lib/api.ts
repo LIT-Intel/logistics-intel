@@ -15,15 +15,20 @@ export type SearchPayload = {
   offset?: number;
 };
 
-type SearchBody = {
-  q?: string | null;
-  mode?: 'air' | 'ocean';
-  hs?: string[] | null;
-  origin?: string[] | null;
-  dest?: string[] | null;
-  carrier?: string[] | null;
+export type SearchRequest = {
+  q?: string | string[] | null;
+  origin?: string | string[] | null;
+  origin_country?: string | string[] | null;
+  destination?: string | string[] | null;
+  dest?: string | string[] | null;
+  dest_country?: string | string[] | null;
+  hs?: string | string[] | null;
+  mode?: 'air' | 'ocean' | null;
+  carrier?: string | string[] | null;
   startDate?: string | null;
   endDate?: string | null;
+  date_start?: string | null;
+  date_end?: string | null;
   origin_city?: string | null;
   dest_city?: string | null;
   dest_state?: string | null;
@@ -31,10 +36,32 @@ type SearchBody = {
   dest_port?: string | null;
   limit?: number;
   offset?: number;
+  page?: number;
+  pageSize?: number;
 };
 
-export async function searchCompaniesProxy(payload: SearchPayload){
-  const resp = await searchCompanies({
+export type SearchCompaniesResult<T = any> = {
+  items: T[];
+  rows: T[];
+  total: number;
+  raw: any;
+  limit: number;
+  offset: number;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const toArray = (value: string | string[] | null | undefined) => {
+  if (value == null) return undefined;
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  return String(value)
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+};
+
+export async function searchCompaniesProxy(payload: SearchPayload) {
+  const result = await searchCompanies({
     q: payload.q,
     origin: payload.origin ?? [],
     dest: payload.dest ?? [],
@@ -42,8 +69,7 @@ export async function searchCompaniesProxy(payload: SearchPayload){
     limit: payload.limit,
     offset: payload.offset,
   });
-  if (!resp.ok) throw new Error(`searchCompanies ${resp.status}`);
-  return resp.json();
+  return result.raw;
 }
 
 export async function getCompanyShipmentsProxy(params: {company_id?: string; company_name?: string; origin?: string[]; dest?: string[]; hs?: string[]; limit?: number; offset?: number;}){
@@ -144,66 +170,113 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const res = await searchCompanies(payload);
-  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
-  return res.json();
+  const result = await searchCompanies(payload);
+  return result.raw;
 }
 
 const GATEWAY_BASE_DEFAULT = RESOLVED_API_BASE;
 
-export async function searchCompanies(body: SearchBody = {}, signal?: AbortSignal) {
-  const payload: Record<string, any> = {};
+export async function searchCompanies(input: SearchRequest = {}, signal?: AbortSignal): Promise<SearchCompaniesResult> {
+  const limit = clamp(Number(input.pageSize ?? input.limit ?? 20), 1, 50);
+  const resolvedOffset = (() => {
+    if (input.page != null) {
+      return Math.max(0, (Number(input.page) - 1) * limit);
+    }
+    if (input.offset != null) {
+      return Math.max(0, Number(input.offset));
+    }
+    const legacyOffset = (input as any)?.offset;
+    if (legacyOffset != null) {
+      return Math.max(0, Number(legacyOffset));
+    }
+    return 0;
+  })();
 
-  if (body.q !== undefined && body.q !== null) {
-    payload.q = String(body.q ?? '').trim();
-  }
-
-  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-  const limit = clamp(Number(body.limit ?? 20), 1, 50);
-  const offset = Math.max(Number(body.offset ?? 0), 0);
-  payload.limit = limit;
-  payload.offset = offset;
-
-  const toArray = (value: string[] | string | null | undefined) => {
-    if (value == null) return undefined;
-    if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
-    return String(value)
-      .split(',')
-      .map((v) => v.trim())
-      .filter(Boolean);
+  const payload: Record<string, any> = {
+    q: Array.isArray(input.q)
+      ? String(input.q[0] ?? '').trim()
+      : String(input.q ?? '').trim(),
+    limit,
+    offset: resolvedOffset,
   };
 
-  const mode = body.mode ? String(body.mode).toLowerCase() : undefined;
-  if (mode === 'air' || mode === 'ocean') {
-    payload.mode = mode;
+  const originValue = toArray(input.origin ?? input.origin_country ?? null);
+  if (originValue?.length) payload.origin = originValue;
+
+  const destValue = toArray(
+    input.dest ??
+      input.destination ??
+      input.dest_country ??
+      (input as any)?.dest ??
+      (input as any)?.destination ??
+      null,
+  );
+  if (destValue?.length) payload.dest = destValue;
+
+  const hsValue = toArray(input.hs ?? null);
+  if (hsValue?.length) payload.hs = hsValue;
+
+  const modeValue = input.mode ? String(input.mode).toLowerCase() : undefined;
+  if (modeValue === 'air' || modeValue === 'ocean') payload.mode = modeValue;
+
+  const carrierValue = toArray(input.carrier ?? null);
+  if (carrierValue?.length) payload.carrier = carrierValue;
+
+  const startDate = input.startDate ?? input.date_start ?? null;
+  const endDate = input.endDate ?? input.date_end ?? null;
+  if (startDate) payload.startDate = startDate;
+  if (endDate) payload.endDate = endDate;
+
+  if (input.origin_city) payload.origin_city = input.origin_city;
+  if (input.dest_city) payload.dest_city = input.dest_city;
+  if (input.dest_state) payload.dest_state = input.dest_state;
+  if (input.dest_postal) payload.dest_postal = input.dest_postal;
+  if (input.dest_port) payload.dest_port = input.dest_port;
+
+  let response: Response;
+  try {
+    response = await fetch(POST_SEARCH, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err) {
+    throw new Error(`POST /public/searchCompanies — network error: ${String((err as Error)?.message ?? err)}`);
   }
 
-  const hs = toArray(body.hs ?? null);
-  if (hs && hs.length) payload.hs = hs;
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`POST /public/searchCompanies — ${response.status}${text ? ` ${text}` : ''}`);
+  }
 
-  const origin = toArray(body.origin ?? null);
-  if (origin && origin.length) payload.origin = origin;
+  const data = await response.json().catch(() => ({}));
+  const rows = Array.isArray(data?.rows)
+    ? data.rows
+    : Array.isArray(data?.results)
+    ? data.results
+    : Array.isArray(data?.items)
+    ? data.items
+    : [];
 
-  const dest = toArray(body.dest ?? null);
-  if (dest && dest.length) payload.dest = dest;
+  const totalRaw = typeof data?.meta?.total === 'number'
+    ? data.meta.total
+    : typeof data?.total === 'number'
+    ? data.total
+    : typeof data?.count === 'number'
+    ? data.count
+    : rows.length;
 
-  const carrier = toArray(body.carrier ?? null);
-  if (carrier && carrier.length) payload.carrier = carrier;
+  const total = Number.isFinite(totalRaw) ? Number(totalRaw) : rows.length;
 
-  if (body.startDate) payload.startDate = body.startDate;
-  if (body.endDate) payload.endDate = body.endDate;
-  if (body.origin_city) payload.origin_city = body.origin_city;
-  if (body.dest_city) payload.dest_city = body.dest_city;
-  if (body.dest_state) payload.dest_state = body.dest_state;
-  if (body.dest_postal) payload.dest_postal = body.dest_postal;
-  if (body.dest_port) payload.dest_port = body.dest_port;
-
-  return fetch(POST_SEARCH, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal,
-  });
+  return {
+    items: rows,
+    rows,
+    total,
+    raw: data,
+    limit,
+    offset: resolvedOffset,
+  };
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
@@ -262,10 +335,15 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
 }
 
 export async function getFilterOptions(signal?: AbortSignal) {
-  const res = await fetch(GET_FILTERS, { method: 'GET', headers: { accept: 'application/json' }, signal });
+  let res: Response;
+  try {
+    res = await fetch(GET_FILTERS, { method: 'GET', headers: { accept: 'application/json' }, signal });
+  } catch (err) {
+    throw new Error(`GET /public/getFilterOptions — network error: ${String((err as Error)?.message ?? err)}`);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`getFilterOptions failed: ${res.status}${text ? ` — ${text}` : ''}`);
+    throw new Error(`GET /public/getFilterOptions — ${res.status}${text ? ` ${text}` : ''}`);
   }
   return res.json();
 }

@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { searchCompanies as searchCompaniesApi } from "@/lib/api";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type Suggestion = {
   company_id?: string | number;
@@ -7,32 +8,25 @@ type Suggestion = {
   domain?: string | null;
 };
 
-function useDebounced<T>(value: T, delay = 250) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setV(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return v;
-}
-
 export default function AutocompleteInput({
   value,
   onChange,
   onSubmit,
   placeholder = "Search by company name or alias (e.g., UPS, Maersk)…",
   minChars = 2,
+  disabled = false,
 }: {
   value: string;
   onChange: (next: string) => void;
   onSubmit: () => void;
   placeholder?: string;
   minChars?: number;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Suggestion[]>([]);
-  const debouncedQ = useDebounced(value, 250);
+  const debouncedQ = useDebounce(value, 300);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   // load suggestions
@@ -40,7 +34,8 @@ export default function AutocompleteInput({
     let cancelled = false;
     (async () => {
       const q = (debouncedQ || "").trim();
-      if (q.length < minChars) {
+      if (disabled || q.length < minChars) {
+        setLoading(false);
         setItems([]);
         setOpen(false);
         return;
@@ -48,21 +43,17 @@ export default function AutocompleteInput({
       setLoading(true);
       setOpen(true); // show the dropdown immediately with a loading state
       try {
-        // use the robust API helper (handles proxy/gateway fallbacks)
-        const res = await searchCompaniesApi({
+        const result = await searchCompaniesApi({
           q,
           pageSize: 6,
           limit: 6,
           // keep filters empty for suggestion speed
+          offset: 0,
         });
         if (cancelled) return;
-        const rows = Array.isArray((res as any)?.results)
-          ? (res as any).results
-          : Array.isArray((res as any)?.rows)
-          ? (res as any).rows
-          : Array.isArray((res as any)?.items)
-          ? (res as any).items
-          : [];
+        const rows = Array.isArray(result?.rows)
+          ? result.rows
+          : (Array.isArray(result?.items) ? result.items : []);
         const mapped: Suggestion[] = rows
           .map((r: any) => ({
             company_id: r?.company_id ?? r?.id,
@@ -85,7 +76,7 @@ export default function AutocompleteInput({
     return () => {
       cancelled = true;
     };
-  }, [debouncedQ, minChars]);
+  }, [debouncedQ, minChars, disabled]);
 
   // close on outside click / escape
   useEffect(() => {
@@ -123,6 +114,7 @@ export default function AutocompleteInput({
         type="search"
         autoComplete="off"
         spellCheck={false}
+        disabled={disabled}
       />
 
       {/* dropdown */}
@@ -144,7 +136,6 @@ export default function AutocompleteInput({
                   onClick={() => {
                     onChange(s.company_name);
                     setOpen(false);
-                    onSubmit();
                   }}
                 >
                   <div className="font-medium text-gray-900">{s.company_name}</div>

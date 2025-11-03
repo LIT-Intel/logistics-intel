@@ -21,12 +21,7 @@ export default function SearchPanel() {
   async function onLoadFilters() {
     try {
       setError(null); setLoading(true);
-      const resp = await getFilterOptions();
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`GET /public/getFilterOptions — ${resp.status} ${text}`);
-      }
-      const data = await resp.json();
+      const data = await getFilterOptions();
       setFilters(data);
     } catch (e) {
       setError(e?.message || 'Failed to load filters');
@@ -45,13 +40,8 @@ export default function SearchPanel() {
         limit: 10,
         offset: 0,
       };
-      const resp = await searchCompanies(body);
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`POST /public/searchCompanies — ${resp.status} ${text}`);
-      }
-      const data = await resp.json();
-      setResults(Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.results) ? data.results : []));
+      const result = await searchCompanies(body);
+      setResults(result.rows ?? result.items ?? []);
     } catch (e) {
       setError(e?.message || 'Search failed');
     } finally {

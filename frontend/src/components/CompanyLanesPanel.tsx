@@ -22,14 +22,9 @@ export default function CompanyLanesPanel({ companyId, limit = 3 }: Props) {
     setLoading(true);
     setError(null);
     searchCompanies({ q: companyId, limit: 5, offset: 0 })
-      .then(async (resp) => {
+      .then((result) => {
         if (cancelled) return;
-        if (!resp.ok) {
-          const text = await resp.text();
-          throw new Error(`POST /public/searchCompanies — ${resp.status} ${text}`);
-        }
-        const data = await resp.json();
-        const rows = Array.isArray(data?.rows) ? data.rows : [];
+        const rows = Array.isArray(result?.rows) ? result.rows : [];
         const matched = rows.find((row: any) => String(row?.company_id || '').trim() === companyId.trim());
         const fallback = rows[0];
         const lanes = (matched?.top_routes ?? fallback?.top_routes ?? []) as any[];

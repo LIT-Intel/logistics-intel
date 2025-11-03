@@ -9,7 +9,7 @@ export type SearchRow = {
   top_routes?: Array<{ origin_country?: string; dest_country?: string; shipments?: number }>;
 };
 
-type Page = { rows: SearchRow[]; nextOffset: number; token: string };
+type Page = { rows: SearchRow[]; nextOffset: number; token: string; total: number; offset: number; limit: number };
 
 export type SearchFilters = {
   origin: string | null;
@@ -28,6 +28,12 @@ export type SearchFilters = {
 
 const RE_SPLIT = /(?:\sand\s|,|\|)+/i;
 
+const toErrorMessage = (err: unknown) => {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string' && err.trim()) return err;
+  return 'Search failed.';
+};
+
 export function useSearch() {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<SearchRow[]>([]);
@@ -38,6 +44,7 @@ export function useSearch() {
   const [limit, setLimit] = useState<number>(25);
   const [hasNext, setHasNext] = useState(false);
   const [total, setTotal] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<SearchFilters>({
     origin: null,
     destination: null,
@@ -61,7 +68,7 @@ export function useSearch() {
   }, [q]);
 
   const fetchTokenPage = async (token: string | null, f: SearchFilters, offset = 0, signal?: AbortSignal) => {
-    const resp = await searchCompaniesHelper({
+    const baseResult = await searchCompaniesHelper({
       q: token ?? null,
       origin: f.origin,
       dest: f.destination,
@@ -76,40 +83,41 @@ export function useSearch() {
       dest_port: f.dest_port ?? null,
       page: Math.floor(offset / limit) + 1,
       pageSize: limit,
+      offset,
+      limit,
     }, signal);
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      throw new Error(`POST /public/searchCompanies ? ${resp.status} ${text}`);
-    }
-    const data = await resp.json();
-    let got: SearchRow[] = Array.isArray(data?.items)
-      ? data.items
-      : (Array.isArray(data?.rows) ? data.rows : []);
-    let total = typeof data?.total === 'number'
-      ? data.total
-      : (typeof data?.meta?.total === 'number' ? data.meta.total : got.length);
-    // Fallback: if nothing returned, try legacy POST body with limit/offset only
+
+    let got: SearchRow[] = Array.isArray(baseResult?.rows)
+      ? baseResult.rows
+      : (Array.isArray(baseResult?.items) ? baseResult.items : []);
+    let totalCount = typeof baseResult?.total === 'number'
+      ? baseResult.total
+      : got.length;
+
     if (!Array.isArray(got) || got.length === 0) {
       try {
         const legacy = await postSearchCompanies({ q: token ?? null, limit, offset });
-        const items = Array.isArray(legacy?.items)
-          ? legacy.items
-          : (Array.isArray(legacy?.rows) ? legacy.rows : (Array.isArray(legacy?.results) ? legacy.results : []));
-        const tot = typeof legacy?.total === 'number' ? legacy.total : (legacy?.meta?.total ?? legacy?.count ?? items.length);
+        const items = Array.isArray(legacy?.rows)
+          ? legacy.rows
+          : (Array.isArray(legacy?.items) ? legacy.items : (Array.isArray(legacy?.results) ? legacy.results : []));
+        const tot = typeof legacy?.total === 'number'
+          ? legacy.total
+          : (legacy?.meta?.total ?? legacy?.count ?? items.length);
         got = items as any;
-        total = tot as any;
+        totalCount = Number(tot ?? got.length);
       } catch {}
     }
-    const nextOffset = offset + limit >= total ? -1 : offset + limit;
-    return { rows: got, nextOffset, token: String(token ?? '') } as Page;
+
+    const nextOffset = offset + limit >= totalCount ? -1 : offset + limit;
+    return { rows: got, nextOffset, token: String(token ?? ''), total: totalCount, offset, limit };
   };
 
   const run = useCallback(async (reset = true, filtersOverride?: SearchFilters) => {
     const f = filtersOverride ?? filters;
     if (reset) { pagesRef.current = []; setPage(1); }
     setLoading(true);
+    setError(null);
     try {
-      // cancel in-flight
       if (abortRef.current) abortRef.current.abort();
       const ac = new AbortController();
       abortRef.current = ac;
@@ -125,17 +133,20 @@ export function useSearch() {
           if (!dedup.has(key)) dedup.set(key, r);
         }
       }
-      setRows(Array.from(dedup.values()).slice(0, limit));
-      // set hasNext based on any page having more
+      const deduped = Array.from(dedup.values());
+      setRows(deduped.slice(0, limit));
       setHasNext(firstPages.some(p => p.nextOffset !== -1));
-      // best-effort total: if single token use API total, else use dedup seen so far
-      const firstTotal = (firstPages.length === 1) ? (await Promise.resolve(0), (pagesRef.current as any), (firstPages[0] as any)) : null;
-      if (firstPages.length === 1) setTotal(total);
-      else setTotal(dedup.size);
+
+      const computedTotal = firstPages.length === 1
+        ? firstPages[0].total
+        : deduped.length;
+      setTotal(computedTotal);
     } catch (err) {
       console.error('[useSearch] run error', err);
       setRows([]);
       setHasNext(false);
+      setTotal(0);
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -143,13 +154,14 @@ export function useSearch() {
 
   const next = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const ac = new AbortController();
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = ac;
 
       const advanced = await Promise.all(
-        pagesRef.current.map(async p => {
+        pagesRef.current.map(async (p) => {
           if (p.nextOffset === -1) return p;
           return fetchTokenPage(p.token, filters, p.nextOffset, ac.signal);
         })
@@ -162,12 +174,16 @@ export function useSearch() {
           if (!dedup.has(key)) dedup.set(key, r);
         }
       }
+      const deduped = Array.from(dedup.values());
       const pageNum = page + 1;
       setPage(pageNum);
-      setRows(Array.from(dedup.values()).slice((pageNum-1)*limit, pageNum*limit));
+      setRows(deduped.slice((pageNum - 1) * limit, pageNum * limit));
       setHasNext(advanced.some(p => p.nextOffset !== -1));
+      const computedTotal = advanced.length === 1 ? advanced[0].total : deduped.length;
+      setTotal(computedTotal);
     } catch (err) {
       console.error('[useSearch] next error', err);
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -175,6 +191,7 @@ export function useSearch() {
 
   const prev = useCallback(() => {
     if (page <= 1) return;
+    setError(null);
     const pageNum = page - 1;
     const all = Array.from(
       pagesRef.current.reduce((acc, p) => {
@@ -190,5 +207,5 @@ export function useSearch() {
     setHasNext(pagesRef.current.some(p => p.nextOffset !== -1));
   }, [page, limit]);
 
-  return { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext, total };
+  return { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext, total, error, setError };
 }
