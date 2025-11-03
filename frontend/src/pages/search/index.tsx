@@ -5,7 +5,7 @@ import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
 import { searchCompanies, getFilterOptions, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
-import { API_BASE } from '@/lib/env';
+import { API_BASE } from '@/lib/apiBase';
 import { Button } from '@/components/ui/button';
 import AutocompleteInput from '@/components/search/AutocompleteInput';
 import { Badge } from '@/components/ui/badge';
@@ -301,9 +301,7 @@ export default function SearchPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [hasNext, setHasNext] = useState(false);
-  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
@@ -327,17 +325,20 @@ export default function SearchPage() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await getFilterOptions();
-        if (cancelled) return;
-        setFilterOptions(data);
-        setError(null);
+        const resp = await getFilterOptions();
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          throw new Error(`GET ${API_BASE}/public/getFilterOptions - ${resp.status} ${text}`);
+        }
+        const data = await resp.json();
+        if (!cancelled) {
+          setFilterOptions(data);
+        }
       } catch (err) {
-        if (cancelled) return;
-        const text = err instanceof Error && err.message ? err.message : '';
-        const message = text.includes('/public/getFilterOptions')
-          ? text.replace('GET /public/getFilterOptions', `GET ${API_BASE}/public/getFilterOptions`)
-          : `GET ${API_BASE}/public/getFilterOptions — ${text || 'unknown error'}`;
-        setError(message);
+        if (!cancelled) {
+          setFilterOptions(null);
+          setError((prev) => prev ?? (err instanceof Error && err.message ? err.message : `GET ${API_BASE}/public/getFilterOptions - unknown error`));
+        }
       }
     })();
     return () => {
@@ -346,73 +347,77 @@ export default function SearchPage() {
   }, []);
 
   const buildSearchPayload = useCallback(
-    (opts: { offset?: number; limit?: number } = {}) => {
-      const nextLimit = opts.limit ?? limit;
-      const payload: Record<string, any> = {
+    (targetPage: number, pageSize: number) => {
+      const safePage = Math.max(1, targetPage);
+      const limitValue = Math.max(1, pageSize);
+      const offset = (safePage - 1) * limitValue;
+      const body: Record<string, any> = {
         q: q.trim(),
-        limit: nextLimit,
-        offset: opts.offset ?? 0,
+        limit: limitValue,
+        offset,
       };
 
-      const origin = typeof filters.origin === 'string' ? filters.origin.trim() : '';
-      if (origin) payload.origin = [origin];
-
-      const destination = typeof filters.destination === 'string' ? filters.destination.trim() : '';
-      if (destination) payload.dest = [destination];
-
-      if (filters.mode) payload.mode = filters.mode;
-
-      if (filters.hs) {
-        payload.hs = String(filters.hs)
-          .split(',')
+      const splitToArray = (value: string | null | undefined) => {
+        if (!value) return undefined;
+        return String(value)
+          .split(/[,|]+/)
           .map((part) => part.trim())
           .filter(Boolean);
-      }
+      };
 
-      if (filters.date_start) payload.startDate = filters.date_start;
-      if (filters.date_end) payload.endDate = filters.date_end;
-      if (filters.origin_city) payload.origin_city = filters.origin_city;
-      if (filters.dest_city) payload.dest_city = filters.dest_city;
-      if (filters.dest_state) payload.dest_state = filters.dest_state;
-      if (filters.dest_postal) payload.dest_postal = filters.dest_postal;
-      if (filters.dest_port) payload.dest_port = filters.dest_port;
+      const origin = splitToArray(filters.origin);
+      if (origin && origin.length) body.origin = origin;
 
-      return payload;
+      const destination = splitToArray(filters.destination);
+      if (destination && destination.length) body.dest = destination;
+
+      const hsValues = splitToArray(filters.hs);
+      if (hsValues && hsValues.length) body.hs = hsValues;
+
+      if (filters.mode) body.mode = filters.mode;
+
+      if (filters.date_start) body.startDate = filters.date_start;
+      if (filters.date_end) body.endDate = filters.date_end;
+      if (filters.origin_city) body.origin_city = filters.origin_city;
+      if (filters.dest_city) body.dest_city = filters.dest_city;
+      if (filters.dest_state) body.dest_state = filters.dest_state;
+      if (filters.dest_postal) body.dest_postal = filters.dest_postal;
+      if (filters.dest_port) body.dest_port = filters.dest_port;
+
+      return { body, offset, limitValue, safePage };
     },
-    [q, filters, limit]
+    [q, filters]
   );
 
-  const performSearch = useCallback(
-    async (targetPage: number, customLimit?: number) => {
-      const nextLimit = customLimit ?? limit;
-      const safePage = Math.max(1, targetPage);
-      const offset = (safePage - 1) * nextLimit;
-
+  const fetchResults = useCallback(
+    async (targetPage: number, targetLimit: number = limit) => {
+      const { body, offset, limitValue, safePage } = buildSearchPayload(targetPage, targetLimit);
       setLoading(true);
       setError(null);
-      setHasSearched(true);
       try {
-        const payload = buildSearchPayload({ offset, limit: nextLimit });
-        const result = await searchCompanies(payload);
-        const nextRows = Array.isArray(result?.rows) ? result.rows : [];
-        const nextTotal = typeof result?.total === 'number' ? result.total : nextRows.length;
-
-        setRows(nextRows);
-        setTotal(nextTotal);
-        setPage(safePage);
-        if (limit !== nextLimit) {
-          setLimit(nextLimit);
+        const resp = await searchCompanies(body);
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
         }
-        setHasNext(offset + nextLimit < nextTotal);
+        const data = await resp.json();
+        const resultRows = Array.isArray(data?.rows)
+          ? data.rows
+          : (Array.isArray(data?.results) ? data.results : (Array.isArray(data?.items) ? data.items : []));
+        const totalValue = typeof data?.meta?.total === 'number'
+          ? data.meta.total
+          : (typeof data?.total === 'number'
+            ? data.total
+            : (typeof data?.count === 'number' ? data.count : resultRows.length));
+
+        setRows(resultRows);
+        setPage(safePage);
+        setLimit(limitValue);
+        setHasNext(offset + limitValue < totalValue);
       } catch (err) {
-        const text = err instanceof Error && err.message ? err.message : '';
-        const message = text.includes('/public/searchCompanies')
-          ? text.replace('POST /public/searchCompanies', `POST ${API_BASE}/public/searchCompanies`)
-          : `POST ${API_BASE}/public/searchCompanies — ${text || 'unknown error'}`;
-        setError(message);
         setRows([]);
-        setTotal(0);
         setHasNext(false);
+        setError(err instanceof Error && err.message ? err.message : `POST ${API_BASE}/public/searchCompanies - unknown error`);
       } finally {
         setLoading(false);
       }
@@ -420,35 +425,26 @@ export default function SearchPage() {
     [buildSearchPayload, limit]
   );
 
-  const doSearch = useCallback((e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    void performSearch(1);
-  }, [performSearch]);
-
-  const handlePrev = useCallback(() => {
-    if (loading || page <= 1) return;
-    void performSearch(page - 1);
-  }, [loading, page, performSearch]);
-
-  const handleNext = useCallback(() => {
-    if (loading || !hasNext) return;
-    void performSearch(page + 1);
-  }, [loading, hasNext, page, performSearch]);
-
-  const handleLimitChange = useCallback(
-    (nextLimit: number) => {
-      if (nextLimit === limit) return;
-      if (!hasSearched) {
-        setLimit(nextLimit);
-        setPage(1);
-        return;
-      }
-      setLimit(nextLimit);
-      setPage(1);
-      void performSearch(1, nextLimit);
+  const run = useCallback(
+    (reset = true, overrideLimit?: number) => {
+      void fetchResults(reset ? 1 : page, overrideLimit ?? limit);
     },
-    [limit, hasSearched, performSearch]
+    [fetchResults, page, limit]
   );
+
+  const next = useCallback(() => {
+    if (loading || !hasNext) return;
+    void fetchResults(page + 1);
+  }, [fetchResults, loading, hasNext, page]);
+
+  const prev = useCallback(() => {
+    if (loading || page <= 1) return;
+    void fetchResults(page - 1);
+  }, [fetchResults, loading, page]);
+
+  // Autocomplete handled by <AutocompleteInput/>; no inline panel
+
+  const hasSearched = (q || '').trim().length > 0;
 
   const dedupedRows = useMemo(() => {
     const seen = new Set<string>();
@@ -462,11 +458,9 @@ export default function SearchPage() {
     return out;
   }, [rows]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('cc:activeFilters', JSON.stringify(normalizeFilters(filters)));
-    } catch {}
-  }, [filters]);
+  const doSearch = useCallback((e?: React.FormEvent) => { if (e) e.preventDefault(); run(true); }, [run]);
+  // Persist filters for Command Center handoff
+  useEffect(() => { try { localStorage.setItem('cc:activeFilters', JSON.stringify(normalizeFilters(filters))); } catch {} }, [filters]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: STYLES.neutralGrayLight }}>
@@ -494,12 +488,7 @@ export default function SearchPage() {
               disabled={loading}
             />
           </div>
-          <Button
-            data-test="search-button"
-            type="submit"
-            className="h-12 px-6 rounded-lg"
-            disabled={loading}
-          >
+          <Button data-test="search-button" type="submit" className="h-12 px-6 rounded-lg" disabled={loading}>
             <SearchIcon className="w-4 h-4 mr-2" />
             {loading ? 'Searching…' : 'Search'}
           </Button>
@@ -527,15 +516,14 @@ export default function SearchPage() {
               className="h-9 rounded-lg border border-gray-300 px-2"
               value={limit}
               onChange={(e)=> {
-                handleLimitChange(Number(e.target.value));
+                const nextLimit = Number(e.target.value);
+                setLimit(nextLimit);
+                run(true, nextLimit);
               }}
               disabled={loading}
             >
               {[20,30,50].map(n => <option key={n} value={n}>{n}</option>)}
             </select>
-            {typeof total === 'number' && (
-              <span className="ml-2 text-xs text-gray-500">Total: {total.toLocaleString()}</span>
-            )}
           </div>
         </div>
 
@@ -573,11 +561,7 @@ export default function SearchPage() {
               dest_port: typeof patch.dest_port === 'string' ? patch.dest_port : (patch.dest_port === undefined ? null : prev.dest_port),
             }));
           }}
-          onApply={() => {
-            void performSearch(1);
-            setFiltersOpen(false);
-            if (view === 'Filters') setView('Cards');
-          }}
+          onApply={() => { run(true); setFiltersOpen(false); if (view === 'Filters') setView('Cards'); }}
         />
 
         {/* Results */}
@@ -597,21 +581,9 @@ export default function SearchPage() {
             )}
             {/* Pagination controls */}
             <div className="mt-4 flex items-center justify-between">
-              <button
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                onClick={handlePrev}
-                disabled={loading || page <= 1}
-              >
-                Prev
-              </button>
+              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={prev} disabled={loading || page <= 1}>Prev</button>
               <div className="text-sm text-gray-600">Page {page}</div>
-              <button
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                onClick={handleNext}
-                disabled={loading || !hasNext}
-              >
-                Next
-              </button>
+              <button className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={next} disabled={loading || !hasNext}>Next</button>
             </div>
           </div>
         )}

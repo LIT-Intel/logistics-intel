@@ -43,7 +43,7 @@ export default function AutocompleteInput({
       setLoading(true);
       setOpen(true); // show the dropdown immediately with a loading state
       try {
-        const result = await searchCompaniesApi({
+        const resp = await searchCompaniesApi({
           q,
           pageSize: 6,
           limit: 6,
@@ -51,9 +51,15 @@ export default function AutocompleteInput({
           offset: 0,
         });
         if (cancelled) return;
-        const rows = Array.isArray(result?.rows)
-          ? result.rows
-          : (Array.isArray(result?.items) ? result.items : []);
+        if (!resp.ok) {
+          setItems([]);
+          setOpen(false);
+          return;
+        }
+        const data = await resp.json();
+        const rows = Array.isArray(data?.rows)
+          ? data.rows
+          : (Array.isArray(data?.items) ? data.items : []);
         const mapped: Suggestion[] = rows
           .map((r: any) => ({
             company_id: r?.company_id ?? r?.id,

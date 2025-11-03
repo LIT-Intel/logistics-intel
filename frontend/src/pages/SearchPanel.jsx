@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { getFilterOptions, searchCompanies } from '@/lib/api';
+import { API_BASE } from '@/lib/apiBase';
 
 export default function SearchPanel() {
   const [q, setQ] = useState("");
@@ -21,7 +22,12 @@ export default function SearchPanel() {
   async function onLoadFilters() {
     try {
       setError(null); setLoading(true);
-      const data = await getFilterOptions();
+      const resp = await getFilterOptions();
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(`GET ${API_BASE}/public/getFilterOptions - ${resp.status} ${text}`);
+      }
+      const data = await resp.json();
       setFilters(data);
     } catch (e) {
       setError(e?.message || 'Failed to load filters');
@@ -40,8 +46,13 @@ export default function SearchPanel() {
         limit: 10,
         offset: 0,
       };
-      const result = await searchCompanies(body);
-      setResults(result.rows ?? result.items ?? []);
+      const resp = await searchCompanies(body);
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
+      }
+      const data = await resp.json();
+      setResults(Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.results) ? data.results : []));
     } catch (e) {
       setError(e?.message || 'Search failed');
     } finally {

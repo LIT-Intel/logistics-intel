@@ -1,98 +1,24 @@
-import { API_BASE as RESOLVED_API_BASE } from './env';
-
-export { RESOLVED_API_BASE as API_BASE };
-export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
-
-const POST_SEARCH = `${RESOLVED_API_BASE}/public/searchCompanies`;
-const GET_FILTERS = `${RESOLVED_API_BASE}/public/getFilterOptions`;
-
-export type SearchPayload = {
-  q: string | null;
-  origin?: string[];
-  dest?: string[];
-  hs?: string[];
-  limit?: number;
-  offset?: number;
-};
-
-export type SearchRequest = {
-  q?: string | string[] | null;
-  origin?: string | string[] | null;
-  origin_country?: string | string[] | null;
-  destination?: string | string[] | null;
-  dest?: string | string[] | null;
-  dest_country?: string | string[] | null;
-  hs?: string | string[] | null;
-  mode?: 'air' | 'ocean' | null;
-  carrier?: string | string[] | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  date_start?: string | null;
-  date_end?: string | null;
-  origin_city?: string | null;
-  dest_city?: string | null;
-  dest_state?: string | null;
-  dest_postal?: string | null;
-  dest_port?: string | null;
-  limit?: number;
-  offset?: number;
-  page?: number;
-  pageSize?: number;
-};
-
-export type SearchCompaniesResult<T = any> = {
-  items: T[];
-  rows: T[];
-  total: number;
-  raw: any;
-  limit: number;
-  offset: number;
-};
-
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-const toArray = (value: string | string[] | null | undefined) => {
-  if (value == null) return undefined;
-  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
-  return String(value)
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean);
-};
-
-export async function searchCompaniesProxy(payload: SearchPayload) {
-  const result = await searchCompanies({
-    q: payload.q,
-    origin: payload.origin ?? [],
-    dest: payload.dest ?? [],
-    hs: payload.hs ?? [],
-    limit: payload.limit,
-    offset: payload.offset,
-  });
-  return result.raw;
-}
-
-export async function getCompanyShipmentsProxy(params: {company_id?: string; company_name?: string; origin?: string[]; dest?: string[]; hs?: string[]; limit?: number; offset?: number;}){
-  const qp = new URLSearchParams();
-  if(params.company_id) qp.set('company_id', params.company_id);
-  if(params.company_name) qp.set('company_name', params.company_name);
-  if(params.origin?.length) qp.set('origin', params.origin.join(','));
-  if(params.dest?.length) qp.set('dest', params.dest.join(','));
-  if(params.hs?.length) qp.set('hs', params.hs.join(','));
-  qp.set('limit', String(params.limit ?? 20));
-  qp.set('offset', String(params.offset ?? 0));
-  const r = await fetch(`${RESOLVED_API_BASE}/public/getCompanyShipments?${qp.toString()}`);
-  if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
-  return r.json();
-}
-
-// Back-compat names expected by some pages
-export const searchCompaniesProxyCompat = searchCompaniesProxy;
-export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
+import { API_BASE } from '@/lib/apiBase';
 import { auth } from '@/auth/firebaseClient';
 
-// Gateway base (env override → default)
-const GW = RESOLVED_API_BASE;
+export { API_BASE };
+export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
+
+const POST_SEARCH = `${API_BASE}/public/searchCompanies`;
+const GET_FILTERS = `${API_BASE}/public/getFilterOptions`;
+
+export const searchCompanies = (body: any, signal?: AbortSignal) =>
+  fetch(POST_SEARCH, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+    signal,
+  });
+
+export const getFilterOptions = (signal?: AbortSignal) =>
+  fetch(GET_FILTERS, { method: "GET", signal });
+
+const GW = '/api/lit';
 
 async function j<T>(p: Promise<Response>): Promise<T> {
   const r = await p;
@@ -170,133 +96,15 @@ export function kpiFrom(item: CompanyItem) {
 
 // Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
-  const result = await searchCompanies(payload);
-  return result.raw;
+  const res = await searchCompanies(payload);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`POST ${API_BASE}/public/searchCompanies - ${res.status} ${text}`);
+  }
+  return res.json();
 }
 
-const GATEWAY_BASE_DEFAULT = RESOLVED_API_BASE;
-
-export async function searchCompanies(input: SearchRequest = {}, signal?: AbortSignal): Promise<SearchCompaniesResult> {
-  const limit = clamp(Number(input.pageSize ?? input.limit ?? 20), 1, 50);
-  const resolvedOffset = (() => {
-    if (input.page != null) {
-      return Math.max(0, (Number(input.page) - 1) * limit);
-    }
-    if (input.offset != null) {
-      return Math.max(0, Number(input.offset));
-    }
-    const legacyOffset = (input as any)?.offset;
-    if (legacyOffset != null) {
-      return Math.max(0, Number(legacyOffset));
-    }
-    return 0;
-  })();
-
-  const payload: Record<string, any> = {
-    q: Array.isArray(input.q)
-      ? String(input.q[0] ?? '').trim()
-      : String(input.q ?? '').trim(),
-    limit,
-    offset: resolvedOffset,
-  };
-
-  const originValue = toArray(input.origin ?? input.origin_country ?? null);
-  if (originValue?.length) payload.origin = originValue;
-
-  const destValue = toArray(
-    input.dest ??
-      input.destination ??
-      input.dest_country ??
-      (input as any)?.dest ??
-      (input as any)?.destination ??
-      null,
-  );
-  if (destValue?.length) payload.dest = destValue;
-
-  const hsValue = toArray(input.hs ?? null);
-  if (hsValue?.length) payload.hs = hsValue;
-
-  const modeValue = input.mode ? String(input.mode).toLowerCase() : undefined;
-  if (modeValue === 'air' || modeValue === 'ocean') payload.mode = modeValue;
-
-  const carrierValue = toArray(input.carrier ?? null);
-  if (carrierValue?.length) payload.carrier = carrierValue;
-
-  const startDate = input.startDate ?? input.date_start ?? null;
-  const endDate = input.endDate ?? input.date_end ?? null;
-  if (startDate) payload.startDate = startDate;
-  if (endDate) payload.endDate = endDate;
-
-  if (input.origin_city) payload.origin_city = input.origin_city;
-  if (input.dest_city) payload.dest_city = input.dest_city;
-  if (input.dest_state) payload.dest_state = input.dest_state;
-  if (input.dest_postal) payload.dest_postal = input.dest_postal;
-  if (input.dest_port) payload.dest_port = input.dest_port;
-
-  let response: Response;
-  try {
-    response = await fetch(POST_SEARCH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal,
-    });
-  } catch (err) {
-    throw new Error(`POST /public/searchCompanies — network error: ${String((err as Error)?.message ?? err)}`);
-  }
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`POST /public/searchCompanies — ${response.status}${text ? ` ${text}` : ''}`);
-  }
-
-  const data = await response.json().catch(() => ({}));
-  const rows = Array.isArray(data?.rows)
-    ? data.rows
-    : Array.isArray(data?.results)
-    ? data.results
-    : Array.isArray(data?.items)
-    ? data.items
-    : [];
-
-  const totalRaw = typeof data?.meta?.total === 'number'
-    ? data.meta.total
-    : typeof data?.total === 'number'
-    ? data.total
-    : typeof data?.count === 'number'
-    ? data.count
-    : rows.length;
-
-  const total = Number.isFinite(totalRaw) ? Number(totalRaw) : rows.length;
-
-  return {
-    items: rows,
-    rows,
-    total,
-    raw: data,
-    limit,
-    offset: resolvedOffset,
-  };
-}
-
-export function buildSearchParams(raw: Record<string, any>) {
-  const cleaned: Record<string, any> = {};
-  for (const [key, value] of Object.entries(raw || {})) {
-    if (value === undefined || value === null) continue;
-    if (typeof value === 'string' && value.trim() === '') continue;
-    cleaned[key] = value;
-  }
-  return cleaned;
-}
-
-export type SearchCompaniesBody = {
-  q: string | null;
-  origin?: string[];
-  dest?: string[];
-  hs?: string[];
-  limit?: number;
-  offset?: number;
-};
+const GATEWAY_BASE_DEFAULT = API_BASE;
 
 export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }) {
   const { company_id } = params;
@@ -334,20 +142,6 @@ export async function getCompanyShipmentsUnified(params: { company_id?: string; 
   return { rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [], total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0) };
 }
 
-export async function getFilterOptions(signal?: AbortSignal) {
-  let res: Response;
-  try {
-    res = await fetch(GET_FILTERS, { method: 'GET', headers: { accept: 'application/json' }, signal });
-  } catch (err) {
-    throw new Error(`GET /public/getFilterOptions — network error: ${String((err as Error)?.message ?? err)}`);
-  }
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`GET /public/getFilterOptions — ${res.status}${text ? ` ${text}` : ''}`);
-  }
-  return res.json();
-}
-
 // Fast KPI endpoint (proxy-first, fallback to Gateway)
 export async function getCompanyKpis(params: { company_id?: string; company_name?: string }, signal?: AbortSignal) {
   const qp = new URLSearchParams();
@@ -374,44 +168,6 @@ export async function getSavedCompanies(signal?: AbortSignal) {
   const r = await fetch(url, { headers: { accept: 'application/json' }, signal });
   if (!r.ok) return { rows: [] };
   return r.json();
-}
-
-// --- Filters singleton cache with 10m TTL ---
-let _filtersCache: { data: any; expires: number } | null = null;
-let _filtersInflight: Promise<any> | null = null;
-
-function readFiltersLocal(): { data: any; expires: number } | null {
-  try {
-    if (typeof window === 'undefined') return null;
-    const raw = window.localStorage.getItem('lit.filters');
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (!obj?.data || !obj?.expires) return null;
-    if (Date.now() > obj.expires) return null;
-    return obj;
-  } catch { return null; }
-}
-
-function writeFiltersLocal(data: any) {
-  try {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('lit.filters', JSON.stringify({ data, expires: Date.now() + 10 * 60 * 1000 }));
-  } catch {}
-}
-
-export async function getFilterOptionsOnce(fetcher: (signal?: AbortSignal) => Promise<any>, signal?: AbortSignal) {
-  if (_filtersCache && Date.now() < _filtersCache.expires) return _filtersCache.data;
-  const local = readFiltersLocal();
-  if (local) { _filtersCache = local; return local.data; }
-  if (_filtersInflight) return _filtersInflight;
-  _filtersInflight = (async () => {
-    const data = await fetcher(signal);
-    _filtersCache = { data, expires: Date.now() + 10 * 60 * 1000 };
-    writeFiltersLocal(data);
-    _filtersInflight = null;
-    return data;
-  })();
-  return _filtersInflight;
 }
 
 export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string | null; source?: string; }) {
@@ -601,7 +357,7 @@ export async function fetchCompanyShipments(params: {
 
 // The exported searchCompanies above already points to the proxy-backed implementation
 
-// --- Lusha wrappers via Vercel proxy → Gateway → Cloud Run ---
+// --- Lusha wrappers via Vercel proxy ? Gateway ? Cloud Run ---
 export async function getCompanyProfileLushia(q: { company_id?: string; domain?: string; company_name?: string }) {
   const params = new URLSearchParams();
   if (q.company_id) params.set('company_id', q.company_id);

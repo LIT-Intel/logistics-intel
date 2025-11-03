@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { searchCompanies as searchCompaniesHelper, postSearchCompanies } from '@/lib/api';
+import { API_BASE } from '@/lib/apiBase';
 
 export type SearchRow = {
   company_id?: string;
@@ -68,7 +69,7 @@ export function useSearch() {
   }, [q]);
 
   const fetchTokenPage = async (token: string | null, f: SearchFilters, offset = 0, signal?: AbortSignal) => {
-    const baseResult = await searchCompaniesHelper({
+    const resp = await searchCompaniesHelper({
       q: token ?? null,
       origin: f.origin,
       dest: f.destination,
@@ -86,6 +87,13 @@ export function useSearch() {
       offset,
       limit,
     }, signal);
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
+    }
+
+    const baseResult = await resp.json();
 
     let got: SearchRow[] = Array.isArray(baseResult?.rows)
       ? baseResult.rows

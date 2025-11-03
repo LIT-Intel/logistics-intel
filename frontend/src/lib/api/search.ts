@@ -1,4 +1,4 @@
-import { API_BASE as RESOLVED_API_BASE } from '@/lib/env';
+import { API_BASE as RESOLVED_API_BASE } from '@/lib/apiBase';
 
 export type CompanyRow = {
   company_id: string;

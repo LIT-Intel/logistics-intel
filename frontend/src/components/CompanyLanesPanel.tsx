@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchCompanies } from '@/lib/api';
+import { API_BASE } from '@/lib/apiBase';
 
 type Props = {
   companyId?: string | null;
@@ -22,9 +23,14 @@ export default function CompanyLanesPanel({ companyId, limit = 3 }: Props) {
     setLoading(true);
     setError(null);
     searchCompanies({ q: companyId, limit: 5, offset: 0 })
-      .then((result) => {
+      .then(async (resp) => {
         if (cancelled) return;
-        const rows = Array.isArray(result?.rows) ? result.rows : [];
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
+        }
+        const data = await resp.json();
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
         const matched = rows.find((row: any) => String(row?.company_id || '').trim() === companyId.trim());
         const fallback = rows[0];
         const lanes = (matched?.top_routes ?? fallback?.top_routes ?? []) as any[];

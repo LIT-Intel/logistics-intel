@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { searchCompanies } from "@/lib/api";
+import { API_BASE } from "@/lib/apiBase";
 import { kpiFrom } from "@/lib/kpi";
 import CompanyLanesPanel from "@/components/CompanyLanesPanel";
 import CompanyShipmentsPanel from "@/components/company/CompanyShipmentsPanel";
@@ -107,11 +108,16 @@ export default function CommandCenter() {
     setListError(null);
     (async () => {
       try {
-        const result = await searchCompanies({ q: debouncedSearch, limit: 30, offset: 0 }, controller.signal);
+        const resp = await searchCompanies({ q: debouncedSearch, limit: 30, offset: 0 }, controller.signal);
         if (cancelled) return;
-        const rows = Array.isArray(result?.rows)
-          ? result.rows
-          : (Array.isArray(result?.items) ? result.items : []);
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "");
+          throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
+        }
+        const data = await resp.json();
+        const rows = Array.isArray(data?.rows)
+          ? data.rows
+          : (Array.isArray(data?.items) ? data.items : []);
         const typed = (Array.isArray(rows) ? rows : []) as CompanyItem[];
         setCompanies(typed);
         setSelectedKey((prev) => {
