@@ -4,19 +4,71 @@ import { auth } from '@/auth/firebaseClient';
 export { API_BASE };
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 
-const POST_SEARCH = `${API_BASE}/public/searchCompanies`;
-const GET_FILTERS = `${API_BASE}/public/getFilterOptions`;
+const PATH_PUBLIC_SEARCH = '/public/searchCompanies';
+const PATH_PUBLIC_FILTERS = '/public/getFilterOptions';
 
-export const searchCompanies = (body: any, signal?: AbortSignal) =>
-  fetch(POST_SEARCH, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
+const FALLBACK_GATEWAY_BASE = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
+
+const API_BASES = (() => {
+  const bases = [API_BASE];
+  if (!bases.includes(FALLBACK_GATEWAY_BASE)) bases.push(FALLBACK_GATEWAY_BASE);
+  return bases;
+})();
+
+const joinUrl = (base: string, path: string) => `${base.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
+
+const RESPONSE_BASE_SYMBOL = Symbol.for('lit.api.base');
+
+const attachBase = (resp: Response, baseUrl: string) => {
+  try {
+    Object.defineProperty(resp, RESPONSE_BASE_SYMBOL, {
+      value: baseUrl,
+      enumerable: false,
+      configurable: true,
+      writable: false,
+    });
+  } catch {
+    (resp as any).__litBase = baseUrl;
+  }
+  return resp;
+};
+
+export const responseBase = (resp: Response) =>
+  (resp as any)[RESPONSE_BASE_SYMBOL] || (resp as any).__litBase || API_BASE;
+
+async function fetchFromBases(path: string, init?: RequestInit) {
+  let lastError: Error | null = null;
+  for (const base of API_BASES) {
+    try {
+      const url = joinUrl(base, path);
+      const resp = await fetch(url, init);
+      if (resp.status === 401 || resp.status === 403) {
+        const text = await resp.text().catch(() => '');
+        lastError = new Error(`${init?.method ?? 'GET'} ${url} - ${resp.status} ${text}`);
+        continue;
+      }
+      return { resp: attachBase(resp, base), baseUrl: base };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+  throw lastError ?? new Error('API request failed');
+}
+
+export const searchCompanies = async (body: any, signal?: AbortSignal) => {
+  const { resp } = await fetchFromBases(PATH_PUBLIC_SEARCH, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body ?? {}),
     signal,
   });
+  return resp;
+};
 
-export const getFilterOptions = (signal?: AbortSignal) =>
-  fetch(GET_FILTERS, { method: "GET", signal });
+export const getFilterOptions = async (signal?: AbortSignal) => {
+  const { resp } = await fetchFromBases(PATH_PUBLIC_FILTERS, { method: 'GET', signal });
+  return resp;
+};
 
 const GW = '/api/lit';
 
@@ -99,7 +151,7 @@ export async function postSearchCompanies(payload: any) {
   const res = await searchCompanies(payload);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`POST ${API_BASE}/public/searchCompanies - ${res.status} ${text}`);
+    throw new Error(`POST ${responseBase(res)}/public/searchCompanies - ${res.status} ${text}`);
   }
   return res.json();
 }

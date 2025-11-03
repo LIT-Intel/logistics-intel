@@ -4,7 +4,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
-import { searchCompanies, getFilterOptions, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
+import { searchCompanies, getFilterOptions, saveCompanyToCrm, getCompanyKey, getCompanyKpis, responseBase } from '@/lib/api';
 import { API_BASE } from '@/lib/apiBase';
 import { Button } from '@/components/ui/button';
 import AutocompleteInput from '@/components/search/AutocompleteInput';
@@ -36,7 +36,50 @@ function normalizeSearchRow(item: any) {
   const company_name = item.company_name ?? item.name ?? '';
   const shipments_12m = item.shipments_12m ?? item.kpis?.shipments_12m ?? item.kpis?.shipments ?? null;
   const last_activity = item.last_activity ?? item.kpis?.last_activity ?? null;
-  const top_routes = item.top_routes ?? item.kpis?.top_routes ?? item.routes ?? [];
+  const formatRoutes = (routes: any) => {
+    if (!Array.isArray(routes)) return [];
+    return routes.map((entry) => {
+      if (!entry) return entry;
+      if (typeof entry === 'object') {
+        if (entry.origin_country || entry.dest_country) return entry;
+        if (entry.route) {
+          const [origin, dest] = String(entry.route).split('→');
+          return {
+            origin_country: origin?.trim() || null,
+            dest_country: dest?.trim() || null,
+            shipments: entry.shipments ?? entry.count ?? entry.freq ?? null,
+          };
+        }
+      }
+      if (typeof entry === 'string') {
+        const [origin, dest] = entry.split('→');
+        return {
+          origin_country: origin?.trim() || null,
+          dest_country: dest?.trim() || null,
+          shipments: null,
+        };
+      }
+      return entry;
+    });
+  };
+
+  const formatCarriers = (carriers: any) => {
+    if (!Array.isArray(carriers)) return [];
+    return carriers.map((entry) => {
+      if (!entry) return entry;
+      if (typeof entry === 'object') {
+        if (entry.carrier) return entry;
+        if (entry.name) return { carrier: entry.name, share_pct: entry.share_pct ?? entry.freq ?? null };
+      }
+      if (typeof entry === 'string') {
+        return { carrier: entry, share_pct: null };
+      }
+      return entry;
+    });
+  };
+
+  const top_routes = formatRoutes(item.top_routes ?? item.kpis?.top_routes ?? item.routes ?? []);
+  const top_carriers = formatCarriers(item.top_carriers ?? item.kpis?.top_carriers ?? []);
 
   return {
     ...item,
@@ -45,6 +88,7 @@ function normalizeSearchRow(item: any) {
     shipments_12m,
     last_activity,
     top_routes,
+    top_carriers,
   };
 }
 
@@ -347,7 +391,7 @@ export default function SearchPage() {
         const resp = await getFilterOptions();
         if (!resp.ok) {
           const text = await resp.text().catch(() => '');
-          throw new Error(`GET ${API_BASE}/public/getFilterOptions - ${resp.status} ${text}`);
+          throw new Error(`GET ${responseBase(resp)}/public/getFilterOptions - ${resp.status} ${text}`);
         }
         const data = await resp.json();
         if (!cancelled) {
@@ -418,7 +462,7 @@ export default function SearchPage() {
         const resp = await searchCompanies(body);
         if (!resp.ok) {
           const text = await resp.text().catch(() => '');
-          throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
+          throw new Error(`POST ${responseBase(resp)}/public/searchCompanies - ${resp.status} ${text}`);
         }
         const data = await resp.json();
         const resultRows = Array.isArray(data?.rows)

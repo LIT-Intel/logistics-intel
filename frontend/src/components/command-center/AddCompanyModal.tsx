@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { searchCompanies } from '@/lib/api';
-import { API_BASE } from '@/lib/apiBase';
+import { searchCompanies, responseBase } from '@/lib/api';
 
 type LitRow = {
   company_id: string | null;
@@ -42,7 +41,7 @@ export default function AddCompanyModal({ open, onClose, onSaved }: Props) {
       const resp = await searchCompanies({ q: q || null, limit: 10, offset: 0 });
       if (!resp.ok) {
         const text = await resp.text().catch(() => "");
-        throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
+        throw new Error(`POST ${responseBase(resp)}/public/searchCompanies - ${resp.status} ${text}`);
       }
       const data = await resp.json();
       setRows(Array.isArray(data?.rows) ? data.rows : (Array.isArray(data?.items) ? data.items : []));

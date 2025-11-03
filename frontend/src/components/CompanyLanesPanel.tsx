@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { searchCompanies } from '@/lib/api';
-import { API_BASE } from '@/lib/apiBase';
+import { searchCompanies, responseBase } from '@/lib/api';
 
 type Props = {
   companyId?: string | null;
@@ -27,7 +26,7 @@ export default function CompanyLanesPanel({ companyId, limit = 3 }: Props) {
         if (cancelled) return;
         if (!resp.ok) {
           const text = await resp.text().catch(() => '');
-          throw new Error(`POST ${API_BASE}/public/searchCompanies - ${resp.status} ${text}`);
+          throw new Error(`POST ${responseBase(resp)}/public/searchCompanies - ${resp.status} ${text}`);
         }
         const data = await resp.json();
         const rows = Array.isArray(data?.rows) ? data.rows : [];
