@@ -4,9 +4,8 @@ import { useAuth } from '@/auth/AuthProvider';
 import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
-import { useSearch } from '@/app/search/useSearch';
-import { getFilterOptions, getFilterOptionsOnce, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
-import { searchCompanies as searchCompaniesApi } from "@/lib/api"; // <-- soft autocomplete uses the lib client
+import { searchCompanies, getFilterOptions, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
+import { API_BASE } from '@/lib/env';
 import { Button } from '@/components/ui/button';
 import AutocompleteInput from '@/components/search/AutocompleteInput';
 import { Badge } from '@/components/ui/badge';
@@ -39,12 +38,6 @@ function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: strin
       <div className="text-[11px] uppercase text-gray-500 font-medium mt-1 truncate w-full max-w-full" title={label}>{label}</div>
     </div>
   );
-}
-
-function errorMessage(err: unknown) {
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === 'string' && err.trim()) return err;
-  return 'Something went wrong.';
 }
 
 function SaveToCommandCenterButton({ row, size = 'sm', activeFilters }: { row: any; size?: 'sm'|'md'; activeFilters?: any }) {
@@ -302,29 +295,160 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
 }
 
 export default function SearchPage() {
-  // Keep existing search hook (wires to /api/lit/public/searchCompanies)
-  const { q, setQ, rows, loading, run, next, prev, page, limit, setLimit, filters, setFilters, hasNext, total, error, setError } = useSearch();
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [hasNext, setHasNext] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
   const [filterOptions, setFilterOptions] = useState<any>(null);
-
-  // Autocomplete handled by <AutocompleteInput/>; no inline panel
+  const [filters, setFilters] = useState({
+    origin: null as string | null,
+    destination: null as string | null,
+    hs: null as string | null,
+    mode: null as 'air' | 'ocean' | null,
+    date_start: null as string | null,
+    date_end: null as string | null,
+    year: null as string | null,
+    origin_city: null as string | null,
+    dest_city: null as string | null,
+    dest_state: null as string | null,
+    dest_postal: null as string | null,
+    dest_port: null as string | null,
+  });
 
   useEffect(() => {
-    const ac = new AbortController();
-    getFilterOptionsOnce((signal?: AbortSignal) => getFilterOptions(signal), ac.signal)
-      .then((data) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getFilterOptions();
+        if (cancelled) return;
         setFilterOptions(data);
-      })
-      .catch((err) => {
-        if (ac.signal.aborted) return;
-        setError((prev) => prev ?? errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [setError]);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        const text = err instanceof Error && err.message ? err.message : '';
+        const message = text.includes('/public/getFilterOptions')
+          ? text.replace('GET /public/getFilterOptions', `GET ${API_BASE}/public/getFilterOptions`)
+          : `GET ${API_BASE}/public/getFilterOptions — ${text || 'unknown error'}`;
+        setError(message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const hasSearched = (q || '').trim().length > 0;
+  const buildSearchPayload = useCallback(
+    (opts: { offset?: number; limit?: number } = {}) => {
+      const nextLimit = opts.limit ?? limit;
+      const payload: Record<string, any> = {
+        q: q.trim(),
+        limit: nextLimit,
+        offset: opts.offset ?? 0,
+      };
+
+      const origin = typeof filters.origin === 'string' ? filters.origin.trim() : '';
+      if (origin) payload.origin = [origin];
+
+      const destination = typeof filters.destination === 'string' ? filters.destination.trim() : '';
+      if (destination) payload.dest = [destination];
+
+      if (filters.mode) payload.mode = filters.mode;
+
+      if (filters.hs) {
+        payload.hs = String(filters.hs)
+          .split(',')
+          .map((part) => part.trim())
+          .filter(Boolean);
+      }
+
+      if (filters.date_start) payload.startDate = filters.date_start;
+      if (filters.date_end) payload.endDate = filters.date_end;
+      if (filters.origin_city) payload.origin_city = filters.origin_city;
+      if (filters.dest_city) payload.dest_city = filters.dest_city;
+      if (filters.dest_state) payload.dest_state = filters.dest_state;
+      if (filters.dest_postal) payload.dest_postal = filters.dest_postal;
+      if (filters.dest_port) payload.dest_port = filters.dest_port;
+
+      return payload;
+    },
+    [q, filters, limit]
+  );
+
+  const performSearch = useCallback(
+    async (targetPage: number, customLimit?: number) => {
+      const nextLimit = customLimit ?? limit;
+      const safePage = Math.max(1, targetPage);
+      const offset = (safePage - 1) * nextLimit;
+
+      setLoading(true);
+      setError(null);
+      setHasSearched(true);
+      try {
+        const payload = buildSearchPayload({ offset, limit: nextLimit });
+        const result = await searchCompanies(payload);
+        const nextRows = Array.isArray(result?.rows) ? result.rows : [];
+        const nextTotal = typeof result?.total === 'number' ? result.total : nextRows.length;
+
+        setRows(nextRows);
+        setTotal(nextTotal);
+        setPage(safePage);
+        if (limit !== nextLimit) {
+          setLimit(nextLimit);
+        }
+        setHasNext(offset + nextLimit < nextTotal);
+      } catch (err) {
+        const text = err instanceof Error && err.message ? err.message : '';
+        const message = text.includes('/public/searchCompanies')
+          ? text.replace('POST /public/searchCompanies', `POST ${API_BASE}/public/searchCompanies`)
+          : `POST ${API_BASE}/public/searchCompanies — ${text || 'unknown error'}`;
+        setError(message);
+        setRows([]);
+        setTotal(0);
+        setHasNext(false);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [buildSearchPayload, limit]
+  );
+
+  const doSearch = useCallback((e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    void performSearch(1);
+  }, [performSearch]);
+
+  const handlePrev = useCallback(() => {
+    if (loading || page <= 1) return;
+    void performSearch(page - 1);
+  }, [loading, page, performSearch]);
+
+  const handleNext = useCallback(() => {
+    if (loading || !hasNext) return;
+    void performSearch(page + 1);
+  }, [loading, hasNext, page, performSearch]);
+
+  const handleLimitChange = useCallback(
+    (nextLimit: number) => {
+      if (nextLimit === limit) return;
+      if (!hasSearched) {
+        setLimit(nextLimit);
+        setPage(1);
+        return;
+      }
+      setLimit(nextLimit);
+      setPage(1);
+      void performSearch(1, nextLimit);
+    },
+    [limit, hasSearched, performSearch]
+  );
 
   const dedupedRows = useMemo(() => {
     const seen = new Set<string>();
@@ -338,13 +462,11 @@ export default function SearchPage() {
     return out;
   }, [rows]);
 
-  const doSearch = useCallback((e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setError(null);
-    run(true);
-  }, [run, setError]);
-  // Persist filters for Command Center handoff
-  useEffect(() => { try { localStorage.setItem('cc:activeFilters', JSON.stringify(normalizeFilters(filters))); } catch {} }, [filters]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('cc:activeFilters', JSON.stringify(normalizeFilters(filters)));
+    } catch {}
+  }, [filters]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: STYLES.neutralGrayLight }}>
@@ -405,9 +527,7 @@ export default function SearchPage() {
               className="h-9 rounded-lg border border-gray-300 px-2"
               value={limit}
               onChange={(e)=> {
-                setLimit(Number(e.target.value));
-                setError(null);
-                run(true);
+                handleLimitChange(Number(e.target.value));
               }}
               disabled={loading}
             >
@@ -454,8 +574,7 @@ export default function SearchPage() {
             }));
           }}
           onApply={() => {
-            setError(null);
-            run(true);
+            void performSearch(1);
             setFiltersOpen(false);
             if (view === 'Filters') setView('Cards');
           }}
@@ -480,7 +599,7 @@ export default function SearchPage() {
             <div className="mt-4 flex items-center justify-between">
               <button
                 className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                onClick={prev}
+                onClick={handlePrev}
                 disabled={loading || page <= 1}
               >
                 Prev
@@ -488,7 +607,7 @@ export default function SearchPage() {
               <div className="text-sm text-gray-600">Page {page}</div>
               <button
                 className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                onClick={next}
+                onClick={handleNext}
                 disabled={loading || !hasNext}
               >
                 Next
