@@ -3,24 +3,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Logistic Intel</title>
-    <meta name="x-build" content="vercel-refresh-2025-10-15-cc-v2-4">
-      <script>
-        (function redirectRoot() {
-          try {
-            var path = window.location.pathname || "/";
-            if (path === "/" || path === "") {
-              var hash = window.location.hash || "";
-              window.location.replace("/search" + hash);
-            }
-          } catch (err) {}
-        })();
-      </script>
+    <title>Logistics Intel</title>
+    <meta name="x-build" content="vercel-refresh-2025-10-15-cc-v2-4" />
+
+    <!-- Static root redirect: works before any JS bundle or SW caches -->
+    <meta http-equiv="refresh" content="0; url=/search" />
+    <script>
+      (function () {
+        try {
+          var path = window.location.pathname || "/";
+          if (path === "/" || path === "") {
+            var hash = window.location.hash || "";
+            window.location.replace("/search" + hash);
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
   <body>
+    <noscript>
+      <!-- No-JS fallback redirect -->
+      <meta http-equiv="refresh" content="0; url=/search" />
+      <p>Redirecting to <a href="/search">/search</a>…</p>
+    </noscript>
+
     <div id="root"></div>
-    <script type="module" src="./src/main.jsx"></script>
+    <!-- Keep Vite entry; use absolute path so it resolves on Vercel -->
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
