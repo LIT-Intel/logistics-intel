@@ -34,8 +34,11 @@ function normalizeSearchRow(item: any) {
   if (!item || typeof item !== 'object') return item;
   const company_id = item.company_id ?? item.id ?? null;
   const company_name = item.company_name ?? item.name ?? '';
-  const shipments_12m = item.shipments_12m ?? item.kpis?.shipments_12m ?? item.kpis?.shipments ?? null;
-  const last_activity = item.last_activity ?? item.kpis?.last_activity ?? null;
+  const shipmentsRaw = item.shipments_12m ?? item.kpis?.shipments_12m ?? item.kpis?.shipments ?? null;
+  const rawLast = item.last_activity ?? item.kpis?.last_activity ?? null;
+  const last_activity = (rawLast && typeof rawLast === 'object' && 'value' in rawLast)
+    ? rawLast.value ?? null
+    : rawLast ?? null;
   const formatRoutes = (routes: any) => {
     if (!Array.isArray(routes)) return [];
     return routes.map((entry) => {
@@ -85,12 +88,31 @@ function normalizeSearchRow(item: any) {
     ...item,
     company_id,
     company_name,
-    shipments_12m,
+    shipments_12m: shipmentsRaw != null ? Number(shipmentsRaw) : null,
     last_activity,
     top_routes,
     top_carriers,
+    short_id: company_id ? String(company_id).slice(0, 8) : null,
   };
 }
+
+const getShortId = (id?: string | null) => (id ? String(id).slice(0, 8) : null);
+
+const formatNumberDisplay = (value: any) => {
+  if (value == null || value === '') return '—';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return num.toLocaleString();
+};
+
+const formatDateDisplay = (value: any) => {
+  if (!value) return '—';
+  const raw = typeof value === 'object' && value !== null && 'value' in value ? (value as any).value : value;
+  if (!raw) return '—';
+  const dt = new Date(String(raw));
+  if (Number.isNaN(dt.getTime())) return '—';
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
@@ -128,8 +150,8 @@ function SaveToCommandCenterButton({ row, size = 'sm', activeFilters }: { row: a
       const existing = JSON.parse(localStorage.getItem(lsKey) || '[]');
       if (!existing.find((c: any)=> String(c?.id||'') === cid)) {
         const kpis = {
-          shipments12m: row?.shipments_12m || 0,
-          lastActivity: kLastActivity(row?.last_activity),
+          shipments12m: Number(row?.shipments_12m ?? 0),
+          lastActivity: formatDateDisplay(row?.last_activity),
           originsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.origin_country) : [],
           destsTop: Array.isArray(row?.top_routes) ? row.top_routes.map((r: any)=> r.dest_country) : [],
           carriersTop: Array.isArray(row?.top_carriers) ? row.top_carriers.map((c: any)=> c.carrier) : [],
@@ -195,10 +217,12 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const top = r.top_routes?.[0];
   const name = r.company_name;
   const id = r.company_id || '—';
-  const shipments12m = r.shipments_12m ?? 0;
-  const lastActivity = kLastActivity(r.last_activity);
+  const shortId = r.short_id ?? getShortId(r.company_id);
+  const shipmentsDisplay = formatNumberDisplay(r.shipments_12m);
+  const lastActivityDisplay = formatDateDisplay(r.last_activity);
   const [teus12m, setTeus12m] = useState<number | null>(null);
   const [growthRate, setGrowthRate] = useState<number | null>(null);
+  const alias = (r as any)?.domain || '';
   useEffect(() => {
     const cid = String(r?.company_id || '').trim();
     const cacheKey = cid || `name:${String(r?.company_name || '').toLowerCase()}`;
@@ -250,14 +274,17 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   }, [key]);
 
   const topBorder = { borderTop: `4px solid ${STYLES.brandPurple}` } as const;
-  const alias = (r as any)?.domain || '';
   return (
     <div className="rounded-xl bg-white p-5 min-h-[220px] shadow-md hover:shadow-lg transition border border-gray-200 cursor-default" style={topBorder}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[13px] text-slate-500">Company</div>
           <div className="truncate text-xl font-bold text-gray-900" title={name}>{name}</div>
-          <div className="text-sm text-gray-500 truncate">{alias || `ID: ${id}`}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+            {shortId && <span className="font-mono text-gray-500">#{shortId}</span>}
+            {alias && <span className="truncate max-w-[180px] sm:max-w-[220px]">{alias}</span>}
+            {!alias && !shortId && id !== '—' && <span className="font-mono text-gray-500">#{getShortId(id)}</span>}
+          </div>
           <div className="mt-2 flex items-center gap-2">
             <SaveToCommandCenterButton row={r} />
             <span className="inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 text-[11px] px-2 py-0.5">
@@ -267,9 +294,9 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
         </div>
         <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white flex items-center justify-center text-sm font-semibold select-none">{initials}</div>
       </div>
-      <div className="mt-4 border-t border-b border-gray-200 py-3 grid grid-cols-2 md:grid-cols-4 gap-3">
-        <ResultKPI icon={<Ship className="w-4 h-4" style={{ color: STYLES.brandPurple }}/>} label="Shipments (12m)" value={shipments12m} />
-        <ResultKPI icon={<Clock className="w-4 h-4 text-gray-500" />} label="Last Activity" value={lastActivity} />
+        <div className="mt-4 border-t border-b border-gray-200 py-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <ResultKPI icon={<Ship className="w-4 h-4" style={{ color: STYLES.brandPurple }}/>} label="Shipments" value={shipmentsDisplay} />
+          <ResultKPI icon={<Clock className="w-4 h-4 text-gray-500" />} label="Last Activity" value={lastActivityDisplay} />
         <ResultKPI icon={<Box className="w-4 h-4 text-gray-500" />} label="Total TEUs" value={totalTeusDisplay} />
         <ResultKPI icon={<TrendingUp className="w-4 h-4 text-gray-500" />} label="Growth Rate" value={growthRateDisplay} />
       </div>
@@ -329,14 +356,17 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
             const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
             const top = r.top_routes?.[0];
             const isSaved = savedSet.has(key);
+            const shortId = r.short_id ?? getShortId(r.company_id);
+            const shipmentsDisplay = formatNumberDisplay(r.shipments_12m);
+            const lastActivityDisplay = formatDateDisplay(r.last_activity);
             return (
               <tr key={key} className={cn("hover:bg-gray-50 transition", selectedKey === key ? "ring-2 ring-indigo-500 ring-offset-1" : "") }>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <p className="font-medium text-gray-900 truncate max-w-[360px]" title={r.company_name}>{r.company_name}</p>
-                  <p className="text-xs text-gray-500">ID: {r.company_id || '—'}</p>
+                  <p className="text-xs text-gray-500">ID: {shortId ? `#${shortId}` : (r.company_id || '—')}</p>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.shipments_12m ?? '—'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{kLastActivity(r.last_activity)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shipmentsDisplay}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lastActivityDisplay}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center">
                   <MapPin className="w-4 h-4 mr-1 text-red-500" /> {top ? `${top.origin_country} → ${top.dest_country}` : '—'}
                 </td>

@@ -3,11 +3,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { getCompanyShipmentsUnified, fetchCompanyShipments } from '@/lib/api';
-import { X, Ship, Box, TrendingUp, MapPin, Globe, Database, Link as LinkIcon, Lock, BarChart as BarChartIcon } from 'lucide-react';
+import { API_BASE } from '@/lib/apiBase';
+import { X, Ship, Box, TrendingUp, MapPin, Globe, Database, Link as LinkIcon, Lock, BarChart as BarChartIcon, Clock, Loader2 } from 'lucide-react';
 
 type Company = { company_id?: string | null; company_name?: string; domain?: string | null; website?: string | null };
 
 type ModalProps = { company: Company | null; open: boolean; onClose: (open: boolean) => void };
+
+const getShortId = (id?: string | null) => (id ? String(id).slice(0, 8) : null);
+const formatNumberDisplay = (value: any) => {
+  if (value == null || value === '') return '—';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return num.toLocaleString();
+};
+const formatDateDisplay = (value: any) => {
+  if (!value) return '—';
+  const raw = typeof value === 'object' && value !== null && 'value' in value ? (value as any).value : value;
+  if (!raw) return '—';
+  const dt = new Date(String(raw));
+  if (Number.isNaN(dt.getTime())) return '—';
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const [chartRows, setChartRows] = useState<any[]>([]);
@@ -23,24 +40,49 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const [dateStart, setDateStart] = useState<string>('');
   const [dateEnd, setDateEnd] = useState<string>('');
   const [showGate, setShowGate] = useState(false);
+  const [chartState, setChartState] = useState<'idle'|'loading'|'ready'|'empty'>('idle');
 
   const cid = company?.company_id || undefined;
   const cname = company?.company_name || undefined;
 
   useEffect(() => {
+    if (!open) {
+      setChartRows([]);
+      setChartState('idle');
+    }
+  }, [open]);
+
+  useEffect(() => {
     let cancelled = false;
+    if (!open || !company || activeTab !== 'summary') return;
+    const companyId = company.company_id;
+    if (!companyId) {
+      setChartRows([]);
+      setChartState('empty');
+      return;
+    }
+    setChartState('loading');
     (async () => {
-      if (!open || !company) return;
       try {
-        const data = await fetchCompanyShipments({ company: cname || '', limit: 1000, offset: 0 });
-        const rows = (data?.items || data?.rows || []) as any[];
-        if (!cancelled) setChartRows(Array.isArray(rows) ? rows : []);
+        const resp = await fetch(`${API_BASE}/public/companyChart?company_id=${encodeURIComponent(String(companyId))}`);
+        if (!resp.ok) throw new Error(String(resp.status));
+        const data = await resp.json().catch(() => null);
+        const rows = Array.isArray(data?.rows)
+          ? data.rows
+          : Array.isArray(data)
+            ? data
+            : [];
+        if (cancelled) return;
+        setChartRows(Array.isArray(rows) ? rows : []);
+        setChartState(rows && rows.length ? 'ready' : 'empty');
       } catch {
-        if (!cancelled) setChartRows([]);
+        if (cancelled) return;
+        setChartRows([]);
+        setChartState('empty');
       }
     })();
     return () => { cancelled = true; };
-  }, [open, cid, cname, company]);
+  }, [open, activeTab, company]);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,32 +110,45 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
     const months: { key: string; month: string; volume: number }[] = [];
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       months.push({ key, month: d.toLocaleString(undefined, { month: 'short' }), volume: 0 });
     }
-    const byKey = new Map(months.map(m => [m.key, m]));
+    const byKey = new Map(months.map((m) => [m.key, m]));
     for (const r of chartRows) {
-      const raw = (r as any)?.date?.value || (r as any)?.shipment_date?.value || (r as any)?.shipped_on || null;
+      const raw = (r as any)?.month ?? (r as any)?.period ?? (r as any)?.date ?? (r as any)?.date_key ?? (r as any)?.date?.value ?? (r as any)?.shipment_date?.value ?? (r as any)?.shipped_on ?? null;
       if (!raw) continue;
-      const dt = new Date(String(raw)); if (isNaN(dt.getTime())) continue;
-      const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`;
-      const vol = typeof (r as any)?.teu === 'number' ? Number((r as any).teu) : 1;
+      let dt: Date | null = null;
+      if (typeof raw === 'string' && /^\d{4}-\d{2}$/.test(raw)) {
+        dt = new Date(`${raw}-01`);
+      } else {
+        dt = new Date(String(raw));
+      }
+      if (!dt || Number.isNaN(dt.getTime())) continue;
+      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+      const volRaw = (r as any)?.volume ?? (r as any)?.teu ?? (r as any)?.total ?? (r as any)?.shipments ?? (r as any)?.count ?? (r as any)?.value ?? 0;
+      const vol = Number(volRaw);
+      if (!Number.isFinite(vol)) continue;
       if (byKey.has(key)) byKey.get(key)!.volume += vol;
     }
     return months;
   }, [chartRows]);
 
+  const hasChartData = monthlyVolumes.some((m) => m.volume > 0);
+
+  const shortId = getShortId(company?.company_id);
+  const shipmentsKpi = (company as any)?.shipments_12m ?? (company as any)?.kpis?.shipments_12m ?? null;
+  const lastActivityRaw = (company as any)?.last_activity ?? (company as any)?.kpis?.last_activity ?? null;
+  const shipmentsDisplay = formatNumberDisplay(shipmentsKpi);
+  const lastActivityDisplay = formatDateDisplay(lastActivityRaw);
+
   const topRoute = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const r of chartRows) {
-      const o = (r as any)?.origin_country || (r as any)?.origin_city || (r as any)?.origin_port || '—';
-      const d = (r as any)?.dest_country || (r as any)?.dest_city || (r as any)?.dest_port || '—';
-      const key = `${o} → ${d}`;
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
-    let best = '—', max = 0; for (const [k, v] of counts) { if (v > max) { max = v; best = k; } }
-    return best;
-  }, [chartRows]);
+    const routes = Array.isArray((company as any)?.top_routes) ? (company as any).top_routes : [];
+    if (!routes.length) return '—';
+    const route = routes[0] || {};
+    const origin = route.origin_country || route.origin || route.origin_city || '—';
+    const dest = route.dest_country || route.dest || route.dest_city || '—';
+    return `${origin} → ${dest}`;
+  }, [company]);
 
   const displayedRows = useMemo(() => {
     if (!dateStart && !dateEnd) return tableRows;
@@ -117,11 +172,11 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
         <DialogHeader className="p-6 border-b">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <DialogTitle className="text-2xl font-bold truncate" style={{ color: '#7F3DFF' }} title={company?.company_name || 'Company'}>
-                {company?.company_name || 'Company'}
-              </DialogTitle>
-              <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                <div>ID: {company?.company_id || '—'}</div>
+                <DialogTitle className="text-2xl font-bold truncate" style={{ color: '#7F3DFF' }} title={company?.company_name || 'Company'}>
+                  {company?.company_name || 'Company'}
+                </DialogTitle>
+                <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                  <div>ID: {shortId ? `#${shortId}` : (company?.company_id || '—')}</div>
                 {website && (
                   <div className="flex items-center gap-1.5"><Globe className="w-4 h-4" /><a className="text-blue-600 hover:underline" href={`https://${website.replace(/^https?:\/\//,'')}`} target="_blank" rel="noreferrer">{website.replace(/^https?:\/\//,'')}</a></div>
                 )}
@@ -144,13 +199,26 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               </TabsList>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabsContent value="overview" className="p-6 space-y-6">
-                <h3 className="text-xl font-bold text-gray-900">Company Profile</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Database className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Company ID</div><div className="font-semibold text-gray-800">{company?.company_id || '—'}</div></div></div>
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><LinkIcon className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Website</div><div className="font-semibold text-gray-800 truncate max-w-[280px]">{website ? website.replace(/^https?:\/\//,'') : '—'}</div></div></div>
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Ship className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Total Shipments (12m)</div><div className="font-semibold text-gray-800">{(company as any)?.shipments_12m ?? '—'}</div></div></div>
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Box className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Total TEUs (12m)</div><div className="font-semibold text-gray-800">{(company as any)?.total_teus != null ? Number((company as any).total_teus).toLocaleString() : '—'}</div></div></div>
+                <TabsContent value="overview" className="p-6 space-y-6">
+                  <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 text-indigo-700 px-3 py-1">
+                      <Ship className="w-4 h-4" />
+                      <span className="font-medium text-gray-900">Shipments</span>
+                      <span className="font-semibold text-gray-900">{shipmentsDisplay}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 text-slate-700 px-3 py-1">
+                      <Clock className="w-4 h-4" />
+                      <span className="font-medium text-gray-900">Last Activity</span>
+                      <span className="font-semibold text-gray-900">{lastActivityDisplay}</span>
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900">Company Profile</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Database className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Company ID</div><div className="font-semibold text-gray-800">{shortId ? `#${shortId}` : (company?.company_id || '—')}</div></div></div>
+                    <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><LinkIcon className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Website</div><div className="font-semibold text-gray-800 truncate max-w-[280px]">{website ? website.replace(/^https?:\/\//,'') : '—'}</div></div></div>
+                    <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Ship className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Shipments (12m)</div><div className="font-semibold text-gray-800">{shipmentsDisplay}</div></div></div>
+                    <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Clock className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Last Activity</div><div className="font-semibold text-gray-800">{lastActivityDisplay}</div></div></div>
+                    <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Box className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Total TEUs (12m)</div><div className="font-semibold text-gray-800">{(company as any)?.total_teus != null ? Number((company as any).total_teus).toLocaleString() : '—'}</div></div></div>
                   <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm sm:col-span-2"><MapPin className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Top Trade Route</div><div className="font-semibold text-gray-800">{topRoute}</div></div></div>
                 </div>
                 <div className="border rounded-xl p-4" style={{ backgroundColor: '#EEE6FF' }}>
@@ -161,35 +229,44 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
               <TabsContent value="summary" className="p-6 space-y-6">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="p-4 border border-gray-200 rounded-xl bg-white text-center"><Ship className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{(company as any)?.shipments_12m ?? '—'}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Total Shipments (12m)</div></div>
+                    <div className="p-4 border border-gray-200 rounded-xl bg-white text-center"><Ship className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{shipmentsDisplay}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Shipments (12m)</div></div>
                   <div className="p-4 border border-gray-200 rounded-xl bg-white text-center"><Box className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{(company as any)?.total_teus != null ? Number((company as any).total_teus).toLocaleString() : '—'}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Total TEUs (12m)</div></div>
-                  <div className="p-4 border border-gray-200 rounded-xl bg-white text-center"><TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{(company as any)?.growth_rate != null ? `${Math.round(Number((company as any).growth_rate) * 100)}%` : '—'}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Growth Rate (YoY)</div></div>
+                    <div className="p-4 border border-gray-200 rounded-xl bg-white text-center"><Clock className="w-6 h-6 mx-auto mb-2 text-gray-500" /><div className="text-lg font-bold">{lastActivityDisplay}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Last Activity</div></div>
+                    <div className="p-4 border border-gray-200 rounded-xl bg-white text-center"><TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/><div className="text-2xl font-bold">{(company as any)?.growth_rate != null ? `${Math.round(Number((company as any).growth_rate) * 100)}%` : '—'}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Growth Rate (YoY)</div></div>
                   <div className="p-4 border border-gray-200 rounded-xl bg-white text-center"><MapPin className="w-6 h-6 mx-auto mb-2 text-red-500"/><div className="text-lg font-bold">{topRoute}</div><div className="text-xs uppercase text-gray-500 font-medium mt-1">Primary Route</div></div>
                 </div>
                 <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> 12-Month Shipment Volume (TEU Equivalent)</h3>
-                  <div className="relative" style={{ height: '150px' }}>
-                    <div className="absolute inset-x-0 h-0 border-t border-dashed border-gray-200 top-0" />
-                    <div className="absolute inset-x-0 h-0 border-t border-dashed border-gray-200 top-1/2 -translate-y-1/2" />
-                    <div className="absolute inset-x-0 h-0 border-t border-dashed border-gray-200 bottom-0" />
-                    <div className="h-full flex items-end justify-around gap-2 px-1">
-                      {(() => {
-                        const max = Math.max(1, ...monthlyVolumes.map(v => v.volume));
-                        return monthlyVolumes.map((v, idx) => {
-                          const barH = Math.max(5, Math.round((v.volume / max) * 150));
-                          const color = idx === monthlyVolumes.length - 1 ? '#7F3DFF' : '#A97EFF';
-                          return (
-                            <div key={v.key} className="group relative flex-1 flex flex-col items-center justify-end" style={{ minWidth: '20px' }}>
-                              <div className="absolute -top-7 rounded bg-gray-900 text-white text-[11px] px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg">{v.volume.toLocaleString()}</div>
-                              <div className="w-full rounded-t-sm transition-all duration-300 hover:opacity-90 shadow-[inset_0_0_6px_rgba(255,255,255,0.3),0_6px_12px_rgba(0,0,0,0.15)]" style={{ height: `${barH}px`, background: `linear-gradient(180deg, ${color} 0%, ${color} 60%, #5f2fd1 100%)` }} />
-                              <div className="text-[11px] text-gray-500 mt-1">{v.month}</div>
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-                  <p className="text-xs text-center text-gray-400 mt-4">Data represents estimated monthly shipment volume over the last 12 months.</p>
+                    {chartState === 'loading' ? (
+                      <div className="py-12 text-center text-sm text-gray-500"><Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" /> Loading chart…</div>
+                    ) : chartState === 'ready' && hasChartData ? (
+                      <>
+                        <div className="relative" style={{ height: '150px' }}>
+                          <div className="absolute inset-x-0 h-0 border-t border-dashed border-gray-200 top-0" />
+                          <div className="absolute inset-x-0 h-0 border-t border-dashed border-gray-200 top-1/2 -translate-y-1/2" />
+                          <div className="absolute inset-x-0 h-0 border-t border-dashed border-gray-200 bottom-0" />
+                          <div className="h-full flex items-end justify-around gap-2 px-1">
+                            {(() => {
+                              const max = Math.max(1, ...monthlyVolumes.map(v => v.volume));
+                              return monthlyVolumes.map((v, idx) => {
+                                const barH = Math.max(5, Math.round((v.volume / max) * 150));
+                                const color = idx === monthlyVolumes.length - 1 ? '#7F3DFF' : '#A97EFF';
+                                return (
+                                  <div key={v.key} className="group relative flex-1 flex flex-col items-center justify-end" style={{ minWidth: '20px' }}>
+                                    <div className="absolute -top-7 rounded bg-gray-900 text-white text-[11px] px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg">{v.volume.toLocaleString()}</div>
+                                    <div className="w-full rounded-t-sm transition-all duration-300 hover:opacity-90 shadow-[inset_0_0_6px_rgba(255,255,255,0.3),0_6px_12px_rgba(0,0,0,0.15)]" style={{ height: `${barH}px`, background: `linear-gradient(180deg, ${color} 0%, ${color} 60%, #5f2fd1 100%)` }} />
+                                    <div className="text-[11px] text-gray-500 mt-1">{v.month}</div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        </div>
+                        <p className="text-xs text-center text-gray-400 mt-4">Data represents estimated monthly shipment volume over the last 12 months.</p>
+                      </>
+                    ) : (
+                      <div className="py-12 text-center text-sm text-gray-500">No chart data yet.</div>
+                    )}
                 </div>
               </TabsContent>
 
