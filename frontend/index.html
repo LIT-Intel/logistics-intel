@@ -7,6 +7,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Logistic Intel</title>
     <meta name="x-build" content="vercel-refresh-2025-10-15-cc-v2-4">
+      <script>
+        (function redirectRoot() {
+          try {
+            var path = window.location.pathname || "/";
+            if (path === "/" || path === "") {
+              var hash = window.location.hash || "";
+              window.location.replace("/search" + hash);
+            }
+          } catch (err) {}
+        })();
+      </script>
   </head>
   <body>
     <div id="root"></div>
