@@ -321,19 +321,19 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
                 <div>
-          <h1 className='text-3xl md:text-3xl font-extrabold tracking-tight text-slate-900'>{active.name}</h1>
-                  <div className='text-xs text-slate-500'>ID: {active.id}</div>
+            <h1 className='text-3xl md:text-3xl font-extrabold tracking-tight text-slate-900'>{active.name}</h1>
+                    <div className='text-xs text-slate-500'>ID: {active?.company_id ?? active?.id ?? '—'}</div>
                 </div>
                 <div className='flex items-center gap-2'>
-                  <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
-                    try { await saveCompanyToCrm({ company_id: String(active.id), company_name: active.name, source:'companies' }); alert('Saved to CRM'); } catch(e:any){ alert('Save failed: '+ String(e?.message||e)); }
+                    <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
+                      try { await saveCompanyToCrm({ company_id: String(active?.company_id ?? active?.id ?? ''), company_name: active.name, source:'companies' }); alert('Saved to CRM'); } catch(e:any){ alert('Save failed: '+ String(e?.message||e)); }
                   }}>Save</button>
                   <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-xs' onClick={async()=>{
-                    try { await enrichCompany({ company_id: String(active.id) }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
+                      try { await enrichCompany({ company_id: String(active?.company_id ?? active?.id ?? '') }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
                   }}>Enrich Now</button>
                   <button className='px-3 py-1.5 rounded border text-xs disabled:opacity-60' title={aiEnabled? 'AI Recall' : 'Connect AI in Settings → Providers'} disabled={!aiEnabled}
                     onClick={async()=>{
-                    try { await recallCompany({ company_id: String(active.id) }); alert('AI Recall requested'); } catch(e:any){ alert('Recall failed: '+ String(e?.message||e)); }
+                      try { await recallCompany({ company_id: String(active?.company_id ?? active?.id ?? '') }); alert('AI Recall requested'); } catch(e:any){ alert('Recall failed: '+ String(e?.message||e)); }
                   }}>AI Recall</button>
                 </div>
               </div>
