@@ -83,6 +83,22 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
   return r.json();
 }
 
+export async function getFilterOptions(signal?: AbortSignal) {
+  return getFilterOptionsOnce(async (innerSignal) => {
+    const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/getFilterOptions`, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: innerSignal ?? signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`getFilterOptions failed: ${res.status} ${text}`);
+    }
+    const data = await res.json().catch(() => ({}));
+    return data ?? {};
+  }, signal);
+}
+
 // Back-compat names expected by some pages
 export const searchCompaniesProxyCompat = searchCompaniesProxy;
 export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;

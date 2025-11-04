@@ -3,6 +3,9 @@
   "ignoreCommand": "",
   "buildCommand": "npm ci && npm run build",
   "outputDirectory": "dist",
+  "redirects": [
+    { "source": "/", "destination": "/search", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],

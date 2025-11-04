@@ -11,3 +11,7 @@ export function getGatewayBase(): string {
   const base = (fromVitePrimary || fromViteAlt || fromNext || DEFAULT_BASE).toString().trim();
   return base.replace(/\/+$/, "");
 }
+
+export function getApiBase(): string {
+  return getGatewayBase();
+}

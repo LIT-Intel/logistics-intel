@@ -2,12 +2,18 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { getCompanyShipmentsUnified, fetchCompanyShipments } from '@/lib/api';
+import { getApiBase } from '@/lib/env';
 import { X, Ship, Box, TrendingUp, MapPin, Globe, Database, Link as LinkIcon, Lock, BarChart as BarChartIcon } from 'lucide-react';
 
 type Company = { company_id?: string | null; company_name?: string; domain?: string | null; website?: string | null };
 
 type ModalProps = { company: Company | null; open: boolean; onClose: (open: boolean) => void };
+
+function normalizeString(value: unknown): string | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+}
 
 export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const [chartRows, setChartRows] = useState<any[]>([]);
@@ -24,42 +30,96 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const [dateEnd, setDateEnd] = useState<string>('');
   const [showGate, setShowGate] = useState(false);
 
-  const cid = company?.company_id || undefined;
-  const cname = company?.company_name || undefined;
+  const companyId = normalizeString(company?.company_id ?? (company as any)?.companyId ?? (company as any)?.id);
+  const companyName = normalizeString(company?.company_name ?? (company as any)?.name);
+  const displayName = companyName ?? 'Company';
+  const apiBase = getApiBase();
+
+  async function fetchShipmentsPage(params: {
+    limit: number;
+    offset: number;
+    mode?: string;
+    origin?: string;
+    dest?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    if (!companyId && !companyName) {
+      return { rows: [] as any[], total: 0 };
+    }
+    const search = new URLSearchParams();
+    if (companyId) search.set('company_id', companyId);
+    else if (companyName) search.set('company_name', companyName);
+    search.set('limit', String(params.limit ?? 20));
+    search.set('offset', String(params.offset ?? 0));
+    if (params.mode) search.set('mode', params.mode);
+    if (params.origin) search.set('origin', params.origin);
+    if (params.dest) search.set('dest', params.dest);
+    if (params.startDate) search.set('startDate', params.startDate);
+    if (params.endDate) search.set('endDate', params.endDate);
+
+    const response = await fetch(`${apiBase}/public/getCompanyShipments?${search.toString()}`, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `getCompanyShipments ${response.status}`);
+    }
+    const data = await response.json();
+    const rows = Array.isArray(data?.rows)
+      ? data.rows
+      : (Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []));
+    const total = Number(data?.meta?.total ?? data?.total ?? rows.length ?? 0);
+    return { rows: Array.isArray(rows) ? rows : [], total: Number.isFinite(total) ? total : rows.length };
+  }
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!open || !company) return;
+      if (!open || (!companyId && !companyName)) return;
       try {
-        const data = await fetchCompanyShipments({ company: cname || '', limit: 1000, offset: 0 });
-        const rows = (data?.items || data?.rows || []) as any[];
+        const { rows } = await fetchShipmentsPage({ limit: 1000, offset: 0 });
         if (!cancelled) setChartRows(Array.isArray(rows) ? rows : []);
       } catch {
         if (!cancelled) setChartRows([]);
       }
     })();
     return () => { cancelled = true; };
-  }, [open, cid, cname, company]);
+  }, [open, companyId, companyName, apiBase]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!open || !company || activeTab !== 'shipments') return;
-      setLoadingTable(true); setError(null);
+      if (!open || activeTab !== 'shipments' || (!companyId && !companyName)) return;
+      setLoadingTable(true);
+      setError(null);
       try {
-        const data = await fetchCompanyShipments({ company: cname || '', mode: mode || undefined, origin: origin || undefined, dest: dest || undefined, startDate: dateStart || undefined, endDate: dateEnd || undefined, limit: 50, offset: (page - 1) * 50 });
-        const rows = (data?.items || data?.rows || []) as any[];
-        const total = Number(data?.total || rows.length || 0);
-        if (!cancelled) { setTableRows(Array.isArray(rows) ? rows : []); setTotal(total); }
+        const { rows, total } = await fetchShipmentsPage({
+          limit: 50,
+          offset: (page - 1) * 50,
+          mode: mode || undefined,
+          origin: origin || undefined,
+          dest: dest || undefined,
+          startDate: dateStart || undefined,
+          endDate: dateEnd || undefined,
+        });
+        if (!cancelled) {
+          setTableRows(Array.isArray(rows) ? rows : []);
+          setTotal(typeof total === 'number' && Number.isFinite(total) ? total : Array.isArray(rows) ? rows.length : 0);
+        }
       } catch (e: any) {
-        if (!cancelled) { setTableRows([]); setTotal(0); setError('Failed to load shipments'); }
+        if (!cancelled) {
+          setTableRows([]);
+          setTotal(0);
+          setError('Failed to load shipments');
+        }
       } finally {
         if (!cancelled) setLoadingTable(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [open, activeTab, page, cid, cname, company, mode, origin, dest, dateStart, dateEnd]);
+  }, [open, activeTab, page, companyId, companyName, mode, origin, dest, dateStart, dateEnd, apiBase]);
 
   const website = (company?.website || company?.domain || '')?.toString();
 
@@ -117,11 +177,11 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
         <DialogHeader className="p-6 border-b">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <DialogTitle className="text-2xl font-bold truncate" style={{ color: '#7F3DFF' }} title={company?.company_name || 'Company'}>
-                {company?.company_name || 'Company'}
+                <DialogTitle className="text-2xl font-bold truncate" style={{ color: '#7F3DFF' }} title={displayName}>
+                  {displayName}
               </DialogTitle>
               <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                <div>ID: {company?.company_id || '—'}</div>
+                  <div>ID: {companyId ?? '—'}</div>
                 {website && (
                   <div className="flex items-center gap-1.5"><Globe className="w-4 h-4" /><a className="text-blue-600 hover:underline" href={`https://${website.replace(/^https?:\/\//,'')}`} target="_blank" rel="noreferrer">{website.replace(/^https?:\/\//,'')}</a></div>
                 )}
@@ -147,7 +207,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               <TabsContent value="overview" className="p-6 space-y-6">
                 <h3 className="text-xl font-bold text-gray-900">Company Profile</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Database className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Company ID</div><div className="font-semibold text-gray-800">{company?.company_id || '—'}</div></div></div>
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Database className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Company ID</div><div className="font-semibold text-gray-800">{companyId ?? '—'}</div></div></div>
                   <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><LinkIcon className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Website</div><div className="font-semibold text-gray-800 truncate max-w-[280px]">{website ? website.replace(/^https?:\/\//,'') : '—'}</div></div></div>
                   <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Ship className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Total Shipments (12m)</div><div className="font-semibold text-gray-800">{(company as any)?.shipments_12m ?? '—'}</div></div></div>
                   <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-100 bg-white shadow-sm"><Box className="w-5 h-5 text-gray-500" /><div><div className="text-xs font-semibold uppercase text-gray-500">Total TEUs (12m)</div><div className="font-semibold text-gray-800">{(company as any)?.total_teus != null ? Number((company as any).total_teus).toLocaleString() : '—'}</div></div></div>
@@ -225,8 +285,8 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                 <div className="overflow-auto rounded-xl border border-gray-200 bg-white">
                   {loadingTable ? (
                     <div className="p-6 text-sm text-gray-500">Loading shipments…</div>
-                  ) : displayedRows.length === 0 ? (
-                    <div className="p-6 text-sm text-gray-500">No shipment data available.</div>
+                    ) : displayedRows.length === 0 ? (
+                      <div className="p-6 text-sm text-gray-500">No shipments found.</div>
                   ) : (
                     <table className="min-w-full text-sm">
                       <thead className="bg-gray-50 text-gray-600">
