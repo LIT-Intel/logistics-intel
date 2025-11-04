@@ -1,11 +1,11 @@
 import { useEffect } from "react";
-import { useRouter } from "next/router";
 
 export default function Home() {
-  const router = useRouter();
   useEffect(() => {
-    router.replace("/search");
-  }, [router]);
+    if (typeof window !== "undefined") {
+      window.location.replace("/search");
+    }
+  }, []);
 
   return (
     <main style={{ padding: 24 }}>

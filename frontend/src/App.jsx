@@ -49,14 +49,7 @@ export default function App() {
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading…</div>}>
       {/* Marketing / public */}
       <Routes>
-        <Route
-          path="/"
-          element={
-            <Layout currentPageName="Landing">
-              <Landing />
-            </Layout>
-          }
-        />
+          <Route path="/" element={<Navigate to="/search" replace />} />
         {/* Public Company route → use full Company page for consistency */}
         <Route
           path="/company/:id"
