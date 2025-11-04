@@ -1,74 +1,64 @@
-import { API_BASE } from '@/lib/apiBase';
 import { auth } from '@/auth/firebaseClient';
+import { getApiBase } from './env';
 
-export { API_BASE };
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 
-const PATH_PUBLIC_SEARCH = '/public/searchCompanies';
-const PATH_PUBLIC_FILTERS = '/public/getFilterOptions';
+const BASE = getApiBase();
 
-const FALLBACK_GATEWAY_BASE = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
-
-const API_BASES = (() => {
-  const bases = [API_BASE];
-  if (!bases.includes(FALLBACK_GATEWAY_BASE)) bases.push(FALLBACK_GATEWAY_BASE);
-  return bases;
-})();
-
-const joinUrl = (base: string, path: string) => `${base.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`;
-
-const RESPONSE_BASE_SYMBOL = Symbol.for('lit.api.base');
-
-const attachBase = (resp: Response, baseUrl: string) => {
-  try {
-    Object.defineProperty(resp, RESPONSE_BASE_SYMBOL, {
-      value: baseUrl,
-      enumerable: false,
-      configurable: true,
-      writable: false,
-    });
-  } catch {
-    (resp as any).__litBase = baseUrl;
-  }
-  return resp;
+const PATH = {
+  searchCompanies: `${BASE}/public/searchCompanies`,
+  getFilterOptions: `${BASE}/public/getFilterOptions`,
 };
 
-export const responseBase = (resp: Response) =>
-  (resp as any)[RESPONSE_BASE_SYMBOL] || (resp as any).__litBase || API_BASE;
+export const responseBase = (_resp?: unknown) => BASE;
 
-async function fetchFromBases(path: string, init?: RequestInit) {
-  let lastError: Error | null = null;
-  for (const base of API_BASES) {
-    try {
-      const url = joinUrl(base, path);
-      const resp = await fetch(url, init);
-      if (resp.status === 401 || resp.status === 403) {
-        const text = await resp.text().catch(() => '');
-        lastError = new Error(`${init?.method ?? 'GET'} ${url} - ${resp.status} ${text}`);
-        continue;
-      }
-      return { resp: attachBase(resp, base), baseUrl: base };
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
-  }
-  throw lastError ?? new Error('API request failed');
+export async function getFilterOptions(signal?: AbortSignal) {
+  const r = await fetch(PATH.getFilterOptions, { method: 'GET', signal });
+  if (!r.ok) throw new Error(`GET getFilterOptions ${r.status}`);
+  return r.json();
 }
 
-export const searchCompanies = async (body: any, signal?: AbortSignal) => {
-  const { resp } = await fetchFromBases(PATH_PUBLIC_SEARCH, {
+export async function postSearchCompanies(body: {
+  q?: string;
+  mode?: 'air' | 'ocean';
+  hs?: string[];
+  origin?: string[];
+  dest?: string[];
+  carrier?: string[];
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}, signal?: AbortSignal) {
+  const r = await fetch(PATH.searchCompanies, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
+    body: JSON.stringify(body),
     signal,
   });
-  return resp;
-};
+  if (!r.ok) throw new Error(`POST searchCompanies ${r.status}`);
+  return r.json();
+}
 
-export const getFilterOptions = async (signal?: AbortSignal) => {
-  const { resp } = await fetchFromBases(PATH_PUBLIC_FILTERS, { method: 'GET', signal });
-  return resp;
-};
+export async function searchCompanies(body: any, signal?: AbortSignal) {
+  try {
+    const data = await postSearchCompanies(body, signal);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => data,
+    } as const;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const match = message.match(/(\d{3})$/);
+    const status = match ? Number(match[1]) : 500;
+    return {
+      ok: false,
+      status,
+      json: async () => ({ error: message }),
+    } as const;
+  }
+}
 
 const GW = '/api/lit';
 
@@ -146,17 +136,7 @@ export function kpiFrom(item: CompanyItem) {
   return { shipments12m, lastActivity, originsTop, destsTop, carriersTop };
 }
 
-// Legacy-compatible wrapper that accepts arrays or CSV
-export async function postSearchCompanies(payload: any) {
-  const res = await searchCompanies(payload);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`POST ${responseBase(res)}/public/searchCompanies - ${res.status} ${text}`);
-  }
-  return res.json();
-}
-
-const GATEWAY_BASE_DEFAULT = API_BASE;
+const GATEWAY_BASE_DEFAULT = BASE;
 
 export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }) {
   const { company_id } = params;

@@ -3,14 +3,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { getCompanyShipmentsUnified, fetchCompanyShipments } from '@/lib/api';
-import { API_BASE } from '@/lib/apiBase';
+import { getApiBase } from '@/lib/env';
 import { X, Ship, Box, TrendingUp, MapPin, Globe, Database, Link as LinkIcon, Lock, BarChart as BarChartIcon, Clock, Loader2 } from 'lucide-react';
 
 type Company = { company_id?: string | null; company_name?: string; domain?: string | null; website?: string | null };
 
 type ModalProps = { company: Company | null; open: boolean; onClose: (open: boolean) => void };
 
-const getShortId = (id?: string | null) => (id ? String(id).slice(0, 8) : null);
+const API_BASE = getApiBase();
+
+const getShortId = (company?: { company_id?: string | null; company_code?: string | null }) => {
+  if (!company) return null;
+  if (company.company_code) return company.company_code;
+  if (company.company_id) return `#${String(company.company_id).slice(0, 8)}`;
+  return null;
+};
 const formatNumberDisplay = (value: any) => {
   if (value == null || value === '') return '—';
   const num = Number(value);
@@ -125,7 +132,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
       }
       if (!dt || Number.isNaN(dt.getTime())) continue;
       const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
-      const volRaw = (r as any)?.volume ?? (r as any)?.teu ?? (r as any)?.total ?? (r as any)?.shipments ?? (r as any)?.count ?? (r as any)?.value ?? 0;
+      const volRaw = (r as any)?.shipments ?? (r as any)?.volume ?? (r as any)?.teu ?? (r as any)?.total ?? (r as any)?.count ?? (r as any)?.value ?? 0;
       const vol = Number(volRaw);
       if (!Number.isFinite(vol)) continue;
       if (byKey.has(key)) byKey.get(key)!.volume += vol;
@@ -135,14 +142,15 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   const hasChartData = monthlyVolumes.some((m) => m.volume > 0);
 
-  const shortId = getShortId(company?.company_id);
-  const shipmentsKpi = (company as any)?.shipments_12m ?? (company as any)?.kpis?.shipments_12m ?? null;
-  const lastActivityRaw = (company as any)?.last_activity ?? (company as any)?.kpis?.last_activity ?? null;
+  const shortId = getShortId(company);
+  const shipmentsKpi = (company as any)?.kpis?.shipments_12m ?? (company as any)?.shipments_12m ?? null;
+  const lastActivityRaw = (company as any)?.kpis?.last_activity ?? (company as any)?.last_activity ?? null;
   const shipmentsDisplay = formatNumberDisplay(shipmentsKpi);
   const lastActivityDisplay = formatDateDisplay(lastActivityRaw);
 
   const topRoute = useMemo(() => {
-    const routes = Array.isArray((company as any)?.top_routes) ? (company as any).top_routes : [];
+    const source = (company as any)?.kpis?.top_routes ?? (company as any)?.top_routes;
+    const routes = Array.isArray(source) ? source : [];
     if (!routes.length) return '—';
     const route = routes[0] || {};
     const origin = route.origin_country || route.origin || route.origin_city || '—';
@@ -176,7 +184,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                   {company?.company_name || 'Company'}
                 </DialogTitle>
                 <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                  <div>ID: {shortId ? `#${shortId}` : (company?.company_id || '—')}</div>
+                  <div>ID: {shortId ?? (company?.company_id || '—')}</div>
                 {website && (
                   <div className="flex items-center gap-1.5"><Globe className="w-4 h-4" /><a className="text-blue-600 hover:underline" href={`https://${website.replace(/^https?:\/\//,'')}`} target="_blank" rel="noreferrer">{website.replace(/^https?:\/\//,'')}</a></div>
                 )}

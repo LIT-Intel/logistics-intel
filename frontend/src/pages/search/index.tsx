@@ -4,8 +4,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { hasFeature } from '@/lib/access';
 
 // Keep existing app wiring and proxies intact
-import { searchCompanies, getFilterOptions, saveCompanyToCrm, getCompanyKey, getCompanyKpis, responseBase } from '@/lib/api';
-import { API_BASE } from '@/lib/apiBase';
+import { postSearchCompanies, getFilterOptions, saveCompanyToCrm, getCompanyKey, getCompanyKpis } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import AutocompleteInput from '@/components/search/AutocompleteInput';
 import { Badge } from '@/components/ui/badge';
@@ -24,18 +23,14 @@ const STYLES = {
 };
 
 // --- Helpers ---
-function kLastActivity(v: any): string {
-  if (!v) return '—';
-  if (typeof v === 'object' && 'value' in v) return String((v as any).value || '—');
-  return String(v);
-}
-
 function normalizeSearchRow(item: any) {
   if (!item || typeof item !== 'object') return item;
   const company_id = item.company_id ?? item.id ?? null;
-  const company_name = item.company_name ?? item.name ?? '';
-  const shipmentsRaw = item.shipments_12m ?? item.kpis?.shipments_12m ?? item.kpis?.shipments ?? null;
-  const rawLast = item.last_activity ?? item.kpis?.last_activity ?? null;
+  const company_code = item.company_code ?? null;
+  const name = item.company_name ?? item.name ?? '';
+  const kpis = item.kpis ?? {};
+  const shipmentsRaw = kpis.shipments_12m ?? item.shipments_12m ?? null;
+  const rawLast = kpis.last_activity ?? item.last_activity ?? null;
   const last_activity = (rawLast && typeof rawLast === 'object' && 'value' in rawLast)
     ? rawLast.value ?? null
     : rawLast ?? null;
@@ -81,28 +76,34 @@ function normalizeSearchRow(item: any) {
     });
   };
 
-  const top_routes = formatRoutes(item.top_routes ?? item.kpis?.top_routes ?? item.routes ?? []);
-  const top_carriers = formatCarriers(item.top_carriers ?? item.kpis?.top_carriers ?? []);
+  const top_routes = formatRoutes(kpis.top_routes ?? item.top_routes ?? item.routes ?? []);
+  const top_carriers = formatCarriers(kpis.top_carriers ?? item.top_carriers ?? []);
 
   return {
     ...item,
     company_id,
-    company_name,
+    company_code,
+    company_name: name,
     shipments_12m: shipmentsRaw != null ? Number(shipmentsRaw) : null,
     last_activity,
+    kpis: {
+      ...kpis,
+      shipments_12m: shipmentsRaw != null ? Number(shipmentsRaw) : null,
+      last_activity,
+    },
     top_routes,
     top_carriers,
-    short_id: company_id ? String(company_id).slice(0, 8) : null,
+    short_id: company_code ?? (company_id ? `#${String(company_id).slice(0, 8)}` : null),
   };
 }
 
-const getShortId = (id?: string | null) => (id ? String(id).slice(0, 8) : null);
+const getShortId = (row: any) => row?.company_code ?? (row?.company_id ? `#${String(row.company_id).slice(0, 8)}` : null);
 
 const formatNumberDisplay = (value: any) => {
   if (value == null || value === '') return '—';
   const num = Number(value);
   if (!Number.isFinite(num)) return '—';
-  return num.toLocaleString();
+  return new Intl.NumberFormat().format(num);
 };
 
 const formatDateDisplay = (value: any) => {
@@ -111,7 +112,7 @@ const formatDateDisplay = (value: any) => {
   if (!raw) return '—';
   const dt = new Date(String(raw));
   if (Number.isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return dt.toISOString().slice(0, 10);
 };
 
 function ResultKPI({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
@@ -217,9 +218,9 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
   const top = r.top_routes?.[0];
   const name = r.company_name;
   const id = r.company_id || '—';
-  const shortId = r.short_id ?? getShortId(r.company_id);
-  const shipmentsDisplay = formatNumberDisplay(r.shipments_12m);
-  const lastActivityDisplay = formatDateDisplay(r.last_activity);
+  const shortId = getShortId(r);
+  const shipmentsDisplay = formatNumberDisplay(r?.kpis?.shipments_12m ?? r.shipments_12m);
+  const lastActivityDisplay = formatDateDisplay(r?.kpis?.last_activity ?? r.last_activity);
   const [teus12m, setTeus12m] = useState<number | null>(null);
   const [growthRate, setGrowthRate] = useState<number | null>(null);
   const alias = (r as any)?.domain || '';
@@ -281,9 +282,9 @@ function ResultCard({ r, onOpen }: { r: any; onOpen: (r: any) => void }) {
           <div className="text-[13px] text-slate-500">Company</div>
           <div className="truncate text-xl font-bold text-gray-900" title={name}>{name}</div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-            {shortId && <span className="font-mono text-gray-500">#{shortId}</span>}
+            {shortId && <span className="font-mono text-gray-500">{shortId}</span>}
             {alias && <span className="truncate max-w-[180px] sm:max-w-[220px]">{alias}</span>}
-            {!alias && !shortId && id !== '—' && <span className="font-mono text-gray-500">#{getShortId(id)}</span>}
+            {!alias && !shortId && id !== '—' && <span className="font-mono text-gray-500">#{String(id).slice(0, 8)}</span>}
           </div>
           <div className="mt-2 flex items-center gap-2">
             <SaveToCommandCenterButton row={r} />
@@ -356,14 +357,14 @@ function ResultsList({ rows, onOpen, selectedKey, filters }: { rows: any[]; onOp
             const key = getCompanyKey({ company_id: r?.company_id, company_name: r?.company_name });
             const top = r.top_routes?.[0];
             const isSaved = savedSet.has(key);
-            const shortId = r.short_id ?? getShortId(r.company_id);
-            const shipmentsDisplay = formatNumberDisplay(r.shipments_12m);
-            const lastActivityDisplay = formatDateDisplay(r.last_activity);
+            const shortId = getShortId(r);
+            const shipmentsDisplay = formatNumberDisplay(r?.kpis?.shipments_12m ?? r.shipments_12m);
+            const lastActivityDisplay = formatDateDisplay(r?.kpis?.last_activity ?? r.last_activity);
             return (
               <tr key={key} className={cn("hover:bg-gray-50 transition", selectedKey === key ? "ring-2 ring-indigo-500 ring-offset-1" : "") }>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <p className="font-medium text-gray-900 truncate max-w-[360px]" title={r.company_name}>{r.company_name}</p>
-                  <p className="text-xs text-gray-500">ID: {shortId ? `#${shortId}` : (r.company_id || '—')}</p>
+                  <p className="text-xs text-gray-500">ID: {shortId ?? (r.company_id || '—')}</p>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shipmentsDisplay}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lastActivityDisplay}</td>
@@ -396,8 +397,8 @@ export default function SearchPage() {
   const [view, setView] = useState<'Cards'|'List'|'Filters'|'Explore'>('List');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [modal, setModal] = useState<any | null>(null);
-  const [filterOptions, setFilterOptions] = useState<any>(null);
-  const [resultsMeta, setResultsMeta] = useState<{ total: number; offset: number; limit: number } | null>(null);
+  const [filterOptions, setFilterOptions] = useState<{ modes: string[]; origins: string[]; destinations: string[] } | null>(null);
+  const [resultsMeta, setResultsMeta] = useState<{ total: number; offset: number; limit: number; count: number } | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [filters, setFilters] = useState({
     origin: null as string | null,
@@ -417,22 +418,19 @@ export default function SearchPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const resp = await getFilterOptions();
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => '');
-          throw new Error(`GET ${responseBase(resp)}/public/getFilterOptions - ${resp.status} ${text}`);
-        }
-        const data = await resp.json();
-        if (!cancelled) {
-          setFilterOptions(data);
-        }
-      } catch (err) {
-        if (!cancelled) {
+        try {
+          const data = await getFilterOptions();
+          if (cancelled) return;
+          setFilterOptions({
+            modes: Array.isArray(data?.modes) ? data.modes : [],
+            origins: Array.isArray(data?.origins) ? data.origins : [],
+            destinations: Array.isArray(data?.destinations) ? data.destinations : [],
+          });
+        } catch (err) {
+          if (cancelled) return;
           setFilterOptions(null);
-          setError((prev) => prev ?? (err instanceof Error && err.message ? err.message : `GET ${API_BASE}/public/getFilterOptions - unknown error`));
+          setError((prev) => prev ?? (err instanceof Error ? err.message : String(err)));
         }
-      }
     })();
     return () => {
       cancelled = true;
@@ -444,11 +442,12 @@ export default function SearchPage() {
       const safePage = Math.max(1, targetPage);
       const limitValue = Math.max(1, pageSize);
       const offset = (safePage - 1) * limitValue;
-      const body: Record<string, any> = {
-        q: q.trim(),
-        limit: limitValue,
-        offset,
-      };
+        const trimmed = q.trim();
+        const body: Record<string, any> = {
+          limit: limitValue,
+          offset,
+        };
+        if (trimmed.length) body.q = trimmed;
 
       const splitToArray = (value: string | null | undefined) => {
         if (!value) return undefined;
@@ -489,37 +488,37 @@ export default function SearchPage() {
       setError(null);
       setHasSearched(true);
       try {
-        const resp = await searchCompanies(body);
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => '');
-          throw new Error(`POST ${responseBase(resp)}/public/searchCompanies - ${resp.status} ${text}`);
-        }
-        const data = await resp.json();
-        const resultRows = Array.isArray(data?.rows)
-          ? data.rows
-          : (Array.isArray(data?.results) ? data.results : (Array.isArray(data?.items) ? data.items : []));
-        const totalValue = typeof data?.meta?.total === 'number'
-          ? data.meta.total
-          : (typeof data?.total === 'number'
-            ? data.total
-            : (typeof data?.count === 'number' ? data.count : resultRows.length));
-        const normalizedRows = Array.isArray(resultRows) ? resultRows.map(normalizeSearchRow) : [];
+          const data = await postSearchCompanies(body);
+          const resultRows = Array.isArray(data?.rows)
+            ? data.rows
+            : Array.isArray(data?.items)
+              ? data.items
+              : Array.isArray(data?.results)
+                ? data.results
+                : [];
+          const normalizedRows = Array.isArray(resultRows) ? resultRows.map(normalizeSearchRow) : [];
+          const meta = data?.meta ?? {};
+          const total = typeof meta.total === 'number'
+            ? meta.total
+            : (typeof data?.total === 'number'
+              ? data.total
+              : normalizedRows.length);
+          const effectiveOffset = typeof meta.offset === 'number' ? meta.offset : offset;
+          const effectiveLimit = typeof meta.limit === 'number' ? meta.limit : limitValue;
 
-        const metaFromApi = data?.meta ?? {};
-        const nextMeta = {
-          total: Number(metaFromApi.total ?? totalValue ?? normalizedRows.length ?? 0),
-          offset: Number(metaFromApi.offset ?? offset ?? 0),
-          limit: Number(metaFromApi.limit ?? limitValue ?? normalizedRows.length ?? 0),
-        };
-
-        setRows(normalizedRows);
-        setPage(safePage);
-        setLimit(limitValue);
-        setResultsMeta(nextMeta);
-      } catch (err) {
-        setRows([]);
-        setResultsMeta(null);
-        setError(err instanceof Error && err.message ? err.message : `POST ${API_BASE}/public/searchCompanies - unknown error`);
+          setRows(normalizedRows);
+          setPage(safePage);
+          setLimit(limitValue);
+          setResultsMeta({
+            total: Number(total || 0),
+            offset: Number(effectiveOffset || 0),
+            limit: Number(effectiveLimit || limitValue),
+            count: normalizedRows.length,
+          });
+        } catch (err) {
+          setRows([]);
+          setResultsMeta(null);
+          setError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }
@@ -534,21 +533,21 @@ export default function SearchPage() {
     [fetchResults, page, limit]
   );
 
-  const next = useCallback(() => {
-    if (loading || !resultsMeta) return;
-    if (resultsMeta.offset + resultsMeta.limit >= resultsMeta.total) return;
-    void fetchResults(page + 1);
-  }, [fetchResults, loading, page, resultsMeta]);
+    const next = useCallback(() => {
+      if (loading || !resultsMeta) return;
+      if (resultsMeta.offset + resultsMeta.count >= resultsMeta.total) return;
+      void fetchResults(page + 1);
+    }, [fetchResults, loading, page, resultsMeta]);
 
-  const prev = useCallback(() => {
-    if (loading || !resultsMeta) return;
-    if (resultsMeta.offset === 0 || page <= 1) return;
-    void fetchResults(page - 1);
-  }, [fetchResults, loading, page, resultsMeta]);
+    const prev = useCallback(() => {
+      if (loading || !resultsMeta) return;
+      if (resultsMeta.offset <= 0 || page <= 1) return;
+      void fetchResults(page - 1);
+    }, [fetchResults, loading, page, resultsMeta]);
 
   // Autocomplete handled by <AutocompleteInput/>; no inline panel
 
-  const hasNextPage = resultsMeta ? resultsMeta.offset + resultsMeta.limit < resultsMeta.total : false;
+    const hasNextPage = resultsMeta ? resultsMeta.offset + resultsMeta.count < resultsMeta.total : false;
 
   const dedupedRows = useMemo(() => {
     const seen = new Set<string>();
