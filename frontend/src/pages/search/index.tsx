@@ -1,77 +1,46 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useDebounce } from "@/lib/hooks/useDebounce";
-import { getGatewayBase } from "@/lib/env";
-import { searchCompanies } from "@/lib/api/search"; // existing client util
-// ^ if your search client export differs, keep the current import you have.
+import React, { useState } from "react";
 
 type Mode = "shippers" | "companies";
 
 export default function SearchPage() {
-  const didInitRef = useRef(false);
   const [mode, setMode] = useState<Mode>("shippers");
-  const [keyword, setKeyword] = useState("");
-  const debouncedKeyword = useDebounce(keyword, 250);
+  const [q, setQ] = useState("");
 
-  // Initial one-time read from URL
-  useEffect(() => {
-    if (didInitRef.current) return;
-    didInitRef.current = true;
-    if (typeof window === "undefined") return;
-
-    const url = new URL(window.location.href);
-    const qsMode = (url.searchParams.get("mode") as Mode) || "shippers";
-    const qsKeyword = url.searchParams.get("keyword") || "";
-    setMode(qsMode);
-    setKeyword(qsKeyword);
-  }, []);
-
-  // Write URL when user changes state (after initial mount)
-  useEffect(() => {
-    if (typeof window === "undefined" || !didInitRef.current) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set("mode", mode);
-    if (debouncedKeyword) url.searchParams.set("keyword", debouncedKeyword);
-    else url.searchParams.delete("keyword");
-    window.history.replaceState(null, "", url.toString());
-  }, [mode, debouncedKeyword]);
-
-  // Data fetch (sample: reuse your existing loader)
-  const base = useMemo(() => getGatewayBase(), []);
-  useEffect(() => {
-    // call your existing loader here; keep UI shell stable while loading
-    // Example: searchCompanies({ base, mode, keyword: debouncedKeyword, limit: 20, offset: 0 })
-    // .then(setResults).catch(setError)
-  }, [base, mode, debouncedKeyword]);
-
-  // Minimal shell so first paint doesn’t jump; replace with your existing JSX
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
-      {/* Mode toggle (keep your styling/brand tokens) */}
-      <div className="flex items-center gap-2 mb-4">
-        <button
-          className={`px-3 py-1 rounded-2xl ${mode === "shippers" ? "bg-black text-white" : "bg-gray-100"}`}
-          onClick={() => setMode("shippers")}
-        >
-          Shippers
-        </button>
-        <button
-          className={`px-3 py-1 rounded-2xl ${mode === "companies" ? "bg-black text-white" : "bg-gray-100"}`}
-          onClick={() => setMode("companies")}
-        >
-          Companies
-        </button>
+    <div className="mx-auto max-w-[1000px] px-4 pb-24">
+      <header className="pt-8 pb-4">
+        <h1 className="text-2xl font-semibold text-slate-900">Search</h1>
+        <p className="text-sm text-slate-500">UI placeholder to verify toggle renders without flicker.</p>
+      </header>
+
+      <div className="flex flex-wrap items-center gap-3 pb-4">
+        <div className="inline-flex rounded-2xl border border-slate-200 p-0.5">
+          <button
+            onClick={() => setMode("shippers")}
+            className={`px-3 py-1.5 text-sm rounded-2xl ${mode === "shippers" ? "bg-indigo-600 text-white" : "text-slate-700 hover:bg-slate-100"}`}
+            aria-pressed={mode === "shippers"}
+          >
+            Shippers
+          </button>
+          <button
+            onClick={() => setMode("companies")}
+            className={`px-3 py-1.5 text-sm rounded-2xl ${mode === "companies" ? "bg-indigo-600 text-white" : "text-slate-700 hover:bg-slate-100"}`}
+            aria-pressed={mode === "companies"}
+          >
+            Companies
+          </button>
+        </div>
+
         <input
-          className="ml-auto w-80 rounded-xl border px-3 py-2"
-          placeholder="Search keyword…"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by company name or alias…"
+          className="w-full sm:w-80 rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
         />
       </div>
 
-      {/* Your KPI header + grid go here; render skeletons first to avoid flicker */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 rounded-2xl border p-4 min-h-24">KPI header (skeleton/then data)</div>
-        <div className="col-span-12 rounded-2xl border p-4 min-h-64">Results grid (skeleton/then cards)</div>
+      <div className="text-xs text-slate-500">
+        Mode: <b>{mode}</b> · Query: <b>{q || "—"}</b>
       </div>
     </div>
   );
