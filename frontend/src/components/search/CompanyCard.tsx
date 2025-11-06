@@ -15,10 +15,14 @@ export default function CompanyCard({
   row,
   onOpen,
   onSave,
+  saving = false,
+  saved = false,
 }: {
   row: SearchRow;
   onOpen: (row: SearchRow) => void;
   onSave: (row: SearchRow) => void | Promise<void>;
+  saving?: boolean;
+  saved?: boolean;
 }) {
   const shipmentsDisplay =
     row.shipments_12m != null && Number.isFinite(Number(row.shipments_12m))
@@ -81,10 +85,11 @@ export default function CompanyCard({
         <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={() => onSave(row)}
-            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+            disabled={saving || saved}
+            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-70"
             title="Save to Command Center"
           >
-            Save to Command Center
+            {saved ? 'Saved' : saving ? 'Saving…' : 'Save to Command Center'}
           </button>
           <button
             onClick={() => onOpen(row)}

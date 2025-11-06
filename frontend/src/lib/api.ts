@@ -1,4 +1,5 @@
 import { getGatewayBase } from '@/lib/env';
+import type { ImportYetiCompany, ImportYetiSearchResp } from '@/types/importyeti';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
@@ -368,8 +369,23 @@ export async function getFilterOptionsOnce(fetcher: (signal?: AbortSignal) => Pr
   return _filtersInflight;
 }
 
-export async function saveCompanyToCrm(payload: { company_id: string; company_name: string; notes?: string | null; source?: string; }) {
-  const res = await fetch(`${GW}/crm/saveCompany`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...payload, source: payload.source ?? "search" }) });
+export async function saveCompanyToCrm(payload: { company_id?: string; company_name: string; slug?: string; notes?: string | null; source?: string; }) {
+  const body: Record<string, unknown> = {
+    company_name: payload.company_name,
+    source: payload.source ?? "search",
+  };
+
+  if (payload.company_id) {
+    body.company_id = payload.company_id;
+  }
+  if (payload.slug) {
+    body.slug = payload.slug;
+  }
+  if (payload.notes !== undefined) {
+    body.notes = payload.notes;
+  }
+
+  const res = await fetch(`${GW}/crm/saveCompany`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`saveCompanyToCrm failed: ${res.status} ${await res.text().catch(()=> "")}`);
   return await res.json();
 }
@@ -489,6 +505,65 @@ export async function saveCampaign(body: Record<string, any>) {
   return res.json();
 }
 
+export async function postImportYetiSearch(params: { keyword: string; limit: number; offset: number; signal?: AbortSignal }): Promise<ImportYetiSearchResp> {
+  const keyword = String(params?.keyword ?? '').trim();
+  const limit = Math.max(1, Math.min(100, Number(params?.limit ?? 20)));
+  const offset = Math.max(0, Number(params?.offset ?? 0));
+
+  const res = await fetch(`${GW}/public/importyeti/search`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({ keyword, limit, offset }),
+    signal: params.signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`importyeti.search ${res.status}${text ? ` ${text}` : ''}`);
+  }
+
+  const data = await res.json().catch(() => null);
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const meta = data?.meta ?? {};
+
+  return {
+    rows,
+    meta: {
+      total: Number.isFinite(Number(meta?.total)) ? Number(meta.total) : rows.length,
+      page: Number.isFinite(Number(meta?.page)) ? Number(meta.page) : Math.floor(offset / limit) + 1,
+      page_size: Number.isFinite(Number(meta?.page_size)) ? Number(meta.page_size) : limit,
+    },
+  };
+}
+
+export async function getImportYetiCompany(slug: string, signal?: AbortSignal): Promise<ImportYetiCompany> {
+  const normalized = String(slug ?? '').trim();
+  if (!normalized) {
+    throw new Error('importyeti.company requires slug');
+  }
+
+  const res = await fetch(`${GW}/public/importyeti/company?slug=${encodeURIComponent(normalized)}`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`importyeti.company ${res.status}${text ? ` ${text}` : ''}`);
+  }
+
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') {
+    throw new Error('importyeti.company empty response');
+  }
+
+  return data as ImportYetiCompany;
+}
+
 // Consolidated API object for callers using api.*
 export const api = {
   searchCompanies,
@@ -503,6 +578,8 @@ export const api = {
   getCalendarEvents,
   createAlert,
   kpiFrom,
+  postImportYetiSearch,
+  getImportYetiCompany,
 };
 
 // New API helpers for Company Lanes and Shipments drill-down via direct service
