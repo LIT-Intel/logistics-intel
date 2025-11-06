@@ -276,11 +276,6 @@ export default function SearchPage() {
     ? shipperState.total > 0 ? Math.ceil(shipperState.total / SHIPPER_PAGE_SIZE) : 1
     : 1;
 
-  const hasKeyword = keyword.trim().length > 0;
-  const totalPages = searchMode === "shippers"
-    ? shipperState.total > 0 ? Math.ceil(shipperState.total / SHIPPER_PAGE_SIZE) : 1
-    : 1;
-
   const renderResults = () => {
     if (searchMode === "shippers") {
       if (!hasKeyword) {
