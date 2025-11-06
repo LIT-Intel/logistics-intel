@@ -40,10 +40,11 @@ type ModalContext =
 
 const INITIAL_SHIPPER_STATE: ShipperState = { rows: [], total: 0, loading: false, error: null };
 
+
 export default function SearchPage() {
   const { toast } = useToast();
   const didInitRef = useRef(false);
-  const [isReady, setIsReady] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   const [searchMode, setSearchMode] = useState<"shippers" | "companies">("shippers");
   const [keyword, setKeyword] = useState<string>("");
@@ -102,56 +103,45 @@ export default function SearchPage() {
     setShouldAutoSearchCompanies(qsMode === "companies" && qsKeyword.trim().length > 0);
 
     didInitRef.current = true;
-    setIsReady(true);
+    setBootstrapped(true);
   }, []);
 
   useEffect(() => {
-    if (!isReady || typeof window === "undefined") return;
+    if (!bootstrapped || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
 
-    if (searchMode !== "shippers") {
-      params.set("mode", searchMode);
-    } else {
-      params.delete("mode");
-    }
+    if (searchMode !== "shippers") params.set("mode", searchMode); else params.delete("mode");
 
     if (debouncedKeyword.trim()) {
-      params.set("keyword", debouncedKeyword.trim());
-      params.set("q", debouncedKeyword.trim());
+      const next = debouncedKeyword.trim();
+      params.set("keyword", next);
+      params.set("q", next);
     } else {
       params.delete("keyword");
       params.delete("q");
     }
 
-    const search = params.toString();
     const hash = window.location.hash ?? "";
+    const search = params.toString();
     const nextUrl = search ? `${window.location.pathname}?${search}${hash}` : `${window.location.pathname}${hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [isReady, searchMode, debouncedKeyword]);
+  }, [bootstrapped, searchMode, debouncedKeyword]);
 
   useEffect(() => {
-    if (!isReady || !shouldAutoSearchCompanies) return;
-    runCompanySearch(keyword);
-    setShouldAutoSearchCompanies(false);
-  }, [isReady, shouldAutoSearchCompanies, runCompanySearch, keyword]);
-
-  useEffect(() => {
-    if (searchMode === "shippers") {
-      setShowFilters(false);
-    }
+    if (searchMode === "shippers") setShowFilters(false);
   }, [searchMode]);
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!bootstrapped) return;
     if (searchMode !== "shippers") {
       setShipperState({ ...INITIAL_SHIPPER_STATE });
       return;
     }
     setShipperPage(1);
-  }, [isReady, searchMode, debouncedKeyword]);
+  }, [bootstrapped, searchMode, debouncedKeyword]);
 
   useEffect(() => {
-    if (!isReady || searchMode !== "shippers") return;
+    if (!bootstrapped || searchMode !== "shippers") return;
     const term = debouncedKeyword.trim();
     if (!term) {
       setShipperState({ ...INITIAL_SHIPPER_STATE });
@@ -178,7 +168,7 @@ export default function SearchPage() {
       });
 
     return () => controller.abort();
-  }, [isReady, searchMode, debouncedKeyword, shipperPage]);
+  }, [bootstrapped, searchMode, debouncedKeyword, shipperPage]);
 
   const computedHs = useMemo(() => {
     if (!hs.trim()) return undefined;
@@ -212,12 +202,16 @@ export default function SearchPage() {
     }
   }, [keyword, transportMode, computedHs, origin, dest]);
 
+  useEffect(() => {
+    if (!bootstrapped || !shouldAutoSearchCompanies) return;
+    runCompanySearch(keyword);
+    setShouldAutoSearchCompanies(false);
+  }, [bootstrapped, shouldAutoSearchCompanies, runCompanySearch, keyword]);
+
   const handleModeChange = (value: string) => {
     if (value === "shippers" || value === "companies") {
       setSearchMode(value);
-      if (value === "companies" && keyword.trim()) {
-        setShouldAutoSearchCompanies(true);
-      }
+      if (value === "companies" && keyword.trim()) setShouldAutoSearchCompanies(true);
     }
   };
 
@@ -253,6 +247,8 @@ export default function SearchPage() {
   const handleViewCompany = (row: SearchRow) => setModalContext({ mode: "companies", company: row });
   const closeModal = () => setModalContext(null);
 
+  const isBooting = !bootstrapped;
+
   const modalProps = useMemo(() => {
     if (!modalContext) return null;
     if (modalContext.mode === "shippers") {
@@ -274,6 +270,11 @@ export default function SearchPage() {
       saved: savedCompanyKeys.has(key),
     };
   }, [modalContext, savingSlug, savedSlugs, savingCompanyKey, savedCompanyKeys]);
+
+  const hasKeyword = keyword.trim().length > 0;
+  const totalPages = searchMode === "shippers"
+    ? shipperState.total > 0 ? Math.ceil(shipperState.total / SHIPPER_PAGE_SIZE) : 1
+    : 1;
 
   const hasKeyword = keyword.trim().length > 0;
   const totalPages = searchMode === "shippers"
@@ -537,7 +538,11 @@ export default function SearchPage() {
           )}
         </div>
 
-        {renderResults()}
+        {isBooting ? (
+          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500 shadow-sm">Preparing search results…</div>
+        ) : (
+          renderResults()
+        )}
       </div>
 
       {modalProps && (
