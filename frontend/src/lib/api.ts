@@ -1,4 +1,4 @@
-import { getGatewayBase } from '@/lib/env';
+import { getGatewayBase, getApiBase } from '@/lib/env';
 import type { ImportYetiCompany, ImportYetiSearchResp } from '@/types/importyeti';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
@@ -25,8 +25,20 @@ export type SearchPayload = {
   offset?: number;
 };
 
+export type LogoSearchHit = {
+  name: string;
+  domain?: string | null;
+  logo_url?: string | null;
+};
+
 function normalizeQ(q: unknown) {
   return (q ?? '').toString().trim();
+}
+
+function normalizeKeyword(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const text = String(value).trim();
+  return text.length ? text : undefined;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -46,8 +58,8 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export async function searchCompaniesProxy(payload: SearchPayload){
+  const keyword = normalizeKeyword(payload.q);
   const body = {
-    q: payload.q ?? null,
     origin: Array.isArray(payload.origin) ? payload.origin : [],
     dest: Array.isArray(payload.dest) ? payload.dest : [],
     hs: Array.isArray(payload.hs) ? payload.hs : [],
@@ -58,7 +70,7 @@ export async function searchCompaniesProxy(payload: SearchPayload){
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      q: body.q,
+      keyword: keyword ?? null,
       origin: null,
       dest: null,
       hs: null,
@@ -68,6 +80,28 @@ export async function searchCompaniesProxy(payload: SearchPayload){
   });
   if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
   return r.json();
+}
+
+export async function searchCompanyLogo(query: string, signal?: AbortSignal) {
+  const normalized = normalizeKeyword(query);
+  if (!normalized) return [] as LogoSearchHit[];
+  const params = new URLSearchParams({ q: normalized });
+  const res = await fetch(`${getApiBase()}/public/logoSearch?${params.toString()}`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+    signal,
+  });
+  if (!res.ok) {
+    if (res.status === 404 || res.status === 501) {
+      return [] as LogoSearchHit[];
+    }
+    const text = await res.text().catch(() => '');
+    throw new Error(`logoSearch failed: ${res.status} ${text}`);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (Array.isArray(data)) return data as LogoSearchHit[];
+  if (Array.isArray((data as any)?.results)) return (data as any).results as LogoSearchHit[];
+  return [] as LogoSearchHit[];
 }
 
 export async function getCompanyShipmentsProxy(params: {company_id?: string; company_name?: string; origin?: string[]; dest?: string[]; hs?: string[]; limit?: number; offset?: number;}){

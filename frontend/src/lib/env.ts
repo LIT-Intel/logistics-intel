@@ -24,3 +24,11 @@ export function getGatewayBase(): string {
 export function getApiBase(): string {
   return getGatewayBase();
 }
+
+export function getLogoDevPublishToken(): string {
+  const fromVite = typeof import.meta !== "undefined" ? (import.meta as any)?.env?.VITE_LOGO_DEV_PUBLISH : null;
+  const fromNext = typeof process !== "undefined"
+    ? process.env?.NEXT_PUBLIC_LOGO_DEV_PUBLISH ?? process.env?.LOGO_DEV_PUBLISH ?? process.env?.logo_published_key
+    : null;
+  return String(fromVite ?? fromNext ?? "").trim();
+}
