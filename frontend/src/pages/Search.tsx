@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useToast } from "@/components/ui/use-toast";
@@ -38,13 +38,16 @@ type ModalContext =
   | { mode: "shippers"; shipper: ImportYetiSearchRow }
   | { mode: "companies"; company: SearchRow };
 
+const INITIAL_SHIPPER_STATE: ShipperState = { rows: [], total: 0, loading: false, error: null };
+
 export default function SearchPage() {
   const { toast } = useToast();
+  const didInitRef = useRef(false);
+  const [isReady, setIsReady] = useState(false);
 
-  const [initializedFromQuery, setInitializedFromQuery] = useState(false);
   const [searchMode, setSearchMode] = useState<"shippers" | "companies">("shippers");
   const [keyword, setKeyword] = useState<string>("");
-  const debouncedKeyword = useDebounce(keyword, 400);
+  const debouncedKeyword = useDebounce(keyword, 250);
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ origin_countries: [], dest_countries: [], modes: [] });
   const [transportMode, setTransportMode] = useState<"air" | "ocean" | "" | undefined>("");
@@ -57,7 +60,7 @@ export default function SearchPage() {
   const [companyLoading, setCompanyLoading] = useState(false);
   const [companyError, setCompanyError] = useState<string | null>(null);
 
-  const [shipperState, setShipperState] = useState<ShipperState>({ rows: [], total: 0, loading: false, error: null });
+  const [shipperState, setShipperState] = useState<ShipperState>({ ...INITIAL_SHIPPER_STATE });
   const [shipperPage, setShipperPage] = useState(1);
 
   const [savingSlug, setSavingSlug] = useState<string | null>(null);
@@ -87,32 +90,50 @@ export default function SearchPage() {
   }, []);
 
   useEffect(() => {
-    if (initializedFromQuery) return;
+    if (didInitRef.current) return;
     if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const modeParam = params.get("mode") === "companies" ? "companies" : "shippers";
-    setSearchMode(modeParam);
-    const qParam = params.get("q") ?? "";
-    setKeyword(qParam);
-    setShouldAutoSearchCompanies(modeParam === "companies" && qParam.trim().length > 0);
-    setInitializedFromQuery(true);
-  }, [initializedFromQuery]);
+
+    const url = new URL(window.location.href);
+    const qsMode = url.searchParams.get("mode") === "companies" ? "companies" : "shippers";
+    const qsKeyword = url.searchParams.get("keyword") ?? url.searchParams.get("q") ?? "";
+
+    setSearchMode(qsMode);
+    setKeyword(qsKeyword);
+    setShouldAutoSearchCompanies(qsMode === "companies" && qsKeyword.trim().length > 0);
+
+    didInitRef.current = true;
+    setIsReady(true);
+  }, []);
 
   useEffect(() => {
-    if (!initializedFromQuery || typeof window === "undefined") return;
+    if (!isReady || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (keyword.trim()) params.set("q", keyword.trim()); else params.delete("q");
-    if (searchMode !== "shippers") params.set("mode", searchMode); else params.delete("mode");
+
+    if (searchMode !== "shippers") {
+      params.set("mode", searchMode);
+    } else {
+      params.delete("mode");
+    }
+
+    if (debouncedKeyword.trim()) {
+      params.set("keyword", debouncedKeyword.trim());
+      params.set("q", debouncedKeyword.trim());
+    } else {
+      params.delete("keyword");
+      params.delete("q");
+    }
+
     const search = params.toString();
-    const newUrl = search ? `${window.location.pathname}?${search}` : window.location.pathname;
-    window.history.replaceState(null, "", newUrl);
-  }, [keyword, searchMode, initializedFromQuery]);
+    const hash = window.location.hash ?? "";
+    const nextUrl = search ? `${window.location.pathname}?${search}${hash}` : `${window.location.pathname}${hash}`;
+    window.history.replaceState(null, "", nextUrl);
+  }, [isReady, searchMode, debouncedKeyword]);
 
   useEffect(() => {
-    if (!initializedFromQuery || !shouldAutoSearchCompanies) return;
-    runCompanySearch();
+    if (!isReady || !shouldAutoSearchCompanies) return;
+    runCompanySearch(keyword);
     setShouldAutoSearchCompanies(false);
-  }, [initializedFromQuery, shouldAutoSearchCompanies, runCompanySearch]);
+  }, [isReady, shouldAutoSearchCompanies, runCompanySearch, keyword]);
 
   useEffect(() => {
     if (searchMode === "shippers") {
@@ -121,20 +142,22 @@ export default function SearchPage() {
   }, [searchMode]);
 
   useEffect(() => {
+    if (!isReady) return;
     if (searchMode !== "shippers") {
-      setShipperState({ rows: [], total: 0, loading: false, error: null });
+      setShipperState({ ...INITIAL_SHIPPER_STATE });
       return;
     }
     setShipperPage(1);
-  }, [searchMode, debouncedKeyword]);
+  }, [isReady, searchMode, debouncedKeyword]);
 
   useEffect(() => {
-    if (searchMode !== "shippers") return;
+    if (!isReady || searchMode !== "shippers") return;
     const term = debouncedKeyword.trim();
     if (!term) {
-      setShipperState({ rows: [], total: 0, loading: false, error: null });
+      setShipperState({ ...INITIAL_SHIPPER_STATE });
       return;
     }
+
     const controller = new AbortController();
     setShipperState((prev) => ({ ...prev, loading: true, error: null }));
     postImportYetiSearch({
@@ -153,8 +176,9 @@ export default function SearchPage() {
         if (controller.signal.aborted) return;
         setShipperState({ rows: [], total: 0, loading: false, error: err?.message ?? "Search failed" });
       });
+
     return () => controller.abort();
-  }, [searchMode, debouncedKeyword, shipperPage]);
+  }, [isReady, searchMode, debouncedKeyword, shipperPage]);
 
   const computedHs = useMemo(() => {
     if (!hs.trim()) return undefined;
@@ -165,12 +189,13 @@ export default function SearchPage() {
     return hs.trim();
   }, [hs]);
 
-  const runCompanySearch = useCallback(async () => {
+  const runCompanySearch = useCallback(async (searchTerm?: string) => {
+    const query = searchTerm ?? keyword;
     setCompanyLoading(true);
     setCompanyError(null);
     try {
       const res = await searchCompanies({
-        q: keyword,
+        q: query,
         mode: transportMode || undefined,
         hs: computedHs ?? undefined,
         origin: origin.length ? origin : undefined,
@@ -190,6 +215,9 @@ export default function SearchPage() {
   const handleModeChange = (value: string) => {
     if (value === "shippers" || value === "companies") {
       setSearchMode(value);
+      if (value === "companies" && keyword.trim()) {
+        setShouldAutoSearchCompanies(true);
+      }
     }
   };
 
@@ -253,15 +281,15 @@ export default function SearchPage() {
     : 1;
 
   const renderResults = () => {
-    if (!hasKeyword && searchMode === "shippers") {
-      return (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm text-slate-500">
-          Start typing to search verified shippers.
-        </div>
-      );
-    }
-
     if (searchMode === "shippers") {
+      if (!hasKeyword) {
+        return (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm text-slate-500">
+            Start typing to search verified shippers.
+          </div>
+        );
+      }
+
       if (shipperState.loading) {
         return (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

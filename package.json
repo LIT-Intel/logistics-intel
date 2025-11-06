@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm --filter ./frontend build",
     "start": "next start",
     "test:sim": "vitest run"
   },
