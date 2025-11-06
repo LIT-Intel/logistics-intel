@@ -1,5 +1,3 @@
-'use client';
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
