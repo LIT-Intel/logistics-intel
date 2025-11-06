@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/router";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useToast } from "@/components/ui/use-toast";
@@ -40,7 +39,6 @@ type ModalContext =
   | { mode: "companies"; company: SearchRow };
 
 export default function SearchPage() {
-  const router = useRouter();
   const { toast } = useToast();
 
   const [initializedFromQuery, setInitializedFromQuery] = useState(false);
@@ -89,22 +87,26 @@ export default function SearchPage() {
   }, []);
 
   useEffect(() => {
-    if (!router.isReady || initializedFromQuery) return;
-    const modeParam = router.query.mode === "companies" ? "companies" : "shippers";
+    if (initializedFromQuery) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const modeParam = params.get("mode") === "companies" ? "companies" : "shippers";
     setSearchMode(modeParam);
-    const qParam = typeof router.query.q === "string" ? router.query.q : "";
+    const qParam = params.get("q") ?? "";
     setKeyword(qParam);
     setShouldAutoSearchCompanies(modeParam === "companies" && qParam.trim().length > 0);
     setInitializedFromQuery(true);
-  }, [router.isReady, router.query, initializedFromQuery]);
+  }, [initializedFromQuery]);
 
   useEffect(() => {
-    if (!router.isReady || !initializedFromQuery) return;
-    const nextQuery: Record<string, string> = {};
-    if (keyword.trim()) nextQuery.q = keyword.trim();
-    if (searchMode !== "shippers") nextQuery.mode = searchMode;
-    router.replace({ pathname: router.pathname, query: nextQuery }, undefined, { shallow: true });
-  }, [keyword, searchMode, router, initializedFromQuery]);
+    if (!initializedFromQuery || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (keyword.trim()) params.set("q", keyword.trim()); else params.delete("q");
+    if (searchMode !== "shippers") params.set("mode", searchMode); else params.delete("mode");
+    const search = params.toString();
+    const newUrl = search ? `${window.location.pathname}?${search}` : window.location.pathname;
+    window.history.replaceState(null, "", newUrl);
+  }, [keyword, searchMode, initializedFromQuery]);
 
   useEffect(() => {
     if (!initializedFromQuery || !shouldAutoSearchCompanies) return;
