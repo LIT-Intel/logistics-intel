@@ -1,35 +1,14 @@
-// Cross-runtime resolver with a safe production default (no trailing slash).
-const DEFAULT_BASE = "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
-
-// Returns the API base URL, trimming any trailing slash.
-// Works in Node (build) and browser (Vite/Next) without throwing.
+// Resolves API base across Node (Vercel) + Vite (browser)
 export function getGatewayBase(): string {
-  // Prefer explicit envs during build/server
-  const nodeVar =
-    process.env.NEXT_PUBLIC_API_BASE ||
-    process.env.API_BASE ||
-    process.env.VITE_API_BASE;
+  const envBase =
+    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_BASE) || null;
 
-  if (nodeVar && nodeVar.trim()) {
-    return nodeVar.replace(/\/+$/, "");
+  let viteBase: string | null = null;
+  if (typeof window !== "undefined" && typeof (import.meta as any) !== "undefined") {
+    viteBase = (import.meta as any)?.env?.VITE_API_BASE ?? null;
   }
 
-  // Browser-time fallbacks (guard import.meta and window)
-  const viteVar =
-    (typeof import !== "undefined" &&
-      // @ts-ignore optional at runtime
-      (import.meta as any)?.env?.VITE_API_BASE) || null;
-
-  if (viteVar && String(viteVar).trim()) {
-    return String(viteVar).replace(/\/+$/, "");
-  }
-
-  // Last resort: baked-in gateway
-  return DEFAULT_BASE;
-}
-
-// Back-compat exports used elsewhere
-export const API_BASE = getGatewayBase();
-export function getApiBase() {
-  return getGatewayBase();
+  // Hard default: current Gateway
+  const DEFAULT_BASE = "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
+  return envBase || viteBase || DEFAULT_BASE;
 }
