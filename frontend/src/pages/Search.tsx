@@ -1,240 +1,148 @@
-import { useEffect, useMemo, useState } from "react";
-import { getFilterOptions, searchCompanies } from "@/lib/api";
+import React, { useEffect, useMemo, useState } from "react";
 
-const ENABLE_ADV = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS === "true")
-  || (typeof import.meta !== "undefined" && (import.meta as any)?.env?.NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS === "true");
+type Mode = "shippers" | "companies";
+type Row = { company_id: string; company_name: string; shipments_12m: number | null; last_activity: string | null; };
+type Resp = { meta: { total: number; page: number; page_size: number }; rows: Row[] };
 
-type FilterOptions = {
-  origin_countries: string[];
-  dest_countries: string[];
-  modes: string[];
-  hs_top?: string[];
-};
+const PAGE_SIZE = 20;
 
-type SearchRow = {
-  company_id: string;
-  company_name: string;
-  shipments_12m: number | null;
-  last_activity: string | null;
-  top_routes?: Array<{ route?: string; origin_country?: string; dest_country?: string }>;
-  top_carriers?: Array<{ carrier?: string }>;
+// Inline debounce to avoid extra imports
+function useDebounce<T>(value: T, delay = 350) {
+  const [d, setD] = useState<T>(value);
+  useEffect(() => { const t = setTimeout(() => setD(value), delay); return () => clearTimeout(t); }, [value, delay]);
+  return d;
+}
+
+// Robust Gateway base
+function getGatewayBase(): string {
+  const envBase =
+    (window as any).__ENV?.API_BASE ||
+    (import.meta as any)?.env?.VITE_API_BASE ||
+    (import.meta as any)?.env?.NEXT_PUBLIC_API_BASE;
+  return (envBase && String(envBase)) || "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
+}
+
+const getParam = (k: string) => new URL(window.location.href).searchParams.get(k);
+const setParams = (obj: Record<string, string | null | undefined>) => {
+  const url = new URL(window.location.href);
+  Object.entries(obj).forEach(([k, v]) => { if (!v) url.searchParams.delete(k); else url.searchParams.set(k, v); });
+  window.history.replaceState({}, "", url.toString());
 };
 
 export default function SearchPage() {
-  const [q, setQ] = useState<string>("");
-  const [mode, setMode] = useState<"air" | "ocean" | "" | undefined>("");
-  const [hs, setHs] = useState<string>("");
-  const [origin, setOrigin] = useState<string[]>([]);
-  const [dest, setDest] = useState<string[]>([]);
-  const [options, setOptions] = useState<FilterOptions>({ origin_countries: [], dest_countries: [], modes: [] });
-  const [rows, setRows] = useState<SearchRow[]>([]);
+  const [mode, setMode] = useState<Mode>((getParam("mode") as Mode) || "shippers");
+  const [q, setQ] = useState<string>(getParam("q") || "");
+  const [page, setPage] = useState<number>(Math.max(1, parseInt(getParam("page") || "1", 10) || 1));
+
+  const [rows, setRows] = useState<Row[]>([]);
+  const [total, setTotal] = useState<number>(0);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dq = useDebounce(q, 350);
+  useEffect(() => setPage(1), [dq, mode]);
+  useEffect(() => setParams({ mode, q: dq, page: String(page) }), [mode, dq, page]);
+
+  const offset = useMemo(() => (page - 1) * PAGE_SIZE, [page]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   useEffect(() => {
     let cancelled = false;
-    getFilterOptions()
-      .then((data) => {
-        if (cancelled) return;
-        setOptions({
-          origin_countries: Array.isArray(data?.origin_countries) ? data.origin_countries : [],
-          dest_countries: Array.isArray(data?.dest_countries) ? data.dest_countries : [],
-          modes: Array.isArray(data?.modes) ? data.modes : [],
-          hs_top: data?.hs_top,
+    async function run() {
+      setError(null);
+      if (mode === "companies") { setRows([]); setTotal(0); return; }
+      setLoading(true);
+      try {
+        const base = getGatewayBase();
+        const key = (window as any).__ENV?.GCP_API_KEY ?? ""; // optional API key when gateway enforces it
+        const r = await fetch(`${base}/public/searchCompanies${key ? `?key=${key}` : ""}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ q: dq || null, origin: null, dest: null, hs: null, limit: PAGE_SIZE, offset }),
         });
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const computedHs = useMemo(() => {
-    if (!hs.trim()) return undefined;
-    if (hs.includes(",")) {
-      const arr = hs.split(",").map((s) => s.trim()).filter(Boolean);
-      return arr.length ? arr : undefined;
+        if (!r.ok) throw new Error(`HTTP ${r.status} – ${await r.text()}`);
+        const data: Resp = await r.json();
+        if (!cancelled) { setRows(data.rows || []); setTotal(data.meta?.total ?? 0); }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Request failed");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    return hs.trim();
-  }, [hs]);
-
-  async function runSearch() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await searchCompanies({
-        q,
-        mode: mode || undefined,
-        hs: computedHs ?? undefined,
-        origin: origin.length ? origin : undefined,
-        dest: dest.length ? dest : undefined,
-        limit: 20,
-        offset: 0,
-      });
-      setRows(Array.isArray(res?.rows) ? res.rows : []);
-    } catch (e: any) {
-      setRows([]);
-      setErr(e?.message ?? "searchCompanies failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+    run();
+    return () => { cancelled = true; };
+  }, [mode, dq, offset]);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div>
-          <h1 className="text-4xl font-bold">Search</h1>
-          <p className="text-slate-600 mt-1">Query the logistics intelligence index with filters for origin, destination, mode, and HS codes.</p>
-        </div>
-        <a
-          className="ml-auto inline-flex items-center px-3 py-2 rounded-xl border text-slate-700 hover:bg-slate-50"
-          href="/app/search/trends"
-        >
-          View Trends
-        </a>
-        <button
-          type="button"
-          onClick={() => setShowFilters((prev) => !prev)}
-          className="inline-flex items-center px-3 py-2 rounded-xl border text-slate-700 hover:bg-slate-50"
-        >
-          {showFilters ? "Hide Filters" : "Show Filters"}
-        </button>
-      </div>
+    <div className="mx-auto max-w-[1500px] px-4 pb-24">
+      <header className="pt-8 pb-4">
+        <h1 className="text-2xl font-semibold text-slate-900">Search</h1>
+        <p className="text-sm text-slate-500">Find shippers now; companies (Lusha) next.</p>
+      </header>
 
-      <div className="rounded-2xl border p-4 bg-white space-y-3">
-        <div>
-          <label className="text-xs font-semibold block mb-1">KEYWORD</label>
-          <input
-            className="w-full rounded-xl border p-3"
-            placeholder="Search companies…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+      <div className="flex flex-wrap items-center gap-3 pb-4">
+        <div className="inline-flex rounded-2xl border border-slate-200 p-0.5">
+          <button onClick={() => setMode("shippers")}
+            className={`px-3 py-1.5 text-sm rounded-2xl ${mode === "shippers" ? "bg-indigo-600 text-white" : "text-slate-700 hover:bg-slate-100"}`}
+            aria-pressed={mode === "shippers"}>Shippers</button>
+          <button onClick={() => setMode("companies")}
+            className={`px-3 py-1.5 text-sm rounded-2xl ${mode === "companies" ? "bg-indigo-600 text-white" : "text-slate-700 hover:bg-slate-100"}`}
+            aria-pressed={mode === "companies"}>Companies</button>
         </div>
 
-        {showFilters && (
-          <div className="grid md:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-semibold block mb-1">MODE</label>
-            <select
-              className="w-full rounded-xl border p-3"
-              value={mode ?? ""}
-              onChange={(e) => setMode((e.target.value || undefined) as any)}
-            >
-              <option value="">Any</option>
-              {options.modes.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">HS (comma-separated)</label>
-            <input
-              className="w-full rounded-xl border p-3"
-              value={hs}
-              onChange={(e) => setHs(e.target.value)}
-              placeholder="e.g. 9506, 4202"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">ORIGIN COUNTRY</label>
-            <select
-              multiple
-              className="w-full rounded-xl border p-3 h-32"
-              value={origin}
-              onChange={(e) => setOrigin(Array.from(e.target.selectedOptions).map((o) => o.value))}
-            >
-              {options.origin_countries.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">DESTINATION COUNTRY</label>
-            <select
-              multiple
-              className="w-full rounded-xl border p-3 h-32"
-              value={dest}
-              onChange={(e) => setDest(Array.from(e.target.selectedOptions).map((o) => o.value))}
-            >
-              {options.dest_countries.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          </div>
-        )}
-
-        {showFilters && ENABLE_ADV && (
-          <div className="opacity-60 pointer-events-none">
-            <div className="text-xs font-semibold">Advanced (coming soon)</div>
-            <div className="grid md:grid-cols-3 gap-3 mt-2">
-              <input className="rounded-xl border p-3" placeholder="Origin city" />
-              <input className="rounded-xl border p-3" placeholder="Origin state" />
-              <input className="rounded-xl border p-3" placeholder="Origin port" />
-              <input className="rounded-xl border p-3" placeholder="Dest city" />
-              <input className="rounded-xl border p-3" placeholder="Dest state" />
-              <input className="rounded-xl border p-3" placeholder="Dest ZIP" />
-              <input className="rounded-xl border p-3" placeholder="Commodity type" />
-            </div>
-          </div>
-        )}
-
-        <button
-          onClick={runSearch}
-          disabled={loading}
-          className="inline-flex items-center px-4 py-2 rounded-xl bg-indigo-600 text-white disabled:opacity-50"
-        >
-          {loading ? "Searching…" : "Search"}
-        </button>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by company name or alias…"
+          className="w-full sm:w-80 rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
       </div>
 
-      {err && (
-        <div className="mt-4 rounded-xl bg-red-50 text-red-700 border border-red-200 p-3 text-sm break-all">
-          {err}
+      <div className="flex items-center justify-between py-2">
+        <div className="text-xs text-slate-500">{loading ? "Loading…" : total ? `${total} results` : "No results"}</div>
+        <div className="text-xs text-slate-400">Page {page} / {totalPages}</div>
+      </div>
+
+      {error && <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">{error}</div>}
+
+      {!error && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {rows.map((r) => (
+            <article key={r.company_id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-sm uppercase tracking-wide text-slate-400">Company</div>
+                  <div className="mt-0.5 text-base font-semibold text-slate-900">{r.company_name}</div>
+                  <div className="text-[11px] uppercase text-slate-400 mt-0.5">ID</div>
+                  <div className="text-xs text-slate-600">{r.company_id}</div>
+                </div>
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">Active</span>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="rounded-xl border border-slate-200 p-2">
+                  <div className="text-[10px] uppercase text-slate-400">Shipments (12m)</div>
+                  <div className="text-sm font-medium text-slate-900">{r.shipments_12m ?? "—"}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-2">
+                  <div className="text-[10px] uppercase text-slate-400">Last Activity</div>
+                  <div className="text-sm font-medium text-slate-900">{r.last_activity ?? "—"}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-2">
+                  <div className="text-[10px] uppercase text-slate-400">Top Carrier</div>
+                  <div className="text-sm font-medium text-slate-400">—</div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <button className="rounded-xl bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500"
+                  onClick={() => alert("Company drawer coming next")}>View Details</button>
+              </div>
+            </article>
+          ))}
         </div>
       )}
 
-      <div className="mt-6 grid md:grid-cols-2 gap-4">
-        {rows.map((r) => (
-          <div key={r.company_id} className="rounded-2xl border p-4 bg-white">
-            <div className="font-semibold text-lg">{r.company_name}</div>
-            <div className="text-sm text-slate-600">Shipments (12m): {r.shipments_12m ?? "—"}</div>
-            <div className="text-sm text-slate-600">Last activity: {r.last_activity ?? "—"}</div>
-            <div className="text-sm mt-2">
-              <div className="font-medium">Top routes</div>
-              <div className="text-slate-600">
-                {Array.isArray(r.top_routes) && r.top_routes.length
-                  ? r.top_routes
-                      .map((t) => t.route || [t.origin_country, t.dest_country].filter(Boolean).join(" → "))
-                      .filter(Boolean)
-                      .join(" • ")
-                  : "—"}
-              </div>
-            </div>
-            <div className="text-sm mt-1">
-              <div className="font-medium">Top carriers</div>
-              <div className="text-slate-600">
-                {Array.isArray(r.top_carriers) && r.top_carriers.length
-                  ? r.top_carriers.map((t) => t.carrier ?? "").filter(Boolean).join(" • ") || "—"
-                  : "—"}
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="mt-6 flex items-center justify-center gap-2">
+        <button className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40"
+          onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading}>Prev</button>
+        <button className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40"
+          onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages || loading}>Next</button>
       </div>
-
-      {!loading && !err && rows.length === 0 && (
-        <div className="mt-6 text-sm text-slate-500">No results yet. Run a search to see companies.</div>
-      )}
     </div>
   );
 }
