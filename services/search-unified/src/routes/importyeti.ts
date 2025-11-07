@@ -62,29 +62,30 @@ r.post("/searchShippers", async (req, res) => {
           ? payload.items
           : [];
 
-    const rows = results.map((company: any) => {
-      const name = company?.name ?? company?.company_name ?? "Unknown";
-      const key =
-        company?.key ??
-        company?.slug ??
-        company?.company_url ??
-        company?.id ??
-        `company/${String(name).trim().toLowerCase().replace(/\s+/g, "-")}`;
-      const mostRecent =
-        company?.mostRecentShipment ??
-        company?.last_shipment_date ??
-        company?.updated_at ??
-        company?.lastShipmentDate;
+      const rows = results.map((company: any) => {
+        const name = company?.name ?? company?.company_name ?? "Unknown";
+        const key =
+          company?.key ??
+          company?.slug ??
+          company?.company_url ??
+          company?.id ??
+          `company/${String(name).trim().toLowerCase().replace(/\s+/g, "-")}`;
+        const mostRecent =
+          company?.mostRecentShipment ??
+          company?.last_shipment_date ??
+          company?.updated_at ??
+          company?.lastShipmentDate;
 
-      return {
-        title: name,
-        countryCode: company?.country ?? company?.countryCode ?? company?.country_code ?? undefined,
-        address: company?.address ?? company?.street ?? undefined,
-        totalShipments: company?.total_shipments ?? company?.shipments_12m ?? company?.shipments_last_12_months ?? null,
-        mostRecentShipment: typeof mostRecent === "string" ? (mostRecent.includes("/") ? mostRecent : toDMY(mostRecent)) : null,
-        key,
-      };
-    });
+        return {
+          title: name,
+          countryCode: company?.country ?? company?.countryCode ?? company?.country_code ?? undefined,
+          address: company?.address ?? company?.street ?? undefined,
+          totalShipments: company?.total_shipments ?? company?.shipments_12m ?? company?.shipments_last_12_months ?? null,
+          mostRecentShipment: typeof mostRecent === "string" ? (mostRecent.includes("/") ? mostRecent : toDMY(mostRecent)) : null,
+          key,
+          topSuppliers: Array.isArray(company?.topSuppliers) ? company.topSuppliers : [],
+        };
+      });
 
     return res.json({ ok: true, rows, total: payload?.total ?? rows.length });
   } catch (err: any) {
@@ -127,24 +128,28 @@ r.post("/companyBols", async (req, res) => {
           ? payload.items
           : [];
 
-    const rows = results.map((row: any) => {
-      const dmy =
-        row?.date_formatted ??
-        row?.dateFormatted ??
-        row?.date ??
-        (typeof row?.shipment_date === "string" ? toDMY(row.shipment_date) : null);
+      const rows = results.map((row: any) => {
+        const dmy =
+          row?.date_formatted ??
+          row?.dateFormatted ??
+          row?.date ??
+          (typeof row?.shipment_date === "string" ? toDMY(row.shipment_date) : null);
 
-      return {
-        date_formatted: typeof dmy === "string" ? dmy : null,
-        Bill_of_Lading: row?.Bill_of_Lading ?? row?.bill_of_lading ?? row?.bol ?? "",
-        Master_Bill_of_Lading: row?.Master_Bill_of_Lading ?? row?.master_bill_of_lading ?? row?.mbl ?? null,
-        HS_Code: row?.HS_Code ?? row?.hs_code ?? row?.HSCode ?? null,
-        TEU: row?.TEU ?? row?.teu ?? null,
-        Shipper_Name: row?.Shipper_Name ?? row?.shipper ?? row?.shipper_name ?? null,
-        Consignee_Name: row?.Consignee_Name ?? row?.consignee ?? row?.consignee_name ?? null,
-        Product_Description: row?.Product_Description ?? row?.product_description ?? row?.description ?? null,
-      };
-    });
+        return {
+          date_formatted: typeof dmy === "string" ? dmy : null,
+          Bill_of_Lading: row?.Bill_of_Lading ?? row?.bill_of_lading ?? row?.bol ?? "",
+          Master_Bill_of_Lading: row?.Master_Bill_of_Lading ?? row?.master_bill_of_lading ?? row?.mbl ?? null,
+          HS_Code: row?.HS_Code ?? row?.hs_code ?? row?.HSCode ?? null,
+          TEU: row?.TEU ?? row?.teu ?? null,
+          Quantity: row?.Quantity ?? row?.quantity ?? null,
+          Quantity_Unit: row?.Quantity_Unit ?? row?.quantity_unit ?? null,
+          Shipper_Name: row?.Shipper_Name ?? row?.shipper ?? row?.shipper_name ?? null,
+          Consignee_Name: row?.Consignee_Name ?? row?.consignee ?? row?.consignee_name ?? null,
+          Product_Description: row?.Product_Description ?? row?.product_description ?? row?.description ?? null,
+          lcl: typeof row?.lcl === "boolean" ? row.lcl : null,
+          shipping_cost: row?.shipping_cost ?? row?.Shipping_Cost ?? null,
+        };
+      });
 
     return res.json({ ok: true, rows });
   } catch (err: any) {

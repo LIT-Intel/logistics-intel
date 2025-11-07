@@ -1,4 +1,6 @@
 import { getGatewayBase } from '@/lib/env';
+import { CompanyLite, ShipmentLite, CommandCenterRecord } from '@/types/importyeti';
+import { normalizeIYCompany, normalizeIYShipment } from '@/lib/normalize';
 export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
@@ -248,143 +250,63 @@ export async function searchCompanies(body: { q?: string | null; origin?: string
   return { items, total, meta: data?.meta, raw: data } as { items: any[]; total: number; meta?: unknown; raw: unknown };
 }
 
-type IYSearchRow = {
-  title: string;
-  countryCode?: string;
-  address?: string;
-  totalShipments?: number;
-  mostRecentShipment?: string;
-  key: string;
-};
-
-type IYSearchResponse = {
-  ok: boolean;
-  rows?: IYSearchRow[];
-  error?: string;
-  total?: number;
-};
-
-type IYBolsRow = {
-  date_formatted?: string;
-  Bill_of_Lading: string;
-  Master_Bill_of_Lading?: string;
-  HS_Code?: string;
-  TEU?: string | number;
-  Shipper_Name?: string;
-  Consignee_Name?: string;
-  Product_Description?: string;
-};
-
-type IYBolsResponse = {
-  ok: boolean;
-  rows?: IYBolsRow[];
-  error?: string;
-};
-
-export type ImportYetiShipperRow = {
-  company_id: string;
-  company_name: string;
-  shipments_12m: number;
-  last_activity: string | null;
-  _source: "importyeti";
-  _iy: {
-    key: string;
-    countryCode?: string;
-    address?: string;
-  };
-};
-
-export type ImportYetiShipmentRow = {
-  date: string | null;
-  bol: string;
-  mbl?: string | null;
-  hs_code?: string | null;
-  teu?: number | null;
-  shipper?: string | null;
-  consignee?: string | null;
-  description?: string | null;
-  source: "importyeti";
-};
-
-function toISOFromDMY(dmy?: string | null): string | null {
-  if (!dmy) return null;
-  const trimmed = String(dmy).trim();
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
-  if (!match) {
-    const date = new Date(trimmed);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toISOString().slice(0, 10);
-  }
-  const [, dd, mm, yyyy] = match;
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-export async function iySearchShippers(keyword: string, limit = 20, offset = 0) {
+export async function iySearchShippers(params: { keyword: string; limit: number; offset: number; }): Promise<{ rows: CompanyLite[]; total: number; }> {
   const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/iy/searchShippers`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ keyword, limit, offset }),
+    body: JSON.stringify(params),
   });
   if (!res.ok) {
-    throw new Error(`iySearchShippers ${res.status}`);
+    throw new Error(`iySearchShippers failed: ${res.status}`);
   }
-  const data = await res.json() as IYSearchResponse;
-  if (data.ok === false) {
-    throw new Error(data.error || "iySearchShippers failed");
-  }
-  const rows: ImportYetiShipperRow[] = (data.rows ?? []).map((row) => {
-    const iso = toISOFromDMY(row.mostRecentShipment ?? null);
-    const totalShipments = Number.isFinite(Number(row.totalShipments))
-      ? Number(row.totalShipments)
-      : 0;
-    return {
-      company_id: row.key,
-      company_name: row.title ?? "Unknown ImportYeti Company",
-      shipments_12m: totalShipments,
-      last_activity: iso,
-      _source: "importyeti" as const,
-      _iy: {
-        key: row.key,
-        countryCode: row.countryCode,
-        address: row.address,
-      },
-    };
-  });
-  return {
-    rows,
-    meta: {
-      total: data.total ?? rows.length,
-      page: Math.floor(offset / Math.max(limit, 1)) + 1,
-      page_size: limit,
-    },
-  };
+  const data = await res.json();
+  const rawRows = Array.isArray(data?.rows) ? data.rows : [];
+  const rows = rawRows.map(normalizeIYCompany);
+  const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : rows.length;
+  return { rows, total };
 }
 
-export async function iyCompanyBols(companyKey: string, limit = 50, offset = 0) {
+export async function iyFetchCompanyBols(params: { companyKey: string; limit: number; offset: number; }): Promise<ShipmentLite[]> {
   const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/iy/companyBols`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ companyKey, limit, offset }),
+    body: JSON.stringify(params),
   });
   if (!res.ok) {
-    throw new Error(`iyCompanyBols ${res.status}`);
+    throw new Error(`iyFetchCompanyBols failed: ${res.status}`);
   }
-  const data = await res.json() as IYBolsResponse;
-  if (data.ok === false) {
-    throw new Error(data.error || "iyCompanyBols failed");
+  const data = await res.json();
+  const rawRows = Array.isArray(data?.rows) ? data.rows : [];
+  return rawRows.map(normalizeIYShipment);
+}
+
+export async function saveCompany(record: CommandCenterRecord): Promise<{ saved_id?: string }> {
+  const res = await fetch(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      company_id: record.company.company_id,
+      stage: "prospect",
+      provider: record.company.source,
+      payload: record,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`saveCompany failed: ${res.status}`);
   }
-  const rows: ImportYetiShipmentRow[] = (data.rows ?? []).map((row) => ({
-    date: toISOFromDMY(row.date_formatted ?? null),
-    bol: row.Bill_of_Lading,
-    mbl: row.Master_Bill_of_Lading ?? null,
-    hs_code: row.HS_Code ?? null,
-    teu: row.TEU != null ? Number(row.TEU) : null,
-    shipper: row.Shipper_Name ?? null,
-    consignee: row.Consignee_Name ?? null,
-    description: row.Product_Description ?? null,
-    source: "importyeti",
-  }));
-  return { rows };
+  return res.json();
+}
+
+export async function listSavedCompanies(): Promise<CommandCenterRecord[]> {
+  const res = await fetch(`${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=prospect`, {
+    method: "GET",
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`listSavedCompanies failed: ${res.status}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data?.rows) ? data.rows : [];
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
