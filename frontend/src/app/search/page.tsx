@@ -23,7 +23,7 @@ function getGatewayBase(): string {
   return (envBase && String(envBase)) || "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
 }
 
-const getParam = (k: string) => new URL(window.location.href).searchParams.get(k);
+const getParam = (k: string) => new URL(window.location.href).searchParams.get(k) || undefined;
 
 function setParamsIfChanged(obj: Record<string, string | null | undefined>, prevRef: React.MutableRefObject<string>) {
   const url = new URL(window.location.href);
@@ -39,6 +39,9 @@ function setParamsIfChanged(obj: Record<string, string | null | undefined>, prev
 }
 
 export default function SearchPage() {
+  // --- Kill-switch: add ?noapi=1 to URL to fully suspend fetching + URL sync
+  const NOAPI = (getParam("noapi") === "1");
+
   const [mode, setMode] = useState<Mode>((getParam("mode") as Mode) || "shippers");
   const [q, setQ] = useState<string>(getParam("q") || "");
   const [page, setPage] = useState<number>(Math.max(1, parseInt(getParam("page") || "1", 10) || 1));
@@ -51,20 +54,35 @@ export default function SearchPage() {
   const dq = useDebounce(q, 350);
   const prevSearchRef = useRef<string>(new URL(window.location.href).search.toString());
 
-  useEffect(() => setPage(1), [dq, mode]);
-  useEffect(() => setParamsIfChanged({ mode, q: dq, page: String(page) }, prevSearchRef), [mode, dq, page]);
+  // When NOAPI is on, do not force page to 1 on debounce/mode change (prevents twitch)
+  useEffect(() => {
+    if (!NOAPI) setPage(1);
+  }, [dq, mode, NOAPI]);
+
+  // Also skip URL syncing entirely when NOAPI is on
+  useEffect(() => {
+    if (!NOAPI) setParamsIfChanged({ mode, q: dq, page: String(page) }, prevSearchRef);
+  }, [mode, dq, page, NOAPI]);
 
   const offset = useMemo(() => (page - 1) * PAGE_SIZE, [page]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Fetch companies unless kill-switch is on
   useEffect(() => {
     let cancelled = false;
+
     async function run() {
       setError(null);
-      if (mode === "companies") {
+
+      // If we’ve disabled API or we’re on the “companies” tab (to be wired to Lusha),
+      // stop here and render the UI without network activity.
+      if (NOAPI || mode === "companies") {
+        setRows([]);
         setTotal(0);
+        setLoading(false);
         return;
       }
+
       setLoading(true);
       try {
         const base = getGatewayBase();
@@ -73,6 +91,7 @@ export default function SearchPage() {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
+            // NOTE: backend expects "keyword" (we saw 0 results with "q")
             keyword: dq || null,
             origin: null,
             dest: null,
@@ -86,7 +105,7 @@ export default function SearchPage() {
 
         const rowsNext: Row[] = (raw.rows || []).map((x: any) => ({
           company_id: x.company_id,
-          company_name: x.name,
+          company_name: x.name, // backend returns "name"
           shipments_12m: x.kpis?.shipments_12m ?? null,
           last_activity: x.kpis?.last_activity ?? null,
         }));
@@ -102,17 +121,20 @@ export default function SearchPage() {
         if (!cancelled) setLoading(false);
       }
     }
+
     run();
     return () => {
       cancelled = true;
     };
-  }, [mode, dq, offset]);
+  }, [mode, dq, offset, NOAPI]);
 
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-24">
       <header className="pt-8 pb-4">
         <h1 className="text-2xl font-semibold text-slate-900">Search</h1>
-        <p className="text-sm text-slate-500">Find shippers now; companies (Lusha) next.</p>
+        <p className="text-sm text-slate-500">
+          {NOAPI ? "Search temporarily paused (debug mode)." : "Find shippers now; companies (Lusha) next."}
+        </p>
       </header>
 
       <div className="flex flex-wrap items-center gap-3 pb-4">
@@ -146,7 +168,9 @@ export default function SearchPage() {
       </div>
 
       <div className="flex items-center justify-between py-2">
-        <div className="text-xs text-slate-500">{loading ? "Loading…" : total ? `${total} results` : "No results"}</div>
+        <div className="text-xs text-slate-500">
+          {NOAPI ? "Debug mode: API disabled" : loading ? "Loading…" : total ? `${total} results` : "No results"}
+        </div>
         <div className="text-xs text-slate-400">Page {page} / {totalPages}</div>
       </div>
 
@@ -155,11 +179,18 @@ export default function SearchPage() {
       )}
 
       {!error && (
-        <div
-          className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
-          style={{ minHeight: 360 }}
-        >
-          {rows.map((r) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" style={{ minHeight: 360 }}>
+          {(NOAPI || mode === "companies") && (
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-600">
+                {mode === "companies"
+                  ? "Companies tab will be wired to Lusha. API calls are paused."
+                  : "API calls paused with ?noapi=1. Use this to debug flicker."}
+              </div>
+            </article>
+          )}
+
+          {!NOAPI && mode === "shippers" && rows.map((r) => (
             <article key={r.company_id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between">
                 <div>
@@ -203,14 +234,14 @@ export default function SearchPage() {
         <button
           className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40"
           onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={page <= 1 || loading}
+          disabled={page <= 1 || loading || NOAPI}
         >
           Prev
         </button>
         <button
           className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40"
-          onClick={() => setPage((p) => p + 1)}
-          disabled={page >= totalPages || loading}
+          onClick={() => setPage((p) => p + 1))}
+          disabled={page >= totalPages || loading || NOAPI}
         >
           Next
         </button>
