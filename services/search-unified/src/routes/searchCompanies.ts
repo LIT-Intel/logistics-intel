@@ -1,3 +1,13 @@
+/**
+ * ============================================================================
+ * LOCAL SEARCH CONTRACT
+ * ----------------------------------------------------------------------------
+ * This SQL powers the legacy Companies search toggle. Keep the response shape
+ * stable (rows + meta.total) so the frontend can paginate safely. Any schema
+ * changes in BigQuery must be reflected here without breaking existing fields.
+ * ============================================================================
+ */
+
 import { Router } from "express";
 import { z } from "zod";
 import { bq } from "../bq.js";

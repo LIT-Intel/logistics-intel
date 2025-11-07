@@ -4,6 +4,7 @@ import getFilterOptions from "./routes/getFilterOptions.js";
 import searchCompanies from "./routes/searchCompanies.js";
 import getCompanyShipments from "./routes/getCompanyShipments.js";
 import companyShipments from "./routes/companyShipments.js";
+import importyeti from "./routes/importyeti.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -36,6 +37,7 @@ app.use(getFilterOptions);
 app.use(searchCompanies);
 app.use(getCompanyShipments);
 app.use(companyShipments);
+app.use("/public/iy", importyeti);
 
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err);
