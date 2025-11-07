@@ -213,8 +213,10 @@ const ENV_DIRECT_SEARCH_BASE = (() => {
 })();
 
 export async function searchCompanies(body: { q?: string | null; origin?: string | null; dest?: string | null; hs?: string | null; limit?: number; offset?: number }, signal?: AbortSignal) {
+  const keyword = body?.q ?? null;
   const payload = {
-    q: body?.q ?? null,
+    keyword,
+    q: keyword,
     origin: body?.origin ?? null,
     dest: body?.dest ?? null,
     hs: body?.hs ?? null,
@@ -244,6 +246,145 @@ export async function searchCompanies(body: { q?: string | null; origin?: string
     : (typeof data?.total === 'number' ? data.total : items.length);
 
   return { items, total, meta: data?.meta, raw: data } as { items: any[]; total: number; meta?: unknown; raw: unknown };
+}
+
+type IYSearchRow = {
+  title: string;
+  countryCode?: string;
+  address?: string;
+  totalShipments?: number;
+  mostRecentShipment?: string;
+  key: string;
+};
+
+type IYSearchResponse = {
+  ok: boolean;
+  rows?: IYSearchRow[];
+  error?: string;
+  total?: number;
+};
+
+type IYBolsRow = {
+  date_formatted?: string;
+  Bill_of_Lading: string;
+  Master_Bill_of_Lading?: string;
+  HS_Code?: string;
+  TEU?: string | number;
+  Shipper_Name?: string;
+  Consignee_Name?: string;
+  Product_Description?: string;
+};
+
+type IYBolsResponse = {
+  ok: boolean;
+  rows?: IYBolsRow[];
+  error?: string;
+};
+
+export type ImportYetiShipperRow = {
+  company_id: string;
+  company_name: string;
+  shipments_12m: number;
+  last_activity: string | null;
+  _source: "importyeti";
+  _iy: {
+    key: string;
+    countryCode?: string;
+    address?: string;
+  };
+};
+
+export type ImportYetiShipmentRow = {
+  date: string | null;
+  bol: string;
+  mbl?: string | null;
+  hs_code?: string | null;
+  teu?: number | null;
+  shipper?: string | null;
+  consignee?: string | null;
+  description?: string | null;
+  source: "importyeti";
+};
+
+function toISOFromDMY(dmy?: string | null): string | null {
+  if (!dmy) return null;
+  const trimmed = String(dmy).trim();
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!match) {
+    const date = new Date(trimmed);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+  }
+  const [, dd, mm, yyyy] = match;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export async function iySearchShippers(keyword: string, limit = 20, offset = 0) {
+  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/iy/searchShippers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ keyword, limit, offset }),
+  });
+  if (!res.ok) {
+    throw new Error(`iySearchShippers ${res.status}`);
+  }
+  const data = await res.json() as IYSearchResponse;
+  if (data.ok === false) {
+    throw new Error(data.error || "iySearchShippers failed");
+  }
+  const rows: ImportYetiShipperRow[] = (data.rows ?? []).map((row) => {
+    const iso = toISOFromDMY(row.mostRecentShipment ?? null);
+    const totalShipments = Number.isFinite(Number(row.totalShipments))
+      ? Number(row.totalShipments)
+      : 0;
+    return {
+      company_id: row.key,
+      company_name: row.title ?? "Unknown ImportYeti Company",
+      shipments_12m: totalShipments,
+      last_activity: iso,
+      _source: "importyeti" as const,
+      _iy: {
+        key: row.key,
+        countryCode: row.countryCode,
+        address: row.address,
+      },
+    };
+  });
+  return {
+    rows,
+    meta: {
+      total: data.total ?? rows.length,
+      page: Math.floor(offset / Math.max(limit, 1)) + 1,
+      page_size: limit,
+    },
+  };
+}
+
+export async function iyCompanyBols(companyKey: string, limit = 50, offset = 0) {
+  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/iy/companyBols`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ companyKey, limit, offset }),
+  });
+  if (!res.ok) {
+    throw new Error(`iyCompanyBols ${res.status}`);
+  }
+  const data = await res.json() as IYBolsResponse;
+  if (data.ok === false) {
+    throw new Error(data.error || "iyCompanyBols failed");
+  }
+  const rows: ImportYetiShipmentRow[] = (data.rows ?? []).map((row) => ({
+    date: toISOFromDMY(row.date_formatted ?? null),
+    bol: row.Bill_of_Lading,
+    mbl: row.Master_Bill_of_Lading ?? null,
+    hs_code: row.HS_Code ?? null,
+    teu: row.TEU != null ? Number(row.TEU) : null,
+    shipper: row.Shipper_Name ?? null,
+    consignee: row.Consignee_Name ?? null,
+    description: row.Product_Description ?? null,
+    source: "importyeti",
+  }));
+  return { rows };
 }
 
 export function buildSearchParams(raw: Record<string, any>) {

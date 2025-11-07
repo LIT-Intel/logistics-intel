@@ -1,251 +1,328 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+'use client';
 
-type Mode = "shippers" | "companies";
-type Row = { company_id: string; company_name: string; shipments_12m: number | null; last_activity: string | null };
-type Resp = { meta: { total: number; page: number; page_size: number }; rows: any[] };
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import SearchBar from "@/components/SearchBar";
 
 const PAGE_SIZE = 20;
 
-function useDebounce<T>(value: T, delay = 350) {
-  const [d, setD] = useState<T>(value);
-  useEffect(() => {
-    const t = setTimeout(() => setD(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return d;
-}
-
-function getGatewayBase(): string {
-  const envBase =
-    (window as any).__ENV?.API_BASE ||
-    (import.meta as any)?.env?.VITE_API_BASE ||
-    (import.meta as any)?.env?.NEXT_PUBLIC_API_BASE;
-  return (envBase && String(envBase)) || "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
-}
-
-const getParam = (k: string) => new URL(window.location.href).searchParams.get(k) || undefined;
-
-function setParamsIfChanged(obj: Record<string, string | null | undefined>, prevRef: React.MutableRefObject<string>) {
-  const url = new URL(window.location.href);
-  Object.entries(obj).forEach(([k, v]) => {
-    if (!v) url.searchParams.delete(k);
-    else url.searchParams.set(k, v);
-  });
-  const next = url.search.toString();
-  if (next !== prevRef.current) {
-    window.history.replaceState({}, "", url.toString());
-    prevRef.current = next;
-  }
-}
+type Row = {
+  company_id: string;
+  company_name: string;
+  shipments_12m: number | null;
+  last_activity: string | null;
+};
 
 export default function SearchPage() {
-  // --- Kill-switch: add ?noapi=1 to URL to fully suspend fetching + URL sync
-  const NOAPI = (getParam("noapi") === "1");
-
-  const [mode, setMode] = useState<Mode>((getParam("mode") as Mode) || "shippers");
-  const [q, setQ] = useState<string>(getParam("q") || "");
-  const [page, setPage] = useState<number>(Math.max(1, parseInt(getParam("page") || "1", 10) || 1));
-
+  const [isClient, setIsClient] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [committedQuery, setCommittedQuery] = useState("");
+  const [searchInputSeed, setSearchInputSeed] = useState("");
+  const [page, setPage] = useState(1);
   const [rows, setRows] = useState<Row[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [loading, setLoading] = useState(false);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const dq = useDebounce(q, 350);
-  const prevSearchRef = useRef<string>(new URL(window.location.href).search.toString());
+  const lastUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // When NOAPI is on, do not force page to 1 on debounce/mode change (prevents twitch)
   useEffect(() => {
-    if (!NOAPI) setPage(1);
-  }, [dq, mode, NOAPI]);
+    setIsClient(true);
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
-  // Also skip URL syncing entirely when NOAPI is on
-  useEffect(() => {
-    if (!NOAPI) setParamsIfChanged({ mode, q: dq, page: String(page) }, prevSearchRef);
-  }, [mode, dq, page, NOAPI]);
+  const syncUrl = useCallback(
+    (keyword: string, targetPage: number) => {
+      if (!isClient) return;
+      const url = new URL(window.location.href);
+      const params = new URLSearchParams();
+      if (keyword.trim()) params.set("q", keyword.trim());
+      if (targetPage > 1) params.set("page", String(targetPage));
+      const nextSearch = params.toString();
+      const nextUrl = nextSearch ? `${url.pathname}?${nextSearch}${url.hash}` : `${url.pathname}${url.hash}`;
+      if (lastUrlRef.current === nextUrl) return;
+      lastUrlRef.current = nextUrl;
+      window.history.replaceState(null, "", nextUrl);
+    },
+    [isClient]
+  );
 
-  const offset = useMemo(() => (page - 1) * PAGE_SIZE, [page]);
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const runSearch = useCallback(
+    async (rawTerm: string, targetPage = 1, options?: { skipUrl?: boolean }) => {
+      if (!isClient) return;
+      const keyword = rawTerm.trim();
 
-  // Fetch companies unless kill-switch is on
-  useEffect(() => {
-    let cancelled = false;
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
 
-    async function run() {
-      setError(null);
-
-      // If we’ve disabled API or we’re on the “companies” tab (to be wired to Lusha),
-      // stop here and render the UI without network activity.
-      if (NOAPI || mode === "companies") {
+      if (!keyword) {
+        setCommittedQuery("");
+        setPage(1);
         setRows([]);
         setTotal(0);
-        setLoading(false);
+        setError(null);
+        setSearchInputSeed("");
+        if (!options?.skipUrl) {
+          syncUrl("", 1);
+        } else if (lastUrlRef.current == null && typeof window !== "undefined") {
+          lastUrlRef.current = window.location.pathname + window.location.hash;
+        }
         return;
       }
 
+      const controller = new AbortController();
+      abortRef.current = controller;
       setLoading(true);
+      setError(null);
+      setPage(targetPage);
+
+      const offset = (targetPage - 1) * PAGE_SIZE;
+
       try {
-        const base = getGatewayBase();
-        const key = (window as any).__ENV?.GCP_API_KEY ?? "";
-        const r = await fetch(`${base}/public/searchCompanies${key ? `?key=${key}` : ""}`, {
+        const response = await fetch("/api/searchCompanies", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            // NOTE: backend expects "keyword" (we saw 0 results with "q")
-            keyword: dq || null,
-            origin: null,
-            dest: null,
-            hs: null,
+            keyword,
             limit: PAGE_SIZE,
             offset,
           }),
+          signal: controller.signal,
         });
-        if (!r.ok) throw new Error(`HTTP ${r.status} – ${await r.text()}`);
-        const raw: Resp = await r.json();
 
-        const rowsNext: Row[] = (raw.rows || []).map((x: any) => ({
-          company_id: x.company_id,
-          company_name: x.name, // backend returns "name"
-          shipments_12m: x.kpis?.shipments_12m ?? null,
-          last_activity: x.kpis?.last_activity ?? null,
-        }));
-        const totalNext = raw.meta?.total ?? 0;
-
-        if (!cancelled) {
-          setRows(rowsNext);
-          setTotal(totalNext);
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw new Error(text || `searchCompanies failed ${response.status}`);
         }
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Request failed");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
 
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, dq, offset, NOAPI]);
+        const data = await response.json();
+        const rawRows = Array.isArray(data?.rows)
+          ? data.rows
+          : Array.isArray(data?.items)
+            ? data.items
+            : [];
+
+        const mapped: Row[] = rawRows.map((item: any) => {
+          const idCandidate = item?.company_id ?? item?.id ?? null;
+          const nameCandidate =
+            typeof item?.company_name === "string" && item.company_name.trim()
+              ? item.company_name.trim()
+              : typeof item?.name === "string"
+                ? item.name.trim()
+                : "";
+          const shipmentsValue = item?.kpis?.shipments_12m ?? item?.shipments_12m ?? null;
+          const lastActivityValue = item?.kpis?.last_activity ?? item?.last_activity ?? null;
+
+          return {
+            company_id: String(idCandidate ?? nameCandidate || keyword),
+            company_name: nameCandidate || "—",
+            shipments_12m: shipmentsValue != null ? Number(shipmentsValue) : null,
+            last_activity: lastActivityValue ?? null,
+          };
+        });
+
+        const totalValue = (() => {
+          const metaTotal = data?.meta?.total;
+          if (Number.isFinite(metaTotal)) return Number(metaTotal);
+          if (Number.isFinite(data?.total)) return Number(data.total);
+          return mapped.length;
+        })();
+
+        setRows(mapped);
+        setTotal(totalValue);
+        setCommittedQuery(keyword);
+        setSearchInputSeed(keyword);
+        if (!options?.skipUrl) {
+          syncUrl(keyword, targetPage);
+        } else if (lastUrlRef.current == null && typeof window !== "undefined") {
+          const params = new URLSearchParams();
+          if (keyword) params.set("q", keyword);
+          if (targetPage > 1) params.set("page", String(targetPage));
+          const nextSearch = params.toString();
+          lastUrlRef.current = nextSearch
+            ? `${window.location.pathname}?${nextSearch}${window.location.hash}`
+            : `${window.location.pathname}${window.location.hash}`;
+        }
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        console.error("searchCompanies error", err);
+        setError(err?.message ?? "Search failed");
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          if (abortRef.current === controller) {
+            abortRef.current = null;
+          }
+        }
+      }
+    },
+    [isClient, syncUrl]
+  );
+
+  useEffect(() => {
+    if (!isClient || initialized) return;
+
+    try {
+      const url = new URL(window.location.href);
+      const params = url.searchParams;
+      const initialQuery = (params.get("q") ?? params.get("keyword") ?? "").trim();
+      const pageParam = Number.parseInt(params.get("page") ?? "1", 10);
+      const initialPage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
+      const initialUrl = params.toString()
+        ? `${url.pathname}?${params.toString()}${url.hash}`
+        : `${url.pathname}${url.hash}`;
+      lastUrlRef.current = initialUrl;
+
+      setSearchInputSeed(initialQuery);
+      setPage(initialPage);
+
+      if (initialQuery) {
+        void runSearch(initialQuery, initialPage, { skipUrl: true });
+      }
+    } catch (err) {
+      console.error("search init failed", err);
+    } finally {
+      setInitialized(true);
+    }
+  }, [isClient, initialized, runSearch]);
+
+  const totalPages = useMemo(() => {
+    if (total <= 0) return committedQuery ? 1 : 0;
+    return Math.max(1, Math.ceil(total / PAGE_SIZE));
+  }, [total, committedQuery]);
+
+  const pageStart = rows.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const pageEnd = rows.length ? Math.min(total || pageStart + rows.length - 1, (page - 1) * PAGE_SIZE + rows.length) : 0;
+
+  const handleSearch = useCallback(
+    (keyword: string) => {
+      if (!keyword.trim()) {
+        void runSearch("", 1);
+        return;
+      }
+      void runSearch(keyword, 1);
+    },
+    [runSearch]
+  );
+
+  const handlePrev = useCallback(() => {
+    if (loading) return;
+    if (!committedQuery) return;
+    if (page <= 1) return;
+    const nextPage = page - 1;
+    void runSearch(committedQuery, nextPage);
+  }, [loading, committedQuery, page, runSearch]);
+
+  const handleNext = useCallback(() => {
+    if (loading) return;
+    if (!committedQuery) return;
+    if (totalPages === 0 || page >= totalPages) return;
+    const nextPage = page + 1;
+    void runSearch(committedQuery, nextPage);
+  }, [loading, committedQuery, page, totalPages, runSearch]);
+
+  if (!isClient || !initialized) {
+    return (
+      <div className="mx-auto max-w-screen-xl px-4 py-10 space-y-6">
+        <div className="h-12 w-72 animate-pulse rounded-xl bg-slate-200" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((key) => (
+            <div key={key} className="h-32 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const showInitialPrompt = !loading && !committedQuery && rows.length === 0 && !error;
+  const showEmptyState = !loading && committedQuery && rows.length === 0 && !error;
 
   return (
-    <div className="mx-auto max-w-[1500px] px-4 pb-24">
-      <header className="pt-8 pb-4">
-        <h1 className="text-2xl font-semibold text-slate-900">Search</h1>
-        <p className="text-sm text-slate-500">
-          {NOAPI ? "Search temporarily paused (debug mode)." : "Find shippers now; companies (Lusha) next."}
+    <div className="mx-auto max-w-screen-xl px-4 py-10 space-y-8">
+      <header className="space-y-2">
+        <h1 className="text-3xl font-semibold text-slate-900">Search</h1>
+        <p className="text-slate-600">
+          Query the logistics intelligence index for companies and shippers. Use the Search button or press Enter to run
+          a query.
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-3 pb-4">
-        <div className="inline-flex rounded-2xl border border-slate-200 p-0.5">
-          <button
-            onClick={() => setMode("shippers")}
-            className={`px-3 py-1.5 text-sm rounded-2xl ${
-              mode === "shippers" ? "bg-indigo-600 text-white" : "text-slate-700 hover:bg-slate-100"
-            }`}
-            aria-pressed={mode === "shippers"}
-          >
-            Shippers
-          </button>
-          <button
-            onClick={() => setMode("companies")}
-            className={`px-3 py-1.5 text-sm rounded-2xl ${
-              mode === "companies" ? "bg-indigo-600 text-white" : "text-slate-700 hover:bg-slate-100"
-            }`}
-            aria-pressed={mode === "companies"}
-          >
-            Companies
-          </button>
-        </div>
-
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by company name or alias…"
-          className="w-full sm:w-80 rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-      </div>
-
-      <div className="flex items-center justify-between py-2">
-        <div className="text-xs text-slate-500">
-          {NOAPI ? "Debug mode: API disabled" : loading ? "Loading…" : total ? `${total} results` : "No results"}
-        </div>
-        <div className="text-xs text-slate-400">Page {page} / {totalPages}</div>
-      </div>
+      <SearchBar initialQuery={searchInputSeed} onSearch={handleSearch} isLoading={loading} />
 
       {error && (
-        <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">{error}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
       )}
 
-      {!error && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" style={{ minHeight: 360 }}>
-          {(NOAPI || mode === "companies") && (
-            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-sm text-slate-600">
-                {mode === "companies"
-                  ? "Companies tab will be wired to Lusha. API calls are paused."
-                  : "API calls paused with ?noapi=1. Use this to debug flicker."}
-              </div>
-            </article>
-          )}
+      {showInitialPrompt && (
+        <div className="text-sm text-slate-500">Type a company or shipper name and press Enter to search.</div>
+      )}
 
-          {!NOAPI && mode === "shippers" && rows.map((r) => (
-            <article key={r.company_id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-sm uppercase tracking-wide text-slate-400">Company</div>
-                  <div className="mt-0.5 text-base font-semibold text-slate-900">{r.company_name}</div>
-                  <div className="text-[11px] uppercase text-slate-400 mt-0.5">ID</div>
-                  <div className="text-xs text-slate-600 break-all">{r.company_id}</div>
+      {showEmptyState && (
+        <div className="text-sm text-slate-500">
+          No results found for “{committedQuery}”. Try adjusting the spelling or searching for a different company.
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="space-y-3">
+          <div className="text-sm text-slate-500">
+            Showing {pageStart.toLocaleString()}-{pageEnd.toLocaleString()} of {total.toLocaleString()} companies
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {rows.map((row) => (
+              <div key={`${row.company_id}-${row.company_name}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium text-slate-900">{row.company_name}</div>
+                  <span className="text-[11px] uppercase tracking-wide text-slate-500">{row.company_id}</span>
                 </div>
-                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
-                  Active
-                </span>
+                <div className="mt-3 text-sm text-slate-600">
+                  Shipments (12m): {row.shipments_12m != null ? row.shipments_12m.toLocaleString() : "—"}
+                </div>
+                <div className="text-sm text-slate-600">Last activity: {row.last_activity ?? "—"}</div>
               </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-xl border border-slate-200 p-2">
-                  <div className="text-[10px] uppercase text-slate-400">Shipments (12m)</div>
-                  <div className="text-sm font-medium text-slate-900">{r.shipments_12m ?? "—"}</div>
-                </div>
-                <div className="rounded-xl border border-slate-200 p-2">
-                  <div className="text-[10px] uppercase text-slate-400">Last Activity</div>
-                  <div className="text-sm font-medium text-slate-900">{r.last_activity ?? "—"}</div>
-                </div>
-                <div className="rounded-xl border border-slate-200 p-2">
-                  <div className="text-[10px] uppercase text-slate-400">Top Carrier</div>
-                  <div className="text-sm font-medium text-slate-400">—</div>
-                </div>
-              </div>
-              <div className="mt-4">
-                <button
-                  className="rounded-xl bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500"
-                  onClick={() => alert("Company drawer coming next")}
-                >
-                  View Details
-                </button>
-              </div>
-            </article>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading && rows.length === 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((key) => (
+            <div key={key} className="h-32 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm" />
           ))}
         </div>
       )}
 
-      <div className="mt-6 flex items-center justify-center gap-2">
-        <button
-          className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40"
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={page <= 1 || loading || NOAPI}
-        >
-          Prev
-        </button>
-        <button
-          className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm disabled:opacity-40"
-          onClick={() => setPage((p) => p + 1))}
-          disabled={page >= totalPages || loading || NOAPI}
-        >
-          Next
-        </button>
-      </div>
+      {rows.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <button
+            type="button"
+            onClick={handlePrev}
+            disabled={loading || page <= 1}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Prev
+          </button>
+          <span className="text-sm text-slate-500">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={handleNext}
+            disabled={loading || page >= totalPages}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
