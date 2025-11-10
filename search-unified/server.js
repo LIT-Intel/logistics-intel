@@ -55,6 +55,10 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.status(204).end();
   return next();
 });
+// ImportYeti proxy mount
+app.use("/public/iy", importyeti);
+  return next();
+});
 // Public route for the SPA (no gateway token on the client)
 async function handleGetFilterOptions(_req, res) {
   // Directly reuse the internal logic by calling the same queries again
@@ -114,10 +118,6 @@ app.get('/public/getFilterOptions', handleGetFilterOptions);
 // GET FILTER OPTIONS  (Required by search page)
 // Source tables/views: logistics-intel.lit.v_shipments_normalized
 // Fields used: date, mode, origin_country, dest_country
-app.post('/getFilterOptions', async (_req, res) => {
-  try {
-    const where = `WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)`;
-
     const qModes = `
       SELECT DISTINCT LOWER(mode) AS mode
       FROM 
@@ -202,7 +202,7 @@ app.post('/public/searchCompanies', async (req, res) => {
             ov.company_name as name,
             STRUCT(
               ov.total_shipments_12m as shipments_12m,
-              ov.last_seen_12m as last_activity
+              NULL as last_activity
             ) as kpis
           FROM 
             logistics-intel.lit.v_company_overview_latest ov
