@@ -17,6 +17,11 @@ function resolveSearchGatewayBase(): string {
 
 const SEARCH_GATEWAY_BASE = resolveSearchGatewayBase();
 
+const IY_API_BASE = (() => {
+  if (!SEARCH_GATEWAY_BASE) return '/api/lit';
+  return SEARCH_GATEWAY_BASE.replace(/\/$/, '');
+})();
+
 export type SearchPayload = {
   q: string | null;
   origin?: string[];
@@ -248,6 +253,51 @@ export async function searchCompanies(body: { q?: string | null; origin?: string
     : (typeof data?.total === 'number' ? data.total : items.length);
 
   return { items, total, meta: data?.meta, raw: data } as { items: any[]; total: number; meta?: unknown; raw: unknown };
+}
+
+async function postIyJson<T>(path: string, body: any): Promise<T> {
+  const resp = await fetch(`${IY_API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw { status: resp.status, ...json };
+  }
+  return json as T;
+}
+
+export type IySearchRow = {
+  company_id: string | null;
+  name: string | null;
+  role: string | null;
+  country: string | null;
+  address: string | null;
+  website: string | null;
+  phone: string | null;
+  total_shipments: number | null;
+  most_recent_shipment: string | null;
+  aliases_count: number | null;
+  addresses_count: number | null;
+  top_suppliers?: string[] | null;
+  top_customers?: string[] | null;
+};
+
+export async function iySearch(q: string, limit = 10, offset = 0) {
+  return postIyJson<{ ok: boolean; rows: IySearchRow[] }>('/public/iy/searchShippers', {
+    q,
+    limit,
+    offset,
+  });
+}
+
+export async function iyCompanyBols(company_id: string, limit = 50, offset = 0) {
+  return postIyJson<{ ok: boolean; rows: any[] }>('/public/iy/companyBols', {
+    company_id,
+    limit,
+    offset,
+  });
 }
 
 export async function iySearchShippers(params: { keyword: string; limit: number; offset: number; }): Promise<{ rows: CompanyLite[]; total: number; }> {

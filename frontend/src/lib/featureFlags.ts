@@ -1,5 +1,9 @@
 import { getGatewayBase } from '@/lib/env';
 
+export const FLAGS = {
+  IMPORTYETI_PRO_ENABLED: process.env.NEXT_PUBLIC_IMPORTYETI_PRO_ENABLED === 'true',
+};
+
 const PROXY_BASE = '/api/lit';
 
 export type FeatureFlags = {
