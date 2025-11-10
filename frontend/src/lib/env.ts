@@ -1,5 +1,5 @@
 // Resolves API base across Node (Vercel) + Vite (browser)
-export function getGatewayBase(): string {
+export const getGatewayBase = (): string => {
   const envBase =
     (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_BASE) || null;
 
@@ -11,4 +11,6 @@ export function getGatewayBase(): string {
   // Hard default: current Gateway
   const DEFAULT_BASE = "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
   return envBase || viteBase || DEFAULT_BASE;
-}
+};
+
+export default { getGatewayBase };
