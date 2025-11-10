@@ -7,5 +7,3 @@ export function getGatewayBase(): string {
   const nextBase = (typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_API_BASE) || "";
   return viteBase || nextBase || "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
 }
-
-export default { getGatewayBase };

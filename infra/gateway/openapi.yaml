@@ -1,242 +1,175 @@
-openapi: 3.0.0
+swagger: "2.0"
 info:
-  title: logistics-intel-api
-  version: 1.0.0
-servers:
-  - url: https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev
+  title: Logistics-Intel Public API
+  version: "1.0.4"
+schemes:
+  - https
+produces:
+  - application/json
+
+# Global backend (Cloud Run)
+x-google-backend:
+  address: https://search-unified-187580267283.us-central1.run.app
+  jwt_audience: https://search-unified-187580267283.us-central1.run.app
+
+securityDefinitions:
+  api_key:
+    type: apiKey
+    name: key
+    in: query
+
 paths:
-  /public/healthz:
-    get:
-      operationId: healthz
-      x-google-backend:
-        address: https://crm-api-gxezx63yea-uc.a.run.app
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-      responses:
-        '200':
-          description: ok
   /public/status:
+    options:
+      operationId: preflightStatus
+      summary: CORS preflight
+      responses:
+        "204":
+          description: No content
+      x-google-allow: all
     get:
       operationId: status
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses: { '200': { description: OK } }
-    options:
-      operationId: statusOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
+      summary: Health/status
+      security:
+        - api_key: []
       responses:
-        '204': { description: CORS preflight ok }
-        '200': { description: CORS preflight ok }
-
-  /public/dashboard/summary:
-    get:
-      summary: Get dashboard summary
-      operationId: publicDashboardSummary
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses:
-        '200':
+        "200":
           description: OK
-    options:
-      summary: CORS preflight
-      operationId: corsPublicDashboardSummary
-      responses:
-        '204':
-          description: No content
-          headers:
-            Access-Control-Allow-Origin:
-              type: string
-              default: "*"
-            Access-Control-Allow-Methods:
-              type: string
-              default: "GET,OPTIONS"
-            Access-Control-Allow-Headers:
-              type: string
-              default: "Content-Type,Authorization"
-            Access-Control-Max-Age:
-              type: string
-              default: "3600"
 
   /public/getFilterOptions:
+    options:
+      operationId: preflightGetFilterOptions
+      summary: CORS preflight
+      responses:
+        "204":
+          description: No content
+      x-google-allow: all
     get:
       operationId: getFilterOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses: { '200': { description: OK } }
-    options:
-      operationId: getFilterOptionsOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
+      summary: Filter options (GET)
+      security:
+        - api_key: []
       responses:
-        '204': { description: CORS preflight ok }
-        '200': { description: CORS preflight ok }
-
-  /search:
+        "200":
+          description: OK
     post:
-      operationId: search
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses: { '200': { description: OK } }
-    options:
-      operationId: searchOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
+      operationId: postGetFilterOptions
+      summary: Filter options (POST mirror)
+      security:
+        - api_key: []
       responses:
-        '204': { description: CORS preflight ok }
-        '200': { description: CORS preflight ok }
+        "200":
+          description: OK
 
   /public/searchCompanies:
+    options:
+      operationId: preflightSearchCompanies
+      summary: CORS preflight
+      responses:
+        "204":
+          description: No content
+      x-google-allow: all
     post:
       operationId: searchCompanies
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses: { '200': { description: OK } }
-    options:
-      operationId: searchCompaniesOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
+      summary: Search companies (BigQuery)
+      security:
+        - api_key: []
+      parameters:
+        - in: body
+          name: body
+          required: false
+          schema:
+            type: object
+            properties:
+              q:
+                type: string
+              hs:
+                type: array
+                items: { type: string }
+              limit:
+                type: integer
+                default: 24
+              page:
+                type: integer
+                default: 1
       responses:
-        '204': { description: CORS preflight ok }
-        '200': { description: CORS preflight ok }
-
-  /crm/feature-flags:
-    get:
-      summary: Get feature flags
-      operationId: crmFeatureFlags
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses:
-        '200':
+        "200":
           description: OK
-    options:
-      summary: CORS preflight
-      operationId: corsCrmFeatureFlags
-      responses:
-        '204':
-          description: No content
-          headers:
-            Access-Control-Allow-Origin:
-              type: string
-              default: "*"
-            Access-Control-Allow-Methods:
-              type: string
-              default: "GET,OPTIONS"
-            Access-Control-Allow-Headers:
-              type: string
-              default: "Content-Type,Authorization"
-            Access-Control-Max-Age:
-              type: string
-              default: "3600"
 
-  /public/getCompanyShipments:
+  # -------- ImportYeti proxies (GET) --------
+  /public/iy/searchShippers:
+    options:
+      operationId: preflightIySearchShippers
+      summary: CORS preflight
+      responses:
+        "204":
+          description: No content
+      x-google-allow: all
     get:
-      operationId: getCompanyShipments
+      operationId: iySearchShippers
+      summary: ImportYeti — search shippers
+      description: Proxies ImportYeti v1.0 search; mirrors backend GET with query params.
+      security:
+        - api_key: []
+      parameters:
+        - in: query
+          name: q
+          type: string
+          required: true
+        - in: query
+          name: page
+          type: integer
+          default: 1
+      responses:
+        "200":
+          description: OK
+
+  /public/iy/companyBols:
+    options:
+      operationId: preflightIyCompanyBols
+      summary: CORS preflight
+      responses:
+        "204":
+          description: No content
+      x-google-allow: all
+    get:
+      operationId: iyCompanyBols
+      summary: ImportYeti — company BOLs
+      description: Proxies ImportYeti v1.0 company BOLs; mirrors backend GET with query params.
+      security:
+        - api_key: []
       parameters:
         - in: query
           name: company_id
-          schema: { type: string }
+          type: string
           required: true
         - in: query
-          name: limit
-          schema: { type: integer, default: 50 }
-        - in: query
-          name: offset
-          schema: { type: integer, default: 0 }
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses: { '200': { description: OK } }
-    options:
-      operationId: getCompanyShipmentsOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
+          name: page
+          type: integer
+          default: 1
       responses:
-        '204': { description: CORS preflight ok }
-        '200': { description: CORS preflight ok }
+        "200":
+          description: OK
 
-  /public/contacts:
+  /public/iy/bol:
+    options:
+      operationId: preflightIyBolLookup
+      summary: CORS preflight
+      responses:
+        "204":
+          description: No content
+      x-google-allow: all
     get:
-      operationId: contacts
-      x-google-backend:
-        address: https://crm-api-gxezx63yea-uc.a.run.app
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
+      operationId: iyBolLookup
+      summary: ImportYeti — BOL lookup
+      description: Proxies ImportYeti v1.0 for a single BOL number.
+      security:
+        - api_key: []
       parameters:
-        - name: q
-          in: query
+        - in: query
+          name: number
           type: string
-          required: false
-          description: Company name search
-        - name: company_id
-          in: query
-          type: string
-          required: false
-        - name: limit
-          in: query
-          type: integer
-          format: int32
-          required: false
-          default: 25
-        - name: offset
-          in: query
-          type: integer
-          format: int32
-          required: false
-          default: 0
+          required: true
       responses:
-        '200':
-          description: Contacts list
-
-  /public/campaigns:
-    get:
-      operationId: listCampaigns
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses: { '200': { description: OK } }
-    options:
-      operationId: campaignsOptions
-      x-google-backend:
-        address: https://search-unified-187580267283.us-central1.run.app
-        protocol: h2
-        jwt_audience: https://search-unified-gxezx63yea-uc.a.run.app
-        path_translation: APPEND_PATH_TO_ADDRESS
-      responses:
-        '204': { description: CORS preflight ok }
-        '200': { description: CORS preflight ok }
+        "200":
+          description: OK
