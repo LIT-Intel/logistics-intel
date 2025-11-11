@@ -1,61 +1,69 @@
+// search-unified/routes/importyeti.js
 const express = require('express');
+const fetch = require('node-fetch');
+
 const router = express.Router();
 
-const IY_API_KEY = process.env.IY_API_KEY || "";
-const URL_SEARCH  = process.env.IY_DMA_SEARCH_URL     || "https://data.importyeti.com/v1.0/search/shippers";
-const URL_BOLS    = process.env.IY_DMA_BOLS_URL       || "https://data.importyeti.com/v1.0/company/bols";
-const URL_BOL_ONE = process.env.IY_DMA_BOL_LOOKUP_URL || "https://data.importyeti.com/v1.0/bol";
+const IY_API_KEY = process.env.IY_API_KEY || process.env.IYApiKey || '';
+const URL_SEARCH  = process.env.IY_DMA_SEARCH_URL      || 'https://data.importyeti.com/v1.0/search/shippers';
+const URL_BOLS    = process.env.IY_DMA_BOLS_URL        || 'https://data.importyeti.com/v1.0/company/bols';
+const URL_BOL_ONE = process.env.IY_DMA_BOL_LOOKUP_URL  || 'https://data.importyeti.com/v1.0/bol';
 
-async function proxyGet(res, url, params) {
-  if (!IY_API_KEY) {
-    return res.status(500).json({ ok:false, error:"Missing IY_API_KEY env" });
-  }
-  const qstr = new URLSearchParams(params).toString();
-  const resp = await fetch(`${url}?${qstr}`, {
-    headers: { "x-api-key": IY_API_KEY, "accept": "application/json" }
-  });
-  const text = await resp.text();
-  // Try JSON first; fall back to raw text for debugging
-  try {
-    const json = JSON.parse(text);
-    return res.status(resp.status).json(json);
-  } catch {
-    return res.status(resp.status).send(text);
+function required(v, name) {
+  if (!v) throw new Error(`missing required param: ${name}`);
+}
+
+async function proxyGet(res, url) {
+  const r = await fetch(url, { headers: { 'X-API-KEY': IY_API_KEY } });
+  const ct = r.headers.get('content-type') || '';
+  const body = await r.text();
+  // Try to pass through JSON when possible
+  if (ct.includes('application/json')) {
+    res.status(r.status).type('application/json').send(body);
+  } else {
+    // fall back (some endpoints are text/csv occasionally)
+    res.status(r.status).type('application/json').send(body);
   }
 }
 
-// GET /public/iy/searchShippers?q=ACME&page=1
+// GET /public/iy/searchShippers?q=NAME&page=1
 router.get('/searchShippers', async (req, res) => {
   try {
-    const q = String(req.query.q || "").trim();
-    const page = parseInt(String(req.query.page || "1"), 10) || 1;
-    if (!q) return res.status(400).json({ ok:false, error:"q required" });
-    await proxyGet(res, URL_SEARCH, { q, page });
+    required(IY_API_KEY, 'IY_API_KEY');
+    const q = String(req.query.q || '').trim();
+    required(q, 'q');
+    const page = Number(req.query.page || 1);
+    const url = `${URL_SEARCH}?q=${encodeURIComponent(q)}&page=${page}`;
+    await proxyGet(res, url);
   } catch (e) {
-    res.status(500).json({ ok:false, error: String(e?.message || e) });
+    res.status(400).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-// GET /public/iy/companyBols?company_id=SLUG_OR_KEY&page=1
+// GET /public/iy/companyBols?company_id=ID&page=1
 router.get('/companyBols', async (req, res) => {
   try {
-    const company_id = String(req.query.company_id || "").trim();
-    const page = parseInt(String(req.query.page || "1"), 10) || 1;
-    if (!company_id) return res.status(400).json({ ok:false, error:"company_id required" });
-    await proxyGet(res, URL_BOLS, { company_id, page });
+    required(IY_API_KEY, 'IY_API_KEY');
+    const company_id = String(req.query.company_id || '').trim();
+    required(company_id, 'company_id');
+    const page = Number(req.query.page || 1);
+    const url = `${URL_BOLS}?company_id=${encodeURIComponent(company_id)}&page=${page}`;
+    await proxyGet(res, url);
   } catch (e) {
-    res.status(500).json({ ok:false, error: String(e?.message || e) });
+    res.status(400).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-// GET /public/iy/bol?number=XXXX
+// GET /public/iy/bol?number=BOLNUMBER
 router.get('/bol', async (req, res) => {
   try {
-    const number = String(req.query.number || "").trim();
-    if (!number) return res.status(400).json({ ok:false, error:"number required" });
-    await proxyGet(res, URL_BOL_ONE, { number });
+    required(IY_API_KEY, 'IY_API_KEY');
+    const number = String(req.query.number || '').trim();
+    required(number, 'number');
+    const url = `${URL_BOL_ONE}?number=${encodeURIComponent(number)}`;
+    await proxyGet(res, url);
   } catch (e) {
-    res.status(500).json({ ok:false, error: String(e?.message || e) });
+    res.status(400).json({ ok: false, error: String(e.message || e) });
   }
 });
 
