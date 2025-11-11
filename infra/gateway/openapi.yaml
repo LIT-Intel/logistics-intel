@@ -1,175 +1,69 @@
 swagger: "2.0"
-info:
-  title: Logistics-Intel Public API
-  version: "1.0.4"
-schemes:
-  - https
-produces:
-  - application/json
+info: { title: Logistics-Intel Public API, version: "1.0.5" }
+schemes: [https]
+produces: [application/json]
 
-# Global backend (Cloud Run)
 x-google-backend:
   address: https://search-unified-187580267283.us-central1.run.app
   jwt_audience: https://search-unified-187580267283.us-central1.run.app
 
 securityDefinitions:
-  api_key:
-    type: apiKey
-    name: key
-    in: query
+  api_key: { type: apiKey, name: key, in: query }
 
 paths:
   /public/status:
-    options:
-      operationId: preflightStatus
-      summary: CORS preflight
-      responses:
-        "204":
-          description: No content
-      x-google-allow: all
+    options: { operationId: preflightStatus, responses: { "204": { description: No content } }, x-google-allow: all }
     get:
       operationId: status
-      summary: Health/status
-      security:
-        - api_key: []
-      responses:
-        "200":
-          description: OK
+      security: [ { api_key: [] } ]
+      responses: { "200": { description: OK } }
 
-  /public/getFilterOptions:
-    options:
-      operationId: preflightGetFilterOptions
-      summary: CORS preflight
-      responses:
-        "204":
-          description: No content
-      x-google-allow: all
-    get:
-      operationId: getFilterOptions
-      summary: Filter options (GET)
-      security:
-        - api_key: []
-      responses:
-        "200":
-          description: OK
-    post:
-      operationId: postGetFilterOptions
-      summary: Filter options (POST mirror)
-      security:
-        - api_key: []
-      responses:
-        "200":
-          description: OK
-
-  /public/searchCompanies:
-    options:
-      operationId: preflightSearchCompanies
-      summary: CORS preflight
-      responses:
-        "204":
-          description: No content
-      x-google-allow: all
-    post:
-      operationId: searchCompanies
-      summary: Search companies (BigQuery)
-      security:
-        - api_key: []
-      parameters:
-        - in: body
-          name: body
-          required: false
-          schema:
-            type: object
-            properties:
-              q:
-                type: string
-              hs:
-                type: array
-                items: { type: string }
-              limit:
-                type: integer
-                default: 24
-              page:
-                type: integer
-                default: 1
-      responses:
-        "200":
-          description: OK
-
-  # -------- ImportYeti proxies (GET) --------
   /public/iy/searchShippers:
-    options:
-      operationId: preflightIySearchShippers
-      summary: CORS preflight
-      responses:
-        "204":
-          description: No content
-      x-google-allow: all
+    options: { operationId: preflightIySearch, responses: { "204": { description: No content } }, x-google-allow: all }
     get:
-      operationId: iySearchShippers
-      summary: ImportYeti — search shippers
-      description: Proxies ImportYeti v1.0 search; mirrors backend GET with query params.
-      security:
-        - api_key: []
+      operationId: iySearchShippersGet
+      security: [ { api_key: [] } ]
       parameters:
-        - in: query
-          name: q
-          type: string
-          required: true
-        - in: query
-          name: page
-          type: integer
-          default: 1
-      responses:
-        "200":
-          description: OK
+        - in: query; name: q; type: string; required: true
+        - in: query; name: page; type: integer; default: 1
+      responses: { "200": { description: OK } }
+    post:
+      operationId: iySearchShippersPost
+      security: [ { api_key: [] } ]
+      parameters:
+        - in: body; name: body; required: true
+          schema: { type: object, properties: { q: {type: string}, page: {type: integer, default: 1} } }
+      responses: { "200": { description: OK } }
 
   /public/iy/companyBols:
-    options:
-      operationId: preflightIyCompanyBols
-      summary: CORS preflight
-      responses:
-        "204":
-          description: No content
-      x-google-allow: all
+    options: { operationId: preflightIyBols, responses: { "204": { description: No content } }, x-google-allow: all }
     get:
-      operationId: iyCompanyBols
-      summary: ImportYeti — company BOLs
-      description: Proxies ImportYeti v1.0 company BOLs; mirrors backend GET with query params.
-      security:
-        - api_key: []
+      operationId: iyCompanyBolsGet
+      security: [ { api_key: [] } ]
       parameters:
-        - in: query
-          name: company_id
-          type: string
-          required: true
-        - in: query
-          name: page
-          type: integer
-          default: 1
-      responses:
-        "200":
-          description: OK
+        - in: query; name: company_id; type: string; required: true
+        - in: query; name: page; type: integer; default: 1
+      responses: { "200": { description: OK } }
+    post:
+      operationId: iyCompanyBolsPost
+      security: [ { api_key: [] } ]
+      parameters:
+        - in: body; name: body; required: true
+          schema: { type: object, properties: { company_id: {type: string}, page: {type: integer, default: 1} } }
+      responses: { "200": { description: OK } }
 
   /public/iy/bol:
-    options:
-      operationId: preflightIyBolLookup
-      summary: CORS preflight
-      responses:
-        "204":
-          description: No content
-      x-google-allow: all
+    options: { operationId: preflightIyBol, responses: { "204": { description: No content } }, x-google-allow: all }
     get:
-      operationId: iyBolLookup
-      summary: ImportYeti — BOL lookup
-      description: Proxies ImportYeti v1.0 for a single BOL number.
-      security:
-        - api_key: []
+      operationId: iyBolGet
+      security: [ { api_key: [] } ]
       parameters:
-        - in: query
-          name: number
-          type: string
-          required: true
-      responses:
-        "200":
-          description: OK
+        - in: query; name: number; type: string; required: true
+      responses: { "200": { description: OK } }
+    post:
+      operationId: iyBolPost
+      security: [ { api_key: [] } ]
+      parameters:
+        - in: body; name: body; required: true
+          schema: { type: object, properties: { number: {type: string} } }
+      responses: { "200": { description: OK } }
