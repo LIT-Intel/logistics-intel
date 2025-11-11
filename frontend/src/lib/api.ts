@@ -22,6 +22,18 @@ const IY_API_BASE = (() => {
   return SEARCH_GATEWAY_BASE.replace(/\/$/, '');
 })();
 
+export async function getCampaigns(base = getGatewayBase()) {
+  const root = (base || '').replace(/\/$/, '');
+  try {
+    const r = await fetch(`${root}/public/campaigns`, { method: 'GET', headers: { accept: 'application/json' } });
+    if (!r.ok) throw new Error(`bad status ${r.status}`);
+    return await r.json();
+  } catch (error) {
+    console.warn('[api] getCampaigns falling back to mock', error);
+    return [];
+  }
+}
+
 export type SearchPayload = {
   q: string | null;
   origin?: string[];
