@@ -1,14 +1,4 @@
-const API_BASE = resolveGatewayBase();
-
-function resolveGatewayBase(): string {
-  const viteEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
-  const base =
-    viteEnv.NEXT_PUBLIC_API_BASE ??
-    viteEnv.VITE_API_BASE ??
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
-    '';
-  return (base || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').replace(/\/$/, '');
-}
+const API_BASE = '/api/lit';
 
 export type CompanyRow = {
   company_id: string;

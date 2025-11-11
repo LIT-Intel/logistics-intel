@@ -4,13 +4,7 @@ export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@
 export const API_BASE = '/api/lit';
 
 function resolveSearchGatewayBase(): string {
-  const viteEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
-  const base =
-    viteEnv.NEXT_PUBLIC_API_BASE ??
-    viteEnv.VITE_API_BASE ??
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
-    '';
-  return base || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
+  return API_BASE;
 }
 
 const SEARCH_GATEWAY_BASE = resolveSearchGatewayBase();
