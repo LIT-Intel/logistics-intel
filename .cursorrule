@@ -1,0 +1,32 @@
+Project: Logistics-Intel
+
+Non-negotiables
+- Do NOT change Cloud Run auth or make it public.
+- Always treat the Cloud Run audience as: https://search-unified-gxezx63yea-uc.a.run.app
+- Do NOT edit GCP IAM, secrets, or billing.
+- No hard-coding secrets. Never expose keys client-side.
+
+What you may edit
+- Frontend Next.js files under frontend/.
+- Backend code under search-unified/ or backend/ routes, SQL, logging, retry/backoff.
+- Infra/text docs under infra/, docs/, scripts/ (but do NOT apply gcloud changes yourself).
+
+Workflow
+- One task at a time. Create a feature branch: feat/<short-name>.
+- Minimal diff. Run lint/tests before commit.
+- Open a PR with: Summary, Files changed, Test steps, and Rollback notes.
+- If calling the backend from the UI, use our server-side proxy (/api/lit/*) only.
+
+Endpoints (read-only contract)
+- POST /public/searchCompanies  { q, origin[], dest[], hs[], limit, offset }
+- GET  /public/getCompanyShipments?company_id=&limit=&offset=
+
+Allowed terminal actions (local only)
+- npm i, npm run dev/build/lint/test
+- git fetch/commit/push/checkout
+- curl against localhost or the API Gateway
+- DO NOT run gcloud or terraform (humans only).
+
+Style
+- Use shadcn/Tailwind, rounded-2xl, compact labels (uppercase text-[11px]).
+- Keep code comments short and practical.
