@@ -9,6 +9,8 @@ const { BigQuery } = require('@google-cloud/bigquery');
 
 // --- ImportYeti router (mounted at /public/iy) ---
 const importyeti = require('./routes/importyeti');
+// --- RFP router (mounted at /rfp) ---
+const rfp = require('./routes/rfp');
 
 console.log('search-unified: loading express and bigquery modules');
 
@@ -48,7 +50,13 @@ app.get('/', (_req, res) => {
       'GET  /healthz',
       'GET  /public/iy/searchShippers',
       'GET  /public/iy/companyBols',
-      'GET  /public/iy/bol'
+      'GET  /public/iy/bol',
+      'GET  /rfp/health',
+      'POST /rfp/quote-html',
+      'POST /rfp/annual-html',
+      'GET  /rfp/export.csv',
+      'POST /rfp/email',
+      'POST /rfp/save'
     ]
   });
 });
@@ -67,6 +75,8 @@ app.use((req, res, next) => {
 
 // -------- ImportYeti proxy mount (fixes 404) --------
 app.use('/public/iy', importyeti);
+// -------- RFP workspace backend --------
+app.use('/rfp', rfp);
 
 // -------- Filter options (GET/POST) --------
 async function handleGetFilterOptions(_req, res) {
