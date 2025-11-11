@@ -1,5 +1,5 @@
 swagger: "2.0"
-info: { title: Logistics-Intel Public API, version: "1.0.5" }
+info: { title: Logistics-Intel Public API, version: "1.0.6" }
 schemes: [https]
 produces: [application/json]
 
@@ -8,7 +8,10 @@ x-google-backend:
   jwt_audience: https://search-unified-187580267283.us-central1.run.app
 
 securityDefinitions:
-  api_key: { type: apiKey, name: key, in: query }
+  api_key:
+    type: apiKey
+    name: key
+    in: query
 
 paths:
   /public/status:
@@ -24,15 +27,17 @@ paths:
       operationId: iySearchShippersGet
       security: [ { api_key: [] } ]
       parameters:
-        - in: query; name: q; type: string; required: true
-        - in: query; name: page; type: integer; default: 1
+        - { in: query, name: q, type: string, required: true }
+        - { in: query, name: page, type: integer, default: 1 }
       responses: { "200": { description: OK } }
     post:
       operationId: iySearchShippersPost
       security: [ { api_key: [] } ]
       parameters:
-        - in: body; name: body; required: true
-          schema: { type: object, properties: { q: {type: string}, page: {type: integer, default: 1} } }
+        - in: body
+          name: body
+          required: true
+          schema: { type: object, properties: { q: { type: string }, page: { type: integer, default: 1 } } }
       responses: { "200": { description: OK } }
 
   /public/iy/companyBols:
@@ -41,15 +46,17 @@ paths:
       operationId: iyCompanyBolsGet
       security: [ { api_key: [] } ]
       parameters:
-        - in: query; name: company_id; type: string; required: true
-        - in: query; name: page; type: integer; default: 1
+        - { in: query, name: company_id, type: string, required: true }
+        - { in: query, name: page, type: integer, default: 1 }
       responses: { "200": { description: OK } }
     post:
       operationId: iyCompanyBolsPost
       security: [ { api_key: [] } ]
       parameters:
-        - in: body; name: body; required: true
-          schema: { type: object, properties: { company_id: {type: string}, page: {type: integer, default: 1} } }
+        - in: body
+          name: body
+          required: true
+          schema: { type: object, properties: { company_id: { type: string }, page: { type: integer, default: 1 } } }
       responses: { "200": { description: OK } }
 
   /public/iy/bol:
@@ -58,12 +65,14 @@ paths:
       operationId: iyBolGet
       security: [ { api_key: [] } ]
       parameters:
-        - in: query; name: number; type: string; required: true
+        - { in: query, name: number, type: string, required: true }
       responses: { "200": { description: OK } }
     post:
       operationId: iyBolPost
       security: [ { api_key: [] } ]
       parameters:
-        - in: body; name: body; required: true
-          schema: { type: object, properties: { number: {type: string} } }
+        - in: body
+          name: body
+          required: true
+          schema: { type: object, properties: { number: { type: string } } }
       responses: { "200": { description: OK } }
