@@ -1,38 +1,46 @@
-import type { NextApiRequest, NextApiResponse } from 'next'
+﻿import type { NextApiRequest, NextApiResponse } from "next";
 
-const BASE = process.env.TARGET_BASE_URL || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev'
-const BASE =
-  process.env.TARGET_BASE_URL ||
-  'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev'
+const API_BASE = process.env.API_GATEWAY_BASE!;
+const ALLOWED_PREFIXES = ["/public/"];
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const path = req.query.path
-  const suffix = Array.isArray(path) ? path.join('/') : String(path ?? '')
-  const qs = req.url && req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
-  const url = `${String(BASE).replace(/\/$/, '')}/${suffix}${qs}`
-
   try {
-    const r = await fetch(url, {
+    const segs = (req.query.path ?? []) as string[] | string;
+    const path = Array.isArray(segs) ? segs.join("/") : String(segs || "");
+    const targetPath = `/${path}`;
+
+    if (!ALLOWED_PREFIXES.some(p => targetPath.startsWith(p))) {
+      res.status(403).json({ error: "Blocked path" });
+      return;
+    }
+
+    const qs = req.url && req.url.includes("?") ? "?" + req.url.split("?")[1] : "";
+    const url = `${API_BASE}${targetPath}${qs}`;
+
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (typeof v === "string" && ["content-type", "authorization"].includes(k.toLowerCase())) {
+        headers.set(k, v);
+      }
+    }
+
+    const init: RequestInit = {
       method: req.method,
-      headers: { 'content-type': 'application/json' },
-      body: req.method && !['GET','HEAD','OPTIONS'].includes(req.method) ? JSON.stringify(req.body ?? {}) : undefined,
-      cache: 'no-store',
-    })
-    const text = await r.text()
-    res.status(r.status)
-       .setHeader('content-type', r.headers.get('content-type') ?? 'application/json')
-       .send(text)
-      body: req.method && !['GET','HEAD','OPTIONS'].includes(req.method)
-        ? JSON.stringify(req.body ?? {})
-        : undefined,
-      cache: 'no-store',
-    })
-    const text = await r.text()
-    res
-      .status(r.status)
-      .setHeader('content-type', r.headers.get('content-type') ?? 'application/json')
-      .send(text)
-  } catch (e: any) {
-    res.status(502).json({ error: 'proxy_failed', detail: e?.message })
+      headers,
+      body: ["GET", "HEAD"].includes(req.method || "GET") ? undefined : (req as any),
+      // @ts-ignore node-fetch duplex hint
+      duplex: "half",
+    };
+
+    const r = await fetch(url, init);
+    res.status(r.status);
+    r.headers.forEach((val, key) => {
+      if (["content-type", "content-length"].includes(key)) res.setHeader(key, val);
+    });
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.send(buf);
+  } catch (err: any) {
+    console.error(err);
+    res.status(502).json({ error: "Proxy error", detail: String(err?.message || err) });
   }
 }
