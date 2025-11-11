@@ -8,7 +8,7 @@ import {
   getCompanyKey,
 } from "@/lib/api";
 import CompanyLanesPanel from "@/components/CompanyLanesPanel";
-import CommandCenterShipments from "@/components/company/CommandCenterShipments";
+import ShipmentsTable from "@/components/command-center/ShipmentsTable";
 import { Loader2, Search } from "lucide-react";
 
 type TabKey = "Overview" | "Shipments" | "Contacts" | "Campaigns" | "RFP";
@@ -199,7 +199,7 @@ export default function CommandCenter() {
         <h3 className="text-sm font-semibold text-slate-800">Recent Shipments</h3>
       </div>
       {selectedCompanyId ? (
-        <CommandCenterShipments companyId={selectedCompanyId} />
+        <ShipmentsTable companyId={selectedCompanyId} />
       ) : (
         <div className="text-sm text-slate-500">Select a company to view shipments.</div>
       )}
