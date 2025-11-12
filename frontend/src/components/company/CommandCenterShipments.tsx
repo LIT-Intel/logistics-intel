@@ -11,9 +11,14 @@ export default function CommandCenterShipments({ companyId }: { companyId: strin
     let alive = true;
     (async () => {
       try {
-        const res = await iyCompanyBols(companyId, 25, 0);
+        const res = await iyCompanyBols({ company_id: companyId, limit: 25, offset: 0 });
         if (!alive) return;
-        setState({ rows: res.rows || [] });
+        const rows = Array.isArray(res?.data?.rows)
+          ? res.data.rows
+          : Array.isArray(res?.rows)
+            ? res.rows
+            : [];
+        setState({ rows });
       } catch (e: any) {
         if (!alive) return;
         if (e?.status === 402) {

@@ -1,0 +1,37 @@
+Name: LIT Backend Only — Scope & Guardrails
+
+Scope (read/edit):
+- Include: search-unified/**, infra/**, openapi/**, bigquery/**, docs/**
+- Exclude: frontend/**, .next/**, dist/**, out/**, node_modules/**
+
+Branch:
+- Work only on fix/backend-route-audit (create if missing). Do not merge or rebase other branches.
+
+Non-negotiables:
+- Do NOT change GCP IAM, secrets, Cloud Run visibility, or API Gateway config.
+- Do NOT run gcloud/terraform or modify CI/CD.
+- Keep Cloud Run private; audience is https://search-unified-gxezx63yea-uc.a.run.app (for info only).
+
+API contracts to maintain:
+- GET  /public/status -> 200 { ok, service:"search-unified", time }
+- GET  /public/getFilterOptions -> 200 { origins[], destinations[], modes[], hs[] }
+- POST /public/searchCompanies { q?, origin[], dest[], hs[], mode[], limit?, offset? }
+  -> 200 { results:[{ company_id, company_name, shipments_12m, last_activity, top_routes, top_carriers }], total }
+- GET  /public/getCompanyShipments?company_id=&limit=&offset=
+  -> 200 { shipments:[{ date, origin_country, dest_country, mode, hs_code, carrier, value_usd, gross_weight_kg }], total }
+- GET  /public/campaigns -> 200 { campaigns:[{ id, title, status, created_at }], total }
+
+Data:
+- BigQuery dataset: lit; table: lit.shipments_daily_part
+  Columns: origin_country, dest_country, mode, hs_code, date, company_id, company_name, carrier, value_usd, gross_weight_kg
+
+Coding rules:
+- JSON only; stable shapes; 4xx for bad input; 5xx with generic message.
+- Structured logs (route, duration_ms, status_code). No secrets.
+- Remove duplicate/unused handlers; keep minimal diff.
+
+PR rules:
+- One phase per PR with summary, changed files, smoke steps (curl examples), rollback notes.
+---
+alwaysApply: true
+---

@@ -46,6 +46,8 @@ No other modules import `src/app/search/page.tsx`; it is effectively dead code t
 - Removed `src/app/search/page.tsx` (unused Next-style page) to avoid double-render edge cases.
 - Deleted `src/pages/search/index.tsx` (duplicate Search implementation).
 - Archived legacy Firebase function shims under `frontend/_archive/api/functions/**` and removed runtime re-exports.
+- Archived the previous search UI fragments (`Pager.tsx`, `SearchResults.jsx`, `CompanyCardCompact.jsx`, `SearchFilters.jsx`, etc.) under `frontend/_archive/components/search/**` so only the canvas-driven components ship.
+- Updated `src/pages/Search.tsx` to the canvas-spec UI (Shippers tab gate, inline error messaging, dedicated Search button, no duplicate filter placeholder) and wired all controls through `/api/lit/*`.
 - Updated Vite proxy to read `API_GATEWAY_BASE` from `.env.local` and fail fast when missing.
 - Pointed `src/lib/api.ts`, `src/lib/api.rfp.ts`, `src/lib/litApi.ts`, `src/components/command-center/AddCompanyModal.tsx`, and TS shims at `/api/lit/*`.
 

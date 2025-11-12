@@ -1,12 +1,34 @@
 import { getGatewayBase } from '@/lib/env';
 import { CompanyLite, ShipmentLite, CommandCenterRecord } from '@/types/importyeti';
 import { normalizeIYCompany, normalizeIYShipment } from '@/lib/normalize';
-export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@/lib/api/search';
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
 
 const SEARCH_GATEWAY_BASE = API_BASE;
 const IY_API_BASE = API_BASE;
+
+export type FilterOptions = {
+  origins: string[];
+  destinations: string[];
+  modes: string[];
+  hs: string[];
+};
+
+export type CompanyHit = {
+  company_id: string;
+  company_name: string;
+  shipments_12m: number;
+  last_activity: string;
+  top_routes: string[];
+  top_carriers: string[];
+};
+
+export type SearchResponse = {
+  total: number;
+  results: CompanyHit[];
+};
+
+const BASE = "";
 
 export async function getCampaigns(base = API_BASE) {
   const root = (base || '').replace(/\/$/, '');
@@ -88,19 +110,26 @@ export async function getCompanyShipmentsProxy(params: {company_id?: string; com
   return r.json();
 }
 
-export async function getFilterOptions(signal?: AbortSignal) {
+export async function getFilterOptions(signal?: AbortSignal): Promise<FilterOptions> {
   return getFilterOptionsOnce(async (innerSignal) => {
-    const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/getFilterOptions`, {
-      method: 'GET',
-      headers: { accept: 'application/json' },
+    const res = await fetch(`${API_BASE}/public/getFilterOptions`, {
+      method: "GET",
+      headers: { accept: "application/json" },
       signal: innerSignal ?? signal,
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`getFilterOptions failed: ${res.status} ${text}`);
+      throw new Error(`filters ${res.status}`);
     }
     const data = await res.json().catch(() => ({}));
-    return data ?? {};
+    const normalize = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+    const normalizedModes = normalize(data?.modes).map((mode) => mode.toLowerCase());
+    return {
+      origins: normalize(data?.origins),
+      destinations: normalize(data?.destinations),
+      modes: normalizedModes,
+      hs: normalize(data?.hs),
+    };
   }, signal);
 }
 
@@ -203,40 +232,139 @@ export async function postSearchCompanies(payload: any) {
   return res.json(); // { items, total }
 }
 
-export async function searchCompanies(body: { q?: string | null; origin?: string | null; dest?: string | null; hs?: string | null; limit?: number; offset?: number }, signal?: AbortSignal) {
-  const keyword = body?.q ?? null;
-  const payload = {
-    keyword,
-    q: keyword,
-    origin: body?.origin ?? null,
-    dest: body?.dest ?? null,
-    hs: body?.hs ?? null,
-    limit: Math.max(1, Math.min(100, Number(body?.limit ?? 20))),
-    offset: Math.max(0, Number(body?.offset ?? 0)),
+function normalizeCompanyHit(entry: any): CompanyHit {
+  const ensureArray = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value
+          .map((item) => {
+            if (typeof item === 'string') return item;
+            if (item && typeof item === 'object') {
+              if ('route' in item && typeof (item as any).route === 'string') return (item as any).route as string;
+              if ('value' in item && typeof (item as any).value === 'string') return (item as any).value as string;
+              if ('carrier' in item && typeof (item as any).carrier === 'string') return (item as any).carrier as string;
+            }
+            return null;
+          })
+          .filter((item): item is string => typeof item === 'string' && item.length > 0)
+      : [];
+
+  const companyId = (entry as any)?.company_id ?? (entry as any)?.id ?? '';
+  const companyName =
+    (entry as any)?.company_name ??
+    (entry as any)?.name ??
+    (entry as any)?.company ??
+    '';
+  const shipments12m =
+    (entry as any)?.shipments_12m ??
+    (entry as any)?.shipments ??
+    (entry as any)?.kpis?.shipments_12m ??
+    0;
+  const lastActivity =
+    (entry as any)?.last_activity ??
+    (entry as any)?.lastActivity ??
+    (entry as any)?.kpis?.last_activity ??
+    '';
+
+  return {
+    company_id: typeof companyId === 'string' ? companyId : String(companyId ?? ''),
+    company_name: typeof companyName === 'string' && companyName.trim() ? companyName : '—',
+    shipments_12m: Number.isFinite(Number(shipments12m)) ? Number(shipments12m) : 0,
+    last_activity: typeof lastActivity === 'string' ? lastActivity : '',
+    top_routes: ensureArray((entry as any)?.top_routes),
+    top_carriers: ensureArray((entry as any)?.top_carriers),
+  };
+}
+
+export type SearchCompaniesResult = SearchResponse & {
+  items: any[];
+  rows: any[];
+  meta?: unknown;
+  raw: unknown;
+  ok: boolean;
+  code?: number;
+  message?: string;
+};
+
+export async function searchCompanies(
+  input: Partial<{ q: string; origin: string[]; dest: string[]; hs: string[]; mode: string[]; limit: number; offset: number }>,
+  signal?: AbortSignal,
+): Promise<SearchCompaniesResult> {
+  const limitValue = Number(input.limit);
+  const offsetValue = Number(input.offset);
+
+  const body = {
+    q: typeof input.q === "string" ? input.q : "",
+    origin: Array.isArray(input.origin) ? input.origin : [],
+    dest: Array.isArray(input.dest) ? input.dest : [],
+    hs: Array.isArray(input.hs) ? input.hs : [],
+    mode: Array.isArray(input.mode) ? input.mode : [],
+    limit: Math.max(1, Math.min(100, Number.isFinite(limitValue) ? limitValue : 25)),
+    offset: Math.max(0, Number.isFinite(offsetValue) ? offsetValue : 0),
   };
 
-  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
+  const res = await fetch(`${API_BASE}/public/searchCompanies`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
     signal,
   });
 
-  if (!res.ok) {
-    throw new Error(`searchCompanies failed ${res.status}`);
+  const rawBody = await res.text().catch(() => "");
+  let parsed: unknown;
+  if (rawBody) {
+    try {
+      parsed = JSON.parse(rawBody);
+    } catch {
+      parsed = rawBody;
+    }
   }
 
-  const data = await res.json().catch(() => ({ rows: [], meta: { total: 0 } }));
-  const items = Array.isArray(data?.rows)
-    ? data.rows
-    : (Array.isArray(data?.items)
-      ? data.items
-      : (Array.isArray(data?.results) ? data.results : []));
-  const total = typeof data?.meta?.total === 'number'
-    ? data.meta.total
-    : (typeof data?.total === 'number' ? data.total : items.length);
+  const json = (parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {}) ?? {};
+  const extractItems = (): any[] => {
+    if (Array.isArray(json.results)) return json.results as any[];
+    if (Array.isArray(json.rows)) return json.rows as any[];
+    if (Array.isArray(json.items)) return json.items as any[];
+    return [];
+  };
 
-  return { items, total, meta: data?.meta, raw: data } as { items: any[]; total: number; meta?: unknown; raw: unknown };
+  if (!res.ok) {
+    const message =
+      typeof json.message === "string"
+        ? json.message
+        : typeof parsed === "string" && parsed.trim().length > 0
+          ? parsed
+          : `search ${res.status}`;
+    return {
+      ok: false,
+      code: res.status,
+      message,
+      total: 0,
+      results: [],
+      items: [],
+      rows: [],
+      meta: undefined,
+      raw: parsed ?? null,
+    };
+  }
+
+  const rawItems = extractItems();
+  const results = rawItems.map(normalizeCompanyHit);
+
+  const total = Number.isFinite(Number(json.total))
+    ? Number(json.total)
+    : Number.isFinite(Number((json.meta as any)?.total))
+      ? Number((json.meta as any).total)
+      : results.length;
+
+  return {
+    ok: true,
+    total,
+    results,
+    items: rawItems,
+    rows: rawItems,
+    meta: json.meta,
+    raw: parsed ?? null,
+  };
 }
 
 async function postIyJson<T>(path: string, body: any): Promise<T> {
@@ -269,49 +397,94 @@ export type IySearchRow = {
 };
 
 export async function iySearch(q: string, limit = 10, offset = 0) {
-  return postIyJson<{ ok: boolean; rows: IySearchRow[] }>('/public/iy/searchShippers', {
-    q,
-    limit,
-    offset,
-  });
+  const payload = await iySearchShippers({ q, limit, offset });
+  const rows = Array.isArray(payload?.data?.rows)
+    ? payload.data.rows
+    : Array.isArray(payload?.rows)
+      ? payload.rows
+      : [];
+  return { ok: payload?.ok ?? true, rows };
 }
 
-export async function iyCompanyBols(company_id: string, limit = 50, offset = 0) {
-  return postIyJson<{ ok: boolean; rows: any[] }>('/public/iy/companyBols', {
-    company_id,
-    limit,
-    offset,
+export async function iyCompanyBols(
+  params: { company_id: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; data: any }> {
+  const origin =
+    typeof window !== 'undefined' && typeof window.location !== 'undefined'
+      ? window.location.origin
+      : 'http://localhost';
+  const url = new URL(`${API_BASE}/public/iy/companyBols`, origin);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    url.searchParams.set(key, String(value));
   });
-}
 
-export async function iySearchShippers(params: { keyword: string; limit: number; offset: number; }): Promise<{ rows: CompanyLite[]; total: number; }> {
-  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/iy/searchShippers`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(params),
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+    signal,
   });
-  if (!res.ok) {
-    throw new Error(`iySearchShippers failed: ${res.status}`);
+
+  const text = await response.text().catch(() => '');
+  let parsed: unknown = {};
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
   }
-  const data = await res.json();
-  const rawRows = Array.isArray(data?.rows) ? data.rows : [];
-  const rows = rawRows.map(normalizeIYCompany);
-  const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : rows.length;
-  return { rows, total };
+
+  if (!response.ok) {
+    const errorPayload = typeof parsed === 'object' && parsed !== null ? parsed : {};
+    throw { status: response.status, ...errorPayload };
+  }
+
+  const data = typeof parsed === 'object' && parsed !== null ? parsed : {};
+  return { ok: true, data };
+}
+
+export async function iySearchShippers(
+  body: { q: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; data: any }> {
+  const response = await fetch(`${API_BASE}/public/iy/searchShippers`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  const text = await response.text().catch(() => '');
+  let parsed: unknown = {};
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
+
+  if (!response.ok) {
+    const errorPayload = typeof parsed === 'object' && parsed !== null ? parsed : {};
+    throw { status: response.status, ...errorPayload };
+  }
+
+  const data = typeof parsed === 'object' && parsed !== null ? parsed : {};
+  return { ok: true, data };
 }
 
 export async function iyFetchCompanyBols(params: { companyKey: string; limit: number; offset: number; }): Promise<ShipmentLite[]> {
-  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/iy/companyBols`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok) {
-    throw new Error(`iyFetchCompanyBols failed: ${res.status}`);
-  }
-  const data = await res.json();
-  const rawRows = Array.isArray(data?.rows) ? data.rows : [];
-  return rawRows.map(normalizeIYShipment);
+  const payload = await iyCompanyBols(
+    { company_id: params.companyKey, limit: params.limit, offset: params.offset },
+  );
+  const rows = Array.isArray(payload?.data?.rows)
+    ? payload.data.rows
+    : Array.isArray(payload?.rows)
+      ? payload.rows
+      : [];
+  return rows.map(normalizeIYShipment);
 }
 
 export async function saveCompany(record: CommandCenterRecord): Promise<{ saved_id?: string }> {
@@ -362,10 +535,34 @@ export type SearchCompaniesBody = {
   offset?: number;
 };
 
-export async function getCompanyShipments(params: { company_id: string; limit?: number; offset?: number }) {
-  const { company_id } = params;
-  const limit = Math.max(1, Math.min(100, Number(params.limit ?? 20)));
-  const offset = Math.max(0, Number(params.offset ?? 0));
+export async function getCompanyShipments(
+  company: string | { company_id: string; limit?: number; offset?: number },
+  limitOrOpts?: number | { limit?: number; offset?: number },
+  maybeOffset?: number
+) {
+  let company_id = "";
+  let limit = 20;
+  let offset = 0;
+
+  if (typeof company === "string") {
+    company_id = company;
+    if (typeof limitOrOpts === "number") {
+      limit = limitOrOpts;
+      if (typeof maybeOffset === "number") {
+        offset = maybeOffset;
+      }
+    } else if (limitOrOpts && typeof limitOrOpts === "object") {
+      if (typeof limitOrOpts.limit === "number") limit = limitOrOpts.limit;
+      if (typeof limitOrOpts.offset === "number") offset = limitOrOpts.offset;
+    }
+  } else {
+    company_id = company.company_id;
+    if (typeof company.limit === "number") limit = company.limit;
+    if (typeof company.offset === "number") offset = company.offset;
+  }
+
+  limit = Math.max(1, Math.min(100, Number(limit ?? 20)));
+  offset = Math.max(0, Number(offset ?? 0));
   const qs = new URLSearchParams({ company_id, limit: String(limit), offset: String(offset) });
   const res = await fetch(`${GW}/public/getCompanyShipments?${qs.toString()}`, { method: 'GET' });
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getCompanyShipments failed: ${res.status} ${t}`); }

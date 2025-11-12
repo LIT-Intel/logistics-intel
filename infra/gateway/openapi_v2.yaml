@@ -182,6 +182,26 @@ paths:
         jwt_audience: 'https://search-unified-187580267283.us-central1.run.app'
         path_translation: APPEND_PATH_TO_ADDRESS
         protocol: h2
+  /public/iy/searchShippers:
+    post:
+      operationId: iySearchShippers
+      consumes:
+        - application/json
+      x-google-backend:
+        address: __SERVICE_URL__
+        jwt_audience: __SERVICE_URL__
+      responses:
+        "200":
+          description: OK
+  /public/iy/companyBols:
+    get:
+      operationId: iyCompanyBols
+      x-google-backend:
+        address: __SERVICE_URL__
+        jwt_audience: __SERVICE_URL__
+      responses:
+        "200":
+          description: OK
   /public/status:
     get:
       parameters: []

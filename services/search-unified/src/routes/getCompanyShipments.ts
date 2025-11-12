@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { bq } from "../bq.js";
 
@@ -11,7 +12,7 @@ const Query = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-r.get("/public/getCompanyShipments", async (req, res, next) => {
+r.get("/public/getCompanyShipments", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const q = Query.parse({
       company_id: req.query.company_id,
@@ -47,8 +48,24 @@ r.get("/public/getCompanyShipments", async (req, res, next) => {
     `;
 
     const [rows] = await bq.query({ query: sql, location: "US" });
-    res.json({ rows });
-  } catch (err) { next(err); }
+    const shipments = (rows as any[]).map((row: any) => ({
+      date: row.shipped_on ?? null,
+      origin_country: row.origin ?? null,
+      dest_country: row.destination ?? null,
+      mode: row.mode ?? null,
+      hs_code: row.hs_code ?? null,
+      carrier: row.carrier ?? null,
+      value_usd: row.value_usd ? Number(row.value_usd) || 0 : 0,
+      gross_weight_kg: row.weight_kg ? Number(row.weight_kg) || 0 : 0,
+    }));
+
+    res.json({
+      shipments,
+      total: Number(rows.length),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default r;

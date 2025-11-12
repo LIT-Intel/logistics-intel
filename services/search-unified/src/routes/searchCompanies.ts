@@ -2,13 +2,15 @@
  * ============================================================================
  * LOCAL SEARCH CONTRACT
  * ----------------------------------------------------------------------------
- * This SQL powers the legacy Companies search toggle. Keep the response shape
- * stable (rows + meta.total) so the frontend can paginate safely. Any schema
- * changes in BigQuery must be reflected here without breaking existing fields.
+ * This SQL powers the unified Companies search endpoint. Keep the response
+ * shape stable ({ results, total }) so the frontend can paginate safely. Any
+ * schema changes in BigQuery must be reflected here without breaking existing
+ * fields.
  * ============================================================================
  */
 
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { bq } from "../bq.js";
 
@@ -28,7 +30,7 @@ const Body = z.object({
   offset: z.number().int().min(0).optional(),
 });
 
-r.post("/public/searchCompanies", async (req, res, next) => {
+r.post("/public/searchCompanies", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = Body.parse(req.body ?? {});
 
@@ -152,14 +154,8 @@ LIMIT @limit OFFSET @offset;
     });
 
     res.json({
-      ok: true,
-      meta: {
-        total,
-        page: Math.floor(offset / Math.max(limit, 1)) + 1,
-        page_size: limit,
-      },
+      results: sanitized,
       total,
-      rows: sanitized,
     });
   } catch (err) {
     next(err);

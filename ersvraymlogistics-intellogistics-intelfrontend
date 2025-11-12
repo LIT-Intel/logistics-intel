@@ -1,0 +1,294 @@
+[1mdiff --git a/frontend/src/components/search/SearchFilters.tsx b/frontend/src/components/search/SearchFilters.tsx[m
+[1mindex 4ec1578..d0e4ce6 100644[m
+[1m--- a/frontend/src/components/search/SearchFilters.tsx[m
+[1m+++ b/frontend/src/components/search/SearchFilters.tsx[m
+[36m@@ -1,142 +1,172 @@[m
+ 'use client';[m
+[31m-import * as React from 'react';[m
+[31m-import { Ship, Plane } from 'lucide-react';[m
+[32m+[m
+[32m+[m[32mimport * as React from "react";[m
+[32m+[m[32mimport type { FilterOptions } from "@/lib/api";[m
+[32m+[m
+[32m+[m[32mtype Selected = {[m
+[32m+[m[32m  origins: string[];[m
+[32m+[m[32m  destinations: string[];[m
+[32m+[m[32m  modes: string[];[m
+[32m+[m[32m  hs: string[];[m
+[32m+[m[32m};[m
+ [m
+ type Props = {[m
+[31m-  value: {[m
+[31m-    origin: string | null;[m
+[31m-    destination: string | null;[m
+[31m-    hs: string | null;            // comma-separated[m
+[31m-    mode: 'ocean' | 'air' | null;[m
+[31m-  };[m
+[31m-  onChange: (next: Props['value']) => void;[m
+[32m+[m[32m  filters: FilterOptions | null;[m
+[32m+[m[32m  selected: Selected;[m
+[32m+[m[32m  onToggle: (type: keyof Selected, value: string) => void;[m
+[32m+[m[32m  onClearAll: () => void;[m
+[32m+[m[32m  loading?: boolean;[m
+[32m+[m[32m  errorMessage?: string | null;[m
+[32m+[m[32m  onDismissError?: () => void;[m
+[32m+[m[32m  className?: string;[m
+ };[m
+ [m
+[31m-const COUNTRIES = [[m
+[31m-  'Argentina','Australia','Bahamas','Bangladesh','Belgium','Brazil','Canada','China','Colombia',[m
+[31m-  'Denmark','Dominican Republic','France','Germany','Hong Kong','India','Indonesia','Ireland',[m
+[31m-  'Italy','Japan','Korea, Republic of','Malaysia','Mexico','Netherlands','New Zealand','Pakistan',[m
+[31m-  'Philippines','Poland','Portugal','Singapore','Spain','Sweden','Taiwan','Thailand','Turkey',[m
+[31m-  'United Arab Emirates','United Kingdom','United States','Vietnam'[m
+[32m+[m[32mtype FacetKey = keyof Selected;[m
+[32m+[m
+[32m+[m[32mconst FACETS: Array<{ key: FacetKey; label: string }> = [[m
+[32m+[m[32m  { key: "origins", label: "Origins" },[m
+[32m+[m[32m  { key: "destinations", label: "Destinations" },[m
+[32m+[m[32m  { key: "modes", label: "Modes" },[m
+[32m+[m[32m  { key: "hs", label: "HS Codes" },[m
+ ];[m
+ [m
+[31m-export default function SearchFilters({ value, onChange }: Props) {[m
+[31m-  const [origin, setOrigin] = React.useState(value.origin ?? '');[m
+[31m-  const [destination, setDestination] = React.useState(value.destination ?? '');[m
+[31m-  const [hs, setHs] = React.useState(value.hs ?? '');[m
+[31m-  const [mode, setMode] = React.useState<'ocean'|'air'|null>(value.mode ?? null);[m
+[31m-[m
+[31m-  // Simple typeahead suggestions[m
+[31m-  const [originSug, setOriginSug] = React.useState<string[]>([]);[m
+[31m-  const [destSug, setDestSug]   = React.useState<string[]>([]);[m
+[31m-  React.useEffect(() => {[m
+[31m-    const o = origin.trim().toLowerCase();[m
+[31m-    const d = destination.trim().toLowerCase();[m
+[31m-    setOriginSug(o ? COUNTRIES.filter(c => c.toLowerCase().includes(o)).slice(0,6) : []);[m
+[31m-    setDestSug  (d ? COUNTRIES.filter(c => c.toLowerCase().includes(d)).slice(0,6) : []);[m
+[31m-  }, [origin, destination]);[m
+[31m-[m
+[31m-  // Push state up (debounced) so page can auto-search as user types[m
+[31m-  React.useEffect(() => {[m
+[31m-    const id = setTimeout(() => {[m
+[31m-      onChange({[m
+[31m-        origin: origin.trim() ? origin.trim() : null,[m
+[31m-        destination: destination.trim() ? destination.trim() : null,[m
+[31m-        hs: hs.trim() ? hs.trim() : null,[m
+[31m-        mode[m
+[31m-      });[m
+[31m-    }, 350);[m
+[31m-    return () => clearTimeout(id);[m
+[31m-  }, [origin, destination, hs, mode]); // eslint-disable-line[m
+[32m+[m[32mconst CHIP_BASE =[m
+[32m+[m[32m  "mr-2 mb-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200";[m
+[32m+[m[32mconst CHIP_ACTIVE = "bg-indigo-600 text-white hover:bg-indigo-500 focus:ring-offset-1";[m
+[32m+[m[32mconst CHIP_INACTIVE =[m
+[32m+[m[32m  "bg-slate-100 text-slate-700 hover:bg-slate-200 focus-visible:ring-indigo-500 focus:ring-offset-1";[m
+[32m+[m[32mconst CHIP_OVERFLOW =[m
+[32m+[m[32m  "bg-slate-200 text-slate-600 hover:bg-slate-300 focus-visible:ring-indigo-500 focus:ring-offset-1";[m
+ [m
+[31m-  return ([m
+[31m-    <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm p-4">[m
+[31m-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">[m
+[31m-        {/* Origin */}[m
+[31m-        <div>[m
+[31m-          <label className="text-xs text-neutral-600">Origin</label>[m
+[31m-          <div className="relative mt-1">[m
+[31m-            <input[m
+[31m-              value={origin}[m
+[31m-              onChange={e => setOrigin(e.target.value)}[m
+[31m-              placeholder="Type a country…"[m
+[31m-              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"[m
+[31m-            />[m
+[31m-            {originSug.length > 0 && ([m
+[31m-              <div className="absolute z-10 mt-1 w-full rounded-xl border border-neutral-200 bg-white shadow">[m
+[31m-                {originSug.map((s) => ([m
+[31m-                  <button[m
+[31m-                    key={s}[m
+[31m-                    onClick={() => setOrigin(s)}[m
+[31m-                    className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-50"[m
+[31m-                  >{s}</button>[m
+[31m-                ))}[m
+[31m-              </div>[m
+[31m-            )}[m
+[31m-          </div>[m
+[31m-        </div>[m
+[32m+[m[32mconst SKELETON_CHIPS = Array.from({ length: 6 });[m
+[32m+[m
+[32m+[m[32mexport default function SearchFilters({[m
+[32m+[m[32m  filters,[m
+[32m+[m[32m  selected,[m
+[32m+[m[32m  onToggle,[m
+[32m+[m[32m  onClearAll,[m
+[32m+[m[32m  loading = false,[m
+[32m+[m[32m  errorMessage,[m
+[32m+[m[32m  onDismissError,[m
+[32m+[m[32m  className,[m
+[32m+[m[32m}: Props) {[m
+[32m+[m[32m  const [expanded, setExpanded] = React.useState<Record<FacetKey, boolean>>({[m
+[32m+[m[32m    origins: false,[m
+[32m+[m[32m    destinations: false,[m
+[32m+[m[32m    modes: false,[m
+[32m+[m[32m    hs: false,[m
+[32m+[m[32m  });[m
+ [m
+[31m-        {/* Destination */}[m
+[31m-        <div>[m
+[31m-          <label className="text-xs text-neutral-600">Destination</label>[m
+[31m-          <div className="relative mt-1">[m
+[31m-            <input[m
+[31m-              value={destination}[m
+[31m-              onChange={e => setDestination(e.target.value)}[m
+[31m-              placeholder="Type a country…"[m
+[31m-              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"[m
+[32m+[m[32m  const resolvedFilters: FilterOptions = React.useMemo([m
+[32m+[m[32m    () => ({[m
+[32m+[m[32m      origins: filters?.origins ?? [],[m
+[32m+[m[32m      destinations: filters?.destinations ?? [],[m
+[32m+[m[32m      modes: filters?.modes ?? [],[m
+[32m+[m[32m      hs: filters?.hs ?? [],[m
+[32m+[m[32m    }),[m
+[32m+[m[32m    [filters],[m
+[32m+[m[32m  );[m
+[32m+[m
+[32m+[m[32m  const hasSelections = React.useMemo([m
+[32m+[m[32m    () =>[m
+[32m+[m[32m      selected.origins.length > 0 ||[m
+[32m+[m[32m      selected.destinations.length > 0 ||[m
+[32m+[m[32m      selected.modes.length > 0 ||[m
+[32m+[m[32m      selected.hs.length > 0,[m
+[32m+[m[32m    [selected],[m
+[32m+[m[32m  );[m
+[32m+[m
+[32m+[m[32m  const toggleExpanded = React.useCallback((key: FacetKey) => {[m
+[32m+[m[32m    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));[m
+[32m+[m[32m  }, []);[m
+[32m+[m
+[32m+[m[32m  if (loading) {[m
+[32m+[m[32m    return ([m
+[32m+[m[32m      <div className={`flex flex-col gap-3 ${className ?? ""}`}>[m
+[32m+[m[32m        <div className="flex flex-wrap">[m
+[32m+[m[32m          {SKELETON_CHIPS.map((_, index) => ([m
+[32m+[m[32m            <span[m
+[32m+[m[32m              key={index}[m
+[32m+[m[32m              className="mr-2 mb-2 inline-flex h-6 w-16 animate-pulse rounded-full bg-slate-200"[m
+             />[m
+[31m-            {destSug.length > 0 && ([m
+[31m-              <div className="absolute z-10 mt-1 w-full rounded-xl border border-neutral-200 bg-white shadow">[m
+[31m-                {destSug.map((s) => ([m
+[31m-                  <button[m
+[31m-                    key={s}[m
+[31m-                    onClick={() => setDestination(s)}[m
+[31m-                    className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-50"[m
+[31m-                  >{s}</button>[m
+[31m-                ))}[m
+[31m-              </div>[m
+[31m-            )}[m
+[31m-          </div>[m
+[32m+[m[32m          ))}[m
+         </div>[m
+[32m+[m[32m      </div>[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }[m
+ [m
+[31m-        {/* HS Codes */}[m
+[31m-        <div>[m
+[31m-          <label className="text-xs text-neutral-600">HS Codes</label>[m
+[31m-          <input[m
+[31m-            value={hs}[m
+[31m-            onChange={e => setHs(e.target.value)}[m
+[31m-            placeholder="e.g., 9403, 8501"[m
+[31m-            className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm mt-1"[m
+[31m-          />[m
+[31m-          <div className="text-[11px] text-neutral-500 mt-1">Comma-separated; partial prefixes ok.</div>[m
+[31m-        </div>[m
+[32m+[m[32m  const renderFacet = (key: FacetKey, label: string) => {[m
+[32m+[m[32m    const options = resolvedFilters[key] ?? [];[m
+[32m+[m[32m    if (options.length === 0) {[m
+[32m+[m[32m      return null;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    const showAll = expanded[key];[m
+[32m+[m[32m    const visibleOptions = showAll ? options : options.slice(0, 8);[m
+[32m+[m[32m    const remaining = Math.max(0, options.length - visibleOptions.length);[m
+[32m+[m
+[32m+[m[32m    return ([m
+[32m+[m[32m      <div key={key} className="flex flex-wrap items-center">[m
+[32m+[m[32m        <span className="mr-3 mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">[m
+[32m+[m[32m          {label}[m
+[32m+[m[32m        </span>[m
+[32m+[m[32m        {visibleOptions.map((value) => {[m
+[32m+[m[32m          const normalizedValue = key === "modes" ? value.toLowerCase() : value;[m
+[32m+[m[32m          const displayLabel = key === "modes" ? value.toUpperCase() : value;[m
+[32m+[m[32m          const isActive = selected[key].includes(normalizedValue);[m
+ [m
+[31m-        {/* Mode icon toggle */}[m
+[31m-        <div>[m
+[31m-          <label className="text-xs text-neutral-600">Mode</label>[m
+[31m-          <div className="mt-1 flex items-center gap-2">[m
+[32m+[m[32m          return ([m
+             <button[m
+[32m+[m[32m              key={value}[m
+               type="button"[m
+[31m-              aria-label="Ocean"[m
+[31m-              onClick={() => setMode('ocean')}[m
+[31m-              className={`h-10 w-12 rounded-xl grid place-items-center border ${mode==='ocean' ? 'border-violet-400 bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700' : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50'}`}[m
+[31m-              title="Ocean"[m
+[32m+[m[32m              onClick={() => onToggle(key, normalizedValue)}[m
+[32m+[m[32m              className={`${CHIP_BASE} ${isActive ? CHIP_ACTIVE : CHIP_INACTIVE}`}[m
+[32m+[m[32m              aria-pressed={isActive}[m
+             >[m
+[31m-              <Ship size={18}/>[m
+[32m+[m[32m              <span>{displayLabel}</span>[m
+[32m+[m[32m              {isActive && <span className="ml-1 text-[11px] font-semibold">×</span>}[m
+             </button>[m
+[32m+[m[32m          );[m
+[32m+[m[32m        })}[m
+[32m+[m[32m        {remaining > 0 && ([m
+[32m+[m[32m          <button[m
+[32m+[m[32m            type="button"[m
+[32m+[m[32m            onClick={() => toggleExpanded(key)}[m
+[32m+[m[32m            className={`${CHIP_BASE} ${CHIP_OVERFLOW}`}[m
+[32m+[m[32m          >[m
+[32m+[m[32m            {showAll ? "Show less" : `+${remaining} more`}[m
+[32m+[m[32m          </button>[m
+[32m+[m[32m        )}[m
+[32m+[m[32m      </div>[m
+[32m+[m[32m    );[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  return ([m
+[32m+[m[32m    <div className={`flex flex-col gap-3 ${className ?? ""}`}>[m
+[32m+[m[32m      {errorMessage && ([m
+[32m+[m[32m        <div className="mr-2 mb-1 inline-flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">[m
+[32m+[m[32m          <span>{errorMessage}</span>[m
+[32m+[m[32m          {onDismissError && ([m
+             <button[m
+               type="button"[m
+[31m-              aria-label="Air"[m
+[31m-              onClick={() => setMode('air')}[m
+[31m-              className={`h-10 w-12 rounded-xl grid place-items-center border ${mode==='air' ? 'border-violet-400 bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700' : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50'}`}[m
+[31m-              title="Air"[m
+[32m+[m[32m              onClick={onDismissError}[m
+[32m+[m[32m              className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"[m
+             >[m
+[31m-              <Plane size={18}/>[m
+[32m+[m[32m              Dismiss[m
+             </button>[m
+[31m-          </div>[m
+[32m+[m[32m          )}[m
+         </div>[m
+[31m-      </div>[m
+[32m+[m[32m      )}[m
+[32m+[m[32m      {FACETS.map(({ key, label }) => renderFacet(key, label))}[m
+[32m+[m[32m      {hasSelections && ([m
+[32m+[m[32m        <button[m
+[32m+[m[32m          type="button"[m
+[32m+[m[32m          onClick={onClearAll}[m
+[32m+[m[32m          className="ml-auto inline-flex items-center text-xs font-semibold text-indigo-600 hover:text-indigo-500"[m
+[32m+[m[32m        >[m
+[32m+[m[32m          Clear all[m
+[32m+[m[32m        </button>[m
+[32m+[m[32m      )}[m
+     </div>[m
+   );[m
+ }[m
