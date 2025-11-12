@@ -117,7 +117,7 @@ export default function SearchPage() {
           const lastActivityValue = item?.kpis?.last_activity ?? item?.last_activity ?? null;
 
           return {
-            company_id: String(idCandidate ?? nameCandidate || keyword),
+            company_id: String(idCandidate ?? nameCandidate ?? keyword ?? ""),
             company_name: nameCandidate || "—",
             shipments_12m: shipmentsValue != null ? Number(shipmentsValue) : null,
             last_activity: lastActivityValue ?? null,
