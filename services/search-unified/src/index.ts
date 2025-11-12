@@ -1,4 +1,6 @@
+import iyRouter from "./routes/iy";
 import express from "express";
+import iyRouter from './routes/iy';
 import type { NextFunction, Request, Response } from "express";
 import campaigns from "./routes/campaigns.js";
 import getCompanyShipments from "./routes/getCompanyShipments.js";
@@ -8,6 +10,7 @@ import searchCompanies from "./routes/searchCompanies.js";
 import statusRoutes from "./routes/status.js";
 
 const app = express();
+app.use('/public/iy', iyRouter);
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
 

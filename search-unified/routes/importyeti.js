@@ -1,69 +1,72 @@
-// search-unified/routes/importyeti.js
 const express = require('express');
-const fetch = require('node-fetch');
+const axios = require('axios');
 
 const router = express.Router();
 
-const IY_API_KEY = process.env.IY_API_KEY || process.env.IYApiKey || '';
-const URL_SEARCH  = process.env.IY_DMA_SEARCH_URL      || 'https://data.importyeti.com/v1.0/search/shippers';
-const URL_BOLS    = process.env.IY_DMA_BOLS_URL        || 'https://data.importyeti.com/v1.0/company/bols';
-const URL_BOL_ONE = process.env.IY_DMA_BOL_LOOKUP_URL  || 'https://data.importyeti.com/v1.0/bol';
+// Absolute upstream URLs (fallbacks included)
+const SEARCH_URL = process.env.IY_DMA_SEARCH_URL      || 'https://data.importyeti.com/v1.0/search/shippers';
+const BOLS_URL   = process.env.IY_DMA_BOLS_URL        || 'https://data.importyeti.com/v1.0/company/bols';
+const BOL_URL    = process.env.IY_DMA_BOL_LOOKUP_URL  || 'https://data.importyeti.com/v1.0/bol';
 
-function required(v, name) {
-  if (!v) throw new Error(`missing required param: ${name}`);
+// API key from either env (both names supported)
+const API_KEY = process.env.IY_API_KEY || process.env.IYApiKey || '';
+
+// Send key both ways to be safe (some DMA deployments expect header, some query)
+function withAuth(url, query = {}) {
+  const params = { ...query };
+  if (API_KEY) params.api_key = API_KEY;
+  const headers = API_KEY ? { 'Authorization': `Bearer ${API_KEY}`, 'x-api-key': API_KEY } : {};
+  return { url, params, headers };
 }
 
-async function proxyGet(res, url) {
-  const r = await fetch(url, { headers: { 'X-API-KEY': IY_API_KEY } });
-  const ct = r.headers.get('content-type') || '';
-  const body = await r.text();
-  // Try to pass through JSON when possible
-  if (ct.includes('application/json')) {
-    res.status(r.status).type('application/json').send(body);
-  } else {
-    // fall back (some endpoints are text/csv occasionally)
-    res.status(r.status).type('application/json').send(body);
-  }
-}
-
-// GET /public/iy/searchShippers?q=NAME&page=1
 router.get('/searchShippers', async (req, res) => {
   try {
-    required(IY_API_KEY, 'IY_API_KEY');
-    const q = String(req.query.q || '').trim();
-    required(q, 'q');
-    const page = Number(req.query.page || 1);
-    const url = `${URL_SEARCH}?q=${encodeURIComponent(q)}&page=${page}`;
-    await proxyGet(res, url);
+    const { q, page = 1 } = req.query || {};
+    if (!q) return res.status(400).json({ error: 'missing q' });
+
+    const reqCfg = withAuth(SEARCH_URL, { q, page });
+    const r = await axios.get(reqCfg.url, { params: reqCfg.params, headers: reqCfg.headers, timeout: 15000 });
+    res.status(200).json(r.data);
   } catch (e) {
-    res.status(400).json({ ok: false, error: String(e.message || e) });
+    const status = e.response?.status || 500;
+    res.status(status).json({
+      error: e.response?.data || String(e.message || e),
+      upstream: SEARCH_URL
+    });
   }
 });
 
-// GET /public/iy/companyBols?company_id=ID&page=1
 router.get('/companyBols', async (req, res) => {
   try {
-    required(IY_API_KEY, 'IY_API_KEY');
-    const company_id = String(req.query.company_id || '').trim();
-    required(company_id, 'company_id');
-    const page = Number(req.query.page || 1);
-    const url = `${URL_BOLS}?company_id=${encodeURIComponent(company_id)}&page=${page}`;
-    await proxyGet(res, url);
+    const { company_id, page = 1 } = req.query || {};
+    if (!company_id) return res.status(400).json({ error: 'missing company_id' });
+
+    const reqCfg = withAuth(BOLS_URL, { company_id, page });
+    const r = await axios.get(reqCfg.url, { params: reqCfg.params, headers: reqCfg.headers, timeout: 15000 });
+    res.status(200).json(r.data);
   } catch (e) {
-    res.status(400).json({ ok: false, error: String(e.message || e) });
+    const status = e.response?.status || 500;
+    res.status(status).json({
+      error: e.response?.data || String(e.message || e),
+      upstream: BOLS_URL
+    });
   }
 });
 
-// GET /public/iy/bol?number=BOLNUMBER
 router.get('/bol', async (req, res) => {
   try {
-    required(IY_API_KEY, 'IY_API_KEY');
-    const number = String(req.query.number || '').trim();
-    required(number, 'number');
-    const url = `${URL_BOL_ONE}?number=${encodeURIComponent(number)}`;
-    await proxyGet(res, url);
+    const { number } = req.query || {};
+    if (!number) return res.status(400).json({ error: 'missing number' });
+
+    const reqCfg = withAuth(BOL_URL, { number });
+    const r = await axios.get(reqCfg.url, { params: reqCfg.params, headers: reqCfg.headers, timeout: 15000 });
+    res.status(200).json(r.data);
   } catch (e) {
-    res.status(400).json({ ok: false, error: String(e.message || e) });
+    const status = e.response?.status || 500;
+    res.status(status).json({
+      error: e.response?.data || String(e.message || e),
+      upstream: BOL_URL
+    });
   }
 });
 
