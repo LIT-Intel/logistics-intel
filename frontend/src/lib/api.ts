@@ -5,24 +5,10 @@ export type { SearchFilters, SearchCompaniesResponse, SearchCompanyRow } from '@
 // Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = '/api/lit';
 
-function resolveSearchGatewayBase(): string {
-  const viteEnv = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
-  const base =
-    viteEnv.NEXT_PUBLIC_API_BASE ??
-    viteEnv.VITE_API_BASE ??
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
-    '';
-  return base || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
-}
+const SEARCH_GATEWAY_BASE = API_BASE;
+const IY_API_BASE = API_BASE;
 
-const SEARCH_GATEWAY_BASE = resolveSearchGatewayBase();
-
-const IY_API_BASE = (() => {
-  if (!SEARCH_GATEWAY_BASE) return '/api/lit';
-  return SEARCH_GATEWAY_BASE.replace(/\/$/, '');
-})();
-
-export async function getCampaigns(base = getGatewayBase()) {
+export async function getCampaigns(base = API_BASE) {
   const root = (base || '').replace(/\/$/, '');
   try {
     const r = await fetch(`${root}/public/campaigns`, { method: 'GET', headers: { accept: 'application/json' } });
@@ -216,20 +202,6 @@ export async function postSearchCompanies(payload: any) {
   if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`postSearchCompanies failed: ${res.status} ${t}`); }
   return res.json(); // { items, total }
 }
-
-const GATEWAY_BASE_DEFAULT = 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev';
-
-const ENV_DIRECT_SEARCH_BASE = (() => {
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      const raw = process.env.NEXT_PUBLIC_SEARCH_UNIFIED_URL ?? '';
-      return raw ? String(raw).trim().replace(/\/$/, '') : '';
-    }
-  } catch {
-    /* ignore */
-  }
-  return '';
-})();
 
 export async function searchCompanies(body: { q?: string | null; origin?: string | null; dest?: string | null; hs?: string | null; limit?: number; offset?: number }, signal?: AbortSignal) {
   const keyword = body?.q ?? null;

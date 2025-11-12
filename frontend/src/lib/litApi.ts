@@ -1,13 +1,6 @@
-// Force all browser calls through gateway host exposed via environment config
-const BASE = (() => {
-  const env = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
-  const raw =
-    env.NEXT_PUBLIC_API_BASE ??
-    env.VITE_API_BASE ??
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
-    '';
-  return (raw || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').replace(/\/$/, '');
-})();
+import { getGatewayBase } from '@/lib/env';
+
+const BASE = getGatewayBase().replace(/\/$/, '') || '/api/lit';
 
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
