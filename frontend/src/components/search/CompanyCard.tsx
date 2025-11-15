@@ -1,61 +1,27 @@
 import { useMemo } from "react";
 import type { CompanyHit } from "@/lib/api";
 
-type Props = {
-  row: CompanyHit | Record<string, unknown>;
-  onOpen?: (row: CompanyHit) => void;
-  onSave?: (row: CompanyHit) => void | Promise<void>;
+type CompanyCardProps = {
+  data: CompanyHit;
+  onViewDetails?: (company: CompanyHit) => void;
+  onSave?: (company: CompanyHit) => void | Promise<void>;
   saving?: boolean;
 };
-
-function normalizeRow(row: CompanyHit | Record<string, unknown>): CompanyHit {
-  const coerceStringArray = (value: unknown): string[] =>
-    Array.isArray(value)
-      ? value
-          .map((item) => {
-            if (typeof item === "string") return item;
-            if (item && typeof item === "object") {
-              if ("route" in item && typeof (item as any).route === "string") return (item as any).route as string;
-              if ("value" in item && typeof (item as any).value === "string") return (item as any).value as string;
-              if ("carrier" in item && typeof (item as any).carrier === "string") return (item as any).carrier as string;
-            }
-            return null;
-          })
-          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-      : [];
-
-  const companyId = typeof (row as any)?.company_id === "string" ? (row as any).company_id : String((row as any)?.id ?? "");
-  const companyNameRaw =
-    (row as any)?.company_name ??
-    (row as any)?.name ??
-    (row as any)?.company ??
-    "—";
-  const shipmentsRaw =
-    (row as any)?.shipments_12m ??
-    (row as any)?.shipments ??
-    (row as any)?.kpis?.shipments_12m ??
-    0;
-  const lastActivityRaw =
-    (row as any)?.last_activity ??
-    (row as any)?.lastActivity ??
-    (row as any)?.kpis?.last_activity ??
-    "";
-
-  return {
-    company_id: companyId,
-    company_name: typeof companyNameRaw === "string" && companyNameRaw.trim() ? companyNameRaw : "—",
-    shipments_12m: Number.isFinite(Number(shipmentsRaw)) ? Number(shipmentsRaw) : 0,
-    last_activity: typeof lastActivityRaw === "string" ? lastActivityRaw : "",
-    top_routes: coerceStringArray((row as any)?.top_routes),
-    top_carriers: coerceStringArray((row as any)?.top_carriers),
-  };
-}
 
 function formatDate(value: string): string {
   if (!value) return "—";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }).format(parsed);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  }).format(parsed);
+}
+
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return Number(value).toLocaleString();
 }
 
 function formatList(values: string[]): string {
@@ -63,23 +29,18 @@ function formatList(values: string[]): string {
   return values.slice(0, 2).join(" · ");
 }
 
-export default function CompanyCard({ row, onOpen, onSave, saving = false }: Props) {
-  const company = useMemo(() => normalizeRow(row), [row]);
+function getInitials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "•";
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
 
-  const shipmentsDisplay = Number.isFinite(company.shipments_12m)
-    ? company.shipments_12m.toLocaleString()
-    : "—";
-
-  const topRoutes = useMemo(() => company.top_routes.filter(Boolean).slice(0, 2), [company.top_routes]);
-  const topCarriers = useMemo(() => company.top_carriers.filter(Boolean).slice(0, 2), [company.top_carriers]);
-
-  const initials = useMemo(() => {
-    const name = company.company_name.trim();
-    if (!name) return "•";
-    const parts = name.split(/\s+/);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }, [company.company_name]);
+export default function CompanyCard({ data, onViewDetails, onSave, saving = false }: CompanyCardProps) {
+  const topRoutes = useMemo(() => data.top_routes.filter(Boolean).slice(0, 2), [data.top_routes]);
+  const topCarriers = useMemo(() => data.top_carriers.filter(Boolean).slice(0, 2), [data.top_carriers]);
+  const initials = useMemo(() => getInitials(data.company_name), [data.company_name]);
 
   return (
     <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -90,22 +51,24 @@ export default function CompanyCard({ row, onOpen, onSave, saving = false }: Pro
           </div>
           <div className="space-y-1">
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Company</div>
-            <div className="text-lg font-semibold leading-tight text-slate-900">{company.company_name}</div>
-            <div className="text-xs text-slate-500">Last activity · {formatDate(company.last_activity)}</div>
+            <div className="text-lg font-semibold leading-tight text-slate-900" title={data.company_name}>
+              {data.company_name}
+            </div>
+            <div className="text-xs text-slate-500">Last activity · {formatDate(data.last_activity)}</div>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => onOpen?.(company)}
+            onClick={() => onViewDetails?.(data)}
             className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={!onOpen}
+            disabled={!onViewDetails}
           >
             View Details
           </button>
           <button
             type="button"
-            onClick={() => onSave?.(company)}
+            onClick={() => onSave?.(data)}
             className="rounded-full bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!onSave || saving}
           >
@@ -117,7 +80,7 @@ export default function CompanyCard({ row, onOpen, onSave, saving = false }: Pro
       <div className="mt-5 grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl bg-slate-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shipments (12m)</p>
-          <p className="mt-1 text-xl font-semibold text-slate-900">{shipmentsDisplay}</p>
+          <p className="mt-1 text-xl font-semibold text-slate-900">{formatNumber(data.shipments_12m)}</p>
         </div>
         <div className="rounded-xl bg-slate-50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top Routes</p>
@@ -138,8 +101,7 @@ export default function CompanyCard({ row, onOpen, onSave, saving = false }: Pro
             </p>
           </div>
           <div className="rounded-xl bg-white/80 p-3 text-xs text-slate-500">
-            Save this company to Command Center to keep prospect notes and revisit activity history once additional data is
-            available.
+            Save this company to Command Center to keep prospect notes and revisit activity history once additional data is available.
           </div>
         </div>
         <div className="pointer-events-none absolute inset-0 backdrop-blur-[2px]" />

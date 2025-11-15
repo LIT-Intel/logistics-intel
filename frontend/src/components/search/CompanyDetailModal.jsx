@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -34,11 +34,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
       setError('');
       try {
         // Load large set to power chart and top route
-        const big = await getCompanyShipments({ company_id: String(companyId), limit: 1000, offset: 0 });
+        const big = await getCompanyShipments(String(companyId), { limit: 1000, offset: 0 });
         const bigRows = Array.isArray(big?.rows) ? big.rows : [];
         if (!abort) setAllRows(bigRows);
         // Load first page for table
-        const first = await getCompanyShipments({ company_id: String(companyId), limit: 50, offset: 0 });
+        const first = await getCompanyShipments(String(companyId), { limit: 50, offset: 0 });
         if (!abort) setTableRows(Array.isArray(first?.rows) ? first.rows : []);
         // Load KPIs (TEU + Growth)
         try {
@@ -48,7 +48,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
             const growthVal = k.growth_rate ?? null;
             setKpis({ teus12m: teuVal != null ? Number(teuVal) : null, growthRate: growthVal != null ? Number(growthVal) : null });
           }
-        } catch {}
+        } catch (err) {
+          if (!abort) {
+            console.warn("getCompanyKpis failed", err);
+          }
+        }
       } catch (e) {
         if (!abort) {
           setAllRows([]);

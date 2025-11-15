@@ -13,11 +13,7 @@ export default function CommandCenterShipments({ companyId }: { companyId: strin
       try {
         const res = await iyCompanyBols({ company_id: companyId, limit: 25, offset: 0 });
         if (!alive) return;
-        const rows = Array.isArray(res?.data?.rows)
-          ? res.data.rows
-          : Array.isArray(res?.rows)
-            ? res.rows
-            : [];
+        const rows = Array.isArray(res?.rows) ? res.rows : [];
         setState({ rows });
       } catch (e: any) {
         if (!alive) return;

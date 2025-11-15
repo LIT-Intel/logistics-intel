@@ -104,7 +104,13 @@ export default function Dashboard() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {seedRows.slice(0,6).map((row, i) => (
-                        <CompanyCard key={i} row={row} onOpen={(r)=> window.location.href = `/search?q=${encodeURIComponent(r.company_name)}`} onSave={() => {}} />
+                        <CompanyCard
+                          key={row?.company_id ?? row?.id ?? i}
+                          data={row}
+                          onViewDetails={(company) => {
+                            window.location.href = `/search?q=${encodeURIComponent(company.company_name)}`;
+                          }}
+                        />
                       ))}
                     </div>
                     <div className="mt-3 text-xs text-gray-500">For a complete list and filters, use the Search page.</div>
