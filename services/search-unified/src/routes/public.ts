@@ -7,6 +7,22 @@ import { searchCompanies } from "../services/search.js";
 const router = Router();
 const ROUTE = "/public/getFilterOptions";
 
+const toStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === "string" ? entry.trim() : entry == null ? "" : String(entry)))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  return [];
+};
+
 router.get(ROUTE, async (_req: Request, res: Response) => {
   const started = Date.now();
   try {
@@ -41,8 +57,55 @@ const SEARCH_ROUTE = "/public/searchCompanies";
 
 router.post(SEARCH_ROUTE, async (req: Request, res: Response) => {
   const started = Date.now();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const qRaw =
+    typeof body.q === "string"
+      ? body.q
+      : typeof body.keyword === "string"
+        ? body.keyword
+        : "";
+  const limitCandidate = Number(body.limit);
+  const offsetCandidate = Number(body.offset);
+  const limit = Number.isFinite(limitCandidate) ? limitCandidate : 25;
+  const offset = Number.isFinite(offsetCandidate) ? offsetCandidate : 0;
+
+  const origins = toStringArray(body.origin);
+  const dests = toStringArray(body.dest);
+  const modes = toStringArray(body.mode);
+  const hs = toStringArray(body.hs);
+  const carriers = toStringArray(body.carrier);
+
+  console.log("[searchCompanies] req", {
+    q: qRaw.trim(),
+    originsCount: origins.length,
+    destsCount: dests.length,
+    modesCount: modes.length,
+    hsCount: hs.length,
+    carriersCount: carriers.length,
+    limit,
+    offset,
+  });
+
   try {
-    const data = await searchCompanies((req.body ?? {}) as Record<string, unknown>);
+    const payload = {
+      ...body,
+      q: qRaw,
+      keyword: qRaw,
+      origin: origins,
+      origins,
+      dest: dests,
+      destinations: dests,
+      mode: modes,
+      modes,
+      hs: hs,
+      hsCodes: hs,
+      carrier: carriers,
+      carriers,
+      limit,
+      offset,
+    };
+
+    const data = await searchCompanies(payload);
     const duration = Date.now() - started;
     console.log(
       JSON.stringify({
@@ -51,6 +114,18 @@ router.post(SEARCH_ROUTE, async (req: Request, res: Response) => {
         duration_ms: duration,
       }),
     );
+    const rows = Array.isArray((data as any)?.rows)
+      ? (data as any).rows
+      : Array.isArray((data as any)?.results)
+        ? (data as any).results
+        : [];
+    const total = typeof (data as any)?.total === "number" ? (data as any).total : rows.length;
+
+    console.log("[searchCompanies] response", {
+      total,
+      rowsLength: rows.length,
+    });
+
     res.status(200).json(data);
   } catch (err: unknown) {
     const duration = Date.now() - started;

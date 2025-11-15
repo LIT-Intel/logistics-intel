@@ -1,15 +1,62 @@
 import express from "express";
-import type { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, Response, Express } from "express";
 import campaigns from "./routes/campaigns.js";
 import getCompanyShipments from "./routes/getCompanyShipments.js";
-import importYetiRoutes from "./routes/iy.js";
+import { iyRouter } from "./routes/iy.js";
 import publicRoutes from "./routes/public.js";
 import searchCompanies from "./routes/searchCompanies.js";
+import rfpRoutes from "./routes/rfp.js";
 import statusRoutes from "./routes/status.js";
+
+function logRoutes(app: Express) {
+  const stack = (app as any)?._router?.stack;
+  if (!Array.isArray(stack)) {
+    console.log("[routes] no router stack found");
+    return;
+  }
+
+  const formatPath = (base: string, path: string | string[] | undefined): string => {
+    const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
+    if (Array.isArray(path)) {
+      return path.map((segment) => `${normalizedBase}${segment}`.replace(/\/+$/, "")).join(",");
+    }
+    if (typeof path === "string") {
+      const combined = `${normalizedBase}${path.startsWith("/") ? "" : "/"}${path}`;
+      return combined.replace(/\/+$/, "") || "/";
+    }
+    return normalizedBase || "/";
+  };
+
+  const regexToPath = (regex: { source: string } | undefined): string => {
+    if (!regex?.source) return "";
+    return regex.source
+      .replace(/\\\//g, "/")
+      .replace(/\^\/?/, "/")
+      .replace(/\/?\(\?=\\\/=\|\$\)/, "")
+      .replace(/\$|\^/g, "")
+      .replace(/\(\?:\(\?=\/\|\$\)\|\$\)/g, "")
+      .replace(/\/+$/, "");
+  };
+
+  const printLayer = (basePath: string, layer: any): void => {
+    if (layer.route?.path) {
+      const methods = Object.keys(layer.route.methods || {})
+        .filter((method) => layer.route.methods[method])
+        .map((method) => method.toUpperCase())
+        .join(",");
+      const fullPath = formatPath(basePath, layer.route.path);
+      console.log("[routes]", methods || "USE", fullPath);
+    } else if (layer.name === "router" && Array.isArray(layer.handle?.stack)) {
+      const nextBase = `${basePath}${regexToPath(layer.regexp)}`.replace(/\/+$/, "");
+      layer.handle.stack.forEach((nested: any) => printLayer(nextBase || "/", nested));
+    }
+  };
+
+  stack.forEach((layer: any) => printLayer("", layer));
+}
 
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "2mb" }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const started = Date.now();
@@ -43,12 +90,21 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+app.use(express.json());
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  console.log("[req]", req.method, req.originalUrl);
+  next();
+});
+app.use("/public/iy", iyRouter);
+
 app.use(statusRoutes);
 app.use(publicRoutes);
 app.use(searchCompanies);
 app.use(getCompanyShipments);
-app.use(importYetiRoutes);
+app.use(rfpRoutes);
 app.use(campaigns);
+
+logRoutes(app);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   const error = err as {

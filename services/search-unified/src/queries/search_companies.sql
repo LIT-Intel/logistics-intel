@@ -1,68 +1,118 @@
--- Parameterized company search with optional filters + paging.
--- Params:
---   @q STRING, @origins ARRAY<STRING>, @dests ARRAY<STRING>,
---   @modes ARRAY<STRING>, @hs ARRAY<STRING>, @limit INT64, @offset INT64
+DECLARE q STRING DEFAULT IFNULL(TRIM(@q), '');
+DECLARE lim INT64 DEFAULT IFNULL(@limit, 25);
+DECLARE off INT64 DEFAULT IFNULL(@offset, 0);
+DECLARE origins ARRAY<STRING> DEFAULT IFNULL(@origins, []);
+DECLARE destinations ARRAY<STRING> DEFAULT IFNULL(@destinations, []);
+DECLARE modes ARRAY<STRING> DEFAULT IFNULL(@modes, []);
+DECLARE hsCodes ARRAY<STRING> DEFAULT IFNULL(@hsCodes, []);
+DECLARE carriers ARRAY<STRING> DEFAULT IFNULL(@carriers, []);
+
 WITH base AS (
   SELECT
-    company_id,
-    company_name,
-    origin_country,
-    dest_country,
-    mode,
-    hs_code,
-    carrier,
-    SAFE_CAST(date AS DATE) AS date
-  FROM `lit.shipments_daily_part`
-  WHERE TRUE
-    AND (@q IS NULL OR @q = "" OR REGEXP_CONTAINS(LOWER(company_name), LOWER(@q)))
-    AND (ARRAY_LENGTH(@origins) IS NULL OR ARRAY_LENGTH(@origins)=0 OR origin_country IN UNNEST(@origins))
-    AND (ARRAY_LENGTH(@dests)   IS NULL OR ARRAY_LENGTH(@dests)=0   OR dest_country IN UNNEST(@dests))
-    AND (ARRAY_LENGTH(@modes)   IS NULL OR ARRAY_LENGTH(@modes)=0   OR mode IN UNNEST(@modes))
-    AND (ARRAY_LENGTH(@hs)      IS NULL OR ARRAY_LENGTH(@hs)=0      OR hs_code IN UNNEST(@hs))
+    COALESCE(
+      NULLIF(TRIM(company_id), ''),
+      TO_HEX(SHA256(LOWER(REGEXP_REPLACE(COALESCE(company_name, party_name, consignee_name, shipper_name), r'\s+', ' '))))
+    ) AS company_id,
+    COALESCE(company_name, party_name, consignee_name, shipper_name) AS company_name,
+    DATE(date) AS shipment_date,
+    NULLIF(TRIM(carrier), '') AS carrier,
+    NULLIF(TRIM(mode), '') AS mode,
+    NULLIF(TRIM(origin_country), '') AS origin_country,
+    NULLIF(TRIM(dest_country), '') AS dest_country,
+    NULLIF(TRIM(hs_code), '') AS hs_code,
+    LOWER(COALESCE(company_name, party_name, consignee_name, shipper_name)) AS name_lower
+  FROM `logistics-intel.lit.shipments_daily_part`
+  WHERE DATE(date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
+    AND COALESCE(company_name, party_name, consignee_name, shipper_name) IS NOT NULL
+    AND (
+      ARRAY_LENGTH(IFNULL(origins, [])) = 0
+      OR origin_country IN UNNEST(IFNULL(origins, []))
+    )
+    AND (
+      ARRAY_LENGTH(IFNULL(destinations, [])) = 0
+      OR dest_country IN UNNEST(IFNULL(destinations, []))
+    )
+    AND (
+      ARRAY_LENGTH(IFNULL(modes, [])) = 0
+      OR UPPER(mode) IN UNNEST(IFNULL(modes, []))
+    )
+    AND (
+      ARRAY_LENGTH(IFNULL(hsCodes, [])) = 0
+      OR hs_code IN UNNEST(IFNULL(hsCodes, []))
+    )
+    AND (
+      ARRAY_LENGTH(IFNULL(carriers, [])) = 0
+      OR carrier IN UNNEST(IFNULL(carriers, []))
+    )
+),
+filtered AS (
+  SELECT *
+  FROM base
+  WHERE q = '' OR name_lower LIKE CONCAT('%', LOWER(q), '%')
 ),
 agg AS (
   SELECT
     company_id,
     ANY_VALUE(company_name) AS company_name,
-    COUNTIF(date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)) AS shipments_12m,
-    MAX(date) AS last_activity,
-    ARRAY(
-      SELECT AS STRUCT CONCAT(origin_country, "→", dest_country) AS route, COUNT(*) AS cnt
-      FROM base b2
-      WHERE b2.company_id = b.company_id
-      GROUP BY route
-      ORDER BY cnt DESC
-      LIMIT 3
-    ) AS top_routes_struct,
-    ARRAY(
-      SELECT AS STRUCT carrier, COUNT(*) AS cnt
-      FROM base b3
-      WHERE b3.company_id = b.company_id AND carrier IS NOT NULL
-      GROUP BY carrier
-      ORDER BY cnt DESC
-      LIMIT 3
-    ) AS top_carriers_struct
-  FROM base b
+    COUNT(*) AS shipments_12m,
+    MAX(shipment_date) AS last_activity
+  FROM filtered
   GROUP BY company_id
 ),
-total AS (
-  SELECT COUNT(*) AS total FROM agg
+routes AS (
+  SELECT
+    company_id,
+    ARRAY_AGG(STRUCT(route, shipments) ORDER BY shipments DESC LIMIT 3) AS top_routes
+  FROM (
+    SELECT
+      company_id,
+      CONCAT(origin_country, ' -> ', dest_country) AS route,
+      COUNT(*) AS shipments
+    FROM filtered
+    WHERE origin_country IS NOT NULL
+      AND dest_country IS NOT NULL
+      AND CONCAT(origin_country, ' -> ', dest_country) IS NOT NULL
+    GROUP BY company_id, route
+  )
+  GROUP BY company_id
 ),
-paged AS (
-  SELECT * FROM agg
-  ORDER BY shipments_12m DESC, last_activity DESC, company_name
-  LIMIT @limit OFFSET @offset
+carrier_stats AS (
+  SELECT
+    company_id,
+    ARRAY_AGG(STRUCT(carrier, shipments) ORDER BY shipments DESC LIMIT 3) AS top_carriers
+  FROM (
+    SELECT
+      company_id,
+      carrier,
+      COUNT(*) AS shipments
+    FROM filtered
+    WHERE carrier IS NOT NULL
+    GROUP BY company_id, carrier
+  )
+  GROUP BY company_id
+),
+final AS (
+  SELECT
+    agg.company_id,
+    agg.company_name,
+    agg.shipments_12m,
+    CAST(agg.last_activity AS STRING) AS last_activity,
+    COALESCE(routes.top_routes, []) AS top_routes,
+    COALESCE(carrier_stats.top_carriers, []) AS top_carriers
+  FROM agg
+  LEFT JOIN routes USING (company_id)
+  LEFT JOIN carrier_stats USING (company_id)
 )
 SELECT
-  (SELECT total FROM total) AS total,
-  ARRAY_AGG(STRUCT(
-    company_id,
-    company_name,
-    shipments_12m,
-    last_activity,
-    (SELECT ARRAY(SELECT route FROM UNNEST(top_routes_struct))) AS top_routes,
-    (SELECT ARRAY(SELECT carrier FROM UNNEST(top_carriers_struct))) AS top_carriers
-  )) AS results
-FROM paged;
+  company_id,
+  company_name,
+  shipments_12m,
+  last_activity,
+  top_routes,
+  top_carriers,
+  COUNT(*) OVER() AS total_count
+FROM final
+ORDER BY shipments_12m DESC, company_name
+LIMIT lim OFFSET off;
 
 

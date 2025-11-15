@@ -23,10 +23,49 @@ export type CompanyHit = {
   top_carriers: string[];
 };
 
-export type SearchResponse = {
-  total: number;
-  results: CompanyHit[];
+// ImportYeti shipper search types
+export type IyShipperHit = {
+  key: string;
+  title: string;
+  address?: string;
+  countryCode?: string;
+  totalShipments?: number;
+  mostRecentShipment?: string;
+  topSuppliers?: string[];
 };
+
+export type IySearchMeta = {
+  q: string;
+  page: number;
+  pageSize: number;
+  total: number;
+  creditsRemaining?: number;
+  requestCost?: number;
+};
+
+export type IySearchResponse = {
+  ok: boolean;
+  meta: IySearchMeta;
+  rows: IyShipperHit[];
+  total: number;
+};
+
+export type SearchResponse<T> = {
+  ok: boolean;
+  total: number;
+  rows: T[];
+  results?: T[];
+};
+
+export type CompanySearchInput = Partial<{
+  q: string;
+  origin: string[];
+  dest: string[];
+  hs: string[];
+  mode: string[];
+  limit: number;
+  offset: number;
+}>;
 
 const BASE = "";
 
@@ -275,95 +314,51 @@ function normalizeCompanyHit(entry: any): CompanyHit {
   };
 }
 
-export type SearchCompaniesResult = SearchResponse & {
-  items: any[];
-  rows: any[];
-  meta?: unknown;
-  raw: unknown;
-  ok: boolean;
-  code?: number;
-  message?: string;
-};
-
 export async function searchCompanies(
-  input: Partial<{ q: string; origin: string[]; dest: string[]; hs: string[]; mode: string[]; limit: number; offset: number }>,
+  input: CompanySearchInput = {},
   signal?: AbortSignal,
-): Promise<SearchCompaniesResult> {
-  const limitValue = Number(input.limit);
-  const offsetValue = Number(input.offset);
+): Promise<SearchResponse<CompanyHit>> {
+  const limitCandidate = Number(input.limit);
+  const offsetCandidate = Number(input.offset);
+  const limit = Math.max(1, Math.min(100, Number.isFinite(limitCandidate) ? limitCandidate : 25));
+  const offset = Math.max(0, Number.isFinite(offsetCandidate) ? offsetCandidate : 0);
 
-  const body = {
-    q: typeof input.q === "string" ? input.q : "",
+  const payload = {
+    q: typeof input.q === "string" ? input.q.trim() : "",
     origin: Array.isArray(input.origin) ? input.origin : [],
     dest: Array.isArray(input.dest) ? input.dest : [],
     hs: Array.isArray(input.hs) ? input.hs : [],
     mode: Array.isArray(input.mode) ? input.mode : [],
-    limit: Math.max(1, Math.min(100, Number.isFinite(limitValue) ? limitValue : 25)),
-    offset: Math.max(0, Number.isFinite(offsetValue) ? offsetValue : 0),
+    limit,
+    offset,
   };
 
-  const res = await fetch(`${API_BASE}/public/searchCompanies`, {
+  const response = await fetch(`${API_BASE}/public/searchCompanies`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
     signal,
   });
 
-  const rawBody = await res.text().catch(() => "");
-  let parsed: unknown;
-  if (rawBody) {
-    try {
-      parsed = JSON.parse(rawBody);
-    } catch {
-      parsed = rawBody;
-    }
+  if (!response.ok) {
+    throw new Error(`search ${response.status}`);
   }
 
-  const json = (parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {}) ?? {};
-  const extractItems = (): any[] => {
-    if (Array.isArray(json.results)) return json.results as any[];
-    if (Array.isArray(json.rows)) return json.rows as any[];
-    if (Array.isArray(json.items)) return json.items as any[];
-    return [];
-  };
+  const data = await response.json().catch(() => ({}));
+  const rawRows = Array.isArray((data as any)?.rows)
+    ? (data as any).rows
+    : Array.isArray((data as any)?.results)
+      ? (data as any).results
+      : [];
 
-  if (!res.ok) {
-    const message =
-      typeof json.message === "string"
-        ? json.message
-        : typeof parsed === "string" && parsed.trim().length > 0
-          ? parsed
-          : `search ${res.status}`;
-    return {
-      ok: false,
-      code: res.status,
-      message,
-      total: 0,
-      results: [],
-      items: [],
-      rows: [],
-      meta: undefined,
-      raw: parsed ?? null,
-    };
-  }
-
-  const rawItems = extractItems();
-  const results = rawItems.map(normalizeCompanyHit);
-
-  const total = Number.isFinite(Number(json.total))
-    ? Number(json.total)
-    : Number.isFinite(Number((json.meta as any)?.total))
-      ? Number((json.meta as any).total)
-      : results.length;
+  const rows = rawRows.map(normalizeCompanyHit);
+  const total = typeof (data as any)?.total === "number" ? (data as any).total : rows.length;
 
   return {
-    ok: true,
+    ok: Boolean((data as any)?.ok ?? true),
+    rows,
+    results: rows,
     total,
-    results,
-    items: rawItems,
-    rows: rawItems,
-    meta: json.meta,
-    raw: parsed ?? null,
   };
 }
 
@@ -397,19 +392,17 @@ export type IySearchRow = {
 };
 
 export async function iySearch(q: string, limit = 10, offset = 0) {
-  const payload = await iySearchShippers({ q, limit, offset });
-  const rows = Array.isArray(payload?.data?.rows)
-    ? payload.data.rows
-    : Array.isArray(payload?.rows)
-      ? payload.rows
-      : [];
-  return { ok: payload?.ok ?? true, rows };
+  const pageSize = Math.max(1, Number.isFinite(limit) ? Number(limit) : 10);
+  const computedOffset = Math.max(0, Number.isFinite(offset) ? Number(offset) : 0);
+  const page = Math.floor(computedOffset / pageSize) + 1;
+  const payload = await searchShippers({ q, page, pageSize });
+  return { ok: payload.ok, rows: payload.rows, meta: payload.meta };
 }
 
 export async function iyCompanyBols(
   params: { company_id: string; limit?: number; offset?: number },
   signal?: AbortSignal,
-): Promise<{ ok: boolean; data: any }> {
+): Promise<{ ok: boolean; data: any; rows: any[] }> {
   const origin =
     typeof window !== 'undefined' && typeof window.location !== 'undefined'
       ? window.location.origin
@@ -442,49 +435,40 @@ export async function iyCompanyBols(
   }
 
   const data = typeof parsed === 'object' && parsed !== null ? parsed : {};
-  return { ok: true, data };
+  const rows = Array.isArray((data as any)?.rows)
+    ? (data as any).rows
+    : Array.isArray(parsed)
+      ? (parsed as any[])
+      : [];
+  return { ok: true, data, rows };
 }
 
-export async function iySearchShippers(
-  body: { q: string; limit?: number; offset?: number },
-  signal?: AbortSignal,
-): Promise<{ ok: boolean; data: any }> {
-  const response = await fetch(`${API_BASE}/public/iy/searchShippers`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+export async function searchShippers(params: {
+  q: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<IySearchResponse> {
+  const body = {
+    q: params.q ?? "",
+    page: Math.max(1, Number.isFinite(params.page) ? Number(params.page) : 1),
+    pageSize: Math.max(1, Number.isFinite(params.pageSize) ? Number(params.pageSize) : 25),
+  };
+
+  const r = await fetch(`${API_BASE}/public/iy/searchShippers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-    signal,
   });
 
-  const text = await response.text().catch(() => '');
-  let parsed: unknown = {};
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-
-  if (!response.ok) {
-    const errorPayload = typeof parsed === 'object' && parsed !== null ? parsed : {};
-    throw { status: response.status, ...errorPayload };
-  }
-
-  const data = typeof parsed === 'object' && parsed !== null ? parsed : {};
-  return { ok: true, data };
+  if (!r.ok) throw new Error(`iy search ${r.status}`);
+  return r.json();
 }
 
 export async function iyFetchCompanyBols(params: { companyKey: string; limit: number; offset: number; }): Promise<ShipmentLite[]> {
   const payload = await iyCompanyBols(
     { company_id: params.companyKey, limit: params.limit, offset: params.offset },
   );
-  const rows = Array.isArray(payload?.data?.rows)
-    ? payload.data.rows
-    : Array.isArray(payload?.rows)
-      ? payload.rows
-      : [];
-  return rows.map(normalizeIYShipment);
+  return Array.isArray(payload?.rows) ? payload.rows.map(normalizeIYShipment) : [];
 }
 
 export async function saveCompany(record: CommandCenterRecord): Promise<{ saved_id?: string }> {
@@ -526,47 +510,26 @@ export function buildSearchParams(raw: Record<string, any>) {
   return cleaned;
 }
 
-export type SearchCompaniesBody = {
-  q: string | null;
-  origin?: string[];
-  dest?: string[];
-  hs?: string[];
-  limit?: number;
-  offset?: number;
-};
-
 export async function getCompanyShipments(
-  company: string | { company_id: string; limit?: number; offset?: number },
-  limitOrOpts?: number | { limit?: number; offset?: number },
-  maybeOffset?: number
+  company_id: string,
+  opts?: { limit?: number; offset?: number },
 ) {
-  let company_id = "";
-  let limit = 20;
-  let offset = 0;
+  const limitCandidate = Number(opts?.limit);
+  const offsetCandidate = Number(opts?.offset);
+  const limit = Math.max(1, Math.min(100, Number.isFinite(limitCandidate) ? limitCandidate : 25));
+  const offset = Math.max(0, Number.isFinite(offsetCandidate) ? offsetCandidate : 0);
 
-  if (typeof company === "string") {
-    company_id = company;
-    if (typeof limitOrOpts === "number") {
-      limit = limitOrOpts;
-      if (typeof maybeOffset === "number") {
-        offset = maybeOffset;
-      }
-    } else if (limitOrOpts && typeof limitOrOpts === "object") {
-      if (typeof limitOrOpts.limit === "number") limit = limitOrOpts.limit;
-      if (typeof limitOrOpts.offset === "number") offset = limitOrOpts.offset;
-    }
-  } else {
-    company_id = company.company_id;
-    if (typeof company.limit === "number") limit = company.limit;
-    if (typeof company.offset === "number") offset = company.offset;
+  const params = new URLSearchParams({
+    company_id,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  const response = await fetch(`${API_BASE}/public/getCompanyShipments?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`shipments ${response.status}`);
   }
-
-  limit = Math.max(1, Math.min(100, Number(limit ?? 20)));
-  offset = Math.max(0, Number(offset ?? 0));
-  const qs = new URLSearchParams({ company_id, limit: String(limit), offset: String(offset) });
-  const res = await fetch(`${GW}/public/getCompanyShipments?${qs.toString()}`, { method: 'GET' });
-  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`getCompanyShipments failed: ${res.status} ${t}`); }
-  return res.json();
+  return response.json();
 }
 
 // New helpers per patch: getCompanyDetails, getCompanyShipments (unified signature)
@@ -714,25 +677,38 @@ export async function enrichCompany(payload: { company_id: string }) {
 
 export async function recallCompany(payload: { company_id: string; questions?: string[] }) {
   // Prefer POST; if 405, fallback to GET with query params
-  const res = await fetch(`${GW}/ai/recall`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  const res = await fetch(`${GW}/ai/recall`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
   if (res.status === 405) {
     const qs = new URLSearchParams({ company_id: payload.company_id });
-    const g = await fetch(`${GW}/ai/recall?${qs.toString()}`, { method: 'GET', headers: { 'accept': 'application/json' } });
-    if (!g.ok) { const t = await g.text().catch(()=> ''); throw new Error(`recallCompany failed: ${g.status} ${t}`); }
+    const g = await fetch(`${GW}/ai/recall?${qs.toString()}`, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+    });
+    if (!g.ok) {
+      const t = await g.text().catch(() => '');
+      throw new Error(`recallCompany failed: ${g.status} ${t}`);
+    }
     return g.json();
   }
-  if (!res.ok) { const t = await res.text().catch(()=> ''); throw new Error(`recallCompany failed: ${res.status} ${t}`); }
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`recallCompany failed: ${res.status} ${t}`);
+  }
   return res.json();
 }
 
 export async function enrichContacts(company_id: string) {
   const res = await fetch(`${GW}/crm/contacts.enrich`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
-    body: JSON.stringify({ company_id })
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ company_id }),
   });
   if (!res.ok) {
-    const t = await res.text().catch(()=> '');
+    const t = await res.text().catch(() => '');
     throw new Error(`contacts.enrich ${res.status} ${t}`);
   }
   return res.json();
@@ -742,28 +718,30 @@ export async function listContacts(company_id: string, dept?: string) {
   const u = new URL(`${GW}/crm/contacts.list`);
   u.searchParams.set('company_id', company_id);
   if (dept) u.searchParams.set('dept', dept);
-  const res = await fetch(u.toString(), { headers: { 'accept': 'application/json' } });
+  const res = await fetch(u.toString(), { headers: { accept: 'application/json' } });
   if (!res.ok) throw new Error(`contacts.list ${res.status}`);
   return res.json();
 }
 
 export async function getEmailThreads(company_id: string) {
   const url = `${GW}/crm/email.threads?company_id=${encodeURIComponent(company_id)}`;
-  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  const res = await fetch(url, { headers: { accept: 'application/json' } });
   if (!res.ok) throw new Error(`email.threads ${res.status}`);
   return await res.json();
 }
 
 export async function getCalendarEvents(company_id: string) {
   const url = `${GW}/crm/calendar.events?company_id=${encodeURIComponent(company_id)}`;
-  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  const res = await fetch(url, { headers: { accept: 'application/json' } });
   if (!res.ok) throw new Error(`calendar.events ${res.status}`);
   return res.json();
 }
 
 export async function createTask(p: { company_id: string; title: string; due_date?: string; notes?: string }) {
   const res = await fetch(`${GW}/crm/task.create`, {
-    method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify(p)
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(p),
   });
   if (!res.ok) throw new Error(`task.create ${res.status}`);
   return res.json();
@@ -771,19 +749,27 @@ export async function createTask(p: { company_id: string; title: string; due_dat
 
 export async function createAlert(p: { company_id: string; type: string; message: string }) {
   const res = await fetch(`${GW}/crm/alert.create`, {
-    method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify(p)
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(p),
   });
   if (!res.ok) throw new Error(`alert.create ${res.status}`);
   return await res.json();
 }
 
 export async function saveCampaign(body: Record<string, any>) {
-  const res = await fetch(`${GW}/crm/campaigns`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`saveCampaign failed: ${res.status} ${(await res.text().catch(()=> '')).slice(0,200)}`);
+  const res = await fetch(`${GW}/crm/campaigns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`saveCampaign failed: ${res.status} ${t.slice(0, 200)}`);
+  }
   return res.json();
 }
 
-// Consolidated API object for callers using api.*
 export const api = {
   searchCompanies,
   getFilterOptions,
@@ -799,10 +785,9 @@ export const api = {
   kpiFrom,
 };
 
-// New API helpers for Company Lanes and Shipments drill-down via direct service
 export async function fetchCompanyLanes(params: {
   company: string;
-  month?: string;      // YYYY-MM-01
+  month?: string;
   origin?: string;
   dest?: string;
   limit?: number;
@@ -813,9 +798,9 @@ export async function fetchCompanyLanes(params: {
     || '';
   const serviceBase = String(base || '').replace(/\/$/, '');
   const res = await fetch(`${serviceBase}/public/companyLanes`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(params),
   });
   if (!res.ok) throw new Error(`companyLanes ${res.status}`);
@@ -825,11 +810,11 @@ export async function fetchCompanyLanes(params: {
 export async function fetchCompanyShipments(params: {
   company: string;
   name_norm?: string;
-  mode?: "air"|"ocean";
+  mode?: 'air' | 'ocean';
   origin?: string;
   dest?: string;
-  startDate?: string; // YYYY-MM-DD
-  endDate?: string;   // YYYY-MM-DD
+  startDate?: string;
+  endDate?: string;
   limit?: number;
   offset?: number;
 }) {
@@ -838,18 +823,15 @@ export async function fetchCompanyShipments(params: {
     || '';
   const serviceBase = String(base || '').replace(/\/$/, '');
   const res = await fetch(`${serviceBase}/public/companyShipments`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(params),
   });
   if (!res.ok) throw new Error(`companyShipments ${res.status}`);
   return res.json();
 }
 
-// The exported searchCompanies above already points to the proxy-backed implementation
-
-// --- Lusha wrappers via Vercel proxy → Gateway → Cloud Run ---
 export async function getCompanyProfileLushia(q: { company_id?: string; domain?: string; company_name?: string }) {
   const params = new URLSearchParams();
   if (q.company_id) params.set('company_id', q.company_id);
@@ -870,7 +852,7 @@ export async function enrichCompanyLushia(body: { company_id?: string; domain?: 
 
 export async function listContactsLushia(
   who: { company_id?: string; domain?: string; company_name?: string },
-  opts?: { dept?: string; limit?: number; offset?: number }
+  opts?: { dept?: string; limit?: number; offset?: number },
 ) {
   const params = new URLSearchParams();
   if (who.company_id) params.set('company_id', who.company_id);

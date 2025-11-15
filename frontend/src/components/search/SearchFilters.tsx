@@ -3,174 +3,135 @@
 import * as React from "react";
 import type { FilterOptions } from "@/lib/api";
 
-type Selected = {
-  origins: string[];
-  destinations: string[];
-  modes: string[];
+type FacetKey = "origin" | "dest" | "mode" | "hs";
+
+type SearchFiltersProps = {
+  filterOptions: FilterOptions | null;
+  origin: string[];
+  dest: string[];
+  mode: string[];
   hs: string[];
-};
-
-type Props = {
-  filters: FilterOptions | null;
-  selected: Selected;
-  onToggle: (type: keyof Selected, value: string) => void;
-  onClearAll: () => void;
-  loading?: boolean;
-  errorMessage?: string | null;
-  onDismissError?: () => void;
+  onChange: (next: { origin: string[]; dest: string[]; mode: string[]; hs: string[] }) => void;
   className?: string;
-  visible?: boolean;
 };
 
-type FacetKey = keyof Selected;
+type MultiChipRowProps = {
+  label: string;
+  values: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  transform?: (value: string) => string;
+};
 
-const FACETS: Array<{ key: FacetKey; label: string }> = [
-  { key: "origins", label: "Origins" },
-  { key: "destinations", label: "Destinations" },
-  { key: "modes", label: "Modes" },
-  { key: "hs", label: "HS Codes" },
-];
-
-const CHIP_BASE =
-  "mr-2 mb-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200";
-const CHIP_ACTIVE = "bg-indigo-600 text-white hover:bg-indigo-500 focus:ring-offset-1";
-const CHIP_INACTIVE =
-  "bg-slate-100 text-slate-700 hover:bg-slate-200 focus-visible:ring-indigo-500 focus:ring-offset-1";
-const CHIP_OVERFLOW =
-  "bg-slate-200 text-slate-600 hover:bg-slate-300 focus-visible:ring-indigo-500 focus:ring-offset-1";
-
-const SKELETON_CHIPS = Array.from({ length: 6 });
-
-export default function SearchFilters({
-  filters,
-  selected,
-  onToggle,
-  onClearAll,
-  loading = false,
-  errorMessage,
-  onDismissError,
-  className,
-  visible = true,
-}: Props) {
-  if (!visible) {
-    return null;
-  }
-
-  const [expanded, setExpanded] = React.useState<Record<FacetKey, boolean>>({
-    origins: false,
-    destinations: false,
-    modes: false,
-    hs: false,
-  });
-
-  const resolvedFilters: FilterOptions = React.useMemo(
-    () => ({
-      origins: filters?.origins ?? [],
-      destinations: filters?.destinations ?? [],
-      modes: filters?.modes ?? [],
-      hs: filters?.hs ?? [],
-    }),
-    [filters],
-  );
-
-  const hasSelections = React.useMemo(
-    () =>
-      selected.origins.length > 0 ||
-      selected.destinations.length > 0 ||
-      selected.modes.length > 0 ||
-      selected.hs.length > 0,
-    [selected],
-  );
-
-  const toggleExpanded = React.useCallback((key: FacetKey) => {
-    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className={`flex flex-col gap-3 ${className ?? ""}`}>
-        <div className="flex flex-wrap">
-          {SKELETON_CHIPS.map((_, index) => (
-            <span
-              key={index}
-              className="mr-2 mb-2 inline-flex h-6 w-16 animate-pulse rounded-full bg-slate-200"
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const renderFacet = (key: FacetKey, label: string) => {
-    const options = resolvedFilters[key] ?? [];
-    if (options.length === 0) {
-      return null;
-    }
-
-    const showAll = expanded[key];
-    const visibleOptions = showAll ? options : options.slice(0, 8);
-    const remaining = Math.max(0, options.length - visibleOptions.length);
-
-    return (
-      <div key={key} className="flex flex-wrap items-center">
-        <span className="mr-3 mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          {label}
-        </span>
-        {visibleOptions.map((value) => {
-          const normalizedValue = key === "modes" ? value.toLowerCase() : value;
-          const displayLabel = key === "modes" ? value.toUpperCase() : value;
-          const isActive = selected[key].includes(normalizedValue);
-
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => onToggle(key, normalizedValue)}
-              className={`${CHIP_BASE} ${isActive ? CHIP_ACTIVE : CHIP_INACTIVE}`}
-              aria-pressed={isActive}
-            >
-              <span>{displayLabel}</span>
-              {isActive && <span className="ml-1 text-[11px] font-semibold">×</span>}
-            </button>
-          );
-        })}
-        {remaining > 0 && (
-          <button
-            type="button"
-            onClick={() => toggleExpanded(key)}
-            className={`${CHIP_BASE} ${CHIP_OVERFLOW}`}
-          >
-            {showAll ? "Show less" : `+${remaining} more`}
-          </button>
-        )}
-      </div>
-    );
-  };
+function MultiChipRow({ label, values, selected, onToggle, transform }: MultiChipRowProps) {
+  if (!values.length) return null;
+  const display = transform ?? ((value: string) => value);
 
   return (
-    <div className={`flex flex-col gap-3 ${className ?? ""}`}>
-      {errorMessage && (
-        <div className="mr-2 mb-1 inline-flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          <span>{errorMessage}</span>
-          {onDismissError && (
-            <button
-              type="button"
-              onClick={onDismissError}
-              className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
-            >
-              Dismiss
-            </button>
-          )}
-        </div>
-      )}
-      {FACETS.map(({ key, label }) => renderFacet(key, label))}
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      {values.map((value) => {
+        const normalized = value.trim();
+        const isActive = selected.includes(normalized);
+        return (
+          <button
+            key={normalized}
+            type="button"
+            onClick={() => onToggle(normalized)}
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
+              isActive ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+            aria-pressed={isActive}
+          >
+            {display(normalized)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function SearchFilters({
+  filterOptions,
+  origin,
+  dest,
+  mode,
+  hs,
+  onChange,
+  className,
+}: SearchFiltersProps) {
+  const opts = React.useMemo(
+    () => ({
+      origins: filterOptions?.origins ?? [],
+      destinations: filterOptions?.destinations ?? [],
+      modes: filterOptions?.modes ?? [],
+      hs: filterOptions?.hs ?? [],
+    }),
+    [filterOptions],
+  );
+
+  const selections = React.useMemo(
+    () => ({ origin, dest, mode, hs }),
+    [origin, dest, mode, hs],
+  );
+
+  const hasSelections = origin.length + dest.length + mode.length + hs.length > 0;
+
+  const handleToggle = React.useCallback(
+    (facet: FacetKey, value: string) => {
+      const current = new Set(selections[facet]);
+      if (current.has(value)) {
+        current.delete(value);
+      } else {
+        current.add(value);
+      }
+      const next = {
+        origin: facet === "origin" ? Array.from(current) : selections.origin,
+        dest: facet === "dest" ? Array.from(current) : selections.dest,
+        mode: facet === "mode" ? Array.from(current) : selections.mode,
+        hs: facet === "hs" ? Array.from(current) : selections.hs,
+      };
+      onChange(next);
+    },
+    [onChange, selections],
+  );
+
+  const rootClass = ["flex flex-col gap-3", className].filter(Boolean).join(" ");
+
+  return (
+    <div className={rootClass}>
+      <MultiChipRow
+        label="Origins"
+        values={opts.origins}
+        selected={origin}
+        onToggle={(value) => handleToggle("origin", value)}
+      />
+      <MultiChipRow
+        label="Destinations"
+        values={opts.destinations}
+        selected={dest}
+        onToggle={(value) => handleToggle("dest", value)}
+      />
+      <MultiChipRow
+        label="Modes"
+        values={opts.modes}
+        selected={mode}
+        onToggle={(value) => handleToggle("mode", value.toLowerCase())}
+        transform={(value) => value.toUpperCase()}
+      />
+      <MultiChipRow
+        label="HS Codes"
+        values={opts.hs}
+        selected={hs}
+        onToggle={(value) => handleToggle("hs", value)}
+      />
       {hasSelections && (
         <button
           type="button"
-          onClick={onClearAll}
-          className="ml-auto inline-flex items-center text-xs font-semibold text-indigo-600 hover:text-indigo-500"
+          onClick={() => onChange({ origin: [], dest: [], mode: [], hs: [] })}
+          className="self-start text-[11px] font-semibold text-indigo-600 underline-offset-2 hover:underline"
         >
-          Clear all
+          Clear filters
         </button>
       )}
     </div>

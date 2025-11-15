@@ -67,15 +67,16 @@ paths:
       responses: { "200": { description: "ok" } }
 
   /public/iy/searchShippers:
-    options:
-      operationId: cors_iySearchShippers
-      security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
-      responses: { "200": { description: "ok" } }
     post:
+      summary: ImportYeti shipper search
       operationId: iySearchShippers
-      security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      consumes:
+        - application/json
+      produces:
+        - application/json
       parameters:
         - in: body
           name: body
@@ -86,21 +87,48 @@ paths:
               q:        { type: string }
               page:     { type: integer }
               pageSize: { type: integer }
-      responses: { "200": { description: "ok" } }
+      responses:
+        '200':
+          description: OK
+    options:
+      summary: CORS preflight
+      operationId: corsIySearchShippers
+      security: []
+      responses:
+        '204':
+          description: No content
+          headers:
+            Access-Control-Allow-Origin:      { type: string, default: "*" }
+            Access-Control-Allow-Methods:     { type: string, default: "GET,POST,OPTIONS" }
+            Access-Control-Allow-Headers:     { type: string, default: "Content-Type,Authorization" }
+            Access-Control-Max-Age:          { type: string, default: "3600" }
 
   /public/iy/companyBols:
-    options:
-      operationId: cors_iyCompanyBols
-      security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
-      responses: { "200": { description: "ok" } }
     get:
+      summary: ImportYeti company BOLs
       operationId: iyCompanyBols
-      security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-187580267283.us-central1.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      produces:
+        - application/json
       parameters:
         - { name: company_id, in: query, type: string,  required: true }
         - { name: limit,      in: query, type: integer, required: false }
         - { name: offset,     in: query, type: integer, required: false }
-      responses: { "200": { description: "ok" } }
+      responses:
+        '200':
+          description: OK
+    options:
+      summary: CORS preflight
+      operationId: corsIyCompanyBols
+      security: []
+      responses:
+        '204':
+          description: No content
+          headers:
+            Access-Control-Allow-Origin:      { type: string, default: "*" }
+            Access-Control-Allow-Methods:     { type: string, default: "GET,OPTIONS" }
+            Access-Control-Allow-Headers:     { type: string, default: "Content-Type,Authorization" }
+            Access-Control-Max-Age:          { type: string, default: "3600" }
 

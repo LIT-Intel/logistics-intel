@@ -1,147 +1,76 @@
+// services/search-unified/src/routes/iy.ts
 import { Router } from "express";
+import type { Request, Response } from "express";
+import { iySearch, iyCompanyBols } from "../services/iy.js";
 
-const router = Router();
-const SEARCH_ROUTE = "/public/iy/searchShippers";
-const BOLS_ROUTE = "/public/iy/companyBols";
-const USER_AGENT = "lit-intel/iy-bridge";
+export const iyRouter = Router();
 
-router.post(SEARCH_ROUTE, async (req, res) => {
-  const started = Date.now();
-  const url = process.env.IY_DMA_SEARCH_URL;
-  if (!url) {
-    res.status(500).json({ code: 500, message: "IY_DMA_SEARCH_URL not configured" });
-    console.error(
-      JSON.stringify({
-        level: "error",
-        route: SEARCH_ROUTE,
-        duration_ms: Date.now() - started,
-        error_code: "config_missing",
-      }),
-    );
-    return;
-  }
-
-  const { q, limit = 10, offset = 0 } = req.body ?? {};
-  if (!q || typeof q !== "string") {
-    res.status(400).json({ code: 400, message: "q required" });
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        route: SEARCH_ROUTE,
-        duration_ms: Date.now() - started,
-        error_code: "q_required",
-      }),
-    );
-    return;
-  }
-
+// POST /public/iy/searchShippers
+iyRouter.post("/searchShippers", async (req: Request, res: Response) => {
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": process.env.IY_API_KEY ?? "",
-        "user-agent": USER_AGENT,
-      },
-      body: JSON.stringify({
-        q,
-        limit: Number.isFinite(Number(limit)) ? Number(limit) : 10,
-        offset: Number.isFinite(Number(offset)) ? Number(offset) : 0,
-      }),
-    });
-    const data = await response.json().catch(() => ({}));
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const qRaw = body.q ?? body.query ?? "";
+    const q = typeof qRaw === "string" ? qRaw : String(qRaw ?? "");
+    const pageValue = Number(body.page);
+    const pageSizeValue = Number(body.pageSize);
 
-    res.status(response.status).json({ ok: response.ok, data });
+    console.log("[iy] searchShippers request body", JSON.stringify(body));
+
+    const result = await iySearch({
+      q,
+      page: Number.isFinite(pageValue) ? pageValue : undefined,
+      pageSize: Number.isFinite(pageSizeValue) ? pageSizeValue : undefined,
+    });
+
     console.log(
+      "[iy] searchShippers response meta",
       JSON.stringify({
-        level: response.ok ? "info" : "warn",
-        route: SEARCH_ROUTE,
-        duration_ms: Date.now() - started,
-        status_code: response.status,
+        q: result.meta.q,
+        page: result.meta.page,
+        pageSize: result.meta.pageSize,
+        total: result.meta.total,
+        rowsLen: result.rows.length,
       }),
     );
+
+    res.status(200).json(result);
   } catch (err) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        route: SEARCH_ROUTE,
-        duration_ms: Date.now() - started,
-        error_code: "importyeti_upstream_failed",
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    );
-    res.status(502).json({ code: 502, message: "ImportYeti DMA upstream failed" });
+    const error = err as { code?: string; message?: string; status?: number };
+    const code = error?.code ?? "importyeti_failed";
+    const status =
+      code === "importyeti_config_missing"
+        ? 500
+        : code === "importyeti_upstream_failed"
+          ? 502
+          : 500;
+
+    console.error("[iy] /public/iy/searchShippers error", {
+      code,
+      status: error?.status,
+      message: error?.message,
+    });
+
+    res.status(status).json({
+      ok: false,
+      error: {
+        code,
+        message: error?.message ?? "ImportYeti search failed",
+      },
+    });
   }
 });
 
-router.get(BOLS_ROUTE, async (req, res) => {
-  const started = Date.now();
-  const base = process.env.IY_DMA_SHIPMENTS_URL;
-  if (!base) {
-    res.status(500).json({ code: 500, message: "IY_DMA_SHIPMENTS_URL not configured" });
-    console.error(
-      JSON.stringify({
-        level: "error",
-        route: BOLS_ROUTE,
-        duration_ms: Date.now() - started,
-        error_code: "config_missing",
-      }),
-    );
-    return;
-  }
-
-  const { company_id, limit = "20", offset = "0" } = req.query as Record<string, string | undefined>;
-  if (!company_id) {
-    res.status(400).json({ code: 400, message: "company_id required" });
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        route: BOLS_ROUTE,
-        duration_ms: Date.now() - started,
-        error_code: "company_id_required",
-      }),
-    );
-    return;
-  }
-
+// GET /public/iy/companyBols
+iyRouter.get("/companyBols", async (req: Request, res: Response) => {
   try {
-    const u = new URL(base);
-    u.searchParams.set("company_id", company_id);
-    u.searchParams.set("limit", String(limit ?? "20"));
-    u.searchParams.set("offset", String(offset ?? "0"));
-
-    const response = await fetch(u, {
-      method: "GET",
-      headers: {
-        "x-api-key": process.env.IY_API_KEY ?? "",
-        "user-agent": USER_AGENT,
-      },
-    });
-    const data = await response.json().catch(() => ({}));
-
-    res.status(response.status).json({ ok: response.ok, data });
-    console.log(
-      JSON.stringify({
-        level: response.ok ? "info" : "warn",
-        route: BOLS_ROUTE,
-        duration_ms: Date.now() - started,
-        status_code: response.status,
-      }),
-    );
+    const company_id = String(req.query.company_id || "");
+    const limit = Number(req.query.limit || 10);
+    const offset = Number(req.query.offset || 0);
+    const out = await iyCompanyBols({ company_id, limit, offset });
+    res.status(out.ok ? 200 : out.status ?? 502).json(out);
   } catch (err) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        route: BOLS_ROUTE,
-        duration_ms: Date.now() - started,
-        error_code: "importyeti_upstream_failed",
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    );
-    res.status(502).json({ code: 502, message: "ImportYeti DMA upstream failed" });
+    res.status(500).json({ ok: false, error: "internal_error", detail: String(err) });
   }
 });
-
-export default router;
 
 

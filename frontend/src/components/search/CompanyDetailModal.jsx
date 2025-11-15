@@ -34,11 +34,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
       setError('');
       try {
         // Load large set to power chart and top route
-        const big = await getCompanyShipments({ company_id: String(companyId), limit: 1000, offset: 0 });
+        const big = await getCompanyShipments(String(companyId), { limit: 1000, offset: 0 });
         const bigRows = Array.isArray(big?.rows) ? big.rows : [];
         if (!abort) setAllRows(bigRows);
         // Load first page for table
-        const first = await getCompanyShipments({ company_id: String(companyId), limit: 50, offset: 0 });
+        const first = await getCompanyShipments(String(companyId), { limit: 50, offset: 0 });
         if (!abort) setTableRows(Array.isArray(first?.rows) ? first.rows : []);
         // Load KPIs (TEU + Growth)
         try {
