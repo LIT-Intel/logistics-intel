@@ -1,113 +1,119 @@
-import React from 'react';
-import type { SearchRow } from '@/lib/types';
+import { useMemo } from "react";
+import type { CompanyHit } from "@/lib/api";
 
-function Kpi({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-3 shadow-sm">
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-slate-900">{value}</div>
-      {hint && <div className="text-xs text-slate-500">{hint}</div>}
-    </div>
-  );
+type CompanyCardProps = {
+  data: CompanyHit;
+  onViewDetails?: (company: CompanyHit) => void;
+  onSave?: (company: CompanyHit) => void | Promise<void>;
+  saving?: boolean;
+};
+
+function formatDate(value: string): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  }).format(parsed);
 }
 
-export default function CompanyCard({
-  row,
-  onOpen,
-  onSave,
-}: {
-  row: SearchRow;
-  onOpen: (row: SearchRow) => void;
-  onSave: (row: SearchRow) => void | Promise<void>;
-}) {
-  const shipmentsDisplay =
-    row.shipments_12m != null && Number.isFinite(Number(row.shipments_12m))
-      ? Number(row.shipments_12m).toLocaleString()
-      : '—';
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return Number(value).toLocaleString();
+}
 
-  const lastActivityRaw =
-    typeof row.last_activity === 'object' && row.last_activity !== null && 'value' in row.last_activity
-      ? (row.last_activity as any).value
-      : row.last_activity;
+function formatList(values: string[]): string {
+  if (!values.length) return "—";
+  return values.slice(0, 2).join(" · ");
+}
 
-  let lastActivityDisplay = '—';
-  if (lastActivityRaw) {
-    const parsed = new Date(String(lastActivityRaw));
-    if (!Number.isNaN(parsed.getTime())) {
-      lastActivityDisplay = new Intl.DateTimeFormat('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: '2-digit',
-      }).format(parsed);
-    } else {
-      lastActivityDisplay = String(lastActivityRaw);
-    }
-  }
+function getInitials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "•";
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
 
-  const topCarrierEntry = Array.isArray(row.top_carriers) ? row.top_carriers[0] : null;
-  const topCarrierDisplay = (() => {
-    if (!topCarrierEntry) return '—';
-    if (typeof topCarrierEntry === 'string') return topCarrierEntry || '—';
-    if (typeof topCarrierEntry === 'object' && topCarrierEntry !== null) {
-      const value =
-        (topCarrierEntry as any).carrier ??
-        (topCarrierEntry as any).name ??
-        (topCarrierEntry as any).value ??
-        (topCarrierEntry as any).label ??
-        (topCarrierEntry as any).carrier_name ??
-        null;
-      if (typeof value === 'string' && value.trim()) return value.trim();
-    }
-    return '—';
-  })();
-
-  const topRoute = row.top_routes?.[0];
-  const topRouteDisplay = topRoute
-    ? `${topRoute.origin_country ?? '—'} → ${topRoute.dest_country ?? '—'}`
-    : '—';
+export default function CompanyCard({ data, onViewDetails, onSave, saving = false }: CompanyCardProps) {
+  const topRoutes = useMemo(() => data.top_routes.filter(Boolean).slice(0, 2), [data.top_routes]);
+  const topCarriers = useMemo(() => data.top_carriers.filter(Boolean).slice(0, 2), [data.top_carriers]);
+  const initials = useMemo(() => getInitials(data.company_name), [data.company_name]);
 
   return (
-    <div className="group rounded-2xl bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+    <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-[13px] text-slate-500">Company</div>
-          <div className="truncate text-xl font-semibold tracking-tight text-slate-900">
-            {row.company_name}
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid h-12 w-12 place-items-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
+            {initials}
           </div>
-          <div className="mt-1 text-xs text-slate-400 truncate" title={row.company_id || '—'}>
-            ID: {row.company_id || '—'}
+          <div className="space-y-1">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Company</div>
+            <div className="text-lg font-semibold leading-tight text-slate-900" title={data.company_name}>
+              {data.company_name}
+            </div>
+            <div className="text-xs text-slate-500">Last activity · {formatDate(data.last_activity)}</div>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
-            onClick={() => onSave(row)}
-            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
-            title="Save to Command Center"
-          >
-            Save to Command Center
-          </button>
-          <button
-            onClick={() => onOpen(row)}
-            className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-900 border border-slate-200 hover:bg-slate-50"
-            title="View details"
+            type="button"
+            onClick={() => onViewDetails?.(data)}
+            className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!onViewDetails}
           >
             View Details
           </button>
+          <button
+            type="button"
+            onClick={() => onSave?.(data)}
+            className="rounded-full bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!onSave || saving}
+          >
+            {saving ? "Saving…" : "Save to Command Center"}
+          </button>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <Kpi label="Shipments (12m)" value={shipmentsDisplay} />
-        <Kpi label="Last activity" value={lastActivityDisplay} />
-        <Kpi label="Top carrier" value={topCarrierDisplay} />
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl bg-slate-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shipments (12m)</p>
+          <p className="mt-1 text-xl font-semibold text-slate-900">{formatNumber(data.shipments_12m)}</p>
+        </div>
+        <div className="rounded-xl bg-slate-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top Routes</p>
+          <p className="mt-1 text-sm text-slate-700">{formatList(topRoutes)}</p>
+        </div>
+        <div className="rounded-xl bg-slate-50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top Carriers</p>
+          <p className="mt-1 text-sm text-slate-700">{formatList(topCarriers)}</p>
+        </div>
       </div>
 
-      <div className="mt-4 text-xs text-slate-500">
-        <span className="font-semibold text-slate-600">Top route:</span> {topRouteDisplay}
-      </div>
-
-      <div className="mt-3 text-xs text-slate-500">
-        Contacts & Campaigns gated (Enrich). Save first to manage alerts & watchlist in Command Center.
+      <div className="relative mt-5 overflow-hidden rounded-2xl border border-dashed border-slate-200 bg-slate-50">
+        <div className="grid gap-3 p-4 text-sm text-slate-600">
+          <div className="rounded-xl bg-white/80 p-3 shadow-sm">
+            <p className="text-sm font-medium text-slate-700">Pro contact preview</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Unlock verified contacts, enrichment, and outreach automations when you upgrade.
+            </p>
+          </div>
+          <div className="rounded-xl bg-white/80 p-3 text-xs text-slate-500">
+            Save this company to Command Center to keep prospect notes and revisit activity history once additional data is available.
+          </div>
+        </div>
+        <div className="pointer-events-none absolute inset-0 backdrop-blur-[2px]" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 bg-white/95 px-4 py-3 text-xs text-slate-600">
+          <span>Contacts are gated. Upgrade to Pro to unlock intros and workflows.</span>
+          <button
+            type="button"
+            className="pointer-events-auto rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+          >
+            Upgrade
+          </button>
+        </div>
       </div>
     </div>
   );

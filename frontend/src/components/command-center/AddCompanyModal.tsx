@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
+import { getGatewayBase } from "@/lib/env";
 
-const API_BASE = (() => {
-  const env = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
-  const raw =
-    env.NEXT_PUBLIC_API_BASE ??
-    env.VITE_API_BASE ??
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
-    '';
-  return (raw || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').replace(/\/$/, '');
-})();
+const API_BASE = getGatewayBase().replace(/\/$/, "") || "/api/lit";
 
 type LitRow = {
   company_id: string | null;

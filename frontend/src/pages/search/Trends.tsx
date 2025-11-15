@@ -17,6 +17,12 @@ export default function TrendsPage() {
     searchCompanies({ q: "", limit: 20, offset: 0 })
       .then((res) => {
         if (cancelled) return;
+        if (!res.ok) {
+          setErr(res.message ?? "Failed to load trends");
+          setRows([]);
+          return;
+        }
+        setErr(null);
         setRows(Array.isArray(res?.rows) ? res.rows : []);
       })
       .catch((e: any) => {

@@ -1,240 +1,500 @@
-import { useEffect, useMemo, useState } from "react";
-import { getFilterOptions, searchCompanies } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import SearchFilters from "@/components/search/SearchFilters";
+import CompanyCard from "@/components/search/CompanyCard";
+import CompanyModal from "@/components/search/CompanyModal";
+import ShipperCard from "@/components/search/ShipperCard";
+import {
+  getFilterOptions,
+  searchCompanies,
+  searchShippers,
+  saveCompanyToCrm,
+  type CompanyHit,
+  type FilterOptions,
+  type IySearchMeta,
+  type IyShipperHit,
+} from "@/lib/api";
 
-const ENABLE_ADV = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS === "true")
-  || (typeof import.meta !== "undefined" && (import.meta as any)?.env?.NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS === "true");
+const PAGE_SIZE = 25;
 
-type FilterOptions = {
-  origin_countries: string[];
-  dest_countries: string[];
-  modes: string[];
-  hs_top?: string[];
+type TabKey = "company" | "shipper";
+
+type FiltersState = {
+  origin: string[];
+  dest: string[];
+  mode: string[];
+  hs: string[];
 };
 
-type SearchRow = {
-  company_id: string;
-  company_name: string;
-  shipments_12m: number | null;
-  last_activity: string | null;
-  top_routes?: Array<{ route?: string; origin_country?: string; dest_country?: string }>;
-  top_carriers?: Array<{ carrier?: string }>;
-};
+const emptyFilters: FiltersState = { origin: [], dest: [], mode: [], hs: [] };
+
+const iyEnabled = import.meta.env.VITE_IY_ENABLED === "1";
 
 export default function SearchPage() {
-  const [q, setQ] = useState<string>("");
-  const [mode, setMode] = useState<"air" | "ocean" | "" | undefined>("");
-  const [hs, setHs] = useState<string>("");
-  const [origin, setOrigin] = useState<string[]>([]);
-  const [dest, setDest] = useState<string[]>([]);
-  const [options, setOptions] = useState<FilterOptions>({ origin_countries: [], dest_countries: [], modes: [] });
-  const [rows, setRows] = useState<SearchRow[]>([]);
+  const [activeTab, setActiveTab] = useState<TabKey>("company");
+  const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [filters, setFilters] = useState<FiltersState>(emptyFilters);
+  const [page, setPage] = useState(0);
+
+  const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
+  const [filterError, setFilterError] = useState<string | null>(null);
+
+  const [rows, setRows] = useState<CompanyHit[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [shipperQuery, setShipperQuery] = useState("");
+  const [shipperPage, setShipperPage] = useState(1);
+  const [shipperPageSize] = useState(25);
+  const [shipperLoading, setShipperLoading] = useState(false);
+  const [shipperError, setShipperError] = useState<string | null>(null);
+  const [shipperResults, setShipperResults] = useState<IyShipperHit[]>([]);
+  const [shipperMeta, setShipperMeta] = useState<IySearchMeta | null>(null);
+
+  const [activeCompany, setActiveCompany] = useState<CompanyHit | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getFilterOptions()
-      .then((data) => {
-        if (cancelled) return;
-        setOptions({
-          origin_countries: Array.isArray(data?.origin_countries) ? data.origin_countries : [],
-          dest_countries: Array.isArray(data?.dest_countries) ? data.dest_countries : [],
-          modes: Array.isArray(data?.modes) ? data.modes : [],
-          hs_top: data?.hs_top,
-        });
-      })
-      .catch(() => undefined);
+    (async () => {
+      try {
+        const options = await getFilterOptions();
+        if (!cancelled) {
+          setFilterOptions(options);
+          setFilterError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("filter load error", err);
+          setFilterError("Filters temporarily unavailable.");
+        }
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const computedHs = useMemo(() => {
-    if (!hs.trim()) return undefined;
-    if (hs.includes(",")) {
-      const arr = hs.split(",").map((s) => s.trim()).filter(Boolean);
-      return arr.length ? arr : undefined;
-    }
-    return hs.trim();
-  }, [hs]);
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedQ(q.trim());
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [q]);
 
-  async function runSearch() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await searchCompanies({
-        q,
-        mode: mode || undefined,
-        hs: computedHs ?? undefined,
-        origin: origin.length ? origin : undefined,
-        dest: dest.length ? dest : undefined,
-        limit: 20,
-        offset: 0,
-      });
-      setRows(Array.isArray(res?.rows) ? res.rows : []);
-    } catch (e: any) {
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedQ, filters.origin, filters.dest, filters.mode, filters.hs]);
+
+  useEffect(() => {
+    if (activeTab !== "company") {
       setRows([]);
-      setErr(e?.message ?? "searchCompanies failed");
-    } finally {
+      setTotal(0);
       setLoading(false);
+      setError(null);
+      return;
     }
-  }
+
+    const query = debouncedQ;
+    if (!query) {
+      setRows([]);
+      setTotal(0);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    searchCompanies(
+      {
+        q: query,
+        origin: filters.origin,
+        dest: filters.dest,
+        mode: filters.mode,
+        hs: filters.hs,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      },
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setRows(res.rows);
+        setTotal(res.total);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("search error", err);
+        setRows([]);
+        setTotal(0);
+        setError("Search failed. Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, debouncedQ, filters.origin, filters.dest, filters.mode, filters.hs, page]);
+
+  useEffect(() => {
+    if (!iyEnabled) {
+      setShipperLoading(false);
+      setShipperError(null);
+      setShipperResults([]);
+      setShipperMeta(null);
+      return;
+    }
+    if (activeTab !== "shipper") {
+      return;
+    }
+    const trimmed = shipperQuery.trim();
+    if (!trimmed) {
+      setShipperLoading(false);
+      setShipperResults([]);
+      setShipperMeta(null);
+      setShipperError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setShipperLoading(true);
+    setShipperError(null);
+
+    searchShippers({ q: trimmed, page: shipperPage, pageSize: shipperPageSize })
+      .then((res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setShipperError("ImportYeti search failed.");
+        } else {
+          setShipperError(null);
+        }
+        setShipperResults(Array.isArray(res.rows) ? res.rows : []);
+        setShipperMeta(res.meta ?? null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("shipper search error", err);
+        setShipperResults([]);
+        setShipperMeta(null);
+        setShipperError(err?.message ?? "ImportYeti search failed.");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setShipperLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, shipperQuery, shipperPage, shipperPageSize, iyEnabled]);
+
+  const resultsLabel = useMemo(() => {
+    if (!debouncedQ) return "Showing 0 results";
+    const count = total > 0 ? total : rows.length;
+    return `Showing ${count.toLocaleString()} results`;
+  }, [debouncedQ, total, rows.length]);
+
+  const totalPages = total > 0 ? Math.ceil(total / PAGE_SIZE) : null;
+  const hasPrev = page > 0;
+  const hasNext = total > 0 ? (page + 1) * PAGE_SIZE < total : rows.length === PAGE_SIZE;
+
+  const showEmptyState = activeTab === "company" && !loading && !!debouncedQ && rows.length === 0 && !error;
+  const showIntro = activeTab === "company" && !loading && !debouncedQ;
+
+  const handleTabChange = useCallback(
+    (tab: TabKey) => {
+      if (tab === activeTab) return;
+      setActiveTab(tab);
+      setPage(0);
+      setError(null);
+      if (tab === "shipper") {
+        setRows([]);
+        setTotal(0);
+        setShipperPage(1);
+        setShipperError(null);
+      }
+    },
+    [activeTab],
+  );
+
+  const handleFiltersChange = useCallback((next: FiltersState) => {
+    setFilters(next);
+  }, []);
+
+  const handleViewDetails = useCallback((company: CompanyHit) => {
+    setActiveCompany(company);
+  }, []);
+
+  const handleModalChange = useCallback((open: boolean) => {
+    if (!open) {
+      setActiveCompany(null);
+    }
+  }, []);
+
+  const handleSaveCompany = useCallback(async (company: CompanyHit) => {
+    if (!company.company_id) return;
+    setSavingId(company.company_id);
+    try {
+      await saveCompanyToCrm({
+        company_id: company.company_id,
+        company_name: company.company_name,
+        source: "search",
+      });
+    } catch (err) {
+      console.error("saveCompanyToCrm failed", err);
+    } finally {
+      setSavingId(null);
+    }
+  }, []);
+
+  const filtersActive =
+    filters.origin.length + filters.dest.length + filters.mode.length + filters.hs.length > 0;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div>
-          <h1 className="text-4xl font-bold">Search</h1>
-          <p className="text-slate-600 mt-1">Query the logistics intelligence index with filters for origin, destination, mode, and HS codes.</p>
-        </div>
-        <a
-          className="ml-auto inline-flex items-center px-3 py-2 rounded-xl border text-slate-700 hover:bg-slate-50"
-          href="/app/search/trends"
-        >
-          View Trends
-        </a>
-        <button
-          type="button"
-          onClick={() => setShowFilters((prev) => !prev)}
-          className="inline-flex items-center px-3 py-2 rounded-xl border text-slate-700 hover:bg-slate-50"
-        >
-          {showFilters ? "Hide Filters" : "Show Filters"}
-        </button>
-      </div>
-
-      <div className="rounded-2xl border p-4 bg-white space-y-3">
-        <div>
-          <label className="text-xs font-semibold block mb-1">KEYWORD</label>
-          <input
-            className="w-full rounded-xl border p-3"
-            placeholder="Search companies…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-
-        {showFilters && (
-          <div className="grid md:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-semibold block mb-1">MODE</label>
-            <select
-              className="w-full rounded-xl border p-3"
-              value={mode ?? ""}
-              onChange={(e) => setMode((e.target.value || undefined) as any)}
-            >
-              <option value="">Any</option>
-              {options.modes.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">HS (comma-separated)</label>
-            <input
-              className="w-full rounded-xl border p-3"
-              value={hs}
-              onChange={(e) => setHs(e.target.value)}
-              placeholder="e.g. 9506, 4202"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">ORIGIN COUNTRY</label>
-            <select
-              multiple
-              className="w-full rounded-xl border p-3 h-32"
-              value={origin}
-              onChange={(e) => setOrigin(Array.from(e.target.selectedOptions).map((o) => o.value))}
-            >
-              {options.origin_countries.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">DESTINATION COUNTRY</label>
-            <select
-              multiple
-              className="w-full rounded-xl border p-3 h-32"
-              value={dest}
-              onChange={(e) => setDest(Array.from(e.target.selectedOptions).map((o) => o.value))}
-            >
-              {options.dest_countries.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          </div>
-        )}
-
-        {showFilters && ENABLE_ADV && (
-          <div className="opacity-60 pointer-events-none">
-            <div className="text-xs font-semibold">Advanced (coming soon)</div>
-            <div className="grid md:grid-cols-3 gap-3 mt-2">
-              <input className="rounded-xl border p-3" placeholder="Origin city" />
-              <input className="rounded-xl border p-3" placeholder="Origin state" />
-              <input className="rounded-xl border p-3" placeholder="Origin port" />
-              <input className="rounded-xl border p-3" placeholder="Dest city" />
-              <input className="rounded-xl border p-3" placeholder="Dest state" />
-              <input className="rounded-xl border p-3" placeholder="Dest ZIP" />
-              <input className="rounded-xl border p-3" placeholder="Commodity type" />
+    <>
+      <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100">
+        <div className="mx-auto w-full max-w-7xl px-4 pt-10 pb-16 sm:px-6 lg:px-8">
+          <header className="flex flex-col gap-4">
+            <div>
+              <h1 className="text-3xl font-semibold text-slate-900">Search</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Explore prospect companies, review shipment activity, and push targets to Command Center.
+              </p>
             </div>
+          </header>
+
+          <div className="mt-6 flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleTabChange("company")}
+              className={`inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                activeTab === "company"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              Companies
+            </button>
+            <button
+              type="button"
+              onClick={() => handleTabChange("shipper")}
+              className={`inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                activeTab === "shipper"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              } ${!iyEnabled ? "cursor-not-allowed opacity-70" : ""}`}
+              aria-disabled={!iyEnabled}
+              title={!iyEnabled ? "Temporarily gated" : undefined}
+            >
+              Shippers (DMA)
+            </button>
           </div>
-        )}
 
-        <button
-          onClick={runSearch}
-          disabled={loading}
-          className="inline-flex items-center px-4 py-2 rounded-xl bg-indigo-600 text-white disabled:opacity-50"
-        >
-          {loading ? "Searching…" : "Search"}
-        </button>
-      </div>
-
-      {err && (
-        <div className="mt-4 rounded-xl bg-red-50 text-red-700 border border-red-200 p-3 text-sm break-all">
-          {err}
-        </div>
-      )}
-
-      <div className="mt-6 grid md:grid-cols-2 gap-4">
-        {rows.map((r) => (
-          <div key={r.company_id} className="rounded-2xl border p-4 bg-white">
-            <div className="font-semibold text-lg">{r.company_name}</div>
-            <div className="text-sm text-slate-600">Shipments (12m): {r.shipments_12m ?? "—"}</div>
-            <div className="text-sm text-slate-600">Last activity: {r.last_activity ?? "—"}</div>
-            <div className="text-sm mt-2">
-              <div className="font-medium">Top routes</div>
-              <div className="text-slate-600">
-                {Array.isArray(r.top_routes) && r.top_routes.length
-                  ? r.top_routes
-                      .map((t) => t.route || [t.origin_country, t.dest_country].filter(Boolean).join(" → "))
-                      .filter(Boolean)
-                      .join(" • ")
-                  : "—"}
+          <div className="mt-8">
+          {activeTab === "company" ? (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <input
+                  value={q}
+                  onChange={(event) => setQ(event.target.value)}
+                  placeholder="Search companies by name or domain"
+                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                />
+                {error && <p className="text-sm text-rose-600">{error}</p>}
               </div>
-            </div>
-            <div className="text-sm mt-1">
-              <div className="font-medium">Top carriers</div>
-              <div className="text-slate-600">
-                {Array.isArray(r.top_carriers) && r.top_carriers.length
-                  ? r.top_carriers.map((t) => t.carrier ?? "").filter(Boolean).join(" • ") || "—"
-                  : "—"}
+
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
+                  <span>{resultsLabel}</span>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    Sort: Relevance
+                  </span>
+                </div>
+                {filterError && (
+                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
+                    {filterError}
+                  </div>
+                )}
+                <SearchFilters
+                  filterOptions={filterOptions}
+                  origin={filters.origin}
+                  dest={filters.dest}
+                  mode={filters.mode}
+                  hs={filters.hs}
+                  onChange={handleFiltersChange}
+                />
+                {filtersActive && (
+                  <p className="text-xs text-slate-500">
+                    Filters narrow results to the most relevant companies.
+                  </p>
+                )}
               </div>
+
+              <main className="space-y-6">
+                {showIntro && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
+                    <h2 className="text-lg font-semibold text-slate-900">Start searching</h2>
+                    <p className="mt-2 text-sm text-slate-500">Enter a company name to load results.</p>
+                  </div>
+                )}
+
+                {showEmptyState && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
+                    <h2 className="text-lg font-semibold text-slate-900">No companies found</h2>
+                    <p className="mt-2 text-sm text-slate-500">Try a different query or adjust your filters.</p>
+                  </div>
+                )}
+
+                {rows.length > 0 && (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {rows.map((company) => (
+                      <CompanyCard
+                        key={company.company_id}
+                        data={company}
+                        onViewDetails={handleViewDetails}
+                        onSave={handleSaveCompany}
+                        saving={savingId === company.company_id}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {loading && (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <div
+                        key={index}
+                        className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {rows.length > 0 && (
+                  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.max(0, current - 1))}
+                      disabled={!hasPrev || loading}
+                      className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Prev
+                    </button>
+                    <span className="text-sm text-slate-500">
+                      Page {page + 1}
+                      {totalPages ? ` of ${totalPages}` : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => current + 1)}
+                      disabled={!hasNext || loading}
+                      className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </main>
             </div>
-          </div>
-        ))}
+          ) : (
+            <div className="space-y-6">
+              {!iyEnabled ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
+                  <h2 className="text-lg font-semibold text-slate-900">ImportYeti DMA access coming soon</h2>
+                  <p className="mt-2 text-sm text-slate-500">
+                    We’ll enable shipper search once ImportYeti DMA is live. Hang tight!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="max-w-xl">
+                    <input
+                      value={shipperQuery}
+                      onChange={(event) => {
+                        setShipperQuery(event.target.value);
+                        setShipperPage(1);
+                      }}
+                      placeholder="Search shippers by company name (e.g., Walmart)"
+                      className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    />
+                  </div>
+
+                  {shipperError && <p className="text-xs text-rose-600">{shipperError}</p>}
+
+                  {shipperMeta && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                      <span>
+                        Showing <span className="font-medium">{shipperResults.length}</span> of{" "}
+                        <span className="font-medium">{shipperMeta.total}</span> results for{" "}
+                        <span className="font-semibold">"{shipperMeta.q}"</span>
+                      </span>
+                      {typeof shipperMeta.creditsRemaining === "number" && (
+                        <span>Credits remaining: {shipperMeta.creditsRemaining}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {shipperLoading ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <div
+                          key={index}
+                          className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
+                        />
+                      ))}
+                    </div>
+                  ) : shipperResults.length === 0 && shipperMeta?.q ? (
+                    <p className="text-sm text-slate-500">No shippers found for "{shipperMeta.q}".</p>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {shipperResults.map((row) => (
+                        <ShipperCard key={row.key || row.title} data={row} />
+                      ))}
+                    </div>
+                  )}
+
+                  {shipperMeta && shipperMeta.total > shipperPageSize && (
+                    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={shipperPage === 1 || shipperLoading}
+                        onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Prev
+                      </button>
+                      <span>Page {shipperPage}</span>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={
+                          shipperLoading || (shipperMeta.total ?? 0) <= shipperPage * shipperPageSize
+                        }
+                        onClick={() => setShipperPage((prev) => prev + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        </div>
       </div>
 
-      {!loading && !err && rows.length === 0 && (
-        <div className="mt-6 text-sm text-slate-500">No results yet. Run a search to see companies.</div>
-      )}
-    </div>
+      <CompanyModal company={activeCompany} open={Boolean(activeCompany)} onClose={handleModalChange} />
+    </>
   );
 }
+

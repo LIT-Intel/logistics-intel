@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { getApiBase } from '@/lib/env';
+import { getGatewayBase } from '@/lib/env';
 import { X, Ship, Box, TrendingUp, MapPin, Globe, Database, Link as LinkIcon, Lock, BarChart as BarChartIcon } from 'lucide-react';
 
 type Company = { company_id?: string | null; company_name?: string; domain?: string | null; website?: string | null };
@@ -33,7 +33,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
   const companyId = normalizeString(company?.company_id ?? (company as any)?.companyId ?? (company as any)?.id);
   const companyName = normalizeString(company?.company_name ?? (company as any)?.name);
   const displayName = companyName ?? 'Company';
-  const apiBase = getApiBase();
+  const apiBase = getGatewayBase();
 
   async function fetchShipmentsPage(params: {
     limit: number;

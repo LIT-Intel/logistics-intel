@@ -1,0 +1,6 @@
+# exclude for BACKEND agent
+frontend/
+out/
+dist/
+.next/
+node_modules/

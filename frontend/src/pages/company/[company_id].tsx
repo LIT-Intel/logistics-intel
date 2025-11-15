@@ -31,7 +31,7 @@ export default function CompanyPage() {
         const items = Array.isArray((res as any)?.rows) ? (res as any).rows : [];
         const match = items.find((x: any) => x?.company_id === id) ?? items[0];
         setCompany(match || null);
-        const s = await getCompanyShipments(id, 20, 0);
+        const s = await getCompanyShipments(id, { limit: 20, offset: 0 });
         setShip(s.rows || []);
         if (match) {
           const k = kpiFrom(match);
@@ -96,7 +96,7 @@ export default function CompanyPage() {
           }}>Enrich Now</button>
           <button className='rounded border px-3 py-1.5 text-sm' onClick={async () => {
             const k = kpiFrom(company!);
-            const s = await getCompanyShipments(id, 20, 0);
+            const s = await getCompanyShipments(id, { limit: 20, offset: 0 });
             const prompt = buildPreCallPrompt({ company: { id, name: data.name, shipments12m: k.shipments12m, lastActivity: k.lastActivity as any, originsTop: k.originsTop, destsTop: k.destsTop, carriersTop: k.carriersTop }, shipments: s.rows || [] });
             const ai = await recallCompany({ company_id: id, questions: [prompt] });
             setData((prev: any) => prev ? { ...prev, ai: { summary: (ai as any)?.summary || '', bullets: Array.isArray((ai as any)?.bullets) ? (ai as any).bullets : [] } } : prev);
