@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import ShipperCard from "@/components/search/ShipperCard";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
-import SearchFilters from "@/components/search/SearchFilters";
+import SearchFilters, { type SearchFiltersValue } from "@/components/search/SearchFilters";
 import {
   searchShippers,
   saveCompanyToCrm,
@@ -12,6 +12,8 @@ import {
 } from "@/lib/api";
 
 const RESULTS_PER_PAGE = 25;
+
+type FiltersState = SearchFiltersValue;
 
 export default function SearchPage() {
   const [shipperQuery, setShipperQuery] = useState("");
@@ -26,10 +28,11 @@ export default function SearchPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [modeFilter, setModeFilter] = useState<"any" | "fcl" | "lcl">("any");
-  const [regionFilter, setRegionFilter] = useState<"global" | "us-importers">("global");
-  const [activityFilter, setActivityFilter] = useState<"12m" | "6m" | "3m">("12m");
+  const [filters, setFilters] = useState<FiltersState>({
+    mode: "any",
+    region: "global",
+    activity: "12m",
+  });
 
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
@@ -54,6 +57,7 @@ export default function SearchPage() {
     setShipperLoading(true);
     setShipperError(null);
 
+    // Filters currently UI-only; backend ImportYeti proxy supports only q/page/pageSize.
     searchShippers(
       { q: submittedQuery, page: shipperPage, pageSize: RESULTS_PER_PAGE },
       controller.signal,
@@ -132,12 +136,12 @@ export default function SearchPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100">
-        <div className="mx-auto w-full max-w-5xl px-4 pt-10 pb-16 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
           <header className="flex flex-col gap-4">
             <div>
-              <h1 className="text-3xl font-semibold text-slate-900">ImportYeti Shipper Search</h1>
-              <p className="mt-1 text-sm text-slate-500">
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">ImportYeti Shipper Search</h1>
+              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
                 Search the ImportYeti DMA index for verified shippers, view live BOL activity, and save
                 companies to Command Center.
               </p>
@@ -161,8 +165,19 @@ export default function SearchPage() {
                   {shipperLoading ? "Searching…" : "Search"}
                 </button>
               </div>
-              <p className="text-xs text-slate-500">All searches route through /api/lit/public/iy/searchShippers.</p>
             </form>
+
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-slate-500">
+                All searches route through{" "}
+                <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">
+                  /api/lit/public/iy/searchShippers
+                </code>
+                .
+              </p>
+
+              <SearchFilters value={filters} onChange={setFilters} />
+            </div>
 
             {shipperError && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -245,31 +260,31 @@ export default function SearchPage() {
         </div>
       </div>
 
-        {modalLoading && activeShipper && (
-          <div className="pointer-events-none fixed inset-x-0 top-6 z-40 flex justify-center">
-            <div className="rounded-full bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow">
-              Loading route insights…
-            </div>
+      {modalLoading && activeShipper && (
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-40 flex justify-center">
+          <div className="rounded-full bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow">
+            Loading route insights…
           </div>
-        )}
+        </div>
+      )}
 
-        {modalError && activeShipper && (
-          <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center">
-            <div className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700 shadow">
-              {modalError}
-            </div>
+      {modalError && activeShipper && (
+        <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center">
+          <div className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700 shadow">
+            {modalError}
           </div>
-        )}
+        </div>
+      )}
 
-        <ShipperDetailModal
-          shipper={activeShipper}
-          open={Boolean(activeShipper)}
-          onClose={handleCloseModal}
-          topRoute={routeKpis?.topRouteLast12m ?? null}
-          recentRoute={routeKpis?.mostRecentRoute ?? null}
-          onSave={handleSaveToCommandCenter}
-          saving={saveLoading}
-        />
+      <ShipperDetailModal
+        shipper={activeShipper}
+        open={Boolean(activeShipper)}
+        onClose={handleCloseModal}
+        topRoute={routeKpis?.topRouteLast12m ?? null}
+        recentRoute={routeKpis?.mostRecentRoute ?? null}
+        onSave={handleSaveToCommandCenter}
+        saving={saveLoading}
+      />
     </>
   );
 }
