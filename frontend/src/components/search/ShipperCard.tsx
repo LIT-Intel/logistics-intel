@@ -1,4 +1,4 @@
-import CompanyAvatar from "@/components/CompanyAvatar";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
 import type { IyShipperHit } from "@/lib/api";
 
 type ShipperCardProps = {
