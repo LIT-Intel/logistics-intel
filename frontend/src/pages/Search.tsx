@@ -498,29 +498,29 @@ export default function SearchPage() {
                       </div>
                     )}
 
-                  {shipperMeta && shipperMeta.total > shipperPageSize && (
-                    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={shipperPage === 1 || shipperLoading}
-                        onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
-                      >
-                        Prev
-                      </button>
-                      <span>Page {shipperPage}</span>
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={
-                          shipperLoading || (shipperMeta.total ?? 0) <= shipperPage * shipperPageSize
-                        }
-                        onClick={() => setShipperPage((prev) => prev + 1)}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
+                    {shipperMeta && shipperMeta.total > shipperPageSize && (
+                      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={shipperPage === 1 || shipperLoading}
+                          onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
+                        >
+                          Prev
+                        </button>
+                        <span>Page {shipperPage}</span>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={
+                            shipperLoading || (shipperMeta.total ?? 0) <= shipperPage * shipperPageSize
+                          }
+                          onClick={() => setShipperPage((prev) => prev + 1)}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -528,18 +528,17 @@ export default function SearchPage() {
           </div>
         </div>
       </div>
-    </div>
 
-    <CompanyModal company={activeCompany} open={Boolean(activeCompany)} onClose={handleModalChange} />
-    <ShipperDetailModal
-      shipper={activeShipper}
-      open={shipperModalOpen && Boolean(activeShipper)}
-      onClose={handleShipperModalClose}
-      topRoute={shipperRouteKpis?.topRouteLast12m}
-      recentRoute={shipperRouteKpis?.mostRecentRoute}
-      onSave={handleSaveShipper}
-      saving={Boolean(activeShipper?.key && shipperSavingKey === activeShipper.key)}
-    />
+      <CompanyModal company={activeCompany} open={Boolean(activeCompany)} onClose={handleModalChange} />
+      <ShipperDetailModal
+        shipper={activeShipper}
+        open={shipperModalOpen && Boolean(activeShipper)}
+        onClose={handleShipperModalClose}
+        topRoute={shipperRouteKpis?.topRouteLast12m}
+        recentRoute={shipperRouteKpis?.mostRecentRoute}
+        onSave={handleSaveShipper}
+        saving={Boolean(activeShipper?.key && shipperSavingKey === activeShipper.key)}
+      />
     </>
   );
 }
