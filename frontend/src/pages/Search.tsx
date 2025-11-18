@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import ShipperCard from "@/components/search/ShipperCard";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
+import SearchFilters from "@/components/search/SearchFilters";
 import {
   searchShippers,
   saveCompanyToCrm,
@@ -25,6 +26,10 @@ export default function SearchPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [modeFilter, setModeFilter] = useState<"any" | "fcl" | "lcl">("any");
+  const [regionFilter, setRegionFilter] = useState<"global" | "us-importers">("global");
+  const [activityFilter, setActivityFilter] = useState<"12m" | "6m" | "3m">("12m");
 
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
