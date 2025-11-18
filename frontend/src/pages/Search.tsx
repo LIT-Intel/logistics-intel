@@ -521,23 +521,25 @@ export default function SearchPage() {
                       </button>
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-          )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+    </div>
 
-      <CompanyModal company={activeCompany} open={Boolean(activeCompany)} onClose={handleModalChange} />
-      <ShipperDetailModal
-        shipper={activeShipper}
-        open={shipperModalOpen && Boolean(activeShipper)}
-        onClose={handleShipperModalClose}
-        topRoute={shipperRouteKpis?.topRouteLast12m}
-        recentRoute={shipperRouteKpis?.mostRecentRoute}
-        onSave={handleSaveShipper}
-        saving={Boolean(activeShipper?.key && shipperSavingKey === activeShipper.key)}
-      />
+    <CompanyModal company={activeCompany} open={Boolean(activeCompany)} onClose={handleModalChange} />
+    <ShipperDetailModal
+      shipper={activeShipper}
+      open={shipperModalOpen && Boolean(activeShipper)}
+      onClose={handleShipperModalClose}
+      topRoute={shipperRouteKpis?.topRouteLast12m}
+      recentRoute={shipperRouteKpis?.mostRecentRoute}
+      onSave={handleSaveShipper}
+      saving={Boolean(activeShipper?.key && shipperSavingKey === activeShipper.key)}
+    />
     </>
   );
 }
