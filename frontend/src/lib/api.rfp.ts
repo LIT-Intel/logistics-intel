@@ -1,12 +1,6 @@
-const BASE = (() => {
-  const env = (typeof import.meta !== 'undefined' && (import.meta as any)?.env) || {};
-  const raw =
-    env.NEXT_PUBLIC_API_BASE ??
-    env.VITE_API_BASE ??
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE ?? process.env?.VITE_API_BASE : '') ??
-    '';
-  return (raw || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').replace(/\/$/, '');
-})();
+import { getGatewayBase } from '@/lib/env';
+
+const BASE = getGatewayBase().replace(/\/$/, '') || '/api/lit';
 
 const HDRS: Record<string,string> = {
   'content-type': 'application/json',

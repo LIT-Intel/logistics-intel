@@ -33,7 +33,7 @@ export default function PreCallBriefing() {
     try {
       const [ovr, shp] = await Promise.all([
         getCompanyOverview({ company_id: companyId }),
-        getCompanyShipments({ company_id: companyId, limit: 50 }),
+        getCompanyShipments(companyId, { limit: 50 }),
       ]);
       setOverview(ovr?.data?.result || null);
       setShipments(Array.isArray(shp?.data?.results) ? shp.data.results : []);

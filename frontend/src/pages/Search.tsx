@@ -1,240 +1,275 @@
-import { useEffect, useMemo, useState } from "react";
-import { getFilterOptions, searchCompanies } from "@/lib/api";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import ShipperCard from "@/components/search/ShipperCard";
+import ShipperDetailModal from "@/components/search/ShipperDetailModal";
+import SearchFilters from "@/components/search/SearchFilters";
+import {
+  searchShippers,
+  saveCompanyToCrm,
+  getIyRouteKpisForCompany,
+  type IySearchMeta,
+  type IyShipperHit,
+  type IyRouteKpis,
+} from "@/lib/api";
 
-const ENABLE_ADV = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS === "true")
-  || (typeof import.meta !== "undefined" && (import.meta as any)?.env?.NEXT_PUBLIC_ENABLE_ADVANCED_FILTERS === "true");
-
-type FilterOptions = {
-  origin_countries: string[];
-  dest_countries: string[];
-  modes: string[];
-  hs_top?: string[];
-};
-
-type SearchRow = {
-  company_id: string;
-  company_name: string;
-  shipments_12m: number | null;
-  last_activity: string | null;
-  top_routes?: Array<{ route?: string; origin_country?: string; dest_country?: string }>;
-  top_carriers?: Array<{ carrier?: string }>;
-};
+const RESULTS_PER_PAGE = 25;
 
 export default function SearchPage() {
-  const [q, setQ] = useState<string>("");
-  const [mode, setMode] = useState<"air" | "ocean" | "" | undefined>("");
-  const [hs, setHs] = useState<string>("");
-  const [origin, setOrigin] = useState<string[]>([]);
-  const [dest, setDest] = useState<string[]>([]);
-  const [options, setOptions] = useState<FilterOptions>({ origin_countries: [], dest_countries: [], modes: [] });
-  const [rows, setRows] = useState<SearchRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [shipperQuery, setShipperQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [shipperPage, setShipperPage] = useState(1);
+  const [shipperResults, setShipperResults] = useState<IyShipperHit[]>([]);
+  const [shipperMeta, setShipperMeta] = useState<IySearchMeta | null>(null);
+  const [shipperLoading, setShipperLoading] = useState(false);
+  const [shipperError, setShipperError] = useState<string | null>(null);
+  const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
+  const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [modeFilter, setModeFilter] = useState<"any" | "fcl" | "lcl">("any");
+  const [regionFilter, setRegionFilter] = useState<"global" | "us-importers">("global");
+  const [activityFilter, setActivityFilter] = useState<"12m" | "6m" | "3m">("12m");
+
+  const handleSubmit = useCallback(
+    (event?: FormEvent<HTMLFormElement>) => {
+      event?.preventDefault();
+      const trimmed = shipperQuery.trim();
+      setSubmittedQuery(trimmed);
+      setShipperPage(1);
+    },
+    [shipperQuery],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    getFilterOptions()
-      .then((data) => {
-        if (cancelled) return;
-        setOptions({
-          origin_countries: Array.isArray(data?.origin_countries) ? data.origin_countries : [],
-          dest_countries: Array.isArray(data?.dest_countries) ? data.dest_countries : [],
-          modes: Array.isArray(data?.modes) ? data.modes : [],
-          hs_top: data?.hs_top,
-        });
+    if (!submittedQuery) {
+      setShipperResults([]);
+      setShipperMeta(null);
+      setShipperError(null);
+      setShipperLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setShipperLoading(true);
+    setShipperError(null);
+
+    searchShippers(
+      { q: submittedQuery, page: shipperPage, pageSize: RESULTS_PER_PAGE },
+      controller.signal,
+    )
+      .then((res) => {
+        if (controller.signal.aborted) return;
+        setShipperResults(Array.isArray(res.results) ? res.results : []);
+        setShipperMeta(res.meta ?? null);
       })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setShipperResults([]);
+        setShipperMeta(null);
+        setShipperError(err?.message ?? "ImportYeti search failed. Please try again.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setShipperLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [submittedQuery, shipperPage]);
+
+  const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
+    if (!shipper) return;
+    setActiveShipper(shipper);
+    setModalLoading(true);
+    setModalError(null);
+    try {
+      const kpis = await getIyRouteKpisForCompany({ companyKey: shipper.key });
+      setRouteKpis(kpis ?? null);
+    } catch (err) {
+      console.warn("getIyRouteKpisForCompany failed", err);
+      setRouteKpis(null);
+      setModalError("Route KPIs unavailable for this shipper.");
+    } finally {
+      setModalLoading(false);
+    }
   }, []);
 
-  const computedHs = useMemo(() => {
-    if (!hs.trim()) return undefined;
-    if (hs.includes(",")) {
-      const arr = hs.split(",").map((s) => s.trim()).filter(Boolean);
-      return arr.length ? arr : undefined;
-    }
-    return hs.trim();
-  }, [hs]);
+  const handleCloseModal = useCallback(() => {
+    setActiveShipper(null);
+    setRouteKpis(null);
+    setModalError(null);
+    setModalLoading(false);
+  }, []);
 
-  async function runSearch() {
-    setLoading(true);
-    setErr(null);
+  const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
+    if (!shipper?.key) return;
+    setSaveLoading(true);
     try {
-      const res = await searchCompanies({
-        q,
-        mode: mode || undefined,
-        hs: computedHs ?? undefined,
-        origin: origin.length ? origin : undefined,
-        dest: dest.length ? dest : undefined,
-        limit: 20,
-        offset: 0,
+      await saveCompanyToCrm({
+        company_id: shipper.key,
+        company_name: shipper.title,
+        source: "importyeti",
       });
-      setRows(Array.isArray(res?.rows) ? res.rows : []);
-    } catch (e: any) {
-      setRows([]);
-      setErr(e?.message ?? "searchCompanies failed");
+    } catch (err) {
+      console.error("saveCompanyToCrm failed", err);
     } finally {
-      setLoading(false);
+      setSaveLoading(false);
     }
-  }
+  }, []);
+
+  const resultSummary = useMemo(() => {
+    if (!submittedQuery || !shipperMeta) return null;
+    const totalLabel = shipperMeta.total?.toLocaleString() ?? "0";
+    return `Showing ${shipperResults.length} of ${totalLabel} results for "${shipperMeta.q}"`;
+  }, [submittedQuery, shipperMeta, shipperResults.length]);
+
+  const showIntroState = !submittedQuery;
+  const showNoResults = Boolean(submittedQuery && !shipperLoading && shipperResults.length === 0);
+  const totalPages = shipperMeta?.total ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE) : 0;
+  const hasPrevPage = shipperPage > 1;
+  const hasNextPage = shipperMeta ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total : false;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div>
-          <h1 className="text-4xl font-bold">Search</h1>
-          <p className="text-slate-600 mt-1">Query the logistics intelligence index with filters for origin, destination, mode, and HS codes.</p>
+    <>
+      <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100">
+        <div className="mx-auto w-full max-w-5xl px-4 pt-10 pb-16 sm:px-6 lg:px-8">
+          <header className="flex flex-col gap-4">
+            <div>
+              <h1 className="text-3xl font-semibold text-slate-900">ImportYeti Shipper Search</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Search the ImportYeti DMA index for verified shippers, view live BOL activity, and save
+                companies to Command Center.
+              </p>
+            </div>
+          </header>
+
+          <section className="mt-8 space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <input
+                  value={shipperQuery}
+                  onChange={(event) => setShipperQuery(event.target.value)}
+                  placeholder="Search by company, retailer, or brand (e.g., Walmart, Nike, Target)"
+                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                />
+                <button
+                  type="submit"
+                  disabled={shipperLoading || !shipperQuery.trim()}
+                  className="h-11 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {shipperLoading ? "Searching…" : "Search"}
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">All searches route through /api/lit/public/iy/searchShippers.</p>
+            </form>
+
+            {shipperError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {shipperError}
+              </div>
+            )}
+
+            {resultSummary && (
+              <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
+                <span>{resultSummary}</span>
+                {typeof shipperMeta?.creditsRemaining === "number" && (
+                  <span className="text-slate-400">Credits remaining: {shipperMeta.creditsRemaining}</span>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="mt-8 space-y-6">
+            {showIntroState ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-900">Start with a shipper</h2>
+                <p className="mt-2 text-sm text-slate-500">Search for a retailer, importer, or brand to pull live ImportYeti DMA data.</p>
+              </div>
+            ) : showNoResults ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-900">No shippers found</h2>
+                <p className="mt-2 text-sm text-slate-500">Try another query or broaden your search.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {shipperLoading && shipperResults.length === 0 ? (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <div
+                        key={`skeleton-${index}`}
+                        className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
+                      />
+                    ))}
+                  </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {shipperResults.map((shipper) => (
+                        <ShipperCard
+                          key={shipper.key || shipper.title}
+                          shipper={shipper}
+                          onViewDetails={() => handleViewDetails(shipper)}
+                          onSave={() => handleSaveToCommandCenter(shipper)}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                {shipperMeta && shipperMeta.total > RESULTS_PER_PAGE && (
+                  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!hasPrevPage || shipperLoading}
+                      onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <span>
+                      Page {shipperPage}
+                      {totalPages > 0 ? ` of ${totalPages}` : ""}
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!hasNextPage || shipperLoading}
+                      onClick={() => setShipperPage((prev) => prev + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
         </div>
-        <a
-          className="ml-auto inline-flex items-center px-3 py-2 rounded-xl border text-slate-700 hover:bg-slate-50"
-          href="/app/search/trends"
-        >
-          View Trends
-        </a>
-        <button
-          type="button"
-          onClick={() => setShowFilters((prev) => !prev)}
-          className="inline-flex items-center px-3 py-2 rounded-xl border text-slate-700 hover:bg-slate-50"
-        >
-          {showFilters ? "Hide Filters" : "Show Filters"}
-        </button>
       </div>
 
-      <div className="rounded-2xl border p-4 bg-white space-y-3">
-        <div>
-          <label className="text-xs font-semibold block mb-1">KEYWORD</label>
-          <input
-            className="w-full rounded-xl border p-3"
-            placeholder="Search companies…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-
-        {showFilters && (
-          <div className="grid md:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-semibold block mb-1">MODE</label>
-            <select
-              className="w-full rounded-xl border p-3"
-              value={mode ?? ""}
-              onChange={(e) => setMode((e.target.value || undefined) as any)}
-            >
-              <option value="">Any</option>
-              {options.modes.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">HS (comma-separated)</label>
-            <input
-              className="w-full rounded-xl border p-3"
-              value={hs}
-              onChange={(e) => setHs(e.target.value)}
-              placeholder="e.g. 9506, 4202"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">ORIGIN COUNTRY</label>
-            <select
-              multiple
-              className="w-full rounded-xl border p-3 h-32"
-              value={origin}
-              onChange={(e) => setOrigin(Array.from(e.target.selectedOptions).map((o) => o.value))}
-            >
-              {options.origin_countries.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1">DESTINATION COUNTRY</label>
-            <select
-              multiple
-              className="w-full rounded-xl border p-3 h-32"
-              value={dest}
-              onChange={(e) => setDest(Array.from(e.target.selectedOptions).map((o) => o.value))}
-            >
-              {options.dest_countries.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
+        {modalLoading && activeShipper && (
+          <div className="pointer-events-none fixed inset-x-0 top-6 z-40 flex justify-center">
+            <div className="rounded-full bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow">
+              Loading route insights…
+            </div>
           </div>
         )}
 
-        {showFilters && ENABLE_ADV && (
-          <div className="opacity-60 pointer-events-none">
-            <div className="text-xs font-semibold">Advanced (coming soon)</div>
-            <div className="grid md:grid-cols-3 gap-3 mt-2">
-              <input className="rounded-xl border p-3" placeholder="Origin city" />
-              <input className="rounded-xl border p-3" placeholder="Origin state" />
-              <input className="rounded-xl border p-3" placeholder="Origin port" />
-              <input className="rounded-xl border p-3" placeholder="Dest city" />
-              <input className="rounded-xl border p-3" placeholder="Dest state" />
-              <input className="rounded-xl border p-3" placeholder="Dest ZIP" />
-              <input className="rounded-xl border p-3" placeholder="Commodity type" />
+        {modalError && activeShipper && (
+          <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center">
+            <div className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700 shadow">
+              {modalError}
             </div>
           </div>
         )}
 
-        <button
-          onClick={runSearch}
-          disabled={loading}
-          className="inline-flex items-center px-4 py-2 rounded-xl bg-indigo-600 text-white disabled:opacity-50"
-        >
-          {loading ? "Searching…" : "Search"}
-        </button>
-      </div>
-
-      {err && (
-        <div className="mt-4 rounded-xl bg-red-50 text-red-700 border border-red-200 p-3 text-sm break-all">
-          {err}
-        </div>
-      )}
-
-      <div className="mt-6 grid md:grid-cols-2 gap-4">
-        {rows.map((r) => (
-          <div key={r.company_id} className="rounded-2xl border p-4 bg-white">
-            <div className="font-semibold text-lg">{r.company_name}</div>
-            <div className="text-sm text-slate-600">Shipments (12m): {r.shipments_12m ?? "—"}</div>
-            <div className="text-sm text-slate-600">Last activity: {r.last_activity ?? "—"}</div>
-            <div className="text-sm mt-2">
-              <div className="font-medium">Top routes</div>
-              <div className="text-slate-600">
-                {Array.isArray(r.top_routes) && r.top_routes.length
-                  ? r.top_routes
-                      .map((t) => t.route || [t.origin_country, t.dest_country].filter(Boolean).join(" → "))
-                      .filter(Boolean)
-                      .join(" • ")
-                  : "—"}
-              </div>
-            </div>
-            <div className="text-sm mt-1">
-              <div className="font-medium">Top carriers</div>
-              <div className="text-slate-600">
-                {Array.isArray(r.top_carriers) && r.top_carriers.length
-                  ? r.top_carriers.map((t) => t.carrier ?? "").filter(Boolean).join(" • ") || "—"
-                  : "—"}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {!loading && !err && rows.length === 0 && (
-        <div className="mt-6 text-sm text-slate-500">No results yet. Run a search to see companies.</div>
-      )}
-    </div>
+        <ShipperDetailModal
+          shipper={activeShipper}
+          open={Boolean(activeShipper)}
+          onClose={handleCloseModal}
+          topRoute={routeKpis?.topRouteLast12m ?? null}
+          recentRoute={routeKpis?.mostRecentRoute ?? null}
+          onSave={handleSaveToCommandCenter}
+          saving={saveLoading}
+        />
+    </>
   );
 }

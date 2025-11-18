@@ -1,142 +1,139 @@
 'use client';
-import * as React from 'react';
-import { Ship, Plane } from 'lucide-react';
 
-type Props = {
-  value: {
-    origin: string | null;
-    destination: string | null;
-    hs: string | null;            // comma-separated
-    mode: 'ocean' | 'air' | null;
-  };
-  onChange: (next: Props['value']) => void;
+import * as React from "react";
+import type { FilterOptions } from "@/lib/api";
+
+type FacetKey = "origin" | "dest" | "mode" | "hs";
+
+type SearchFiltersProps = {
+  filterOptions: FilterOptions | null;
+  origin: string[];
+  dest: string[];
+  mode: string[];
+  hs: string[];
+  onChange: (next: { origin: string[]; dest: string[]; mode: string[]; hs: string[] }) => void;
+  className?: string;
 };
 
-const COUNTRIES = [
-  'Argentina','Australia','Bahamas','Bangladesh','Belgium','Brazil','Canada','China','Colombia',
-  'Denmark','Dominican Republic','France','Germany','Hong Kong','India','Indonesia','Ireland',
-  'Italy','Japan','Korea, Republic of','Malaysia','Mexico','Netherlands','New Zealand','Pakistan',
-  'Philippines','Poland','Portugal','Singapore','Spain','Sweden','Taiwan','Thailand','Turkey',
-  'United Arab Emirates','United Kingdom','United States','Vietnam'
-];
+type MultiChipRowProps = {
+  label: string;
+  values: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  transform?: (value: string) => string;
+};
 
-export default function SearchFilters({ value, onChange }: Props) {
-  const [origin, setOrigin] = React.useState(value.origin ?? '');
-  const [destination, setDestination] = React.useState(value.destination ?? '');
-  const [hs, setHs] = React.useState(value.hs ?? '');
-  const [mode, setMode] = React.useState<'ocean'|'air'|null>(value.mode ?? null);
-
-  // Simple typeahead suggestions
-  const [originSug, setOriginSug] = React.useState<string[]>([]);
-  const [destSug, setDestSug]   = React.useState<string[]>([]);
-  React.useEffect(() => {
-    const o = origin.trim().toLowerCase();
-    const d = destination.trim().toLowerCase();
-    setOriginSug(o ? COUNTRIES.filter(c => c.toLowerCase().includes(o)).slice(0,6) : []);
-    setDestSug  (d ? COUNTRIES.filter(c => c.toLowerCase().includes(d)).slice(0,6) : []);
-  }, [origin, destination]);
-
-  // Push state up (debounced) so page can auto-search as user types
-  React.useEffect(() => {
-    const id = setTimeout(() => {
-      onChange({
-        origin: origin.trim() ? origin.trim() : null,
-        destination: destination.trim() ? destination.trim() : null,
-        hs: hs.trim() ? hs.trim() : null,
-        mode
-      });
-    }, 350);
-    return () => clearTimeout(id);
-  }, [origin, destination, hs, mode]); // eslint-disable-line
+function MultiChipRow({ label, values, selected, onToggle, transform }: MultiChipRowProps) {
+  if (!values.length) return null;
+  const display = transform ?? ((value: string) => value);
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm p-4">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
-        {/* Origin */}
-        <div>
-          <label className="text-xs text-neutral-600">Origin</label>
-          <div className="relative mt-1">
-            <input
-              value={origin}
-              onChange={e => setOrigin(e.target.value)}
-              placeholder="Type a country…"
-              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
-            />
-            {originSug.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full rounded-xl border border-neutral-200 bg-white shadow">
-                {originSug.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setOrigin(s)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-50"
-                  >{s}</button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      {values.map((value) => {
+        const normalized = value.trim();
+        const isActive = selected.includes(normalized);
+        return (
+          <button
+            key={normalized}
+            type="button"
+            onClick={() => onToggle(normalized)}
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
+              isActive ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+            aria-pressed={isActive}
+          >
+            {display(normalized)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
-        {/* Destination */}
-        <div>
-          <label className="text-xs text-neutral-600">Destination</label>
-          <div className="relative mt-1">
-            <input
-              value={destination}
-              onChange={e => setDestination(e.target.value)}
-              placeholder="Type a country…"
-              className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm"
-            />
-            {destSug.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full rounded-xl border border-neutral-200 bg-white shadow">
-                {destSug.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setDestination(s)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-50"
-                  >{s}</button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+export default function SearchFilters({
+  filterOptions,
+  origin,
+  dest,
+  mode,
+  hs,
+  onChange,
+  className,
+}: SearchFiltersProps) {
+  const opts = React.useMemo(
+    () => ({
+      origins: filterOptions?.origins ?? [],
+      destinations: filterOptions?.destinations ?? [],
+      modes: filterOptions?.modes ?? [],
+      hs: filterOptions?.hs ?? [],
+    }),
+    [filterOptions],
+  );
 
-        {/* HS Codes */}
-        <div>
-          <label className="text-xs text-neutral-600">HS Codes</label>
-          <input
-            value={hs}
-            onChange={e => setHs(e.target.value)}
-            placeholder="e.g., 9403, 8501"
-            className="w-full h-10 rounded-xl border border-neutral-300 px-3 text-sm mt-1"
-          />
-          <div className="text-[11px] text-neutral-500 mt-1">Comma-separated; partial prefixes ok.</div>
-        </div>
+  const selections = React.useMemo(
+    () => ({ origin, dest, mode, hs }),
+    [origin, dest, mode, hs],
+  );
 
-        {/* Mode icon toggle */}
-        <div>
-          <label className="text-xs text-neutral-600">Mode</label>
-          <div className="mt-1 flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Ocean"
-              onClick={() => setMode('ocean')}
-              className={`h-10 w-12 rounded-xl grid place-items-center border ${mode==='ocean' ? 'border-violet-400 bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700' : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50'}`}
-              title="Ocean"
-            >
-              <Ship size={18}/>
-            </button>
-            <button
-              type="button"
-              aria-label="Air"
-              onClick={() => setMode('air')}
-              className={`h-10 w-12 rounded-xl grid place-items-center border ${mode==='air' ? 'border-violet-400 bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700' : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50'}`}
-              title="Air"
-            >
-              <Plane size={18}/>
-            </button>
-          </div>
-        </div>
-      </div>
+  const hasSelections = origin.length + dest.length + mode.length + hs.length > 0;
+
+  const handleToggle = React.useCallback(
+    (facet: FacetKey, value: string) => {
+      const current = new Set(selections[facet]);
+      if (current.has(value)) {
+        current.delete(value);
+      } else {
+        current.add(value);
+      }
+      const next = {
+        origin: facet === "origin" ? Array.from(current) : selections.origin,
+        dest: facet === "dest" ? Array.from(current) : selections.dest,
+        mode: facet === "mode" ? Array.from(current) : selections.mode,
+        hs: facet === "hs" ? Array.from(current) : selections.hs,
+      };
+      onChange(next);
+    },
+    [onChange, selections],
+  );
+
+  const rootClass = ["flex flex-col gap-3", className].filter(Boolean).join(" ");
+
+  return (
+    <div className={rootClass}>
+      <MultiChipRow
+        label="Origins"
+        values={opts.origins}
+        selected={origin}
+        onToggle={(value) => handleToggle("origin", value)}
+      />
+      <MultiChipRow
+        label="Destinations"
+        values={opts.destinations}
+        selected={dest}
+        onToggle={(value) => handleToggle("dest", value)}
+      />
+      <MultiChipRow
+        label="Modes"
+        values={opts.modes}
+        selected={mode}
+        onToggle={(value) => handleToggle("mode", value.toLowerCase())}
+        transform={(value) => value.toUpperCase()}
+      />
+      <MultiChipRow
+        label="HS Codes"
+        values={opts.hs}
+        selected={hs}
+        onToggle={(value) => handleToggle("hs", value)}
+      />
+      {hasSelections && (
+        <button
+          type="button"
+          onClick={() => onChange({ origin: [], dest: [], mode: [], hs: [] })}
+          className="self-start text-[11px] font-semibold text-indigo-600 underline-offset-2 hover:underline"
+        >
+          Clear filters
+        </button>
+      )}
     </div>
   );
 }

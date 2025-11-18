@@ -1,30 +1,32 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-const BASE = process.env.TARGET_BASE_URL || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev'
-const BASE =
+const RAW_BASE =
   process.env.TARGET_BASE_URL ||
-  'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev'
+  process.env.API_GATEWAY_BASE ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  process.env.VITE_API_BASE ||
+  ''
+
+const NORMALIZED_BASE = RAW_BASE.trim().replace(/\/$/, '')
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const path = req.query.path
-  const suffix = Array.isArray(path) ? path.join('/') : String(path ?? '')
+  if (!NORMALIZED_BASE) {
+    res.status(500).json({ error: 'missing_target_base' })
+    return
+  }
+
+  const path = Array.isArray(req.query.path) ? req.query.path.join('/') : String(req.query.path ?? '')
   const qs = req.url && req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
-  const url = `${String(BASE).replace(/\/$/, '')}/${suffix}${qs}`
+  const url = `${NORMALIZED_BASE}/${path}${qs}`
 
   try {
     const r = await fetch(url, {
       method: req.method,
       headers: { 'content-type': 'application/json' },
-      body: req.method && !['GET','HEAD','OPTIONS'].includes(req.method) ? JSON.stringify(req.body ?? {}) : undefined,
-      cache: 'no-store',
-    })
-    const text = await r.text()
-    res.status(r.status)
-       .setHeader('content-type', r.headers.get('content-type') ?? 'application/json')
-       .send(text)
-      body: req.method && !['GET','HEAD','OPTIONS'].includes(req.method)
-        ? JSON.stringify(req.body ?? {})
-        : undefined,
+      body:
+        req.method && !['GET', 'HEAD', 'OPTIONS'].includes(req.method ?? '')
+          ? JSON.stringify(req.body ?? {})
+          : undefined,
       cache: 'no-store',
     })
     const text = await r.text()
@@ -33,6 +35,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .setHeader('content-type', r.headers.get('content-type') ?? 'application/json')
       .send(text)
   } catch (e: any) {
-    res.status(502).json({ error: 'proxy_failed', detail: e?.message })
+    res.status(502).json({ error: 'proxy_failed', detail: e?.message ?? 'unknown error' })
   }
 }

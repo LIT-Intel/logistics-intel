@@ -1,17 +1,37 @@
-const DEFAULT_BASE = "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev";
+const PROXY_BASE = "/api/lit";
+
+function readEnvBase(): string {
+  try {
+    const metaEnv = typeof import.meta !== "undefined" ? ((import.meta as any)?.env ?? {}) : {};
+    const processEnv =
+      typeof process !== "undefined" && process.env
+        ? process.env
+        : {};
+    const candidate =
+      metaEnv.API_GATEWAY_BASE ??
+      metaEnv.VITE_API_BASE ??
+      metaEnv.NEXT_PUBLIC_API_BASE ??
+      processEnv.API_GATEWAY_BASE ??
+      processEnv.VITE_API_BASE ??
+      processEnv.NEXT_PUBLIC_API_BASE ??
+      "";
+    if (typeof candidate !== "string") return "";
+    const trimmed = candidate.trim();
+    return trimmed ? trimmed.replace(/\/+$/, "") : "";
+  } catch {
+    return "";
+  }
+}
 
 export function getGatewayBase(): string {
-  const fromNext = typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_BASE;
-  // Vite exposes VITE_*; also check NEXT_PUBLIC_* in case it's defined
-  // @ts-ignore Vite env typings
-  const fromVitePrimary = typeof import.meta !== "undefined" && (import.meta as any)?.env?.VITE_API_BASE;
-  // @ts-ignore Vite env typings
-  const fromViteAlt = typeof import.meta !== "undefined" && (import.meta as any)?.env?.NEXT_PUBLIC_API_BASE;
-
-  const base = (fromVitePrimary || fromViteAlt || fromNext || DEFAULT_BASE).toString().trim();
-  return base.replace(/\/+$/, "");
+  const envBase = readEnvBase();
+  if (typeof window === "undefined" && envBase) {
+    return envBase;
+  }
+  if (envBase.startsWith("/")) {
+    return envBase || PROXY_BASE;
+  }
+  return PROXY_BASE;
 }
 
-export function getApiBase(): string {
-  return getGatewayBase();
-}
+export const API_PROXY_BASE = PROXY_BASE;

@@ -159,7 +159,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
       try {
         // Fetch shipments
         try {
-          const s = await getCompanyShipments({ company_id: String(activeId), limit: 20, offset: 0 });
+          const s = await getCompanyShipments(String(activeId), { limit: 20, offset: 0 });
           if (!ignore) setShipments(Array.isArray(s?.rows) ? s.rows : []);
         } catch {
           if (!ignore) setShipments([]);
