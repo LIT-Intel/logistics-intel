@@ -3,15 +3,18 @@ import SearchFilters from "@/components/search/SearchFilters";
 import CompanyCard from "@/components/search/CompanyCard";
 import CompanyModal from "@/components/search/CompanyModal";
 import ShipperCard from "@/components/search/ShipperCard";
+import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import {
   getFilterOptions,
   searchCompanies,
   searchShippers,
   saveCompanyToCrm,
+  getIyRouteKpisForCompany,
   type CompanyHit,
   type FilterOptions,
   type IySearchMeta,
   type IyShipperHit,
+  type IyRouteKpis,
 } from "@/lib/api";
 
 const PAGE_SIZE = 25;
@@ -54,6 +57,10 @@ export default function SearchPage() {
 
   const [activeCompany, setActiveCompany] = useState<CompanyHit | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
+  const [shipperModalOpen, setShipperModalOpen] = useState(false);
+  const [shipperRouteKpis, setShipperRouteKpis] = useState<IyRouteKpis | null>(null);
+  const [shipperSavingKey, setShipperSavingKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,12 +178,8 @@ export default function SearchPage() {
     searchShippers({ q: trimmed, page: shipperPage, pageSize: shipperPageSize })
       .then((res) => {
         if (cancelled) return;
-        if (!res.ok) {
-          setShipperError("ImportYeti search failed.");
-        } else {
-          setShipperError(null);
-        }
-        setShipperResults(Array.isArray(res.rows) ? res.rows : []);
+        setShipperError(null);
+        setShipperResults(Array.isArray(res.results) ? res.results : []);
         setShipperMeta(res.meta ?? null);
       })
       .catch((err) => {
@@ -253,6 +256,39 @@ export default function SearchPage() {
       console.error("saveCompanyToCrm failed", err);
     } finally {
       setSavingId(null);
+    }
+  }, []);
+
+  const handleSelectShipper = useCallback((shipper: IyShipperHit) => {
+    if (!shipper) return;
+    setActiveShipper(shipper);
+    setShipperModalOpen(true);
+    setShipperRouteKpis(null);
+    if (!shipper.key) return;
+    getIyRouteKpisForCompany({ companyKey: shipper.key })
+      .then((kpis) => setShipperRouteKpis(kpis))
+      .catch(() => setShipperRouteKpis(null));
+  }, []);
+
+  const handleShipperModalClose = useCallback(() => {
+    setShipperModalOpen(false);
+    setActiveShipper(null);
+    setShipperRouteKpis(null);
+  }, []);
+
+  const handleSaveShipper = useCallback(async (shipper: IyShipperHit) => {
+    if (!shipper?.key) return;
+    setShipperSavingKey(shipper.key);
+    try {
+      await saveCompanyToCrm({
+        company_id: shipper.key,
+        company_name: shipper.title,
+        source: "importyeti",
+      });
+    } catch (err) {
+      console.error("save importyeti shipper failed", err);
+    } finally {
+      setShipperSavingKey(null);
     }
   }, []);
 
@@ -428,39 +464,39 @@ export default function SearchPage() {
                     />
                   </div>
 
-                  {shipperError && <p className="text-xs text-rose-600">{shipperError}</p>}
+                    {shipperError && <p className="text-xs text-rose-600">{shipperError}</p>}
 
-                  {shipperMeta && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                      <span>
-                        Showing <span className="font-medium">{shipperResults.length}</span> of{" "}
-                        <span className="font-medium">{shipperMeta.total}</span> results for{" "}
-                        <span className="font-semibold">"{shipperMeta.q}"</span>
-                      </span>
-                      {typeof shipperMeta.creditsRemaining === "number" && (
-                        <span>Credits remaining: {shipperMeta.creditsRemaining}</span>
-                      )}
-                    </div>
-                  )}
+                    {shipperMeta && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                        <span>
+                          Showing <span className="font-medium">{shipperResults.length}</span> of{" "}
+                          <span className="font-medium">{shipperMeta.total}</span> results for{" "}
+                          <span className="font-semibold">"{shipperMeta.q}"</span>
+                        </span>
+                        {typeof shipperMeta.creditsRemaining === "number" && (
+                          <span>Credits remaining: {shipperMeta.creditsRemaining}</span>
+                        )}
+                      </div>
+                    )}
 
-                  {shipperLoading ? (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {Array.from({ length: 6 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
-                        />
-                      ))}
-                    </div>
-                  ) : shipperResults.length === 0 && shipperMeta?.q ? (
-                    <p className="text-sm text-slate-500">No shippers found for "{shipperMeta.q}".</p>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {shipperResults.map((row) => (
-                        <ShipperCard key={row.key || row.title} data={row} />
-                      ))}
-                    </div>
-                  )}
+                    {shipperLoading ? (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {Array.from({ length: 6 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
+                          />
+                        ))}
+                      </div>
+                    ) : shipperResults.length === 0 && shipperMeta?.q ? (
+                      <p className="text-sm text-slate-500">No shippers found for "{shipperMeta.q}".</p>
+                    ) : (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {shipperResults.map((row) => (
+                          <ShipperCard key={row.key || row.title} data={row} onSelect={handleSelectShipper} />
+                        ))}
+                      </div>
+                    )}
 
                   {shipperMeta && shipperMeta.total > shipperPageSize && (
                     <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
@@ -490,10 +526,18 @@ export default function SearchPage() {
             </div>
           )}
         </div>
-        </div>
       </div>
 
       <CompanyModal company={activeCompany} open={Boolean(activeCompany)} onClose={handleModalChange} />
+      <ShipperDetailModal
+        shipper={activeShipper}
+        open={shipperModalOpen && Boolean(activeShipper)}
+        onClose={handleShipperModalClose}
+        topRoute={shipperRouteKpis?.topRouteLast12m}
+        recentRoute={shipperRouteKpis?.mostRecentRoute}
+        onSave={handleSaveShipper}
+        saving={Boolean(activeShipper?.key && shipperSavingKey === activeShipper.key)}
+      />
     </>
   );
 }

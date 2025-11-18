@@ -52,5 +52,10 @@ export function normalizeIYShipment(row: any): ShipmentLite {
     description: row?.Product_Description ?? null,
     lcl: typeof row?.lcl === 'boolean' ? row.lcl : null,
     shipping_cost_usd: Number.isFinite(costNum) ? costNum : (row?.shipping_cost === 0 ? 0 : null),
+    origin_port: row?.origin_port ?? row?.Origin_Port ?? row?.Port_of_Lading ?? null,
+    destination_port: row?.destination_port ?? row?.Destination_Port ?? row?.Port_of_Unlading ?? null,
+    origin_country_code: row?.origin_country_code ?? row?.Origin_Country_Code ?? row?.origin_country ?? null,
+    dest_country_code: row?.dest_country_code ?? row?.Destination_Country_Code ?? row?.dest_country ?? null,
+    mode: row?.mode ?? row?.Mode ?? row?.transport_mode ?? null,
   };
 }

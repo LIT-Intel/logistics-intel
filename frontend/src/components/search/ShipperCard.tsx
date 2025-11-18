@@ -2,19 +2,43 @@ import type { IyShipperHit } from "@/lib/api";
 
 type ShipperCardProps = {
   data: IyShipperHit;
+  onSelect?: (shipper: IyShipperHit) => void;
 };
 
-export default function ShipperCard({ data }: ShipperCardProps) {
+export default function ShipperCard({ data, onSelect }: ShipperCardProps) {
   const suppliers = Array.isArray(data.topSuppliers) ? data.topSuppliers.slice(0, 3) : [];
 
+  const handleSelect = () => {
+    onSelect?.(data);
+  };
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+    <div
+      className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition ${
+        onSelect ? "cursor-pointer hover:shadow-lg focus-within:ring-2 focus-within:ring-indigo-200" : "hover:shadow-md"
+      }`}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={handleSelect}
+      onKeyDown={(event) => {
+        if (!onSelect) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleSelect();
+        }
+      }}
+    >
       <div className="mb-4">
         <h3 className="text-sm font-semibold text-slate-900">{data.title}</h3>
         {data.address && <p className="mt-1 text-xs text-slate-500">{data.address}</p>}
         {data.countryCode && (
           <p className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">
             Country: {data.countryCode}
+          </p>
+        )}
+        {data.type && (
+          <p className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">
+            Type: {data.type}
           </p>
         )}
       </div>
@@ -56,18 +80,21 @@ export default function ShipperCard({ data }: ShipperCardProps) {
         <button
           type="button"
           disabled
-          title="Command Center wiring coming soon"
+          title="Command Center save available inside the detail modal"
           className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 opacity-60"
+          onClick={(event) => event.stopPropagation()}
         >
           Save to Command Center
         </button>
         <button
           type="button"
-          disabled
-          title="Shipment detail view coming soon"
-          className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-3 py-1.5 text-xs font-medium text-white opacity-60"
+          className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
+          onClick={(event) => {
+            event.stopPropagation();
+            handleSelect();
+          }}
         >
-          View shipments
+          View details
         </button>
       </div>
     </div>
