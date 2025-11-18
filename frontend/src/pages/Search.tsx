@@ -21,9 +21,10 @@ export default function SearchPage() {
   const [shipperLoading, setShipperLoading] = useState(false);
   const [shipperError, setShipperError] = useState<string | null>(null);
   const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
-  const [shipperModalOpen, setShipperModalOpen] = useState(false);
-  const [shipperRouteKpis, setShipperRouteKpis] = useState<IyRouteKpis | null>(null);
-  const [shipperSavingKey, setShipperSavingKey] = useState<string | null>(null);
+  const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [saveLoading, setSaveLoading] = useState(false);
 
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
@@ -72,26 +73,33 @@ export default function SearchPage() {
     return () => controller.abort();
   }, [submittedQuery, shipperPage]);
 
-  const handleSelectShipper = useCallback((shipper: IyShipperHit) => {
+  const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
     if (!shipper) return;
     setActiveShipper(shipper);
-    setShipperModalOpen(true);
-    setShipperRouteKpis(null);
-    if (!shipper.key) return;
-    getIyRouteKpisForCompany({ companyKey: shipper.key })
-      .then((kpis) => setShipperRouteKpis(kpis))
-      .catch(() => setShipperRouteKpis(null));
+    setModalLoading(true);
+    setModalError(null);
+    try {
+      const kpis = await getIyRouteKpisForCompany({ companyKey: shipper.key });
+      setRouteKpis(kpis ?? null);
+    } catch (err) {
+      console.warn("getIyRouteKpisForCompany failed", err);
+      setRouteKpis(null);
+      setModalError("Route KPIs unavailable for this shipper.");
+    } finally {
+      setModalLoading(false);
+    }
   }, []);
 
-  const handleShipperModalClose = useCallback(() => {
-    setShipperModalOpen(false);
+  const handleCloseModal = useCallback(() => {
     setActiveShipper(null);
-    setShipperRouteKpis(null);
+    setRouteKpis(null);
+    setModalError(null);
+    setModalLoading(false);
   }, []);
 
-  const handleSaveShipper = useCallback(async (shipper: IyShipperHit) => {
+  const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
     if (!shipper?.key) return;
-    setShipperSavingKey(shipper.key);
+    setSaveLoading(true);
     try {
       await saveCompanyToCrm({
         company_id: shipper.key,
@@ -99,9 +107,9 @@ export default function SearchPage() {
         source: "importyeti",
       });
     } catch (err) {
-      console.error("save importyeti shipper failed", err);
+      console.error("saveCompanyToCrm failed", err);
     } finally {
-      setShipperSavingKey(null);
+      setSaveLoading(false);
     }
   }, []);
 
@@ -189,13 +197,18 @@ export default function SearchPage() {
                       />
                     ))}
                   </div>
-                ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {shipperResults.map((shipper) => (
-                      <ShipperCard key={shipper.key || shipper.title} data={shipper} onSelect={handleSelectShipper} />
-                    ))}
-                  </div>
-                )}
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {shipperResults.map((shipper) => (
+                        <ShipperCard
+                          key={shipper.key || shipper.title}
+                          shipper={shipper}
+                          onViewDetails={() => handleViewDetails(shipper)}
+                          onSave={() => handleSaveToCommandCenter(shipper)}
+                        />
+                      ))}
+                    </div>
+                  )}
 
                 {shipperMeta && shipperMeta.total > RESULTS_PER_PAGE && (
                   <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
@@ -227,15 +240,31 @@ export default function SearchPage() {
         </div>
       </div>
 
-      <ShipperDetailModal
-        shipper={activeShipper}
-        open={shipperModalOpen && Boolean(activeShipper)}
-        onClose={handleShipperModalClose}
-        topRoute={shipperRouteKpis?.topRouteLast12m}
-        recentRoute={shipperRouteKpis?.mostRecentRoute}
-        onSave={handleSaveShipper}
-        saving={Boolean(activeShipper?.key && shipperSavingKey === activeShipper.key)}
-      />
+        {modalLoading && activeShipper && (
+          <div className="pointer-events-none fixed inset-x-0 top-6 z-40 flex justify-center">
+            <div className="rounded-full bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow">
+              Loading route insights…
+            </div>
+          </div>
+        )}
+
+        {modalError && activeShipper && (
+          <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center">
+            <div className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700 shadow">
+              {modalError}
+            </div>
+          </div>
+        )}
+
+        <ShipperDetailModal
+          shipper={activeShipper}
+          open={Boolean(activeShipper)}
+          onClose={handleCloseModal}
+          topRoute={routeKpis?.topRouteLast12m ?? null}
+          recentRoute={routeKpis?.mostRecentRoute ?? null}
+          onSave={handleSaveToCommandCenter}
+          saving={saveLoading}
+        />
     </>
   );
 }
