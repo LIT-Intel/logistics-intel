@@ -104,3 +104,32 @@ paths:
         - { name: offset,     in: query, type: integer, required: false }
       responses: { "200": { description: "ok" } }
 
+    /public/iy/companyLatestBol:
+      options:
+        operationId: cors_iyCompanyLatestBol
+        security: []
+        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+        responses: { "200": { description: "ok" } }
+      get:
+        operationId: iyCompanyLatestBol
+        security: []
+        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+        parameters:
+          - { name: company, in: query, type: string, required: true }
+        responses: { "200": { description: "ok" } }
+
+    /public/iy/companyStats:
+      options:
+        operationId: cors_iyCompanyStats
+        security: []
+        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+        responses: { "200": { description: "ok" } }
+      get:
+        operationId: iyCompanyStats
+        security: []
+        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+        parameters:
+          - { name: company, in: query, type: string, required: true }
+          - { name: range, in: query, type: string, required: false }
+        responses: { "200": { description: "ok" } }
+

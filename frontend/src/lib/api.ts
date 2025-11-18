@@ -27,8 +27,9 @@ export type CompanyHit = {
 export type IyShipperHit = {
   key: string;
   title: string;
-  address?: string;
   countryCode?: string;
+  type?: string;
+  address?: string;
   totalShipments?: number;
   mostRecentShipment?: string;
   topSuppliers?: string[];
@@ -44,10 +45,47 @@ export type IySearchMeta = {
 };
 
 export type IySearchResponse = {
-  ok: boolean;
-  meta: IySearchMeta;
-  rows: IyShipperHit[];
   total: number;
+  results: IyShipperHit[];
+  meta: IySearchMeta;
+};
+
+export type IyRouteKpis = {
+  topRouteLast12m: string | null;
+  mostRecentRoute: string | null;
+  sampleSize: number;
+};
+
+export type IyShipmentTypeBreakdown = {
+  fcl_shipments?: number;
+  lcl_shipments?: number;
+};
+
+export type IyMonthlyShipment = {
+  month: string;
+  shipments: number;
+  teu?: number;
+  fcl_shipments?: number;
+  lcl_shipments?: number;
+};
+
+export type IyTopLane = {
+  origin_port?: string;
+  origin_country_code?: string;
+  dest_port?: string;
+  dest_country_code?: string;
+  shipments_12m?: number;
+  teu_12m?: number;
+};
+
+export type IyCompanyStats = {
+  ok: boolean;
+  companySlug?: string;
+  range?: string;
+  shipmentTypeBreakdown?: IyShipmentTypeBreakdown;
+  monthlyShipments?: IyMonthlyShipment[];
+  topLanes?: IyTopLane[];
+  routes?: Array<{ origin_country_code?: string; dest_country_code?: string; shipments_12m?: number; teu_12m?: number }>;
 };
 
 export type SearchResponse<T> = {
@@ -391,35 +429,161 @@ export type IySearchRow = {
   top_customers?: string[] | null;
 };
 
+const IY_COMPANY_KEY_PREFIX = "company/";
+
+function ensureCompanyKey(value: string) {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith(IY_COMPANY_KEY_PREFIX) ? trimmed : `${IY_COMPANY_KEY_PREFIX}${trimmed}`;
+}
+
+function normalizeIyShipperHit(entry: any): IyShipperHit {
+  const rawKey =
+    entry?.key ??
+    entry?.company_id ??
+    entry?.slug ??
+    entry?.id ??
+    null;
+  const fallbackTitle =
+    (typeof entry?.title === "string" && entry.title.trim()) ||
+    (typeof entry?.name === "string" && entry.name.trim()) ||
+    "shipper";
+  const normalizedKey =
+    typeof rawKey === "string" && rawKey.trim()
+      ? rawKey.trim()
+      : ensureCompanyKey(
+          fallbackTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "shipper",
+        );
+
+  const normalizeString = (value: unknown) =>
+    typeof value === "string" && value.trim().length ? value.trim() : undefined;
+
+  const toNumberOrUndefined = (value: unknown) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
+  };
+
+  const supplierSource = Array.isArray(entry?.topSuppliers)
+    ? entry.topSuppliers
+    : Array.isArray(entry?.top_suppliers)
+      ? entry.top_suppliers
+      : [];
+  const topSuppliers = supplierSource
+    .map((item: unknown) => (typeof item === "string" ? item.trim() : undefined))
+    .filter((item): item is string => Boolean(item && item.length));
+
+  return {
+    key: normalizedKey,
+    title: normalizeString(entry?.title) ?? normalizeString(entry?.name) ?? fallbackTitle,
+    countryCode:
+      normalizeString(entry?.countryCode) ??
+      normalizeString(entry?.country_code) ??
+      normalizeString(entry?.country),
+    type: normalizeString(entry?.type),
+    address: normalizeString(entry?.address),
+    totalShipments:
+      toNumberOrUndefined(entry?.totalShipments) ??
+      toNumberOrUndefined(entry?.shipments) ??
+      toNumberOrUndefined(entry?.shipments_12m),
+    mostRecentShipment:
+      normalizeString(entry?.mostRecentShipment) ??
+      normalizeString(entry?.last_activity) ??
+      normalizeString(entry?.recentShipment),
+    topSuppliers,
+  };
+}
+
+function resolveIySearchArray(raw: any): any[] {
+  if (Array.isArray(raw?.results)) return raw.results;
+  if (Array.isArray(raw?.rows)) return raw.rows;
+  if (Array.isArray(raw?.items)) return raw.items;
+  if (Array.isArray(raw)) return raw;
+  return [];
+}
+
+function buildIySearchMeta(
+  rawMeta: any,
+  fallback: { q: string; page: number; pageSize: number; total: number },
+): IySearchMeta {
+  const toNumber = (value: unknown, defaultValue: number) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : defaultValue;
+  };
+  return {
+    q: typeof rawMeta?.q === "string" ? rawMeta.q : fallback.q,
+    page: toNumber(rawMeta?.page, fallback.page),
+    pageSize: toNumber(rawMeta?.pageSize, fallback.pageSize),
+    total: toNumber(rawMeta?.total, fallback.total),
+    creditsRemaining:
+      typeof rawMeta?.creditsRemaining === "number" ? rawMeta.creditsRemaining : undefined,
+    requestCost: typeof rawMeta?.requestCost === "number" ? rawMeta.requestCost : undefined,
+  };
+}
+
+function coerceIySearchResponse(
+  raw: any,
+  fallback: { q: string; page: number; pageSize: number },
+): IySearchResponse {
+  const items = resolveIySearchArray(raw);
+  const totalCandidate =
+    raw?.total ??
+    raw?.meta?.total ??
+    items.length;
+  const total = Number.isFinite(Number(totalCandidate)) ? Number(totalCandidate) : items.length;
+  const meta = buildIySearchMeta(raw?.meta ?? {}, { ...fallback, total });
+
+  return {
+    total,
+    results: items.map(normalizeIyShipperHit),
+    meta,
+  };
+}
+
 export async function iySearch(q: string, limit = 10, offset = 0) {
   const pageSize = Math.max(1, Number.isFinite(limit) ? Number(limit) : 10);
   const computedOffset = Math.max(0, Number.isFinite(offset) ? Number(offset) : 0);
   const page = Math.floor(computedOffset / pageSize) + 1;
   const payload = await searchShippers({ q, page, pageSize });
-  return { ok: payload.ok, rows: payload.rows, meta: payload.meta };
+  return { ok: true, rows: payload.results, meta: payload.meta, total: payload.total };
+}
+
+export async function iySearchShippers(
+  body: { q: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+) {
+  const q = typeof body.q === "string" ? body.q.trim() : "";
+  const limitCandidate = Number(body.limit);
+  const offsetCandidate = Number(body.offset);
+  const limit = Math.max(1, Math.min(100, Number.isFinite(limitCandidate) ? limitCandidate : 25));
+  const offset = Math.max(0, Number.isFinite(offsetCandidate) ? offsetCandidate : 0);
+
+  return fetchJson<any>(`${API_BASE}/public/iy/searchShippers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ q, limit, offset }),
+    signal,
+  });
 }
 
 export async function iyCompanyBols(
   params: { company_id: string; limit?: number; offset?: number },
   signal?: AbortSignal,
-): Promise<{ ok: boolean; data: any; rows: any[] }> {
-  const origin =
-    typeof window !== 'undefined' && typeof window.location !== 'undefined'
-      ? window.location.origin
-      : 'http://localhost';
-  const url = new URL(`${API_BASE}/public/iy/companyBols`, origin);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null) return;
-    url.searchParams.set(key, String(value));
-  });
+): Promise<{ ok: boolean; data: any; rows: any[]; total: number }> {
+  const companyId = ensureCompanyKey(params.company_id);
+  if (!companyId) {
+    throw new Error("iyCompanyBols requires company_id");
+  }
+  const search = new URLSearchParams({ company_id: companyId });
+  if (params.limit != null) search.set("limit", String(params.limit));
+  if (params.offset != null) search.set("offset", String(params.offset));
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: { accept: 'application/json' },
+  const response = await fetch(`${API_BASE}/public/iy/companyBols?${search.toString()}`, {
+    method: "GET",
+    headers: { accept: "application/json" },
     signal,
   });
 
-  const text = await response.text().catch(() => '');
+  const text = await response.text().catch(() => "");
   let parsed: unknown = {};
   if (text) {
     try {
@@ -430,45 +594,165 @@ export async function iyCompanyBols(
   }
 
   if (!response.ok) {
-    const errorPayload = typeof parsed === 'object' && parsed !== null ? parsed : {};
+    const errorPayload = typeof parsed === "object" && parsed !== null ? parsed : {};
     throw { status: response.status, ...errorPayload };
   }
 
-  const data = typeof parsed === 'object' && parsed !== null ? parsed : {};
+  const data = typeof parsed === "object" && parsed !== null ? parsed : {};
   const rows = Array.isArray((data as any)?.rows)
     ? (data as any).rows
     : Array.isArray(parsed)
       ? (parsed as any[])
       : [];
-  return { ok: true, data, rows };
+  const total =
+    typeof (data as any)?.total === "number"
+      ? (data as any).total
+      : rows.length;
+
+  return { ok: Boolean((data as any)?.ok ?? true), data, rows, total };
 }
 
-export async function searchShippers(params: {
-  q: string;
-  page?: number;
-  pageSize?: number;
-}): Promise<IySearchResponse> {
-  const body = {
-    q: params.q ?? "",
-    page: Math.max(1, Number.isFinite(params.page) ? Number(params.page) : 1),
-    pageSize: Math.max(1, Number.isFinite(params.pageSize) ? Number(params.pageSize) : 25),
-  };
+export async function iyCompanyStats(
+  params: { company: string; range?: string },
+  signal?: AbortSignal,
+): Promise<IyCompanyStats | null> {
+  const company = (params.company ?? "").trim();
+  if (!company) return null;
+  const search = new URLSearchParams({ company });
+  if (params.range) search.set("range", params.range);
+  try {
+    return await fetchJson<IyCompanyStats>(`${API_BASE}/public/iy/companyStats?${search.toString()}`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal,
+    });
+  } catch (error) {
+    console.warn("iyCompanyStats failed", error);
+    return null;
+  }
+}
 
-  const r = await fetch(`${API_BASE}/public/iy/searchShippers`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+export async function searchShippers(
+  params: { q: string; page?: number; pageSize?: number },
+  signal?: AbortSignal,
+): Promise<IySearchResponse> {
+  const q = typeof params.q === "string" ? params.q.trim() : "";
+  const page = Math.max(1, Number.isFinite(Number(params.page)) ? Number(params.page) : 1);
+  const pageSize = Math.max(1, Math.min(100, Number.isFinite(Number(params.pageSize)) ? Number(params.pageSize) : 25));
+
+  if (!q) {
+    const meta: IySearchMeta = { q, page, pageSize, total: 0 };
+    return { total: 0, results: [], meta };
+  }
+
+  const raw = await iySearchShippers(
+    { q, limit: pageSize, offset: (page - 1) * pageSize },
+    signal,
+  );
+  return coerceIySearchResponse(raw, { q, page, pageSize });
+}
+
+function mapIyRowsToShipments(rows: any[]): ShipmentLite[] {
+  return rows.map((row) => {
+    const normalized = normalizeIYShipment(row);
+    return {
+      ...normalized,
+      origin_port: row?.origin_port ?? row?.origin ?? row?.Origin_Port ?? null,
+      destination_port: row?.destination_port ?? row?.destination ?? row?.Destination_Port ?? null,
+      origin_country_code: row?.origin_country_code ?? row?.origin_country ?? row?.Origin_Country_Code ?? null,
+      dest_country_code: row?.dest_country_code ?? row?.dest_country ?? row?.Destination_Country_Code ?? null,
+      mode: row?.mode ?? row?.transport_mode ?? row?.Mode ?? null,
+    };
   });
-
-  if (!r.ok) throw new Error(`iy search ${r.status}`);
-  return r.json();
 }
 
 export async function iyFetchCompanyBols(params: { companyKey: string; limit: number; offset: number; }): Promise<ShipmentLite[]> {
   const payload = await iyCompanyBols(
     { company_id: params.companyKey, limit: params.limit, offset: params.offset },
   );
-  return Array.isArray(payload?.rows) ? payload.rows.map(normalizeIYShipment) : [];
+  return Array.isArray(payload?.rows) ? mapIyRowsToShipments(payload.rows) : [];
+}
+
+function buildRouteFromShipment(row: ShipmentLite): string | null {
+  const origin =
+    row.origin_port ||
+    row.origin_country_code ||
+    row.shipper_name ||
+    null;
+  const destination =
+    row.destination_port ||
+    row.dest_country_code ||
+    row.consignee_name ||
+    null;
+  if (origin && destination) return `${origin} → ${destination}`;
+  if (origin) return origin;
+  if (destination) return destination;
+  return null;
+}
+
+export function computeIyRouteKpisFromShipments(rows: ShipmentLite[]): IyRouteKpis {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { topRouteLast12m: null, mostRecentRoute: null, sampleSize: 0 };
+  }
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setMonth(cutoff.getMonth() - 12);
+  const cutoffTime = cutoff.getTime();
+
+  const routeCounts = new Map<string, number>();
+  let mostRecentRoute: string | null = null;
+  let mostRecentTime = 0;
+
+  for (const row of rows) {
+    const route = buildRouteFromShipment(row);
+    if (!route) continue;
+    const ts = row.date ? new Date(row.date).getTime() : NaN;
+    if (!Number.isNaN(ts) && ts > mostRecentTime) {
+      mostRecentTime = ts;
+      mostRecentRoute = route;
+    }
+    if (!Number.isNaN(ts) && ts >= cutoffTime) {
+      routeCounts.set(route, (routeCounts.get(route) || 0) + 1);
+    }
+  }
+
+  let topRouteLast12m: string | null = null;
+  let maxCount = 0;
+  for (const [route, count] of routeCounts.entries()) {
+    if (count > maxCount) {
+      maxCount = count;
+      topRouteLast12m = route;
+    }
+  }
+
+  return {
+    topRouteLast12m,
+    mostRecentRoute,
+    sampleSize: rows.length,
+  };
+}
+
+export async function getIyRouteKpisForCompany(params: {
+  companyKey: string;
+  limit?: number;
+  offset?: number;
+}): Promise<IyRouteKpis> {
+  const companyKey = ensureCompanyKey(params.companyKey);
+  if (!companyKey) {
+    return { topRouteLast12m: null, mostRecentRoute: null, sampleSize: 0 };
+  }
+  const limitCandidate = Number(params.limit);
+  const offsetCandidate = Number(params.offset);
+  const limit = Math.max(25, Math.min(500, Number.isFinite(limitCandidate) ? limitCandidate : 200));
+  const offset = Math.max(0, Number.isFinite(offsetCandidate) ? offsetCandidate : 0);
+  try {
+    const { rows } = await iyCompanyBols({ company_id: companyKey, limit, offset });
+    const shipments = mapIyRowsToShipments(rows);
+    return computeIyRouteKpisFromShipments(shipments);
+  } catch (error) {
+    console.error("getIyRouteKpisForCompany", error);
+    return { topRouteLast12m: null, mostRecentRoute: null, sampleSize: 0 };
+  }
 }
 
 export async function saveCompany(record: CommandCenterRecord): Promise<{ saved_id?: string }> {

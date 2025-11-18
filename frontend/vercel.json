@@ -7,6 +7,7 @@
     { "source": "/", "destination": "/search", "permanent": false }
   ],
   "rewrites": [
+    { "source": "/api/lit/:path*", "destination": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

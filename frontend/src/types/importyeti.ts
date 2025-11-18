@@ -28,6 +28,11 @@ export interface ShipmentLite {
   description?: string | null;
   lcl?: boolean | null;
   shipping_cost_usd?: number | null;
+  origin_port?: string | null;
+  destination_port?: string | null;
+  origin_country_code?: string | null;
+  dest_country_code?: string | null;
+  mode?: string | null;
 }
 
 export interface CommandCenterRecord {
