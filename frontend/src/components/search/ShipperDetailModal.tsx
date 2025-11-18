@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -128,21 +128,17 @@ export default function ShipperDetailModal({
     onSave(shipper);
   };
 
-  const derivedTopRoute = useMemo(() => {
+  const derivedTopRoute = (() => {
     if (topRoute) return topRoute;
     const lane = stats?.topLanes?.[0];
     if (!lane) return null;
-    const origin =
-      lane.origin_port ||
-      lane.origin_country_code;
-    const dest =
-      lane.dest_port ||
-      lane.dest_country_code;
+    const origin = lane.origin_port || lane.origin_country_code;
+    const dest = lane.dest_port || lane.dest_country_code;
     if (origin && dest) return `${origin} → ${dest}`;
     return origin || dest || null;
-  }, [stats?.topLanes, topRoute]);
+  })();
 
-  const derivedRecentRoute = useMemo(() => recentRoute ?? derivedTopRoute ?? null, [recentRoute, derivedTopRoute]);
+  const derivedRecentRoute = recentRoute ?? derivedTopRoute ?? null;
 
   const breakdown = stats?.shipmentTypeBreakdown;
   const fcl = breakdown?.fcl_shipments ?? 0;
