@@ -1,5 +1,3 @@
-// frontend/src/components/search/ShipperCard.tsx
-
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import type { IyShipperHit } from "@/lib/api";
 import { Calendar, MapPin, Package, Target } from "lucide-react";
