@@ -35,10 +35,11 @@ export default function SearchPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [modeFilter, setModeFilter] = useState<"any" | "fcl" | "lcl">("any");
-  const [regionFilter, setRegionFilter] = useState<"global" | "us-importers">("global");
-  const [activityFilter, setActivityFilter] = useState<"12m" | "6m" | "3m">("12m");
+  const [filters, setFilters] = useState<SearchFiltersValue>(() => ({
+    mode: "any",
+    region: "global",
+    activity: "12m",
+  }));
 
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
@@ -242,7 +243,7 @@ export default function SearchPage() {
                 .
               </p>
 
-              <SearchFilters value={filters} onChange={setFilters} />
+                <SearchFilters value={filters} onChange={setFilters} />
             </div>
 
             {shipperError && (
