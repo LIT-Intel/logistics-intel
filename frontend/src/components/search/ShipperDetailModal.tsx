@@ -1,55 +1,25 @@
-// frontend/src/components/search/ShipperDetailModal.tsx
-
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import React from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import {
-  iyCompanyStats,
-  iyFetchCompanyBols,
-  type IyCompanyStats,
-  type IyShipperHit,
-} from "@/lib/api";
-import type { ShipmentLite } from "@/types/importyeti";
-import {
-  Loader2,
-  MapPin,
-  Ship,
-  TrendingUp,
-  BarChart3,
-  Target,
-  Lock,
-  X,
-} from "lucide-react";
+import { MapPin, Calendar, Package, Ship, Info } from "lucide-react";
+import type { IyShipperHit } from "@/lib/api";
 
-type Props = {
+type ShipperDetailModalProps = {
   shipper: IyShipperHit | null;
   open: boolean;
   onClose: () => void;
   topRoute?: string | null;
   recentRoute?: string | null;
-  onSave?: (shipper: IyShipperHit) => void;
+  onSave?: (shipper: IyShipperHit) => void | Promise<void>;
   saving?: boolean;
 };
 
-const SHIPMENT_PAGE_LIMIT = 25;
-
-const formatNumber = (value?: number | null) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat().format(value);
-};
-
-const formatDate = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-};
-
-const getCompanySlug = (key: string | undefined) => {
-  if (!key) return "";
-  return key.replace(/^company\//, "");
-};
+function safe(value: unknown): string {
+  if (value == null) return "—";
+  const text = String(value).trim();
+  return text.length ? text : "—";
+}
 
 export default function ShipperDetailModal({
   shipper,
@@ -58,165 +28,66 @@ export default function ShipperDetailModal({
   topRoute,
   recentRoute,
   onSave,
-  saving,
-}: Props) {
-  const [activeTab, setActiveTab] = useState<"overview" | "kpis" | "shipments" | "contacts">(
-    "overview",
-  );
-
-  const [shipments, setShipments] = useState<ShipmentLite[]>([]);
-  const [shipmentsLoading, setShipmentsLoading] = useState(false);
-  const [shipmentsError, setShipmentsError] = useState<string | null>(null);
-
-  const [stats, setStats] = useState<IyCompanyStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
-  const [statsError, setStatsError] = useState<string | null>(null);
-
-  // Fetch BOLs for shipments tab
-  useEffect(() => {
-    if (!open || !shipper?.key) {
-      setShipments([]);
-      setShipmentsError(null);
-      return;
-    }
-
-    let cancelled = false;
-    const slug = getCompanySlug(shipper.key);
-
-    setShipmentsLoading(true);
-    setShipmentsError(null);
-
-    iyFetchCompanyBols({
-      companyKey: slug || shipper.key,
-      limit: SHIPMENT_PAGE_LIMIT,
-      offset: 0,
-    })
-      .then((rows) => {
-        if (cancelled) return;
-        setShipments(rows);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setShipments([]);
-        setShipmentsError(err?.message ?? "Failed to pull ImportYeti BOLs.");
-      })
-      .finally(() => {
-        if (!cancelled) setShipmentsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, shipper?.key]);
-
-  // Fetch company stats for KPIs / lanes
-  useEffect(() => {
-    if (!open || !shipper?.key) {
-      setStats(null);
-      setStatsError(null);
-      return;
-    }
-
-    let cancelled = false;
-    const slug = getCompanySlug(shipper.key);
-    if (!slug) return;
-
-    setStatsLoading(true);
-    setStatsError(null);
-
-    iyCompanyStats({ company: slug })
-      .then((payload) => {
-        if (cancelled) return;
-        setStats(payload);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setStats(null);
-        setStatsError(err?.message ?? "Stats temporarily unavailable.");
-      })
-      .finally(() => {
-        if (!cancelled) setStatsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, shipper?.key]);
-
-  useEffect(() => {
-    if (!open) {
-      setActiveTab("overview");
-    }
-  }, [open]);
-
+  saving = false,
+}: ShipperDetailModalProps) {
+  // If no shipper, render nothing. No hooks are used in this component,
+  // so React's hook ordering stays stable and cannot trigger error #310.
   if (!open || !shipper) return null;
 
-  const handleSaveClick = () => {
-    if (!onSave) return;
-    onSave(shipper);
-  };
-
-  const breakdown = stats?.shipmentTypeBreakdown;
-  const fcl = breakdown?.fcl_shipments ?? 0;
-  const lcl = breakdown?.lcl_shipments ?? 0;
-  const monthlySeries = stats?.monthlyShipments ?? [];
-  const topLanes = stats?.topLanes ?? [];
-
-  const derivedTopRoute = useMemo(() => {
-    if (topRoute) return topRoute;
-    const lane = topLanes[0];
-    if (!lane) return null;
-    const origin = lane.origin_port || lane.origin_country_code;
-    const dest = lane.dest_port || lane.dest_country_code;
-    if (origin && dest) return `${origin} → ${dest}`;
-    return origin || dest || null;
-  }, [topRoute, topLanes]);
-
-  const derivedRecentRoute = useMemo(
-    () => recentRoute ?? derivedTopRoute ?? null,
-    [recentRoute, derivedTopRoute],
+  const title = safe(shipper.title);
+  const address = safe(
+    [
+      shipper.address_line_1,
+      shipper.address_line_2,
+      shipper.city,
+      shipper.state,
+      shipper.postal_code,
+      shipper.country,
+    ]
+      .filter(Boolean)
+      .join(", "),
   );
 
-  const dmaShipments12m =
-    typeof (stats as any)?.shipments12m === "number"
-      ? (stats as any).shipments12m
-      : fcl + lcl;
+  const shipmentsLabel =
+    typeof shipper.shipments_12m === "number"
+      ? shipper.shipments_12m.toLocaleString()
+      : safe(shipper.shipments_12m);
 
-  const totalShipmentsLabel =
-    typeof shipper.totalShipments === "number"
-      ? shipper.totalShipments.toLocaleString()
+  const teusLabel =
+    typeof (shipper as any).total_teus === "number"
+      ? (shipper as any).total_teus.toLocaleString()
       : "—";
 
+  const suppliers = Array.isArray((shipper as any).topSuppliers)
+    ? ((shipper as any).topSuppliers as string[]).slice(0, 6)
+    : [];
+
+  const handleSaveClick = async () => {
+    if (!onSave) return;
+    await onSave(shipper);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="max-w-5xl max-h-[95vh] overflow-hidden rounded-2xl bg-white p-0">
-        {/* Header */}
-        <div className="border-b px-6 py-5">
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[95vh] bg-white rounded-2xl p-0 flex flex-col">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-100">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2
-                className="truncate text-2xl font-semibold text-slate-900"
-                title={shipper.title}
+              <DialogTitle
+                className="text-2xl font-semibold text-slate-900 truncate"
+                title={title}
               >
-                {shipper.title}
-              </h2>
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                {shipper.address && <span>{shipper.address}</span>}
-                {shipper.countryCode && <span>{shipper.countryCode}</span>}
-                {shipper.type && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
-                    {shipper.type}
-                  </span>
-                )}
-              </div>
+                {title}
+              </DialogTitle>
+              <p className="mt-1 text-sm text-slate-500 truncate">{address}</p>
             </div>
             <div className="flex items-center gap-2">
               {onSave && (
                 <Button
-                  type="button"
+                  size="sm"
                   onClick={handleSaveClick}
                   disabled={saving}
-                  className="rounded-full bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
+                  className="rounded-full bg-indigo-600 text-xs font-semibold text-white px-4 py-2 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {saving ? "Saving…" : "Save to Command Center"}
                 </Button>
@@ -226,364 +97,143 @@ export default function ShipperDetailModal({
                 size="icon"
                 onClick={onClose}
                 aria-label="Close"
+                className="rounded-full text-slate-500 hover:text-slate-900"
               >
-                <X className="h-5 w-5" />
+                ✕
               </Button>
             </div>
           </div>
-        </div>
+        </DialogHeader>
 
-        {/* Tabs */}
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) =>
-            setActiveTab(value as "overview" | "kpis" | "shipments" | "contacts")
-          }
-        >
-          <div className="border-b bg-slate-50 px-6">
-            <TabsList className="flex h-11 gap-2 bg-transparent">
-              <TabsTrigger value="overview" className="flex-1">
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="kpis" className="flex-1">
-                Shipment Summary
-              </TabsTrigger>
-              <TabsTrigger value="shipments" className="flex-1">
-                Shipments
-              </TabsTrigger>
-              <TabsTrigger value="contacts" className="flex-1">
-                Contacts
-              </TabsTrigger>
-            </TabsList>
-          </div>
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <Tabs defaultValue="overview" className="flex-1 flex flex-col">
+            <div className="px-6 border-b border-slate-100">
+              <TabsList className="h-11 gap-2 bg-transparent p-0">
+                <TabsTrigger
+                  value="overview"
+                  className="px-3 py-2 text-xs font-semibold text-slate-500 data-[state=active]:text-indigo-600 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none border-b-2 border-transparent"
+                >
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger
+                  value="kpis"
+                  className="px-3 py-2 text-xs font-semibold text-slate-500 data-[state=active]:text-indigo-600 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none border-b-2 border-transparent"
+                >
+                  KPIs
+                </TabsTrigger>
+                <TabsTrigger
+                  value="shipments"
+                  className="px-3 py-2 text-xs font-semibold text-slate-500 data-[state=active]:text-indigo-600 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none border-b-2 border-transparent"
+                >
+                  Shipments
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-          <div className="max-h-[calc(95vh-140px)] overflow-y-auto px-6 py-6 space-y-6">
-            {/* OVERVIEW */}
-            <TabsContent value="overview" className="space-y-6">
-              {/* Hero KPIs */}
-              <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <KpiCard
-                  icon={<Ship className="h-5 w-5 text-indigo-500" />}
-                  label="Total shipments (all time)"
-                  value={totalShipmentsLabel}
-                />
-                <KpiCard
-                  icon={<TrendingUp className="h-5 w-5 text-indigo-500" />}
-                  label="DMA shipments (last 12m)"
-                  value={formatNumber(dmaShipments12m)}
-                />
-                <KpiCard
-                  icon={<MapPin className="h-5 w-5 text-indigo-500" />}
-                  label="Top route (12m)"
-                  value={derivedTopRoute ?? "—"}
-                />
-              </section>
-
-              {/* Lane “map” card */}
-              {topLanes.length > 0 && (
-                <section className="rounded-2xl border border-slate-200 bg-gradient-to-r from-indigo-50 via-slate-50 to-slate-50 p-5">
-                  <h3 className="text-sm font-semibold text-slate-800">
-                    Active lanes (DMA last 12m)
-                  </h3>
-                  <LaneMapCard lanes={topLanes} />
-                </section>
-              )}
-
-              {/* Info strip */}
-              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                ImportYeti DMA unlocks shipment intelligence for this shipper. Save them to Command
-                Center to track lanes, TEUs, and AI-enriched summaries alongside your sales
-                workflows.
-              </section>
-
-              {/* Top suppliers */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-5">
-                <h3 className="mb-3 text-sm font-semibold text-slate-800">Top suppliers</h3>
-                {shipper.topSuppliers?.length ? (
-                  <div className="flex flex-wrap gap-2 text-xs text-slate-700">
-                    {shipper.topSuppliers.map((supplier) => (
-                      <span
-                        key={supplier}
-                        className="rounded-full bg-slate-100 px-3 py-1"
-                      >
-                        {supplier}
-                      </span>
-                    ))}
+            <div className="flex-1 overflow-auto">
+              {/* Overview */}
+              <TabsContent value="overview" className="p-6 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
+                    <Ship className="h-5 w-5 text-indigo-500" />
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        Shipments (12m)
+                      </div>
+                      <div className="text-lg font-semibold text-slate-900">
+                        {shipmentsLabel}
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-sm text-slate-500">No supplier data yet.</p>
+                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
+                    <Package className="h-5 w-5 text-indigo-500" />
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        TEUs (12m)
+                      </div>
+                      <div className="text-lg font-semibold text-slate-900">
+                        {teusLabel}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
+                    <Calendar className="h-5 w-5 text-indigo-500" />
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        Most recent shipment
+                      </div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        {safe(recentRoute ?? (shipper as any)?.last_shipment_date)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {suppliers.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold uppercase text-slate-500">
+                      Top suppliers
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {suppliers.map((name) => (
+                        <span
+                          key={name}
+                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+                        >
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
-              </section>
-            </TabsContent>
+              </TabsContent>
 
-            {/* SHIPMENT SUMMARY (KPIs) */}
-            <TabsContent value="kpis" className="space-y-6">
-              {statsLoading && (
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading DMA stats…
-                </div>
-              )}
-              {statsError && !statsLoading && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                  {statsError}
-                </div>
-              )}
-              {!statsLoading && stats && (
-                <>
-                  <section className="grid gap-4 md:grid-cols-3">
-                    <KpiCard
-                      icon={<Target className="h-5 w-5 text-indigo-500" />}
-                      label="DMA FCL shipments (12m)"
-                      value={formatNumber(fcl)}
-                    />
-                    <KpiCard
-                      icon={<Target className="h-5 w-5 text-indigo-500" />}
-                      label="DMA LCL shipments (12m)"
-                      value={formatNumber(lcl)}
-                    />
-                    <KpiCard
-                      icon={<BarChart3 className="h-5 w-5 text-indigo-500" />}
-                      label="Most recent DMA route"
-                      value={derivedRecentRoute ?? "—"}
-                    />
-                  </section>
-
-                  {monthlySeries.length > 0 && (
-                    <section>
-                      <h3 className="mb-3 text-sm font-semibold text-slate-800">
-                        Monthly shipments (DMA, last 12m)
-                      </h3>
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <MonthlyChart data={monthlySeries} />
+              {/* KPIs */}
+              <TabsContent value="kpis" className="p-6 space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 flex items-center gap-3">
+                    <MapPin className="h-5 w-5 text-indigo-500" />
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        Top route (12m)
                       </div>
-                    </section>
-                  )}
-
-                  {topLanes.length > 0 && (
-                    <section className="space-y-3">
-                      <h3 className="text-sm font-semibold text-slate-800">Top lanes</h3>
-                      <div className="space-y-2">
-                        {topLanes.slice(0, 5).map((lane, idx) => (
-                          <div
-                            key={`${lane.origin_port}-${lane.dest_port}-${idx}`}
-                            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600"
-                          >
-                            <span>
-                              {lane.origin_port || lane.origin_country_code || "—"} →{" "}
-                              {lane.dest_port || lane.dest_country_code || "—"}
-                            </span>
-                            <span className="font-semibold text-slate-900">
-                              {formatNumber(lane.shipments_12m)} shipments
-                            </span>
-                          </div>
-                        ))}
+                      <div className="text-sm font-semibold text-slate-900">
+                        {safe(topRoute ?? (shipper as any)?.top_route_12m)}
                       </div>
-                    </section>
-                  )}
-                </>
-              )}
-            </TabsContent>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 flex items-center gap-3">
+                    <MapPin className="h-5 w-5 text-indigo-500" />
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        Recent route
+                      </div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        {safe(recentRoute ?? (shipper as any)?.recent_route)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-indigo-50 bg-indigo-50/60 px-4 py-3 flex gap-2 text-xs text-slate-700">
+                  <Info className="h-4 w-4 mt-0.5 text-indigo-500" />
+                  <p>
+                    ImportYeti DMA KPIs are directional. Save this shipper to Command Center
+                    to unlock AI briefings, contact enrichment, and multi-lane summaries.
+                  </p>
+                </div>
+              </TabsContent>
 
-            {/* SHIPMENTS TAB */}
-            <TabsContent value="shipments" className="space-y-4">
-              {shipmentsLoading && (
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading ImportYeti BOLs…
+              {/* Shipments placeholder */}
+              <TabsContent value="shipments" className="p-6 space-y-3">
+                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Shipment-level BOL details will appear here. For now, lane and TEU
+                  intelligence is available on the Overview and KPIs tabs.
                 </div>
-              )}
-              {shipmentsError && !shipmentsLoading && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {shipmentsError}
-                </div>
-              )}
-              {!shipmentsLoading && !shipmentsError && (
-                <div className="rounded-2xl border border-slate-200 bg-white">
-                  <div className="border-b px-4 py-2 text-xs text-slate-500">
-                    Showing first {SHIPMENT_PAGE_LIMIT} BOLs
-                  </div>
-                  <div className="overflow-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2">Date</th>
-                          <th className="px-3 py-2">BOL</th>
-                          <th className="px-3 py-2">Origin</th>
-                          <th className="px-3 py-2">Destination</th>
-                          <th className="px-3 py-2 text-right">TEU</th>
-                          <th className="px-3 py-2">Description</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {shipments.map((row, index) => (
-                          <tr key={`${row.bol}-${index}`} className="bg-white">
-                            <td className="px-3 py-2">{formatDate(row.date)}</td>
-                            <td className="px-3 py-2">{row.bol || "—"}</td>
-                            <td className="px-3 py-2">
-                              {row.origin_port || row.origin_country_code || "—"}
-                            </td>
-                            <td className="px-3 py-2">
-                              {row.destination_port || row.dest_country_code || "—"}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {formatNumber((row as any).teu)}
-                            </td>
-                            <td className="px-3 py-2 text-slate-600">
-                              {row.description || "—"}
-                            </td>
-                          </tr>
-                        ))}
-                        {!shipments.length && (
-                          <tr>
-                            <td
-                              colSpan={6}
-                              className="px-3 py-6 text-center text-sm text-slate-500"
-                            >
-                              No ImportYeti shipments available yet.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-
-            {/* CONTACTS TAB */}
-            <TabsContent value="contacts">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
-                    <Lock className="h-5 w-5 text-slate-500" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-800">Contacts are gated</p>
-                    <p className="text-xs text-slate-500">
-                      Save this shipper to Command Center to unlock DMA contacts, playbooks, and AI
-                      enrichment.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-          </div>
-        </Tabs>
+              </TabsContent>
+            </div>
+          </Tabs>
+        </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-type KpiCardProps = {
-  icon: ReactNode;
-  label: string;
-  value: string;
-};
-
-function KpiCard({ icon, label, value }: KpiCardProps) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-2 text-lg font-semibold text-slate-900">{value}</div>
-    </div>
-  );
-}
-
-function MonthlyChart({
-  data,
-}: {
-  data: NonNullable<IyCompanyStats["monthlyShipments"]>;
-}) {
-  if (!data.length) return null;
-  const max = Math.max(...data.map((item) => Number(item.shipments ?? 0)));
-  return (
-    <div className="flex items-end gap-2">
-      {data.map((item) => {
-        const height =
-          max > 0
-            ? Math.max(8, Math.round((Number(item.shipments ?? 0) / max) * 120))
-            : 8;
-        return (
-          <div key={item.month} className="flex flex-1 flex-col items-center">
-            <div className="text-[11px] text-slate-500">
-              {formatNumber(item.shipments)}
-            </div>
-            <div
-              className="mt-1 w-full rounded-t bg-gradient-to-b from-indigo-400 to-indigo-600"
-              style={{ height }}
-            />
-            <div className="mt-1 text-[11px] text-slate-500">{item.month}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function LaneMapCard({
-  lanes,
-}: {
-  lanes: NonNullable<IyCompanyStats["topLanes"]>;
-}) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const active = lanes[activeIndex] ?? lanes[0];
-
-  return (
-    <div className="mt-3 grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-      <div className="rounded-2xl bg-indigo-600/5 px-4 py-3">
-        <p className="text-xs text-slate-600 mb-2">
-          Hover a lane to see shipment details.
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {lanes.map((lane, index) => {
-            const label = `${lane.origin_port || lane.origin_country_code || "—"} → ${
-              lane.dest_port || lane.dest_country_code || "—"
-            }`;
-            const isActive = index === activeIndex;
-            return (
-              <button
-                key={`${label}-${index}`}
-                type="button"
-                onMouseEnter={() => setActiveIndex(index)}
-                className={`rounded-full border px-3 py-1 text-xs ${
-                  isActive
-                    ? "border-indigo-500 bg-indigo-600 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-indigo-300"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      {active && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Lane detail
-          </p>
-          <p className="mt-1 font-semibold text-slate-900">
-            {active.origin_port || active.origin_country_code || "—"} →{" "}
-            {active.dest_port || active.dest_country_code || "—"}
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            Shipments (12m):{" "}
-            <span className="font-semibold text-slate-900">
-              {formatNumber(active.shipments_12m)}
-            </span>
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            TEUs (12m):{" "}
-            <span className="font-semibold text-slate-900">
-              {formatNumber((active as any).teu_12m)}
-            </span>
-          </p>
-        </div>
-      )}
-    </div>
   );
 }
