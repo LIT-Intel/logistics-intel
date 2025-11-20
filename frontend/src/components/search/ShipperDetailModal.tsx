@@ -92,9 +92,23 @@ export default function ShipperDetailModal({
     setShipmentsLoading(true);
     setShipmentsError(null);
 
+    if (import.meta.env.DEV) {
+      console.debug("[ShipperDetailModal] Fetching ImportYeti BOLs", {
+        key: shipper.key,
+        slug,
+      });
+    }
     iyFetchCompanyBols({ companyKey: slug, limit: SHIPMENTS_LIMIT, offset: 0 })
       .then((rows) => {
-        if (!cancelled) setShipments(rows ?? []);
+        if (!cancelled) {
+          setShipments(rows ?? []);
+          if (import.meta.env.DEV) {
+            console.debug("[ShipperDetailModal] BOL rows received", {
+              key: shipper.key,
+              count: rows?.length ?? 0,
+            });
+          }
+        }
       })
       .catch((error) => {
         console.warn("iyFetchCompanyBols failed", error);
@@ -105,6 +119,12 @@ export default function ShipperDetailModal({
       })
       .finally(() => {
         if (!cancelled) setShipmentsLoading(false);
+        if (import.meta.env.DEV) {
+          console.debug("[ShipperDetailModal] BOL fetch complete", {
+            key: shipper.key,
+            loaded: !cancelled,
+          });
+        }
       });
 
     return () => {
@@ -190,6 +210,14 @@ export default function ShipperDetailModal({
 
     return template;
   }, [shipments]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.debug("[ShipperDetailModal] Monthly series recomputed", {
+      months: monthlySeries.length,
+      totalShipments: shipments.length,
+    });
+  }, [monthlySeries, shipments.length]);
 
   const chartSeries = useMemo(() => {
     return monthlySeries.map((row, index, list) => {

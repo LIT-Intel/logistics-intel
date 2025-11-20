@@ -83,12 +83,26 @@ export default function SearchPage() {
   }, [submittedQuery, shipperPage]);
 
   const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
-    if (!shipper) return;
+    if (!shipper) {
+      if (import.meta.env.DEV) {
+        console.warn("[Search] handleViewDetails called without a shipper");
+      }
+      return;
+    }
+    if (import.meta.env.DEV) {
+      console.debug("[Search] Opening ShipperDetailModal", {
+        key: shipper.key,
+        title: shipper.title,
+      });
+    }
     setActiveShipper(shipper);
     setModalLoading(true);
     setModalError(null);
     try {
       const kpis = await getIyRouteKpisForCompany({ companyKey: shipper.key });
+      if (import.meta.env.DEV) {
+        console.debug("[Search] Route KPIs fetched", { key: shipper.key, sampleSize: kpis?.sampleSize });
+      }
       setRouteKpis(kpis ?? null);
     } catch (err) {
       console.warn("getIyRouteKpisForCompany failed", err);

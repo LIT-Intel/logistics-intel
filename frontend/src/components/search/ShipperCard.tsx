@@ -45,7 +45,12 @@ export default function ShipperCard({
     (shipper as any)?.website ??
     null;
 
-  const logoUrl = getCompanyLogoUrl(shipper.domain ?? website ?? null);
+  const domain =
+    shipper.domain ??
+    (shipper as any)?.domain ??
+    (shipper as any)?.website ??
+    undefined;
+  const logoUrl = getCompanyLogoUrl(domain ?? null);
 
   const displayAddress =
     shipper.address ??
@@ -53,9 +58,9 @@ export default function ShipperCard({
       (shipper as any)?.city,
       (shipper as any)?.state,
       (shipper as any)?.country,
-    ]
-      .filter(Boolean)
-      .join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ") || shipper.address;
 
   const suppliers = Array.isArray(shipper.topSuppliers)
     ? shipper.topSuppliers.slice(0, 4)
