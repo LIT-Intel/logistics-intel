@@ -1,5 +1,5 @@
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import type { IyShipperHit } from "@/lib/api";
+import type { IyCompanyContact, IyShipperHit } from "@/lib/api";
 import { Calendar, MapPin, Package, Target } from "lucide-react";
 import { getCompanyLogoUrl } from "@/lib/logo";
 
@@ -14,6 +14,7 @@ function countryCodeToEmoji(countryCode?: string | null): string | null {
 
 type ShipperCardProps = {
   shipper: IyShipperHit;
+  contact?: IyCompanyContact | null;
   topRoute?: string | null;
   teus12m?: number | null;
   shipments12m?: number | null;
@@ -25,6 +26,7 @@ type ShipperCardProps = {
 
 export default function ShipperCard({
   shipper,
+  contact,
   topRoute,
   teus12m,
   shipments12m,
@@ -40,17 +42,30 @@ export default function ShipperCard({
     null;
 
   const website =
+    contact?.website ??
     shipper.website ??
     (shipper as any)?.company_website ??
     (shipper as any)?.website ??
     null;
 
   const domain =
+    contact?.domain ??
     shipper.domain ??
     (shipper as any)?.domain ??
+    website ??
     (shipper as any)?.website ??
     undefined;
   const logoUrl = getCompanyLogoUrl(domain ?? null);
+  const contactPhone =
+    contact?.phone ??
+    shipper.phone ??
+    (shipper as any)?.company_main_phone_number ??
+    (shipper as any)?.phone ??
+    null;
+  const contactWebsite = website;
+  const contactEmail = contact?.email;
+  const websiteLabel =
+    contactWebsite?.replace(/^https?:\/\//i, "").replace(/\/$/, "") ?? null;
 
   const fallbackAddress = [
     shipper.address,
@@ -91,27 +106,56 @@ export default function ShipperCard({
     <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
       {/* Header */}
       <div className="flex items-start gap-3">
-          <CompanyAvatar
-            name={shipper.title}
-            size="md"
-            className="shrink-0"
-            logoUrl={logoUrl}
-          />
+        <CompanyAvatar
+          name={shipper.title}
+          size="md"
+          className="shrink-0"
+          logoUrl={logoUrl}
+        />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold text-slate-900">
             {shipper.title}
           </h3>
-            <div className="mt-1 text-xs text-slate-500 flex items-center gap-1">
-              {countryCode && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600">
-                  <span aria-hidden="true">
-                    {countryCodeToEmoji(countryCode)}
-                  </span>
-                  <span>{countryCode}</span>
+          <div className="mt-1 text-xs text-slate-500 flex items-center gap-1">
+            {countryCode && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600">
+                <span aria-hidden="true">
+                  {countryCodeToEmoji(countryCode)}
                 </span>
+                <span>{countryCode}</span>
+              </span>
+            )}
+            {displayAddress && (
+              <span className="truncate">{displayAddress}</span>
+            )}
+          </div>
+          {(contactPhone || contactWebsite || contactEmail) && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+              {contactPhone && <span>📞 {contactPhone}</span>}
+              {contactEmail && (
+                <a
+                  href={`mailto:${contactEmail}`}
+                  className="underline decoration-slate-300 hover:decoration-slate-500"
+                >
+                  {contactEmail}
+                </a>
               )}
-                {displayAddress && <span className="truncate">{displayAddress}</span>}
+              {contactWebsite && (
+                <a
+                  href={
+                    /^https?:\/\//i.test(contactWebsite)
+                      ? contactWebsite
+                      : `https://${contactWebsite}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-slate-300 hover:decoration-slate-500"
+                >
+                  {websiteLabel ?? contactWebsite}
+                </a>
+              )}
             </div>
+          )}
         </div>
       </div>
 

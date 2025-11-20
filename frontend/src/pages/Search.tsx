@@ -1,7 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import ShipperCard from "@/components/search/ShipperCard";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
-import SearchFilters, { type SearchFiltersValue } from "@/components/search/SearchFilters";
+import SearchFilters, {
+  type SearchFiltersValue,
+} from "@/components/search/SearchFilters";
 import {
   searchShippers,
   saveCompanyToCrm,
@@ -9,6 +11,7 @@ import {
   type IySearchMeta,
   type IyShipperHit,
   type IyRouteKpis,
+  type IyCompanyContact,
 } from "@/lib/api";
 
 const RESULTS_PER_PAGE = 25;
@@ -25,6 +28,9 @@ export default function SearchPage() {
   const [shipperError, setShipperError] = useState<string | null>(null);
   const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
+  const [contactsByKey, setContactsByKey] = useState<
+    Record<string, IyCompanyContact>
+  >({});
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -71,7 +77,9 @@ export default function SearchPage() {
         if (controller.signal.aborted) return;
         setShipperResults([]);
         setShipperMeta(null);
-        setShipperError(err?.message ?? "ImportYeti search failed. Please try again.");
+        setShipperError(
+          err?.message ?? "ImportYeti search failed. Please try again.",
+        );
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -101,7 +109,16 @@ export default function SearchPage() {
     try {
       const kpis = await getIyRouteKpisForCompany({ companyKey: shipper.key });
       if (import.meta.env.DEV) {
-        console.debug("[Search] Route KPIs fetched", { key: shipper.key, sampleSize: kpis?.sampleSize });
+        console.debug("[Search] Route KPIs fetched", {
+          key: shipper.key,
+          sampleSize: kpis?.sampleSize,
+        });
+      }
+      if (kpis?.contact) {
+        setContactsByKey((prev) => {
+          if (prev[shipper.key] === kpis.contact) return prev;
+          return { ...prev, [shipper.key]: kpis.contact! };
+        });
       }
       setRouteKpis(kpis ?? null);
     } catch (err) {
@@ -120,21 +137,28 @@ export default function SearchPage() {
     setModalLoading(false);
   }, []);
 
-  const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
-    if (!shipper?.key) return;
-    setSaveLoading(true);
-    try {
-      await saveCompanyToCrm({
-        company_id: shipper.key,
-        company_name: shipper.title,
-        source: "importyeti",
-      });
-    } catch (err) {
-      console.error("saveCompanyToCrm failed", err);
-    } finally {
-      setSaveLoading(false);
-    }
-  }, []);
+  const activeContact = activeShipper?.key
+    ? (contactsByKey[activeShipper.key] ?? routeKpis?.contact ?? null)
+    : (routeKpis?.contact ?? null);
+
+  const handleSaveToCommandCenter = useCallback(
+    async (shipper: IyShipperHit) => {
+      if (!shipper?.key) return;
+      setSaveLoading(true);
+      try {
+        await saveCompanyToCrm({
+          company_id: shipper.key,
+          company_name: shipper.title,
+          source: "importyeti",
+        });
+      } catch (err) {
+        console.error("saveCompanyToCrm failed", err);
+      } finally {
+        setSaveLoading(false);
+      }
+    },
+    [],
+  );
 
   const resultSummary = useMemo(() => {
     if (!submittedQuery || !shipperMeta) return null;
@@ -143,10 +167,16 @@ export default function SearchPage() {
   }, [submittedQuery, shipperMeta, shipperResults.length]);
 
   const showIntroState = !submittedQuery;
-  const showNoResults = Boolean(submittedQuery && !shipperLoading && shipperResults.length === 0);
-  const totalPages = shipperMeta?.total ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE) : 0;
+  const showNoResults = Boolean(
+    submittedQuery && !shipperLoading && shipperResults.length === 0,
+  );
+  const totalPages = shipperMeta?.total
+    ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE)
+    : 0;
   const hasPrevPage = shipperPage > 1;
-  const hasNextPage = shipperMeta ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total : false;
+  const hasNextPage = shipperMeta
+    ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total
+    : false;
 
   return (
     <>
@@ -154,10 +184,12 @@ export default function SearchPage() {
         <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
           <header className="flex flex-col gap-4">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">ImportYeti Shipper Search</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+                ImportYeti Shipper Search
+              </h1>
               <p className="mt-2 text-sm text-slate-500 max-w-2xl">
-                Search the ImportYeti DMA index for verified shippers, view live BOL activity, and save
-                companies to Command Center.
+                Search the ImportYeti DMA index for verified shippers, view live
+                BOL activity, and save companies to Command Center.
               </p>
             </div>
           </header>
@@ -203,7 +235,9 @@ export default function SearchPage() {
               <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
                 <span>{resultSummary}</span>
                 {typeof shipperMeta?.creditsRemaining === "number" && (
-                  <span className="text-slate-400">Credits remaining: {shipperMeta.creditsRemaining}</span>
+                  <span className="text-slate-400">
+                    Credits remaining: {shipperMeta.creditsRemaining}
+                  </span>
                 )}
               </div>
             )}
@@ -212,18 +246,27 @@ export default function SearchPage() {
           <section className="mt-8 space-y-6">
             {showIntroState ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">Start with a shipper</h2>
-                <p className="mt-2 text-sm text-slate-500">Search for a retailer, importer, or brand to pull live ImportYeti DMA data.</p>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Start with a shipper
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Search for a retailer, importer, or brand to pull live
+                  ImportYeti DMA data.
+                </p>
               </div>
             ) : showNoResults ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">No shippers found</h2>
-                <p className="mt-2 text-sm text-slate-500">Try another query or broaden your search.</p>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  No shippers found
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Try another query or broaden your search.
+                </p>
               </div>
             ) : (
-                <div className="space-y-6">
-                  {shipperLoading && shipperResults.length === 0 ? (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
+              <div className="space-y-6">
+                {shipperLoading && shipperResults.length === 0 ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
                     {Array.from({ length: 6 }).map((_, index) => (
                       <div
                         key={`skeleton-${index}`}
@@ -231,18 +274,19 @@ export default function SearchPage() {
                       />
                     ))}
                   </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
-                      {shipperResults.map((shipper) => (
-                        <ShipperCard
-                          key={shipper.key || shipper.title}
-                          shipper={shipper}
-                          onViewDetails={() => handleViewDetails(shipper)}
-                          onSave={() => handleSaveToCommandCenter(shipper)}
-                        />
-                      ))}
-                    </div>
-                  )}
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
+                    {shipperResults.map((shipper) => (
+                      <ShipperCard
+                        key={shipper.key || shipper.title}
+                        shipper={shipper}
+                        contact={contactsByKey[shipper.key]}
+                        onViewDetails={() => handleViewDetails(shipper)}
+                        onSave={() => handleSaveToCommandCenter(shipper)}
+                      />
+                    ))}
+                  </div>
+                )}
 
                 {shipperMeta && shipperMeta.total > RESULTS_PER_PAGE && (
                   <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
@@ -250,7 +294,9 @@ export default function SearchPage() {
                       type="button"
                       className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                       disabled={!hasPrevPage || shipperLoading}
-                      onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
+                      onClick={() =>
+                        setShipperPage((prev) => Math.max(1, prev - 1))
+                      }
                     >
                       Prev
                     </button>
@@ -296,6 +342,7 @@ export default function SearchPage() {
         onClose={handleCloseModal}
         topRoute={routeKpis?.topRouteLast12m ?? null}
         recentRoute={routeKpis?.mostRecentRoute ?? null}
+        contact={activeContact}
         onSave={handleSaveToCommandCenter}
         saving={saveLoading}
       />

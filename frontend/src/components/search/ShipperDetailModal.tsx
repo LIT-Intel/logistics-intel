@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import {
@@ -11,7 +16,7 @@ import {
   TrendingUp,
   Loader2,
 } from "lucide-react";
-import type { IyShipperHit } from "@/lib/api";
+import type { IyCompanyContact, IyShipperHit } from "@/lib/api";
 import { iyFetchCompanyBols } from "@/lib/api";
 import type { ShipmentLite } from "@/types/importyeti";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -22,19 +27,23 @@ type ShipperDetailModalProps = {
   onClose: () => void;
   topRoute?: string | null;
   recentRoute?: string | null;
+  contact?: IyCompanyContact | null;
   onSave?: (shipper: IyShipperHit) => void | Promise<void>;
   saving?: boolean;
 };
 
 type ChartMetric = "shipments" | "teu" | "containers" | "trend";
 
-const chartMetricOptions: Array<{ key: ChartMetric; label: string; icon: React.ComponentType<{ className?: string }> }> =
-  [
-    { key: "shipments", label: "Shipments", icon: Package },
-    { key: "teu", label: "TEU", icon: Box },
-    { key: "containers", label: "Containers", icon: Ship },
-    { key: "trend", label: "Trend spikes", icon: TrendingUp },
-  ];
+const chartMetricOptions: Array<{
+  key: ChartMetric;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { key: "shipments", label: "Shipments", icon: Package },
+  { key: "teu", label: "TEU", icon: Box },
+  { key: "containers", label: "Containers", icon: Ship },
+  { key: "trend", label: "Trend spikes", icon: TrendingUp },
+];
 
 const SHIPMENTS_LIMIT = 250;
 
@@ -75,6 +84,7 @@ export default function ShipperDetailModal({
   onClose,
   topRoute,
   recentRoute,
+  contact,
   onSave,
   saving = false,
 }: ShipperDetailModalProps) {
@@ -140,13 +150,13 @@ export default function ShipperDetailModal({
     (shipper as any)?.country ??
     null;
 
-  const companyPhone =
+  const fallbackPhone =
     shipper.phone ??
     (shipper as any)?.company_main_phone_number ??
     (shipper as any)?.phone ??
     null;
 
-  const companyWebsite =
+  const fallbackWebsite =
     shipper.website ??
     (shipper as any)?.company_website ??
     (shipper as any)?.website ??
@@ -168,7 +178,14 @@ export default function ShipperDetailModal({
     ? shipper.topSuppliers.slice(0, 6)
     : [];
 
-  const logoUrl = getCompanyLogoUrl(shipper.domain ?? companyWebsite ?? null);
+  const effectivePhone = contact?.phone ?? fallbackPhone;
+  const effectiveWebsite = contact?.website ?? fallbackWebsite;
+  const effectiveEmail = contact?.email ?? null;
+  const websiteLabel =
+    effectiveWebsite?.replace(/^https?:\/\//i, "").replace(/\/$/, "") ?? null;
+  const logoSource =
+    contact?.domain ?? shipper.domain ?? effectiveWebsite ?? null;
+  const logoUrl = getCompanyLogoUrl(logoSource);
 
   const monthlySeries = useMemo(() => {
     const template: Array<{
@@ -225,7 +242,8 @@ export default function ShipperDetailModal({
       let value = row.shipments;
       if (chartMetric === "teu") value = row.teu;
       if (chartMetric === "containers") value = row.containers;
-      if (chartMetric === "trend") value = prev ? row.shipments - prev.shipments : 0;
+      if (chartMetric === "trend")
+        value = prev ? row.shipments - prev.shipments : 0;
 
       return {
         ...row,
@@ -329,34 +347,47 @@ export default function ShipperDetailModal({
                 logoUrl={logoUrl}
               />
               <div className="min-w-0">
-                <DialogTitle className="text-2xl font-semibold text-slate-900" title={shipper.title}>
+                <DialogTitle
+                  className="text-2xl font-semibold text-slate-900"
+                  title={shipper.title}
+                >
                   {shipper.title}
                 </DialogTitle>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
                   {countryCode && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">
-                      <span aria-hidden="true">{countryCodeToEmoji(countryCode)}</span>
+                      <span aria-hidden="true">
+                        {countryCodeToEmoji(countryCode)}
+                      </span>
                       <span>{countryCode}</span>
                     </span>
                   )}
                   {address && <span className="truncate">{address}</span>}
                 </div>
 
-                {(companyPhone || companyWebsite) && (
+                {(effectivePhone || effectiveEmail || effectiveWebsite) && (
                   <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                    {companyPhone && <span>📞 {companyPhone}</span>}
-                    {companyWebsite && (
+                    {effectivePhone && <span>📞 {effectivePhone}</span>}
+                    {effectiveEmail && (
+                      <a
+                        href={`mailto:${effectiveEmail}`}
+                        className="underline decoration-slate-300 hover:decoration-slate-500"
+                      >
+                        {effectiveEmail}
+                      </a>
+                    )}
+                    {effectiveWebsite && (
                       <a
                         href={
-                          companyWebsite.startsWith("http")
-                            ? companyWebsite
-                            : `https://${companyWebsite}`
+                          /^https?:\/\//i.test(effectiveWebsite)
+                            ? effectiveWebsite
+                            : `https://${effectiveWebsite}`
                         }
                         target="_blank"
                         rel="noreferrer"
                         className="underline decoration-slate-300 hover:decoration-slate-500"
                       >
-                        {companyWebsite}
+                        {websiteLabel ?? effectiveWebsite}
                       </a>
                     )}
                   </div>
@@ -408,8 +439,8 @@ export default function ShipperDetailModal({
                 card.value == null
                   ? null
                   : typeof card.value === "number"
-                  ? card.value
-                  : card.value;
+                    ? card.value
+                    : card.value;
               const displayValue =
                 typeof card.formatter === "function"
                   ? card.formatter(rawValue)
@@ -424,7 +455,9 @@ export default function ShipperDetailModal({
                     <Icon className="h-4 w-4 text-indigo-500" />
                     {card.label}
                   </div>
-                  <div className="text-xl font-semibold text-slate-900">{displayValue}</div>
+                  <div className="text-xl font-semibold text-slate-900">
+                    {displayValue}
+                  </div>
                 </div>
               );
             })}
@@ -437,7 +470,8 @@ export default function ShipperDetailModal({
                   12-Month volume by metric
                 </p>
                 <p className="text-xs text-slate-500">
-                  Toggle the metric to explore TEU, shipments, containers, or trend spikes.
+                  Toggle the metric to explore TEU, shipments, containers, or
+                  trend spikes.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -473,7 +507,10 @@ export default function ShipperDetailModal({
                 {chartSeries.map((point) => {
                   const height =
                     maxMagnitude > 0
-                      ? Math.max(6, Math.round((point.magnitude / maxMagnitude) * 170))
+                      ? Math.max(
+                          6,
+                          Math.round((point.magnitude / maxMagnitude) * 170),
+                        )
                       : 6;
                   const isTrend = chartMetric === "trend";
                   const barColor = isTrend
@@ -483,7 +520,10 @@ export default function ShipperDetailModal({
                     : "from-indigo-400 to-indigo-600";
 
                   return (
-                    <div key={point.key} className="flex flex-1 flex-col items-center gap-2">
+                    <div
+                      key={point.key}
+                      className="flex flex-1 flex-col items-center gap-2"
+                    >
                       <div className="text-[11px] text-slate-500">
                         {formatNumber(point.value)}
                       </div>
@@ -507,7 +547,9 @@ export default function ShipperDetailModal({
 
           {suppliers.length > 0 && (
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="text-sm font-semibold text-slate-900">Top suppliers</div>
+              <div className="text-sm font-semibold text-slate-900">
+                Top suppliers
+              </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {suppliers.map((name) => (
                   <span
@@ -524,8 +566,9 @@ export default function ShipperDetailModal({
           <section className="mt-6 rounded-2xl border border-indigo-50 bg-indigo-50/60 px-4 py-3 text-sm text-slate-700 flex gap-2">
             <Info className="h-5 w-5 text-indigo-500" />
             <p>
-              ImportYeti DMA insights update weekly. Save this shipper to Command Center to unlock
-              deeper contact enrichment, AI briefings, and multi-lane strategy recommendations.
+              ImportYeti DMA insights update weekly. Save this shipper to
+              Command Center to unlock deeper contact enrichment, AI briefings,
+              and multi-lane strategy recommendations.
             </p>
           </section>
         </div>
