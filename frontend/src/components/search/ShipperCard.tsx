@@ -2,6 +2,15 @@ import { CompanyAvatar } from "@/components/CompanyAvatar";
 import type { IyShipperHit } from "@/lib/api";
 import { Calendar, MapPin, Package, Target } from "lucide-react";
 
+function countryCodeToEmoji(countryCode?: string | null): string | null {
+  if (!countryCode) return null;
+  const cc = countryCode.toUpperCase();
+  if (cc.length !== 2) return null;
+
+  const codePoints = Array.from(cc).map((ch) => 127397 + ch.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
+
 type ShipperCardProps = {
   shipper: IyShipperHit;
   topRoute?: string | null;
@@ -54,17 +63,17 @@ export default function ShipperCard({
           <h3 className="truncate text-sm font-semibold text-slate-900">
             {shipper.title}
           </h3>
-          {shipper.address && (
-            <p className="mt-1 text-xs text-slate-500">{shipper.address}</p>
-          )}
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-slate-400">
-            {shipper.countryCode && <span>{shipper.countryCode}</span>}
-            {shipper.type && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600 normal-case">
-                {shipper.type}
-              </span>
-            )}
-          </div>
+            <div className="mt-1 text-xs text-slate-500 flex items-center gap-1">
+              {shipper.countryCode && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600">
+                  <span aria-hidden="true">
+                    {countryCodeToEmoji(shipper.countryCode)}
+                  </span>
+                  <span>{shipper.countryCode}</span>
+                </span>
+              )}
+              <span className="truncate">{shipper.address}</span>
+            </div>
         </div>
       </div>
 

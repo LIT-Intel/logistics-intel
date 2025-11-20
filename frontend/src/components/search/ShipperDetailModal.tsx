@@ -15,6 +15,15 @@ type ShipperDetailModalProps = {
   saving?: boolean;
 };
 
+function countryCodeToEmoji(countryCode?: string | null): string | null {
+  if (!countryCode) return null;
+  const cc = countryCode.toUpperCase();
+  if (cc.length !== 2) return null;
+
+  const codePoints = Array.from(cc).map((ch) => 127397 + ch.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
+
 function safe(value: unknown): string {
   if (value == null) return "—";
   const text = String(value).trim();
@@ -33,6 +42,18 @@ export default function ShipperDetailModal({
   // If no shipper, render nothing. No hooks are used in this component,
   // so React's hook ordering stays stable and cannot trigger error #310.
   if (!open || !shipper) return null;
+
+  const countryCode = (shipper as any)?.countryCode ?? null;
+
+  const companyPhone =
+    (shipper as any)?.company_main_phone_number ??
+    (shipper as any)?.phone ??
+    null;
+
+  const companyWebsite =
+    (shipper as any)?.company_website ??
+    (shipper as any)?.website ??
+    null;
 
   const title = safe(shipper.title);
   const address = safe(
@@ -79,7 +100,35 @@ export default function ShipperDetailModal({
               >
                 {title}
               </DialogTitle>
-              <p className="mt-1 text-sm text-slate-500 truncate">{address}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+                {countryCode && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600">
+                    <span aria-hidden="true">{countryCodeToEmoji(countryCode)}</span>
+                    <span>{countryCode}</span>
+                  </span>
+                )}
+                <span className="truncate">{address}</span>
+              </div>
+
+              {(companyPhone || companyWebsite) && (
+                <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                  {companyPhone && <span>📞 {companyPhone}</span>}
+                  {companyWebsite && (
+                    <a
+                      href={
+                        companyWebsite.startsWith("http")
+                          ? companyWebsite
+                          : `https://${companyWebsite}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline decoration-slate-300 hover:decoration-slate-500"
+                    >
+                      {companyWebsite}
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {onSave && (
