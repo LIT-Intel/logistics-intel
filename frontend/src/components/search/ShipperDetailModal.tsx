@@ -16,8 +16,12 @@ import {
   TrendingUp,
   Loader2,
 } from "lucide-react";
-import type { IyCompanyContact, IyShipperHit } from "@/lib/api";
-import { iyFetchCompanyBols } from "@/lib/api";
+import type { IyBolDetail, IyCompanyContact, IyShipperHit } from "@/lib/api";
+import {
+  deriveContactFromBol,
+  getIyBolDetails,
+  iyFetchCompanyBols,
+} from "@/lib/api";
 import type { ShipmentLite } from "@/types/importyeti";
 import { getCompanyLogoUrl } from "@/lib/logo";
 
@@ -46,6 +50,8 @@ const chartMetricOptions: Array<{
 ];
 
 const SHIPMENTS_LIMIT = 250;
+const BOL_DETAIL_LIMIT = 50;
+const BOL_DETAIL_CONCURRENCY = 5;
 
 function countryCodeToEmoji(countryCode?: string | null): string | null {
   if (!countryCode) return null;
@@ -78,6 +84,192 @@ function getCompanySlug(key?: string | null) {
   return key.replace(/^company\//i, "");
 }
 
+type MonthlyPoint = {
+  key: string;
+  label: string;
+  shipments: number;
+  teu: number;
+  containers: number;
+};
+
+type RouteInsights = {
+  monthlySeries: MonthlyPoint[];
+  shipmentsValue: number | null;
+  teusTotal: number;
+  teuWindows: { three: number; six: number; twelve: number };
+  topRoute: string | null;
+  topRoutes: Array<{ route: string; shipments: number }>;
+  growthPercent: number | null;
+};
+
+function createMonthlyTemplate(monthCount = 12): MonthlyPoint[] {
+  const template: MonthlyPoint[] = [];
+  const now = new Date();
+  for (let i = monthCount - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    template.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: d.toLocaleString(undefined, { month: "short" }),
+      shipments: 0,
+      teu: 0,
+      containers: 0,
+    });
+  }
+  return template;
+}
+
+function parseDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildRouteLabelFromDetail(detail: IyBolDetail): string | null {
+  const rateRoute = detail.shipping_rate?.route;
+  if (rateRoute && rateRoute.trim().length) {
+    return rateRoute.trim();
+  }
+  const origin =
+    detail.entry_port ??
+    detail.origin_port ??
+    detail.shipping_rate?.origin_port ??
+    null;
+  const destination =
+    detail.exit_port ??
+    detail.destination_port ??
+    detail.shipping_rate?.destination_port ??
+    null;
+  if (origin && destination) return `${origin} → ${destination}`;
+  if (origin) return origin;
+  if (destination) return destination;
+  return null;
+}
+
+function buildRouteLabelFromShipment(row: ShipmentLite): string | null {
+  const origin = row.origin_port || row.origin_country_code;
+  const destination = row.destination_port || row.dest_country_code;
+  if (origin && destination) return `${origin} → ${destination}`;
+  return origin || destination || null;
+}
+
+function computeGrowthPercentFromSeries(series: MonthlyPoint[]): number | null {
+  if (!series.length) return null;
+  const first = series[0].shipments || 0;
+  const last = series[series.length - 1].shipments || 0;
+  if (!first) return null;
+  return ((last - first) / first) * 100;
+}
+
+function computeTeuWindowsFromSeries(series: MonthlyPoint[]) {
+  const takeLast = (months: number) =>
+    series.slice(-months).reduce((sum, row) => sum + row.teu, 0);
+  return {
+    three: takeLast(3),
+    six: takeLast(6),
+    twelve: takeLast(12),
+  };
+}
+
+function buildInsightsFromDetails(
+  details: IyBolDetail[],
+): RouteInsights | null {
+  if (!details.length) return null;
+  const monthlySeries = createMonthlyTemplate();
+  const bucketMap = new Map(monthlySeries.map((m) => [m.key, m]));
+  const routeCounts = new Map<string, number>();
+
+  details.forEach((detail) => {
+    const arrival = parseDate(detail.arrival_date);
+    const teuValue =
+      toNumber(detail.company_teu_12m) ??
+      toNumber(detail.total_teu) ??
+      toNumber(detail.container_teu) ??
+      0;
+    const containersValue =
+      toNumber(detail.container_count) ??
+      toNumber(detail.container_teu) ??
+      teuValue ??
+      1;
+    if (arrival) {
+      const key = `${arrival.getFullYear()}-${String(arrival.getMonth() + 1).padStart(2, "0")}`;
+      const bucket = bucketMap.get(key);
+      if (bucket) {
+        bucket.shipments += 1;
+        bucket.teu += teuValue || 0;
+        bucket.containers += containersValue || teuValue || 1;
+      }
+    }
+    const routeLabel = buildRouteLabelFromDetail(detail);
+    if (routeLabel) {
+      routeCounts.set(routeLabel, (routeCounts.get(routeLabel) || 0) + 1);
+    }
+  });
+
+  const teusTotal = monthlySeries.reduce((sum, row) => sum + row.teu, 0);
+  const topRoutes = Array.from(routeCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([route, shipments]) => ({ route, shipments }));
+
+  return {
+    monthlySeries,
+    shipmentsValue: details.length || null,
+    teusTotal,
+    teuWindows: computeTeuWindowsFromSeries(monthlySeries),
+    topRoute: topRoutes[0]?.route ?? null,
+    topRoutes,
+    growthPercent: computeGrowthPercentFromSeries(monthlySeries),
+  };
+}
+
+function buildInsightsFromShipments(rows: ShipmentLite[]): RouteInsights {
+  const monthlySeries = createMonthlyTemplate();
+  const bucketMap = new Map(monthlySeries.map((m) => [m.key, m]));
+  const routeCounts = new Map<string, number>();
+
+  rows.forEach((row) => {
+    const dateValue = row.date ? new Date(row.date) : null;
+    if (dateValue && !Number.isNaN(dateValue.getTime())) {
+      const key = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, "0")}`;
+      const bucket = bucketMap.get(key);
+      if (bucket) {
+        bucket.shipments += 1;
+        const teu = typeof row.teu === "number" ? row.teu : 0;
+        bucket.teu += teu;
+        const containers =
+          typeof (row as any)?.container_count === "number"
+            ? (row as any).container_count
+            : teu || 1;
+        bucket.containers += containers;
+      }
+    }
+    const routeLabel = buildRouteLabelFromShipment(row);
+    if (routeLabel) {
+      routeCounts.set(routeLabel, (routeCounts.get(routeLabel) || 0) + 1);
+    }
+  });
+
+  const teusTotal = monthlySeries.reduce((sum, row) => sum + row.teu, 0);
+  const topRoutes = Array.from(routeCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([route, shipments]) => ({ route, shipments }));
+
+  return {
+    monthlySeries,
+    shipmentsValue: rows.length || null,
+    teusTotal,
+    teuWindows: computeTeuWindowsFromSeries(monthlySeries),
+    topRoute: topRoutes[0]?.route ?? null,
+    topRoutes,
+    growthPercent: computeGrowthPercentFromSeries(monthlySeries),
+  };
+}
+
 export default function ShipperDetailModal({
   shipper,
   open,
@@ -92,6 +284,9 @@ export default function ShipperDetailModal({
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
   const [shipmentsError, setShipmentsError] = useState<string | null>(null);
   const [chartMetric, setChartMetric] = useState<ChartMetric>("teu");
+  const [bolDetails, setBolDetails] = useState<IyBolDetail[]>([]);
+  const [bolDetailsLoading, setBolDetailsLoading] = useState(false);
+  const [bolDetailsError, setBolDetailsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !shipper?.key) return;
@@ -148,6 +343,63 @@ export default function ShipperDetailModal({
     };
   }, [open, shipper?.key]);
 
+  useEffect(() => {
+    if (!open || !shipper?.key || shipments.length === 0) {
+      setBolDetails([]);
+      setBolDetailsError(null);
+      return;
+    }
+    const uniqueBolNumbers = shipments
+      .map((row) => row.bol)
+      .filter(
+        (value, index, self): value is string =>
+          typeof value === "string" &&
+          value.trim().length > 0 &&
+          self.indexOf(value) === index,
+      )
+      .slice(0, BOL_DETAIL_LIMIT);
+
+    if (!uniqueBolNumbers.length) {
+      setBolDetails([]);
+      setBolDetailsError("No BOL numbers available for detail enrichment.");
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setBolDetailsLoading(true);
+    setBolDetailsError(null);
+
+    getIyBolDetails(uniqueBolNumbers, {
+      limit: BOL_DETAIL_LIMIT,
+      concurrency: BOL_DETAIL_CONCURRENCY,
+      signal: controller.signal,
+    })
+      .then((details) => {
+        if (cancelled) return;
+        setBolDetails(details);
+        if (!details.length) {
+          setBolDetailsError("ImportYeti BOL details unavailable.");
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("getIyBolDetails failed", error);
+        setBolDetails([]);
+        setBolDetailsError("ImportYeti BOL detail lookup failed.");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBolDetailsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [open, shipper?.key, shipments]);
+
   if (!open || !shipper) return null;
 
   const countryCode =
@@ -180,67 +432,50 @@ export default function ShipperDetailModal({
         .join(", "),
   );
 
-  const suppliers = Array.isArray(shipper.topSuppliers)
-    ? shipper.topSuppliers.slice(0, 6)
-    : [];
+  const detailContact = useMemo(() => {
+    if (!bolDetails.length) return null;
+    for (const detail of bolDetails) {
+      const candidate = deriveContactFromBol(detail);
+      if (candidate.phone || candidate.website || candidate.email) {
+        return candidate;
+      }
+    }
+    return null;
+  }, [bolDetails]);
 
-  const effectivePhone = contact?.phone ?? fallbackPhone;
-  const effectiveWebsite = contact?.website ?? fallbackWebsite;
-  const effectiveEmail = contact?.email ?? null;
+  const mergedContact = contact ?? detailContact ?? null;
+
+  const effectivePhone = mergedContact?.phone ?? fallbackPhone;
+  const effectiveWebsite = mergedContact?.website ?? fallbackWebsite;
+  const effectiveEmail = mergedContact?.email ?? null;
   const websiteLabel =
     effectiveWebsite?.replace(/^https?:\/\//i, "").replace(/\/$/, "") ?? null;
   const logoSource =
-    contact?.domain ?? shipper.domain ?? effectiveWebsite ?? null;
+    mergedContact?.domain ??
+    contact?.domain ??
+    shipper.domain ??
+    effectiveWebsite ??
+    null;
   const logoUrl = getCompanyLogoUrl(logoSource);
 
-  const monthlySeries = useMemo(() => {
-    const template: Array<{
-      key: string;
-      label: string;
-      shipments: number;
-      teu: number;
-      containers: number;
-    }> = [];
-    const now = new Date();
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      template.push({
-        key,
-        label: d.toLocaleString(undefined, { month: "short" }),
-        shipments: 0,
-        teu: 0,
-        containers: 0,
-      });
-    }
-
-    const bucketMap = new Map(template.map((m) => [m.key, m]));
-    shipments.forEach((row) => {
-      const dateValue = row.date ? new Date(row.date) : null;
-      if (!dateValue || Number.isNaN(dateValue.getTime())) return;
-      const key = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, "0")}`;
-      const bucket = bucketMap.get(key);
-      if (!bucket) return;
-      bucket.shipments += 1;
-      const teu = typeof row.teu === "number" ? row.teu : 0;
-      bucket.teu += teu;
-      const containers =
-        typeof (row as any)?.container_count === "number"
-          ? (row as any).container_count
-          : teu || 1;
-      bucket.containers += containers;
-    });
-
-    return template;
-  }, [shipments]);
+  const detailInsights = useMemo(
+    () => buildInsightsFromDetails(bolDetails),
+    [bolDetails],
+  );
+  const shipmentInsights = useMemo(
+    () => buildInsightsFromShipments(shipments),
+    [shipments],
+  );
+  const activeInsights = detailInsights ?? shipmentInsights;
+  const monthlySeries = activeInsights.monthlySeries;
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     console.debug("[ShipperDetailModal] Monthly series recomputed", {
       months: monthlySeries.length,
-      totalShipments: shipments.length,
+      shipmentsSource: detailInsights ? "bolDetails" : "shipments",
     });
-  }, [monthlySeries, shipments.length]);
+  }, [monthlySeries, detailInsights]);
 
   const chartSeries = useMemo(() => {
     return monthlySeries.map((row, index, list) => {
@@ -262,49 +497,16 @@ export default function ShipperDetailModal({
   const maxMagnitude =
     chartSeries.reduce((max, point) => Math.max(max, point.magnitude), 0) || 0;
 
-  const teusTotal = useMemo(() => {
-    if (!monthlySeries.length) return null;
-    return monthlySeries.reduce(
-      (sum, row) => sum + (Number.isFinite(row.teu) ? row.teu : 0),
-      0,
-    );
-  }, [monthlySeries]);
-
-  const derivedTopRoute = useMemo(() => {
-    if (topRoute) return topRoute;
-    const counts = new Map<string, number>();
-    shipments.forEach((row) => {
-      const origin = row.origin_port || row.origin_country_code;
-      const dest = row.destination_port || row.dest_country_code;
-      const route = origin && dest ? `${origin} → ${dest}` : origin || dest;
-      if (!route) return;
-      counts.set(route, (counts.get(route) || 0) + 1);
-    });
-    let best: string | null = null;
-    let max = 0;
-    counts.forEach((count, route) => {
-      if (count > max) {
-        max = count;
-        best = route;
-      }
-    });
-    return best;
-  }, [topRoute, shipments]);
-
-  const growthPercent = useMemo(() => {
-    if (monthlySeries.length < 2) return null;
-    const first = monthlySeries[0].shipments || 0;
-    const last = monthlySeries[monthlySeries.length - 1].shipments || 0;
-    if (!first) return null;
-    return ((last - first) / first) * 100;
-  }, [monthlySeries]);
-
-  const shipmentsValue = useMemo(() => {
-    if (typeof shipper.totalShipments === "number") {
-      return shipper.totalShipments;
-    }
-    return shipments.length || null;
-  }, [shipper.totalShipments, shipments]);
+  const teusTotal = activeInsights.teusTotal || null;
+  const teuWindows = activeInsights.teuWindows;
+  const derivedTopRoute =
+    topRoute ?? activeInsights.topRoute ?? recentRoute ?? null;
+  const growthPercent = activeInsights.growthPercent;
+  const shipmentsValue =
+    typeof shipper.totalShipments === "number"
+      ? shipper.totalShipments
+      : (activeInsights.shipmentsValue ?? (shipments.length || null));
+  const topRoutesList = activeInsights.topRoutes.slice(0, 5);
 
   const kpiCards = [
     {
@@ -437,6 +639,17 @@ export default function ShipperDetailModal({
               {shipmentsError}
             </div>
           )}
+          {bolDetailsLoading && (
+            <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
+              Enriching BOL contact & route intelligence…
+            </div>
+          )}
+          {bolDetailsError && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              {bolDetailsError}
+            </div>
+          )}
 
           <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {kpiCards.map((card) => {
@@ -549,21 +762,46 @@ export default function ShipperDetailModal({
                 })}
               </div>
             )}
+            <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+              <span>
+                3M TEU:{" "}
+                <span className="font-semibold text-slate-900">
+                  {formatNumber(teuWindows.three)}
+                </span>
+              </span>
+              <span>
+                6M TEU:{" "}
+                <span className="font-semibold text-slate-900">
+                  {formatNumber(teuWindows.six)}
+                </span>
+              </span>
+              <span>
+                12M TEU:{" "}
+                <span className="font-semibold text-slate-900">
+                  {formatNumber(teuWindows.twelve)}
+                </span>
+              </span>
+            </div>
           </section>
 
-          {suppliers.length > 0 && (
+          {topRoutesList.length > 0 && (
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
               <div className="text-sm font-semibold text-slate-900">
-                Top suppliers
+                Top routes (12m)
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {suppliers.map((name) => (
-                  <span
-                    key={name}
-                    className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {topRoutesList.map((route) => (
+                  <div
+                    key={route.route}
+                    className="rounded-2xl border border-slate-100 bg-slate-50/60 px-3 py-3"
                   >
-                    {name}
-                  </span>
+                    <div className="text-sm font-semibold text-slate-900">
+                      {route.route}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {formatNumber(route.shipments)} shipments
+                    </p>
+                  </div>
                 ))}
               </div>
             </section>

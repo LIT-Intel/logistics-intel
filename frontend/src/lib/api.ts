@@ -83,6 +83,17 @@ export interface IyBolDetail {
   company_country_code?: string | null;
   company_main_phone_number?: string | null;
   company_website?: string | null;
+  arrival_date?: string | null;
+  entry_port?: string | null;
+  exit_port?: string | null;
+  origin_port?: string | null;
+  destination_port?: string | null;
+  total_teu?: number | null;
+  container_teu?: number | null;
+  container_count?: number | null;
+  company_teu_3m?: number | null;
+  company_teu_6m?: number | null;
+  company_teu_12m?: number | null;
   company_contact_info?: {
     emails?: string[];
     phone_numbers?: string[];
@@ -90,6 +101,11 @@ export interface IyBolDetail {
   notify_party_contact_info?: {
     emails?: string[];
     phone_numbers?: string[];
+  };
+  shipping_rate?: {
+    route?: string | null;
+    origin_port?: string | null;
+    destination_port?: string | null;
   };
 }
 
@@ -981,6 +997,43 @@ export async function getIyBolDetail(
   }
 
   return res.bol;
+}
+
+export async function getIyBolDetails(
+  bolNumbers: string[],
+  options?: { limit?: number; concurrency?: number; signal?: AbortSignal },
+): Promise<IyBolDetail[]> {
+  if (!Array.isArray(bolNumbers) || bolNumbers.length === 0) {
+    return [];
+  }
+  const limit = Math.max(
+    1,
+    Math.min(options?.limit ?? bolNumbers.length, bolNumbers.length),
+  );
+  const concurrency = Math.max(1, options?.concurrency ?? 5);
+  const numbers = bolNumbers
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0,
+    )
+    .slice(0, limit);
+  const results: IyBolDetail[] = [];
+
+  for (let i = 0; i < numbers.length; i += concurrency) {
+    if (options?.signal?.aborted) break;
+    const batch = numbers.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(
+      batch.map((bolNum) => getIyBolDetail(bolNum, options?.signal)),
+    );
+    for (const outcome of settled) {
+      if (options?.signal?.aborted) break;
+      if (outcome.status === "fulfilled" && outcome.value) {
+        results.push(outcome.value);
+      }
+    }
+  }
+
+  return results;
 }
 
 function buildRouteFromShipment(row: ShipmentLite): string | null {
