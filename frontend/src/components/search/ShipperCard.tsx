@@ -1,6 +1,7 @@
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import type { IyShipperHit } from "@/lib/api";
 import { Calendar, MapPin, Package, Target } from "lucide-react";
+import { getCompanyLogoUrl } from "@/lib/logo";
 
 function countryCodeToEmoji(countryCode?: string | null): string | null {
   if (!countryCode) return null;
@@ -38,6 +39,24 @@ export default function ShipperCard({
     (shipper as any)?.country ??
     null;
 
+  const website =
+    shipper.website ??
+    (shipper as any)?.company_website ??
+    (shipper as any)?.website ??
+    null;
+
+  const logoUrl = getCompanyLogoUrl(shipper.domain ?? website ?? null);
+
+  const displayAddress =
+    shipper.address ??
+    [
+      (shipper as any)?.city,
+      (shipper as any)?.state,
+      (shipper as any)?.country,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
   const suppliers = Array.isArray(shipper.topSuppliers)
     ? shipper.topSuppliers.slice(0, 4)
     : [];
@@ -64,7 +83,12 @@ export default function ShipperCard({
     <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
       {/* Header */}
       <div className="flex items-start gap-3">
-        <CompanyAvatar name={shipper.title} size="md" className="shrink-0" />
+          <CompanyAvatar
+            name={shipper.title}
+            size="md"
+            className="shrink-0"
+            logoUrl={logoUrl}
+          />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold text-slate-900">
             {shipper.title}
@@ -78,7 +102,7 @@ export default function ShipperCard({
                   <span>{countryCode}</span>
                 </span>
               )}
-              <span className="truncate">{shipper.address}</span>
+                {displayAddress && <span className="truncate">{displayAddress}</span>}
             </div>
         </div>
       </div>

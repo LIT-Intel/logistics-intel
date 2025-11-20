@@ -30,9 +30,16 @@ export type IyShipperHit = {
   countryCode?: string;
   type?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
   totalShipments?: number;
   mostRecentShipment?: string;
   topSuppliers?: string[];
+  website?: string;
+  phone?: string;
+  domain?: string;
 };
 
 export type IySearchMeta = {
@@ -437,6 +444,24 @@ function ensureCompanyKey(value: string) {
   return trimmed.startsWith(IY_COMPANY_KEY_PREFIX) ? trimmed : `${IY_COMPANY_KEY_PREFIX}${trimmed}`;
 }
 
+function deriveDomainCandidate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(trimmed)) {
+    return trimmed.replace(/^https?:\/\//i, "").replace(/^www\./i, "").toLowerCase();
+  }
+
+  try {
+    const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function normalizeIyShipperHit(entry: any): IyShipperHit {
   const rawKey =
     entry?.key ??
@@ -472,6 +497,18 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
     .map((item: unknown) => (typeof item === "string" ? item.trim() : undefined))
     .filter((item): item is string => Boolean(item && item.length));
 
+  const website =
+    normalizeString(entry?.company_website) ??
+    normalizeString(entry?.website);
+  const phone =
+    normalizeString(entry?.company_main_phone_number) ??
+    normalizeString(entry?.phone);
+  const domain =
+    normalizeString(entry?.domain) ??
+    deriveDomainCandidate(entry?.company_website) ??
+    deriveDomainCandidate(entry?.website) ??
+    undefined;
+
   return {
     key: normalizedKey,
     title: normalizeString(entry?.title) ?? normalizeString(entry?.name) ?? fallbackTitle,
@@ -481,6 +518,10 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
       normalizeString(entry?.country),
     type: normalizeString(entry?.type),
     address: normalizeString(entry?.address),
+    city: normalizeString(entry?.city),
+    state: normalizeString(entry?.state),
+    postalCode: normalizeString(entry?.postal_code),
+    country: normalizeString(entry?.country),
     totalShipments:
       toNumberOrUndefined(entry?.totalShipments) ??
       toNumberOrUndefined(entry?.shipments) ??
@@ -490,6 +531,9 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
       normalizeString(entry?.last_activity) ??
       normalizeString(entry?.recentShipment),
     topSuppliers,
+    website,
+    phone,
+    domain,
   };
 }
 
