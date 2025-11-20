@@ -52,15 +52,18 @@ export default function ShipperCard({
     undefined;
   const logoUrl = getCompanyLogoUrl(domain ?? null);
 
+  const fallbackAddress = [
+    shipper.address,
+    (shipper as any)?.city,
+    (shipper as any)?.state,
+    (shipper as any)?.country,
+  ]
+    .filter((part) => typeof part === "string" && part.trim().length)
+    .map((part) => String(part).trim());
+
   const displayAddress =
     shipper.address ??
-    [
-      (shipper as any)?.city,
-      (shipper as any)?.state,
-      (shipper as any)?.country,
-  ]
-    .filter(Boolean)
-    .join(", ") || shipper.address;
+    (fallbackAddress.length ? fallbackAddress.join(", ") : undefined);
 
   const suppliers = Array.isArray(shipper.topSuppliers)
     ? shipper.topSuppliers.slice(0, 4)
