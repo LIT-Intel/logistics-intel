@@ -11,8 +11,9 @@ import {
   TrendingUp,
   Loader2,
 } from "lucide-react";
-import type { IyShipperHit, IyCompanyStats } from "@/lib/api";
-import { iyCompanyStats } from "@/lib/api";
+import type { IyShipperHit } from "@/lib/api";
+import { iyFetchCompanyBols } from "@/lib/api";
+import type { ShipmentLite } from "@/types/importyeti";
 import { getCompanyLogoUrl } from "@/lib/logo";
 
 type ShipperDetailModalProps = {
@@ -34,6 +35,8 @@ const chartMetricOptions: Array<{ key: ChartMetric; label: string; icon: React.C
     { key: "containers", label: "Containers", icon: Ship },
     { key: "trend", label: "Trend spikes", icon: TrendingUp },
   ];
+
+const SHIPMENTS_LIMIT = 250;
 
 function countryCodeToEmoji(countryCode?: string | null): string | null {
   if (!countryCode) return null;
@@ -66,14 +69,6 @@ function getCompanySlug(key?: string | null) {
   return key.replace(/^company\//i, "");
 }
 
-function formatMonthLabel(input: string) {
-  if (!input) return "—";
-  const normalized = input.includes("-") ? `${input}-01` : input;
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return input;
-  return date.toLocaleString(undefined, { month: "short" });
-}
-
 export default function ShipperDetailModal({
   shipper,
   open,
@@ -83,9 +78,9 @@ export default function ShipperDetailModal({
   onSave,
   saving = false,
 }: ShipperDetailModalProps) {
-  const [stats, setStats] = useState<IyCompanyStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
-  const [statsError, setStatsError] = useState<string | null>(null);
+  const [shipments, setShipments] = useState<ShipmentLite[]>([]);
+  const [shipmentsLoading, setShipmentsLoading] = useState(false);
+  const [shipmentsError, setShipmentsError] = useState<string | null>(null);
   const [chartMetric, setChartMetric] = useState<ChartMetric>("teu");
 
   useEffect(() => {
@@ -94,19 +89,22 @@ export default function ShipperDetailModal({
     if (!slug) return;
 
     let cancelled = false;
-    setStatsLoading(true);
-    setStatsError(null);
+    setShipmentsLoading(true);
+    setShipmentsError(null);
 
-    iyCompanyStats({ company: slug })
-      .then((payload) => {
-        if (!cancelled) setStats(payload);
+    iyFetchCompanyBols({ companyKey: slug, limit: SHIPMENTS_LIMIT, offset: 0 })
+      .then((rows) => {
+        if (!cancelled) setShipments(rows ?? []);
       })
       .catch((error) => {
-        console.warn("iyCompanyStats failed", error);
-        if (!cancelled) setStatsError("Unable to load DMA insights.");
+        console.warn("iyFetchCompanyBols failed", error);
+        if (!cancelled) {
+          setShipments([]);
+          setShipmentsError("ImportYeti BOLs are temporarily unavailable.");
+        }
       })
       .finally(() => {
-        if (!cancelled) setStatsLoading(false);
+        if (!cancelled) setShipmentsLoading(false);
       });
 
     return () => {
@@ -153,19 +151,45 @@ export default function ShipperDetailModal({
   const logoUrl = getCompanyLogoUrl(shipper.domain ?? companyWebsite ?? null);
 
   const monthlySeries = useMemo(() => {
-    const rows = stats?.monthlyShipments ?? [];
-    return rows.slice(-12).map((row) => {
-      const shipments = Number(row.shipments ?? 0);
-      const teu = Number(row.teu ?? shipments);
-      return {
-        key: row.month,
-        label: formatMonthLabel(row.month),
-        shipments,
-        teu,
-        containers: teu || shipments,
-      };
+    const template: Array<{
+      key: string;
+      label: string;
+      shipments: number;
+      teu: number;
+      containers: number;
+    }> = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      template.push({
+        key,
+        label: d.toLocaleString(undefined, { month: "short" }),
+        shipments: 0,
+        teu: 0,
+        containers: 0,
+      });
+    }
+
+    const bucketMap = new Map(template.map((m) => [m.key, m]));
+    shipments.forEach((row) => {
+      const dateValue = row.date ? new Date(row.date) : null;
+      if (!dateValue || Number.isNaN(dateValue.getTime())) return;
+      const key = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, "0")}`;
+      const bucket = bucketMap.get(key);
+      if (!bucket) return;
+      bucket.shipments += 1;
+      const teu = typeof row.teu === "number" ? row.teu : 0;
+      bucket.teu += teu;
+      const containers =
+        typeof (row as any)?.container_count === "number"
+          ? (row as any).container_count
+          : teu || 1;
+      bucket.containers += containers;
     });
-  }, [stats?.monthlyShipments]);
+
+    return template;
+  }, [shipments]);
 
   const chartSeries = useMemo(() => {
     return monthlySeries.map((row, index, list) => {
@@ -196,13 +220,24 @@ export default function ShipperDetailModal({
 
   const derivedTopRoute = useMemo(() => {
     if (topRoute) return topRoute;
-    const lane = stats?.topLanes?.[0];
-    if (!lane) return null;
-    const origin = lane.origin_port || lane.origin_country_code;
-    const dest = lane.dest_port || lane.dest_country_code;
-    if (origin && dest) return `${origin} → ${dest}`;
-    return origin || dest || null;
-  }, [topRoute, stats?.topLanes]);
+    const counts = new Map<string, number>();
+    shipments.forEach((row) => {
+      const origin = row.origin_port || row.origin_country_code;
+      const dest = row.destination_port || row.dest_country_code;
+      const route = origin && dest ? `${origin} → ${dest}` : origin || dest;
+      if (!route) return;
+      counts.set(route, (counts.get(route) || 0) + 1);
+    });
+    let best: string | null = null;
+    let max = 0;
+    counts.forEach((count, route) => {
+      if (count > max) {
+        max = count;
+        best = route;
+      }
+    });
+    return best;
+  }, [topRoute, shipments]);
 
   const growthPercent = useMemo(() => {
     if (monthlySeries.length < 2) return null;
@@ -216,13 +251,8 @@ export default function ShipperDetailModal({
     if (typeof shipper.totalShipments === "number") {
       return shipper.totalShipments;
     }
-    const breakdown = stats?.shipmentTypeBreakdown;
-    if (!breakdown) return null;
-    const fcl = Number(breakdown.fcl_shipments ?? 0);
-    const lcl = Number(breakdown.lcl_shipments ?? 0);
-    const total = fcl + lcl;
-    return total > 0 ? total : null;
-  }, [shipper.totalShipments, stats?.shipmentTypeBreakdown]);
+    return shipments.length || null;
+  }, [shipper.totalShipments, shipments]);
 
   const kpiCards = [
     {
@@ -331,45 +361,45 @@ export default function ShipperDetailModal({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-6">
-          {statsLoading && (
+          {shipmentsLoading && (
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
-              Loading DMA insights…
+              Loading ImportYeti BOLs…
             </div>
           )}
-          {statsError && (
+          {shipmentsError && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              {statsError}
+              {shipmentsError}
             </div>
           )}
 
           <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {kpiCards.map((card) => {
-                const Icon = card.icon;
-                const rawValue =
-                  card.value == null
-                    ? null
-                    : typeof card.value === "number"
-                    ? card.value
-                    : card.value;
-                const displayValue =
-                  typeof card.formatter === "function"
-                    ? card.formatter(rawValue)
-                    : formatNumber(rawValue as number | null);
+            {kpiCards.map((card) => {
+              const Icon = card.icon;
+              const rawValue =
+                card.value == null
+                  ? null
+                  : typeof card.value === "number"
+                  ? card.value
+                  : card.value;
+              const displayValue =
+                typeof card.formatter === "function"
+                  ? card.formatter(rawValue)
+                  : formatNumber(rawValue as number | null);
 
-                return (
-                  <div
-                    key={card.key}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 min-h-[120px] flex flex-col justify-between"
-                  >
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-500">
-                      <Icon className="h-4 w-4 text-indigo-500" />
-                      {card.label}
-                    </div>
-                    <div className="text-xl font-semibold text-slate-900">{displayValue}</div>
+              return (
+                <div
+                  key={card.key}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 min-h-[120px] flex flex-col justify-between"
+                >
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-500">
+                    <Icon className="h-4 w-4 text-indigo-500" />
+                    {card.label}
                   </div>
-                );
-              })}
+                  <div className="text-xl font-semibold text-slate-900">{displayValue}</div>
+                </div>
+              );
+            })}
           </section>
 
           <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">

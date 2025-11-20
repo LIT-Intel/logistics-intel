@@ -207,9 +207,9 @@ export default function SearchPage() {
                 <p className="mt-2 text-sm text-slate-500">Try another query or broaden your search.</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {shipperLoading && shipperResults.length === 0 ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="space-y-6">
+                  {shipperLoading && shipperResults.length === 0 ? (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
                     {Array.from({ length: 6 }).map((_, index) => (
                       <div
                         key={`skeleton-${index}`}
@@ -218,7 +218,7 @@ export default function SearchPage() {
                     ))}
                   </div>
                   ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
                       {shipperResults.map((shipper) => (
                         <ShipperCard
                           key={shipper.key || shipper.title}
