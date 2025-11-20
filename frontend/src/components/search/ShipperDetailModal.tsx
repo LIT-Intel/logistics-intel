@@ -109,13 +109,19 @@ export default function ShipperDetailModal({
       });
     }
     iyFetchCompanyBols({ companyKey: slug, limit: SHIPMENTS_LIMIT, offset: 0 })
-      .then((rows) => {
+      .then((result) => {
         if (!cancelled) {
-          setShipments(rows ?? []);
+          setShipments(result.shipments ?? []);
+          if (!result.ok) {
+            setShipmentsError("ImportYeti BOLs are temporarily unavailable.");
+          } else {
+            setShipmentsError(null);
+          }
           if (import.meta.env.DEV) {
             console.debug("[ShipperDetailModal] BOL rows received", {
               key: shipper.key,
-              count: rows?.length ?? 0,
+              count: result.shipments?.length ?? 0,
+              ok: result.ok,
             });
           }
         }

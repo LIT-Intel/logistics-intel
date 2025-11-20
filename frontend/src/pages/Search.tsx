@@ -1,4 +1,11 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ShipperCard from "@/components/search/ShipperCard";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import SearchFilters, {
@@ -28,6 +35,7 @@ export default function SearchPage() {
   const [shipperError, setShipperError] = useState<string | null>(null);
   const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
+  const [kpisByKey, setKpisByKey] = useState<Record<string, IyRouteKpis>>({});
   const [contactsByKey, setContactsByKey] = useState<
     Record<string, IyCompanyContact>
   >({});
@@ -39,6 +47,48 @@ export default function SearchPage() {
     region: "global",
     activity: "12m",
   });
+  const pendingKpiRequests = useRef<
+    Record<string, Promise<IyRouteKpis | null> | undefined>
+  >({});
+
+  const loadKpisForKey = useCallback(
+    async (companyKey: string) => {
+      if (!companyKey) return null;
+      if (kpisByKey[companyKey]) {
+        return kpisByKey[companyKey];
+      }
+      if (pendingKpiRequests.current[companyKey]) {
+        return pendingKpiRequests.current[companyKey]!;
+      }
+      const promise = getIyRouteKpisForCompany({ companyKey })
+        .catch((error) => {
+          console.warn("getIyRouteKpisForCompany failed", {
+            companyKey,
+            error,
+          });
+          return null;
+        })
+        .finally(() => {
+          delete pendingKpiRequests.current[companyKey];
+        });
+      pendingKpiRequests.current[companyKey] = promise;
+      const kpis = await promise;
+      if (kpis) {
+        setKpisByKey((prev) =>
+          prev[companyKey] === kpis ? prev : { ...prev, [companyKey]: kpis },
+        );
+        if (kpis.contact) {
+          setContactsByKey((prev) =>
+            prev[companyKey] === kpis.contact
+              ? prev
+              : { ...prev, [companyKey]: kpis.contact! },
+          );
+        }
+      }
+      return kpis;
+    },
+    [kpisByKey],
+  );
 
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
@@ -90,45 +140,47 @@ export default function SearchPage() {
     return () => controller.abort();
   }, [submittedQuery, shipperPage]);
 
-  const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
-    if (!shipper) {
-      if (import.meta.env.DEV) {
-        console.warn("[Search] handleViewDetails called without a shipper");
+  const handleViewDetails = useCallback(
+    async (shipper: IyShipperHit) => {
+      if (!shipper) {
+        if (import.meta.env.DEV) {
+          console.warn("[Search] handleViewDetails called without a shipper");
+        }
+        return;
       }
-      return;
-    }
-    if (import.meta.env.DEV) {
-      console.debug("[Search] Opening ShipperDetailModal", {
-        key: shipper.key,
-        title: shipper.title,
-      });
-    }
-    setActiveShipper(shipper);
-    setModalLoading(true);
-    setModalError(null);
-    try {
-      const kpis = await getIyRouteKpisForCompany({ companyKey: shipper.key });
       if (import.meta.env.DEV) {
-        console.debug("[Search] Route KPIs fetched", {
+        console.debug("[Search] Opening ShipperDetailModal", {
           key: shipper.key,
-          sampleSize: kpis?.sampleSize,
+          title: shipper.title,
         });
       }
-      if (kpis?.contact) {
-        setContactsByKey((prev) => {
-          if (prev[shipper.key] === kpis.contact) return prev;
-          return { ...prev, [shipper.key]: kpis.contact! };
-        });
+      setActiveShipper(shipper);
+      setModalLoading(true);
+      setModalError(null);
+      try {
+        const kpis = await loadKpisForKey(shipper.key);
+        if (import.meta.env.DEV) {
+          console.debug("[Search] Route KPIs fetched", {
+            key: shipper.key,
+            sampleSize: kpis?.sampleSize,
+          });
+        }
+        if (!kpis) {
+          setRouteKpis(null);
+          setModalError("Route KPIs unavailable for this shipper.");
+        } else {
+          setRouteKpis(kpis);
+        }
+      } catch (err) {
+        console.warn("getIyRouteKpisForCompany failed", err);
+        setRouteKpis(null);
+        setModalError("Route KPIs unavailable for this shipper.");
+      } finally {
+        setModalLoading(false);
       }
-      setRouteKpis(kpis ?? null);
-    } catch (err) {
-      console.warn("getIyRouteKpisForCompany failed", err);
-      setRouteKpis(null);
-      setModalError("Route KPIs unavailable for this shipper.");
-    } finally {
-      setModalLoading(false);
-    }
-  }, []);
+    },
+    [loadKpisForKey],
+  );
 
   const handleCloseModal = useCallback(() => {
     setActiveShipper(null);
@@ -138,7 +190,10 @@ export default function SearchPage() {
   }, []);
 
   const activeContact = activeShipper?.key
-    ? (contactsByKey[activeShipper.key] ?? routeKpis?.contact ?? null)
+    ? (contactsByKey[activeShipper.key] ??
+      kpisByKey[activeShipper.key]?.contact ??
+      routeKpis?.contact ??
+      null)
     : (routeKpis?.contact ?? null);
 
   const handleSaveToCommandCenter = useCallback(
@@ -276,15 +331,30 @@ export default function SearchPage() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
-                    {shipperResults.map((shipper) => (
-                      <ShipperCard
-                        key={shipper.key || shipper.title}
-                        shipper={shipper}
-                        contact={contactsByKey[shipper.key]}
-                        onViewDetails={() => handleViewDetails(shipper)}
-                        onSave={() => handleSaveToCommandCenter(shipper)}
-                      />
-                    ))}
+                    {shipperResults.map((shipper) => {
+                      const key = shipper.key || shipper.title;
+                      const cachedKpis =
+                        (shipper.key && kpisByKey[shipper.key]) ?? null;
+                      const cachedContact =
+                        (shipper.key && contactsByKey[shipper.key]) ??
+                        cachedKpis?.contact ??
+                        null;
+                      return (
+                        <ShipperCard
+                          key={key}
+                          shipper={shipper}
+                          contact={cachedContact}
+                          kpis={cachedKpis}
+                          onPrefetchKpis={
+                            shipper.key
+                              ? () => loadKpisForKey(shipper.key)
+                              : undefined
+                          }
+                          onViewDetails={() => handleViewDetails(shipper)}
+                          onSave={() => handleSaveToCommandCenter(shipper)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
 

@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import type { IyCompanyContact, IyShipperHit } from "@/lib/api";
+import type { IyCompanyContact, IyRouteKpis, IyShipperHit } from "@/lib/api";
 import { Calendar, MapPin, Package, Target } from "lucide-react";
 import { getCompanyLogoUrl } from "@/lib/logo";
 
@@ -15,11 +16,13 @@ function countryCodeToEmoji(countryCode?: string | null): string | null {
 type ShipperCardProps = {
   shipper: IyShipperHit;
   contact?: IyCompanyContact | null;
+  kpis?: IyRouteKpis | null;
   topRoute?: string | null;
   teus12m?: number | null;
   shipments12m?: number | null;
   onViewDetails?: () => void;
   onSave?: () => void;
+  onPrefetchKpis?: () => void;
   isSaving?: boolean;
   isSaved?: boolean;
 };
@@ -27,14 +30,41 @@ type ShipperCardProps = {
 export default function ShipperCard({
   shipper,
   contact,
+  kpis,
   topRoute,
   teus12m,
   shipments12m,
   onViewDetails,
   onSave,
+  onPrefetchKpis,
   isSaving,
   isSaved,
 }: ShipperCardProps) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!onPrefetchKpis || kpis || typeof window === "undefined") {
+      return;
+    }
+    const element = cardRef.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            onPrefetchKpis();
+            observer.disconnect();
+          }
+        });
+      },
+      { threshold: 0.25 },
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [kpis, onPrefetchKpis]);
+
   const countryCode =
     shipper.countryCode ??
     (shipper as any)?.country_code ??
@@ -80,21 +110,29 @@ export default function ShipperCard({
     shipper.address ??
     (fallbackAddress.length ? fallbackAddress.join(", ") : undefined);
 
-  const suppliers = Array.isArray(shipper.topSuppliers)
-    ? shipper.topSuppliers.slice(0, 4)
-    : [];
-
+  const shipmentsValue =
+    kpis?.shipmentsLast12m ??
+    shipments12m ??
+    (typeof shipper.totalShipments === "number"
+      ? shipper.totalShipments
+      : null);
   const totalShipmentsLabel =
-    typeof shipments12m === "number"
-      ? shipments12m.toLocaleString()
-      : typeof shipper.totalShipments === "number"
-        ? shipper.totalShipments.toLocaleString()
-        : "—";
+    typeof shipmentsValue === "number" ? shipmentsValue.toLocaleString() : "—";
 
   const lastShipmentLabel = shipper.mostRecentShipment || "—";
-  const topRouteLabel = topRoute || "Top route data coming…";
+  const topRouteLabel =
+    kpis?.topRouteLast12m ?? topRoute ?? "Top route data coming…";
+  const teusValue =
+    typeof kpis?.teuLast12m === "number"
+      ? kpis.teuLast12m
+      : typeof teus12m === "number"
+        ? teus12m
+        : null;
   const teusLabel =
-    typeof teus12m === "number" ? teus12m.toLocaleString() : "—";
+    typeof teusValue === "number" ? teusValue.toLocaleString() : "—";
+  const topRoutes =
+    kpis?.topRoutesLast12m?.slice(0, 5).filter((route) => route.route) ?? [];
+  const showContactRow = contactPhone || contactWebsite || contactEmail;
 
   const saveLabel = isSaved
     ? "Saved"
@@ -103,7 +141,10 @@ export default function ShipperCard({
       : "Save to Command Center";
 
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+    <div
+      ref={cardRef}
+      className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
+    >
       {/* Header */}
       <div className="flex items-start gap-3">
         <CompanyAvatar
@@ -116,9 +157,9 @@ export default function ShipperCard({
           <h3 className="truncate text-sm font-semibold text-slate-900">
             {shipper.title}
           </h3>
-          <div className="mt-1 text-xs text-slate-500 flex items-center gap-1">
+          <div className="mt-1 text-xs text-slate-500 flex flex-wrap items-center gap-1">
             {countryCode && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600 shrink-0">
                 <span aria-hidden="true">
                   {countryCodeToEmoji(countryCode)}
                 </span>
@@ -129,7 +170,7 @@ export default function ShipperCard({
               <span className="truncate">{displayAddress}</span>
             )}
           </div>
-          {(contactPhone || contactWebsite || contactEmail) && (
+          {showContactRow && (
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
               {contactPhone && <span>📞 {contactPhone}</span>}
               {contactEmail && (
@@ -202,24 +243,33 @@ export default function ShipperCard({
         </div>
       </div>
 
-      {/* Top suppliers */}
-      {suppliers.length > 0 && (
-        <div className="mt-4">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500">
-            Top suppliers
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {suppliers.map((supplier) => (
-              <span
-                key={supplier}
-                className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700"
+      {/* Top routes */}
+      <div className="mt-4">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          Top routes (12m)
+        </p>
+        {topRoutes.length > 0 ? (
+          <div className="mt-2 flex flex-col gap-1.5 text-xs text-slate-600">
+            {topRoutes.map((route) => (
+              <div
+                key={`${shipper.key || shipper.title}-${route.route}`}
+                className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 px-2 py-1"
               >
-                {supplier}
-              </span>
+                <span className="line-clamp-1 pr-2 font-medium text-slate-700">
+                  {route.route}
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {route.shipments.toLocaleString()} shipments
+                </span>
+              </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="mt-2 text-xs text-slate-400">
+            ImportYeti route insights will appear once data loads.
+          </p>
+        )}
+      </div>
 
       {/* Actions */}
       <div className="mt-5 mt-auto flex flex-col gap-2 sm:flex-row">

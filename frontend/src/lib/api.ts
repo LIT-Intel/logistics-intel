@@ -61,10 +61,19 @@ export type IySearchResponse = {
   meta: IySearchMeta;
 };
 
+export type IyRouteTopRoute = {
+  route: string;
+  shipments: number;
+  teu?: number | null;
+};
+
 export type IyRouteKpis = {
   topRouteLast12m: string | null;
   mostRecentRoute: string | null;
   sampleSize: number;
+  shipmentsLast12m: number;
+  teuLast12m: number;
+  topRoutesLast12m: IyRouteTopRoute[];
   contact?: IyCompanyContact;
 };
 
@@ -919,19 +928,37 @@ export function deriveContactFromBol(bol: IyBolDetail): IyCompanyContact {
   };
 }
 
+export type IyCompanyBolsResult = {
+  shipments: ShipmentLite[];
+  total: number;
+  ok: boolean;
+  error?: unknown;
+};
+
 export async function iyFetchCompanyBols(
   params: { companyKey: string; limit: number; offset: number },
   signal?: AbortSignal,
-): Promise<ShipmentLite[]> {
-  const payload = await iyCompanyBols(
-    {
-      company_id: params.companyKey,
-      limit: params.limit,
-      offset: params.offset,
-    },
-    signal,
-  );
-  return Array.isArray(payload?.rows) ? mapIyRowsToShipments(payload.rows) : [];
+): Promise<IyCompanyBolsResult> {
+  try {
+    const payload = await iyCompanyBols(
+      {
+        company_id: params.companyKey,
+        limit: params.limit,
+        offset: params.offset,
+      },
+      signal,
+    );
+    const shipments = Array.isArray(payload?.rows)
+      ? mapIyRowsToShipments(payload.rows)
+      : [];
+    const total =
+      typeof payload?.total === "number" ? payload.total : shipments.length;
+    const ok = Boolean((payload as any)?.ok ?? true);
+    return { shipments, total, ok };
+  } catch (error) {
+    console.error("iyFetchCompanyBols", error);
+    return { shipments: [], total: 0, ok: false, error };
+  }
 }
 
 export async function getIyBolDetail(
@@ -971,53 +998,73 @@ export function computeIyRouteKpisFromShipments(
   rows: ShipmentLite[],
 ): IyRouteKpis {
   if (!Array.isArray(rows) || rows.length === 0) {
-    return { topRouteLast12m: null, mostRecentRoute: null, sampleSize: 0 };
+    return {
+      topRouteLast12m: null,
+      mostRecentRoute: null,
+      sampleSize: 0,
+      shipmentsLast12m: 0,
+      teuLast12m: 0,
+      topRoutesLast12m: [],
+    };
   }
   const now = new Date();
   const cutoff = new Date(now);
   cutoff.setMonth(cutoff.getMonth() - 12);
   const cutoffTime = cutoff.getTime();
 
-  const routeCounts = new Map<string, number>();
+  const routeStats = new Map<string, { count: number; teu: number }>();
   let mostRecentRoute: string | null = null;
   let mostRecentTime = 0;
+  let shipmentsLast12m = 0;
+  let teuLast12m = 0;
 
   for (const row of rows) {
     const route = buildRouteFromShipment(row);
-    if (!route) continue;
     const ts = row.date ? new Date(row.date).getTime() : NaN;
-    if (!Number.isNaN(ts) && ts > mostRecentTime) {
+    if (!Number.isNaN(ts) && ts > mostRecentTime && route) {
       mostRecentTime = ts;
       mostRecentRoute = route;
     }
     if (!Number.isNaN(ts) && ts >= cutoffTime) {
-      routeCounts.set(route, (routeCounts.get(route) || 0) + 1);
+      shipmentsLast12m += 1;
+      const teuContribution = Number.isFinite(Number(row.teu))
+        ? Number(row.teu)
+        : 0;
+      teuLast12m += teuContribution;
+      if (route) {
+        const current = routeStats.get(route) ?? { count: 0, teu: 0 };
+        current.count += 1;
+        current.teu += teuContribution;
+        routeStats.set(route, current);
+      }
     }
   }
 
-  let topRouteLast12m: string | null = null;
-  let maxCount = 0;
-  for (const [route, count] of routeCounts.entries()) {
-    if (count > maxCount) {
-      maxCount = count;
-      topRouteLast12m = route;
-    }
-  }
+  const topRoutes = Array.from(routeStats.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([route, stats]) => ({
+      route,
+      shipments: stats.count,
+      teu: stats.teu || null,
+    }));
 
   return {
-    topRouteLast12m,
+    topRouteLast12m: topRoutes[0]?.route ?? null,
     mostRecentRoute,
     sampleSize: rows.length,
+    shipmentsLast12m,
+    teuLast12m,
+    topRoutesLast12m: topRoutes,
   };
 }
 
 export async function getIyRouteKpisForCompany(
   params: { companyKey: string; limit?: number; offset?: number },
   signal?: AbortSignal,
-): Promise<IyRouteKpis> {
+): Promise<IyRouteKpis | null> {
   const companyKey = ensureCompanyKey(params.companyKey);
   if (!companyKey) {
-    return { topRouteLast12m: null, mostRecentRoute: null, sampleSize: 0 };
+    return null;
   }
   const limitCandidate = Number(params.limit);
   const offsetCandidate = Number(params.offset);
@@ -1030,13 +1077,21 @@ export async function getIyRouteKpisForCompany(
     Number.isFinite(offsetCandidate) ? offsetCandidate : 0,
   );
   try {
-    const shipments = await iyFetchCompanyBols(
+    const result = await iyFetchCompanyBols(
       { companyKey, limit, offset },
       signal,
     );
-    const kpis = computeIyRouteKpisFromShipments(shipments);
+    if (!result.ok || result.shipments.length === 0) {
+      console.warn("getIyRouteKpisForCompany: no shipments available", {
+        companyKey,
+        ok: result.ok,
+        total: result.total,
+      });
+      return null;
+    }
+    const kpis = computeIyRouteKpisFromShipments(result.shipments);
     let contact: IyCompanyContact | undefined;
-    const firstBol = shipments[0];
+    const firstBol = result.shipments[0];
     if (firstBol?.bol) {
       try {
         const detail = await getIyBolDetail(firstBol.bol, signal);
@@ -1056,7 +1111,7 @@ export async function getIyRouteKpisForCompany(
     };
   } catch (error) {
     console.error("getIyRouteKpisForCompany", error);
-    return { topRouteLast12m: null, mostRecentRoute: null, sampleSize: 0 };
+    return null;
   }
 }
 
