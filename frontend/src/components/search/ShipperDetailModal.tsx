@@ -43,7 +43,11 @@ export default function ShipperDetailModal({
   // so React's hook ordering stays stable and cannot trigger error #310.
   if (!open || !shipper) return null;
 
-  const countryCode = (shipper as any)?.countryCode ?? null;
+  const countryCode =
+    (shipper as any)?.countryCode ??
+    (shipper as any)?.country_code ??
+    (shipper as any)?.country ??
+    null;
 
   const companyPhone =
     (shipper as any)?.company_main_phone_number ??

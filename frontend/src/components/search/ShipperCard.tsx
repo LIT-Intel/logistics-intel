@@ -32,6 +32,12 @@ export default function ShipperCard({
   isSaving,
   isSaved,
 }: ShipperCardProps) {
+  const countryCode =
+    shipper.countryCode ??
+    (shipper as any)?.country_code ??
+    (shipper as any)?.country ??
+    null;
+
   const suppliers = Array.isArray(shipper.topSuppliers)
     ? shipper.topSuppliers.slice(0, 4)
     : [];
@@ -64,12 +70,12 @@ export default function ShipperCard({
             {shipper.title}
           </h3>
             <div className="mt-1 text-xs text-slate-500 flex items-center gap-1">
-              {shipper.countryCode && (
+              {countryCode && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600">
                   <span aria-hidden="true">
-                    {countryCodeToEmoji(shipper.countryCode)}
+                    {countryCodeToEmoji(countryCode)}
                   </span>
-                  <span>{shipper.countryCode}</span>
+                  <span>{countryCode}</span>
                 </span>
               )}
               <span className="truncate">{shipper.address}</span>
