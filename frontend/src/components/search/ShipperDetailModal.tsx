@@ -260,8 +260,8 @@ export default function ShipperDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="w-full max-w-4xl max-h-[95vh] overflow-hidden rounded-2xl bg-white p-0">
-        <DialogHeader className="border-b border-slate-100 px-6 py-5">
+      <DialogContent className="w-[95vw] max-w-4xl max-h-[95vh] overflow-hidden rounded-2xl bg-white p-0 flex flex-col">
+        <DialogHeader className="border-b border-slate-100 px-6 py-5 shrink-0">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-start gap-4">
               <CompanyAvatar
