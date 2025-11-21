@@ -104,6 +104,34 @@ paths:
         - { name: offset,     in: query, type: integer, required: false }
       responses: { "200": { description: "ok" } }
 
+  /public/iy/companyProfile:
+    get:
+      summary: Get ImportYeti company profile (normalized)
+      operationId: getIyCompanyProfile
+      parameters:
+        - name: company_id
+          in: query
+          required: true
+          type: string
+          description: "Company key, e.g. company/walmart"
+      responses:
+        "200":
+          description: Company profile
+          schema:
+            type: object
+        "4xx":
+          description: Upstream ImportYeti error
+        "5xx":
+          description: Internal error
+      x-google-backend:
+        # Use the SAME address as your other /public/iy/* routes
+        address: https://search-unified-<YOUR-SERVICE-HASH>-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      x-google-cors:
+        allowOrigins: ["*"]
+        allowMethods: ["GET", "OPTIONS"]
+        allowHeaders: ["content-type", "authorization", "x-api-key"]
+
     /public/iy/companyLatestBol:
       options:
         operationId: cors_iyCompanyLatestBol
