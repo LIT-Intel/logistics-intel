@@ -8,7 +8,7 @@ import express, {
 
 import campaigns from "./routes/campaigns.js";
 import getCompanyShipments from "./routes/getCompanyShipments.js";
-import iyRouter from "./routes/iy.js";
+import importYetiRoutes from "./routes/iy.js";
 import publicRoutes from "./routes/public.js";
 import searchCompanies from "./routes/searchCompanies.js";
 import statusRoutes from "./routes/status.js";
@@ -29,7 +29,7 @@ app.use(
   }),
 );
 
-// Basic CORS (Gateway sits in front, but this keeps things simple)
+// CORS – keeps things simple behind Gateway
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
@@ -49,25 +49,24 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Core public/status/search routes
-// NOTE: these route modules define their own paths, e.g.
-//  - /public/status
-//  - /public/getFilterOptions
-//  - /public/searchCompanies
+// These route modules define their own paths, e.g.:
+//   /public/status
+//   /public/getFilterOptions
+//   /public/searchCompanies
 app.use(statusRoutes);
 app.use(publicRoutes);
 app.use(searchCompanies);
 app.use(getCompanyShipments);
 
-// ImportYeti router
-// iy.ts defines routes like:
-//   router.post("/searchShippers", ...)
-//   router.post("/companyBols", ...)
-// so mounting at /public/iy gives:
-//   POST /public/iy/searchShippers
-//   POST /public/iy/companyBols
-app.use("/public/iy", iyRouter);
+// ImportYeti routes
+// NOTE: routes/iy.ts defines full paths like:
+//   router.post("/public/iy/searchShippers", ...)
+//   router.post("/public/iy/companyBols", ...)
+//   router.get("/public/iy/bol", ...)
+// So we mount the router at root, not under an extra prefix.
+app.use(importYetiRoutes);
 
-// Campaign-related routes (CRM / outreach, etc.)
+// Campaign / CRM routes
 app.use(campaigns);
 
 // Central error handler
@@ -105,7 +104,7 @@ app.use(
   },
 );
 
-// Start server (Cloud Run)
+// Start server (Cloud Run entrypoint)
 const port = Number(process.env.PORT ?? 8080);
 
 if (process.env.NODE_ENV !== "test") {
