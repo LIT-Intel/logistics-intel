@@ -114,15 +114,16 @@ paths:
           required: true
           type: string
           description: "Company key, e.g. company/walmart"
-      responses:
+            responses:
         "200":
           description: Company profile
           schema:
             type: object
-        "4xx":
-          description: Upstream ImportYeti error
-        "5xx":
+        "400":
+          description: Upstream ImportYeti error (auth/credits/etc.)
+        "500":
           description: Internal error
+
       x-google-backend:
         # Use the SAME address as your other /public/iy/* routes
         address: https://search-unified-<YOUR-SERVICE-HASH>-uc.a.run.app
