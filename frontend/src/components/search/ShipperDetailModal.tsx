@@ -1,22 +1,21 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { MapPin, Calendar, Package, Ship, Info } from "lucide-react";
-import type { IyShipperHit } from "@/lib/api";
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
+import type { IyCompanyProfile, IyShipperHit } from "@/lib/api";
+import { getIyCompanyProfile } from "@/lib/api";
 
-type ExtendedShipperHit = IyShipperHit & {
-  address_line_1?: string | null;
-  address_line_2?: string | null;
-  city?: string | null;
-  state?: string | null;
-  postal_code?: string | null;
-  country?: string | null;
-  shipments_12m?: number | string | null;
-  total_teus?: number | null;
-  last_shipment_date?: string | null;
-  topSuppliers?: string[];
-};
+type MetricKey = "shipments" | "teu" | "chinaShipments" | "chinaTeu";
 
 type ShipperDetailModalProps = {
   shipper: IyShipperHit | null;
@@ -28,10 +27,101 @@ type ShipperDetailModalProps = {
   saving?: boolean;
 };
 
+const metricOptions: Array<{ key: MetricKey; label: string }> = [
+  { key: "shipments", label: "Shipments" },
+  { key: "teu", label: "TEUs" },
+  { key: "chinaShipments", label: "China shipments" },
+  { key: "chinaTeu", label: "China TEUs" },
+];
+
 function safe(value: unknown): string {
   if (value == null) return "—";
   const text = String(value).trim();
   return text.length ? text : "—";
+}
+
+function formatNumber(value: unknown): string {
+  if (value == null) return "—";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  return num.toLocaleString();
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return safe(value);
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function normalizeWebsite(url: string | null | undefined): { href: string; label: string } | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  const href = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const label = trimmed.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  return { href, label };
+}
+
+function countryCodeToEmoji(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const normalized = code.trim().slice(0, 2).toUpperCase();
+  if (normalized.length !== 2) return null;
+  return normalized
+    .split("")
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+}
+
+function ensureCompanyKeyLocal(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith("company/") ? trimmed : `company/${trimmed}`;
+}
+
+function resolveCompanyId(shipper: IyShipperHit | null): string | null {
+  if (!shipper) return null;
+  const candidates = [
+    (shipper as any)?.id,
+    (shipper as any)?.company_id,
+    shipper.key,
+    (shipper as any)?.slug,
+  ];
+  for (const candidate of candidates) {
+    const normalized = ensureCompanyKeyLocal(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function buildAddress(profile: IyCompanyProfile | null, shipper: IyShipperHit | null): string | null {
+  if (profile?.address) return profile.address;
+  if (!shipper) return null;
+  const parts = [
+    (shipper as any)?.address_line_1 ?? shipper.address,
+    (shipper as any)?.address_line_2,
+    shipper.city,
+    shipper.state,
+    shipper.postalCode,
+    shipper.country,
+  ]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+  if (parts.length) return parts.join(", ");
+  return null;
+}
+
+function formatMonthKey(value: string): string {
+  if (!value) return "";
+  const normalized = value.length === 7 && value.includes("-") ? `${value}-01` : value;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, { month: "short", year: "numeric" });
 }
 
 export default function ShipperDetailModal({
@@ -43,44 +133,113 @@ export default function ShipperDetailModal({
   onSave,
   saving = false,
 }: ShipperDetailModalProps) {
+  const [profile, setProfile] = useState<IyCompanyProfile | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [metric, setMetric] = useState<MetricKey>("shipments");
+
+  useEffect(() => {
+    if (!open || !shipper) {
+      setProfile(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const companyId = resolveCompanyId(shipper);
+    if (!companyId) {
+      setError("Missing company id for ImportYeti profile");
+      setProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getIyCompanyProfile(companyId, controller.signal);
+        if (!cancelled) {
+          setProfile(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Unable to load ImportYeti company profile";
+          setError(message);
+          setProfile(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [open, shipper]);
+
   if (!open || !shipper) return null;
 
-  const extended = shipper as ExtendedShipperHit;
-  const title = safe((shipper as any).title ?? "");
-
-  const address = (() => {
-    const parts = [
-      extended.address_line_1,
-      extended.address_line_2,
-      extended.city,
-      extended.state,
-      extended.postal_code,
-      extended.country,
-    ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
-
-    if (parts.length > 0) {
-      return safe(parts.join(", "));
-    }
-
-    return safe((shipper as any).address);
-  })();
-
-  const shipmentsLabel = (() => {
-    if (typeof extended.shipments_12m === "number") {
-      return extended.shipments_12m.toLocaleString();
-    }
-    if (typeof (extended as any).totalShipments === "number") {
-      return (extended as any).totalShipments.toLocaleString();
-    }
-    return safe(extended.shipments_12m ?? (shipper as any).totalShipments);
-  })();
-
-  const teusLabel =
-    typeof extended.total_teus === "number" ? extended.total_teus.toLocaleString() : "—";
-
-  const suppliers = Array.isArray(extended.topSuppliers)
-    ? extended.topSuppliers.slice(0, 6)
-    : [];
+  const displayTitle =
+    profile?.title ??
+    shipper.title ??
+    (shipper as any)?.company_name ??
+    (shipper as any)?.name ??
+    "Company";
+  const flagEmoji = countryCodeToEmoji(
+    profile?.countryCode ??
+      shipper.countryCode ??
+      (shipper as any)?.country_code ??
+      (shipper as any)?.country,
+  );
+  const address = buildAddress(profile, shipper);
+  const websiteInfo = normalizeWebsite(
+    profile?.website ??
+      shipper.website ??
+      (shipper as any)?.company_website ??
+      (shipper as any)?.domain,
+  );
+  const phoneNumber =
+    profile?.phoneNumber ??
+    shipper.phone ??
+    (shipper as any)?.company_main_phone_number ??
+    null;
+  const totalShipments = formatNumber(profile?.totalShipments ?? (shipper as any)?.totalShipments);
+  const shipmentsLast12m = formatNumber(
+    profile?.shipmentsLast12m ?? (shipper as any)?.shipments_12m,
+  );
+  const teusLast12m = formatNumber(profile?.teusLast12m ?? (shipper as any)?.total_teus);
+  const lastShipmentDate = formatDate(
+    profile?.lastShipmentDate ??
+      (shipper as any)?.last_shipment_date ??
+      shipper.mostRecentShipment ??
+      null,
+  );
+  const chartPoints = useMemo(() => {
+    if (!profile?.timeseries?.length) return [];
+    const series = [...profile.timeseries];
+    series.sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+    return series.map((point) => {
+      let value = 0;
+      if (metric === "shipments") value = point.shipments;
+      if (metric === "teu") value = point.teu;
+      if (metric === "chinaShipments") value = point.chinaShipments;
+      if (metric === "chinaTeu") value = point.chinaTeu;
+      return { label: formatMonthKey(point.monthKey), value };
+    });
+  }, [metric, profile]);
+  const hasChartData = chartPoints.length > 0;
+  const topLocations = (profile?.locations ?? []).slice(0, 4);
+  const routeInsightsAvailable = Boolean(topRoute || recentRoute);
 
   const handleSaveClick = async () => {
     if (!onSave) return;
@@ -92,14 +251,41 @@ export default function ShipperDetailModal({
       <DialogContent className="max-w-4xl max-h-[95vh] bg-white rounded-2xl p-0 flex flex-col">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-100">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <DialogTitle
-                className="text-2xl font-semibold text-slate-900 truncate"
-                title={title}
-              >
-                {title}
-              </DialogTitle>
-              <p className="mt-1 text-sm text-slate-500 truncate">{address}</p>
+            <div className="min-w-0 space-y-3">
+              <div className="flex items-center gap-2">
+                {flagEmoji && <span className="text-2xl">{flagEmoji}</span>}
+                <DialogTitle
+                  className="text-2xl font-semibold text-slate-900 truncate"
+                  title={displayTitle}
+                >
+                  {displayTitle}
+                </DialogTitle>
+              </div>
+              <div className="space-y-1 text-sm text-slate-600">
+                {address && (
+                  <div className="flex items-start gap-2">
+                    <MapPin className="h-4 w-4 mt-0.5 text-indigo-500" />
+                    <span className="truncate">{address}</span>
+                  </div>
+                )}
+                {websiteInfo && (
+                  <a
+                    href={websiteInfo.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 text-indigo-600 hover:underline"
+                  >
+                    <Info className="h-4 w-4" />
+                    <span className="truncate">{websiteInfo.label}</span>
+                  </a>
+                )}
+                {phoneNumber && (
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-indigo-500" />
+                    <span>{phoneNumber}</span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {onSave && (
@@ -135,119 +321,166 @@ export default function ShipperDetailModal({
                 >
                   Overview
                 </TabsTrigger>
-                <TabsTrigger
-                  value="kpis"
-                  className="px-3 py-2 text-xs font-semibold text-slate-500 data-[state=active]:text-indigo-600 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none border-b-2 border-transparent"
-                >
-                  KPIs
-                </TabsTrigger>
-                <TabsTrigger
-                  value="shipments"
-                  className="px-3 py-2 text-xs font-semibold text-slate-500 data-[state=active]:text-indigo-600 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none border-b-2 border-transparent"
-                >
-                  Shipments
-                </TabsTrigger>
               </TabsList>
             </div>
 
             <div className="flex-1 overflow-auto">
-              <TabsContent value="overview" className="p-6 space-y-4">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
-                    <Ship className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-slate-500">
-                        Shipments (12m)
-                      </div>
-                      <div className="text-lg font-semibold text-slate-900">
-                        {shipmentsLabel}
-                      </div>
+              <TabsContent value="overview" className="p-6 space-y-5">
+                {error && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {error}
+                  </div>
+                )}
+
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <KpiCard icon={Ship} label="Total shipments" value={totalShipments} sublabel="lifetime" />
+                  <KpiCard icon={Ship} label="Shipments (last 12m)" value={shipmentsLast12m} />
+                  <KpiCard icon={Package} label="TEUs (last 12m)" value={teusLast12m} />
+                  <KpiCard icon={Calendar} label="Most recent shipment" value={lastShipmentDate} />
+                </div>
+
+                {routeInsightsAvailable && (
+                  <div className="rounded-xl border border-slate-100 bg-white px-4 py-4 space-y-3">
+                    <div className="text-xs font-semibold uppercase text-slate-500">
+                      Route insights
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {topRoute && (
+                        <div>
+                          <div className="text-xs text-slate-500">Top route (12m)</div>
+                          <div className="text-base font-semibold text-slate-900">
+                            {safe(topRoute)}
+                          </div>
+                        </div>
+                      )}
+                      {recentRoute && (
+                        <div>
+                          <div className="text-xs text-slate-500">Recent lane</div>
+                          <div className="text-base font-semibold text-slate-900">
+                            {safe(recentRoute)}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
-                    <Package className="h-5 w-5 text-indigo-500" />
+                )}
+
+                <div className="rounded-2xl border border-slate-100 bg-white p-4 space-y-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <div className="text-xs font-semibold uppercase text-slate-500">
-                        TEUs (12m)
+                      <div className="text-xs uppercase text-slate-500 font-semibold">
+                        Volume trend
                       </div>
-                      <div className="text-lg font-semibold text-slate-900">
-                        {teusLabel}
+                      <div className="text-base font-semibold text-slate-900">
+                        ImportYeti timeseries
                       </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {metricOptions.map((option) => (
+                        <Button
+                          key={option.key}
+                          variant={metric === option.key ? "default" : "outline"}
+                          size="sm"
+                          className={
+                            metric === option.key
+                              ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+                              : "bg-white text-slate-600 border-slate-200"
+                          }
+                          onClick={() => setMetric(option.key)}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-center gap-3">
-                    <Calendar className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-slate-500">
-                        Most recent shipment
+                  <div className="h-72">
+                    {loading && !profile && (
+                      <div className="flex h-full items-center justify-center">
+                        <span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500" />
                       </div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        {safe(
-                          recentRoute ??
-                            (extended.last_shipment_date ?? (shipper as any)?.last_shipment_date),
-                        )}
+                    )}
+                    {!loading && hasChartData && (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={chartPoints}
+                          margin={{ top: 10, right: 16, left: -14, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis
+                            dataKey="label"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 12, fill: "#64748b" }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            tickFormatter={(value: number) => formatNumber(value)}
+                            tick={{ fontSize: 12, fill: "#64748b" }}
+                            width={70}
+                          />
+                          <Tooltip
+                            formatter={(value: number) => formatNumber(value)}
+                            labelFormatter={(label) => label}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#4f46e5"
+                            strokeWidth={2}
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                    {!loading && !hasChartData && (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                        No timeseries data yet for this company.
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
-                {suppliers.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold uppercase text-slate-500">
-                      Top suppliers
+                {topLocations.length > 0 && (
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+                    <div className="text-xs uppercase text-slate-500 font-semibold">
+                      Locations ({topLocations.length})
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {suppliers.map((name) => (
-                        <span
-                          key={name}
-                          className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
-                        >
-                          {name}
-                        </span>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {topLocations.map((location, idx) => (
+                        <div key={`${location.address}-${idx}`} className="rounded-xl bg-white p-3 shadow-sm border border-slate-100">
+                          <div className="text-sm font-semibold text-slate-900">
+                            {safe(location.address)}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            Most recent shipment to{" "}
+                            <span className="font-medium text-slate-700">
+                              {safe(location.mostRecentShipmentTo)}
+                            </span>
+                          </div>
+                          {(location.emails?.length || location.phoneNumbers?.length) && (
+                            <div className="mt-2 text-xs text-slate-600 space-y-1">
+                              {location.emails?.length ? (
+                                <div>Email: {location.emails[0]}</div>
+                              ) : null}
+                              {location.phoneNumbers?.length ? (
+                                <div>Phone: {location.phoneNumbers[0]}</div>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>
                 )}
-              </TabsContent>
 
-              <TabsContent value="kpis" className="p-6 space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 flex items-center gap-3">
-                    <MapPin className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-slate-500">
-                        Top route (12m)
-                      </div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        {safe((topRoute ?? (shipper as any)?.top_route_12m) ?? "")}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 flex items-center gap-3">
-                    <MapPin className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-slate-500">
-                        Recent route
-                      </div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        {safe((recentRoute ?? (shipper as any)?.recent_route) ?? "")}
-                      </div>
-                    </div>
-                  </div>
-                </div>
                 <div className="rounded-xl border border-indigo-50 bg-indigo-50/60 px-4 py-3 flex gap-2 text-xs text-slate-700">
                   <Info className="h-4 w-4 mt-0.5 text-indigo-500" />
                   <p>
-                    ImportYeti DMA KPIs are directional. Save this shipper to Command Center to
+                    ImportYeti company profiles power this view. Save the shipper to Command Center to
                     unlock AI briefings, contact enrichment, and multi-lane summaries.
                   </p>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="shipments" className="p-6 space-y-3">
-                <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Shipment-level BOL details will appear here. For now, lane and TEU intelligence is
-                  available on the Overview and KPIs tabs.
                 </div>
               </TabsContent>
             </div>
@@ -255,5 +488,25 @@ export default function ShipperDetailModal({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type KpiCardProps = {
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  label: string;
+  value: string;
+  sublabel?: string;
+};
+
+function KpiCard({ icon: Icon, label, value, sublabel }: KpiCardProps) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 flex items-start gap-3">
+      <Icon className="h-5 w-5 text-indigo-500" />
+      <div>
+        <div className="text-xs font-semibold uppercase text-slate-500">{label}</div>
+        <div className="text-lg font-semibold text-slate-900">{value}</div>
+        {sublabel && <div className="text-xs text-slate-500">{sublabel}</div>}
+      </div>
+    </div>
   );
 }

@@ -153,6 +153,35 @@ export type IyCompanyStats = {
   }>;
 };
 
+export interface IyCompanyProfile {
+  ok: true;
+  title: string | null;
+  countryCode: string | null;
+  address: string | null;
+  website: string | null;
+  phoneNumber: string | null;
+  totalShipments: number | null;
+  shipmentsLast12m: number;
+  teusLast12m: number;
+  lastShipmentDate: string | null;
+  containersLoad: unknown;
+  locations: {
+    address: string | null;
+    mostRecentShipmentTo: string | null;
+    mostRecentShipmentBol: string | null;
+    emails: string[];
+    phoneNumbers: string[];
+  }[];
+  timeseries: {
+    monthKey: string;
+    shipments: number;
+    teu: number;
+    chinaShipments: number;
+    chinaTeu: number;
+  }[];
+  carriersPerCountry: Record<string, unknown>;
+}
+
 export type SearchResponse<T> = {
   ok: boolean;
   total: number;
@@ -835,6 +864,24 @@ export async function iyCompanyStats(
     console.warn("iyCompanyStats failed", error);
     return null;
   }
+}
+
+export async function getIyCompanyProfile(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<IyCompanyProfile> {
+  if (!companyId) {
+    throw new Error("companyId is required for getIyCompanyProfile");
+  }
+  const companyParam = encodeURIComponent(companyId);
+  return fetchJson<IyCompanyProfile>(
+    `${API_BASE}/public/iy/companyProfile?company_id=${companyParam}`,
+    {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal,
+    },
+  );
 }
 
 export async function searchShippers(
