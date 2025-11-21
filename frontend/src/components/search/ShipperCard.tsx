@@ -1,291 +1,187 @@
-import { useEffect, useRef } from "react";
-import { CompanyAvatar } from "@/components/CompanyAvatar";
-import type { IyCompanyContact, IyRouteKpis, IyShipperHit } from "@/lib/api";
-import { Calendar, MapPin, Package, Target } from "lucide-react";
+import React from "react";
+import { MapPin, Ship, Package, Calendar } from "lucide-react";
+import type { IyShipperHit } from "@/lib/api";
 import { getCompanyLogoUrl } from "@/lib/logo";
-
-function countryCodeToEmoji(countryCode?: string | null): string | null {
-  if (!countryCode) return null;
-  const cc = countryCode.toUpperCase();
-  if (cc.length !== 2) return null;
-
-  const codePoints = Array.from(cc).map((ch) => 127397 + ch.charCodeAt(0));
-  return String.fromCodePoint(...codePoints);
-}
 
 type ShipperCardProps = {
   shipper: IyShipperHit;
-  contact?: IyCompanyContact | null;
-  kpis?: IyRouteKpis | null;
-  topRoute?: string | null;
-  teus12m?: number | null;
-  shipments12m?: number | null;
-  onViewDetails?: () => void;
-  onSave?: () => void;
-  onPrefetchKpis?: () => void;
-  isSaving?: boolean;
-  isSaved?: boolean;
+  onViewDetails: () => void;
+  onSave: () => void;
 };
+
+type ExtendedShipperHit = IyShipperHit & {
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+
+  shipments_12m?: number | string | null;
+  total_teus?: number | null;
+  last_shipment_date?: string | null;
+
+  top_route_12m?: string | null;
+};
+
+function safe(value: unknown): string {
+  if (value == null) return "—";
+  const text = String(value).trim();
+  return text.length ? text : "—";
+}
+
+function getInitials(name: string): string {
+  const parts = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.charAt(0).toUpperCase();
+  return `${parts[0]!.charAt(0)}${parts[1]!.charAt(0)}`.toUpperCase();
+}
 
 export default function ShipperCard({
   shipper,
-  contact,
-  kpis,
-  topRoute,
-  teus12m,
-  shipments12m,
   onViewDetails,
   onSave,
-  onPrefetchKpis,
-  isSaving,
-  isSaved,
 }: ShipperCardProps) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
+  const extended = shipper as ExtendedShipperHit;
+  const title = safe((shipper as any).title ?? "");
 
-  useEffect(() => {
-    if (!onPrefetchKpis || kpis || typeof window === "undefined") {
-      return;
+  const address = (() => {
+    const parts = [
+      extended.address_line_1,
+      extended.address_line_2,
+      extended.city,
+      extended.state,
+      extended.postal_code,
+      extended.country,
+    ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+
+    if (parts.length > 0) return safe(parts.join(", "));
+    return safe((shipper as any).address);
+  })();
+
+  const shipmentsLabel = (() => {
+    if (typeof extended.shipments_12m === "number") {
+      return extended.shipments_12m.toLocaleString();
     }
-    const element = cardRef.current;
-    if (!element) return;
+    if (typeof (extended as any).totalShipments === "number") {
+      return (extended as any).totalShipments.toLocaleString();
+    }
+    return safe(extended.shipments_12m ?? (shipper as any).totalShipments);
+  })();
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            onPrefetchKpis();
-            observer.disconnect();
-          }
-        });
-      },
-      { threshold: 0.25 },
+  const teusLabel = (() => {
+    if (typeof extended.total_teus === "number") {
+      return extended.total_teus.toLocaleString();
+    }
+    if (typeof (shipper as any).teus_12m === "number") {
+      return (shipper as any).teus_12m.toLocaleString();
+    }
+    return "—";
+  })();
+
+  const lastShipmentLabel =
+    safe(
+      extended.last_shipment_date ??
+        (shipper as any).last_shipment_date ??
+        (shipper as any).most_recent_shipment,
     );
 
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [kpis, onPrefetchKpis]);
-
-  const countryCode =
-    shipper.countryCode ??
-    (shipper as any)?.country_code ??
-    (shipper as any)?.country ??
-    null;
-
-  const website =
-    contact?.website ??
-    shipper.website ??
-    (shipper as any)?.company_website ??
-    (shipper as any)?.website ??
-    null;
-
-  const domain =
-    contact?.domain ??
-    shipper.domain ??
-    (shipper as any)?.domain ??
-    website ??
-    (shipper as any)?.website ??
-    undefined;
-  const logoUrl = getCompanyLogoUrl(domain ?? null);
-  const contactPhone =
-    contact?.phone ??
-    shipper.phone ??
-    (shipper as any)?.company_main_phone_number ??
-    (shipper as any)?.phone ??
-    null;
-  const contactWebsite = website;
-  const contactEmail = contact?.email;
-  const websiteLabel =
-    contactWebsite?.replace(/^https?:\/\//i, "").replace(/\/$/, "") ?? null;
-
-  const fallbackAddress = [
-    shipper.address,
-    (shipper as any)?.city,
-    (shipper as any)?.state,
-    (shipper as any)?.country,
-  ]
-    .filter((part) => typeof part === "string" && part.trim().length)
-    .map((part) => String(part).trim());
-
-  const displayAddress =
-    shipper.address ??
-    (fallbackAddress.length ? fallbackAddress.join(", ") : undefined);
-
-  const shipmentsValue =
-    kpis?.shipmentsLast12m ??
-    shipments12m ??
-    (typeof shipper.totalShipments === "number"
-      ? shipper.totalShipments
-      : null);
-  const totalShipmentsLabel =
-    typeof shipmentsValue === "number" ? shipmentsValue.toLocaleString() : "—";
-
-  const lastShipmentLabel = shipper.mostRecentShipment || "—";
   const topRouteLabel =
-    kpis?.topRouteLast12m ?? topRoute ?? "Top route data coming…";
-  const teusValue =
-    typeof kpis?.teuLast12m === "number"
-      ? kpis.teuLast12m
-      : typeof teus12m === "number"
-        ? teus12m
-        : null;
-  const teusLabel =
-    typeof teusValue === "number" ? teusValue.toLocaleString() : "—";
-  const topRoutes =
-    kpis?.topRoutesLast12m?.slice(0, 5).filter((route) => route.route) ?? [];
-  const showContactRow = contactPhone || contactWebsite || contactEmail;
+    safe(
+      extended.top_route_12m ??
+        (shipper as any).top_route_12m ??
+        (shipper as any).topRouteLast12m,
+    );
 
-  const saveLabel = isSaved
-    ? "Saved"
-    : isSaving
-      ? "Saving…"
-      : "Save to Command Center";
+  const logoUrl = getCompanyLogoUrl(
+    (shipper as any).website ?? (shipper as any).domain ?? (shipper as any).title,
+  );
+  const initials = getInitials(title);
 
   return (
-    <div
-      ref={cardRef}
-      className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
-    >
-      {/* Header */}
+    <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+      {/* Header: logo + name + location */}
       <div className="flex items-start gap-3">
-        <CompanyAvatar
-          name={shipper.title}
-          size="md"
-          className="shrink-0"
-          logoUrl={logoUrl}
-        />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-slate-900">
-            {shipper.title}
-          </h3>
-          <div className="mt-1 text-xs text-slate-500 flex flex-wrap items-center gap-1">
-            {countryCode && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600 shrink-0">
-                <span aria-hidden="true">
-                  {countryCodeToEmoji(countryCode)}
-                </span>
-                <span>{countryCode}</span>
-              </span>
-            )}
-            {displayAddress && (
-              <span className="truncate">{displayAddress}</span>
-            )}
-          </div>
-          {showContactRow && (
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-              {contactPhone && <span>📞 {contactPhone}</span>}
-              {contactEmail && (
-                <a
-                  href={`mailto:${contactEmail}`}
-                  className="underline decoration-slate-300 hover:decoration-slate-500"
-                >
-                  {contactEmail}
-                </a>
-              )}
-              {contactWebsite && (
-                <a
-                  href={
-                    /^https?:\/\//i.test(contactWebsite)
-                      ? contactWebsite
-                      : `https://${contactWebsite}`
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline decoration-slate-300 hover:decoration-slate-500"
-                >
-                  {websiteLabel ?? contactWebsite}
-                </a>
-              )}
+        <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-indigo-600 text-xs font-semibold text-white">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={title}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              {initials}
             </div>
           )}
         </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-900" title={title}>
+            {title}
+          </div>
+          <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+            <MapPin className="h-3 w-3 text-slate-400" />
+            <span className="truncate">{address}</span>
+          </div>
+        </div>
       </div>
 
-      {/* KPI grid */}
+      {/* KPI row */}
       <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <Target className="h-3.5 w-3.5 text-indigo-500" />
+        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
+            <Ship className="h-3 w-3 text-indigo-500" />
             <span>Shipments (12m)</span>
           </div>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {totalShipmentsLabel}
-          </p>
-        </div>
-
-        <div>
-          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <Calendar className="h-3.5 w-3.5 text-indigo-500" />
-            <span>Last shipment</span>
+          <div className="mt-1 text-sm font-semibold text-slate-900">
+            {shipmentsLabel}
           </div>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {lastShipmentLabel}
-          </p>
         </div>
-
-        <div>
-          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <MapPin className="h-3.5 w-3.5 text-indigo-500" />
-            <span>Top route (12m)</span>
-          </div>
-          <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-900">
-            {topRouteLabel}
-          </p>
-        </div>
-
-        <div>
-          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <Package className="h-3.5 w-3.5 text-indigo-500" />
+        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
+            <Package className="h-3 w-3 text-indigo-500" />
             <span>TEUs (12m)</span>
           </div>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
+          <div className="mt-1 text-sm font-semibold text-slate-900">
             {teusLabel}
-          </p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
+            <Calendar className="h-3 w-3 text-indigo-500" />
+            <span>Last shipment</span>
+          </div>
+          <div className="mt-1 text-xs font-medium text-slate-900">
+            {lastShipmentLabel}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
+            <MapPin className="h-3 w-3 text-indigo-500" />
+            <span>Top route (12m)</span>
+          </div>
+          <div className="mt-1 text-xs font-medium text-slate-900">
+            {topRouteLabel || "Top route data coming…"}
+          </div>
         </div>
       </div>
 
-      {/* Top routes */}
-      <div className="mt-4">
-        <p className="text-[11px] uppercase tracking-wide text-slate-500">
-          Top routes (12m)
-        </p>
-        {topRoutes.length > 0 ? (
-          <div className="mt-2 flex flex-col gap-1.5 text-xs text-slate-600">
-            {topRoutes.map((route) => (
-              <div
-                key={`${shipper.key || shipper.title}-${route.route}`}
-                className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 px-2 py-1"
-              >
-                <span className="line-clamp-1 pr-2 font-medium text-slate-700">
-                  {route.route}
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  {route.shipments.toLocaleString()} shipments
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 text-xs text-slate-400">
-            ImportYeti route insights will appear once data loads.
-          </p>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="mt-5 mt-auto flex flex-col gap-2 sm:flex-row">
+      {/* Footer buttons */}
+      <div className="mt-4 flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={onSave}
-          className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!onSave || isSaving}
+          className="w-1/2 rounded-full border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
         >
-          {saveLabel}
+          Save to Command Center
         </button>
         <button
           type="button"
           onClick={onViewDetails}
-          className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!onViewDetails}
+          className="w-1/2 rounded-full bg-slate-900 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
         >
           View details
         </button>
