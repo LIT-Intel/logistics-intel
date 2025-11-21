@@ -1,4 +1,7 @@
 {
   "name": "logistics-intel-monorepo",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "vitest": "^4.0.12"
+  }
 }

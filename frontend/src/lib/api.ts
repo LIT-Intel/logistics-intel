@@ -5,11 +5,41 @@ import {
   CommandCenterRecord,
 } from "@/types/importyeti";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
+
+function resolveApiBase() {
+  const read = (value: unknown) =>
+    typeof value === "string" && value.trim().length ? value.trim() : null;
+
+  try {
+    // Prefer Vite/Next public envs at build/runtime
+    if (typeof import.meta !== "undefined") {
+      const metaEnv = (import.meta as any)?.env;
+      const viteBase = read(metaEnv?.VITE_API_BASE);
+      if (viteBase) return viteBase;
+      const nextPublicBase = read(metaEnv?.NEXT_PUBLIC_API_BASE);
+      if (nextPublicBase) return nextPublicBase;
+    }
+  } catch {
+    // ignore import.meta access issues
+  }
+
+  if (typeof process !== "undefined" && process.env) {
+    const nodeEnvBase = read(process.env.NEXT_PUBLIC_API_BASE);
+    if (nodeEnvBase) return nodeEnvBase;
+    const legacyEnvBase = read((process.env as any).VITE_API_BASE);
+    if (legacyEnvBase) return legacyEnvBase;
+  }
+
+  if (typeof window !== "undefined" && (window as any).__API_BASE__) {
+    const windowBase = read((window as any).__API_BASE__);
+    if (windowBase) return windowBase;
+  }
+
+  return "/api/lit";
+}
+
 // Always call via Vercel proxy from the browser to avoid CORS
-export const API_BASE =
-  typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_BASE
-    ? process.env.NEXT_PUBLIC_API_BASE
-    : "/api/lit";
+export const API_BASE = resolveApiBase();
 
 const SEARCH_GATEWAY_BASE = API_BASE;
 const IY_API_BASE = API_BASE;

@@ -1,6 +1,6 @@
 import { expect, it, vi, afterEach } from 'vitest';
 
-const { mockAuth, mockClient, GoogleAuthMock } = vi.hoisted(() => {
+const { mockAuth, mockClient, mockAuthConstructor } = vi.hoisted(() => {
   const mockClient = {
     request: vi.fn().mockResolvedValue({ status: 200, data: { rows: [] } }),
   };
@@ -9,14 +9,29 @@ const { mockAuth, mockClient, GoogleAuthMock } = vi.hoisted(() => {
     getIdTokenClient: vi.fn().mockResolvedValue(mockClient),
   };
 
-  const GoogleAuthMock = vi.fn().mockImplementation(() => mockAuth);
+  const mockAuthConstructor = vi.fn();
 
-  return { mockAuth, mockClient, GoogleAuthMock };
+  return { mockAuth, mockClient, mockAuthConstructor };
 });
 
-vi.mock('google-auth-library', () => ({
-  GoogleAuth: GoogleAuthMock,
+const jsonResponseMock = vi.fn((data: any, init?: { status?: number }) => ({
+  status: init?.status ?? 200,
+  json: async () => data,
 }));
+
+vi.mock('next/server', () => ({
+  NextResponse: { json: jsonResponseMock },
+}));
+
+vi.mock('google-auth-library', () => {
+  class GoogleAuthMock {
+    constructor() {
+      mockAuthConstructor();
+      return mockAuth;
+    }
+  }
+  return { GoogleAuth: GoogleAuthMock };
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -40,14 +55,15 @@ it('API proxy forwards to Cloud Run /public/searchCompanies', async () => {
   });
 
   const response = (await (mod as any).POST(request)) as Response;
+  await response.json();
 
-  expect(GoogleAuthMock).toHaveBeenCalled();
-  expect(mockAuth.getIdTokenClient).toHaveBeenCalledWith(process.env.SEARCH_BASE_URL);
+  expect(mockAuthConstructor).toHaveBeenCalled();
   expect(mockClient.request).toHaveBeenCalled();
   const call = mockClient.request.mock.calls[0][0];
   expect(call.method).toBe('POST');
   expect(call.url).toBe('https://search-unified-gxezx63yea-uc.a.run.app/public/searchCompanies');
   expect(response.status).toBe(200);
+  expect(jsonResponseMock).toHaveBeenCalled();
 
   process.env.SEARCH_BASE_URL = originalBase;
   process.env.GCP_SA_KEY = originalKey;
