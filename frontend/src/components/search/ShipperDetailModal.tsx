@@ -1,33 +1,35 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { MapPin, Calendar, Package, Ship, Info } from "lucide-react";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
+import { MapPin, Calendar, Package, Ship, Info, Globe, Phone } from "lucide-react";
 import {
+  CartesianGrid,
   Line,
   LineChart,
   ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
 } from "recharts";
-import type { IyCompanyProfile, IyShipperHit } from "@/lib/api";
+import type { IyCompanyProfile, IyShipperSearchRow } from "@/lib/api";
 import { getIyCompanyProfile } from "@/lib/api";
+import { getCompanyLogoUrl } from "@/lib/logo";
 
-type MetricKey = "shipments" | "teu" | "chinaShipments" | "chinaTeu";
+type ChartMode = "shipments" | "teu" | "chinaShipments" | "chinaTeu";
 
 type ShipperDetailModalProps = {
-  shipper: IyShipperHit | null;
+  shipper: IyShipperSearchRow | null;
   open: boolean;
   onClose: () => void;
   topRoute?: string | null;
   recentRoute?: string | null;
-  onSave?: (shipper: IyShipperHit) => void | Promise<void>;
+  onSave?: (shipper: IyShipperSearchRow) => void | Promise<void>;
   saving?: boolean;
 };
 
-const metricOptions: Array<{ key: MetricKey; label: string }> = [
+const chartModeOptions: Array<{ key: ChartMode; label: string }> = [
   { key: "shipments", label: "Shipments" },
   { key: "teu", label: "TEUs" },
   { key: "chinaShipments", label: "China shipments" },
@@ -84,36 +86,22 @@ function ensureCompanyKeyLocal(value: unknown): string {
   return trimmed.startsWith("company/") ? trimmed : `company/${trimmed}`;
 }
 
-function resolveCompanyId(shipper: IyShipperHit | null): string | null {
+function resolveCompanyId(shipper: IyShipperSearchRow | null): string | null {
   if (!shipper) return null;
-  const candidates = [
-    (shipper as any)?.id,
-    (shipper as any)?.company_id,
-    shipper.key,
-    (shipper as any)?.slug,
-  ];
-  for (const candidate of candidates) {
-    const normalized = ensureCompanyKeyLocal(candidate);
-    if (normalized) return normalized;
-  }
-  return null;
+  return ensureCompanyKeyLocal(shipper.companyId);
 }
 
-function buildAddress(profile: IyCompanyProfile | null, shipper: IyShipperHit | null): string | null {
+function buildAddress(
+  profile: IyCompanyProfile | null,
+  shipper: IyShipperSearchRow | null,
+): string | null {
   if (profile?.address) return profile.address;
+  if (shipper?.address) return shipper.address;
   if (!shipper) return null;
-  const parts = [
-    (shipper as any)?.address_line_1 ?? shipper.address,
-    (shipper as any)?.address_line_2,
-    shipper.city,
-    shipper.state,
-    shipper.postalCode,
-    shipper.country,
-  ]
+  const parts = [shipper.city, shipper.state, shipper.postalCode, shipper.country]
     .map((part) => (typeof part === "string" ? part.trim() : ""))
     .filter(Boolean);
-  if (parts.length) return parts.join(", ");
-  return null;
+  return parts.length ? parts.join(", ") : null;
 }
 
 function formatMonthKey(value: string): string {
@@ -136,7 +124,7 @@ export default function ShipperDetailModal({
   const [profile, setProfile] = useState<IyCompanyProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [metric, setMetric] = useState<MetricKey>("shipments");
+  const [chartMode, setChartMode] = useState<ChartMode>("shipments");
 
   useEffect(() => {
     if (!open || !shipper) {
@@ -151,6 +139,7 @@ export default function ShipperDetailModal({
       setProfile(null);
       return;
     }
+    setProfile(null);
 
     let cancelled = false;
     const controller = new AbortController();
@@ -185,58 +174,38 @@ export default function ShipperDetailModal({
       cancelled = true;
       controller.abort();
     };
-  }, [open, shipper]);
+    }, [open, shipper?.companyId]);
 
   if (!open || !shipper) return null;
 
   const displayTitle =
-    profile?.title ??
-    shipper.title ??
-    (shipper as any)?.company_name ??
-    (shipper as any)?.name ??
-    "Company";
-  const flagEmoji = countryCodeToEmoji(
-    profile?.countryCode ??
-      shipper.countryCode ??
-      (shipper as any)?.country_code ??
-      (shipper as any)?.country,
-  );
+    profile?.title ?? shipper.normalizedName ?? shipper.name ?? "Company";
+  const flagEmoji = countryCodeToEmoji(profile?.countryCode ?? shipper.countryCode);
   const address = buildAddress(profile, shipper);
-  const websiteInfo = normalizeWebsite(
-    profile?.website ??
-      shipper.website ??
-      (shipper as any)?.company_website ??
-      (shipper as any)?.domain,
+  const websiteInfo = normalizeWebsite(profile?.website ?? shipper.website ?? shipper.domain);
+  const phoneNumber = profile?.phoneNumber ?? shipper.phone ?? null;
+  const logoSource =
+    profile?.domain ?? shipper.domain ?? profile?.website ?? shipper.website ?? shipper.name;
+  const logoUrl = logoSource ? getCompanyLogoUrl(logoSource) : null;
+  const totalShipments = formatNumber(
+    profile?.totalShipments ?? shipper.totalShipments ?? shipper.shipmentsLast12m,
   );
-  const phoneNumber =
-    profile?.phoneNumber ??
-    shipper.phone ??
-    (shipper as any)?.company_main_phone_number ??
-    null;
-  const totalShipments = formatNumber(profile?.totalShipments ?? (shipper as any)?.totalShipments);
-  const shipmentsLast12m = formatNumber(
-    profile?.shipmentsLast12m ?? (shipper as any)?.shipments_12m,
-  );
-  const teusLast12m = formatNumber(profile?.teusLast12m ?? (shipper as any)?.total_teus);
-  const lastShipmentDate = formatDate(
-    profile?.lastShipmentDate ??
-      (shipper as any)?.last_shipment_date ??
-      shipper.mostRecentShipment ??
-      null,
-  );
+  const shipmentsLast12m = formatNumber(profile?.shipmentsLast12m ?? shipper.shipmentsLast12m);
+  const teusLast12m = formatNumber(profile?.teusLast12m ?? shipper.teusLast12m);
+  const lastShipmentDate = formatDate(profile?.lastShipmentDate ?? shipper.lastShipmentDate);
   const chartPoints = useMemo(() => {
     if (!profile?.timeseries?.length) return [];
     const series = [...profile.timeseries];
     series.sort((a, b) => a.monthKey.localeCompare(b.monthKey));
     return series.map((point) => {
       let value = 0;
-      if (metric === "shipments") value = point.shipments;
-      if (metric === "teu") value = point.teu;
-      if (metric === "chinaShipments") value = point.chinaShipments;
-      if (metric === "chinaTeu") value = point.chinaTeu;
+      if (chartMode === "shipments") value = point.shipments;
+      if (chartMode === "teu") value = point.teu;
+      if (chartMode === "chinaShipments") value = point.chinaShipments;
+      if (chartMode === "chinaTeu") value = point.chinaTeu;
       return { label: formatMonthKey(point.monthKey), value };
     });
-  }, [metric, profile]);
+  }, [chartMode, profile]);
   const hasChartData = chartPoints.length > 0;
   const topLocations = (profile?.locations ?? []).slice(0, 4);
   const routeInsightsAvailable = Boolean(topRoute || recentRoute);
@@ -250,63 +219,68 @@ export default function ShipperDetailModal({
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="max-w-4xl max-h-[95vh] bg-white rounded-2xl p-0 flex flex-col">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-100">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 space-y-3">
-              <div className="flex items-center gap-2">
-                {flagEmoji && <span className="text-2xl">{flagEmoji}</span>}
-                <DialogTitle
-                  className="text-2xl font-semibold text-slate-900 truncate"
-                  title={displayTitle}
-                >
-                  {displayTitle}
-                </DialogTitle>
-              </div>
-              <div className="space-y-1 text-sm text-slate-600">
-                {address && (
-                  <div className="flex items-start gap-2">
-                    <MapPin className="h-4 w-4 mt-0.5 text-indigo-500" />
-                    <span className="truncate">{address}</span>
-                  </div>
-                )}
-                {websiteInfo && (
-                  <a
-                    href={websiteInfo.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-2 text-indigo-600 hover:underline"
-                  >
-                    <Info className="h-4 w-4" />
-                    <span className="truncate">{websiteInfo.label}</span>
-                  </a>
-                )}
-                {phoneNumber && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <CompanyAvatar name={displayTitle} logoUrl={logoUrl ?? undefined} size="lg" />
+                <div className="min-w-0 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Package className="h-4 w-4 text-indigo-500" />
-                    <span>{phoneNumber}</span>
+                    {flagEmoji && <span className="text-2xl">{flagEmoji}</span>}
+                    <DialogTitle
+                      className="text-2xl font-semibold text-slate-900 truncate"
+                      title={displayTitle}
+                    >
+                      {displayTitle}
+                    </DialogTitle>
                   </div>
-                )}
+                  <div className="space-y-1 text-sm text-slate-600">
+                    {websiteInfo && (
+                      <a
+                        href={websiteInfo.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-2 text-indigo-600 hover:underline"
+                      >
+                        <Globe className="h-4 w-4" />
+                        <span className="truncate">{websiteInfo.label}</span>
+                      </a>
+                    )}
+                    {phoneNumber && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-indigo-500" />
+                        <span>{phoneNumber}</span>
+                      </div>
+                    )}
+                    {address && (
+                      <div className="flex items-start gap-2">
+                        <MapPin className="h-4 w-4 mt-0.5 text-indigo-500" />
+                        <span className="truncate">{address}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {onSave && (
+              <div className="flex items-center gap-2">
+                {onSave && (
+                  <Button
+                    size="sm"
+                    onClick={handleSaveClick}
+                    disabled={saving}
+                    className="rounded-full bg-indigo-600 text-xs font-semibold text-white px-4 py-2 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {saving ? "Saving…" : "Save to Command Center"}
+                  </Button>
+                )}
                 <Button
-                  size="sm"
-                  onClick={handleSaveClick}
-                  disabled={saving}
-                  className="rounded-full bg-indigo-600 text-xs font-semibold text-white px-4 py-2 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  aria-label="Close"
+                  className="rounded-full text-slate-500 hover:text-slate-900"
                 >
-                  {saving ? "Saving…" : "Save to Command Center"}
+                  ✕
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onClose}
-                aria-label="Close"
-                className="rounded-full text-slate-500 hover:text-slate-900"
-              >
-                ✕
-              </Button>
+              </div>
             </div>
           </div>
         </DialogHeader>
@@ -324,46 +298,51 @@ export default function ShipperDetailModal({
               </TabsList>
             </div>
 
-            <div className="flex-1 overflow-auto">
-              <TabsContent value="overview" className="p-6 space-y-5">
-                {error && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
-                  </div>
-                )}
-
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <KpiCard icon={Ship} label="Total shipments" value={totalShipments} sublabel="lifetime" />
-                  <KpiCard icon={Ship} label="Shipments (last 12m)" value={shipmentsLast12m} />
-                  <KpiCard icon={Package} label="TEUs (last 12m)" value={teusLast12m} />
-                  <KpiCard icon={Calendar} label="Most recent shipment" value={lastShipmentDate} />
-                </div>
-
-                {routeInsightsAvailable && (
-                  <div className="rounded-xl border border-slate-100 bg-white px-4 py-4 space-y-3">
-                    <div className="text-xs font-semibold uppercase text-slate-500">
-                      Route insights
+              <div className="flex-1 overflow-auto">
+                <TabsContent value="overview" className="p-6 space-y-5">
+                  {error && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {error}
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {topRoute && (
-                        <div>
-                          <div className="text-xs text-slate-500">Top route (12m)</div>
-                          <div className="text-base font-semibold text-slate-900">
-                            {safe(topRoute)}
-                          </div>
-                        </div>
-                      )}
-                      {recentRoute && (
-                        <div>
-                          <div className="text-xs text-slate-500">Recent lane</div>
-                          <div className="text-base font-semibold text-slate-900">
-                            {safe(recentRoute)}
-                          </div>
-                        </div>
-                      )}
+                  )}
+                  {!loading && !error && !profile && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      No ImportYeti profile found for this shipper. Showing available search data instead.
                     </div>
+                  )}
+
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    <KpiCard icon={Ship} label="Total shipments" value={totalShipments} sublabel="lifetime" />
+                    <KpiCard icon={Ship} label="Shipments (last 12m)" value={shipmentsLast12m} />
+                    <KpiCard icon={Package} label="TEUs (last 12m)" value={teusLast12m} />
+                    <KpiCard icon={Calendar} label="Most recent shipment" value={lastShipmentDate} />
                   </div>
-                )}
+
+                  {routeInsightsAvailable && (
+                    <div className="rounded-xl border border-slate-100 bg-white px-4 py-4 space-y-3">
+                      <div className="text-xs font-semibold uppercase text-slate-500">
+                        Route insights
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {topRoute && (
+                          <div>
+                            <div className="text-xs text-slate-500">Top route (12m)</div>
+                            <div className="text-base font-semibold text-slate-900">
+                              {safe(topRoute)}
+                            </div>
+                          </div>
+                        )}
+                        {recentRoute && (
+                          <div>
+                            <div className="text-xs text-slate-500">Recent lane</div>
+                            <div className="text-base font-semibold text-slate-900">
+                              {safe(recentRoute)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                 <div className="rounded-2xl border border-slate-100 bg-white p-4 space-y-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -376,17 +355,17 @@ export default function ShipperDetailModal({
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {metricOptions.map((option) => (
+                      {chartModeOptions.map((option) => (
                         <Button
                           key={option.key}
-                          variant={metric === option.key ? "default" : "outline"}
+                          variant={chartMode === option.key ? "default" : "outline"}
                           size="sm"
                           className={
-                            metric === option.key
+                            chartMode === option.key
                               ? "bg-indigo-600 hover:bg-indigo-500 text-white"
                               : "bg-white text-slate-600 border-slate-200"
                           }
-                          onClick={() => setMetric(option.key)}
+                          onClick={() => setChartMode(option.key)}
                         >
                           {option.label}
                         </Button>

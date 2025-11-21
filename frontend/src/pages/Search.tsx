@@ -3,11 +3,11 @@ import ShipperCard from "@/components/search/ShipperCard";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import SearchFilters, { type SearchFiltersValue } from "@/components/search/SearchFilters";
 import {
-  searchShippers,
+  searchIyShippers,
   saveCompanyToCrm,
   getIyRouteKpisForCompany,
-  type IySearchMeta,
-  type IyShipperHit,
+  type IyShipperSearchMeta,
+  type IyShipperSearchRow,
   type IyRouteKpis,
 } from "@/lib/api";
 
@@ -19,11 +19,12 @@ export default function SearchPage() {
   const [shipperQuery, setShipperQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [shipperPage, setShipperPage] = useState(1);
-  const [shipperResults, setShipperResults] = useState<IyShipperHit[]>([]);
-  const [shipperMeta, setShipperMeta] = useState<IySearchMeta | null>(null);
-  const [shipperLoading, setShipperLoading] = useState(false);
-  const [shipperError, setShipperError] = useState<string | null>(null);
-  const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
+  const [iyResults, setIyResults] = useState<IyShipperSearchRow[]>([]);
+  const [iyMeta, setIyMeta] = useState<IyShipperSearchMeta | null>(null);
+  const [iyTotal, setIyTotal] = useState(0);
+  const [iyLoading, setIyLoading] = useState(false);
+  const [iyError, setIyError] = useState<string | null>(null);
+  const [activeShipper, setActiveShipper] = useState<IyShipperSearchRow | null>(null);
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -46,35 +47,38 @@ export default function SearchPage() {
 
   useEffect(() => {
     if (!submittedQuery) {
-      setShipperResults([]);
-      setShipperMeta(null);
-      setShipperError(null);
-      setShipperLoading(false);
+      setIyResults([]);
+      setIyMeta(null);
+      setIyTotal(0);
+      setIyError(null);
+      setIyLoading(false);
       return;
     }
 
     const controller = new AbortController();
-    setShipperLoading(true);
-    setShipperError(null);
+    setIyLoading(true);
+    setIyError(null);
 
-    searchShippers(
+    searchIyShippers(
       { q: submittedQuery, page: shipperPage, pageSize: RESULTS_PER_PAGE },
       controller.signal,
     )
       .then((res) => {
         if (controller.signal.aborted) return;
-        setShipperResults(Array.isArray(res.results) ? res.results : []);
-        setShipperMeta(res.meta ?? null);
+        setIyResults(Array.isArray(res.rows) ? res.rows : []);
+        setIyMeta(res.meta ?? null);
+        setIyTotal(typeof res.total === "number" ? res.total : res.rows.length);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        setShipperResults([]);
-        setShipperMeta(null);
-        setShipperError(err?.message ?? "ImportYeti search failed. Please try again.");
+        setIyResults([]);
+        setIyMeta(null);
+        setIyTotal(0);
+        setIyError(err?.message ?? "ImportYeti search failed. Please try again.");
       })
       .finally(() => {
         if (!controller.signal.aborted) {
-          setShipperLoading(false);
+          setIyLoading(false);
         }
       });
 
@@ -82,22 +86,25 @@ export default function SearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submittedQuery, shipperPage]);
 
-  const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
-    if (!shipper) return;
-    setActiveShipper(shipper);
-    setModalLoading(true);
-    setModalError(null);
-    try {
-      const kpis = await getIyRouteKpisForCompany({ companyKey: (shipper as any).key });
-      setRouteKpis(kpis ?? null);
-    } catch (err) {
-      console.warn("getIyRouteKpisForCompany failed", err);
-      setRouteKpis(null);
-      setModalError("Route KPIs unavailable for this shipper.");
-    } finally {
-      setModalLoading(false);
-    }
-  }, []);
+    const handleViewDetails = useCallback(async (shipper: IyShipperSearchRow) => {
+      if (!shipper) return;
+      setActiveShipper(shipper);
+      setModalLoading(true);
+      setModalError(null);
+      try {
+        const companyKey = shipper.companyId;
+        const kpis = companyKey
+          ? await getIyRouteKpisForCompany({ companyKey })
+          : null;
+        setRouteKpis(kpis ?? null);
+      } catch (err) {
+        console.warn("getIyRouteKpisForCompany failed", err);
+        setRouteKpis(null);
+        setModalError("Route KPIs unavailable for this shipper.");
+      } finally {
+        setModalLoading(false);
+      }
+    }, []);
 
   const handleCloseModal = useCallback(() => {
     setActiveShipper(null);
@@ -106,33 +113,33 @@ export default function SearchPage() {
     setModalLoading(false);
   }, []);
 
-  const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
-    if (!(shipper as any)?.key) return;
-    setSaveLoading(true);
-    try {
-      await saveCompanyToCrm({
-        company_id: (shipper as any).key,
-        company_name: (shipper as any).title,
-        source: "importyeti",
-      });
-    } catch (err) {
-      console.error("saveCompanyToCrm failed", err);
-    } finally {
-      setSaveLoading(false);
-    }
-  }, []);
+    const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperSearchRow) => {
+      if (!shipper?.companyId) return;
+      setSaveLoading(true);
+      try {
+        await saveCompanyToCrm({
+          company_id: shipper.companyId,
+          company_name: shipper.name,
+          source: "importyeti",
+        });
+      } catch (err) {
+        console.error("saveCompanyToCrm failed", err);
+      } finally {
+        setSaveLoading(false);
+      }
+    }, []);
 
-  const resultSummary = useMemo(() => {
-    if (!submittedQuery || !shipperMeta) return null;
-    const totalLabel = shipperMeta.total?.toLocaleString() ?? "0";
-    return `Showing ${shipperResults.length} of ${totalLabel} results for "${shipperMeta.q}"`;
-  }, [submittedQuery, shipperMeta, shipperResults]);
+    const resultSummary = useMemo(() => {
+      if (!submittedQuery || !iyMeta) return null;
+      const totalLabel = iyTotal ? iyTotal.toLocaleString() : "0";
+      return `Showing ${iyResults.length} of ${totalLabel} results for "${iyMeta.q}"`;
+    }, [submittedQuery, iyMeta, iyResults, iyTotal]);
 
-  const showIntroState = !submittedQuery;
-  const showNoResults = Boolean(submittedQuery && !shipperLoading && shipperResults.length === 0);
-  const totalPages = shipperMeta?.total ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE) : 0;
-  const hasPrevPage = shipperPage > 1;
-  const hasNextPage = shipperMeta ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total : false;
+    const showIntroState = !submittedQuery;
+    const showNoResults = Boolean(submittedQuery && !iyLoading && iyResults.length === 0);
+    const totalPages = iyTotal ? Math.ceil(iyTotal / RESULTS_PER_PAGE) : 0;
+    const hasPrevPage = shipperPage > 1;
+    const hasNextPage = iyTotal ? shipperPage * RESULTS_PER_PAGE < iyTotal : false;
 
   return (
     <>
@@ -152,21 +159,21 @@ export default function SearchPage() {
 
           <section className="mt-8 space-y-4">
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  value={shipperQuery}
-                  onChange={(event) => setShipperQuery(event.target.value)}
-                  placeholder="Search by company, retailer, or brand (e.g., Walmart, Nike, Target)"
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                />
-                <button
-                  type="submit"
-                  disabled={shipperLoading || !shipperQuery.trim()}
-                  className="h-11 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {shipperLoading ? "Searching…" : "Search"}
-                </button>
-              </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    value={shipperQuery}
+                    onChange={(event) => setShipperQuery(event.target.value)}
+                    placeholder="Search by company, retailer, or brand (e.g., Walmart, Nike, Target)"
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                  <button
+                    type="submit"
+                    disabled={iyLoading || !shipperQuery.trim()}
+                    className="h-11 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {iyLoading ? "Searching…" : "Search"}
+                  </button>
+                </div>
             </form>
 
             <div className="flex flex-col gap-3">
@@ -181,23 +188,23 @@ export default function SearchPage() {
               <SearchFilters value={filters} onChange={setFilters} />
             </div>
 
-            {shipperError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {shipperError}
-              </div>
-            )}
+              {iyError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {iyError}
+                </div>
+              )}
 
-            {resultSummary && (
-              <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
-                <span>{resultSummary}</span>
-                {typeof shipperMeta?.creditsRemaining === "number" && (
-                  <span className="text-slate-400">
-                    Credits remaining: {shipperMeta.creditsRemaining}
-                  </span>
-                )}
-              </div>
-            )}
-          </section>
+              {resultSummary && (
+                <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
+                  <span>{resultSummary}</span>
+                  {typeof iyMeta?.creditsRemaining === "number" && (
+                    <span className="text-slate-400">
+                      Credits remaining: {iyMeta.creditsRemaining}
+                    </span>
+                  )}
+                </div>
+              )}
+            </section>
 
           <section className="mt-8 space-y-6">
             {showIntroState ? (
@@ -215,53 +222,53 @@ export default function SearchPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {shipperLoading && shipperResults.length === 0 ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {Array.from({ length: 6 }).map((_, index) => (
-                      <div
-                        key={`skeleton-${index}`}
-                        className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {shipperResults.map((shipper) => (
-                      <ShipperCard
-                        key={(shipper as any).key || (shipper as any).title}
-                        shipper={shipper}
-                        onViewDetails={() => handleViewDetails(shipper)}
-                        onSave={() => handleSaveToCommandCenter(shipper)}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-6">
+                  {iyLoading && iyResults.length === 0 ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <div
+                          key={`skeleton-${index}`}
+                          className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {iyResults.map((shipper) => (
+                        <ShipperCard
+                          key={shipper.companyId}
+                          shipper={shipper}
+                          onViewDetails={() => handleViewDetails(shipper)}
+                          onSave={() => handleSaveToCommandCenter(shipper)}
+                        />
+                      ))}
+                    </div>
+                  )}
 
-                {shipperMeta && shipperMeta.total > RESULTS_PER_PAGE && (
-                  <div className="flex items-center justify_between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
-                    <button
-                      type="button"
-                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!hasPrevPage || shipperLoading}
-                      onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <span>
-                      Page {shipperPage}
-                      {totalPages > 0 ? ` of ${totalPages}` : ""}
-                    </span>
-                    <button
-                      type="button"
-                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!hasNextPage || shipperLoading}
-                      onClick={() => setShipperPage((prev) => prev + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
+                  {iyTotal > RESULTS_PER_PAGE && (
+                    <div className="flex items-center justify_between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!hasPrevPage || iyLoading}
+                        onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Prev
+                      </button>
+                      <span>
+                        Page {shipperPage}
+                        {totalPages > 0 ? ` of ${totalPages}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!hasNextPage || iyLoading}
+                        onClick={() => setShipperPage((prev) => prev + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
               </div>
             )}
           </section>
