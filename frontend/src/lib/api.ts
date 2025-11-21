@@ -486,19 +486,26 @@ function normalizeCompanyHit(entry: any): CompanyHit {
   const ensureArray = (value: unknown): string[] =>
     Array.isArray(value)
       ? value
-          .map((item) => {
+          .map((item: unknown) => {
             if (typeof item === "string") return item;
+
             if (item && typeof item === "object") {
-              if ("route" in item && typeof (item as any).route === "string")
+              if ("route" in item && typeof (item as any).route === "string") {
                 return (item as any).route as string;
-              if ("value" in item && typeof (item as any).value === "string")
+              }
+
+              if ("value" in item && typeof (item as any).value === "string") {
                 return (item as any).value as string;
+              }
+
               if (
                 "carrier" in item &&
                 typeof (item as any).carrier === "string"
-              )
+              ) {
                 return (item as any).carrier as string;
+              }
             }
+
             return null;
           })
           .filter(
@@ -513,28 +520,64 @@ function normalizeCompanyHit(entry: any): CompanyHit {
     (entry as any)?.name ??
     (entry as any)?.company ??
     "";
+  const domain =
+    (entry as any)?.domain ??
+    (entry as any)?.website ??
+    deriveDomainCandidate((entry as any)?.website) ??
+    null;
+
+  const countryCode =
+    (entry as any)?.country_code ??
+    (entry as any)?.countryCode ??
+    (entry as any)?.origin_country_code ??
+    null;
+
+  const address =
+    (entry as any)?.address ??
+    (entry as any)?.full_address ??
+    (entry as any)?.location ??
+    null;
+
   const shipments12m =
     (entry as any)?.shipments_12m ??
+    (entry as any)?.shipmentsLast12Months ??
     (entry as any)?.shipments ??
-    (entry as any)?.kpis?.shipments_12m ??
-    0;
-  const lastActivity =
-    (entry as any)?.last_activity ??
-    (entry as any)?.lastActivity ??
-    (entry as any)?.kpis?.last_activity ??
-    "";
+    null;
+
+  const mostRecentShipment =
+    (entry as any)?.most_recent_shipment ??
+    (entry as any)?.lastShipmentDate ??
+    null;
+
+  const aliasesCount =
+    typeof (entry as any)?.aliases_count === "number"
+      ? (entry as any).aliases_count
+      : null;
+
+  const addressesCount =
+    typeof (entry as any)?.addresses_count === "number"
+      ? (entry as any).addresses_count
+      : null;
+
+  const topSuppliers = ensureArray(
+    (entry as any)?.top_suppliers ?? (entry as any)?.suppliers,
+  );
+  const topCustomers = ensureArray(
+    (entry as any)?.top_customers ?? (entry as any)?.customers,
+  );
 
   return {
-    company_id:
-      typeof companyId === "string" ? companyId : String(companyId ?? ""),
-    company_name:
-      typeof companyName === "string" && companyName.trim() ? companyName : "—",
-    shipments_12m: Number.isFinite(Number(shipments12m))
-      ? Number(shipments12m)
-      : 0,
-    last_activity: typeof lastActivity === "string" ? lastActivity : "",
-    top_routes: ensureArray((entry as any)?.top_routes),
-    top_carriers: ensureArray((entry as any)?.top_carriers),
+    company_id: companyId,
+    company_name: companyName,
+    domain,
+    country_code: countryCode,
+    address,
+    shipments_12m: shipments12m,
+    most_recent_shipment: mostRecentShipment,
+    aliases_count: aliasesCount,
+    addresses_count: addressesCount,
+    top_suppliers: topSuppliers.length ? topSuppliers : null,
+    top_customers: topCustomers.length ? topCustomers : null,
   };
 }
 
@@ -833,18 +876,29 @@ export async function iyCompanyBols(
   if (!companyId) {
     throw new Error("iyCompanyBols requires company_id");
   }
-  const search = new URLSearchParams({ company_id: companyId });
-  if (params.limit != null) search.set("limit", String(params.limit));
-  if (params.offset != null) search.set("offset", String(params.offset));
 
-  const response = await fetch(
-    `${API_BASE}/public/iy/companyBols?${search.toString()}`,
-    {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal,
+  const limit =
+    typeof params.limit === "number" && Number.isFinite(params.limit)
+      ? params.limit
+      : 100;
+  const offset =
+    typeof params.offset === "number" && Number.isFinite(params.offset)
+      ? params.offset
+      : 0;
+
+  const response = await fetch(`${API_BASE}/public/iy/companyBols`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify({
+      company_id: companyId,
+      limit,
+      offset,
+    }),
+    signal,
+  });
 
   const text = await response.text().catch(() => "");
   let parsed: unknown = {};

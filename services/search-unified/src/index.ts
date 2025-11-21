@@ -1,16 +1,13 @@
-import iyRouter from "./routes/iy";
+import iyRouter from "./routes/iy.js";
 import express from "express";
-import iyRouter from './routes/iy';
 import type { NextFunction, Request, Response } from "express";
 import campaigns from "./routes/campaigns.js";
 import getCompanyShipments from "./routes/getCompanyShipments.js";
-import importYetiRoutes from "./routes/iy.js";
 import publicRoutes from "./routes/public.js";
 import searchCompanies from "./routes/searchCompanies.js";
 import statusRoutes from "./routes/status.js";
 
 const app = express();
-app.use('/public/iy', iyRouter);
 app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
 
@@ -50,7 +47,6 @@ app.use(statusRoutes);
 app.use(publicRoutes);
 app.use(searchCompanies);
 app.use(getCompanyShipments);
-app.use(importYetiRoutes);
 app.use(campaigns);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
