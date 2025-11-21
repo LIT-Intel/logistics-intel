@@ -1,16 +1,7 @@
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import ShipperCard from "@/components/search/ShipperCard";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
-import SearchFilters, {
-  type SearchFiltersValue,
-} from "@/components/search/SearchFilters";
+import SearchFilters, { type SearchFiltersValue } from "@/components/search/SearchFilters";
 import {
   searchShippers,
   saveCompanyToCrm,
@@ -18,7 +9,6 @@ import {
   type IySearchMeta,
   type IyShipperHit,
   type IyRouteKpis,
-  type IyCompanyContact,
 } from "@/lib/api";
 
 const RESULTS_PER_PAGE = 25;
@@ -35,10 +25,6 @@ export default function SearchPage() {
   const [shipperError, setShipperError] = useState<string | null>(null);
   const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
-  const [kpisByKey, setKpisByKey] = useState<Record<string, IyRouteKpis>>({});
-  const [contactsByKey, setContactsByKey] = useState<
-    Record<string, IyCompanyContact>
-  >({});
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -47,48 +33,6 @@ export default function SearchPage() {
     region: "global",
     activity: "12m",
   });
-  const pendingKpiRequests = useRef<
-    Record<string, Promise<IyRouteKpis | null> | undefined>
-  >({});
-
-  const loadKpisForKey = useCallback(
-    async (companyKey: string) => {
-      if (!companyKey) return null;
-      if (kpisByKey[companyKey]) {
-        return kpisByKey[companyKey];
-      }
-      if (pendingKpiRequests.current[companyKey]) {
-        return pendingKpiRequests.current[companyKey]!;
-      }
-      const promise = getIyRouteKpisForCompany({ companyKey })
-        .catch((error) => {
-          console.warn("getIyRouteKpisForCompany failed", {
-            companyKey,
-            error,
-          });
-          return null;
-        })
-        .finally(() => {
-          delete pendingKpiRequests.current[companyKey];
-        });
-      pendingKpiRequests.current[companyKey] = promise;
-      const kpis = await promise;
-      if (kpis) {
-        setKpisByKey((prev) =>
-          prev[companyKey] === kpis ? prev : { ...prev, [companyKey]: kpis },
-        );
-        if (kpis.contact) {
-          setContactsByKey((prev) =>
-            prev[companyKey] === kpis.contact
-              ? prev
-              : { ...prev, [companyKey]: kpis.contact! },
-          );
-        }
-      }
-      return kpis;
-    },
-    [kpisByKey],
-  );
 
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
@@ -113,7 +57,6 @@ export default function SearchPage() {
     setShipperLoading(true);
     setShipperError(null);
 
-    // Filters currently UI-only; backend ImportYeti proxy supports only q/page/pageSize.
     searchShippers(
       { q: submittedQuery, page: shipperPage, pageSize: RESULTS_PER_PAGE },
       controller.signal,
@@ -127,9 +70,7 @@ export default function SearchPage() {
         if (controller.signal.aborted) return;
         setShipperResults([]);
         setShipperMeta(null);
-        setShipperError(
-          err?.message ?? "ImportYeti search failed. Please try again.",
-        );
+        setShipperError(err?.message ?? "ImportYeti search failed. Please try again.");
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -138,49 +79,25 @@ export default function SearchPage() {
       });
 
     return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submittedQuery, shipperPage]);
 
-  const handleViewDetails = useCallback(
-    async (shipper: IyShipperHit) => {
-      if (!shipper) {
-        if (import.meta.env.DEV) {
-          console.warn("[Search] handleViewDetails called without a shipper");
-        }
-        return;
-      }
-      if (import.meta.env.DEV) {
-        console.debug("[Search] Opening ShipperDetailModal", {
-          key: shipper.key,
-          title: shipper.title,
-        });
-      }
-      setActiveShipper(shipper);
-      setModalLoading(true);
-      setModalError(null);
-      try {
-        const kpis = await loadKpisForKey(shipper.key);
-        if (import.meta.env.DEV) {
-          console.debug("[Search] Route KPIs fetched", {
-            key: shipper.key,
-            sampleSize: kpis?.sampleSize,
-          });
-        }
-        if (!kpis) {
-          setRouteKpis(null);
-          setModalError("Route KPIs unavailable for this shipper.");
-        } else {
-          setRouteKpis(kpis);
-        }
-      } catch (err) {
-        console.warn("getIyRouteKpisForCompany failed", err);
-        setRouteKpis(null);
-        setModalError("Route KPIs unavailable for this shipper.");
-      } finally {
-        setModalLoading(false);
-      }
-    },
-    [loadKpisForKey],
-  );
+  const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
+    if (!shipper) return;
+    setActiveShipper(shipper);
+    setModalLoading(true);
+    setModalError(null);
+    try {
+      const kpis = await getIyRouteKpisForCompany({ companyKey: (shipper as any).key });
+      setRouteKpis(kpis ?? null);
+    } catch (err) {
+      console.warn("getIyRouteKpisForCompany failed", err);
+      setRouteKpis(null);
+      setModalError("Route KPIs unavailable for this shipper.");
+    } finally {
+      setModalLoading(false);
+    }
+  }, []);
 
   const handleCloseModal = useCallback(() => {
     setActiveShipper(null);
@@ -189,49 +106,33 @@ export default function SearchPage() {
     setModalLoading(false);
   }, []);
 
-  const activeContact = activeShipper?.key
-    ? (contactsByKey[activeShipper.key] ??
-      kpisByKey[activeShipper.key]?.contact ??
-      routeKpis?.contact ??
-      null)
-    : (routeKpis?.contact ?? null);
-
-  const handleSaveToCommandCenter = useCallback(
-    async (shipper: IyShipperHit) => {
-      if (!shipper?.key) return;
-      setSaveLoading(true);
-      try {
-        await saveCompanyToCrm({
-          company_id: shipper.key,
-          company_name: shipper.title,
-          source: "importyeti",
-        });
-      } catch (err) {
-        console.error("saveCompanyToCrm failed", err);
-      } finally {
-        setSaveLoading(false);
-      }
-    },
-    [],
-  );
+  const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
+    if (!(shipper as any)?.key) return;
+    setSaveLoading(true);
+    try {
+      await saveCompanyToCrm({
+        company_id: (shipper as any).key,
+        company_name: (shipper as any).title,
+        source: "importyeti",
+      });
+    } catch (err) {
+      console.error("saveCompanyToCrm failed", err);
+    } finally {
+      setSaveLoading(false);
+    }
+  }, []);
 
   const resultSummary = useMemo(() => {
     if (!submittedQuery || !shipperMeta) return null;
     const totalLabel = shipperMeta.total?.toLocaleString() ?? "0";
     return `Showing ${shipperResults.length} of ${totalLabel} results for "${shipperMeta.q}"`;
-  }, [submittedQuery, shipperMeta, shipperResults.length]);
+  }, [submittedQuery, shipperMeta, shipperResults]);
 
   const showIntroState = !submittedQuery;
-  const showNoResults = Boolean(
-    submittedQuery && !shipperLoading && shipperResults.length === 0,
-  );
-  const totalPages = shipperMeta?.total
-    ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE)
-    : 0;
+  const showNoResults = Boolean(submittedQuery && !shipperLoading && shipperResults.length === 0);
+  const totalPages = shipperMeta?.total ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE) : 0;
   const hasPrevPage = shipperPage > 1;
-  const hasNextPage = shipperMeta
-    ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total
-    : false;
+  const hasNextPage = shipperMeta ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total : false;
 
   return (
     <>
@@ -243,8 +144,8 @@ export default function SearchPage() {
                 ImportYeti Shipper Search
               </h1>
               <p className="mt-2 text-sm text-slate-500 max-w-2xl">
-                Search the ImportYeti DMA index for verified shippers, view live
-                BOL activity, and save companies to Command Center.
+                Search the ImportYeti DMA index for verified shippers, view live BOL activity, and
+                save companies to Command Center.
               </p>
             </div>
           </header>
@@ -301,19 +202,14 @@ export default function SearchPage() {
           <section className="mt-8 space-y-6">
             {showIntroState ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Start with a shipper
-                </h2>
+                <h2 className="text-lg font-semibold text-slate-900">Start with a shipper</h2>
                 <p className="mt-2 text-sm text-slate-500">
-                  Search for a retailer, importer, or brand to pull live
-                  ImportYeti DMA data.
+                  Search for a retailer, importer, or brand to pull live ImportYeti DMA data.
                 </p>
               </div>
             ) : showNoResults ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  No shippers found
-                </h2>
+                <h2 className="text-lg font-semibold text-slate-900">No shippers found</h2>
                 <p className="mt-2 text-sm text-slate-500">
                   Try another query or broaden your search.
                 </p>
@@ -321,7 +217,7 @@ export default function SearchPage() {
             ) : (
               <div className="space-y-6">
                 {shipperLoading && shipperResults.length === 0 ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {Array.from({ length: 6 }).map((_, index) => (
                       <div
                         key={`skeleton-${index}`}
@@ -330,43 +226,25 @@ export default function SearchPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
-                    {shipperResults.map((shipper) => {
-                      const key = shipper.key || shipper.title;
-                      const cachedKpis =
-                        (shipper.key && kpisByKey[shipper.key]) ?? null;
-                      const cachedContact =
-                        (shipper.key && contactsByKey[shipper.key]) ??
-                        cachedKpis?.contact ??
-                        null;
-                      return (
-                        <ShipperCard
-                          key={key}
-                          shipper={shipper}
-                          contact={cachedContact}
-                          kpis={cachedKpis}
-                          onPrefetchKpis={
-                            shipper.key
-                              ? () => loadKpisForKey(shipper.key)
-                              : undefined
-                          }
-                          onViewDetails={() => handleViewDetails(shipper)}
-                          onSave={() => handleSaveToCommandCenter(shipper)}
-                        />
-                      );
-                    })}
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {shipperResults.map((shipper) => (
+                      <ShipperCard
+                        key={(shipper as any).key || (shipper as any).title}
+                        shipper={shipper}
+                        onViewDetails={() => handleViewDetails(shipper)}
+                        onSave={() => handleSaveToCommandCenter(shipper)}
+                      />
+                    ))}
                   </div>
                 )}
 
                 {shipperMeta && shipperMeta.total > RESULTS_PER_PAGE && (
-                  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+                  <div className="flex items-center justify_between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
                     <button
                       type="button"
                       className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                       disabled={!hasPrevPage || shipperLoading}
-                      onClick={() =>
-                        setShipperPage((prev) => Math.max(1, prev - 1))
-                      }
+                      onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
                     >
                       Prev
                     </button>
@@ -410,9 +288,8 @@ export default function SearchPage() {
         shipper={activeShipper}
         open={Boolean(activeShipper)}
         onClose={handleCloseModal}
-        topRoute={routeKpis?.topRouteLast12m ?? null}
-        recentRoute={routeKpis?.mostRecentRoute ?? null}
-        contact={activeContact}
+        topRoute={(routeKpis as any)?.topRouteLast12m ?? null}
+        recentRoute={(routeKpis as any)?.mostRecentRoute ?? null}
         onSave={handleSaveToCommandCenter}
         saving={saveLoading}
       />
