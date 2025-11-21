@@ -6,7 +6,10 @@ import {
 } from "@/types/importyeti";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
 // Always call via Vercel proxy from the browser to avoid CORS
-export const API_BASE = "/api/lit";
+export const API_BASE =
+  typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_BASE
+    ? process.env.NEXT_PUBLIC_API_BASE
+    : "/api/lit";
 
 const SEARCH_GATEWAY_BASE = API_BASE;
 const IY_API_BASE = API_BASE;
