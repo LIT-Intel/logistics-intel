@@ -1,98 +1,118 @@
-import iyRouter from "./routes/iy.js";
-import express from "express";
-import type { NextFunction, Request, Response } from "express";
+// services/search-unified/src/index.ts
+
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
+
 import campaigns from "./routes/campaigns.js";
 import getCompanyShipments from "./routes/getCompanyShipments.js";
+import iyRouter from "./routes/iy.js";
 import publicRoutes from "./routes/public.js";
 import searchCompanies from "./routes/searchCompanies.js";
 import statusRoutes from "./routes/status.js";
 
 const app = express();
+
 app.disable("x-powered-by");
-app.use(express.json({ limit: "2mb" }));
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const started = Date.now();
-  res.locals.start_time = started;
+// Body parsing
+app.use(
+  express.json({
+    limit: "2mb",
+  }),
+);
+app.use(
+  express.urlencoded({
+    extended: true,
+  }),
+);
 
-  res.on("finish", () => {
-    const duration = Date.now() - started;
-    const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
-    const logPayload: Record<string, unknown> = {
-      level,
-      route: req.originalUrl ?? req.url,
-      method: req.method,
-      duration_ms: duration,
-      status_code: res.statusCode,
-    };
-    if (res.locals.error_code) {
-      logPayload.error_code = res.locals.error_code;
-    }
-    console.log(JSON.stringify(logPayload));
-  });
-
-  next();
-});
-
-// CORS for Gateway/browser (permissive; tighten later)
+// Basic CORS (Gateway sits in front, but this keeps things simple)
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "content-type, x-api-key, authorization");
-  if (req.method === "OPTIONS") return res.status(204).end();
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-API-Key, x-api-key",
+  );
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
   next();
 });
 
+// Core public/status/search routes
+// NOTE: these route modules define their own paths, e.g.
+//  - /public/status
+//  - /public/getFilterOptions
+//  - /public/searchCompanies
 app.use(statusRoutes);
 app.use(publicRoutes);
 app.use(searchCompanies);
 app.use(getCompanyShipments);
+
+// ImportYeti router
+// iy.ts defines routes like:
+//   router.post("/searchShippers", ...)
+//   router.post("/companyBols", ...)
+// so mounting at /public/iy gives:
+//   POST /public/iy/searchShippers
+//   POST /public/iy/companyBols
+app.use("/public/iy", iyRouter);
+
+// Campaign-related routes (CRM / outreach, etc.)
 app.use(campaigns);
 
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  const error = err as {
-    status?: number;
-    code?: string;
-    error_code?: string;
-    message?: string;
-    expose?: boolean;
-  };
+// Central error handler
+app.use(
+  (
+    err: unknown,
+    _req: Request,
+    res: Response,
+    _next: NextFunction,
+  ): void => {
+    const error = err as {
+      status?: number;
+      code?: string;
+      error_code?: string;
+      message?: string;
+    };
 
-  const status =
-    typeof error?.status === "number" && error.status >= 400 && error.status < 600 ? error.status : 500;
-  const errorCode =
-    typeof error?.code === "string" && error.code.trim().length
-      ? error.code
-      : typeof error?.error_code === "string" && error.error_code.trim().length
-        ? error.error_code
-        : "internal_error";
+    const status = typeof error.status === "number" ? error.status : 500;
+    const errorCode =
+      error.error_code || error.code || (status >= 500 ? "internal_error" : "");
+    const message =
+      error.message ||
+      (status >= 500 ? "Internal server error" : "Request failed");
 
-  res.locals.error_code = errorCode;
+    if (status >= 500) {
+      // eslint-disable-next-line no-console
+      console.error("search-unified error:", err);
+    }
 
-  const exposeMessage = status < 500 || error?.expose === true;
-  const message =
-    typeof error?.message === "string" && error.message.trim().length && exposeMessage
-      ? error.message
-      : "Unexpected error";
-
-  console.error(
-    JSON.stringify({
-      level: "error",
-      message: error?.message ?? "Unhandled error",
+    res.status(status).json({
+      ok: false,
       error_code: errorCode,
-      status_code: status,
-    }),
-  );
+      message,
+    });
+  },
+);
 
-  res.status(status).json({
-    ok: false,
-    error_code: errorCode,
-    message,
-  });
-});
-
+// Start server (Cloud Run)
 const port = Number(process.env.PORT ?? 8080);
-app.listen(port, "0.0.0.0", () => console.log(`search-unified listening on :${port}`));
+
+if (process.env.NODE_ENV !== "test") {
+  app.listen(port, "0.0.0.0", () => {
+    // eslint-disable-next-line no-console
+    console.log(`search-unified listening on :${port}`);
+  });
+}
 
 export default app;
-
