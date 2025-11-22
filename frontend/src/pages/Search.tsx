@@ -21,6 +21,7 @@ export default function SearchPage() {
   const [shipperPage, setShipperPage] = useState(1);
   const [shipperResults, setShipperResults] = useState<IyShipperHit[]>([]);
   const [shipperMeta, setShipperMeta] = useState<IySearchMeta | null>(null);
+  const [shipperTotal, setShipperTotal] = useState(0);
   const [shipperLoading, setShipperLoading] = useState(false);
   const [shipperError, setShipperError] = useState<string | null>(null);
   const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
@@ -48,6 +49,7 @@ export default function SearchPage() {
     if (!submittedQuery) {
       setShipperResults([]);
       setShipperMeta(null);
+      setShipperTotal(0);
       setShipperError(null);
       setShipperLoading(false);
       return;
@@ -65,12 +67,18 @@ export default function SearchPage() {
         if (controller.signal.aborted) return;
         setShipperResults(Array.isArray(res.results) ? res.results : []);
         setShipperMeta(res.meta ?? null);
+        setShipperTotal(typeof res.total === "number" ? res.total : 0);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
         setShipperResults([]);
         setShipperMeta(null);
-        setShipperError(err?.message ?? "ImportYeti search failed. Please try again.");
+        setShipperTotal(0);
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : "ImportYeti search failed. Please try again.";
+        setShipperError(message);
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -88,7 +96,7 @@ export default function SearchPage() {
     setModalLoading(true);
     setModalError(null);
     try {
-      const kpis = await getIyRouteKpisForCompany({ companyKey: (shipper as any).key });
+      const kpis = await getIyRouteKpisForCompany({ companyKey: shipper.key });
       setRouteKpis(kpis ?? null);
     } catch (err) {
       console.warn("getIyRouteKpisForCompany failed", err);
@@ -107,12 +115,12 @@ export default function SearchPage() {
   }, []);
 
   const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
-    if (!(shipper as any)?.key) return;
+    if (!shipper?.key) return;
     setSaveLoading(true);
     try {
       await saveCompanyToCrm({
-        company_id: (shipper as any).key,
-        company_name: (shipper as any).title,
+        company_id: shipper.key,
+        company_name: shipper.title ?? shipper.name,
         source: "importyeti",
       });
     } catch (err) {
@@ -124,15 +132,15 @@ export default function SearchPage() {
 
   const resultSummary = useMemo(() => {
     if (!submittedQuery || !shipperMeta) return null;
-    const totalLabel = shipperMeta.total?.toLocaleString() ?? "0";
+    const totalLabel = shipperTotal ? shipperTotal.toLocaleString() : "0";
     return `Showing ${shipperResults.length} of ${totalLabel} results for "${shipperMeta.q}"`;
-  }, [submittedQuery, shipperMeta, shipperResults]);
+  }, [submittedQuery, shipperMeta, shipperResults, shipperTotal]);
 
   const showIntroState = !submittedQuery;
   const showNoResults = Boolean(submittedQuery && !shipperLoading && shipperResults.length === 0);
-  const totalPages = shipperMeta?.total ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE) : 0;
+  const totalPages = shipperTotal ? Math.ceil(shipperTotal / RESULTS_PER_PAGE) : 0;
   const hasPrevPage = shipperPage > 1;
-  const hasNextPage = shipperMeta ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total : false;
+  const hasNextPage = shipperTotal ? shipperPage * RESULTS_PER_PAGE < shipperTotal : false;
 
   return (
     <>
@@ -152,21 +160,21 @@ export default function SearchPage() {
 
           <section className="mt-8 space-y-4">
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  value={shipperQuery}
-                  onChange={(event) => setShipperQuery(event.target.value)}
-                  placeholder="Search by company, retailer, or brand (e.g., Walmart, Nike, Target)"
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                />
-                <button
-                  type="submit"
-                  disabled={shipperLoading || !shipperQuery.trim()}
-                  className="h-11 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {shipperLoading ? "Searching…" : "Search"}
-                </button>
-              </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    value={shipperQuery}
+                    onChange={(event) => setShipperQuery(event.target.value)}
+                    placeholder="Search by company, retailer, or brand (e.g., Walmart, Nike, Target)"
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                  <button
+                    type="submit"
+                    disabled={shipperLoading || !shipperQuery.trim()}
+                    className="h-11 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {shipperLoading ? "Searching…" : "Search"}
+                  </button>
+                </div>
             </form>
 
             <div className="flex flex-col gap-3">
@@ -181,23 +189,23 @@ export default function SearchPage() {
               <SearchFilters value={filters} onChange={setFilters} />
             </div>
 
-            {shipperError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {shipperError}
-              </div>
-            )}
+              {shipperError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {shipperError}
+                </div>
+              )}
 
-            {resultSummary && (
-              <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
-                <span>{resultSummary}</span>
-                {typeof shipperMeta?.creditsRemaining === "number" && (
-                  <span className="text-slate-400">
-                    Credits remaining: {shipperMeta.creditsRemaining}
-                  </span>
-                )}
-              </div>
-            )}
-          </section>
+              {resultSummary && (
+                <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
+                  <span>{resultSummary}</span>
+                  {typeof shipperMeta?.creditsRemaining === "number" && (
+                    <span className="text-slate-400">
+                      Credits remaining: {shipperMeta.creditsRemaining}
+                    </span>
+                  )}
+                </div>
+              )}
+            </section>
 
           <section className="mt-8 space-y-6">
             {showIntroState ? (
@@ -215,53 +223,52 @@ export default function SearchPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {shipperLoading && shipperResults.length === 0 ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {Array.from({ length: 6 }).map((_, index) => (
-                      <div
-                        key={`skeleton-${index}`}
-                        className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {shipperResults.map((shipper) => (
-                      <ShipperCard
-                        key={(shipper as any).key || (shipper as any).title}
-                        shipper={shipper}
-                        onViewDetails={() => handleViewDetails(shipper)}
-                        onSave={() => handleSaveToCommandCenter(shipper)}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-6">
+                  {shipperLoading && shipperResults.length === 0 ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <div
+                          key={`skeleton-${index}`}
+                          className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {shipperResults.map((shipper) => (
+                        <ShipperCard
+                          key={shipper.key}
+                          shipper={shipper}
+                          onViewDetails={() => handleViewDetails(shipper)}
+                        />
+                      ))}
+                    </div>
+                  )}
 
-                {shipperMeta && shipperMeta.total > RESULTS_PER_PAGE && (
-                  <div className="flex items-center justify_between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
-                    <button
-                      type="button"
-                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!hasPrevPage || shipperLoading}
-                      onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <span>
-                      Page {shipperPage}
-                      {totalPages > 0 ? ` of ${totalPages}` : ""}
-                    </span>
-                    <button
-                      type="button"
-                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!hasNextPage || shipperLoading}
-                      onClick={() => setShipperPage((prev) => prev + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
+                  {shipperTotal > RESULTS_PER_PAGE && (
+                    <div className="flex items-center justify_between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!hasPrevPage || shipperLoading}
+                        onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Prev
+                      </button>
+                      <span>
+                        Page {shipperPage}
+                        {totalPages > 0 ? ` of ${totalPages}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!hasNextPage || shipperLoading}
+                        onClick={() => setShipperPage((prev) => prev + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
               </div>
             )}
           </section>
@@ -284,15 +291,16 @@ export default function SearchPage() {
         </div>
       )}
 
-      <ShipperDetailModal
-        shipper={activeShipper}
-        open={Boolean(activeShipper)}
-        onClose={handleCloseModal}
-        topRoute={(routeKpis as any)?.topRouteLast12m ?? null}
-        recentRoute={(routeKpis as any)?.mostRecentRoute ?? null}
-        onSave={handleSaveToCommandCenter}
-        saving={saveLoading}
-      />
+        <ShipperDetailModal
+          shipper={activeShipper}
+          routeKpis={routeKpis}
+          isOpen={Boolean(activeShipper)}
+          isLoading={modalLoading}
+          error={modalError}
+          onClose={handleCloseModal}
+          onSaveToCommandCenter={handleSaveToCommandCenter}
+          saveLoading={saveLoading}
+        />
     </>
   );
 }
