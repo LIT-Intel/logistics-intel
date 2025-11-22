@@ -44,6 +44,22 @@ export const API_BASE = resolveApiBase();
 const SEARCH_GATEWAY_BASE = API_BASE;
 const IY_API_BASE = API_BASE;
 
+// Frontend API key for calling the API Gateway
+const LIT_GATEWAY_KEY =
+  (typeof import.meta !== "undefined" &&
+    ((import.meta as any).env?.VITE_LIT_GATEWAY_KEY ||
+      (import.meta as any).env?.NEXT_PUBLIC_LIT_GATEWAY_KEY)) ||
+  (typeof window !== "undefined" &&
+    (window as any).__LIT_GATEWAY_KEY__) ||
+  "";
+
+function withGatewayKey(url: string): string {
+  if (!LIT_GATEWAY_KEY) return url;
+  if (url.includes("key=")) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}key=${encodeURIComponent(LIT_GATEWAY_KEY)}`;
+}
+
 export type FilterOptions = {
   origins: string[];
   destinations: string[];
@@ -940,7 +956,7 @@ async function postIySearchShippers(
   body: { q: string; page: number; pageSize: number },
   signal?: AbortSignal,
 ) {
-  return fetchJson<any>(`${API_BASE}/public/iy/searchShippers`, {
+  return fetchJson<any>(withGatewayKey(`${API_BASE}/public/iy/searchShippers`), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -966,19 +982,22 @@ export async function iyCompanyBols(
       ? params.offset
       : 0;
 
-  const response = await fetch(`${API_BASE}/public/iy/companyBols`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
+  const response = await fetch(
+    withGatewayKey(`${API_BASE}/public/iy/companyBols`),
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        company_id: companyId,
+        limit,
+        offset,
+      }),
+      signal,
     },
-    body: JSON.stringify({
-      company_id: companyId,
-      limit,
-      offset,
-    }),
-    signal,
-  });
+  );
 
   const text = await response.text().catch(() => "");
   let parsed: unknown = {};
@@ -1077,7 +1096,15 @@ export async function searchShippers(
     };
   }
 
-  const raw = await postIySearchShippers({ q, page, pageSize }, signal);
+  const raw = await fetchJson<any>(
+    withGatewayKey(`${API_BASE}/public/iy/searchShippers`),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ q, page, pageSize }),
+      signal,
+    },
+  );
   return coerceIySearchResponse(raw, { q, page, pageSize });
 }
 
