@@ -60,9 +60,11 @@ export type CompanyHit = {
   top_carriers: string[];
 };
 
-export interface IyShipperSearchRow {
+export interface IyShipperHit {
+  key: string;
   companyId: string;
   name: string;
+  title: string;
   normalizedName?: string | null;
   domain?: string | null;
   website?: string | null;
@@ -79,9 +81,10 @@ export interface IyShipperSearchRow {
   estSpendLast12m?: number | null;
   primaryRouteSummary?: string | null;
   lastShipmentDate?: string | null;
+  topSuppliers?: string[] | null;
 }
 
-export type IyShipperSearchMeta = {
+export type IySearchMeta = {
   q: string;
   page: number;
   pageSize: number;
@@ -89,15 +92,11 @@ export type IyShipperSearchMeta = {
   requestCost?: number;
 };
 
-export interface IyShipperSearchResponse {
+export interface IySearchResponse {
   ok: boolean;
-  rows: IyShipperSearchRow[];
+  results: IyShipperHit[];
   total: number;
-  meta?: IyShipperSearchMeta;
-  data?: {
-    rows: IyShipperSearchRow[];
-    total: number;
-  };
+  meta?: IySearchMeta;
 }
 
 export type IyRouteTopRoute = {
@@ -720,7 +719,7 @@ function deriveDomainCandidate(value: unknown): string | undefined {
   }
 }
 
-function normalizeIyShipperSearchRow(entry: any): IyShipperSearchRow {
+function normalizeIyShipperHit(entry: any): IyShipperHit {
   const normalizeString = (value: unknown): string | null => {
     if (typeof value !== "string") return null;
     const trimmed = value.trim();
@@ -835,8 +834,14 @@ function normalizeIyShipperSearchRow(entry: any): IyShipperSearchRow {
     null;
 
   return {
+    key: companyId,
     companyId,
     name: fallbackName ?? "ImportYeti shipper",
+    title:
+      normalizeString(entry?.title) ??
+      normalizeString(entry?.name) ??
+      fallbackName ??
+      "ImportYeti shipper",
     normalizedName,
     domain,
     website,
@@ -853,6 +858,13 @@ function normalizeIyShipperSearchRow(entry: any): IyShipperSearchRow {
     estSpendLast12m,
     primaryRouteSummary,
     lastShipmentDate,
+    topSuppliers:
+      Array.isArray(entry?.topSuppliers) || Array.isArray(entry?.top_suppliers)
+        ? (entry?.topSuppliers ?? entry?.top_suppliers)?.filter(
+            (item: unknown): item is string =>
+              typeof item === "string" && item.trim().length,
+          ) ?? null
+        : null,
   };
 }
 
@@ -890,9 +902,9 @@ function buildIySearchMeta(
 function coerceIySearchResponse(
   raw: any,
   fallback: { q: string; page: number; pageSize: number },
-): IyShipperSearchResponse {
+): IySearchResponse {
   const items = resolveIySearchArray(raw);
-  const rows = items.map(normalizeIyShipperSearchRow);
+  const rows = items.map(normalizeIyShipperHit);
   const totalCandidate =
     raw?.total ?? raw?.meta?.total ?? raw?.data?.total ?? rows.length;
   const total = Number.isFinite(Number(totalCandidate))
@@ -900,21 +912,12 @@ function coerceIySearchResponse(
     : rows.length;
   const meta = buildIySearchMeta(raw?.meta ?? {}, fallback);
 
-  const response: IyShipperSearchResponse = {
+  return {
     ok: Boolean(raw?.ok ?? true),
-    rows,
+    results: rows,
     total,
     meta,
   };
-
-  if (raw?.data) {
-    response.data = {
-      rows,
-      total,
-    };
-  }
-
-  return response;
 }
 
 export async function iySearch(q: string, limit = 10, offset = 0) {
@@ -924,10 +927,10 @@ export async function iySearch(q: string, limit = 10, offset = 0) {
     Number.isFinite(offset) ? Number(offset) : 0,
   );
   const page = Math.floor(computedOffset / pageSize) + 1;
-  const payload = await searchIyShippers({ q, page, pageSize });
+  const payload = await searchShippers({ q, page, pageSize });
   return {
     ok: payload.ok,
-    rows: payload.rows,
+    rows: payload.results,
     meta: payload.meta,
     total: payload.total,
   };
@@ -1048,10 +1051,10 @@ export async function getIyCompanyProfile(
   );
 }
 
-export async function searchIyShippers(
+export async function searchShippers(
   params: { q: string; page?: number; pageSize?: number },
   signal?: AbortSignal,
-): Promise<IyShipperSearchResponse> {
+): Promise<IySearchResponse> {
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const page = Math.max(
     1,
@@ -1068,7 +1071,7 @@ export async function searchIyShippers(
   if (!q) {
     return {
       ok: true,
-      rows: [],
+      results: [],
       total: 0,
       meta: { q, page, pageSize },
     };
@@ -1078,7 +1081,7 @@ export async function searchIyShippers(
   return coerceIySearchResponse(raw, { q, page, pageSize });
 }
 
-export const searchShippers = searchIyShippers;
+export const searchIyShippers = searchShippers;
 
 function mapIyRowsToShipments(rows: any[]): ShipmentLite[] {
   return rows.map((row) => {

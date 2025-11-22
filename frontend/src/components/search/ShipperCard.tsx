@@ -1,12 +1,12 @@
 import React from "react";
-import { Calendar, MapPin, Package, Ship } from "lucide-react";
-import type { IyShipperSearchRow } from "@/lib/api";
+import { Calendar, Factory, MapPin } from "lucide-react";
+import type { IyShipperHit } from "@/lib/api";
 import { getCompanyLogoUrl } from "@/lib/logo";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
 
-type ShipperCardProps = {
-  shipper: IyShipperSearchRow;
-  onViewDetails: () => void;
-  onSave: () => void;
+type Props = {
+  shipper: IyShipperHit;
+  onViewDetails?: (shipper: IyShipperHit) => void;
 };
 
 function formatNumber(value: number | null | undefined): string {
@@ -24,19 +24,12 @@ function formatDate(value: string | null | undefined): string {
   });
 }
 
-function buildAddress(shipper: IyShipperSearchRow): string {
+function buildAddress(shipper: IyShipperHit): string {
   if (shipper.address) return shipper.address;
-  const parts = [shipper.city, shipper.state, shipper.postalCode, shipper.country]
+  const parts = [shipper.city, shipper.state, shipper.country]
     .map((part) => (typeof part === "string" ? part.trim() : ""))
     .filter(Boolean);
   return parts.length ? parts.join(", ") : "Location unavailable";
-}
-
-function getInitials(name: string): string {
-  const tokens = name.split(/\s+/).filter(Boolean);
-  if (!tokens.length) return "?";
-  if (tokens.length === 1) return tokens[0]!.charAt(0).toUpperCase();
-  return `${tokens[0]!.charAt(0)}${tokens[1]!.charAt(0)}`.toUpperCase();
 }
 
 function countryCodeToEmoji(code?: string | null): string | null {
@@ -49,39 +42,27 @@ function countryCodeToEmoji(code?: string | null): string | null {
     .join("");
 }
 
-export default function ShipperCard({ shipper, onViewDetails, onSave }: ShipperCardProps) {
-  const displayName = shipper.normalizedName ?? shipper.name ?? "ImportYeti shipper";
-  const address = buildAddress(shipper);
+export default function ShipperCard({ shipper, onViewDetails }: Props) {
+  const displayName = shipper.title || shipper.name || "ImportYeti shipper";
   const flagEmoji = countryCodeToEmoji(shipper.countryCode);
-  const logoSource = shipper.domain ?? shipper.website ?? shipper.name;
-  const logoUrl = logoSource ? getCompanyLogoUrl(logoSource) : null;
-  const initials = getInitials(displayName);
-
-  const totalShipmentsLabel = formatNumber(shipper.totalShipments ?? shipper.shipmentsLast12m);
-  const shipmentsLast12mLabel = formatNumber(shipper.shipmentsLast12m);
-  const teusLast12mLabel = formatNumber(shipper.teusLast12m);
-  const lastShipmentLabel = formatDate(shipper.lastShipmentDate);
+  const address = buildAddress(shipper);
+  const logoUrl = getCompanyLogoUrl(shipper.domain ?? shipper.website ?? undefined);
+  const supplierCount = shipper.topSuppliers?.length ?? 0;
 
   return (
     <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start gap-3">
-        <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-full bg-indigo-600 text-sm font-semibold text-white">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={displayName}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">{initials}</div>
-          )}
-        </div>
+        <CompanyAvatar
+          name={displayName}
+          logoUrl={logoUrl ?? undefined}
+          className="rounded-full"
+          size="lg"
+        />
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
-            <div className="truncate text-sm font-semibold text-slate-900" title={displayName}>
+            <p className="truncate text-sm font-semibold text-slate-900" title={displayName}>
               {displayName}
-            </div>
+            </p>
             {flagEmoji && <span className="text-lg leading-none">{flagEmoji}</span>}
           </div>
           <div className="flex items-center gap-1 text-[11px] text-slate-500">
@@ -89,57 +70,57 @@ export default function ShipperCard({ shipper, onViewDetails, onSave }: ShipperC
             <span className="truncate">{address}</span>
           </div>
           {shipper.primaryRouteSummary && (
-            <div className="text-[11px] text-slate-500">
-              Route:{" "}
-              <span className="font-medium text-slate-700">{shipper.primaryRouteSummary}</span>
-            </div>
+            <p className="text-[11px] text-slate-500">
+              Lane: <span className="font-medium text-slate-700">{shipper.primaryRouteSummary}</span>
+            </p>
           )}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+      <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <Ship className="h-3 w-3 text-indigo-500" />
-            <span>Total shipments</span>
-          </div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{totalShipmentsLabel}</div>
+          <p className="text-[11px] font-semibold uppercase text-slate-500">Shipments (12m)</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatNumber(shipper.shipmentsLast12m)}
+          </p>
         </div>
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <Ship className="h-3 w-3 text-indigo-500" />
-            <span>Shipments (12m)</span>
-          </div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{shipmentsLast12mLabel}</div>
+          <p className="text-[11px] font-semibold uppercase text-slate-500">Total shipments</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatNumber(shipper.totalShipments ?? shipper.shipmentsLast12m)}
+          </p>
         </div>
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <Package className="h-3 w-3 text-indigo-500" />
-            <span>TEUs (12m)</span>
-          </div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{teusLast12mLabel}</div>
+          <p className="text-[11px] font-semibold uppercase text-slate-500">Top suppliers</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {supplierCount > 0 ? supplierCount : "—"}
+          </p>
         </div>
-        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
+        <div className="col-span-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
             <Calendar className="h-3 w-3 text-indigo-500" />
-            <span>Last shipment</span>
-          </div>
-          <div className="mt-1 text-xs font-medium text-slate-900">{lastShipmentLabel}</div>
+            <span>Most recent shipment</span>
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-900">
+            {formatDate(shipper.lastShipmentDate)}
+          </p>
+        </div>
+        <div className="col-span-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
+            <Factory className="h-3 w-3 text-indigo-500" />
+            <span>Est. spend</span>
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-900">
+            {shipper.estSpendLast12m ? `$${formatNumber(shipper.estSpendLast12m)}` : "—"}
+          </p>
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-2">
+      <div className="mt-4 flex items-center justify-between">
         <button
           type="button"
-          onClick={onSave}
-          className="w-1/2 rounded-full border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-        >
-          Save to Command Center
-        </button>
-        <button
-          type="button"
-          onClick={onViewDetails}
-          className="w-1/2 rounded-full bg-slate-900 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+          onClick={() => onViewDetails?.(shipper)}
+          className="w-full rounded-full bg-slate-900 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
         >
           View details
         </button>
