@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from "react";
-import type { IyShipperHit } from "@/lib/api";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
+import {
+  searchShippers,
+  type IyShipperHit,
+  type IyRouteKpis,
+} from "@/lib/api";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
@@ -10,9 +14,6 @@ type ActivityFilter = "12m" | "24m" | "all";
 const PAGE_SIZE = 25;
 
 export default function SearchPage() {
-  // --------------------------
-  // State
-  // --------------------------
   const [query, setQuery] = useState("walmart");
   const [mode, setMode] = useState<ModeFilter>("any");
   const [region, setRegion] = useState<RegionFilter>("global");
@@ -29,9 +30,11 @@ export default function SearchPage() {
     useState<IyShipperHit | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // --------------------------
-  // Helpers
-  // --------------------------
+  // Modal KPI state placeholders
+  const [routeKpis] = useState<IyRouteKpis | null>(null);
+  const [routeKpisLoading] = useState(false);
+  const [routeKpisError] = useState<string | null>(null);
+
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
       setResults([]);
@@ -43,42 +46,21 @@ export default function SearchPage() {
     setError(null);
 
     try {
-      // IMPORTANT: we are NOT hard-coding the gateway.
-      // This call goes through the **existing** backend route
-      // exposed behind API Gateway:
-      //   POST /public/iy/searchShippers  { q, page, pageSize }
-      //
-      // That keeps all the API wiring exactly as it is now.
-      const resp = await fetch("/api/lit/public/iy/searchShippers", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          q,
-          page: pageNum,
-          pageSize: PAGE_SIZE,
-        }),
+      const json: any = await searchShippers({
+        q,
+        page: pageNum,
+        pageSize: PAGE_SIZE,
       });
 
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(
-          `searchShippers ${resp.status}: ${
-            text || resp.statusText || "Request failed"
-          }`,
-        );
-      }
-
-      const json: any = await resp.json();
-
-      const rows: IyShipperHit[] = Array.isArray(json.rows)
-        ? json.rows
-        : Array.isArray(json.data?.rows)
-          ? json.data.rows
-          : Array.isArray(json.data)
-            ? json.data
-            : [];
+      const rows: IyShipperHit[] = Array.isArray(json.results)
+        ? json.results
+        : Array.isArray(json.rows)
+          ? json.rows
+          : Array.isArray(json.data?.rows)
+            ? json.data.rows
+            : Array.isArray(json.data)
+              ? json.data
+              : [];
 
       const totalFromApi: number =
         typeof json.total === "number"
@@ -115,18 +97,13 @@ export default function SearchPage() {
     setSelectedShipper(null);
   };
 
-  // Keep the very first load from feeling empty
   useEffect(() => {
     void fetchShippers(query, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --------------------------
-  // Render
-  // --------------------------
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Top bar / title */}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div>
@@ -141,7 +118,6 @@ export default function SearchPage() {
         </div>
       </header>
 
-      {/* Search + filters */}
       <main className="mx-auto max-w-6xl px-4 pb-10 pt-5 md:px-6">
         <form
           onSubmit={handleSubmit}
@@ -170,7 +146,7 @@ export default function SearchPage() {
           </div>
         </form>
 
-        {/* Filter pills (UI-only for now) */}
+        {/* Filter chips – UI only for now */}
         <div className="mt-4 flex flex-wrap gap-3 text-xs">
           <div className="flex items-center gap-2">
             <span className="font-medium text-slate-600">Mode</span>
@@ -240,7 +216,6 @@ export default function SearchPage() {
           </div>
         </div>
 
-        {/* Results meta */}
         <div className="mt-4 text-xs text-slate-500">
           {error && (
             <span className="text-rose-600">
@@ -249,14 +224,13 @@ export default function SearchPage() {
           )}
           {!error && !loading && (
             <span>
-              Showing {results.length} of {total} results for{" "}
+              Showing {results.length} of {total} results for {" "}
               <span className="font-semibold">"{query}"</span>
             </span>
           )}
           {loading && <span>Searching ImportYeti…</span>}
         </div>
 
-        {/* Results grid */}
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {results.map((shipper) => (
             <button
@@ -270,7 +244,6 @@ export default function SearchPage() {
           ))}
         </div>
 
-        {/* Pagination (very light for now) */}
         {total > PAGE_SIZE && (
           <div className="mt-6 flex items-center justify-between text-xs text-slate-600">
             <span>
@@ -307,13 +280,12 @@ export default function SearchPage() {
         )}
       </main>
 
-      {/* Detail modal – KPIs & interactive chart are handled inside */}
       <ShipperDetailModal
         isOpen={isModalOpen}
         shipper={selectedShipper}
-        routeKpis={null}
-        loading={false}
-        error={null}
+        routeKpis={routeKpis}
+        isLoading={routeKpisLoading}
+        error={routeKpisError}
         onClose={handleModalClose}
         onSaveToCommandCenter={() => {
           // TODO: wire to Command Center save endpoint
