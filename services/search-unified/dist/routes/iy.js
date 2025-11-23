@@ -295,4 +295,25 @@ router.post("/companyBols", async (req, res, next) => {
         return next(err);
     }
 });
+router.get("/companyProfileRaw", async (req, res, next) => {
+    try {
+        const rawCompany = String((req.query.company ?? req.query.company_id ?? "")).trim();
+        if (!rawCompany) {
+            return res
+                .status(400)
+                .json({ ok: false, error: "Missing company parameter" });
+        }
+        const slug = rawCompany.startsWith("company/")
+            ? rawCompany.slice("company/".length)
+            : rawCompany;
+        const resp = await iyGet(`/company/${encodeURIComponent(slug)}`);
+        return res.json({
+            ok: true,
+            company: resp,
+        });
+    }
+    catch (err) {
+        return next(err);
+    }
+});
 export default router;
