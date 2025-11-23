@@ -311,10 +311,9 @@ router.get("/companyProfile", async (req, res, next) => {
         const slug = company.startsWith("company/")
             ? company.slice("company/".length)
             : company;
-        const key = encodeURIComponent(slug);
-        const path = `/company/${key}/profile`;
-        const data = await iyGet(path);
-        return res.json(data);
+        const path = `/company/${encodeURIComponent(slug)}`;
+        const resp = await iyGet(path);
+        return res.json(resp);
     }
     catch (err) {
         return next(err);

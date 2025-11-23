@@ -428,8 +428,8 @@ router.get(
     try {
       const companyRaw =
         (req.query.company_id ?? req.query.company ?? "").toString() || "";
-      const company = companyRaw.trim();
 
+      const company = companyRaw.trim();
       if (!company) {
         return res.status(400).json({
           ok: false,
@@ -441,11 +441,10 @@ router.get(
         ? company.slice("company/".length)
         : company;
 
-      const key = encodeURIComponent(slug);
-      const path = `/company/${key}/profile`;
+      const path = `/company/${encodeURIComponent(slug)}`;
+      const resp = await iyGet<any>(path);
 
-      const data = await iyGet<any>(path);
-      return res.json(data);
+      return res.json(resp);
     } catch (err) {
       return next(err);
     }
