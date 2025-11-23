@@ -8,7 +8,6 @@ import {
   Tooltip,
   Legend,
   Bar,
-  Line,
 } from "recharts";
 import type { IyShipperHit, IyRouteKpis } from "@/lib/api";
 
@@ -263,11 +262,9 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
                         }
                         labelFormatter={(label) => `Month: ${label}`}
                       />
-                      <Legend />
-                      <Bar dataKey="shipmentsFcl" name="Shipments – FCL" stackId="shipments" />
-                      <Bar dataKey="shipmentsLcl" name="Shipments – LCL" stackId="shipments" />
-                      <Line type="monotone" dataKey="teuTotal" name="TEU" />
-                      <Line type="monotone" dataKey="estSpendTotal" name="Est. spend (index)" />
+                        <Legend />
+                        <Bar dataKey="shipmentsFcl" name="Shipments – FCL" stackId="shipments" />
+                        <Bar dataKey="shipmentsLcl" name="Shipments – LCL" stackId="shipments" />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
