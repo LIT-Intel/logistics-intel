@@ -121,13 +121,30 @@ export type IyRouteTopRoute = {
   teu?: number | null;
 };
 
+export type IyMonthlySeriesPoint = {
+  monthLabel: string;
+  shipmentsFcl: number;
+  shipmentsLcl: number;
+  teuFcl?: number | null;
+  teuLcl?: number | null;
+  estSpendUsdFcl?: number | null;
+  estSpendUsdLcl?: number | null;
+};
+
 export type IyRouteKpis = {
-  topRouteLast12m: string | null;
-  mostRecentRoute: string | null;
-  sampleSize: number;
-  shipmentsLast12m: number;
-  teuLast12m: number;
-  topRoutesLast12m: IyRouteTopRoute[];
+  shipmentsLast12m?: number | null;
+  teuLast12m?: number | null;
+  estSpendUsd?: number | null;
+  topRouteLast12m?: string | null;
+  mostRecentRoute?: string | null;
+  sampleSize?: number | null;
+  topRoutesLast12m?: Array<{
+    route: string;
+    shipments: number;
+    teu?: number | null;
+    estSpendUsd?: number | null;
+  }>;
+  monthlySeries?: IyMonthlySeriesPoint[];
   contact?: IyCompanyContact;
 };
 

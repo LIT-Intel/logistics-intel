@@ -35,7 +35,17 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
 }) => {
   if (!isOpen || !shipper) return null;
 
-  const { title, countryCode, address, totalShipments, mostRecentShipment, topSuppliers } = shipper;
+  const {
+    title,
+    countryCode,
+    address,
+    totalShipments,
+    mostRecentShipment,
+    topSuppliers,
+    website,
+    phone,
+    domain,
+  } = shipper;
 
     const shipments12m =
       routeKpis?.shipmentsLast12m ?? (typeof totalShipments === "number" ? totalShipments : null);
@@ -43,17 +53,25 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
     const estSpendUsd = typeof routeKpis?.estSpendUsd === "number" ? routeKpis.estSpendUsd : null;
     const topRoute = routeKpis?.topRouteLast12m ?? null;
     const mostRecentRoute = routeKpis?.mostRecentRoute ?? null;
+  const displayWebsite = website || (domain ? `https://${domain}` : null);
+  const displayPhone = phone ?? null;
 
-    const topRoutes =
-      routeKpis && Array.isArray(routeKpis.topRoutesLast12m) ? routeKpis.topRoutesLast12m : [];
-    const chartData = topRoutes.map((r, index) => ({
-      id: index,
-      route: r.route || `Lane ${index + 1}`,
-      shipments: typeof r.shipments === "number" ? r.shipments : 0,
-      teu: typeof r.teu === "number" ? r.teu : 0,
-      estSpendUsd: typeof r.estSpendUsd === "number" ? r.estSpendUsd : 0,
-    }));
-    const hasChartData = chartData.length > 0;
+  const monthlySeries =
+    routeKpis && Array.isArray(routeKpis.monthlySeries) ? routeKpis.monthlySeries : [];
+  const monthlyChartData = monthlySeries.map((m) => {
+    const shipmentsTotal = m.shipmentsFcl + m.shipmentsLcl;
+    const teuTotal = (m.teuFcl ?? 0) + (m.teuLcl ?? 0);
+    const estSpendTotal = (m.estSpendUsdFcl ?? 0) + (m.estSpendUsdLcl ?? 0);
+    return {
+      monthLabel: m.monthLabel,
+      shipmentsFcl: m.shipmentsFcl,
+      shipmentsLcl: m.shipmentsLcl,
+      shipmentsTotal,
+      teuTotal,
+      estSpendTotal,
+    };
+  });
+  const hasMonthlyData = monthlyChartData.length > 0;
 
   const suppliers = Array.isArray(topSuppliers) ? topSuppliers : [];
 
@@ -85,7 +103,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   };
 
     const formatTooltipValue = (value: number, name: string) => {
-      if (name === "Est. spend") {
+      if (name?.startsWith("Est. spend")) {
         return formatCurrency(value);
       }
       return formatNumber(value);
@@ -105,6 +123,23 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
                 <div className="mt-0.5 text-xs text-gray-500">{address || "Address not available"}</div>
                 <div className="mt-0.5 text-xs text-gray-500">
                   {countryCode ? `Country: ${countryCode}` : "Country unknown"}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  {displayWebsite && (
+                    <a
+                      href={displayWebsite}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100"
+                    >
+                      {displayWebsite.replace(/^https?:\/\//, "")}
+                    </a>
+                  )}
+                  {displayPhone && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                      {displayPhone}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -194,51 +229,45 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Route performance (last 12m)
+                    Sea shipments over time
                   </div>
                   <div className="mt-0.5 text-xs text-gray-400">
-                    Shipments, TEU and est. spend by lane (sampled)
+                    Last 12 months · Monthly volume by service type and estimated spend
                   </div>
                 </div>
               </div>
 
-              {!hasChartData ? (
+              {!hasMonthlyData ? (
                 <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500">
-                  No route data yet. Once ImportYeti BOL-based KPIs are wired, the lane-level chart
-                  will appear here.
+                  No time series data yet. Once ImportYeti BOL-based KPIs are wired, the monthly
+                  FCL/LCL chart will appear here.
                 </div>
               ) : (
-                <div className="h-72">
+                <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart
-                      data={chartData}
+                      data={monthlyChartData}
                       margin={{ top: 10, right: 24, left: 0, bottom: 40 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis
-                        dataKey="route"
-                        angle={-20}
-                        textAnchor="end"
-                        height={50}
-                        interval={0}
-                        tick={{ fontSize: 10 }}
+                        dataKey="monthLabel"
+                        height={40}
+                        tickLine={false}
+                        tick={{ fontSize: 11 }}
                       />
                       <YAxis />
                       <Tooltip
                         formatter={(value, name) =>
                           formatTooltipValue(value as number, name as string)
                         }
-                        labelFormatter={(label) => `Route: ${label}`}
+                        labelFormatter={(label) => `Month: ${label}`}
                       />
                       <Legend />
-                      <Bar dataKey="shipments" name="Shipments" stackId="a" />
-                      <Bar dataKey="teu" name="TEU" stackId="a" />
-                      <Line
-                        type="monotone"
-                        dataKey="estSpendUsd"
-                        name="Est. spend"
-                        yAxisId={0}
-                      />
+                      <Bar dataKey="shipmentsFcl" name="Shipments – FCL" stackId="shipments" />
+                      <Bar dataKey="shipmentsLcl" name="Shipments – LCL" stackId="shipments" />
+                      <Line type="monotone" dataKey="teuTotal" name="TEU" />
+                      <Line type="monotone" dataKey="estSpendTotal" name="Est. spend (index)" />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>

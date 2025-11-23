@@ -5,6 +5,7 @@ import {
   searchShippers,
   type IyShipperHit,
   type IyRouteKpis,
+  type IyMonthlySeriesPoint,
 } from "@/lib/api";
 
 type ModeFilter = "any" | "ocean" | "air";
@@ -311,41 +312,87 @@ export default function SearchPage() {
 function buildMockRouteKpisFromShipper(shipper: IyShipperHit): IyRouteKpis {
   const total =
     typeof shipper.totalShipments === "number" ? shipper.totalShipments : 0;
-  const base = total || 100;
-
-  const r1 = Math.round(base * 0.5);
-  const r2 = Math.round(base * 0.3);
-  const r3 = Math.max(0, base - r1 - r2);
+  const base = total || 1200;
 
   const teuFactor = 0.4;
   const spendPerShipment = 1500;
 
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+
+  const monthlySeries: IyMonthlySeriesPoint[] = months.map((label, index) => {
+    const seasonalFactor = 0.7 + (index % 4) * 0.15;
+    const shipmentsTotal = Math.round((base / 12) * seasonalFactor);
+
+    const fclShare = 0.7;
+    const shipmentsFcl = Math.round(shipmentsTotal * fclShare);
+    const shipmentsLcl = Math.max(0, shipmentsTotal - shipmentsFcl);
+
+    const teuFcl = Math.round(shipmentsFcl * teuFactor);
+    const teuLcl = Math.round(shipmentsLcl * teuFactor * 0.6);
+
+    const estSpendUsdFcl = shipmentsFcl * spendPerShipment * 1.1;
+    const estSpendUsdLcl = shipmentsLcl * spendPerShipment * 0.7;
+
+    return {
+      monthLabel: label,
+      shipmentsFcl,
+      shipmentsLcl,
+      teuFcl,
+      teuLcl,
+      estSpendUsdFcl,
+      estSpendUsdLcl,
+    };
+  });
+
+  const shipmentsLast12m = monthlySeries.reduce(
+    (sum, m) => sum + m.shipmentsFcl + m.shipmentsLcl,
+    0,
+  );
+
+  const teuLast12m = monthlySeries.reduce(
+    (sum, m) => sum + (m.teuFcl ?? 0) + (m.teuLcl ?? 0),
+    0,
+  );
+
+  const estSpendUsd = monthlySeries.reduce(
+    (sum, m) => sum + (m.estSpendUsdFcl ?? 0) + (m.estSpendUsdLcl ?? 0),
+    0,
+  );
+
   return {
-    shipmentsLast12m: total || base,
-    teuLast12m: Math.round((total || base) * teuFactor),
-    estSpendUsd: (total || base) * spendPerShipment,
-    topRouteLast12m: "Asia → US West Coast",
-    mostRecentRoute: "China → US Inland Ramp",
-    sampleSize: total || base,
+    shipmentsLast12m,
+    teuLast12m,
+    estSpendUsd,
+    topRouteLast12m: "Ocean FCL + LCL mix",
+    mostRecentRoute: "China → US main gateways",
+    sampleSize: shipmentsLast12m,
     topRoutesLast12m: [
       {
-        route: "Asia → US West Coast",
-        shipments: r1,
-        teu: Math.round(r1 * teuFactor),
-        estSpendUsd: r1 * spendPerShipment,
+        route: "FCL dominant lanes",
+        shipments: Math.round(shipmentsLast12m * 0.65),
+        teu: Math.round(teuLast12m * 0.7),
+        estSpendUsd: estSpendUsd * 0.7,
       },
       {
-        route: "Asia → US Gulf",
-        shipments: r2,
-        teu: Math.round(r2 * teuFactor),
-        estSpendUsd: r2 * spendPerShipment,
-      },
-      {
-        route: "Europe → US East Coast",
-        shipments: r3,
-        teu: Math.round(r3 * teuFactor),
-        estSpendUsd: r3 * spendPerShipment,
+        route: "LCL + mixed lanes",
+        shipments: Math.round(shipmentsLast12m * 0.35),
+        teu: Math.round(teuLast12m * 0.3),
+        estSpendUsd: estSpendUsd * 0.3,
       },
     ],
+    monthlySeries,
   };
 }
