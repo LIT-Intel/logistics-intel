@@ -418,6 +418,79 @@ router.post(
   },
 );
 
+// -----------------------------------------------------------------------------
+// GET /public/iy/companyProfile
+// -----------------------------------------------------------------------------
+
+router.get(
+  "/companyProfile",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const companyRaw =
+        (req.query.company_id ?? req.query.company ?? "").toString() || "";
+      const company = companyRaw.trim();
+
+      if (!company) {
+        return res.status(400).json({
+          ok: false,
+          message: "company_id or company is required",
+        });
+      }
+
+      const slug = company.startsWith("company/")
+        ? company.slice("company/".length)
+        : company;
+
+      const key = encodeURIComponent(slug);
+      const path = `/company/${key}/profile`;
+
+      const data = await iyGet<any>(path);
+      return res.json(data);
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+// -----------------------------------------------------------------------------
+// GET /public/iy/companyStats
+// -----------------------------------------------------------------------------
+
+router.get(
+  "/companyStats",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const companyRaw = (req.query.company ?? "").toString() || "";
+      const rangeRaw = (req.query.range ?? "").toString();
+      const company = companyRaw.trim();
+      const range = rangeRaw.trim();
+
+      if (!company) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "company is required" });
+      }
+
+      const slug = company.startsWith("company/")
+        ? company.slice("company/".length)
+        : company;
+
+      const search = new URLSearchParams();
+      if (range) search.set("range", range);
+
+      const key = encodeURIComponent(slug);
+      const path = `/company/${key}/stats${
+        search.toString() ? `?${search.toString()}` : ""
+      }`;
+
+      const data = await iyGet<any>(path);
+      return res.json(data);
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
 router.get(
   "/companyProfileRaw",
   async (req: Request, res: Response, next: NextFunction) => {
