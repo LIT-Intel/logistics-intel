@@ -5,7 +5,6 @@ import SearchFilters, { type SearchFiltersValue } from "@/components/search/Sear
 import {
   searchShippers,
   saveCompanyToCrm,
-  getIyRouteKpisForCompany,
   type IySearchMeta,
   type IyShipperHit,
   type IyRouteKpis,
@@ -25,9 +24,9 @@ export default function SearchPage() {
   const [shipperLoading, setShipperLoading] = useState(false);
   const [shipperError, setShipperError] = useState<string | null>(null);
   const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
-  const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
+  const routeKpis: IyRouteKpis | null = null;
+  const modalLoading = false;
+  const modalError: string | null = null;
   const [saveLoading, setSaveLoading] = useState(false);
   const [filters, setFilters] = useState<FiltersState>({
     mode: "any",
@@ -90,28 +89,13 @@ export default function SearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submittedQuery, shipperPage]);
 
-  const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
+  const handleViewDetails = useCallback((shipper: IyShipperHit) => {
     if (!shipper) return;
     setActiveShipper(shipper);
-    setModalLoading(true);
-    setModalError(null);
-    try {
-      const kpis = await getIyRouteKpisForCompany({ companyKey: shipper.key });
-      setRouteKpis(kpis ?? null);
-    } catch (err) {
-      console.warn("getIyRouteKpisForCompany failed", err);
-      setRouteKpis(null);
-      setModalError("Route KPIs unavailable for this shipper.");
-    } finally {
-      setModalLoading(false);
-    }
   }, []);
 
   const handleCloseModal = useCallback(() => {
     setActiveShipper(null);
-    setRouteKpis(null);
-    setModalError(null);
-    setModalLoading(false);
   }, []);
 
   const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
@@ -275,28 +259,12 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {modalLoading && activeShipper && (
-        <div className="pointer-events-none fixed inset-x-0 top-6 z-40 flex justify-center">
-          <div className="rounded-full bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow">
-            Loading route insights…
-          </div>
-        </div>
-      )}
-
-      {modalError && activeShipper && (
-        <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center">
-          <div className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700 shadow">
-            {modalError}
-          </div>
-        </div>
-      )}
-
         <ShipperDetailModal
           shipper={activeShipper}
-          routeKpis={routeKpis}
+          routeKpis={null}
           isOpen={Boolean(activeShipper)}
-          isLoading={modalLoading}
-          error={modalError}
+          isLoading={false}
+          error={null}
           onClose={handleCloseModal}
           onSaveToCommandCenter={handleSaveToCommandCenter}
           saveLoading={saveLoading}
