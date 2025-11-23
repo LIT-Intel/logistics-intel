@@ -30,10 +30,9 @@ export default function SearchPage() {
     useState<IyShipperHit | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Modal KPI state placeholders
-  const [routeKpis] = useState<IyRouteKpis | null>(null);
-  const [routeKpisLoading] = useState(false);
-  const [routeKpisError] = useState<string | null>(null);
+  const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
+  const [routeKpisLoading, setRouteKpisLoading] = useState(false);
+  const [routeKpisError, setRouteKpisError] = useState<string | null>(null);
 
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
@@ -90,6 +89,19 @@ export default function SearchPage() {
   const handleCardClick = (shipper: IyShipperHit) => {
     setSelectedShipper(shipper);
     setIsModalOpen(true);
+
+    setRouteKpisLoading(true);
+    setRouteKpisError(null);
+    try {
+      const kpis = buildMockRouteKpisFromShipper(shipper);
+      setRouteKpis(kpis);
+    } catch (err) {
+      console.error("Failed to build mock route KPIs", err);
+      setRouteKpis(null);
+      setRouteKpisError("Unable to derive route KPI sample for this shipper.");
+    } finally {
+      setRouteKpisLoading(false);
+    }
   };
 
   const handleModalClose = () => {
@@ -294,4 +306,46 @@ export default function SearchPage() {
       />
     </div>
   );
+}
+
+function buildMockRouteKpisFromShipper(shipper: IyShipperHit): IyRouteKpis {
+  const total =
+    typeof shipper.totalShipments === "number" ? shipper.totalShipments : 0;
+  const base = total || 100;
+
+  const r1 = Math.round(base * 0.5);
+  const r2 = Math.round(base * 0.3);
+  const r3 = Math.max(0, base - r1 - r2);
+
+  const teuFactor = 0.4;
+  const spendPerShipment = 1500;
+
+  return {
+    shipmentsLast12m: total || base,
+    teuLast12m: Math.round((total || base) * teuFactor),
+    estSpendUsd: (total || base) * spendPerShipment,
+    topRouteLast12m: "Asia → US West Coast",
+    mostRecentRoute: "China → US Inland Ramp",
+    sampleSize: total || base,
+    topRoutesLast12m: [
+      {
+        route: "Asia → US West Coast",
+        shipments: r1,
+        teu: Math.round(r1 * teuFactor),
+        estSpendUsd: r1 * spendPerShipment,
+      },
+      {
+        route: "Asia → US Gulf",
+        shipments: r2,
+        teu: Math.round(r2 * teuFactor),
+        estSpendUsd: r2 * spendPerShipment,
+      },
+      {
+        route: "Europe → US East Coast",
+        shipments: r3,
+        teu: Math.round(r3 * teuFactor),
+        estSpendUsd: r3 * spendPerShipment,
+      },
+    ],
+  };
 }

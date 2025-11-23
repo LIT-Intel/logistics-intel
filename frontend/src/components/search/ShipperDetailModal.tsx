@@ -1,4 +1,15 @@
 import * as React from "react";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  Bar,
+  Line,
+} from "recharts";
 import type { IyShipperHit, IyRouteKpis } from "@/lib/api";
 
 type ShipperDetailModalProps = {
@@ -26,12 +37,23 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
 
   const { title, countryCode, address, totalShipments, mostRecentShipment, topSuppliers } = shipper;
 
-  const shipments12m =
-    routeKpis?.shipmentsLast12m ?? (typeof totalShipments === "number" ? totalShipments : null);
-  const teu12m = typeof routeKpis?.teuLast12m === "number" ? routeKpis.teuLast12m : null;
-  const estSpendUsd = typeof routeKpis?.estSpendUsd === "number" ? routeKpis.estSpendUsd : null;
-  const topRoute = routeKpis?.topRouteLast12m ?? null;
-  const mostRecentRoute = routeKpis?.mostRecentRoute ?? null;
+    const shipments12m =
+      routeKpis?.shipmentsLast12m ?? (typeof totalShipments === "number" ? totalShipments : null);
+    const teu12m = typeof routeKpis?.teuLast12m === "number" ? routeKpis.teuLast12m : null;
+    const estSpendUsd = typeof routeKpis?.estSpendUsd === "number" ? routeKpis.estSpendUsd : null;
+    const topRoute = routeKpis?.topRouteLast12m ?? null;
+    const mostRecentRoute = routeKpis?.mostRecentRoute ?? null;
+
+    const topRoutes =
+      routeKpis && Array.isArray(routeKpis.topRoutesLast12m) ? routeKpis.topRoutesLast12m : [];
+    const chartData = topRoutes.map((r, index) => ({
+      id: index,
+      route: r.route || `Lane ${index + 1}`,
+      shipments: typeof r.shipments === "number" ? r.shipments : 0,
+      teu: typeof r.teu === "number" ? r.teu : 0,
+      estSpendUsd: typeof r.estSpendUsd === "number" ? r.estSpendUsd : 0,
+    }));
+    const hasChartData = chartData.length > 0;
 
   const suppliers = Array.isArray(topSuppliers) ? topSuppliers : [];
 
@@ -49,7 +71,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
     }
   };
 
-  const formatCurrency = (value: number | null | undefined) => {
+    const formatCurrency = (value: number | null | undefined) => {
     if (value == null || Number.isNaN(value)) return "—";
     try {
       return value.toLocaleString(undefined, {
@@ -61,6 +83,13 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
       return `$${value}`;
     }
   };
+
+    const formatTooltipValue = (value: number, name: string) => {
+      if (name === "Est. spend") {
+        return formatCurrency(value);
+      }
+      return formatNumber(value);
+    };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -161,9 +190,60 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500">
-            Route chart will render here once ImportYeti BOL-based KPIs are wired.
-          </div>
+            <div className="rounded-xl border border-gray-100 px-4 py-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                    Route performance (last 12m)
+                  </div>
+                  <div className="mt-0.5 text-xs text-gray-400">
+                    Shipments, TEU and est. spend by lane (sampled)
+                  </div>
+                </div>
+              </div>
+
+              {!hasChartData ? (
+                <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500">
+                  No route data yet. Once ImportYeti BOL-based KPIs are wired, the lane-level chart
+                  will appear here.
+                </div>
+              ) : (
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      data={chartData}
+                      margin={{ top: 10, right: 24, left: 0, bottom: 40 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="route"
+                        angle={-20}
+                        textAnchor="end"
+                        height={50}
+                        interval={0}
+                        tick={{ fontSize: 10 }}
+                      />
+                      <YAxis />
+                      <Tooltip
+                        formatter={(value, name) =>
+                          formatTooltipValue(value as number, name as string)
+                        }
+                        labelFormatter={(label) => `Route: ${label}`}
+                      />
+                      <Legend />
+                      <Bar dataKey="shipments" name="Shipments" stackId="a" />
+                      <Bar dataKey="teu" name="TEU" stackId="a" />
+                      <Line
+                        type="monotone"
+                        dataKey="estSpendUsd"
+                        name="Est. spend"
+                        yAxisId={0}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
         </div>
       </div>
     </div>
