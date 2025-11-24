@@ -69,14 +69,6 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   const displayAddress = profile?.address || address || null;
   const displayCountryCode = profile?.country_code || countryCode || null;
 
-  const rawWebsite =
-    profile?.website ||
-    (profile &&
-      Array.isArray((profile as any).other_websites) &&
-      (profile as any).other_websites[0]?.website) ||
-    shipperWebsite ||
-    null;
-
   const normalizeWebsite = (value: string | null) => {
     if (!value) return null;
     const trimmed = value.trim();
@@ -85,10 +77,14 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
     return `https://${trimmed}`;
   };
 
-  const displayWebsite = normalizeWebsite(rawWebsite);
+  const websiteSource = profile?.website || shipperWebsite || null;
+  const displayWebsite = normalizeWebsite(websiteSource);
   const displayPhone = profile?.phone_number || shipperPhone || null;
 
   const derivedDomain = (() => {
+    if (profile?.domain) {
+      return profile.domain.replace(/^https?:\/\//i, "");
+    }
     if (displayWebsite) {
       try {
         const parsed = new URL(displayWebsite);

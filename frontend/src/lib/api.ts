@@ -232,6 +232,8 @@ export type IyCompanyProfile = {
   address?: string | null;
   country?: string | null;
   country_code?: string | null;
+  domain?: string | null;
+  raw_website?: string | null;
   containers_load?: Array<{
     load_type: string;
     shipments: number;
@@ -253,6 +255,18 @@ export type IyCompanyProfile = {
 export function extractCompanySlug(key: string): string {
   if (!key) return "";
   return key.replace(/^company\//i, "");
+}
+
+function inferDomainFromSlug(
+  companyKeyOrSlug: string | null | undefined,
+): string | null {
+  if (!companyKeyOrSlug) return null;
+  const raw = companyKeyOrSlug.toString().trim().toLowerCase();
+  if (!raw) return null;
+  const withoutPrefix = raw.replace(/^company\//, "");
+  const core = withoutPrefix.split(/[^a-z0-9]+/)[0];
+  if (!core) return null;
+  return `${core}.com`;
 }
 
 export type SearchResponse<T> = {
@@ -1065,6 +1079,8 @@ export async function getIyCompanyProfile(
     throw new Error("getIyCompanyProfile: empty company slug");
   }
 
+  const brandDomain = inferDomainFromSlug(slug);
+
   const url = withGatewayKey(
     `${API_BASE}/public/iy/companyProfile?company=${encodeURIComponent(slug)}`,
   );
@@ -1083,15 +1099,21 @@ export async function getIyCompanyProfile(
 
   const json: any = await res.json().catch(() => ({}));
   const data = json?.data ?? {};
+  const rawWebsite =
+    typeof data.website === "string" && data.website.trim().length
+      ? data.website.trim()
+      : null;
 
   return {
     title: typeof data.title === "string" ? data.title : "",
-    website: data.website ?? null,
+    website: brandDomain ?? rawWebsite ?? null,
     phone_number: data.phone_number ?? null,
     total_shipments: data.total_shipments ?? null,
     address: data.address ?? null,
     country: data.country ?? null,
     country_code: data.country_code ?? null,
+    domain: brandDomain ?? null,
+    raw_website: rawWebsite,
     containers_load: Array.isArray(data.containers_load)
       ? data.containers_load
       : null,
