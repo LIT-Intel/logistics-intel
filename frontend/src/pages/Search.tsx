@@ -3,9 +3,11 @@ import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
 import {
   searchShippers,
+  getIyCompanyProfile,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
+  type IyCompanyProfile,
 } from "@/lib/api";
 
 type ModeFilter = "any" | "ocean" | "air";
@@ -34,6 +36,10 @@ export default function SearchPage() {
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
   const [routeKpisLoading, setRouteKpisLoading] = useState(false);
   const [routeKpisError, setRouteKpisError] = useState<string | null>(null);
+  const [companyProfile, setCompanyProfile] =
+    useState<IyCompanyProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
@@ -103,6 +109,24 @@ export default function SearchPage() {
     } finally {
       setRouteKpisLoading(false);
     }
+
+    setCompanyProfile(null);
+    setProfileError(null);
+    setProfileLoading(true);
+    const keyOrSlug = shipper.key || shipper.title || "";
+    getIyCompanyProfile(keyOrSlug)
+      .then((profile) => {
+        setCompanyProfile(profile);
+      })
+      .catch((err: any) => {
+        console.error("getIyCompanyProfile failed", err);
+        setProfileError(
+          err?.message || "Failed to load company profile",
+        );
+      })
+      .finally(() => {
+        setProfileLoading(false);
+      });
   };
 
   const handleModalClose = () => {
@@ -297,8 +321,11 @@ export default function SearchPage() {
         isOpen={isModalOpen}
         shipper={selectedShipper}
         routeKpis={routeKpis}
-        isLoading={routeKpisLoading}
+        loading={routeKpisLoading}
         error={routeKpisError}
+        companyProfile={companyProfile}
+        profileLoading={profileLoading}
+        profileError={profileError}
         onClose={handleModalClose}
         onSaveToCommandCenter={() => {
           // TODO: wire to Command Center save endpoint

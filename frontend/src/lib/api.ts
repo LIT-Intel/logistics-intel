@@ -224,47 +224,34 @@ export type IyCompanyStats = {
   }>;
 };
 
-export interface IyCompanyProfile {
-  ok: true;
-
-  title: string | null;
-  normalizedName: string | null;
-  countryCode: string | null;
-  domain: string | null;
-  website: string | null;
-  phoneNumber: string | null;
-  primaryEmail: string | null;
-
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  postalCode: string | null;
-  country: string | null;
-
-  totalShipments: number | null;
-  shipmentsLast12m: number;
-  teusLast12m: number;
-  lastShipmentDate: string | null;
-
-  containersLoad: unknown;
-
-  locations: {
-    address: string | null;
-    mostRecentShipmentTo: string | null;
-    mostRecentShipmentBol: string | null;
-    emails: string[];
-    phoneNumbers: string[];
-  }[];
-
-  timeseries: {
-    monthKey: string;
+export type IyCompanyProfile = {
+  title: string;
+  website?: string | null;
+  phone_number?: string | null;
+  total_shipments?: number | null;
+  address?: string | null;
+  country?: string | null;
+  country_code?: string | null;
+  containers_load?: Array<{
+    load_type: string;
     shipments: number;
-    teu: number;
-    chinaShipments: number;
-    chinaTeu: number;
-  }[];
+    shipments_perc?: number;
+  }> | null;
+  time_series?: Record<
+    string,
+    {
+      shipments?: number;
+      teu?: number;
+      weight?: number;
+      china_shipments?: number;
+      china_teu?: number;
+    }
+  > | null;
+};
 
-  carriersPerCountry: Record<string, unknown>;
+export function extractCompanySlug(key: string): string {
+  if (!key) return "";
+  return key.replace(/^company\//i, "");
 }
 
 export type SearchResponse<T> = {
@@ -1070,21 +1057,48 @@ export async function iyCompanyStats(
 }
 
 export async function getIyCompanyProfile(
-  companyId: string,
-  signal?: AbortSignal,
+  keyOrSlug: string,
 ): Promise<IyCompanyProfile> {
-  if (!companyId) {
-    throw new Error("companyId is required for getIyCompanyProfile");
+  const slug = extractCompanySlug(keyOrSlug);
+  if (!slug) {
+    throw new Error("getIyCompanyProfile: empty company slug");
   }
-  const companyParam = encodeURIComponent(companyId);
-  return fetchJson<IyCompanyProfile>(
-    `${API_BASE}/public/iy/companyProfile?company_id=${companyParam}`,
-    {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal,
-    },
+
+  const url = withGatewayKey(
+    `${API_BASE}/public/iy/companyProfile?company=${encodeURIComponent(slug)}`,
   );
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `companyProfile ${res.status}: ${text || res.statusText}`,
+    );
+  }
+
+  const json: any = await res.json().catch(() => ({}));
+  const data = json?.data ?? {};
+
+  return {
+    title: typeof data.title === "string" ? data.title : "",
+    website: data.website ?? null,
+    phone_number: data.phone_number ?? null,
+    total_shipments: data.total_shipments ?? null,
+    address: data.address ?? null,
+    country: data.country ?? null,
+    country_code: data.country_code ?? null,
+    containers_load: Array.isArray(data.containers_load)
+      ? data.containers_load
+      : null,
+    time_series:
+      data.time_series && typeof data.time_series === "object"
+        ? data.time_series
+        : null,
+  };
 }
 
 export async function searchShippers(

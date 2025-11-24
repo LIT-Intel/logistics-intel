@@ -9,7 +9,12 @@ import {
   Legend,
   Bar,
 } from "recharts";
-import type { IyShipperHit, IyRouteKpis } from "@/lib/api";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
+import type {
+  IyShipperHit,
+  IyRouteKpis,
+  IyCompanyProfile,
+} from "@/lib/api";
 
 type ShipperDetailModalProps = {
   isOpen: boolean;
@@ -17,6 +22,9 @@ type ShipperDetailModalProps = {
   routeKpis: IyRouteKpis | null;
   loading: boolean;
   error: string | null;
+  companyProfile?: IyCompanyProfile | null;
+  profileLoading?: boolean;
+  profileError?: string | null;
   onClose: () => void;
   onSaveToCommandCenter: (shipper: IyShipperHit) => void;
   saveLoading: boolean;
@@ -28,11 +36,16 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   routeKpis,
   loading,
   error,
+  companyProfile,
+  profileLoading = false,
+  profileError = null,
   onClose,
   onSaveToCommandCenter,
   saveLoading,
 }) => {
   if (!isOpen || !shipper) return null;
+
+  const profile = companyProfile ?? null;
 
   const {
     title,
@@ -41,19 +54,64 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
     totalShipments,
     mostRecentShipment,
     topSuppliers,
-    website,
-    phone,
-    domain,
+    website: shipperWebsite,
+    phone: shipperPhone,
+    domain: shipperDomain,
   } = shipper;
 
-    const shipments12m =
-      routeKpis?.shipmentsLast12m ?? (typeof totalShipments === "number" ? totalShipments : null);
-    const teu12m = typeof routeKpis?.teuLast12m === "number" ? routeKpis.teuLast12m : null;
-    const estSpendUsd = typeof routeKpis?.estSpendUsd === "number" ? routeKpis.estSpendUsd : null;
-    const topRoute = routeKpis?.topRouteLast12m ?? null;
-    const mostRecentRoute = routeKpis?.mostRecentRoute ?? null;
-  const displayWebsite = website || (domain ? `https://${domain}` : null);
-  const displayPhone = phone ?? null;
+  const displayTitle =
+    profile?.title ||
+    title ||
+    shipper.name ||
+    shipper.normalizedName ||
+    "Unknown company";
+
+  const displayAddress = profile?.address || address || null;
+  const displayCountryCode = profile?.country_code || countryCode || null;
+
+  const rawWebsite =
+    profile?.website ||
+    (profile &&
+      Array.isArray((profile as any).other_websites) &&
+      (profile as any).other_websites[0]?.website) ||
+    shipperWebsite ||
+    null;
+
+  const normalizeWebsite = (value: string | null) => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+  };
+
+  const displayWebsite = normalizeWebsite(rawWebsite);
+  const displayPhone = profile?.phone_number || shipperPhone || null;
+
+  const derivedDomain = (() => {
+    if (displayWebsite) {
+      try {
+        const parsed = new URL(displayWebsite);
+        return parsed.hostname.replace(/^www\./i, "");
+      } catch {
+        return shipperDomain ?? null;
+      }
+    }
+    return shipperDomain ?? null;
+  })();
+
+  const fallbackShipments =
+    profile?.total_shipments ?? totalShipments ?? null;
+
+  const shipments12m =
+    routeKpis?.shipmentsLast12m ??
+    (typeof fallbackShipments === "number" ? fallbackShipments : null);
+  const teu12m =
+    typeof routeKpis?.teuLast12m === "number" ? routeKpis.teuLast12m : null;
+  const estSpendUsd =
+    typeof routeKpis?.estSpendUsd === "number" ? routeKpis.estSpendUsd : null;
+  const topRoute = routeKpis?.topRouteLast12m ?? null;
+  const mostRecentRoute = routeKpis?.mostRecentRoute ?? null;
 
   const monthlySeries =
     routeKpis && Array.isArray(routeKpis.monthlySeries) ? routeKpis.monthlySeries : [];
@@ -114,14 +172,22 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
         <div className="flex items-start justify-between border-b px-6 py-4">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-lg font-semibold text-indigo-700">
-                {title?.[0]?.toUpperCase() ?? "?"}
-              </div>
+              <CompanyAvatar
+                name={displayTitle}
+                domain={derivedDomain ?? undefined}
+                size={40}
+              />
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-                <div className="mt-0.5 text-xs text-gray-500">{address || "Address not available"}</div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {displayTitle}
+                </h2>
                 <div className="mt-0.5 text-xs text-gray-500">
-                  {countryCode ? `Country: ${countryCode}` : "Country unknown"}
+                  {displayAddress || "Address not available"}
+                </div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  {displayCountryCode
+                    ? `Country: ${displayCountryCode}`
+                    : "Country unknown"}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                   {displayWebsite && (
@@ -163,12 +229,21 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
         </div>
 
         <div className="space-y-6 overflow-y-auto px-6 py-5">
-          {(loading || error) && (
+          {(loading || error || profileLoading || profileError) && (
             <div className="rounded-lg bg-gray-50 px-4 py-3 text-sm">
               {loading && <div className="text-gray-600">Loading shipment insights…</div>}
               {error && !loading && (
                 <div className="text-red-600">
                   Unable to load route KPIs right now. <span className="text-xs text-gray-500">Details: {error}</span>
+                </div>
+              )}
+              {profileLoading && (
+                <div className="text-gray-600">Loading company profile…</div>
+              )}
+              {profileError && !profileLoading && (
+                <div className="text-red-600">
+                  Unable to load company profile.{" "}
+                  <span className="text-xs text-gray-500">Details: {profileError}</span>
                 </div>
               )}
             </div>
