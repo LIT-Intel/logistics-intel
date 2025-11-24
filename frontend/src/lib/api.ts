@@ -230,39 +230,38 @@ export type IyCompanyProfileRoute = {
   destination?: string | null;
   shipments?: number | null;
   teu?: number | null;
-  last_shipment_date?: string | null;
+  lastShipmentDate?: string | null;
+};
+
+export type IyCompanyProfileMonthlyPoint = {
+  date: string;
+  monthLabel: string;
+  totalShipments: number;
+  fclShipments: number;
+  lclShipments: number;
+  teu: number;
 };
 
 export type IyCompanyProfile = {
   title: string;
   website?: string | null;
-  phone_number?: string | null;
-  total_shipments?: number | null;
+  phoneNumber?: string | null;
+  totalShipments?: number | null;
   address?: string | null;
   country?: string | null;
-  country_code?: string | null;
+  countryCode?: string | null;
   domain?: string | null;
-  raw_website?: string | null;
-  last_shipment_date?: string | null;
-  most_recent_route?: IyCompanyProfileRoute | null;
-  top_routes?: IyCompanyProfileRoute[] | null;
-  suppliers_sample?: string[] | null;
-  containers_load?: Array<{
+  rawWebsite?: string | null;
+  lastShipmentDate?: string | null;
+  mostRecentRoute?: IyCompanyProfileRoute | null;
+  topRoutes?: IyCompanyProfileRoute[];
+  suppliersSample?: string[] | null;
+  containersLoad?: Array<{
     load_type: string;
     shipments: number;
     shipments_perc?: number;
   }> | null;
-  time_series?: Record<
-    string,
-    {
-      shipments?: number;
-      teu?: number;
-      weight?: number;
-      china_shipments?: number;
-      china_weight?: number;
-      china_teu?: number;
-    }
-  > | null;
+  timeSeries?: IyCompanyProfileMonthlyPoint[];
 };
 
 export function extractCompanySlug(key: string): string {
