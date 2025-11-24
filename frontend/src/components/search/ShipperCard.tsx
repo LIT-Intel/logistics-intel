@@ -1,5 +1,5 @@
 import React from "react";
-import { Calendar, Factory, MapPin } from "lucide-react";
+import { Calendar, MapPin } from "lucide-react";
 import type { IyShipperHit } from "@/lib/api";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -77,13 +77,7 @@ export default function ShipperCard({ shipper, onViewDetails }: Props) {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
-        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <p className="text-[11px] font-semibold uppercase text-slate-500">Shipments (12m)</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {formatNumber(shipper.shipmentsLast12m)}
-          </p>
-        </div>
+      <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
           <p className="text-[11px] font-semibold uppercase text-slate-500">Total shipments</p>
           <p className="mt-1 text-sm font-semibold text-slate-900">
@@ -91,27 +85,12 @@ export default function ShipperCard({ shipper, onViewDetails }: Props) {
           </p>
         </div>
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <p className="text-[11px] font-semibold uppercase text-slate-500">Top suppliers</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {supplierCount > 0 ? supplierCount : "—"}
-          </p>
-        </div>
-        <div className="col-span-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
           <p className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
             <Calendar className="h-3 w-3 text-indigo-500" />
             <span>Most recent shipment</span>
           </p>
           <p className="mt-1 text-sm font-medium text-slate-900">
-            {formatDate(shipper.lastShipmentDate)}
-          </p>
-        </div>
-        <div className="col-span-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <Factory className="h-3 w-3 text-indigo-500" />
-            <span>Est. spend</span>
-          </p>
-          <p className="mt-1 text-sm font-medium text-slate-900">
-            {shipper.estSpendLast12m ? `$${formatNumber(shipper.estSpendLast12m)}` : "—"}
+            {formatDate(shipper.lastShipmentDate ?? shipper.mostRecentShipment)}
           </p>
         </div>
       </div>
