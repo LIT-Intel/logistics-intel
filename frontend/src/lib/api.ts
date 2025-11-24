@@ -244,6 +244,7 @@ export type IyCompanyProfile = {
       teu?: number;
       weight?: number;
       china_shipments?: number;
+      china_weight?: number;
       china_teu?: number;
     }
   > | null;

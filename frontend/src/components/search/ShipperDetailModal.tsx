@@ -1,7 +1,7 @@
 import * as React from "react";
 import {
   ResponsiveContainer,
-  ComposedChart,
+  BarChart,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -113,22 +113,60 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   const topRoute = routeKpis?.topRouteLast12m ?? null;
   const mostRecentRoute = routeKpis?.mostRecentRoute ?? null;
 
-  const monthlySeries =
-    routeKpis && Array.isArray(routeKpis.monthlySeries) ? routeKpis.monthlySeries : [];
-  const monthlyChartData = monthlySeries.map((m) => {
-    const shipmentsTotal = m.shipmentsFcl + m.shipmentsLcl;
-    const teuTotal = (m.teuFcl ?? 0) + (m.teuLcl ?? 0);
-    const estSpendTotal = (m.estSpendUsdFcl ?? 0) + (m.estSpendUsdLcl ?? 0);
-    return {
-      monthLabel: m.monthLabel,
-      shipmentsFcl: m.shipmentsFcl,
-      shipmentsLcl: m.shipmentsLcl,
-      shipmentsTotal,
-      teuTotal,
-      estSpendTotal,
-    };
-  });
-  const hasMonthlyData = monthlyChartData.length > 0;
+  function buildMonthlySeries(profile?: IyCompanyProfile | null) {
+    if (!profile?.time_series) return [];
+    const entries = Object.entries(profile.time_series)
+      .map(([dateStr, v]) => {
+        if (!v) return null;
+        const [day, month, year] = dateStr.split("/").map((x) => Number(x));
+        if (!day || !month || !year) return null;
+        const d = new Date(year, month - 1, day);
+        return {
+          dateStr,
+          date: d,
+          shipments: v.shipments ?? 0,
+          teu: v.teu ?? 0,
+        };
+      })
+      .filter(
+        (
+          p,
+        ): p is { dateStr: string; date: Date; shipments: number; teu: number } =>
+          !!p,
+      )
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    const last12 = entries.slice(-12);
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+
+    return last12.map((p) => ({
+      period: `${monthNames[p.date.getMonth()]} ${p.date.getFullYear()}`,
+      shipments: p.shipments,
+      teu: p.teu,
+    }));
+  }
+
+  const monthlySeries = buildMonthlySeries(companyProfile);
+  const hasMonthlySeries = monthlySeries.length > 0;
+  const fclKpi = companyProfile?.containers_load?.find(
+    (c) => c.load_type?.toUpperCase() === "FCL",
+  );
+  const lclKpi = companyProfile?.containers_load?.find(
+    (c) => c.load_type?.toUpperCase() === "LCL",
+  );
 
   const suppliers = Array.isArray(topSuppliers) ? topSuppliers : [];
 
@@ -265,6 +303,32 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
               <div className="mt-1 text-2xl font-semibold text-gray-900">{formatCurrency(estSpendUsd)}</div>
               <div className="mt-1 text-xs text-gray-500">Placeholder until full spend model is enabled</div>
             </div>
+            {fclKpi && (
+              <div className="rounded-xl border border-gray-100 bg-indigo-50/40 px-4 py-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-600">
+                  FCL shipments
+                </div>
+                <div className="mt-1 text-2xl font-semibold text-gray-900">
+                  {formatNumber(fclKpi.shipments)}
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {((fclKpi.shipments_perc ?? 0) * 100).toFixed(2)}% of shipments
+                </div>
+              </div>
+            )}
+            {lclKpi && (
+              <div className="rounded-xl border border-gray-100 bg-emerald-50/40 px-4 py-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-600">
+                  LCL shipments
+                </div>
+                <div className="mt-1 text-2xl font-semibold text-gray-900">
+                  {formatNumber(lclKpi.shipments)}
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {((lclKpi.shipments_perc ?? 0) * 100).toFixed(2)}% of shipments
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -299,52 +363,52 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
             </div>
           </div>
 
-            <div className="rounded-xl border border-gray-100 px-4 py-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Sea shipments over time
-                  </div>
-                  <div className="mt-0.5 text-xs text-gray-400">
-                    Last 12 months · Monthly volume by service type and estimated spend
+              <div className="rounded-xl border border-gray-100 px-4 py-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                      Activity last 12 months
+                    </div>
+                    <div className="mt-0.5 text-xs text-gray-400">
+                      Shipments and TEU volumes using ImportYeti company profile
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {!hasMonthlyData ? (
-                <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500">
-                  No time series data yet. Once ImportYeti BOL-based KPIs are wired, the monthly
-                  FCL/LCL chart will appear here.
-                </div>
-              ) : (
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart
-                      data={monthlyChartData}
-                      margin={{ top: 10, right: 24, left: 0, bottom: 40 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="monthLabel"
-                        height={40}
-                        tickLine={false}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <YAxis />
-                      <Tooltip
-                        formatter={(value, name) =>
-                          formatTooltipValue(value as number, name as string)
-                        }
-                        labelFormatter={(label) => `Month: ${label}`}
-                      />
+                {hasMonthlySeries ? (
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={monthlySeries}
+                        margin={{ top: 10, right: 24, left: 0, bottom: 24 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="period"
+                          height={40}
+                          tickLine={false}
+                          tick={{ fontSize: 10 }}
+                        />
+                        <YAxis />
+                        <Tooltip
+                          formatter={(value, name) =>
+                            formatTooltipValue(value as number, name as string)
+                          }
+                          labelFormatter={(label) => label}
+                        />
                         <Legend />
-                        <Bar dataKey="shipmentsFcl" name="Shipments – FCL" stackId="shipments" />
-                        <Bar dataKey="shipmentsLcl" name="Shipments – LCL" stackId="shipments" />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
+                        <Bar dataKey="shipments" name="Shipments" />
+                        <Bar dataKey="teu" name="TEU" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-500">
+                    No time-series data yet. Once ImportYeti BOL-based metrics are available for this
+                    shipper, the monthly chart will render automatically.
+                  </div>
+                )}
+              </div>
         </div>
       </div>
     </div>
