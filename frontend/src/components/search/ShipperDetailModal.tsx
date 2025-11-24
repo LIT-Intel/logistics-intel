@@ -9,14 +9,22 @@ import {
   Legend,
   Bar,
 } from "recharts";
-import { Globe, Phone } from "lucide-react";
+import {
+  Globe,
+  Phone,
+  Bookmark,
+  BookmarkCheck,
+} from "lucide-react";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
+import {
+  getCompanyLogoUrl,
+} from "@/lib/logo";
 import type {
   IyShipperHit,
   IyRouteKpis,
   IyCompanyProfile,
+  IyCompanyProfileRoute,
 } from "@/lib/api";
-import { getCompanyLogoUrl } from "@/lib/logo";
 
 const MONTH_LABELS = [
   "Jan",
@@ -33,63 +41,16 @@ const MONTH_LABELS = [
   "Dec",
 ];
 
-type MonthlyActivityPoint = {
-  period: string;
-  totalShipments: number;
-  fclShipments: number;
-  lclShipments: number;
-  teu: number;
+const percentFormatter = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+const formatShare = (numerator: number | null, denominator: number | null) => {
+  if (!numerator || !denominator || denominator === 0) return null;
+  return percentFormatter.format(numerator / denominator);
 };
-
-function buildMonthlyActivitySeries(
-  profile?: IyCompanyProfile | null,
-  fclRatio = 0,
-  lclRatio = 0,
-): MonthlyActivityPoint[] {
-  if (!profile?.time_series) return [];
-
-  const entries = Object.entries(profile.time_series)
-    .map(([dateStr, value]) => {
-      if (!value) return null;
-      const [day, month, year] = dateStr.split("/").map((num) => Number(num));
-      if (!day || !month || !year) return null;
-      const date = new Date(year, month - 1, day);
-      return {
-        date,
-        shipments: value.shipments ?? 0,
-        teu: value.teu ?? 0,
-      };
-    })
-    .filter(
-      (
-        point,
-      ): point is { date: Date; shipments: number; teu: number } => point !== null,
-    )
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  const last12 = entries.slice(-12);
-  const safeFclRatio = Math.min(Math.max(fclRatio || 0, 0), 1);
-  let safeLclRatio = Math.min(Math.max(lclRatio || 0, 0), 1);
-  if (safeLclRatio === 0 && safeFclRatio > 0) {
-    safeLclRatio = 1 - safeFclRatio;
-  }
-  const fallbackRatio = safeFclRatio === 0 && safeLclRatio === 0 ? 0.5 : safeFclRatio;
-
-  return last12.map((entry) => {
-    const total = entry.shipments ?? 0;
-    const fclValue = Math.round(total * (safeFclRatio || fallbackRatio));
-    const lclValue = Math.max(total - fclValue, 0);
-    const period = `${MONTH_LABELS[entry.date.getMonth()]} ${entry.date.getFullYear()}`;
-
-    return {
-      period,
-      totalShipments: total,
-      fclShipments: fclValue,
-      lclShipments: lclValue,
-      teu: entry.teu ?? 0,
-    };
-  });
-}
 
 const normalizeWebsite = (value: string | null | undefined) => {
   if (!value) return null;
@@ -132,11 +93,89 @@ const formatDateValue = (value?: string | null) => {
   });
 };
 
-const formatPercent = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return null;
-  const formatted = value.toFixed(1);
-  return formatted.endsWith(".0") ? formatted.slice(0, -2) : formatted;
+const formatRouteLabel = (route?: IyCompanyProfileRoute | null) => {
+  if (!route) return null;
+  if (route.label) return route.label;
+  if (route.origin && route.destination) return `${route.origin} → ${route.destination}`;
+  return route.origin ?? route.destination ?? null;
 };
+
+type MonthlyActivityPoint = {
+  period: string;
+  fclShipments: number;
+  lclShipments: number;
+  totalTeu: number;
+};
+
+const coerceNumber = (value: unknown): number | null => {
+  if (value == null) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+function buildMonthlyActivitySeries(
+  profile?: IyCompanyProfile | null,
+  fallbackFclShare = 0,
+): MonthlyActivityPoint[] {
+  if (!profile?.time_series) return [];
+
+  const entries = Object.entries(profile.time_series)
+    .map(([dateStr, raw]) => {
+      if (!raw) return null;
+      const [day, month, year] = dateStr.split("/").map((piece) => Number(piece));
+      if (!day || !month || !year) return null;
+      const date = new Date(year, month - 1, day);
+      const shipments = coerceNumber((raw as any).shipments) ?? 0;
+      const teu = coerceNumber((raw as any).teu) ?? 0;
+      const fcl =
+        coerceNumber((raw as any).fcl_shipments) ??
+        coerceNumber((raw as any).shipments_fcl) ??
+        coerceNumber((raw as any).fcl) ??
+        null;
+      const lcl =
+        coerceNumber((raw as any).lcl_shipments) ??
+        coerceNumber((raw as any).shipments_lcl) ??
+        coerceNumber((raw as any).lcl) ??
+        null;
+      return { date, shipments, fcl, lcl, teu };
+    })
+    .filter(
+      (
+        entry,
+      ): entry is {
+        date: Date;
+        shipments: number;
+        fcl: number | null;
+        lcl: number | null;
+        teu: number;
+      } => !!entry,
+    )
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const last12 = entries.slice(-12);
+  const safeFclShare = Math.min(Math.max(fallbackFclShare || 0, 0), 1);
+
+  return last12.map((entry) => {
+    const label = `${MONTH_LABELS[entry.date.getMonth()]} ${entry.date.getFullYear()}`;
+    if (entry.fcl != null || entry.lcl != null) {
+      const fclValue = entry.fcl ?? Math.max(entry.shipments - (entry.lcl ?? 0), 0);
+      const lclValue = entry.lcl ?? Math.max(entry.shipments - fclValue, 0);
+      return {
+        period: label,
+        fclShipments: Math.max(fclValue, 0),
+        lclShipments: Math.max(lclValue, 0),
+        totalTeu: Math.max(entry.teu, 0),
+      };
+    }
+    const derivedFcl = Math.round(entry.shipments * (safeFclShare || 0.5));
+    return {
+      period: label,
+      fclShipments: Math.max(derivedFcl, 0),
+      lclShipments: Math.max(entry.shipments - derivedFcl, 0),
+      totalTeu: Math.max(entry.teu, 0),
+    };
+  });
+}
 
 type KpiCardProps = {
   label: string;
@@ -147,9 +186,7 @@ type KpiCardProps = {
 
 const KpiCard: React.FC<KpiCardProps> = ({ label, value, sublabel, toneClass }) => (
   <div
-    className={`rounded-xl border px-3 py-3 ${
-      toneClass ?? "bg-slate-50 border-slate-100"
-    }`}
+    className={`rounded-xl border px-3 py-3 ${toneClass ?? "bg-slate-50 border-slate-100"}`}
   >
     <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
       {label}
@@ -168,8 +205,10 @@ type ShipperDetailModalProps = {
   companyProfile?: IyCompanyProfile | null;
   profileLoading?: boolean;
   profileError?: string | null;
+  isSaved?: boolean;
   onClose: () => void;
   onSaveToCommandCenter: (shipper: IyShipperHit) => void;
+  onToggleSaved?: (shipper: IyShipperHit) => void;
   saveLoading: boolean;
 };
 
@@ -182,8 +221,10 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   companyProfile,
   profileLoading = false,
   profileError = null,
+  isSaved = false,
   onClose,
   onSaveToCommandCenter,
+  onToggleSaved,
   saveLoading,
 }) => {
   if (!isOpen || !shipper) return null;
@@ -206,7 +247,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   const displayTitle =
     profile?.title || title || shipper.name || shipper.normalizedName || "Unknown company";
   const displayAddress = profile?.address || address || "Address not available";
-  const displayCountryCode = profile?.country_code || countryCode || "Unknown";
+  const displayCountry = profile?.country_code || countryCode || "Unknown";
 
   const displayWebsite = normalizeWebsite(profile?.website || shipperWebsite || null);
   const websiteLabel = displayWebsite
@@ -243,30 +284,48 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   const lclRatio = lclKpi?.shipments_perc ?? (totalContainers ? (lclKpi?.shipments ?? 0) / totalContainers : 0);
 
   const monthlySeries = React.useMemo(
-    () => buildMonthlyActivitySeries(profile, fclRatio, lclRatio),
-    [profile, fclRatio, lclRatio],
+    () => buildMonthlyActivitySeries(profile, fclRatio || 0),
+    [profile, fclRatio],
   );
   const hasMonthlySeries = monthlySeries.length > 0;
-  const totalShipmentsFromSeries = monthlySeries.reduce(
-    (sum, point) => sum + point.totalShipments,
+  const shipmentsFromSeries = monthlySeries.reduce(
+    (sum, point) => sum + point.fclShipments + point.lclShipments,
     0,
   );
-  const totalTeuFromSeries = monthlySeries.reduce((sum, point) => sum + point.teu, 0);
-
+  const teuFromSeries = monthlySeries.reduce(
+    (sum, point) => sum + point.totalTeu,
+    0,
+  );
   const shipmentsKpi =
-    totalShipmentsFromSeries || routeKpis?.shipmentsLast12m || profile?.total_shipments || totalShipments || null;
-  const teuKpi = totalTeuFromSeries || routeKpis?.teuLast12m || null;
+    shipmentsFromSeries || routeKpis?.shipmentsLast12m || profile?.total_shipments || totalShipments || null;
+  const teuKpi = teuFromSeries || routeKpis?.teuLast12m || null;
   const spendKpi = routeKpis?.estSpendUsd ?? null;
-  const lastShipmentDisplay = formatDateValue(mostRecentShipment);
+  const lastShipmentDate = profile?.last_shipment_date ?? mostRecentShipment ?? null;
 
   const totalFcl = fclKpi?.shipments ?? null;
   const totalLcl = lclKpi?.shipments ?? null;
-  const fclPercent = totalContainers > 0 && totalFcl != null ? (totalFcl / totalContainers) * 100 : null;
-  const lclPercent = totalContainers > 0 && totalLcl != null ? (totalLcl / totalContainers) * 100 : null;
+  const fclShareLabel = formatShare(totalFcl, totalContainers);
+  const lclShareLabel = formatShare(totalLcl, totalContainers);
 
-  const topRoute = routeKpis?.topRouteLast12m || primaryRouteSummary || null;
-  const mostRecentRoute = routeKpis?.mostRecentRoute || null;
-  const suppliers = Array.isArray(topSuppliers) ? topSuppliers : [];
+  const primaryTopRoute = profile?.top_routes?.[0] ?? null;
+  const topRouteLabel =
+    formatRouteLabel(primaryTopRoute) ||
+    routeKpis?.topRouteLast12m ||
+    primaryRouteSummary ||
+    "No route data";
+  const topRouteSublabel =
+    primaryTopRoute?.shipments != null
+      ? `${formatNumber(primaryTopRoute.shipments)} shipments`
+      : undefined;
+
+  const mostRecentRouteData = profile?.most_recent_route ?? null;
+  const mostRecentRouteLabel =
+    formatRouteLabel(mostRecentRouteData) || routeKpis?.mostRecentRoute || "No recent route";
+  const mostRecentRouteSub = mostRecentRouteData?.last_shipment_date
+    ? `Last shipment ${formatDateValue(mostRecentRouteData.last_shipment_date)}`
+    : undefined;
+
+  const supplierSample = profile?.suppliers_sample ?? topSuppliers ?? [];
 
   const statusHasMessage = loading || error || profileLoading || profileError;
 
@@ -291,54 +350,61 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
       value: (
         <span className="flex items-baseline gap-1">
           <span>{formatNumber(totalFcl)}</span>
-          {fclPercent != null && (
-            <span className="text-xs text-slate-500">
-              ({formatPercent(fclPercent)}%)
-            </span>
+          {fclShareLabel && (
+            <span className="text-xs text-slate-500">({fclShareLabel})</span>
           )}
         </span>
       ),
-      toneClass: "bg-indigo-50/40 border-indigo-100",
+      toneClass: "bg-indigo-50/60 border-indigo-100",
     },
     {
       label: "LCL shipments",
       value: (
         <span className="flex items-baseline gap-1">
           <span>{formatNumber(totalLcl)}</span>
-          {lclPercent != null && (
-            <span className="text-xs text-slate-500">
-              ({formatPercent(lclPercent)}%)
-            </span>
+          {lclShareLabel && (
+            <span className="text-xs text-slate-500">({lclShareLabel})</span>
           )}
         </span>
       ),
-      toneClass: "bg-emerald-50/40 border-emerald-100",
+      toneClass: "bg-emerald-50/60 border-emerald-100",
     },
     {
       label: "Last shipment",
-      value: lastShipmentDisplay,
+      value: formatDateValue(lastShipmentDate),
       toneClass: "bg-amber-50 border-amber-100",
     },
   ];
 
   const handleSaveClick = () => {
     if (!shipper || saveLoading) return;
+    if (onToggleSaved) {
+      onToggleSaved(shipper);
+      return;
+    }
     onSaveToCommandCenter(shipper);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl">
-        <div className="border-b px-6 py-4">
+        <div className="border-b px-6 py-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-start gap-4">
-              <CompanyAvatar name={displayTitle} logoUrl={logoUrl ?? undefined} size="lg" />
+              <CompanyAvatar name={displayTitle} logoUrl={logoUrl} size="lg" />
               <div className="min-w-0 space-y-1">
-                <h2 className="text-xl font-semibold tracking-wide uppercase text-slate-900">
-                  {displayTitle}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-semibold tracking-[0.08em] uppercase text-slate-900">
+                    {displayTitle}
+                  </h2>
+                  {isSaved && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                      <BookmarkCheck className="h-3 w-3" /> Saved
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-slate-600">{displayAddress}</p>
-                <p className="text-xs text-slate-500">Country: {displayCountryCode}</p>
+                <p className="text-xs text-slate-500">Country: {displayCountry}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
                   {websiteLabel && displayWebsite && (
                     <a
@@ -368,9 +434,20 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
                 type="button"
                 onClick={handleSaveClick}
                 disabled={saveLoading}
-                className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                  isSaved
+                    ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                } disabled:cursor-not-allowed disabled:opacity-60`}
               >
-                {saveLoading ? "Saving…" : "Save to Command Center"}
+                {isSaved ? (
+                  <BookmarkCheck className="h-4 w-4" />
+                ) : (
+                  <Bookmark className="h-4 w-4" />
+                )}
+                <span>
+                  {isSaved ? "Saved to Command Center" : saveLoading ? "Saving…" : "Save to Command Center"}
+                </span>
               </button>
               <button
                 type="button"
@@ -408,23 +485,19 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <KpiCard
-              label="Top route (last 12m)"
-              value={topRoute || "No route data"}
-              sublabel={routeKpis?.sampleSize ? `${formatNumber(routeKpis.sampleSize)} shipments` : undefined}
-            />
+            <KpiCard label="Top route (last 12m)" value={topRouteLabel} sublabel={topRouteSublabel} />
             <KpiCard
               label="Most recent route"
-              value={mostRecentRoute || "No recent route"}
-              sublabel={lastShipmentDisplay !== "—" ? `Last shipment ${lastShipmentDisplay}` : undefined}
+              value={mostRecentRouteLabel}
+              sublabel={mostRecentRouteSub}
             />
           </div>
 
-          {suppliers.length > 0 && (
+          {supplierSample.length > 0 && (
             <div className="mt-8">
               <h3 className="text-sm font-semibold text-slate-700">Top suppliers (sample)</h3>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                {suppliers.slice(0, 5).map((supplier) => (
+                {supplierSample.slice(0, 5).map((supplier) => (
                   <li key={supplier}>{supplier}</li>
                 ))}
               </ul>
@@ -442,7 +515,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
                   <BarChart data={monthlySeries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="period" tickLine={false} tick={{ fontSize: 10 }} />
-                    <YAxis />
+                    <YAxis allowDecimals={false} />
                     <Tooltip
                       formatter={(value: number) => formatNumber(value as number)}
                       labelFormatter={(label) => label}

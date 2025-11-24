@@ -224,6 +224,15 @@ export type IyCompanyStats = {
   }>;
 };
 
+export type IyCompanyProfileRoute = {
+  label?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  shipments?: number | null;
+  teu?: number | null;
+  last_shipment_date?: string | null;
+};
+
 export type IyCompanyProfile = {
   title: string;
   website?: string | null;
@@ -234,6 +243,10 @@ export type IyCompanyProfile = {
   country_code?: string | null;
   domain?: string | null;
   raw_website?: string | null;
+  last_shipment_date?: string | null;
+  most_recent_route?: IyCompanyProfileRoute | null;
+  top_routes?: IyCompanyProfileRoute[] | null;
+  suppliers_sample?: string[] | null;
   containers_load?: Array<{
     load_type: string;
     shipments: number;
@@ -1103,6 +1116,108 @@ export async function getIyCompanyProfile(
     typeof data.website === "string" && data.website.trim().length
       ? data.website.trim()
       : null;
+  const lastShipmentDate =
+    data.last_shipment_date ??
+    data.lastShipmentDate ??
+    data.last_shipment ??
+    data.lastShipment ??
+    null;
+
+  const buildRoute = (input: any): IyCompanyProfileRoute | null => {
+    if (!input || typeof input !== "object") return null;
+    const origin =
+      input.origin ??
+      input.origin_port ??
+      input.origin_country ??
+      input.origin_country_code ??
+      null;
+    const destination =
+      input.destination ??
+      input.destination_port ??
+      input.destination_country ??
+      input.destination_country_code ??
+      null;
+    const label =
+      input.label ??
+      input.route ??
+      (origin && destination
+        ? `${origin} → ${destination}`
+        : origin || destination || null);
+    const shipments =
+      input.shipments ??
+      input.count ??
+      input.volume ??
+      input.shipments_12m ??
+      null;
+    const teu = input.teu ?? input.teus ?? null;
+    const lastRouteShipment =
+      input.last_shipment_date ??
+      input.lastShipmentDate ??
+      input.last_shipment ??
+      null;
+    if (!label && !origin && !destination) return null;
+    return {
+      label,
+      origin: origin ?? null,
+      destination: destination ?? null,
+      shipments: typeof shipments === "number" ? shipments : null,
+      teu: typeof teu === "number" ? teu : null,
+      last_shipment_date: lastRouteShipment ?? null,
+    };
+  };
+
+  const collectRoutes = (value: any): IyCompanyProfileRoute[] => {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[];
+    }
+    if (typeof value === "object") {
+      const arr: IyCompanyProfileRoute[] = [];
+      if (Array.isArray(value.top)) {
+        arr.push(
+          ...(value.top.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[]),
+        );
+      }
+      if (Array.isArray(value.routes)) {
+        arr.push(
+          ...(value.routes.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[]),
+        );
+      }
+      return arr;
+    }
+    return [];
+  };
+
+  const mostRecentRoute =
+    buildRoute(
+      data.most_recent_route ??
+        data.routes?.most_recent ??
+        data.routes?.mostRecent ??
+        data.routes?.recent ??
+        null,
+    ) ??
+    buildRoute(
+      Array.isArray(data.routes)
+        ? data.routes[0]
+        : Array.isArray(data.top_routes)
+          ? data.top_routes[0]
+          : null,
+    ) ??
+    null;
+
+  const topRoutesRaw =
+    data.top_routes ??
+    data.routes?.top ??
+    data.routes?.top_routes ??
+    data.routes ??
+    null;
+  const topRoutes = collectRoutes(topRoutesRaw);
+
+  const suppliersSample = Array.isArray(data.suppliers_sample)
+    ? data.suppliers_sample.filter((item: unknown) => typeof item === "string")
+    : Array.isArray(data.top_suppliers)
+      ? data.top_suppliers.filter((item: unknown) => typeof item === "string")
+      : null;
 
   return {
     title: typeof data.title === "string" ? data.title : "",
@@ -1114,6 +1229,10 @@ export async function getIyCompanyProfile(
     country_code: data.country_code ?? null,
     domain: brandDomain ?? null,
     raw_website: rawWebsite,
+    last_shipment_date: lastShipmentDate ?? null,
+    most_recent_route: mostRecentRoute,
+    top_routes: topRoutes.length ? topRoutes : null,
+    suppliers_sample: suppliersSample && suppliersSample.length ? suppliersSample : null,
     containers_load: Array.isArray(data.containers_load)
       ? data.containers_load
       : null,
