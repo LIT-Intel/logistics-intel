@@ -7,6 +7,7 @@ import {
   getIyCompanyProfile,
   getSavedCompanies,
   saveCompany,
+  saveCompanyToCrm,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
@@ -203,7 +204,14 @@ export default function SearchPage() {
 
     setSavingKey(primaryId);
     try {
-      await saveCompany(record);
+      await saveCompanyToCrm({
+        company_id: primaryId,
+        company_name: shipper.title || shipper.name || "Company",
+        source: "importyeti-search",
+      });
+      await saveCompany(record).catch((error) => {
+        console.warn("saveCompany supplemental payload failed", error);
+      });
       setSavedKeys((prev) => {
         const next = new Set(prev);
         next.add(primaryId);
