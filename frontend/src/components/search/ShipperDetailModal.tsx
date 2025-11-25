@@ -1,200 +1,5 @@
-import * as React from "react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  Bar,
-} from "recharts";
-import {
-  Globe,
-  Phone,
-  Bookmark,
-  BookmarkCheck,
-} from "lucide-react";
-import { CompanyAvatar } from "@/components/CompanyAvatar";
-import {
-  getCompanyLogoUrl,
-} from "@/lib/logo";
-import type {
-  IyShipperHit,
-  IyRouteKpis,
-  IyCompanyProfile,
-  IyCompanyProfileRoute,
-} from "@/lib/api";
-
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-const percentFormatter = new Intl.NumberFormat("en-US", {
-  style: "percent",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
-
-const formatShare = (numerator: number | null, denominator: number | null) => {
-  if (!numerator || !denominator || denominator === 0) return null;
-  return percentFormatter.format(numerator / denominator);
-};
-
-const normalizeWebsite = (value: string | null | undefined) => {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-};
-
-const formatNumber = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  try {
-    return value.toLocaleString();
-  } catch {
-    return String(value);
-  }
-};
-
-const formatCurrency = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  try {
-    return value.toLocaleString(undefined, {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    });
-  } catch {
-    return `$${value}`;
-  }
-};
-
-const formatDateValue = (value?: string | null) => {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
-};
-
-const formatRouteLabel = (route?: IyCompanyProfileRoute | null) => {
-  if (!route) return null;
-  if (route.label) return route.label;
-  if (route.origin && route.destination) return `${route.origin} → ${route.destination}`;
-  return route.origin ?? route.destination ?? null;
-};
-
-type MonthlyActivityPoint = {
-  period: string;
-  fclShipments: number;
-  lclShipments: number;
-  totalTeu: number;
-};
-
-const coerceNumber = (value: unknown): number | null => {
-  if (value == null) return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
-
-function buildMonthlyActivitySeries(
-  profile?: IyCompanyProfile | null,
-  fallbackFclShare = 0,
-): MonthlyActivityPoint[] {
-  if (!profile?.time_series) return [];
-
-  const entries = Object.entries(profile.time_series)
-    .map(([dateStr, raw]) => {
-      if (!raw) return null;
-      const [day, month, year] = dateStr.split("/").map((piece) => Number(piece));
-      if (!day || !month || !year) return null;
-      const date = new Date(year, month - 1, day);
-      const shipments = coerceNumber((raw as any).shipments) ?? 0;
-      const teu = coerceNumber((raw as any).teu) ?? 0;
-      const fcl =
-        coerceNumber((raw as any).fcl_shipments) ??
-        coerceNumber((raw as any).shipments_fcl) ??
-        coerceNumber((raw as any).fcl) ??
-        null;
-      const lcl =
-        coerceNumber((raw as any).lcl_shipments) ??
-        coerceNumber((raw as any).shipments_lcl) ??
-        coerceNumber((raw as any).lcl) ??
-        null;
-      return { date, shipments, fcl, lcl, teu };
-    })
-    .filter(
-      (
-        entry,
-      ): entry is {
-        date: Date;
-        shipments: number;
-        fcl: number | null;
-        lcl: number | null;
-        teu: number;
-      } => !!entry,
-    )
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  const last12 = entries.slice(-12);
-  const safeFclShare = Math.min(Math.max(fallbackFclShare || 0, 0), 1);
-
-  return last12.map((entry) => {
-    const label = `${MONTH_LABELS[entry.date.getMonth()]} ${entry.date.getFullYear()}`;
-    if (entry.fcl != null || entry.lcl != null) {
-      const fclValue = entry.fcl ?? Math.max(entry.shipments - (entry.lcl ?? 0), 0);
-      const lclValue = entry.lcl ?? Math.max(entry.shipments - fclValue, 0);
-      return {
-        period: label,
-        fclShipments: Math.max(fclValue, 0),
-        lclShipments: Math.max(lclValue, 0),
-        totalTeu: Math.max(entry.teu, 0),
-      };
-    }
-    const derivedFcl = Math.round(entry.shipments * (safeFclShare || 0.5));
-    return {
-      period: label,
-      fclShipments: Math.max(derivedFcl, 0),
-      lclShipments: Math.max(entry.shipments - derivedFcl, 0),
-      totalTeu: Math.max(entry.teu, 0),
-    };
-  });
-}
-
-type KpiCardProps = {
-  label: string;
-  value: React.ReactNode;
-  sublabel?: string;
-  toneClass?: string;
-};
-
-const KpiCard: React.FC<KpiCardProps> = ({ label, value, sublabel, toneClass }) => (
-  <div
-    className={`rounded-xl border px-3 py-3 ${toneClass ?? "bg-slate-50 border-slate-100"}`}
-  >
-    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-      {label}
-    </div>
-    <div className="mt-1 text-lg font-semibold text-slate-900">{value}</div>
-    {sublabel && <div className="mt-1 text-xs text-slate-500">{sublabel}</div>}
-  </div>
-);
+import React from "react";
+import type { IyShipperHit, IyRouteKpis } from "@/lib/api";
 
 type ShipperDetailModalProps = {
   isOpen: boolean;
@@ -202,340 +7,371 @@ type ShipperDetailModalProps = {
   routeKpis: IyRouteKpis | null;
   loading: boolean;
   error: string | null;
-  companyProfile?: IyCompanyProfile | null;
-  profileLoading?: boolean;
-  profileError?: string | null;
-  isSaved?: boolean;
   onClose: () => void;
   onSaveToCommandCenter: (shipper: IyShipperHit) => void;
-  onToggleSaved?: (shipper: IyShipperHit) => void;
   saveLoading: boolean;
 };
 
-const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
-  isOpen,
-  shipper,
-  routeKpis,
-  loading,
-  error,
-  companyProfile,
-  profileLoading = false,
-  profileError = null,
-  isSaved = false,
-  onClose,
-  onSaveToCommandCenter,
-  onToggleSaved,
-  saveLoading,
-}) => {
-  if (!isOpen || !shipper) return null;
+function formatNumber(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return value.toLocaleString();
+}
 
-  const profile = companyProfile ?? null;
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString();
+}
+
+export default function ShipperDetailModal(props: ShipperDetailModalProps) {
+  const {
+    isOpen,
+    shipper,
+    routeKpis,
+    loading,
+    error,
+    onClose,
+    onSaveToCommandCenter,
+    saveLoading,
+  } = props;
+
+  if (!isOpen || !shipper) return null;
 
   const {
     title,
     countryCode,
     address,
+    website,
+    phone,
+    domain,
     totalShipments,
     mostRecentShipment,
     topSuppliers,
-    website: shipperWebsite,
-    phone: shipperPhone,
-    domain: shipperDomain,
-    primaryRouteSummary,
   } = shipper;
 
-  const displayTitle =
-    profile?.title || title || shipper.name || shipper.normalizedName || "Unknown company";
-  const displayAddress = profile?.address || address || "Address not available";
-  const displayCountry = profile?.country_code || countryCode || "Unknown";
+  // ---------------- KPI + chart data ----------------
 
-  const displayWebsite = normalizeWebsite(profile?.website || shipperWebsite || null);
-  const websiteLabel = displayWebsite
-    ? displayWebsite.replace(/^https?:\/\//i, "").replace(/\/$/, "")
-    : null;
-  const displayPhone = profile?.phone_number || shipperPhone || null;
+  const kpis = routeKpis ?? null;
 
-  const derivedDomain = profile?.domain
-    ? profile.domain.replace(/^https?:\/\//i, "")
-    : (() => {
-        if (!displayWebsite) return shipperDomain ?? null;
-        try {
-          const parsed = new URL(displayWebsite);
-          return parsed.hostname.replace(/^www\./i, "");
-        } catch {
-          return shipperDomain ?? null;
-        }
-      })();
+  const shipments12m =
+    (kpis?.shipmentsLast12m ?? null) ??
+    (typeof totalShipments === "number" ? totalShipments : null);
 
-  const logoUrl = derivedDomain
-    ? getCompanyLogoUrl(derivedDomain)
-    : shipperDomain
-    ? getCompanyLogoUrl(shipperDomain)
-    : undefined;
+  const teu12m = kpis?.teuLast12m ?? null;
+  const topRoute = kpis?.topRouteLast12m ?? null;
+  const mostRecentRoute = kpis?.mostRecentRoute ?? null;
+  const sampleSize = kpis?.sampleSize ?? null;
 
-  const fclKpi = profile?.containers_load?.find(
-    (c) => c.load_type?.toUpperCase() === "FCL",
-  );
-  const lclKpi = profile?.containers_load?.find(
-    (c) => c.load_type?.toUpperCase() === "LCL",
-  );
-  const totalContainers = (fclKpi?.shipments ?? 0) + (lclKpi?.shipments ?? 0);
-  const fclRatio = fclKpi?.shipments_perc ?? (totalContainers ? (fclKpi?.shipments ?? 0) / totalContainers : 0);
-  const lclRatio = lclKpi?.shipments_perc ?? (totalContainers ? (lclKpi?.shipments ?? 0) / totalContainers : 0);
+  const routes =
+    Array.isArray(kpis?.topRoutesLast12m) && kpis!.topRoutesLast12m.length > 0
+      ? kpis!.topRoutesLast12m
+      : [];
 
-  const monthlySeries = React.useMemo(
-    () => buildMonthlyActivitySeries(profile, fclRatio || 0),
-    [profile, fclRatio],
-  );
-  const hasMonthlySeries = monthlySeries.length > 0;
-  const shipmentsFromSeries = monthlySeries.reduce(
-    (sum, point) => sum + point.fclShipments + point.lclShipments,
-    0,
-  );
-  const teuFromSeries = monthlySeries.reduce(
-    (sum, point) => sum + point.totalTeu,
-    0,
-  );
-  const shipmentsKpi =
-    shipmentsFromSeries || routeKpis?.shipmentsLast12m || profile?.total_shipments || totalShipments || null;
-  const teuKpi = teuFromSeries || routeKpis?.teuLast12m || null;
-  const spendKpi = routeKpis?.estSpendUsd ?? null;
-  const lastShipmentDate = profile?.last_shipment_date ?? mostRecentShipment ?? null;
+  const maxShipments =
+    routes.length > 0
+      ? Math.max(
+          ...routes.map((r: any) =>
+            typeof r.shipments === "number" ? r.shipments : 0,
+          ),
+        )
+      : 0;
 
-  const totalFcl = fclKpi?.shipments ?? null;
-  const totalLcl = lclKpi?.shipments ?? null;
-  const fclShareLabel = formatShare(totalFcl, totalContainers);
-  const lclShareLabel = formatShare(totalLcl, totalContainers);
+  const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
 
-  const primaryTopRoute = profile?.top_routes?.[0] ?? null;
-  const topRouteLabel =
-    formatRouteLabel(primaryTopRoute) ||
-    routeKpis?.topRouteLast12m ||
-    primaryRouteSummary ||
-    "No route data";
-  const topRouteSublabel =
-    primaryTopRoute?.shipments != null
-      ? `${formatNumber(primaryTopRoute.shipments)} shipments`
-      : undefined;
+  const activeRoute =
+    hoveredIndex != null && routes[hoveredIndex]
+      ? (routes[hoveredIndex] as any)
+      : null;
 
-  const mostRecentRouteData = profile?.most_recent_route ?? null;
-  const mostRecentRouteLabel =
-    formatRouteLabel(mostRecentRouteData) || routeKpis?.mostRecentRoute || "No recent route";
-  const mostRecentRouteSub = mostRecentRouteData?.last_shipment_date
-    ? `Last shipment ${formatDateValue(mostRecentRouteData.last_shipment_date)}`
-    : undefined;
+  const normalizedWebsite =
+    website || (domain ? `https://${domain}` : undefined) || undefined;
 
-  const supplierSample = profile?.suppliers_sample ?? topSuppliers ?? [];
+  const companyInitial =
+    typeof title === "string" && title.trim().length
+      ? title.trim().charAt(0).toUpperCase()
+      : "C";
 
-  const statusHasMessage = loading || error || profileLoading || profileError;
+  const estSpendUsd =
+    typeof kpis?.estSpendUsd === "number" ? kpis.estSpendUsd : null;
 
-  const topKpis: KpiCardProps[] = [
-    {
-      label: "Shipments (12m)",
-      value: formatNumber(shipmentsKpi),
-      toneClass: "bg-indigo-50 border-indigo-100",
-    },
-    {
-      label: "Estimated TEU (12m)",
-      value: formatNumber(teuKpi),
-      toneClass: "bg-sky-50 border-sky-100",
-    },
-    {
-      label: "Est. spend (12m)",
-      value: formatCurrency(spendKpi),
-      toneClass: "bg-emerald-50 border-emerald-100",
-    },
-    {
-      label: "FCL shipments",
-      value: (
-        <span className="flex items-baseline gap-1">
-          <span>{formatNumber(totalFcl)}</span>
-          {fclShareLabel && (
-            <span className="text-xs text-slate-500">({fclShareLabel})</span>
-          )}
-        </span>
-      ),
-      toneClass: "bg-indigo-50/60 border-indigo-100",
-    },
-    {
-      label: "LCL shipments",
-      value: (
-        <span className="flex items-baseline gap-1">
-          <span>{formatNumber(totalLcl)}</span>
-          {lclShareLabel && (
-            <span className="text-xs text-slate-500">({lclShareLabel})</span>
-          )}
-        </span>
-      ),
-      toneClass: "bg-emerald-50/60 border-emerald-100",
-    },
-    {
-      label: "Last shipment",
-      value: formatDateValue(lastShipmentDate),
-      toneClass: "bg-amber-50 border-amber-100",
-    },
-  ];
+  const supplierList =
+    Array.isArray(topSuppliers) && topSuppliers.length > 0
+      ? topSuppliers
+      : [];
 
   const handleSaveClick = () => {
     if (!shipper || saveLoading) return;
-    if (onToggleSaved) {
-      onToggleSaved(shipper);
-      return;
-    }
     onSaveToCommandCenter(shipper);
   };
 
+  // ---------------- Render ----------------
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl">
-        <div className="border-b px-6 py-5">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+      <div className="relative flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        {/* Close button */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+        >
+          <span className="sr-only">Close</span>
+          ×
+        </button>
+
+        {/* Header */}
+        <div className="border-b border-slate-200 bg-slate-50 px-6 py-5 md:px-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-start gap-4">
-              <CompanyAvatar name={displayTitle} logoUrl={logoUrl} size="lg" />
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-semibold tracking-[0.08em] uppercase text-slate-900">
-                    {displayTitle}
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-lg font-semibold text-white">
+                {companyInitial}
+              </div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {title || "Company"}
                   </h2>
-                  {isSaved && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                      <BookmarkCheck className="h-3 w-3" /> Saved
+                  {countryCode && (
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-slate-700">
+                      {countryCode}
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-slate-600">{displayAddress}</p>
-                <p className="text-xs text-slate-500">Country: {displayCountry}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                  {websiteLabel && displayWebsite && (
+                {address && (
+                  <p className="text-xs text-slate-500">{address}</p>
+                )}
+                <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                  {normalizedWebsite && (
                     <a
-                      href={displayWebsite}
+                      href={normalizedWebsite}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 hover:text-indigo-600"
+                      className="truncate text-indigo-600 hover:underline"
                     >
-                      <Globe className="h-4 w-4" />
-                      <span className="truncate max-w-[200px]">{websiteLabel}</span>
+                      {normalizedWebsite.replace(/^https?:\/\//i, "")}
                     </a>
                   )}
-                  {displayPhone && (
-                    <a
-                      href={`tel:${displayPhone}`}
-                      className="inline-flex items-center gap-1 hover:text-indigo-600"
-                    >
-                      <Phone className="h-4 w-4" />
-                      <span>{displayPhone}</span>
-                    </a>
-                  )}
+                  {phone && <span>• {phone}</span>}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+
+            <div className="flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={handleSaveClick}
                 disabled={saveLoading}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                  isSaved
-                    ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    : "bg-indigo-600 text-white hover:bg-indigo-500"
-                } disabled:cursor-not-allowed disabled:opacity-60`}
+                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isSaved ? (
-                  <BookmarkCheck className="h-4 w-4" />
-                ) : (
-                  <Bookmark className="h-4 w-4" />
-                )}
-                <span>
-                  {isSaved ? "Saved to Command Center" : saveLoading ? "Saving…" : "Save to Command Center"}
-                </span>
+                {saveLoading ? "Saving…" : "Save to Command Center"}
               </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
-              >
-                Close
-              </button>
+              {normalizedWebsite && (
+                <a
+                  href={normalizedWebsite}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  View company site
+                </a>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="max-h-[calc(90vh-96px)] overflow-y-auto px-6 pb-8">
-          {statusHasMessage && (
-            <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              {loading && <div>Loading shipment insights…</div>}
-              {error && !loading && <div className="text-red-600">{error}</div>}
-              {profileLoading && <div>Loading company profile…</div>}
-              {profileError && !profileLoading && (
-                <div className="text-red-600">{profileError}</div>
+        {/* Body */}
+        <div className="grid gap-6 px-6 py-5 md:grid-cols-3 md:px-8 md:py-6">
+          {/* Left: KPIs + chart */}
+          <div className="space-y-4 md:col-span-2">
+            {/* KPI row */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Shipments 12m */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  Shipments (12m)
+                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">
+                  {formatNumber(shipments12m)}
+                </p>
+                {mostRecentShipment && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Last shipment: {formatDate(mostRecentShipment)}
+                  </p>
+                )}
+              </div>
+
+              {/* Total shipments */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  Total shipments
+                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">
+                  {formatNumber(totalShipments as number | null | undefined)}
+                </p>
+              </div>
+
+              {/* TEU 12m */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  TEU (12m)
+                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">
+                  {formatNumber(teu12m)}
+                </p>
+                {sampleSize != null && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Sample size: {formatNumber(sampleSize)}
+                  </p>
+                )}
+              </div>
+
+              {/* Est. spend */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  Est. spend (12m)
+                </p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">
+                  {estSpendUsd != null
+                    ? `$${formatNumber(estSpendUsd)}`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+
+            {/* Chart + tooltip */}
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 md:px-6 md:py-5">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Sea shipments by lane (last 12m)
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Hover bars to inspect shipment volume per trade lane.
+                  </p>
+                </div>
+                {loading && (
+                  <p className="text-xs text-slate-400">Loading trend…</p>
+                )}
+              </div>
+
+              {error && (
+                <p className="mb-2 text-xs text-rose-500">
+                  {error || "Failed to load route KPIs."}
+                </p>
+              )}
+
+              {routes.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No route trend data available yet for this shipper.
+                </p>
+              ) : (
+                <>
+                  {/* Hover tooltip */}
+                  {activeRoute && (
+                    <div className="mb-3 inline-flex max-w-full flex-wrap items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-50">
+                      <span className="font-semibold">
+                        {activeRoute.route ?? "Route"}
+                      </span>
+                      <span className="text-slate-300">
+                        • Shipments:{" "}
+                        {formatNumber(
+                          typeof activeRoute.shipments === "number"
+                            ? activeRoute.shipments
+                            : null,
+                        )}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex h-44 items-end gap-2">
+                    {routes.map((route: any, idx: number) => {
+                      const shipments =
+                        typeof route.shipments === "number"
+                          ? route.shipments
+                          : 0;
+                      const heightPct =
+                        maxShipments > 0
+                          ? Math.max(6, (shipments / maxShipments) * 100)
+                          : 0;
+
+                      const isActive = hoveredIndex === idx;
+
+                      return (
+                        <button
+                          key={route.route ?? idx}
+                          type="button"
+                          className="flex flex-1 flex-col items-center justify-end gap-1 focus:outline-none"
+                          onMouseEnter={() => setHoveredIndex(idx)}
+                          onMouseLeave={() =>
+                            setHoveredIndex((current) =>
+                              current === idx ? null : current,
+                            )
+                          }
+                          onFocus={() => setHoveredIndex(idx)}
+                          onBlur={() =>
+                            setHoveredIndex((current) =>
+                              current === idx ? null : current,
+                            )
+                          }
+                        >
+                          <div
+                            className={`w-full rounded-t-md ${
+                              isActive
+                                ? "bg-indigo-600"
+                                : "bg-indigo-500/80 hover:bg-indigo-600"
+                            } transition-[height,background-color]`}
+                            style={{ height: `${heightPct}%` }}
+                          />
+                          <div className="w-full text-center text-[10px] text-slate-500">
+                            {shipments.toLocaleString()}
+                          </div>
+                          <div className="w-full truncate text-center text-[10px] text-slate-500">
+                            {route.route ?? "—"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
-          )}
-
-          <div className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-            {topKpis.map((kpi) => (
-              <KpiCard
-                key={kpi.label}
-                label={kpi.label}
-                value={kpi.value}
-                sublabel={kpi.sublabel}
-                toneClass={kpi.toneClass}
-              />
-            ))}
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <KpiCard label="Top route (last 12m)" value={topRouteLabel} sublabel={topRouteSublabel} />
-            <KpiCard
-              label="Most recent route"
-              value={mostRecentRouteLabel}
-              sublabel={mostRecentRouteSub}
-            />
-          </div>
-
-          {supplierSample.length > 0 && (
-            <div className="mt-8">
-              <h3 className="text-sm font-semibold text-slate-700">Top suppliers (sample)</h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                {supplierSample.slice(0, 5).map((supplier) => (
-                  <li key={supplier}>{supplier}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-8">
-            <h3 className="text-sm font-semibold text-slate-700">
-              Activity last 12 months
-            </h3>
-            <p className="text-xs text-slate-500">Monthly shipments split between FCL and LCL services.</p>
-            {hasMonthlySeries ? (
-              <div className="mt-4 h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlySeries}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="period" tickLine={false} tick={{ fontSize: 10 }} />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip
-                      formatter={(value: number) => formatNumber(value as number)}
-                      labelFormatter={(label) => label}
-                    />
-                    <Legend />
-                    <Bar dataKey="fclShipments" name="FCL" stackId="shipments" fill="#4f46e5" />
-                    <Bar dataKey="lclShipments" name="LCL" stackId="shipments" fill="#10b981" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-slate-500">
-                No time-series data available for this company yet.
+          {/* Right: suppliers / metadata */}
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Top suppliers (sample)
               </p>
-            )}
+              {supplierList.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Supplier details will appear here once available from
+                  ImportYeti.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                  {supplierList.slice(0, 6).map((s, idx) => (
+                    <li key={`${s}-${idx}`} className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                      <span className="truncate">{s}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-xs text-slate-500">
+              <p className="font-medium text-slate-700">What you’re seeing</p>
+              <p className="mt-1">
+                Cards and KPIs are based on ImportYeti DMA data. As we add more
+                stats (lanes, Incoterms, vendor mix), they’ll show up here
+                automatically without changing your workflow.
+              </p>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default ShipperDetailModal;
+}
