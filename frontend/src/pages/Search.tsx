@@ -4,6 +4,8 @@ import ShipperCard from "@/components/search/ShipperCard";
 import {
   searchShippers,
   getIyCompanyProfile,
+  getSavedCompanies,
+  saveCompanyToCrm,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
@@ -40,6 +42,8 @@ export default function SearchPage() {
     useState<IyCompanyProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
@@ -132,6 +136,52 @@ export default function SearchPage() {
   const handleModalClose = () => {
     setIsModalOpen(false);
     setSelectedShipper(null);
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getSavedCompanies(controller.signal)
+      .then((response) => {
+        const rows = Array.isArray(response?.rows) ? response.rows : [];
+        const next = new Set<string>();
+        rows.forEach((record: any) => {
+          const companyId =
+            (record?.company?.company_id ??
+              record?.company_id ??
+              record?.company?.id ??
+              "") || "";
+          if (companyId) {
+            next.add(String(companyId));
+          }
+        });
+        setSavedKeys(next);
+      })
+      .catch((err) => {
+        console.error("getSavedCompanies failed", err);
+      });
+    return () => controller.abort();
+  }, []);
+
+  const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
+    if (!shipper?.key || savingKey || savedKeys.has(shipper.key)) return;
+    setSavingKey(shipper.key);
+    try {
+      await saveCompanyToCrm({
+        company_id: shipper.key,
+        company_name:
+          shipper.title || shipper.name || shipper.normalizedName || "Company",
+        source: "importyeti-search",
+      });
+      setSavedKeys((prev) => {
+        const next = new Set(prev);
+        next.add(shipper.key);
+        return next;
+      });
+    } catch (error) {
+      console.error("saveCompanyToCrm failed", error);
+    } finally {
+      setSavingKey(null);
+    }
   };
 
   useEffect(() => {
@@ -270,14 +320,14 @@ export default function SearchPage() {
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {results.map((shipper) => (
-            <button
-              key={shipper.key || shipper.title}
-              type="button"
-              onClick={() => handleCardClick(shipper)}
-              className="text-left"
-            >
-              <ShipperCard shipper={shipper} />
-            </button>
+            <div key={shipper.key || shipper.title} className="text-left">
+              <ShipperCard
+                shipper={shipper}
+                onViewDetails={handleCardClick}
+                onToggleSaved={handleSaveToCommandCenter}
+                isSaved={Boolean(shipper.key && savedKeys.has(shipper.key))}
+              />
+            </div>
           ))}
         </div>
 
@@ -326,11 +376,15 @@ export default function SearchPage() {
         companyProfile={companyProfile}
         profileLoading={profileLoading}
         profileError={profileError}
+        isSaved={
+          !!(selectedShipper?.key && savedKeys.has(selectedShipper.key))
+        }
         onClose={handleModalClose}
-        onSaveToCommandCenter={() => {
-          // TODO: wire to Command Center save endpoint
-        }}
-        saveLoading={false}
+        onSaveToCommandCenter={handleSaveToCommandCenter}
+        onToggleSaved={handleSaveToCommandCenter}
+        saveLoading={
+          !!(selectedShipper?.key && savingKey === selectedShipper.key)
+        }
       />
     </div>
   );
