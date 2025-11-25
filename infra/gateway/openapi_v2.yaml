@@ -124,7 +124,6 @@ paths:
         "500":
           description: Internal error
       x-google-backend:
-        # Use the SAME address as your other /public/iy/* routes
         address: __SERVICE_URL__
         jwt_audience: __SERVICE_URL__
       x-google-cors:
@@ -161,3 +160,44 @@ paths:
         - { name: range, in: query, type: string, required: false }
       responses: { "200": { description: "ok" } }
 
+  /crm/saveCompany:
+    options:
+      operationId: cors_crmSaveCompany
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    post:
+      operationId: crmSaveCompany
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      consumes:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              company_id: { type: string }
+              stage:      { type: string }
+              provider:   { type: string }
+              payload:    { type: object }
+      responses: { "200": { description: "ok" } }
+
+  /crm/savedCompanies:
+    options:
+      operationId: cors_crmSavedCompanies
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    get:
+      operationId: crmSavedCompanies
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - name: stage
+          in: query
+          required: false
+          type: string
+      responses: { "200": { description: "ok" } }
