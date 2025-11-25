@@ -15,7 +15,7 @@ const Campaigns      = lazy(() => import("@/pages/Campaigns"));
 const CampaignBuilder= lazy(() => import("@/pages/CampaignBuilder"));
 const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));
 const RFPStudio      = lazy(() => import("@/pages/RFPStudio"));
-const Settings       = lazy(() => import("@/pages/Settings"));
+const Settings       = lazy(() => import("@/pages/SettingsPage"));
 const Billing        = lazy(() => import("@/pages/Billing"));
 const AffiliateDash  = lazy(() => import("@/pages/AffiliateDashboard"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
@@ -69,6 +69,12 @@ export default function App() {
           path="/search"
           element={
             <Layout currentPageName="Search"><Search /></Layout>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <Layout currentPageName="Settings"><Settings /></Layout>
           }
         />
         <Route
