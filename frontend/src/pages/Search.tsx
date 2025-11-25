@@ -1,19 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
 import SearchFilters from "@/components/search/SearchFilters";
 import {
   searchShippers,
   getIyCompanyProfile,
-  getSavedCompanies,
-  saveCompany,
+  listSavedCompanies,
+  saveCompanyToCrm,
   ensureCompanyKey,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
   type IyCompanyProfile,
 } from "@/lib/api";
-import type { CommandCenterRecord } from "@/types/importyeti";
+import { useToast } from "@/components/ui/use-toast";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
@@ -54,8 +54,20 @@ export default function SearchPage() {
     useState<IyCompanyProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
-  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [savedCompanies, setSavedCompanies] = useState<{ company_id: string }[]>(
+    [],
+  );
+  const [savingCompanyId, setSavingCompanyId] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const savedCompanyIds = useMemo(() => {
+    const ids = new Set<string>();
+    savedCompanies.forEach((entry) => {
+      const normalized = ensureCompanyKey(entry?.company_id ?? "");
+      if (normalized) ids.add(normalized);
+    });
+    return ids;
+  }, [savedCompanies]);
 
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
@@ -152,26 +164,32 @@ export default function SearchPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    getSavedCompanies(controller.signal)
-      .then((response) => {
-        const rows = Array.isArray(response?.rows) ? response.rows : [];
-        const next = new Set<string>();
-        rows.forEach((record: any) => {
-          const companyId = (
-            record?.company?.company_id ??
-            record?.company_id ??
-            record?.company?.id ??
-            ""
-          ).trim();
-          const normalized = ensureCompanyKey(companyId);
-          if (normalized) {
-            next.add(normalized);
-          }
-        });
-        setSavedKeys(next);
+    listSavedCompanies("prospect")
+      .then((rows) => {
+        const normalized = Array.isArray(rows)
+          ? rows
+              .map((record: any) => {
+                const rawId = (
+                  record?.company?.company_id ??
+                  record?.company_id ??
+                  record?.company?.id ??
+                  ""
+                ).trim();
+                const companyId = ensureCompanyKey(rawId);
+                return companyId ? { company_id: companyId } : null;
+              })
+              .filter(
+                (
+                  entry,
+                ): entry is {
+                  company_id: string;
+                } => Boolean(entry),
+              )
+          : [];
+        setSavedCompanies(normalized);
       })
       .catch((err) => {
-        console.error("getSavedCompanies failed", err);
+        console.error("listSavedCompanies failed", err);
       });
     return () => controller.abort();
   }, []);
@@ -188,56 +206,77 @@ export default function SearchPage() {
     );
   };
 
-  const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
-    if (!shipper || savingKey) return;
-    const companyId = getCanonicalCompanyId(shipper);
-    if (!companyId) {
-      console.warn("[LIT] Save to Command Center skipped (missing id)", {
-        shipper,
-      });
-      return;
-    }
-    if (savedKeys.has(companyId)) return;
+  const isShipperSaved = useCallback(
+    (shipper?: IyShipperHit | null) => {
+      if (!shipper) return false;
+      const companyId = getCanonicalCompanyId(shipper);
+      if (!companyId) return false;
+      return savedCompanyIds.has(companyId);
+    },
+    [savedCompanyIds],
+  );
 
-    const record: CommandCenterRecord = {
-      company: {
-        company_id: companyId,
-        name: shipper.title || shipper.name || "Company",
-        source: "lit-search",
-        address: shipper.address ?? null,
-        country_code: shipper.countryCode ?? null,
-        kpis: {
-          shipments_12m:
-            shipper.totalShipments ?? shipper.shipmentsLast12m ?? 0,
-          last_activity:
-            shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null,
-        },
-        extras: shipper.topSuppliers
-          ? { top_suppliers: shipper.topSuppliers }
-          : undefined,
-      },
-      shipments: [],
-      created_at: new Date().toISOString(),
-    };
+  const handleSaveToCommandCenter = useCallback(
+    async (shipper?: IyShipperHit | null) => {
+      if (!shipper) return;
+      const companyId = getCanonicalCompanyId(shipper);
+      if (!companyId) {
+        toast({
+          variant: "destructive",
+          title: "Missing company ID",
+          description: "Unable to save this company.",
+        });
+        return;
+      }
+      if (savedCompanyIds.has(companyId)) {
+        toast({
+          title: "Already saved",
+          description: "This company is already in Command Center.",
+        });
+        return;
+      }
+      if (savingCompanyId === companyId) return;
 
-    setSavingKey(companyId);
-    try {
-      await saveCompany(record);
-      setSavedKeys((prev) => {
-        const next = new Set(prev);
-        next.add(companyId);
-        return next;
-      });
-    } catch (err) {
-      console.error("[LIT] Save to Command Center failed", {
-        shipper,
-        err,
-        companyId,
-      });
-    } finally {
-      setSavingKey(null);
-    }
-  };
+      setSavingCompanyId(companyId);
+      try {
+        await saveCompanyToCrm({ company: shipper });
+        setSavedCompanies((prev) => {
+          if (
+            prev.some(
+              (entry) => ensureCompanyKey(entry.company_id) === companyId,
+            )
+          ) {
+            return prev;
+          }
+          return [...prev, { company_id: companyId }];
+        });
+        toast({
+          title: "Saved to Command Center",
+          description: `${
+            shipper.title || shipper.name || "Company"
+          } has been saved.`,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to save this company right now.";
+        toast({
+          variant: "destructive",
+          title: "Save failed",
+          description: message,
+        });
+        console.error("[LIT] Save to Command Center failed", {
+          shipper,
+          error,
+          companyId,
+        });
+      } finally {
+        setSavingCompanyId(null);
+      }
+    },
+    [getCanonicalCompanyId, savedCompanyIds, savingCompanyId, toast],
+  );
 
   const hasAdvancedFilters =
     originCity ||
@@ -398,7 +437,8 @@ export default function SearchPage() {
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredResults.map((shipper) => {
             const companyId = getCanonicalCompanyId(shipper);
-            const saved = companyId ? savedKeys.has(companyId) : false;
+            const saved = companyId ? savedCompanyIds.has(companyId) : false;
+            const saving = companyId ? savingCompanyId === companyId : false;
             return (
               <div key={shipper.key || shipper.title} className="text-left">
                 <ShipperCard
@@ -406,6 +446,7 @@ export default function SearchPage() {
                   onViewDetails={handleCardClick}
                   onToggleSaved={handleSaveToCommandCenter}
                   isSaved={saved}
+                  saving={saving}
                 />
               </div>
             );
@@ -457,11 +498,13 @@ export default function SearchPage() {
         companyProfile={companyProfile}
         profileLoading={profileLoading}
         profileError={profileError}
-        isSaved={!!(selectedCompanyId && savedKeys.has(selectedCompanyId))}
+        isSaved={isShipperSaved(selectedShipper)}
         onClose={handleModalClose}
         onSaveToCommandCenter={handleSaveToCommandCenter}
         onToggleSaved={handleSaveToCommandCenter}
-        saveLoading={!!(savingKey && selectedCompanyId === savingKey)}
+        saveLoading={Boolean(
+          selectedCompanyId && savingCompanyId === selectedCompanyId,
+        )}
       />
 
       {filtersOpen && (

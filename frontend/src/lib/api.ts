@@ -1598,69 +1598,12 @@ export async function getIyRouteKpisForCompany(
   }
 }
 
-export async function saveCompany(
-  record: CommandCenterRecord,
-): Promise<{ saved_id?: string }> {
-  const company = record?.company ?? ({} as CompanyLite);
-  const rawId =
-    (company as any)?.companyKey ??
-    company.company_id ??
-    (record as any)?.company_id ??
-    (record as any)?.companyKey ??
-    (record as any)?.key ??
-    company.name ??
-    "";
-  const normalizedId = ensureCompanyKey(rawId);
-  if (!normalizedId) {
-    console.warn("[LIT] saveCompany called with invalid id:", {
-      record,
-      rawId,
-    });
-    throw new Error("saveCompany requires a valid company id");
-  }
-  const payload: CommandCenterRecord = {
-    ...record,
-    company: {
-      ...record.company,
-      company_id: normalizedId,
-    },
-  };
-  const res = await fetch(
-    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        company_id: normalizedId,
-        stage: "prospect",
-        provider: payload.company.source,
-        payload,
-      }),
-    },
-  );
-  if (!res.ok) {
-    let errorBody: any = null;
-    try {
-      errorBody = await res.json();
-    } catch {
-      // ignore body parse issues
-    }
-    if (typeof window !== "undefined") {
-      console.warn("[LIT] saveCompany failed", {
-        status: res.status,
-        statusText: res.statusText,
-        errorBody,
-      });
-    }
-    throw new Error(`saveCompany failed with status ${res.status}`);
-  }
-  return res.json();
-}
-
-export async function listSavedCompanies(): Promise<CommandCenterRecord[]> {
+export async function listSavedCompanies(
+  stage = "prospect",
+): Promise<CommandCenterRecord[]> {
   const res = await fetch(
     withGatewayKey(
-      `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=prospect`,
+      `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=${encodeURIComponent(stage)}`,
     ),
     {
       method: "GET",
@@ -1670,8 +1613,17 @@ export async function listSavedCompanies(): Promise<CommandCenterRecord[]> {
   if (!res.ok) {
     throw new Error(`listSavedCompanies failed: ${res.status}`);
   }
-  const data = await res.json();
-  return Array.isArray(data?.rows) ? data.rows : [];
+  const data = await res.json().catch(() => []);
+  if (Array.isArray(data)) {
+    return data as CommandCenterRecord[];
+  }
+  if (Array.isArray((data as any)?.rows)) {
+    return (data as any).rows as CommandCenterRecord[];
+  }
+  if (Array.isArray((data as any)?.data?.rows)) {
+    return (data as any).data.rows as CommandCenterRecord[];
+  }
+  return [];
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
@@ -1849,31 +1801,66 @@ export async function getFilterOptionsOnce(
   return _filtersInflight;
 }
 
-export async function saveCompanyToCrm(payload: {
-  company_id: string;
-  company_name: string;
-  notes?: string | null;
-  source?: string;
-}) {
-  const normalizedId = ensureCompanyKey(payload.company_id);
-  if (!normalizedId) {
-    console.warn("[LIT] saveCompanyToCrm called with invalid id:", payload);
+type SaveCompanyToCrmInput =
+  | { company: Record<string, any> }
+  | Record<string, any>;
+
+export async function saveCompanyToCrm(
+  input: SaveCompanyToCrmInput,
+): Promise<any> {
+  const company =
+    (input as { company?: Record<string, any> }).company ?? input ?? {};
+  const rawId =
+    (company as any)?.companyKey ||
+    (company as any)?.key ||
+    (company as any)?.company_id ||
+    (company as any)?.companyId ||
+    (company as any)?.id ||
+    (company as any)?.name ||
+    (company as any)?.company_name ||
+    (company as any)?.title ||
+    "";
+  const companyId = ensureCompanyKey(rawId);
+  if (!companyId) {
+    console.warn("[LIT] saveCompanyToCrm called with invalid company payload:", {
+      company,
+      rawId,
+    });
     throw new Error("saveCompanyToCrm requires a valid company id");
   }
-  const res = await fetch(`${GW}/crm/saveCompany`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      ...payload,
-      company_id: normalizedId,
-      source: payload.source ?? "search",
-    }),
-  });
-  if (!res.ok)
-    throw new Error(
-      `saveCompanyToCrm failed: ${res.status} ${await res.text().catch(() => "")}`,
-    );
-  return await res.json();
+
+  const res = await fetch(
+    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        company_id: companyId,
+        stage: "prospect",
+        provider: "importyeti",
+        payload: company,
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    let errorBody: any = null;
+    try {
+      errorBody = await res.json();
+    } catch {
+      // swallow parse error
+    }
+    if (typeof window !== "undefined") {
+      console.warn("[LIT] saveCompanyToCrm failed", {
+        status: res.status,
+        statusText: res.statusText,
+        errorBody,
+      });
+    }
+    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
+  }
+
+  return res.json();
 }
 
 export function buildCompanyShipmentsUrl(
