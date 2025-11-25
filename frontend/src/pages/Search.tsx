@@ -7,7 +7,6 @@ import {
   getIyCompanyProfile,
   getSavedCompanies,
   saveCompany,
-  saveCompanyToCrm,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
@@ -174,16 +173,36 @@ export default function SearchPage() {
     return () => controller.abort();
   }, []);
 
+  const deriveIdentifier = (shipper: IyShipperHit) => {
+    const explicit = shipper.key || shipper.companyId;
+    if (explicit) return explicit;
+    const fallback =
+      shipper.title || shipper.name || shipper.normalizedName || "shipper";
+    const slug = fallback
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return `name:${slug || "shipper"}`;
+  };
+
+  const collectIds = (shipper: IyShipperHit | null) => {
+    if (!shipper) return [];
+    const ids = [
+      shipper.key,
+      shipper.companyId,
+      deriveIdentifier(shipper),
+    ].filter(Boolean) as string[];
+    return Array.from(new Set(ids));
+  };
+
   const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
-    if (!shipper?.key || savingKey) return;
-    const primaryId = shipper.key;
-    const fallbackId =
-      shipper.companyId || shipper.title || shipper.name || primaryId;
-    if (savedKeys.has(primaryId) || savedKeys.has(fallbackId)) return;
+    if (!shipper || savingKey) return;
+    const ids = collectIds(shipper);
+    if (!ids.length || ids.some((id) => savedKeys.has(id))) return;
 
     const record: CommandCenterRecord = {
       company: {
-        company_id: primaryId,
+        company_id: ids[0],
         name: shipper.title || shipper.name || "Company",
         source: "importyeti",
         address: shipper.address ?? null,
@@ -202,20 +221,12 @@ export default function SearchPage() {
       created_at: new Date().toISOString(),
     };
 
-    setSavingKey(primaryId);
+    setSavingKey(ids[0]);
     try {
-      await saveCompanyToCrm({
-        company_id: primaryId,
-        company_name: shipper.title || shipper.name || "Company",
-        source: "importyeti-search",
-      });
-      await saveCompany(record).catch((error) => {
-        console.warn("saveCompany supplemental payload failed", error);
-      });
+      await saveCompany(record);
       setSavedKeys((prev) => {
         const next = new Set(prev);
-        next.add(primaryId);
-        if (fallbackId) next.add(fallbackId);
+        ids.forEach((id) => next.add(id));
         return next;
       });
     } catch (error) {
@@ -385,16 +396,21 @@ export default function SearchPage() {
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredResults.map((shipper) => (
-            <div key={shipper.key || shipper.title} className="text-left">
-              <ShipperCard
-                shipper={shipper}
-                onViewDetails={handleCardClick}
-                onToggleSaved={handleSaveToCommandCenter}
-                isSaved={Boolean(shipper.key && savedKeys.has(shipper.key))}
-              />
-            </div>
-          ))}
+          {filteredResults.map((shipper) => {
+            const saved = collectIds(shipper).some((id) =>
+              savedKeys.has(id),
+            );
+            return (
+              <div key={shipper.key || shipper.title} className="text-left">
+                <ShipperCard
+                  shipper={shipper}
+                  onViewDetails={handleCardClick}
+                  onToggleSaved={handleSaveToCommandCenter}
+                  isSaved={saved}
+                />
+              </div>
+            );
+          })}
         </div>
 
         {total > PAGE_SIZE && (
@@ -442,14 +458,15 @@ export default function SearchPage() {
         companyProfile={companyProfile}
         profileLoading={profileLoading}
         profileError={profileError}
-        isSaved={
-          !!(selectedShipper?.key && savedKeys.has(selectedShipper.key))
-        }
+        isSaved={collectIds(selectedShipper).some((id) => savedKeys.has(id))}
         onClose={handleModalClose}
         onSaveToCommandCenter={handleSaveToCommandCenter}
         onToggleSaved={handleSaveToCommandCenter}
         saveLoading={
-          !!(selectedShipper?.key && savingKey === selectedShipper.key)
+          !!(
+            savingKey &&
+            collectIds(selectedShipper).some((id) => id === savingKey)
+          )
         }
       />
 
