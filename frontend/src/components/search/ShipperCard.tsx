@@ -4,6 +4,7 @@ import {
   BookmarkCheck,
   Calendar,
   Globe,
+  Loader2,
   MapPin,
 } from "lucide-react";
 import type { IyShipperHit } from "@/lib/api";
@@ -56,6 +57,7 @@ type Props = {
   onViewDetails?: (shipper: IyShipperHit) => void;
   isSaved?: boolean;
   onToggleSaved?: (shipper: IyShipperHit) => void;
+  saving?: boolean;
 };
 
 export default function ShipperCard({
@@ -63,6 +65,7 @@ export default function ShipperCard({
   onViewDetails,
   isSaved = false,
   onToggleSaved,
+  saving = false,
 }: Props) {
   const displayName = shipper.title || shipper.name || "LIT Search shipper";
   const flagEmoji = countryCodeToEmoji(shipper.countryCode);
@@ -112,11 +115,18 @@ export default function ShipperCard({
         {onToggleSaved && (
           <button
             type="button"
-            onClick={() => onToggleSaved(shipper)}
-            className="rounded-full border border-slate-200 p-2 text-slate-500 hover:text-slate-900"
+            onClick={() => !saving && onToggleSaved(shipper)}
+            className="rounded-full border border-slate-200 p-2 text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
             aria-label={isSaved ? "Remove from saved" : "Save company"}
+            disabled={saving}
           >
-            {isSaved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+            ) : isSaved ? (
+              <BookmarkCheck className="h-4 w-4" />
+            ) : (
+              <Bookmark className="h-4 w-4" />
+            )}
           </button>
         )}
       </div>
