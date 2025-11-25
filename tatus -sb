@@ -1,0 +1,64 @@
+[1mdiff --git a/infra/gateway/openapi_v2.yaml b/infra/gateway/openapi_v2.yaml[m
+[1mindex 2be70a2..7b582a9 100644[m
+[1m--- a/infra/gateway/openapi_v2.yaml[m
+[1m+++ b/infra/gateway/openapi_v2.yaml[m
+[36m@@ -104,32 +104,32 @@[m [mpaths:[m
+         - { name: offset,     in: query, type: integer, required: false }[m
+       responses: { "200": { description: "ok" } }[m
+ [m
+[31m-    /public/iy/companyLatestBol:[m
+[31m-      options:[m
+[31m-        operationId: cors_iyCompanyLatestBol[m
+[31m-        security: [][m
+[31m-        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[31m-        responses: { "200": { description: "ok" } }[m
+[31m-      get:[m
+[31m-        operationId: iyCompanyLatestBol[m
+[31m-        security: [][m
+[31m-        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[31m-        parameters:[m
+[31m-          - { name: company, in: query, type: string, required: true }[m
+[31m-        responses: { "200": { description: "ok" } }[m
+[32m+[m[32m  /public/iy/companyLatestBol:[m
+[32m+[m[32m    options:[m
+[32m+[m[32m      operationId: cors_iyCompanyLatestBol[m
+[32m+[m[32m      security: [][m
+[32m+[m[32m      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[32m+[m[32m      responses: { "200": { description: "ok" } }[m
+[32m+[m[32m    get:[m
+[32m+[m[32m      operationId: iyCompanyLatestBol[m
+[32m+[m[32m      security: [][m
+[32m+[m[32m      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[32m+[m[32m      parameters:[m
+[32m+[m[32m        - { name: company, in: query, type: string, required: true }[m
+[32m+[m[32m      responses: { "200": { description: "ok" } }[m
+ [m
+[31m-    /public/iy/companyStats:[m
+[31m-      options:[m
+[31m-        operationId: cors_iyCompanyStats[m
+[31m-        security: [][m
+[31m-        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[31m-        responses: { "200": { description: "ok" } }[m
+[31m-      get:[m
+[31m-        operationId: iyCompanyStats[m
+[31m-        security: [][m
+[31m-        x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[31m-        parameters:[m
+[31m-          - { name: company, in: query, type: string, required: true }[m
+[31m-          - { name: range, in: query, type: string, required: false }[m
+[31m-        responses: { "200": { description: "ok" } }[m
+[32m+[m[32m  /public/iy/companyStats:[m
+[32m+[m[32m    options:[m
+[32m+[m[32m      operationId: cors_iyCompanyStats[m
+[32m+[m[32m      security: [][m
+[32m+[m[32m      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[32m+[m[32m      responses: { "200": { description: "ok" } }[m
+[32m+[m[32m    get:[m
+[32m+[m[32m      operationId: iyCompanyStats[m
+[32m+[m[32m      security: [][m
+[32m+[m[32m      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }[m
+[32m+[m[32m      parameters:[m
+[32m+[m[32m        - { name: company, in: query, type: string, required: true }[m
+[32m+[m[32m        - { name: range, in: query, type: string, required: false }[m
+[32m+[m[32m      responses: { "200": { description: "ok" } }[m
+ [m
