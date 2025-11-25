@@ -6,13 +6,12 @@ import {
   searchShippers,
   getIyCompanyProfile,
   getSavedCompanies,
-  saveCompany,
+  saveCompanyToCrm,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
   type IyCompanyProfile,
 } from "@/lib/api";
-import type { CommandCenterRecord } from "@/types/importyeti";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
@@ -174,42 +173,28 @@ export default function SearchPage() {
   }, []);
 
   const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
-    if (!shipper?.key || savingKey || savedKeys.has(shipper.key)) return;
-    setSavingKey(shipper.key);
-    const companyId =
-      shipper.key || shipper.companyId || shipper.title || shipper.name || "";
-    const record: CommandCenterRecord = {
-      company: {
-        company_id: companyId,
-        name: shipper.title || shipper.name || "Company",
-        source: "importyeti",
-        address: shipper.address ?? null,
-        country_code: shipper.countryCode ?? null,
-        kpis: {
-          shipments_12m:
-            shipper.totalShipments ?? shipper.shipmentsLast12m ?? 0,
-          last_activity:
-            shipper.lastShipmentDate ??
-            shipper.mostRecentShipment ??
-            shipper.lastShipmentDate ??
-            null,
-        },
-        extras: {
-          top_suppliers: shipper.topSuppliers ?? undefined,
-        },
-      },
-      shipments: [],
-      created_at: new Date().toISOString(),
-    };
+    if (!shipper?.key || savingKey) return;
+    const key = shipper.key;
+    const fallbackId =
+      shipper.companyId || shipper.title || shipper.name || shipper.key;
+    const primaryId = key || fallbackId;
+    if (savedKeys.has(primaryId) || savedKeys.has(fallbackId)) return;
+
+    setSavingKey(primaryId);
     try {
-      await saveCompany(record);
+      await saveCompanyToCrm({
+        company_id: primaryId,
+        company_name: shipper.title || shipper.name || "Company",
+        source: "importyeti-search",
+      });
       setSavedKeys((prev) => {
         const next = new Set(prev);
-        next.add(companyId);
+        next.add(primaryId);
+        if (fallbackId) next.add(fallbackId);
         return next;
       });
     } catch (error) {
-      console.error("saveCompany failed", error);
+      console.error("saveCompanyToCrm failed", error);
     } finally {
       setSavingKey(null);
     }
