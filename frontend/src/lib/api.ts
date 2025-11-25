@@ -91,6 +91,7 @@ export interface IyShipperHit {
   companyId: string;
   name: string;
   title: string;
+  companyKey?: string | null;
   normalizedName?: string | null;
   domain?: string | null;
   website?: string | null;
@@ -745,7 +746,7 @@ export type IySearchRow = {
 
 const IY_COMPANY_KEY_PREFIX = "company/";
 
-function ensureCompanyKey(value: string) {
+export function ensureCompanyKey(value: string) {
   const trimmed = (value ?? "").trim();
   if (!trimmed) return "";
   return trimmed.startsWith(IY_COMPANY_KEY_PREFIX)
@@ -890,6 +891,8 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
     normalizeString(entry?.last_activity) ??
     null;
 
+  const companyKey = companyId || fallbackKey;
+
   return {
     key: companyId,
     companyId,
@@ -922,6 +925,7 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
               typeof item === "string" && item.trim().length,
           ) ?? null
         : null,
+    companyKey,
   };
 }
 
@@ -1597,9 +1601,21 @@ export async function getIyRouteKpisForCompany(
 export async function saveCompany(
   record: CommandCenterRecord,
 ): Promise<{ saved_id?: string }> {
-  const normalizedId = ensureCompanyKey(record?.company?.company_id ?? "");
+  const company = record?.company ?? ({} as CompanyLite);
+  const rawId =
+    (company as any)?.companyKey ??
+    company.company_id ??
+    (record as any)?.company_id ??
+    (record as any)?.companyKey ??
+    (record as any)?.key ??
+    company.name ??
+    "";
+  const normalizedId = ensureCompanyKey(rawId);
   if (!normalizedId) {
-    console.warn("[LIT] saveCompany called with invalid id:", record?.company);
+    console.warn("[LIT] saveCompany called with invalid id:", {
+      record,
+      rawId,
+    });
     throw new Error("saveCompany requires a valid company id");
   }
   const payload: CommandCenterRecord = {
@@ -1623,7 +1639,20 @@ export async function saveCompany(
     },
   );
   if (!res.ok) {
-    throw new Error(`saveCompany failed: ${res.status}`);
+    let errorBody: any = null;
+    try {
+      errorBody = await res.json();
+    } catch {
+      // ignore body parse issues
+    }
+    if (typeof window !== "undefined") {
+      console.warn("[LIT] saveCompany failed", {
+        status: res.status,
+        statusText: res.statusText,
+        errorBody,
+      });
+    }
+    throw new Error(`saveCompany failed with status ${res.status}`);
   }
   return res.json();
 }

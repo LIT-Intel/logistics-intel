@@ -7,6 +7,7 @@ import {
   getIyCompanyProfile,
   getSavedCompanies,
   saveCompany,
+  ensureCompanyKey,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
@@ -21,7 +22,7 @@ type ActivityFilter = "12m" | "24m" | "all";
 const PAGE_SIZE = 25;
 
 export default function SearchPage() {
-  const [query, setQuery] = useState("walmart");
+  const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ModeFilter>("any");
   const [region, setRegion] = useState<RegionFilter>("global");
   const [activity, setActivity] = useState<ActivityFilter>("12m");
@@ -162,8 +163,9 @@ export default function SearchPage() {
             record?.company?.id ??
             ""
           ).trim();
-          if (companyId) {
-            next.add(companyId);
+          const normalized = ensureCompanyKey(companyId);
+          if (normalized) {
+            next.add(normalized);
           }
         });
         setSavedKeys(next);
@@ -176,7 +178,14 @@ export default function SearchPage() {
 
   const getCanonicalCompanyId = (shipper: IyShipperHit | null) => {
     if (!shipper) return "";
-    return (shipper.key || shipper.companyId || "").trim();
+    return ensureCompanyKey(
+      shipper.companyKey ||
+        shipper.key ||
+        shipper.companyId ||
+        shipper.name ||
+        shipper.title ||
+        "",
+    );
   };
 
   const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
@@ -220,16 +229,15 @@ export default function SearchPage() {
         return next;
       });
     } catch (err) {
-      console.warn("[LIT] Save to Command Center failed", { shipper, err });
+      console.error("[LIT] Save to Command Center failed", {
+        shipper,
+        err,
+        companyId,
+      });
     } finally {
       setSavingKey(null);
     }
   };
-
-  useEffect(() => {
-    void fetchShippers(query, 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const hasAdvancedFilters =
     originCity ||
@@ -331,7 +339,7 @@ export default function SearchPage() {
             </label>
             <input
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="Search shippers (e.g. Walmart, Nike, Home Depot)"
+              placeholder="Search shippers (e.g. Nike, Home Depot)"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
