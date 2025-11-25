@@ -6,12 +6,13 @@ import {
   searchShippers,
   getIyCompanyProfile,
   getSavedCompanies,
-  saveCompanyToCrm,
+  saveCompany,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
   type IyCompanyProfile,
 } from "@/lib/api";
+import type { CommandCenterRecord } from "@/types/importyeti";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
@@ -175,20 +176,40 @@ export default function SearchPage() {
   const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
     if (!shipper?.key || savingKey || savedKeys.has(shipper.key)) return;
     setSavingKey(shipper.key);
+    const companyId =
+      shipper.key || shipper.companyId || shipper.title || shipper.name || "";
+    const record: CommandCenterRecord = {
+      company: {
+        company_id: companyId,
+        name: shipper.title || shipper.name || "Company",
+        source: "importyeti",
+        address: shipper.address ?? null,
+        country_code: shipper.countryCode ?? null,
+        kpis: {
+          shipments_12m:
+            shipper.totalShipments ?? shipper.shipmentsLast12m ?? 0,
+          last_activity:
+            shipper.lastShipmentDate ??
+            shipper.mostRecentShipment ??
+            shipper.lastShipmentDate ??
+            null,
+        },
+        extras: {
+          top_suppliers: shipper.topSuppliers ?? undefined,
+        },
+      },
+      shipments: [],
+      created_at: new Date().toISOString(),
+    };
     try {
-      await saveCompanyToCrm({
-        company_id: shipper.key,
-        company_name:
-          shipper.title || shipper.name || shipper.normalizedName || "Company",
-        source: "importyeti-search",
-      });
+      await saveCompany(record);
       setSavedKeys((prev) => {
         const next = new Set(prev);
-        next.add(shipper.key);
+        next.add(companyId);
         return next;
       });
     } catch (error) {
-      console.error("saveCompanyToCrm failed", error);
+      console.error("saveCompany failed", error);
     } finally {
       setSavingKey(null);
     }

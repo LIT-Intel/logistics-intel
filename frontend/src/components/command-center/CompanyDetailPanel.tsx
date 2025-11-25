@@ -18,6 +18,7 @@ import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import CompanyActivityChart from "./CompanyActivityChart";
 import CommandCenterInsights from "./CommandCenterInsights";
+import CommandCenterEmptyState from "./CommandCenterEmptyState";
 
 type CompanyDetailPanelProps = {
   record: CommandCenterRecord | null;
@@ -215,11 +216,7 @@ export default function CompanyDetailPanel({
   }>;
 
   if (!key) {
-    return (
-      <section className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-600 shadow-sm">
-        <p>Save a shipper to Command Center to see shipment intelligence here.</p>
-      </section>
-    );
+    return <CommandCenterEmptyState />;
   }
 
   return (
