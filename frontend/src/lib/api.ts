@@ -1609,16 +1609,19 @@ export async function saveCompany(
       company_id: normalizedId,
     },
   };
-  const res = await fetch(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      company_id: normalizedId,
-      stage: "prospect",
-      provider: payload.company.source,
-      payload,
-    }),
-  });
+  const res = await fetch(
+    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        company_id: normalizedId,
+        stage: "prospect",
+        provider: payload.company.source,
+        payload,
+      }),
+    },
+  );
   if (!res.ok) {
     throw new Error(`saveCompany failed: ${res.status}`);
   }
@@ -1627,7 +1630,9 @@ export async function saveCompany(
 
 export async function listSavedCompanies(): Promise<CommandCenterRecord[]> {
   const res = await fetch(
-    `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=prospect`,
+    withGatewayKey(
+      `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=prospect`,
+    ),
     {
       method: "GET",
       headers: { accept: "application/json" },
