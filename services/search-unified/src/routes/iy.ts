@@ -108,15 +108,128 @@ async function iySearch(
 
   const start = (page - 1) * pageSize;
   const end = start + pageSize;
-  const rows = allRows.slice(start, end);
+  const rawRows = allRows.slice(start, end);
   const total = allRows.length;
+
+  const normalizedRows = rawRows.map((row: any, index: number) => {
+    const fallbackTitle =
+      row?.title ?? row?.name ?? row?.company_name ?? `Company ${index + 1}`;
+    const normalizedTitle =
+      typeof fallbackTitle === "string" ? fallbackTitle : `Company ${index + 1}`;
+
+    const slugFromTitle = (() => {
+      const base = normalizedTitle.toLowerCase().trim();
+      if (!base) return `company-${index + 1}`;
+      return base.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    })();
+
+    const key =
+      row?.key ??
+      row?.slug ??
+      row?.company_slug ??
+      row?.company_id ??
+      (slugFromTitle ? `company/${slugFromTitle}` : `company-${index + 1}`);
+
+    const rawWebsite =
+      row?.website ??
+      row?.company_website ??
+      row?.url ??
+      row?.company_url ??
+      null;
+    const website =
+      typeof rawWebsite === "string" && rawWebsite.trim().length
+        ? rawWebsite.trim()
+        : null;
+
+    const rawPhone =
+      row?.phone ??
+      row?.company_phone ??
+      row?.phone_number ??
+      row?.company_phone_number ??
+      null;
+    const phone =
+      typeof rawPhone === "string" && rawPhone.trim().length
+        ? rawPhone.trim()
+        : null;
+
+    let domain =
+      row?.domain ??
+      row?.company_domain ??
+      (row?.website_domain ?? null);
+
+    if (!domain && website) {
+      try {
+        const parsed = new URL(
+          website.startsWith("http") ? website : `https://${website}`,
+        );
+        domain = parsed.hostname;
+      } catch {
+        // ignore invalid URL parsing
+      }
+    }
+
+    const derivedAddress = [
+      row?.address_line1,
+      row?.city ?? row?.company_city,
+      row?.state ?? row?.company_state,
+      row?.postal_code ?? row?.zip ?? row?.company_zip,
+      row?.country ?? row?.company_country,
+    ]
+      .filter((part) => typeof part === "string" && part.trim().length)
+      .join(", ");
+
+    const address =
+      row?.address ??
+      row?.full_address ??
+      row?.company_address ??
+      (derivedAddress || null);
+
+    const totalShipments =
+      row?.totalShipments ??
+      row?.total_shipments ??
+      row?.shipments_12m ??
+      row?.shipmentsLast12m ??
+      row?.shipments_last_12m ??
+      null;
+
+    const mostRecentShipment =
+      row?.mostRecentShipment ??
+      row?.last_shipment_date ??
+      row?.most_recent_shipment ??
+      row?.lastShipmentDate ??
+      null;
+
+    const topSuppliers = Array.isArray(row?.topSuppliers)
+      ? row.topSuppliers
+      : Array.isArray(row?.top_suppliers)
+        ? row.top_suppliers
+        : null;
+
+    return {
+      title: normalizedTitle,
+      countryCode:
+        row?.countryCode ??
+        row?.country_code ??
+        row?.company_country_code ??
+        null,
+      type: row?.type ?? row?.company_type ?? null,
+      address,
+      totalShipments,
+      mostRecentShipment,
+      topSuppliers,
+      key,
+      website,
+      phone,
+      domain,
+    };
+  });
 
   return {
     ok: true,
-    rows,
+    rows: normalizedRows,
     total,
     meta: { q: trimmed, page, pageSize },
-    data: { rows, total },
+    data: { rows: normalizedRows, total },
   };
 }
 
@@ -298,6 +411,108 @@ router.post(
           total,
           rows: detailRows,
         },
+      });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+// -----------------------------------------------------------------------------
+// GET /public/iy/companyProfile
+// -----------------------------------------------------------------------------
+
+router.get(
+  "/companyProfile",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const companyRaw =
+        (req.query.company_id ?? req.query.company ?? "").toString() || "";
+
+      const company = companyRaw.trim();
+      if (!company) {
+        return res.status(400).json({
+          ok: false,
+          message: "company_id or company is required",
+        });
+      }
+
+      const slug = company.startsWith("company/")
+        ? company.slice("company/".length)
+        : company;
+
+      const path = `/company/${encodeURIComponent(slug)}`;
+      const resp = await iyGet<any>(path);
+
+      return res.json(resp);
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+// -----------------------------------------------------------------------------
+// GET /public/iy/companyStats
+// -----------------------------------------------------------------------------
+
+router.get(
+  "/companyStats",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const companyRaw = (req.query.company ?? "").toString() || "";
+      const rangeRaw = (req.query.range ?? "").toString();
+      const company = companyRaw.trim();
+      const range = rangeRaw.trim();
+
+      if (!company) {
+        return res
+          .status(400)
+          .json({ ok: false, message: "company is required" });
+      }
+
+      const slug = company.startsWith("company/")
+        ? company.slice("company/".length)
+        : company;
+
+      const search = new URLSearchParams();
+      if (range) search.set("range", range);
+
+      const key = encodeURIComponent(slug);
+      const path = `/company/${key}/stats${
+        search.toString() ? `?${search.toString()}` : ""
+      }`;
+
+      const data = await iyGet<any>(path);
+      return res.json(data);
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+router.get(
+  "/companyProfileRaw",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rawCompany = String(
+        (req.query.company ?? req.query.company_id ?? "") as string,
+      ).trim();
+
+      if (!rawCompany) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "Missing company parameter" });
+      }
+
+      const slug = rawCompany.startsWith("company/")
+        ? rawCompany.slice("company/".length)
+        : rawCompany;
+
+      const resp = await iyGet<any>(`/company/${encodeURIComponent(slug)}`);
+
+      return res.json({
+        ok: true,
+        company: resp,
       });
     } catch (err) {
       return next(err);

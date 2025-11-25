@@ -1,298 +1,425 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import ShipperCard from "@/components/search/ShipperCard";
+import React, { useEffect, useState } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
-import SearchFilters, { type SearchFiltersValue } from "@/components/search/SearchFilters";
+import ShipperCard from "@/components/search/ShipperCard";
 import {
   searchShippers,
-  saveCompanyToCrm,
-  getIyRouteKpisForCompany,
-  type IySearchMeta,
+  getIyCompanyProfile,
   type IyShipperHit,
   type IyRouteKpis,
+  type IyMonthlySeriesPoint,
+  type IyCompanyProfile,
 } from "@/lib/api";
 
-const RESULTS_PER_PAGE = 25;
+type ModeFilter = "any" | "ocean" | "air";
+type RegionFilter = "global" | "americas" | "emea" | "apac";
+type ActivityFilter = "12m" | "24m" | "all";
 
-type FiltersState = SearchFiltersValue;
+const PAGE_SIZE = 25;
 
 export default function SearchPage() {
-  const [shipperQuery, setShipperQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
-  const [shipperPage, setShipperPage] = useState(1);
-  const [shipperResults, setShipperResults] = useState<IyShipperHit[]>([]);
-  const [shipperMeta, setShipperMeta] = useState<IySearchMeta | null>(null);
-  const [shipperLoading, setShipperLoading] = useState(false);
-  const [shipperError, setShipperError] = useState<string | null>(null);
-  const [activeShipper, setActiveShipper] = useState<IyShipperHit | null>(null);
+  const [query, setQuery] = useState("walmart");
+  const [mode, setMode] = useState<ModeFilter>("any");
+  const [region, setRegion] = useState<RegionFilter>("global");
+  const [activity, setActivity] = useState<ActivityFilter>("12m");
+
+  const [page, setPage] = useState(1);
+  const [results, setResults] = useState<IyShipperHit[]>([]);
+  const [total, setTotal] = useState(0);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [selectedShipper, setSelectedShipper] =
+    useState<IyShipperHit | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [filters, setFilters] = useState<FiltersState>({
-    mode: "any",
-    region: "global",
-    activity: "12m",
-  });
+  const [routeKpisLoading, setRouteKpisLoading] = useState(false);
+  const [routeKpisError, setRouteKpisError] = useState<string | null>(null);
+  const [companyProfile, setCompanyProfile] =
+    useState<IyCompanyProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-  const handleSubmit = useCallback(
-    (event?: FormEvent<HTMLFormElement>) => {
-      event?.preventDefault();
-      const trimmed = shipperQuery.trim();
-      setSubmittedQuery(trimmed);
-      setShipperPage(1);
-    },
-    [shipperQuery],
-  );
-
-  useEffect(() => {
-    if (!submittedQuery) {
-      setShipperResults([]);
-      setShipperMeta(null);
-      setShipperError(null);
-      setShipperLoading(false);
+  async function fetchShippers(q: string, pageNum: number) {
+    if (!q.trim()) {
+      setResults([]);
+      setTotal(0);
       return;
     }
 
-    const controller = new AbortController();
-    setShipperLoading(true);
-    setShipperError(null);
+    setLoading(true);
+    setError(null);
 
-    searchShippers(
-      { q: submittedQuery, page: shipperPage, pageSize: RESULTS_PER_PAGE },
-      controller.signal,
-    )
-      .then((res) => {
-        if (controller.signal.aborted) return;
-        setShipperResults(Array.isArray(res.results) ? res.results : []);
-        setShipperMeta(res.meta ?? null);
+    try {
+      const json: any = await searchShippers({
+        q,
+        page: pageNum,
+        pageSize: PAGE_SIZE,
+      });
+
+      const rows: IyShipperHit[] = Array.isArray(json.results)
+        ? json.results
+        : Array.isArray(json.rows)
+          ? json.rows
+          : Array.isArray(json.data?.rows)
+            ? json.data.rows
+            : Array.isArray(json.data)
+              ? json.data
+              : [];
+
+      const totalFromApi: number =
+        typeof json.total === "number"
+          ? json.total
+          : typeof json.data?.total === "number"
+            ? json.data.total
+            : rows.length;
+
+      setResults(rows);
+      setTotal(totalFromApi);
+    } catch (err: any) {
+      console.error("iySearchShippers error:", err);
+      setError(err?.message || "Search failed");
+      setResults([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
+    e.preventDefault();
+    setPage(1);
+    void fetchShippers(query, 1);
+  };
+
+  const handleCardClick = (shipper: IyShipperHit) => {
+    setSelectedShipper(shipper);
+    setIsModalOpen(true);
+
+    setRouteKpisLoading(true);
+    setRouteKpisError(null);
+    try {
+      const kpis = buildMockRouteKpisFromShipper(shipper);
+      setRouteKpis(kpis);
+    } catch (err) {
+      console.error("Failed to build mock route KPIs", err);
+      setRouteKpis(null);
+      setRouteKpisError("Unable to derive route KPI sample for this shipper.");
+    } finally {
+      setRouteKpisLoading(false);
+    }
+
+    setCompanyProfile(null);
+    setProfileError(null);
+    setProfileLoading(true);
+    const keyOrSlug = shipper.key || shipper.title || "";
+    getIyCompanyProfile(keyOrSlug)
+      .then((profile) => {
+        setCompanyProfile(profile);
       })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        setShipperResults([]);
-        setShipperMeta(null);
-        setShipperError(err?.message ?? "ImportYeti search failed. Please try again.");
+      .catch((err: any) => {
+        console.error("getIyCompanyProfile failed", err);
+        setProfileError(
+          err?.message || "Failed to load company profile",
+        );
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
-          setShipperLoading(false);
-        }
+        setProfileLoading(false);
       });
+  };
 
-    return () => controller.abort();
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setSelectedShipper(null);
+  };
+
+  useEffect(() => {
+    void fetchShippers(query, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submittedQuery, shipperPage]);
-
-  const handleViewDetails = useCallback(async (shipper: IyShipperHit) => {
-    if (!shipper) return;
-    setActiveShipper(shipper);
-    setModalLoading(true);
-    setModalError(null);
-    try {
-      const kpis = await getIyRouteKpisForCompany({ companyKey: (shipper as any).key });
-      setRouteKpis(kpis ?? null);
-    } catch (err) {
-      console.warn("getIyRouteKpisForCompany failed", err);
-      setRouteKpis(null);
-      setModalError("Route KPIs unavailable for this shipper.");
-    } finally {
-      setModalLoading(false);
-    }
   }, []);
-
-  const handleCloseModal = useCallback(() => {
-    setActiveShipper(null);
-    setRouteKpis(null);
-    setModalError(null);
-    setModalLoading(false);
-  }, []);
-
-  const handleSaveToCommandCenter = useCallback(async (shipper: IyShipperHit) => {
-    if (!(shipper as any)?.key) return;
-    setSaveLoading(true);
-    try {
-      await saveCompanyToCrm({
-        company_id: (shipper as any).key,
-        company_name: (shipper as any).title,
-        source: "importyeti",
-      });
-    } catch (err) {
-      console.error("saveCompanyToCrm failed", err);
-    } finally {
-      setSaveLoading(false);
-    }
-  }, []);
-
-  const resultSummary = useMemo(() => {
-    if (!submittedQuery || !shipperMeta) return null;
-    const totalLabel = shipperMeta.total?.toLocaleString() ?? "0";
-    return `Showing ${shipperResults.length} of ${totalLabel} results for "${shipperMeta.q}"`;
-  }, [submittedQuery, shipperMeta, shipperResults]);
-
-  const showIntroState = !submittedQuery;
-  const showNoResults = Boolean(submittedQuery && !shipperLoading && shipperResults.length === 0);
-  const totalPages = shipperMeta?.total ? Math.ceil(shipperMeta.total / RESULTS_PER_PAGE) : 0;
-  const hasPrevPage = shipperPage > 1;
-  const hasNextPage = shipperMeta ? shipperPage * RESULTS_PER_PAGE < shipperMeta.total : false;
 
   return (
-    <>
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
-          <header className="flex flex-col gap-4">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-                ImportYeti Shipper Search
-              </h1>
-              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
-                Search the ImportYeti DMA index for verified shippers, view live BOL activity, and
-                save companies to Command Center.
-              </p>
-            </div>
-          </header>
-
-          <section className="mt-8 space-y-4">
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  value={shipperQuery}
-                  onChange={(event) => setShipperQuery(event.target.value)}
-                  placeholder="Search by company, retailer, or brand (e.g., Walmart, Nike, Target)"
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                />
-                <button
-                  type="submit"
-                  disabled={shipperLoading || !shipperQuery.trim()}
-                  className="h-11 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {shipperLoading ? "Searching…" : "Search"}
-                </button>
-              </div>
-            </form>
-
-            <div className="flex flex-col gap-3">
-              <p className="text-xs text-slate-500">
-                All searches route through{" "}
-                <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">
-                  /api/lit/public/iy/searchShippers
-                </code>
-                .
-              </p>
-
-              <SearchFilters value={filters} onChange={setFilters} />
-            </div>
-
-            {shipperError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {shipperError}
-              </div>
-            )}
-
-            {resultSummary && (
-              <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
-                <span>{resultSummary}</span>
-                {typeof shipperMeta?.creditsRemaining === "number" && (
-                  <span className="text-slate-400">
-                    Credits remaining: {shipperMeta.creditsRemaining}
-                  </span>
-                )}
-              </div>
-            )}
-          </section>
-
-          <section className="mt-8 space-y-6">
-            {showIntroState ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">Start with a shipper</h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  Search for a retailer, importer, or brand to pull live ImportYeti DMA data.
-                </p>
-              </div>
-            ) : showNoResults ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">No shippers found</h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  Try another query or broaden your search.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {shipperLoading && shipperResults.length === 0 ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {Array.from({ length: 6 }).map((_, index) => (
-                      <div
-                        key={`skeleton-${index}`}
-                        className="h-48 animate-pulse rounded-2xl border border-slate-200 bg-white shadow-sm"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {shipperResults.map((shipper) => (
-                      <ShipperCard
-                        key={(shipper as any).key || (shipper as any).title}
-                        shipper={shipper}
-                        onViewDetails={() => handleViewDetails(shipper)}
-                        onSave={() => handleSaveToCommandCenter(shipper)}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {shipperMeta && shipperMeta.total > RESULTS_PER_PAGE && (
-                  <div className="flex items-center justify_between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
-                    <button
-                      type="button"
-                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!hasPrevPage || shipperLoading}
-                      onClick={() => setShipperPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <span>
-                      Page {shipperPage}
-                      {totalPages > 0 ? ` of ${totalPages}` : ""}
-                    </span>
-                    <button
-                      type="button"
-                      className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!hasNextPage || shipperLoading}
-                      onClick={() => setShipperPage((prev) => prev + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-
-      {modalLoading && activeShipper && (
-        <div className="pointer-events-none fixed inset-x-0 top-6 z-40 flex justify-center">
-          <div className="rounded-full bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow">
-            Loading route insights…
+    <div className="min-h-screen bg-slate-50">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">
+              ImportYeti Shipper Search
+            </h1>
+            <p className="mt-1 text-xs text-slate-500">
+              Search the ImportYeti DMA index for verified shippers, view
+              live BOL activity, and save companies to Command Center.
+            </p>
           </div>
         </div>
-      )}
+      </header>
 
-      {modalError && activeShipper && (
-        <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center">
-          <div className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700 shadow">
-            {modalError}
+      <main className="mx-auto max-w-6xl px-4 pb-10 pt-5 md:px-6">
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center"
+        >
+          <div className="flex-1">
+            <label className="text-xs font-medium text-slate-600">
+              Company name
+            </label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="Search shippers (e.g. Walmart, Nike, Home Depot)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2 md:flex-nowrap">
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Searching…" : "Search"}
+            </button>
+          </div>
+        </form>
+
+        {/* Filter chips – UI only for now */}
+        <div className="mt-4 flex flex-wrap gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-600">Mode</span>
+            {(["any", "ocean", "air"] as ModeFilter[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`rounded-full px-3 py-1 ${
+                  mode === m
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {m === "any" ? "Any" : m[0].toUpperCase() + m.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-600">Region</span>
+            {(
+              [
+                ["global", "Global"],
+                ["americas", "Americas"],
+                ["emea", "EMEA"],
+                ["apac", "APAC"],
+              ] as [RegionFilter, string][]
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRegion(value)}
+                className={`rounded-full px-3 py-1 ${
+                  region === value
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-600">Activity</span>
+            {(
+              [
+                ["12m", "12m Active"],
+                ["24m", "24m"],
+                ["all", "All time"],
+              ] as [ActivityFilter, string][]
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setActivity(value)}
+                className={`rounded-full px-3 py-1 ${
+                  activity === value
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+
+        <div className="mt-4 text-xs text-slate-500">
+          {error && (
+            <span className="text-rose-600">
+              Search failed: {error}. Try again.
+            </span>
+          )}
+          {!error && !loading && (
+            <span>
+              Showing {results.length} of {total} results for {" "}
+              <span className="font-semibold">"{query}"</span>
+            </span>
+          )}
+          {loading && <span>Searching ImportYeti…</span>}
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {results.map((shipper) => (
+            <button
+              key={shipper.key || shipper.title}
+              type="button"
+              onClick={() => handleCardClick(shipper)}
+              className="text-left"
+            >
+              <ShipperCard shipper={shipper} />
+            </button>
+          ))}
+        </div>
+
+        {total > PAGE_SIZE && (
+          <div className="mt-6 flex items-center justify-between text-xs text-slate-600">
+            <span>
+              Page {page} • {total.toLocaleString()} total companies
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.max(1, page - 1);
+                  setPage(next);
+                  void fetchShippers(query, next);
+                }}
+                disabled={page <= 1 || loading}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const maxPage = Math.ceil(total / PAGE_SIZE);
+                  const next = Math.min(maxPage, page + 1);
+                  setPage(next);
+                  void fetchShippers(query, next);
+                }}
+                disabled={loading || results.length < PAGE_SIZE}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </main>
 
       <ShipperDetailModal
-        shipper={activeShipper}
-        open={Boolean(activeShipper)}
-        onClose={handleCloseModal}
-        topRoute={(routeKpis as any)?.topRouteLast12m ?? null}
-        recentRoute={(routeKpis as any)?.mostRecentRoute ?? null}
-        onSave={handleSaveToCommandCenter}
-        saving={saveLoading}
+        isOpen={isModalOpen}
+        shipper={selectedShipper}
+        routeKpis={routeKpis}
+        loading={routeKpisLoading}
+        error={routeKpisError}
+        companyProfile={companyProfile}
+        profileLoading={profileLoading}
+        profileError={profileError}
+        onClose={handleModalClose}
+        onSaveToCommandCenter={() => {
+          // TODO: wire to Command Center save endpoint
+        }}
+        saveLoading={false}
       />
-    </>
+    </div>
   );
+}
+
+function buildMockRouteKpisFromShipper(shipper: IyShipperHit): IyRouteKpis {
+  const total =
+    typeof shipper.totalShipments === "number" ? shipper.totalShipments : 0;
+  const base = total || 1200;
+
+  const teuFactor = 0.4;
+  const spendPerShipment = 1500;
+
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+
+  const monthlySeries: IyMonthlySeriesPoint[] = months.map((label, index) => {
+    const seasonalFactor = 0.7 + (index % 4) * 0.15;
+    const shipmentsTotal = Math.round((base / 12) * seasonalFactor);
+
+    const fclShare = 0.7;
+    const shipmentsFcl = Math.round(shipmentsTotal * fclShare);
+    const shipmentsLcl = Math.max(0, shipmentsTotal - shipmentsFcl);
+
+    const teuFcl = Math.round(shipmentsFcl * teuFactor);
+    const teuLcl = Math.round(shipmentsLcl * teuFactor * 0.6);
+
+    const estSpendUsdFcl = shipmentsFcl * spendPerShipment * 1.1;
+    const estSpendUsdLcl = shipmentsLcl * spendPerShipment * 0.7;
+
+    return {
+      monthLabel: label,
+      shipmentsFcl,
+      shipmentsLcl,
+      teuFcl,
+      teuLcl,
+      estSpendUsdFcl,
+      estSpendUsdLcl,
+    };
+  });
+
+  const shipmentsLast12m = monthlySeries.reduce(
+    (sum, m) => sum + m.shipmentsFcl + m.shipmentsLcl,
+    0,
+  );
+
+  const teuLast12m = monthlySeries.reduce(
+    (sum, m) => sum + (m.teuFcl ?? 0) + (m.teuLcl ?? 0),
+    0,
+  );
+
+  const estSpendUsd = monthlySeries.reduce(
+    (sum, m) => sum + (m.estSpendUsdFcl ?? 0) + (m.estSpendUsdLcl ?? 0),
+    0,
+  );
+
+  return {
+    shipmentsLast12m,
+    teuLast12m,
+    estSpendUsd,
+    topRouteLast12m: "Ocean FCL + LCL mix",
+    mostRecentRoute: "China → US main gateways",
+    sampleSize: shipmentsLast12m,
+    topRoutesLast12m: [
+      {
+        route: "FCL dominant lanes",
+        shipments: Math.round(shipmentsLast12m * 0.65),
+        teu: Math.round(teuLast12m * 0.7),
+        estSpendUsd: estSpendUsd * 0.7,
+      },
+      {
+        route: "LCL + mixed lanes",
+        shipments: Math.round(shipmentsLast12m * 0.35),
+        teu: Math.round(teuLast12m * 0.3),
+        estSpendUsd: estSpendUsd * 0.3,
+      },
+    ],
+    monthlySeries,
+  };
 }

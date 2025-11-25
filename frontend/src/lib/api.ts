@@ -44,6 +44,22 @@ export const API_BASE = resolveApiBase();
 const SEARCH_GATEWAY_BASE = API_BASE;
 const IY_API_BASE = API_BASE;
 
+// Frontend API key for calling the API Gateway
+const LIT_GATEWAY_KEY =
+  (typeof import.meta !== "undefined" &&
+    ((import.meta as any).env?.VITE_LIT_GATEWAY_KEY ||
+      (import.meta as any).env?.NEXT_PUBLIC_LIT_GATEWAY_KEY)) ||
+  (typeof window !== "undefined" &&
+    (window as any).__LIT_GATEWAY_KEY__) ||
+  "";
+
+function withGatewayKey(url: string): string {
+  if (!LIT_GATEWAY_KEY) return url;
+  if (url.includes("key=")) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}key=${encodeURIComponent(LIT_GATEWAY_KEY)}`;
+}
+
 export type FilterOptions = {
   origins: string[];
   destinations: string[];
@@ -60,39 +76,44 @@ export type CompanyHit = {
   top_carriers: string[];
 };
 
-// ImportYeti shipper search types
-export type IyShipperHit = {
+export interface IyShipperHit {
   key: string;
+  companyId: string;
+  name: string;
   title: string;
-  countryCode?: string;
-  type?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-  country?: string;
-  totalShipments?: number;
-  mostRecentShipment?: string;
-  topSuppliers?: string[];
-  website?: string;
-  phone?: string;
-  domain?: string;
-};
+  normalizedName?: string | null;
+  domain?: string | null;
+  website?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  totalShipments?: number | null;
+  shipmentsLast12m?: number | null;
+  teusLast12m?: number | null;
+  estSpendLast12m?: number | null;
+  primaryRouteSummary?: string | null;
+  lastShipmentDate?: string | null;
+  topSuppliers?: string[] | null;
+}
 
 export type IySearchMeta = {
   q: string;
   page: number;
   pageSize: number;
-  total: number;
   creditsRemaining?: number;
   requestCost?: number;
 };
 
-export type IySearchResponse = {
-  total: number;
+export interface IySearchResponse {
+  ok: boolean;
   results: IyShipperHit[];
-  meta: IySearchMeta;
-};
+  total: number;
+  meta?: IySearchMeta;
+}
 
 export type IyRouteTopRoute = {
   route: string;
@@ -100,13 +121,30 @@ export type IyRouteTopRoute = {
   teu?: number | null;
 };
 
+export type IyMonthlySeriesPoint = {
+  monthLabel: string;
+  shipmentsFcl: number;
+  shipmentsLcl: number;
+  teuFcl?: number | null;
+  teuLcl?: number | null;
+  estSpendUsdFcl?: number | null;
+  estSpendUsdLcl?: number | null;
+};
+
 export type IyRouteKpis = {
-  topRouteLast12m: string | null;
-  mostRecentRoute: string | null;
-  sampleSize: number;
-  shipmentsLast12m: number;
-  teuLast12m: number;
-  topRoutesLast12m: IyRouteTopRoute[];
+  shipmentsLast12m?: number | null;
+  teuLast12m?: number | null;
+  estSpendUsd?: number | null;
+  topRouteLast12m?: string | null;
+  mostRecentRoute?: string | null;
+  sampleSize?: number | null;
+  topRoutesLast12m?: Array<{
+    route: string;
+    shipments: number;
+    teu?: number | null;
+    estSpendUsd?: number | null;
+  }>;
+  monthlySeries?: IyMonthlySeriesPoint[];
   contact?: IyCompanyContact;
 };
 
@@ -186,33 +224,61 @@ export type IyCompanyStats = {
   }>;
 };
 
-export interface IyCompanyProfile {
-  ok: true;
-  title: string | null;
-  countryCode: string | null;
-  address: string | null;
-  website: string | null;
-  phoneNumber: string | null;
-  totalShipments: number | null;
-  shipmentsLast12m: number;
-  teusLast12m: number;
-  lastShipmentDate: string | null;
-  containersLoad: unknown;
-  locations: {
-    address: string | null;
-    mostRecentShipmentTo: string | null;
-    mostRecentShipmentBol: string | null;
-    emails: string[];
-    phoneNumbers: string[];
-  }[];
-  timeseries: {
-    monthKey: string;
+export type IyCompanyProfileRoute = {
+  label?: string | null;
+  origin?: string | null;
+  destination?: string | null;
+  shipments?: number | null;
+  teu?: number | null;
+  lastShipmentDate?: string | null;
+};
+
+export type IyCompanyProfileMonthlyPoint = {
+  date: string;
+  monthLabel: string;
+  totalShipments: number;
+  fclShipments: number;
+  lclShipments: number;
+  teu: number;
+};
+
+export type IyCompanyProfile = {
+  title: string;
+  website?: string | null;
+  phoneNumber?: string | null;
+  totalShipments?: number | null;
+  address?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  domain?: string | null;
+  rawWebsite?: string | null;
+  lastShipmentDate?: string | null;
+  mostRecentRoute?: IyCompanyProfileRoute | null;
+  topRoutes?: IyCompanyProfileRoute[];
+  suppliersSample?: string[] | null;
+  containersLoad?: Array<{
+    load_type: string;
     shipments: number;
-    teu: number;
-    chinaShipments: number;
-    chinaTeu: number;
-  }[];
-  carriersPerCountry: Record<string, unknown>;
+    shipments_perc?: number;
+  }> | null;
+  timeSeries?: IyCompanyProfileMonthlyPoint[];
+};
+
+export function extractCompanySlug(key: string): string {
+  if (!key) return "";
+  return key.replace(/^company\//i, "");
+}
+
+function inferDomainFromSlug(
+  companyKeyOrSlug: string | null | undefined,
+): string | null {
+  if (!companyKeyOrSlug) return null;
+  const raw = companyKeyOrSlug.toString().trim().toLowerCase();
+  if (!raw) return null;
+  const withoutPrefix = raw.replace(/^company\//, "");
+  const core = withoutPrefix.split(/[^a-z0-9]+/)[0];
+  if (!core) return null;
+  return `${core}.com`;
 }
 
 export type SearchResponse<T> = {
@@ -701,80 +767,151 @@ function deriveDomainCandidate(value: unknown): string | undefined {
 }
 
 function normalizeIyShipperHit(entry: any): IyShipperHit {
-  const rawKey =
-    entry?.key ?? entry?.company_id ?? entry?.slug ?? entry?.id ?? null;
-  const fallbackTitle =
-    (typeof entry?.title === "string" && entry.title.trim()) ||
-    (typeof entry?.name === "string" && entry.name.trim()) ||
-    "shipper";
-  const normalizedKey =
-    typeof rawKey === "string" && rawKey.trim()
-      ? rawKey.trim()
-      : ensureCompanyKey(
-          fallbackTitle
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "") || "shipper",
-        );
-
-  const normalizeString = (value: unknown) =>
-    typeof value === "string" && value.trim().length ? value.trim() : undefined;
-
-  const toNumberOrUndefined = (value: unknown) => {
+  const normalizeString = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  };
+  const normalizeNumber = (value: unknown): number | null => {
     const num = Number(value);
-    return Number.isFinite(num) ? num : undefined;
+    return Number.isFinite(num) ? num : null;
   };
 
-  const supplierSource = Array.isArray(entry?.topSuppliers)
-    ? entry.topSuppliers
-    : Array.isArray(entry?.top_suppliers)
-      ? entry.top_suppliers
-      : [];
-  const topSuppliers = supplierSource
-    .map((item: unknown) =>
-      typeof item === "string" ? item.trim() : undefined,
-    )
-    .filter((item): item is string => Boolean(item && item.length));
+  const fallbackName =
+    normalizeString(entry?.name) ??
+    normalizeString(entry?.title) ??
+    normalizeString(entry?.company_name) ??
+    "ImportYeti shipper";
+
+  const fallbackKey = ensureCompanyKey(
+    (fallbackName || "shipper")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "shipper",
+  );
+
+  const idCandidates = [
+    entry?.companyId,
+    entry?.company_id,
+    entry?.key,
+    entry?.id,
+    entry?.slug,
+  ];
+  let companyId = fallbackKey;
+  for (const candidate of idCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      companyId = ensureCompanyKey(candidate);
+      break;
+    }
+  }
+
+  const normalizedName =
+    normalizeString(entry?.normalizedName) ??
+    normalizeString(entry?.normalized_name) ??
+    null;
 
   const website =
-    normalizeString(entry?.company_website) ?? normalizeString(entry?.website);
-  const phone =
-    normalizeString(entry?.company_main_phone_number) ??
-    normalizeString(entry?.phone);
+    normalizeString(entry?.website) ??
+    normalizeString(entry?.company_website) ??
+    null;
   const domain =
     normalizeString(entry?.domain) ??
+    deriveDomainCandidate(website ?? undefined) ??
     deriveDomainCandidate(entry?.company_website) ??
-    deriveDomainCandidate(entry?.website) ??
-    undefined;
+    null;
+  const phone =
+    normalizeString(entry?.phone) ??
+    normalizeString(entry?.phoneNumber) ??
+    normalizeString(entry?.company_main_phone_number) ??
+    null;
+
+  const addressParts = [
+    normalizeString(entry?.address),
+    normalizeString(entry?.address_line_1),
+    normalizeString(entry?.address_line_2),
+  ].filter((part): part is string => Boolean(part));
+  const address = addressParts.length ? addressParts.join(", ") : null;
+
+  const city = normalizeString(entry?.city);
+  const state =
+    normalizeString(entry?.state) ?? normalizeString(entry?.province) ?? null;
+  const postalCode =
+    normalizeString(entry?.postalCode) ??
+    normalizeString(entry?.postal_code) ??
+    null;
+  const country =
+    normalizeString(entry?.country) ??
+    normalizeString(entry?.country_name) ??
+    null;
+  const countryCode =
+    normalizeString(entry?.countryCode) ??
+    normalizeString(entry?.country_code) ??
+    null;
+
+  const shipmentsLast12m =
+    normalizeNumber(entry?.shipmentsLast12m) ??
+    normalizeNumber(entry?.shipments_12m) ??
+    normalizeNumber(entry?.shipments12m) ??
+    normalizeNumber(entry?.shipments) ??
+    null;
+  const totalShipments =
+    normalizeNumber(entry?.totalShipments) ??
+    normalizeNumber(entry?.shipments_total) ??
+    shipmentsLast12m;
+  const teusLast12m =
+    normalizeNumber(entry?.teusLast12m) ??
+    normalizeNumber(entry?.teuLast12m) ??
+    normalizeNumber(entry?.total_teus) ??
+    normalizeNumber(entry?.teu_12m) ??
+    null;
+  const estSpendLast12m =
+    normalizeNumber(entry?.estSpendLast12m) ??
+    normalizeNumber(entry?.estimated_spend_12m) ??
+    null;
+
+  const primaryRouteSummary =
+    normalizeString(entry?.primaryRouteSummary) ??
+    normalizeString(entry?.top_route_12m) ??
+    normalizeString(entry?.topRouteLast12m) ??
+    null;
+  const lastShipmentDate =
+    normalizeString(entry?.lastShipmentDate) ??
+    normalizeString(entry?.mostRecentShipment) ??
+    normalizeString(entry?.last_activity) ??
+    null;
 
   return {
-    key: normalizedKey,
+    key: companyId,
+    companyId,
+    name: fallbackName ?? "ImportYeti shipper",
     title:
       normalizeString(entry?.title) ??
       normalizeString(entry?.name) ??
-      fallbackTitle,
-    countryCode:
-      normalizeString(entry?.countryCode) ??
-      normalizeString(entry?.country_code) ??
-      normalizeString(entry?.country),
-    type: normalizeString(entry?.type),
-    address: normalizeString(entry?.address),
-    city: normalizeString(entry?.city),
-    state: normalizeString(entry?.state),
-    postalCode: normalizeString(entry?.postal_code),
-    country: normalizeString(entry?.country),
-    totalShipments:
-      toNumberOrUndefined(entry?.totalShipments) ??
-      toNumberOrUndefined(entry?.shipments) ??
-      toNumberOrUndefined(entry?.shipments_12m),
-    mostRecentShipment:
-      normalizeString(entry?.mostRecentShipment) ??
-      normalizeString(entry?.last_activity) ??
-      normalizeString(entry?.recentShipment),
-    topSuppliers,
+      fallbackName ??
+      "ImportYeti shipper",
+    normalizedName,
+    domain,
     website,
     phone,
-    domain,
+    address,
+    city,
+    state,
+    postalCode,
+    country,
+    countryCode,
+    totalShipments,
+    shipmentsLast12m,
+    teusLast12m,
+    estSpendLast12m,
+    primaryRouteSummary,
+    lastShipmentDate,
+    topSuppliers:
+      Array.isArray(entry?.topSuppliers) || Array.isArray(entry?.top_suppliers)
+        ? (entry?.topSuppliers ?? entry?.top_suppliers)?.filter(
+            (item: unknown): item is string =>
+              typeof item === "string" && item.trim().length,
+          ) ?? null
+        : null,
   };
 }
 
@@ -788,8 +925,8 @@ function resolveIySearchArray(raw: any): any[] {
 
 function buildIySearchMeta(
   rawMeta: any,
-  fallback: { q: string; page: number; pageSize: number; total: number },
-): IySearchMeta {
+  fallback: { q: string; page: number; pageSize: number },
+): IyShipperSearchMeta {
   const toNumber = (value: unknown, defaultValue: number) => {
     const num = Number(value);
     return Number.isFinite(num) ? num : defaultValue;
@@ -798,7 +935,6 @@ function buildIySearchMeta(
     q: typeof rawMeta?.q === "string" ? rawMeta.q : fallback.q,
     page: toNumber(rawMeta?.page, fallback.page),
     pageSize: toNumber(rawMeta?.pageSize, fallback.pageSize),
-    total: toNumber(rawMeta?.total, fallback.total),
     creditsRemaining:
       typeof rawMeta?.creditsRemaining === "number"
         ? rawMeta.creditsRemaining
@@ -815,15 +951,18 @@ function coerceIySearchResponse(
   fallback: { q: string; page: number; pageSize: number },
 ): IySearchResponse {
   const items = resolveIySearchArray(raw);
-  const totalCandidate = raw?.total ?? raw?.meta?.total ?? items.length;
+  const rows = items.map(normalizeIyShipperHit);
+  const totalCandidate =
+    raw?.total ?? raw?.meta?.total ?? raw?.data?.total ?? rows.length;
   const total = Number.isFinite(Number(totalCandidate))
     ? Number(totalCandidate)
-    : items.length;
-  const meta = buildIySearchMeta(raw?.meta ?? {}, { ...fallback, total });
+    : rows.length;
+  const meta = buildIySearchMeta(raw?.meta ?? {}, fallback);
 
   return {
+    ok: Boolean(raw?.ok ?? true),
+    results: rows,
     total,
-    results: items.map(normalizeIyShipperHit),
     meta,
   };
 }
@@ -837,33 +976,21 @@ export async function iySearch(q: string, limit = 10, offset = 0) {
   const page = Math.floor(computedOffset / pageSize) + 1;
   const payload = await searchShippers({ q, page, pageSize });
   return {
-    ok: true,
+    ok: payload.ok,
     rows: payload.results,
     meta: payload.meta,
     total: payload.total,
   };
 }
 
-export async function iySearchShippers(
-  body: { q: string; limit?: number; offset?: number },
+async function postIySearchShippers(
+  body: { q: string; page: number; pageSize: number },
   signal?: AbortSignal,
 ) {
-  const q = typeof body.q === "string" ? body.q.trim() : "";
-  const limitCandidate = Number(body.limit);
-  const offsetCandidate = Number(body.offset);
-  const limit = Math.max(
-    1,
-    Math.min(100, Number.isFinite(limitCandidate) ? limitCandidate : 25),
-  );
-  const offset = Math.max(
-    0,
-    Number.isFinite(offsetCandidate) ? offsetCandidate : 0,
-  );
-
-  return fetchJson<any>(`${API_BASE}/public/iy/searchShippers`, {
+  return fetchJson<any>(withGatewayKey(`${API_BASE}/public/iy/searchShippers`), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ q, limit, offset }),
+    body: JSON.stringify(body),
     signal,
   });
 }
@@ -886,19 +1013,22 @@ export async function iyCompanyBols(
       ? params.offset
       : 0;
 
-  const response = await fetch(`${API_BASE}/public/iy/companyBols`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
+  const response = await fetch(
+    withGatewayKey(`${API_BASE}/public/iy/companyBols`),
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        company_id: companyId,
+        limit,
+        offset,
+      }),
+      signal,
     },
-    body: JSON.stringify({
-      company_id: companyId,
-      limit,
-      offset,
-    }),
-    signal,
-  });
+  );
 
   const text = await response.text().catch(() => "");
   let parsed: unknown = {};
@@ -954,21 +1084,162 @@ export async function iyCompanyStats(
 }
 
 export async function getIyCompanyProfile(
-  companyId: string,
-  signal?: AbortSignal,
+  keyOrSlug: string,
 ): Promise<IyCompanyProfile> {
-  if (!companyId) {
-    throw new Error("companyId is required for getIyCompanyProfile");
+  const slug = extractCompanySlug(keyOrSlug);
+  if (!slug) {
+    throw new Error("getIyCompanyProfile: empty company slug");
   }
-  const companyParam = encodeURIComponent(companyId);
-  return fetchJson<IyCompanyProfile>(
-    `${API_BASE}/public/iy/companyProfile?company_id=${companyParam}`,
-    {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal,
-    },
+
+  const brandDomain = inferDomainFromSlug(slug);
+
+  const url = withGatewayKey(
+    `${API_BASE}/public/iy/companyProfile?company=${encodeURIComponent(slug)}`,
   );
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `companyProfile ${res.status}: ${text || res.statusText}`,
+    );
+  }
+
+  const json: any = await res.json().catch(() => ({}));
+  const data = json?.data ?? {};
+  const rawWebsite =
+    typeof data.website === "string" && data.website.trim().length
+      ? data.website.trim()
+      : null;
+  const lastShipmentDate =
+    data.last_shipment_date ??
+    data.lastShipmentDate ??
+    data.last_shipment ??
+    data.lastShipment ??
+    null;
+
+  const buildRoute = (input: any): IyCompanyProfileRoute | null => {
+    if (!input || typeof input !== "object") return null;
+    const origin =
+      input.origin ??
+      input.origin_port ??
+      input.origin_country ??
+      input.origin_country_code ??
+      null;
+    const destination =
+      input.destination ??
+      input.destination_port ??
+      input.destination_country ??
+      input.destination_country_code ??
+      null;
+    const label =
+      input.label ??
+      input.route ??
+      (origin && destination
+        ? `${origin} → ${destination}`
+        : origin || destination || null);
+    const shipments =
+      input.shipments ??
+      input.count ??
+      input.volume ??
+      input.shipments_12m ??
+      null;
+    const teu = input.teu ?? input.teus ?? null;
+    const lastRouteShipment =
+      input.last_shipment_date ??
+      input.lastShipmentDate ??
+      input.last_shipment ??
+      null;
+    if (!label && !origin && !destination) return null;
+    return {
+      label,
+      origin: origin ?? null,
+      destination: destination ?? null,
+      shipments: typeof shipments === "number" ? shipments : null,
+      teu: typeof teu === "number" ? teu : null,
+      last_shipment_date: lastRouteShipment ?? null,
+    };
+  };
+
+  const collectRoutes = (value: any): IyCompanyProfileRoute[] => {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[];
+    }
+    if (typeof value === "object") {
+      const arr: IyCompanyProfileRoute[] = [];
+      if (Array.isArray(value.top)) {
+        arr.push(
+          ...(value.top.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[]),
+        );
+      }
+      if (Array.isArray(value.routes)) {
+        arr.push(
+          ...(value.routes.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[]),
+        );
+      }
+      return arr;
+    }
+    return [];
+  };
+
+  const mostRecentRoute =
+    buildRoute(
+      data.most_recent_route ??
+        data.routes?.most_recent ??
+        data.routes?.mostRecent ??
+        data.routes?.recent ??
+        null,
+    ) ??
+    buildRoute(
+      Array.isArray(data.routes)
+        ? data.routes[0]
+        : Array.isArray(data.top_routes)
+          ? data.top_routes[0]
+          : null,
+    ) ??
+    null;
+
+  const topRoutesRaw =
+    data.top_routes ??
+    data.routes?.top ??
+    data.routes?.top_routes ??
+    data.routes ??
+    null;
+  const topRoutes = collectRoutes(topRoutesRaw);
+
+  const suppliersSample = Array.isArray(data.suppliers_sample)
+    ? data.suppliers_sample.filter((item: unknown) => typeof item === "string")
+    : Array.isArray(data.top_suppliers)
+      ? data.top_suppliers.filter((item: unknown) => typeof item === "string")
+      : null;
+
+  return {
+    title: typeof data.title === "string" ? data.title : "",
+    website: brandDomain ?? rawWebsite ?? null,
+    phone_number: data.phone_number ?? null,
+    total_shipments: data.total_shipments ?? null,
+    address: data.address ?? null,
+    country: data.country ?? null,
+    country_code: data.country_code ?? null,
+    domain: brandDomain ?? null,
+    raw_website: rawWebsite,
+    last_shipment_date: lastShipmentDate ?? null,
+    most_recent_route: mostRecentRoute,
+    top_routes: topRoutes.length ? topRoutes : null,
+    suppliers_sample: suppliersSample && suppliersSample.length ? suppliersSample : null,
+    containers_load: Array.isArray(data.containers_load)
+      ? data.containers_load
+      : null,
+    time_series:
+      data.time_series && typeof data.time_series === "object"
+        ? data.time_series
+        : null,
+  };
 }
 
 export async function searchShippers(
@@ -989,16 +1260,27 @@ export async function searchShippers(
   );
 
   if (!q) {
-    const meta: IySearchMeta = { q, page, pageSize, total: 0 };
-    return { total: 0, results: [], meta };
+    return {
+      ok: true,
+      results: [],
+      total: 0,
+      meta: { q, page, pageSize },
+    };
   }
 
-  const raw = await iySearchShippers(
-    { q, limit: pageSize, offset: (page - 1) * pageSize },
-    signal,
+  const raw = await fetchJson<any>(
+    withGatewayKey(`${API_BASE}/public/iy/searchShippers`),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ q, page, pageSize }),
+      signal,
+    },
   );
   return coerceIySearchResponse(raw, { q, page, pageSize });
 }
+
+export const searchIyShippers = searchShippers;
 
 function mapIyRowsToShipments(rows: any[]): ShipmentLite[] {
   return rows.map((row) => {

@@ -1,187 +1,155 @@
 import React from "react";
-import { MapPin, Ship, Package, Calendar } from "lucide-react";
+import {
+  Bookmark,
+  BookmarkCheck,
+  Calendar,
+  Globe,
+  MapPin,
+} from "lucide-react";
 import type { IyShipperHit } from "@/lib/api";
 import { getCompanyLogoUrl } from "@/lib/logo";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
 
-type ShipperCardProps = {
+const formatNumber = (value: number | null | undefined) =>
+  typeof value === "number" ? value.toLocaleString() : "—";
+
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const buildAddress = (shipper: IyShipperHit) => {
+  if (shipper.address) return shipper.address;
+  const parts = [shipper.city, shipper.state, shipper.country]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+  return parts.length ? parts.join(", ") : "Location unavailable";
+};
+
+const countryCodeToEmoji = (code?: string | null) => {
+  if (!code) return null;
+  const normalized = code.trim().slice(0, 2).toUpperCase();
+  if (normalized.length !== 2) return null;
+  return normalized
+    .split("")
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+};
+
+const normalizeWebsite = (value?: string | null) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const href = /^https?:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const label = trimmed.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  return { href, label };
+};
+
+type Props = {
   shipper: IyShipperHit;
-  onViewDetails: () => void;
-  onSave: () => void;
+  onViewDetails?: (shipper: IyShipperHit) => void;
+  isSaved?: boolean;
+  onToggleSaved?: (shipper: IyShipperHit) => void;
 };
-
-type ExtendedShipperHit = IyShipperHit & {
-  address_line_1?: string | null;
-  address_line_2?: string | null;
-  city?: string | null;
-  state?: string | null;
-  postal_code?: string | null;
-  country?: string | null;
-
-  shipments_12m?: number | string | null;
-  total_teus?: number | null;
-  last_shipment_date?: string | null;
-
-  top_route_12m?: string | null;
-};
-
-function safe(value: unknown): string {
-  if (value == null) return "—";
-  const text = String(value).trim();
-  return text.length ? text : "—";
-}
-
-function getInitials(name: string): string {
-  const parts = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0]!.charAt(0).toUpperCase();
-  return `${parts[0]!.charAt(0)}${parts[1]!.charAt(0)}`.toUpperCase();
-}
 
 export default function ShipperCard({
   shipper,
   onViewDetails,
-  onSave,
-}: ShipperCardProps) {
-  const extended = shipper as ExtendedShipperHit;
-  const title = safe((shipper as any).title ?? "");
-
-  const address = (() => {
-    const parts = [
-      extended.address_line_1,
-      extended.address_line_2,
-      extended.city,
-      extended.state,
-      extended.postal_code,
-      extended.country,
-    ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
-
-    if (parts.length > 0) return safe(parts.join(", "));
-    return safe((shipper as any).address);
-  })();
-
-  const shipmentsLabel = (() => {
-    if (typeof extended.shipments_12m === "number") {
-      return extended.shipments_12m.toLocaleString();
-    }
-    if (typeof (extended as any).totalShipments === "number") {
-      return (extended as any).totalShipments.toLocaleString();
-    }
-    return safe(extended.shipments_12m ?? (shipper as any).totalShipments);
-  })();
-
-  const teusLabel = (() => {
-    if (typeof extended.total_teus === "number") {
-      return extended.total_teus.toLocaleString();
-    }
-    if (typeof (shipper as any).teus_12m === "number") {
-      return (shipper as any).teus_12m.toLocaleString();
-    }
-    return "—";
-  })();
-
-  const lastShipmentLabel =
-    safe(
-      extended.last_shipment_date ??
-        (shipper as any).last_shipment_date ??
-        (shipper as any).most_recent_shipment,
-    );
-
-  const topRouteLabel =
-    safe(
-      extended.top_route_12m ??
-        (shipper as any).top_route_12m ??
-        (shipper as any).topRouteLast12m,
-    );
-
-  const logoUrl = getCompanyLogoUrl(
-    (shipper as any).website ?? (shipper as any).domain ?? (shipper as any).title,
-  );
-  const initials = getInitials(title);
+  isSaved = false,
+  onToggleSaved,
+}: Props) {
+  const displayName = shipper.title || shipper.name || "ImportYeti shipper";
+  const flagEmoji = countryCodeToEmoji(shipper.countryCode);
+  const address = buildAddress(shipper);
+  const logoUrl = getCompanyLogoUrl(shipper.domain ?? shipper.website ?? undefined);
+  const website = normalizeWebsite(shipper.website ?? shipper.domain ?? null);
+  const topRoute =
+    shipper.primaryRouteSummary ||
+    (shipper as any).topRoute ||
+    (shipper as any).mostRecentRoute ||
+    "Route data available in profile";
 
   return (
     <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      {/* Header: logo + name + location */}
       <div className="flex items-start gap-3">
-        <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-indigo-600 text-xs font-semibold text-white">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={title}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              {initials}
-            </div>
-          )}
-        </div>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-slate-900" title={title}>
-            {title}
+        <CompanyAvatar
+          name={displayName}
+          logoUrl={logoUrl ?? undefined}
+          className="rounded-full"
+          size="lg"
+        />
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-semibold text-slate-900" title={displayName}>
+              {displayName}
+            </p>
+            {flagEmoji && <span className="text-lg leading-none">{flagEmoji}</span>}
           </div>
-          <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
-            <MapPin className="h-3 w-3 text-slate-400" />
-            <span className="truncate">{address}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1">
+              <MapPin className="h-3 w-3 text-slate-400" />
+              <span className="truncate">{address}</span>
+            </span>
+            {website && (
+              <a
+                href={website.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
+              >
+                <Globe className="h-3 w-3" />
+                <span className="truncate max-w-[140px]">{website.label}</span>
+              </a>
+            )}
           </div>
         </div>
+        {onToggleSaved && (
+          <button
+            type="button"
+            onClick={() => onToggleSaved(shipper)}
+            className="rounded-full border border-slate-200 p-2 text-slate-500 hover:text-slate-900"
+            aria-label={isSaved ? "Remove from saved" : "Save company"}
+          >
+            {isSaved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
-      {/* KPI row */}
-      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+      <div className="mt-4 grid gap-3 text-xs md:grid-cols-3">
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <Ship className="h-3 w-3 text-indigo-500" />
-            <span>Shipments (12m)</span>
-          </div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {shipmentsLabel}
-          </div>
+          <p className="text-[11px] font-semibold uppercase text-slate-500">Total shipments</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {formatNumber(shipper.totalShipments ?? shipper.shipmentsLast12m)}
+          </p>
         </div>
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <Package className="h-3 w-3 text-indigo-500" />
-            <span>TEUs (12m)</span>
-          </div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {teusLabel}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
             <Calendar className="h-3 w-3 text-indigo-500" />
-            <span>Last shipment</span>
-          </div>
-          <div className="mt-1 text-xs font-medium text-slate-900">
-            {lastShipmentLabel}
-          </div>
+            <span>Most recent shipment</span>
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-900">
+            {formatDate(shipper.lastShipmentDate ?? shipper.mostRecentShipment)}
+          </p>
         </div>
         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <MapPin className="h-3 w-3 text-indigo-500" />
-            <span>Top route (12m)</span>
-          </div>
-          <div className="mt-1 text-xs font-medium text-slate-900">
-            {topRouteLabel || "Top route data coming…"}
-          </div>
+          <p className="text-[11px] font-semibold uppercase text-slate-500">Top route</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900 truncate" title={topRoute}>
+            {topRoute || "—"}
+          </p>
         </div>
       </div>
 
-      {/* Footer buttons */}
-      <div className="mt-4 flex items-center justify-between gap-2">
+      <div className="mt-4 flex items-center justify-between">
         <button
           type="button"
-          onClick={onSave}
-          className="w-1/2 rounded-full border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-        >
-          Save to Command Center
-        </button>
-        <button
-          type="button"
-          onClick={onViewDetails}
-          className="w-1/2 rounded-full bg-slate-900 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+          onClick={() => onViewDetails?.(shipper)}
+          className="inline-flex items-center gap-2 rounded-full border border-slate-900 px-4 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50"
         >
           View details
         </button>
