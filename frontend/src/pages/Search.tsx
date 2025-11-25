@@ -156,13 +156,14 @@ export default function SearchPage() {
         const rows = Array.isArray(response?.rows) ? response.rows : [];
         const next = new Set<string>();
         rows.forEach((record: any) => {
-          const companyId =
-            (record?.company?.company_id ??
-              record?.company_id ??
-              record?.company?.id ??
-              "") || "";
+          const companyId = (
+            record?.company?.company_id ??
+            record?.company_id ??
+            record?.company?.id ??
+            ""
+          ).trim();
           if (companyId) {
-            next.add(String(companyId));
+            next.add(companyId);
           }
         });
         setSavedKeys(next);
@@ -173,38 +174,27 @@ export default function SearchPage() {
     return () => controller.abort();
   }, []);
 
-  const deriveIdentifier = (shipper: IyShipperHit) => {
-    const explicit = shipper.key || shipper.companyId;
-    if (explicit) return explicit;
-    const fallback =
-      shipper.title || shipper.name || shipper.normalizedName || "shipper";
-    const slug = fallback
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return `name:${slug || "shipper"}`;
-  };
-
-  const collectIds = (shipper: IyShipperHit | null) => {
-    if (!shipper) return [];
-    const ids = [
-      shipper.key,
-      shipper.companyId,
-      deriveIdentifier(shipper),
-    ].filter(Boolean) as string[];
-    return Array.from(new Set(ids));
+  const getCanonicalCompanyId = (shipper: IyShipperHit | null) => {
+    if (!shipper) return "";
+    return (shipper.key || shipper.companyId || "").trim();
   };
 
   const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
     if (!shipper || savingKey) return;
-    const ids = collectIds(shipper);
-    if (!ids.length || ids.some((id) => savedKeys.has(id))) return;
+    const companyId = getCanonicalCompanyId(shipper);
+    if (!companyId) {
+      console.warn("[LIT] Save to Command Center skipped (missing id)", {
+        shipper,
+      });
+      return;
+    }
+    if (savedKeys.has(companyId)) return;
 
     const record: CommandCenterRecord = {
       company: {
-        company_id: ids[0],
+        company_id: companyId,
         name: shipper.title || shipper.name || "Company",
-        source: "importyeti",
+        source: "lit-search",
         address: shipper.address ?? null,
         country_code: shipper.countryCode ?? null,
         kpis: {
@@ -221,16 +211,16 @@ export default function SearchPage() {
       created_at: new Date().toISOString(),
     };
 
-    setSavingKey(ids[0]);
+    setSavingKey(companyId);
     try {
       await saveCompany(record);
       setSavedKeys((prev) => {
         const next = new Set(prev);
-        ids.forEach((id) => next.add(id));
+        next.add(companyId);
         return next;
       });
-    } catch (error) {
-      console.error("saveCompany failed", error);
+    } catch (err) {
+      console.warn("[LIT] Save to Command Center failed", { shipper, err });
     } finally {
       setSavingKey(null);
     }
@@ -312,16 +302,18 @@ export default function SearchPage() {
     setDestPostal("");
   };
 
+  const selectedCompanyId = getCanonicalCompanyId(selectedShipper);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">
-              ImportYeti Shipper Search
+              LIT Search Shipper Search
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Search the ImportYeti DMA index for verified shippers, view
+              Search the LIT Search DMA index for verified shippers, view
               live BOL activity, and save companies to Command Center.
             </p>
           </div>
@@ -392,14 +384,13 @@ export default function SearchPage() {
               <span className="font-semibold">"{query}"</span>
             </span>
           )}
-          {loading && <span>Searching ImportYeti…</span>}
+          {loading && <span>Searching LIT Search…</span>}
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredResults.map((shipper) => {
-            const saved = collectIds(shipper).some((id) =>
-              savedKeys.has(id),
-            );
+            const companyId = getCanonicalCompanyId(shipper);
+            const saved = companyId ? savedKeys.has(companyId) : false;
             return (
               <div key={shipper.key || shipper.title} className="text-left">
                 <ShipperCard
@@ -458,16 +449,11 @@ export default function SearchPage() {
         companyProfile={companyProfile}
         profileLoading={profileLoading}
         profileError={profileError}
-        isSaved={collectIds(selectedShipper).some((id) => savedKeys.has(id))}
+        isSaved={!!(selectedCompanyId && savedKeys.has(selectedCompanyId))}
         onClose={handleModalClose}
         onSaveToCommandCenter={handleSaveToCommandCenter}
         onToggleSaved={handleSaveToCommandCenter}
-        saveLoading={
-          !!(
-            savingKey &&
-            collectIds(selectedShipper).some((id) => id === savingKey)
-          )
-        }
+        saveLoading={!!(savingKey && selectedCompanyId === savingKey)}
       />
 
       {filtersOpen && (
