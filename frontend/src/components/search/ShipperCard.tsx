@@ -64,7 +64,7 @@ export default function ShipperCard({
   isSaved = false,
   onToggleSaved,
 }: Props) {
-  const displayName = shipper.title || shipper.name || "ImportYeti shipper";
+  const displayName = shipper.title || shipper.name || "LIT Search shipper";
   const flagEmoji = countryCodeToEmoji(shipper.countryCode);
   const address = buildAddress(shipper);
   const logoUrl = getCompanyLogoUrl(shipper.domain ?? shipper.website ?? undefined);

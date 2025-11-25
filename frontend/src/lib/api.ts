@@ -53,6 +53,16 @@ const LIT_GATEWAY_KEY =
     (window as any).__LIT_GATEWAY_KEY__) ||
   "";
 
+if (typeof window !== "undefined" && !LIT_GATEWAY_KEY) {
+  const FLAG = "__LIT_GATEWAY_KEY_MISSING_LOGGED__";
+  if (!(window as any)[FLAG]) {
+    (window as any)[FLAG] = true;
+    console.warn(
+      "[LIT] Gateway key is not configured. Set VITE_LIT_GATEWAY_KEY or NEXT_PUBLIC_LIT_GATEWAY_KEY so /crm/saveCompany calls are authenticated.",
+    );
+  }
+}
+
 function withGatewayKey(url: string): string {
   if (!LIT_GATEWAY_KEY) return url;
   if (url.includes("key=")) return url;
@@ -1587,14 +1597,26 @@ export async function getIyRouteKpisForCompany(
 export async function saveCompany(
   record: CommandCenterRecord,
 ): Promise<{ saved_id?: string }> {
+  const normalizedId = ensureCompanyKey(record?.company?.company_id ?? "");
+  if (!normalizedId) {
+    console.warn("[LIT] saveCompany called with invalid id:", record?.company);
+    throw new Error("saveCompany requires a valid company id");
+  }
+  const payload: CommandCenterRecord = {
+    ...record,
+    company: {
+      ...record.company,
+      company_id: normalizedId,
+    },
+  };
   const res = await fetch(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      company_id: record.company.company_id,
+      company_id: normalizedId,
       stage: "prospect",
-      provider: record.company.source,
-      payload: record,
+      provider: payload.company.source,
+      payload,
     }),
   });
   if (!res.ok) {
@@ -1799,10 +1821,19 @@ export async function saveCompanyToCrm(payload: {
   notes?: string | null;
   source?: string;
 }) {
+  const normalizedId = ensureCompanyKey(payload.company_id);
+  if (!normalizedId) {
+    console.warn("[LIT] saveCompanyToCrm called with invalid id:", payload);
+    throw new Error("saveCompanyToCrm requires a valid company id");
+  }
   const res = await fetch(`${GW}/crm/saveCompany`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...payload, source: payload.source ?? "search" }),
+    body: JSON.stringify({
+      ...payload,
+      company_id: normalizedId,
+      source: payload.source ?? "search",
+    }),
   });
   if (!res.ok)
     throw new Error(

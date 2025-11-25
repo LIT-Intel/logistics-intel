@@ -7,7 +7,6 @@ import {
   getIyCompanyProfile,
   getSavedCompanies,
   saveCompany,
-  saveCompanyToCrm,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
@@ -157,13 +156,14 @@ export default function SearchPage() {
         const rows = Array.isArray(response?.rows) ? response.rows : [];
         const next = new Set<string>();
         rows.forEach((record: any) => {
-          const companyId =
-            (record?.company?.company_id ??
-              record?.company_id ??
-              record?.company?.id ??
-              "") || "";
+          const companyId = (
+            record?.company?.company_id ??
+            record?.company_id ??
+            record?.company?.id ??
+            ""
+          ).trim();
           if (companyId) {
-            next.add(String(companyId));
+            next.add(companyId);
           }
         });
         setSavedKeys(next);
@@ -174,18 +174,27 @@ export default function SearchPage() {
     return () => controller.abort();
   }, []);
 
+  const getCanonicalCompanyId = (shipper: IyShipperHit | null) => {
+    if (!shipper) return "";
+    return (shipper.key || shipper.companyId || "").trim();
+  };
+
   const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
-    if (!shipper?.key || savingKey) return;
-    const primaryId = shipper.key;
-    const fallbackId =
-      shipper.companyId || shipper.title || shipper.name || primaryId;
-    if (savedKeys.has(primaryId) || savedKeys.has(fallbackId)) return;
+    if (!shipper || savingKey) return;
+    const companyId = getCanonicalCompanyId(shipper);
+    if (!companyId) {
+      console.warn("[LIT] Save to Command Center skipped (missing id)", {
+        shipper,
+      });
+      return;
+    }
+    if (savedKeys.has(companyId)) return;
 
     const record: CommandCenterRecord = {
       company: {
-        company_id: primaryId,
+        company_id: companyId,
         name: shipper.title || shipper.name || "Company",
-        source: "importyeti",
+        source: "lit-search",
         address: shipper.address ?? null,
         country_code: shipper.countryCode ?? null,
         kpis: {
@@ -202,24 +211,16 @@ export default function SearchPage() {
       created_at: new Date().toISOString(),
     };
 
-    setSavingKey(primaryId);
+    setSavingKey(companyId);
     try {
-      await saveCompanyToCrm({
-        company_id: primaryId,
-        company_name: shipper.title || shipper.name || "Company",
-        source: "importyeti-search",
-      });
-      await saveCompany(record).catch((error) => {
-        console.warn("saveCompany supplemental payload failed", error);
-      });
+      await saveCompany(record);
       setSavedKeys((prev) => {
         const next = new Set(prev);
-        next.add(primaryId);
-        if (fallbackId) next.add(fallbackId);
+        next.add(companyId);
         return next;
       });
-    } catch (error) {
-      console.error("saveCompany failed", error);
+    } catch (err) {
+      console.warn("[LIT] Save to Command Center failed", { shipper, err });
     } finally {
       setSavingKey(null);
     }
@@ -301,16 +302,18 @@ export default function SearchPage() {
     setDestPostal("");
   };
 
+  const selectedCompanyId = getCanonicalCompanyId(selectedShipper);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">
-              ImportYeti Shipper Search
+              LIT Search Shipper Search
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Search the ImportYeti DMA index for verified shippers, view
+              Search the LIT Search DMA index for verified shippers, view
               live BOL activity, and save companies to Command Center.
             </p>
           </div>
@@ -381,20 +384,24 @@ export default function SearchPage() {
               <span className="font-semibold">"{query}"</span>
             </span>
           )}
-          {loading && <span>Searching ImportYeti…</span>}
+          {loading && <span>Searching LIT Search…</span>}
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredResults.map((shipper) => (
-            <div key={shipper.key || shipper.title} className="text-left">
-              <ShipperCard
-                shipper={shipper}
-                onViewDetails={handleCardClick}
-                onToggleSaved={handleSaveToCommandCenter}
-                isSaved={Boolean(shipper.key && savedKeys.has(shipper.key))}
-              />
-            </div>
-          ))}
+          {filteredResults.map((shipper) => {
+            const companyId = getCanonicalCompanyId(shipper);
+            const saved = companyId ? savedKeys.has(companyId) : false;
+            return (
+              <div key={shipper.key || shipper.title} className="text-left">
+                <ShipperCard
+                  shipper={shipper}
+                  onViewDetails={handleCardClick}
+                  onToggleSaved={handleSaveToCommandCenter}
+                  isSaved={saved}
+                />
+              </div>
+            );
+          })}
         </div>
 
         {total > PAGE_SIZE && (
@@ -442,15 +449,11 @@ export default function SearchPage() {
         companyProfile={companyProfile}
         profileLoading={profileLoading}
         profileError={profileError}
-        isSaved={
-          !!(selectedShipper?.key && savedKeys.has(selectedShipper.key))
-        }
+        isSaved={!!(selectedCompanyId && savedKeys.has(selectedCompanyId))}
         onClose={handleModalClose}
         onSaveToCommandCenter={handleSaveToCommandCenter}
         onToggleSaved={handleSaveToCommandCenter}
-        saveLoading={
-          !!(selectedShipper?.key && savingKey === selectedShipper.key)
-        }
+        saveLoading={!!(savingKey && selectedCompanyId === savingKey)}
       />
 
       {filtersOpen && (
