@@ -6,12 +6,13 @@ import {
   searchShippers,
   getIyCompanyProfile,
   getSavedCompanies,
-  saveCompanyToCrm,
+  saveCompany,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
   type IyCompanyProfile,
 } from "@/lib/api";
+import type { CommandCenterRecord } from "@/types/importyeti";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
@@ -174,19 +175,35 @@ export default function SearchPage() {
 
   const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
     if (!shipper?.key || savingKey) return;
-    const key = shipper.key;
+    const primaryId = shipper.key;
     const fallbackId =
-      shipper.companyId || shipper.title || shipper.name || shipper.key;
-    const primaryId = key || fallbackId;
+      shipper.companyId || shipper.title || shipper.name || primaryId;
     if (savedKeys.has(primaryId) || savedKeys.has(fallbackId)) return;
+
+    const record: CommandCenterRecord = {
+      company: {
+        company_id: primaryId,
+        name: shipper.title || shipper.name || "Company",
+        source: "importyeti",
+        address: shipper.address ?? null,
+        country_code: shipper.countryCode ?? null,
+        kpis: {
+          shipments_12m:
+            shipper.totalShipments ?? shipper.shipmentsLast12m ?? 0,
+          last_activity:
+            shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null,
+        },
+        extras: shipper.topSuppliers
+          ? { top_suppliers: shipper.topSuppliers }
+          : undefined,
+      },
+      shipments: [],
+      created_at: new Date().toISOString(),
+    };
 
     setSavingKey(primaryId);
     try {
-      await saveCompanyToCrm({
-        company_id: primaryId,
-        company_name: shipper.title || shipper.name || "Company",
-        source: "importyeti-search",
-      });
+      await saveCompany(record);
       setSavedKeys((prev) => {
         const next = new Set(prev);
         next.add(primaryId);
@@ -194,7 +211,7 @@ export default function SearchPage() {
         return next;
       });
     } catch (error) {
-      console.error("saveCompanyToCrm failed", error);
+      console.error("saveCompany failed", error);
     } finally {
       setSavingKey(null);
     }
