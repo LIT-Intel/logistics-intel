@@ -1,14 +1,19 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
+import SearchFilters from "@/components/search/SearchFilters";
 import {
   searchShippers,
   getIyCompanyProfile,
+  getSavedCompanies,
+  saveCompany,
+  saveCompanyToCrm,
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
   type IyCompanyProfile,
 } from "@/lib/api";
+import type { CommandCenterRecord } from "@/types/importyeti";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
@@ -32,6 +37,15 @@ export default function SearchPage() {
   const [selectedShipper, setSelectedShipper] =
     useState<IyShipperHit | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [originCity, setOriginCity] = useState("");
+  const [originState, setOriginState] = useState("");
+  const [originCountry, setOriginCountry] = useState("");
+  const [originPostal, setOriginPostal] = useState("");
+  const [destCity, setDestCity] = useState("");
+  const [destState, setDestState] = useState("");
+  const [destCountry, setDestCountry] = useState("");
+  const [destPostal, setDestPostal] = useState("");
 
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
   const [routeKpisLoading, setRouteKpisLoading] = useState(false);
@@ -40,6 +54,8 @@ export default function SearchPage() {
     useState<IyCompanyProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
@@ -135,9 +151,155 @@ export default function SearchPage() {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    getSavedCompanies(controller.signal)
+      .then((response) => {
+        const rows = Array.isArray(response?.rows) ? response.rows : [];
+        const next = new Set<string>();
+        rows.forEach((record: any) => {
+          const companyId =
+            (record?.company?.company_id ??
+              record?.company_id ??
+              record?.company?.id ??
+              "") || "";
+          if (companyId) {
+            next.add(String(companyId));
+          }
+        });
+        setSavedKeys(next);
+      })
+      .catch((err) => {
+        console.error("getSavedCompanies failed", err);
+      });
+    return () => controller.abort();
+  }, []);
+
+  const handleSaveToCommandCenter = async (shipper?: IyShipperHit | null) => {
+    if (!shipper?.key || savingKey) return;
+    const primaryId = shipper.key;
+    const fallbackId =
+      shipper.companyId || shipper.title || shipper.name || primaryId;
+    if (savedKeys.has(primaryId) || savedKeys.has(fallbackId)) return;
+
+    const record: CommandCenterRecord = {
+      company: {
+        company_id: primaryId,
+        name: shipper.title || shipper.name || "Company",
+        source: "importyeti",
+        address: shipper.address ?? null,
+        country_code: shipper.countryCode ?? null,
+        kpis: {
+          shipments_12m:
+            shipper.totalShipments ?? shipper.shipmentsLast12m ?? 0,
+          last_activity:
+            shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null,
+        },
+        extras: shipper.topSuppliers
+          ? { top_suppliers: shipper.topSuppliers }
+          : undefined,
+      },
+      shipments: [],
+      created_at: new Date().toISOString(),
+    };
+
+    setSavingKey(primaryId);
+    try {
+      await saveCompanyToCrm({
+        company_id: primaryId,
+        company_name: shipper.title || shipper.name || "Company",
+        source: "importyeti-search",
+      });
+      await saveCompany(record).catch((error) => {
+        console.warn("saveCompany supplemental payload failed", error);
+      });
+      setSavedKeys((prev) => {
+        const next = new Set(prev);
+        next.add(primaryId);
+        if (fallbackId) next.add(fallbackId);
+        return next;
+      });
+    } catch (error) {
+      console.error("saveCompany failed", error);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  useEffect(() => {
     void fetchShippers(query, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const hasAdvancedFilters =
+    originCity ||
+    originState ||
+    originCountry ||
+    originPostal ||
+    destCity ||
+    destState ||
+    destCountry ||
+    destPostal;
+
+  const filteredResults = useMemo(() => {
+    if (!hasAdvancedFilters) return results;
+    return results.filter((shipper) => {
+      const matchesOrigin =
+        (!originCity ||
+          shipper.city?.toLowerCase().includes(originCity.toLowerCase())) &&
+        (!originState ||
+          shipper.state?.toLowerCase().includes(originState.toLowerCase())) &&
+        (!originCountry ||
+          shipper.country
+            ?.toLowerCase()
+            .includes(originCountry.toLowerCase())) &&
+        (!originPostal ||
+          shipper.postalCode
+            ?.toLowerCase()
+            .includes(originPostal.toLowerCase()));
+
+      const matchesDest =
+        (!destCity ||
+          (shipper.city ?? "")
+            .toLowerCase()
+            .includes(destCity.toLowerCase())) &&
+        (!destState ||
+          (shipper.state ?? "")
+            .toLowerCase()
+            .includes(destState.toLowerCase())) &&
+        (!destCountry ||
+          (shipper.country ?? "")
+            .toLowerCase()
+            .includes(destCountry.toLowerCase())) &&
+        (!destPostal ||
+          (shipper.postalCode ?? "")
+            .toLowerCase()
+            .includes(destPostal.toLowerCase()));
+
+      return matchesOrigin && matchesDest;
+    });
+  }, [
+    results,
+    hasAdvancedFilters,
+    originCity,
+    originState,
+    originCountry,
+    originPostal,
+    destCity,
+    destState,
+    destCountry,
+    destPostal,
+  ]);
+
+  const handleResetAdvancedFilters = () => {
+    setOriginCity("");
+    setOriginState("");
+    setOriginCountry("");
+    setOriginPostal("");
+    setDestCity("");
+    setDestState("");
+    setDestCountry("");
+    setDestPostal("");
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -183,74 +345,28 @@ export default function SearchPage() {
           </div>
         </form>
 
-        {/* Filter chips – UI only for now */}
-        <div className="mt-4 flex flex-wrap gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-600">Mode</span>
-            {(["any", "ocean", "air"] as ModeFilter[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={`rounded-full px-3 py-1 ${
-                  mode === m
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                {m === "any" ? "Any" : m[0].toUpperCase() + m.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-600">Region</span>
-            {(
-              [
-                ["global", "Global"],
-                ["americas", "Americas"],
-                ["emea", "EMEA"],
-                ["apac", "APAC"],
-              ] as [RegionFilter, string][]
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setRegion(value)}
-                className={`rounded-full px-3 py-1 ${
-                  region === value
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-600">Activity</span>
-            {(
-              [
-                ["12m", "12m Active"],
-                ["24m", "24m"],
-                ["all", "All time"],
-              ] as [ActivityFilter, string][]
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setActivity(value)}
-                className={`rounded-full px-3 py-1 ${
-                  activity === value
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
+          <SearchFilters
+            value={{ mode, region, activity }}
+            onChange={(next) => {
+              setMode(next.mode);
+              setRegion(next.region);
+              setActivity(next.activity);
+            }}
+            className="flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Filters
+            {hasAdvancedFilters && (
+              <span className="ml-2 inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-full bg-slate-900 px-2 text-[10px] font-semibold text-white">
+                +
+              </span>
+            )}
+          </button>
         </div>
 
         <div className="mt-4 text-xs text-slate-500">
@@ -261,7 +377,7 @@ export default function SearchPage() {
           )}
           {!error && !loading && (
             <span>
-              Showing {results.length} of {total} results for {" "}
+              Showing {filteredResults.length} of {total} results for{" "}
               <span className="font-semibold">"{query}"</span>
             </span>
           )}
@@ -269,15 +385,15 @@ export default function SearchPage() {
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {results.map((shipper) => (
-            <button
-              key={shipper.key || shipper.title}
-              type="button"
-              onClick={() => handleCardClick(shipper)}
-              className="text-left"
-            >
-              <ShipperCard shipper={shipper} />
-            </button>
+          {filteredResults.map((shipper) => (
+            <div key={shipper.key || shipper.title} className="text-left">
+              <ShipperCard
+                shipper={shipper}
+                onViewDetails={handleCardClick}
+                onToggleSaved={handleSaveToCommandCenter}
+                isSaved={Boolean(shipper.key && savedKeys.has(shipper.key))}
+              />
+            </div>
           ))}
         </div>
 
@@ -326,12 +442,132 @@ export default function SearchPage() {
         companyProfile={companyProfile}
         profileLoading={profileLoading}
         profileError={profileError}
+        isSaved={
+          !!(selectedShipper?.key && savedKeys.has(selectedShipper.key))
+        }
         onClose={handleModalClose}
-        onSaveToCommandCenter={() => {
-          // TODO: wire to Command Center save endpoint
-        }}
-        saveLoading={false}
+        onSaveToCommandCenter={handleSaveToCommandCenter}
+        onToggleSaved={handleSaveToCommandCenter}
+        saveLoading={
+          !!(selectedShipper?.key && savingKey === selectedShipper.key)
+        }
       />
+
+      {filtersOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
+                  Filters
+                </p>
+                <h2 className="text-xl font-semibold text-slate-900">
+                  Origin & destination
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Filter results by city, state, country, or postal code. Filters
+                  are applied locally to the current results.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(false)}
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-6 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Origin
+                </p>
+                <div className="mt-2 space-y-2">
+                  <input
+                    value={originCity}
+                    onChange={(e) => setOriginCity(e.target.value)}
+                    placeholder="City"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <input
+                    value={originState}
+                    onChange={(e) => setOriginState(e.target.value)}
+                    placeholder="State / Province"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <input
+                    value={originCountry}
+                    onChange={(e) => setOriginCountry(e.target.value)}
+                    placeholder="Country"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <input
+                    value={originPostal}
+                    onChange={(e) => setOriginPostal(e.target.value)}
+                    placeholder="Postal code"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Destination
+                </p>
+                <div className="mt-2 space-y-2">
+                  <input
+                    value={destCity}
+                    onChange={(e) => setDestCity(e.target.value)}
+                    placeholder="City"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <input
+                    value={destState}
+                    onChange={(e) => setDestState(e.target.value)}
+                    placeholder="State / Province"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <input
+                    value={destCountry}
+                    onChange={(e) => setDestCountry(e.target.value)}
+                    placeholder="Country"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <input
+                    value={destPostal}
+                    onChange={(e) => setDestPostal(e.target.value)}
+                    placeholder="Postal code"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-slate-500">
+                Client-side filters are applied on top of search results.
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetAdvancedFilters}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen(false)}
+                  className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
