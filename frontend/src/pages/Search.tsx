@@ -366,8 +366,11 @@ export default function SearchPage() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-600">
+              LIT INTELLIGENCE
+            </p>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">
                 LIT Search
               </h1>
               <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
