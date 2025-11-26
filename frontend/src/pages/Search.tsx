@@ -365,20 +365,21 @@ export default function SearchPage() {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">
-              LIT Search with clear branded heading.
-            </h1>
-            <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
-              {/* TODO: replace placeholder with official Gemini SVG asset */}
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
-                G
-              </div>
-              <span>Powered by Gemini 3 for AI enrichment</span>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                LIT Search
+              </h1>
+              <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
+                {/* TODO: swap placeholder glyph with official Gemini SVG asset */}
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 via-purple-500 to-blue-500 text-[11px] font-bold text-white">
+                  ✦
+                </span>
+                <span>Powered by Gemini 3</span>
+              </span>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Search the LIT Search DMA index for verified shippers, view
-              live BOL activity, and save companies to Command Center.
+            <p className="text-sm text-slate-500">
+              Search the LIT Search index for verified shippers, view live BOL activity, and save companies to Command Center for full AI enrichment.
             </p>
           </div>
         </div>
