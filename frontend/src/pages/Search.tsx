@@ -141,15 +141,25 @@ export default function SearchPage() {
     setCompanyProfile(null);
     setProfileError(null);
     setProfileLoading(true);
-    const keyOrSlug = shipper.key || shipper.title || "";
+    const keyOrSlug =
+      shipper.key || shipper.companyId || shipper.title || "";
     getIyCompanyProfile(keyOrSlug)
       .then((profile) => {
         setCompanyProfile(profile);
       })
       .catch((err: any) => {
         console.error("getIyCompanyProfile failed", err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : typeof err === "string"
+              ? err
+              : null;
+        const cleanMessage = message
+          ? message.replace(/<[^>]+>/g, "").trim()
+          : null;
         setProfileError(
-          err?.message || "Failed to load company profile",
+          cleanMessage || "Failed to load company profile",
         );
       })
       .finally(() => {
@@ -357,9 +367,16 @@ export default function SearchPage() {
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">
-              LIT Search Shipper Search
+              LIT Search with clear branded heading.
             </h1>
-            <p className="mt-1 text-xs text-slate-500">
+            <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+              {/* TODO: replace placeholder with official Gemini SVG asset */}
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+                G
+              </div>
+              <span>Powered by Gemini 3 for AI enrichment</span>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
               Search the LIT Search DMA index for verified shippers, view
               live BOL activity, and save companies to Command Center.
             </p>

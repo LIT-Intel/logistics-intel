@@ -1100,15 +1100,15 @@ export async function iyCompanyStats(
 export async function getIyCompanyProfile(
   keyOrSlug: string,
 ): Promise<IyCompanyProfile> {
-  const slug = extractCompanySlug(keyOrSlug);
-  if (!slug) {
-    throw new Error("getIyCompanyProfile: empty company slug");
+  const companyKey = ensureCompanyKey(keyOrSlug);
+  if (!companyKey) {
+    throw new Error("getIyCompanyProfile requires a company key");
   }
-
+  const slug = extractCompanySlug(companyKey);
   const brandDomain = inferDomainFromSlug(slug);
 
   const url = withGatewayKey(
-    `${API_BASE}/public/iy/companyProfile?company=${encodeURIComponent(slug)}`,
+    `${SEARCH_GATEWAY_BASE}/public/iy/companyProfile?company_id=${encodeURIComponent(companyKey)}`,
   );
 
   const res = await fetch(url, {
@@ -1117,9 +1117,8 @@ export async function getIyCompanyProfile(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
     throw new Error(
-      `companyProfile ${res.status}: ${text || res.statusText}`,
+      `companyProfile error: ${res.status} ${res.statusText}`,
     );
   }
 

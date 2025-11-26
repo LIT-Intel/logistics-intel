@@ -70,6 +70,7 @@ export default function ShipperCard({
   const displayName = shipper.title || shipper.name || "LIT Search shipper";
   const flagEmoji = countryCodeToEmoji(shipper.countryCode);
   const address = buildAddress(shipper);
+  // TODO: replace logo.dev lookup with Gemini 3 enrichment service for official logos.
   const logoUrl = getCompanyLogoUrl(shipper.domain ?? shipper.website ?? undefined);
   const website = normalizeWebsite(shipper.website ?? shipper.domain ?? null);
   const topRoute =
@@ -88,11 +89,14 @@ export default function ShipperCard({
           size="lg"
         />
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-sm font-semibold text-slate-900" title={displayName}>
               {displayName}
             </p>
             {flagEmoji && <span className="text-lg leading-none">{flagEmoji}</span>}
+            <span className="ml-auto rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-600">
+              AI enrichment
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1">

@@ -249,11 +249,25 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   const displayAddress = profile?.address || address || "Address not available";
   const displayCountry = profile?.country_code || countryCode || "Unknown";
 
-  const displayWebsite = normalizeWebsite(profile?.website || shipperWebsite || null);
+  const rawWebsite =
+    profile?.website ??
+    (profile as any)?.company_website ??
+    (profile as any)?.url ??
+    (profile as any)?.company_url ??
+    shipperWebsite ??
+    shipper.domain ??
+    null;
+  const displayWebsite = normalizeWebsite(rawWebsite);
   const websiteLabel = displayWebsite
     ? displayWebsite.replace(/^https?:\/\//i, "").replace(/\/$/, "")
     : null;
-  const displayPhone = profile?.phone_number || shipperPhone || null;
+  const displayPhone =
+    profile?.phone_number ??
+    (profile as any)?.company_phone ??
+    (profile as any)?.phone ??
+    (profile as any)?.company_phone_number ??
+    shipperPhone ??
+    null;
 
   const derivedDomain = profile?.domain
     ? profile.domain.replace(/^https?:\/\//i, "")
