@@ -257,9 +257,10 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
     shipperWebsite ??
     shipper.domain ??
     null;
-  const displayWebsite = normalizeWebsite(rawWebsite);
-  const websiteLabel = displayWebsite
-    ? displayWebsite.replace(/^https?:\/\//i, "").replace(/\/$/, "")
+  const normalizedWebsite = normalizeWebsite(rawWebsite);
+  const websiteHref = normalizedWebsite ?? null;
+  const websiteLabel = websiteHref
+    ? websiteHref.replace(/^https?:\/\//i, "").replace(/\/$/, "")
     : null;
   const displayPhone =
     profile?.phone_number ??
@@ -272,9 +273,9 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   const derivedDomain = profile?.domain
     ? profile.domain.replace(/^https?:\/\//i, "")
     : (() => {
-        if (!displayWebsite) return shipperDomain ?? null;
+        if (!websiteHref) return shipperDomain ?? null;
         try {
-          const parsed = new URL(displayWebsite);
+          const parsed = new URL(websiteHref);
           return parsed.hostname.replace(/^www\./i, "");
         } catch {
           return shipperDomain ?? null;
@@ -420,9 +421,9 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
                 <p className="text-sm text-slate-600">{displayAddress}</p>
                 <p className="text-xs text-slate-500">Country: {displayCountry}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                  {websiteLabel && displayWebsite && (
+                  {websiteLabel && websiteHref && (
                     <a
-                      href={displayWebsite}
+                      href={websiteHref}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 hover:text-indigo-600"
@@ -486,7 +487,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
             </div>
           )}
 
-          <div className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
             {topKpis.map((kpi) => (
               <KpiCard
                 key={kpi.label}
