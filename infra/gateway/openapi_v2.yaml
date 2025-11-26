@@ -92,12 +92,16 @@ paths:
     options:
       operationId: cors_iyCompanyBols
       security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       responses: { "200": { description: "ok" } }
     get:
       operationId: iyCompanyBols
       security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       parameters:
         - { name: company_id, in: query, type: string,  required: true }
         - { name: limit,      in: query, type: integer, required: false }
@@ -105,6 +109,15 @@ paths:
       responses: { "200": { description: "ok" } }
 
   /public/iy/companyProfile:
+    options:
+      operationId: cors_getIyCompanyProfile
+      security: []
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200":
+          description: "ok"
     get:
       summary: Get ImportYeti company profile (normalized)
       operationId: getIyCompanyProfile
@@ -124,9 +137,8 @@ paths:
         "500":
           description: Internal error
       x-google-backend:
-        # Use the SAME address as your other /public/iy/* routes
-        address: __SERVICE_URL__
-        jwt_audience: __SERVICE_URL__
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       x-google-cors:
         allowOrigins: ["*"]
         allowMethods: ["GET", "OPTIONS"]
@@ -136,12 +148,16 @@ paths:
     options:
       operationId: cors_iyCompanyLatestBol
       security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       responses: { "200": { description: "ok" } }
     get:
       operationId: iyCompanyLatestBol
       security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       parameters:
         - { name: company, in: query, type: string, required: true }
       responses: { "200": { description: "ok" } }
@@ -150,14 +166,68 @@ paths:
     options:
       operationId: cors_iyCompanyStats
       security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       responses: { "200": { description: "ok" } }
     get:
       operationId: iyCompanyStats
       security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
       parameters:
         - { name: company, in: query, type: string, required: true }
         - { name: range, in: query, type: string, required: false }
       responses: { "200": { description: "ok" } }
+
+  /crm/saveCompany:
+    options:
+      operationId: cors_crmSaveCompany
+      security: []
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200":
+          description: "ok"
+    post:
+      summary: Save company to Command Center (prospect stage)
+      operationId: crmSaveCompany
+      security: []
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+      responses:
+        "200":
+          description: "Saved"
+
+  /crm/savedCompanies:
+    options:
+      operationId: cors_crmSavedCompanies
+      security: []
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200":
+          description: "ok"
+    get:
+      summary: List saved companies for Command Center
+      operationId: crmSavedCompanies
+      security: []
+      x-google-backend:
+        address: https://search-unified-gxezx63yea-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      parameters:
+        - { name: stage, in: query, type: string, required: false }
+      responses:
+        "200":
+          description: "List"
 
