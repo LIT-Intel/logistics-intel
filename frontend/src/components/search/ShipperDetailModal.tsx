@@ -401,15 +401,15 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-3 sm:px-4">
       <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl">
-        <div className="border-b px-6 py-5">
+        <div className="border-b px-4 py-5 sm:px-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
               <CompanyAvatar name={displayTitle} logoUrl={logoUrl} size="lg" />
               <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-semibold tracking-[0.08em] uppercase text-slate-900">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-2xl font-semibold tracking-[0.08em] text-slate-900">
                     {displayTitle}
                   </h2>
                   {isSaved && (
@@ -418,7 +418,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-slate-600">{displayAddress}</p>
+                <p className="text-sm text-slate-600 break-words">{displayAddress}</p>
                 <p className="text-xs text-slate-500">Country: {displayCountry}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
                   {websiteLabel && websiteHref && (
@@ -426,7 +426,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
                       href={websiteHref}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 hover:text-indigo-600"
+                      className="inline-flex max-w-full items-center gap-1 break-all hover:text-indigo-600"
                     >
                       <Globe className="h-4 w-4" />
                       <span className="truncate max-w-[200px]">{websiteLabel}</span>
@@ -475,7 +475,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
           </div>
         </div>
 
-        <div className="max-h-[calc(90vh-96px)] overflow-y-auto px-6 pb-8">
+        <div className="max-h-[calc(90vh-96px)] overflow-y-auto px-4 pb-8 sm:px-6">
           {statusHasMessage && (
             <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               {loading && <div>Loading shipment insights…</div>}

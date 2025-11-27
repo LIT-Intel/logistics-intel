@@ -455,7 +455,7 @@ export default function SearchPage() {
           {loading && <span>Searching LIT Search…</span>}
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredResults.map((shipper) => {
             const companyId = getCanonicalCompanyId(shipper);
             const saved = companyId ? savedCompanyIds.has(companyId) : false;
