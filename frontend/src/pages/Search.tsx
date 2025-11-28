@@ -420,21 +420,23 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
-          <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-xl font-semibold text-slate-900">
-                LIT Search
-              </h1>
-              <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-                Powered by Gemini 3
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Search the LIT Search DMA index for verified shippers, view
-              live BOL activity, and save companies to Command Center.
-            </p>
+        <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-6 md:px-6">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-500">
+            LIT INTELLIGENCE
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold text-slate-900">
+              LIT Search
+            </h1>
+            <span className="text-slate-400">✦</span>
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Powered by Gemini 3
+            </span>
           </div>
+          <p className="text-sm text-slate-600">
+            Search the LIT Search index for verified shippers, view live BOL activity,
+            and save companies to Command Center for full AI enrichment.
+          </p>
         </div>
       </header>
 
