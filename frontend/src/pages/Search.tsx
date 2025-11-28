@@ -419,24 +419,25 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-6 md:px-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-500">
-            LIT INTELLIGENCE
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold text-slate-900">
-              LIT Search
-            </h1>
-            <span className="text-slate-400">✦</span>
-            <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-              Powered by Gemini 3
-            </span>
+      <header className="bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-600">
+                LIT INTELLIGENCE
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+                  LIT Search
+                </h1>
+                <GeminiBadge />
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                Search the LIT Search index for verified shippers, view live BOL activity, and save companies to
+                Command Center for full AI enrichment.
+              </p>
+            </div>
           </div>
-          <p className="text-sm text-slate-600">
-            Search the LIT Search index for verified shippers, view live BOL activity,
-            and save companies to Command Center for full AI enrichment.
-          </p>
         </div>
       </header>
 
@@ -699,6 +700,45 @@ export default function SearchPage() {
     </div>
   );
 }
+
+const GeminiBadge = () => (
+  <span className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur">
+    <GeminiMark />
+    <span className="text-slate-500">Powered by</span>
+    <span className="text-slate-900">Gemini 3 Pro</span>
+  </span>
+);
+
+const GeminiMark = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className="h-5 w-5"
+  >
+    <defs>
+      <linearGradient id="geminiGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#4F46E5" />
+        <stop offset="50%" stopColor="#6366F1" />
+        <stop offset="100%" stopColor="#0EA5E9" />
+      </linearGradient>
+    </defs>
+    <circle cx="12" cy="12" r="10" fill="url(#geminiGradient)" opacity="0.2" />
+    <path
+      d="M7.5 7c1.8 1.3 4.4 2 6.5 2 1.6 0 3.2-.4 4.5-1.1M7.5 17c1.8-1.3 4.4-2 6.5-2 1.6 0 3.2.4 4.5 1.1"
+      stroke="url(#geminiGradient)"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    />
+    <path
+      d="M8.5 6.5c-1 1.4-1.5 3-1.5 4.7s.5 3.3 1.5 4.7M15.5 6.5c1 1.4 1.5 3 1.5 4.7s-.5 3.3-1.5 4.7"
+      stroke="url(#geminiGradient)"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 function buildMockRouteKpisFromShipper(shipper: IyShipperHit): IyRouteKpis {
   const total =
