@@ -508,13 +508,16 @@ export default function SearchPage() {
           {loading && <span>Searching LIT Search…</span>}
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredResults.map((shipper) => {
             const companyId = getCanonicalCompanyId(shipper);
             const saved = companyId ? savedCompanyIds.has(companyId) : false;
             const saving = companyId ? savingCompanyId === companyId : false;
             return (
-              <div key={shipper.key || shipper.title} className="text-left">
+              <div
+                key={shipper.key || shipper.title}
+                className="w-full text-left"
+              >
                 <ShipperCard
                   shipper={shipper}
                   onViewDetails={handleCardClick}

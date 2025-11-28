@@ -79,7 +79,7 @@ export default function ShipperCard({
     "Route data available in profile";
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+    <div className="flex h-full w-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start gap-3">
         <CompanyAvatar
           name={displayName}
