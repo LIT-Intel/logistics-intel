@@ -17,10 +17,51 @@ import {
   Users2,
   Zap,
 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { KpiCard, Pill } from "./SettingsPrimitives";
 
 const cardBase =
   "rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]";
+
+const STORAGE_PREFIX = "lit.settings.";
+
+function storageKey(key: string) {
+  return `${STORAGE_PREFIX}${key}`;
+}
+
+function cloneValue<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value;
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return value;
+  }
+}
+
+function readSetting<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return cloneValue(fallback);
+  try {
+    const raw = window.localStorage.getItem(storageKey(key));
+    if (!raw) return cloneValue(fallback);
+    return JSON.parse(raw) as T;
+  } catch {
+    return cloneValue(fallback);
+  }
+}
+
+function writeSetting<T>(key: string, value: T) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey(key), JSON.stringify(value));
+  } catch {
+    /* noop */
+  }
+}
+
+function clearSetting(key: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(storageKey(key));
+}
 
 export const SETTINGS_SECTIONS = [
   "Profile",
@@ -75,14 +116,36 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
+const DEFAULT_PROFILE = {
+  name: "Ava Patel",
+  title: "Head of Ocean Procurement",
+  phone: "+1 (312) 555-1400",
+  location: "Chicago, IL",
+  bio: "Owns North America ocean sourcing, carrier scorecards, and yearly bids.",
+};
+
 export function ProfileSection() {
-  const [profile, setProfile] = React.useState({
-    name: "Ava Patel",
-    title: "Head of Ocean Procurement",
-    phone: "+1 (312) 555-1400",
-    location: "Chicago, IL",
-    bio: "Owns North America ocean sourcing, carrier scorecards, and yearly bids.",
-  });
+  const { toast } = useToast();
+  const [profile, setProfile] = React.useState(() =>
+    readSetting("profile", DEFAULT_PROFILE),
+  );
+
+  const handleSave = () => {
+    writeSetting("profile", profile);
+    toast({
+      title: "Profile saved",
+      description: "Your workspace profile is now synced locally.",
+    });
+  };
+
+  const handleReset = () => {
+    setProfile({ ...DEFAULT_PROFILE });
+    clearSetting("profile");
+    toast({
+      title: "Profile reset",
+      description: "Restored the default profile values.",
+    });
+  };
 
   return (
     <section className={cardBase}>
@@ -163,12 +226,14 @@ export function ProfileSection() {
       <div className="mt-6 flex flex-wrap gap-3">
         <button
           type="button"
+          onClick={handleSave}
           className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition hover:bg-slate-800"
         >
           Save profile
         </button>
         <button
           type="button"
+          onClick={handleReset}
           className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Reset
@@ -179,13 +244,38 @@ export function ProfileSection() {
 }
 
 export function CompanySignatureSection() {
-  const [preferences, setPreferences] = React.useState({
-    company: "Spark Fusion Logistics",
-    tagline: "Global freight, LIT Search powered.",
-    website: "sparkfusion.co",
-    signature:
-      "Best,\nAva Patel\nSpark Fusion Logistics\nava.patel@sparkfusion.co",
-  });
+  const { toast } = useToast();
+  const DEFAULT_SIGNATURE = React.useMemo(
+    () => ({
+      company: "Spark Fusion Logistics",
+      tagline: "Global freight, LIT Search powered.",
+      website: "sparkfusion.co",
+      signature:
+        "Best,\nAva Patel\nSpark Fusion Logistics\nava.patel@sparkfusion.co",
+    }),
+    [],
+  );
+  const [preferences, setPreferences] = React.useState(() =>
+    readSetting("companySignature", DEFAULT_SIGNATURE),
+  );
+
+  const handleSave = () => {
+    writeSetting("companySignature", preferences);
+    toast({
+      title: "Workspace identity saved",
+      description: "Company branding will persist for this browser.",
+    });
+  };
+
+  const handleReset = () => {
+    const next = { ...DEFAULT_SIGNATURE };
+    setPreferences(next);
+    clearSetting("companySignature");
+    toast({
+      title: "Workspace identity reset",
+      description: "Defaults restored.",
+    });
+  };
 
   return (
     <section className={cardBase}>
@@ -269,6 +359,22 @@ export function CompanySignatureSection() {
             {preferences.signature}
           </pre>
         </div>
+      </div>
+      <div className="mt-6 flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={handleSave}
+          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition hover:bg-slate-800"
+        >
+          Save workspace identity
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Reset
+        </button>
       </div>
     </section>
   );
@@ -690,12 +796,15 @@ export function RfpPipelineSection() {
 }
 
 export function CampaignPreferencesSection() {
-  const [settings, setSettings] = React.useState({
+  const DEFAULT_CAMPAIGN_PREFS = {
     autopilot: true,
     personalizedFirstLines: true,
     dropInCallouts: false,
     autoPause: true,
-  });
+  };
+  const [settings, setSettings] = React.useState(() =>
+    readSetting("campaignPreferences", DEFAULT_CAMPAIGN_PREFS),
+  );
 
   const toggles = [
     { key: "autopilot", label: "Auto-schedule new LIT Search cadences" },
@@ -736,7 +845,11 @@ export function CampaignPreferencesSection() {
             <Toggle
               checked={settings[toggle.key]}
               onChange={(value) =>
-                setSettings((prev) => ({ ...prev, [toggle.key]: value }))
+                setSettings((prev) => {
+                  const next = { ...prev, [toggle.key]: value };
+                  writeSetting("campaignPreferences", next);
+                  return next;
+                })
               }
             />
           </div>
@@ -766,12 +879,15 @@ export function CampaignPreferencesSection() {
 }
 
 export function AlertsNotificationsSection() {
-  const [alerts, setAlerts] = React.useState({
+  const DEFAULT_ALERTS = {
     shipmentDrops: true,
     newSavedCompany: true,
     creditUsage: false,
     weeklyDigest: true,
-  });
+  };
+  const [alerts, setAlerts] = React.useState(() =>
+    readSetting("alerts", DEFAULT_ALERTS),
+  );
 
   return (
     <section className={cardBase}>
@@ -832,7 +948,11 @@ export function AlertsNotificationsSection() {
                 <Toggle
                   checked={alerts[alert.key as keyof typeof alerts]}
                   onChange={(value) =>
-                    setAlerts((prev) => ({ ...prev, [alert.key]: value }))
+                    setAlerts((prev) => {
+                      const next = { ...prev, [alert.key]: value };
+                      writeSetting("alerts", next);
+                      return next;
+                    })
                   }
                 />
               </div>
@@ -846,11 +966,14 @@ export function AlertsNotificationsSection() {
 }
 
 export function SecurityApiSection() {
-  const [security, setSecurity] = React.useState({
+  const DEFAULT_SECURITY = {
     mfa: true,
     deviceApprovals: true,
     rotateKeys: false,
-  });
+  };
+  const [security, setSecurity] = React.useState(() =>
+    readSetting("security", DEFAULT_SECURITY),
+  );
 
   const tokens = [
     { label: "Search automation", lastUsed: "2h ago" },
@@ -893,7 +1016,11 @@ export function SecurityApiSection() {
             <Toggle
               checked={security[item.key as keyof typeof security]}
               onChange={(value) =>
-                setSecurity((prev) => ({ ...prev, [item.key]: value }))
+                setSecurity((prev) => {
+                  const next = { ...prev, [item.key]: value };
+                  writeSetting("security", next);
+                  return next;
+                })
               }
             />
           </div>
