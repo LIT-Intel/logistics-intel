@@ -62,18 +62,40 @@ export default function SettingsLayout() {
 
   return (
     <div className="min-h-screen bg-slate-100/70 py-6 text-slate-900 sm:py-10">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 sm:px-6 lg:flex-row lg:gap-8">
-        <SettingsSidebar
-          sections={SETTINGS_SECTIONS}
-          activeSection={activeSection}
-          onSelectSection={setActiveSection}
-        />
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 sm:flex-row sm:gap-6 lg:gap-8">
+        <div className="sm:hidden">
+          <label className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+            Sections
+          </label>
+          <select
+            value={activeSection}
+            onChange={(event) =>
+              setActiveSection(event.target.value as SettingsSectionId)
+            }
+            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          >
+            {SETTINGS_SECTIONS.map((section) => (
+              <option key={section} value={section}>
+                {section}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="hidden w-full max-w-xs shrink-0 sm:block">
+          <SettingsSidebar
+            sections={SETTINGS_SECTIONS}
+            activeSection={activeSection}
+            onSelectSection={setActiveSection}
+          />
+        </div>
+
         <main className="flex-1 space-y-6">
           <SettingsHeader
             title="Workspace controls"
             description="Adjust messaging defaults, workspace credits, security, and billing for LIT Search."
           />
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {KPI_DATA.map((kpi) => (
               <KpiCard
                 key={kpi.title}
