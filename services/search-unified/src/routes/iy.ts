@@ -6,6 +6,10 @@ import {
   type Response,
   type NextFunction,
 } from "express";
+import {
+  runGeminiAgent,
+  type LitGeminiInput,
+} from "../ai/geminiAgent.js";
 
 const router = Router();
 
@@ -28,7 +32,10 @@ async function iyGet<T>(path: string): Promise<T> {
     throw err;
   }
 
-  const url = `${IY_BASE}${path}`;
+  const url =
+    path.startsWith("http://") || path.startsWith("https://")
+      ? path
+      : `${IY_BASE}${path}`;
 
   const resp = await fetch(url, {
     method: "GET",
@@ -233,6 +240,98 @@ async function iySearch(
   };
 }
 
+const COMPANY_KEY_PREFIX = "company/";
+const IY_COMPANY_PROFILE_TEMPLATE =
+  process.env.IY_DMA_COMPANY_PROFILE_URL || "";
+const IY_COMPANY_BOLS_TEMPLATE =
+  process.env.IY_DMA_COMPANY_BOLS_URL || "";
+
+function normalizeCompanyKey(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const withoutPrefix = trimmed.replace(/^company\//i, "");
+  return `${COMPANY_KEY_PREFIX}${withoutPrefix}`;
+}
+
+function extractSlugFromKey(value: string): string {
+  if (!value) return "";
+  return value.replace(/^company\//i, "").trim();
+}
+
+function buildIyUrlFromTemplate(template: string, slug: string): string {
+  if (!template) return "";
+  const trimmed = template.trim();
+  if (!trimmed) return "";
+  if (trimmed.includes("{slug}")) {
+    return trimmed.replace("{slug}", encodeURIComponent(slug));
+  }
+  const normalized = trimmed.endsWith("/")
+    ? trimmed.slice(0, -1)
+    : trimmed;
+  return `${normalized}/${encodeURIComponent(slug)}`;
+}
+
+async function getImportYetiCompanyProfile(
+  companyKeyOrSlug: string,
+): Promise<any> {
+  const slug = extractSlugFromKey(companyKeyOrSlug);
+  if (!slug) {
+    const err: any = new Error("companyKey is required");
+    err.status = 400;
+    throw err;
+  }
+
+  const templates = [IY_COMPANY_PROFILE_TEMPLATE, IY_COMPANY_BOLS_TEMPLATE]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value?.length));
+
+  let lastError: unknown;
+  for (const template of templates) {
+    const candidateUrl = buildIyUrlFromTemplate(template, slug);
+    if (!candidateUrl) continue;
+    try {
+      return await iyGet<any>(candidateUrl);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  try {
+    return await iyGet<any>(`/company/${encodeURIComponent(slug)}`);
+  } catch (err) {
+    if (lastError) {
+      throw lastError;
+    }
+    throw err;
+  }
+}
+
+async function findCompanyKeyByName(name?: string): Promise<string | null> {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  try {
+    const result = await iySearch(trimmed, 1, 1);
+    const candidate = Array.isArray(result.rows) ? result.rows[0] : null;
+    if (!candidate) return null;
+    const rawKey =
+      candidate.key ||
+      candidate.companyKey ||
+      candidate.company_id ||
+      candidate.companyId ||
+      candidate.slug ||
+      candidate.title ||
+      candidate.name;
+    const normalized = normalizeCompanyKey(rawKey ?? trimmed);
+    return normalized || null;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("findCompanyKeyByName failed", err);
+    return null;
+  }
+}
+
 // -----------------------------------------------------------------------------
 // POST /public/iy/searchShippers
 // (index.ts does: app.use("/public/iy", router))
@@ -419,6 +518,68 @@ router.post(
 );
 
 // -----------------------------------------------------------------------------
+// POST /public/iy/companyProfile
+// -----------------------------------------------------------------------------
+
+router.post(
+  "/companyProfile",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = (req.body ?? {}) as {
+        companyKey?: string;
+        name?: string;
+        user_goal?: string;
+        query?: string;
+      };
+
+      let companyKey = normalizeCompanyKey(body.companyKey ?? "");
+      if (!companyKey && body.name) {
+        companyKey = (await findCompanyKeyByName(body.name)) ?? "";
+      }
+
+      if (!companyKey) {
+        return res
+          .status(404)
+          .json({ ok: false, message: "Company not found" });
+      }
+
+      const companyProfile = await getImportYetiCompanyProfile(companyKey);
+
+      const query =
+        typeof body.query === "string" && body.query.trim().length
+          ? body.query.trim()
+          : null;
+      const userGoal =
+        typeof body.user_goal === "string" && body.user_goal.trim().length
+          ? body.user_goal.trim()
+          : "company profile enrichment";
+
+      let enrichment: any = null;
+      try {
+        const input: LitGeminiInput = {
+          company_profile: companyProfile,
+          lit_search_context: { query, companyKey },
+          command_center_state: null,
+          user_goal: userGoal,
+        };
+        enrichment = await runGeminiAgent(input);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("iy/companyProfile gemini error", err);
+      }
+
+      return res.json({
+        ok: true,
+        companyProfile,
+        enrichment,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+// -----------------------------------------------------------------------------
 // GET /public/iy/companyProfile
 // -----------------------------------------------------------------------------
 
@@ -437,14 +598,9 @@ router.get(
         });
       }
 
-      const slug = company.startsWith("company/")
-        ? company.slice("company/".length)
-        : company;
+      const companyProfile = await getImportYetiCompanyProfile(company);
 
-      const path = `/company/${encodeURIComponent(slug)}`;
-      const resp = await iyGet<any>(path);
-
-      return res.json(resp);
+      return res.json(companyProfile);
     } catch (err) {
       return next(err);
     }

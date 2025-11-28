@@ -126,6 +126,7 @@ paths:
       x-google-backend:
         address: __SERVICE_URL__
         jwt_audience: __SERVICE_URL__
+        path_translation: APPEND_PATH_TO_ADDRESS
       x-google-cors:
         allowOrigins: ["*"]
         allowMethods: ["GET", "OPTIONS"]

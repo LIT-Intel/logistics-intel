@@ -6,6 +6,7 @@ import iyRouter from "./routes/iy.js";
 import publicRoutes from "./routes/public.js";
 import searchCompanies from "./routes/searchCompanies.js";
 import statusRoutes from "./routes/status.js";
+import aiRoutes from "./routes/ai.js";
 const app = express();
 app.disable("x-powered-by");
 // Body parsing
@@ -49,6 +50,8 @@ app.use(getCompanyShipments);
 //   GET  /public/iy/bol
 //
 app.use("/public/iy", iyRouter);
+// AI / Gemini routes
+app.use("/ai", aiRoutes);
 // Campaign / CRM routes
 app.use(campaigns);
 // Central error handler

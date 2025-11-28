@@ -11,7 +11,6 @@ import {
   type IyShipperHit,
   type IyRouteKpis,
   type IyMonthlySeriesPoint,
-  type IyCompanyProfile,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -50,8 +49,8 @@ export default function SearchPage() {
   const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
   const [routeKpisLoading, setRouteKpisLoading] = useState(false);
   const [routeKpisError, setRouteKpisError] = useState<string | null>(null);
-  const [companyProfile, setCompanyProfile] =
-    useState<IyCompanyProfile | null>(null);
+  const [companyProfile, setCompanyProfile] = useState<any>(null);
+  const [companyEnrichment, setCompanyEnrichment] = useState<any>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [savedCompanies, setSavedCompanies] = useState<{ company_id: string }[]>(
@@ -139,12 +138,28 @@ export default function SearchPage() {
     }
 
     setCompanyProfile(null);
+    setCompanyEnrichment(null);
     setProfileError(null);
     setProfileLoading(true);
-    const keyOrSlug = shipper.key || shipper.title || "";
-    getIyCompanyProfile(keyOrSlug)
-      .then((profile) => {
-        setCompanyProfile(profile);
+    const keyOrSlug =
+      getCanonicalCompanyId(shipper) ||
+      shipper.key ||
+      shipper.companyKey ||
+      shipper.companyId ||
+      shipper.title ||
+      "";
+    if (!keyOrSlug) {
+      setProfileError("Missing company identifier");
+      setProfileLoading(false);
+      return;
+    }
+    getIyCompanyProfile(
+      keyOrSlug,
+      query || shipper.name || shipper.title || "",
+    )
+      .then(({ rawProfile, enrichment }) => {
+        setCompanyProfile(rawProfile);
+        setCompanyEnrichment(enrichment);
       })
       .catch((err: any) => {
         console.error("getIyCompanyProfile failed", err);
@@ -160,6 +175,8 @@ export default function SearchPage() {
   const handleModalClose = () => {
     setIsModalOpen(false);
     setSelectedShipper(null);
+    setCompanyProfile(null);
+    setCompanyEnrichment(null);
   };
 
   useEffect(() => {
@@ -239,17 +256,58 @@ export default function SearchPage() {
 
       setSavingCompanyId(companyId);
       try {
-        await saveCompanyToCrm({ company: shipper });
-        setSavedCompanies((prev) => {
+        let enrichmentPayload =
+          selectedShipper &&
+          getCanonicalCompanyId(selectedShipper) === companyId
+            ? companyEnrichment
+            : null;
+
+        if (!enrichmentPayload || !enrichmentPayload.crm_save_payload) {
+          const profileResult = await getIyCompanyProfile(
+            companyId,
+            query || shipper.name || shipper.title || "",
+          );
+          enrichmentPayload = profileResult.enrichment;
           if (
-            prev.some(
-              (entry) => ensureCompanyKey(entry.company_id) === companyId,
-            )
+            selectedShipper &&
+            getCanonicalCompanyId(selectedShipper) === companyId
           ) {
-            return prev;
+            setCompanyProfile(profileResult.rawProfile);
+            setCompanyEnrichment(profileResult.enrichment);
           }
-          return [...prev, { company_id: companyId }];
-        });
+        }
+
+        const crmPayload = enrichmentPayload?.crm_save_payload;
+        if (!crmPayload) {
+          throw new Error(
+            "AI enrichment not available for this company yet.",
+          );
+        }
+
+        await saveCompanyToCrm(crmPayload);
+
+        const refreshed = await listSavedCompanies("prospect");
+        const normalized = Array.isArray(refreshed)
+          ? refreshed
+              .map((record: any) => {
+                const rawId =
+                  record?.company?.company_id ??
+                  record?.company_id ??
+                  record?.company?.id ??
+                  "";
+                const normalizedId = ensureCompanyKey(rawId ?? "");
+                return normalizedId ? { company_id: normalizedId } : null;
+              })
+              .filter(
+                (
+                  entry,
+                ): entry is {
+                  company_id: string;
+                } => Boolean(entry),
+              )
+          : [];
+        setSavedCompanies(normalized);
+
         toast({
           title: "Saved to Command Center",
           description: `${
@@ -275,7 +333,15 @@ export default function SearchPage() {
         setSavingCompanyId(null);
       }
     },
-    [getCanonicalCompanyId, savedCompanyIds, savingCompanyId, toast],
+    [
+      companyEnrichment,
+      query,
+      savedCompanyIds,
+      savingCompanyId,
+      getCanonicalCompanyId,
+      selectedShipper,
+      toast,
+    ],
   );
 
   const hasAdvancedFilters =
@@ -356,9 +422,14 @@ export default function SearchPage() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">
-              LIT Search Shipper Search
-            </h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-xl font-semibold text-slate-900">
+                LIT Search
+              </h1>
+              <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                Powered by Gemini 3
+              </span>
+            </div>
             <p className="mt-1 text-xs text-slate-500">
               Search the LIT Search DMA index for verified shippers, view
               live BOL activity, and save companies to Command Center.
@@ -496,6 +567,7 @@ export default function SearchPage() {
         loading={routeKpisLoading}
         error={routeKpisError}
         companyProfile={companyProfile}
+        companyEnrichment={companyEnrichment}
         profileLoading={profileLoading}
         profileError={profileError}
         isSaved={isShipperSaved(selectedShipper)}

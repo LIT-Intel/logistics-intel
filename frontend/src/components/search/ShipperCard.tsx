@@ -88,11 +88,14 @@ export default function ShipperCard({
           size="lg"
         />
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-sm font-semibold text-slate-900" title={displayName}>
               {displayName}
             </p>
             {flagEmoji && <span className="text-lg leading-none">{flagEmoji}</span>}
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+              AI Enriched
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1">

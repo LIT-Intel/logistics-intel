@@ -19,27 +19,13 @@ import { CompanyAvatar } from "@/components/CompanyAvatar";
 import {
   getCompanyLogoUrl,
 } from "@/lib/logo";
-import type {
-  IyShipperHit,
-  IyRouteKpis,
-  IyCompanyProfile,
-  IyCompanyProfileRoute,
+import {
+  type IyShipperHit,
+  type IyRouteKpis,
+  type IyCompanyProfile,
+  type IyCompanyProfileRoute,
+  normalizeIyCompanyProfile,
 } from "@/lib/api";
-
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 const percentFormatter = new Intl.NumberFormat("en-US", {
   style: "percent",
@@ -100,11 +86,10 @@ const formatRouteLabel = (route?: IyCompanyProfileRoute | null) => {
   return route.origin ?? route.destination ?? null;
 };
 
-type MonthlyActivityPoint = {
-  period: string;
+type LaneActivityPoint = {
+  lane: string;
   fclShipments: number;
   lclShipments: number;
-  totalTeu: number;
 };
 
 const coerceNumber = (value: unknown): number | null => {
@@ -113,68 +98,106 @@ const coerceNumber = (value: unknown): number | null => {
   return Number.isFinite(num) ? num : null;
 };
 
-function buildMonthlyActivitySeries(
+function deriveLaneLabel(input: any, index: number): string {
+  if (!input) return `Lane ${index + 1}`;
+  const origin =
+    input.origin ??
+    input.origin_port ??
+    input.origin_country ??
+    input.origin_country_code ??
+    null;
+  const destination =
+    input.destination ??
+    input.destination_port ??
+    input.destination_country ??
+    input.destination_country_code ??
+    null;
+  return (
+    input.lane ||
+    input.route ||
+    input.label ||
+    (origin && destination ? `${origin} → ${destination}` : origin || destination) ||
+    `Lane ${index + 1}`
+  );
+}
+
+function buildLaneActivitySeries(
+  logisticsKpis: any,
   profile?: IyCompanyProfile | null,
-  fallbackFclShare = 0,
-): MonthlyActivityPoint[] {
-  if (!profile?.time_series) return [];
+): LaneActivityPoint[] {
+  const map = new Map<string, { fcl: number; lcl: number }>();
+  const lanes = Array.isArray(logisticsKpis?.top_lanes)
+    ? logisticsKpis.top_lanes
+    : [];
 
-  const entries = Object.entries(profile.time_series)
-    .map(([dateStr, raw]) => {
-      if (!raw) return null;
-      const [day, month, year] = dateStr.split("/").map((piece) => Number(piece));
-      if (!day || !month || !year) return null;
-      const date = new Date(year, month - 1, day);
-      const shipments = coerceNumber((raw as any).shipments) ?? 0;
-      const teu = coerceNumber((raw as any).teu) ?? 0;
-      const fcl =
-        coerceNumber((raw as any).fcl_shipments) ??
-        coerceNumber((raw as any).shipments_fcl) ??
-        coerceNumber((raw as any).fcl) ??
-        null;
-      const lcl =
-        coerceNumber((raw as any).lcl_shipments) ??
-        coerceNumber((raw as any).shipments_lcl) ??
-        coerceNumber((raw as any).lcl) ??
-        null;
-      return { date, shipments, fcl, lcl, teu };
-    })
-    .filter(
-      (
-        entry,
-      ): entry is {
-        date: Date;
-        shipments: number;
-        fcl: number | null;
-        lcl: number | null;
-        teu: number;
-      } => !!entry,
-    )
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  lanes.forEach((lane, index) => {
+    const label = deriveLaneLabel(lane, index);
+    const mode = (lane?.mode ?? lane?.service ?? lane?.load_type)
+      ?.toString()
+      .toUpperCase();
+    const shipments =
+      coerceNumber(
+        lane?.shipments_12m ??
+          lane?.shipments ??
+          lane?.total_shipments ??
+          lane?.count,
+      ) ?? 0;
+    const fclValue =
+      coerceNumber(
+        lane?.fcl_shipments ?? lane?.shipments_fcl ?? lane?.fcl,
+      ) ?? 0;
+    const lclValue =
+      coerceNumber(
+        lane?.lcl_shipments ?? lane?.shipments_lcl ?? lane?.lcl,
+      ) ?? 0;
+    const bucket = map.get(label) ?? { fcl: 0, lcl: 0 };
 
-  const last12 = entries.slice(-12);
-  const safeFclShare = Math.min(Math.max(fallbackFclShare || 0, 0), 1);
-
-  return last12.map((entry) => {
-    const label = `${MONTH_LABELS[entry.date.getMonth()]} ${entry.date.getFullYear()}`;
-    if (entry.fcl != null || entry.lcl != null) {
-      const fclValue = entry.fcl ?? Math.max(entry.shipments - (entry.lcl ?? 0), 0);
-      const lclValue = entry.lcl ?? Math.max(entry.shipments - fclValue, 0);
-      return {
-        period: label,
-        fclShipments: Math.max(fclValue, 0),
-        lclShipments: Math.max(lclValue, 0),
-        totalTeu: Math.max(entry.teu, 0),
-      };
+    if (fclValue || lclValue) {
+      bucket.fcl += fclValue;
+      bucket.lcl += lclValue;
+    } else if (mode === "FCL") {
+      bucket.fcl += shipments;
+    } else if (mode === "LCL") {
+      bucket.lcl += shipments;
+    } else if (shipments) {
+      const derivedFcl = Math.round(shipments * 0.65);
+      bucket.fcl += derivedFcl;
+      bucket.lcl += Math.max(shipments - derivedFcl, 0);
     }
-    const derivedFcl = Math.round(entry.shipments * (safeFclShare || 0.5));
-    return {
-      period: label,
-      fclShipments: Math.max(derivedFcl, 0),
-      lclShipments: Math.max(entry.shipments - derivedFcl, 0),
-      totalTeu: Math.max(entry.teu, 0),
-    };
+    map.set(label, bucket);
   });
+
+  const fallbackRoutes = profile?.top_routes ?? [];
+  fallbackRoutes.forEach((route, index) => {
+    const label =
+      route.label ||
+      (route.origin && route.destination
+        ? `${route.origin} → ${route.destination}`
+        : route.origin || route.destination || `Route ${index + 1}`);
+    if (!label) return;
+    const shipments = coerceNumber(route.shipments) ?? 0;
+    if (!shipments) return;
+    const bucket = map.get(label) ?? { fcl: 0, lcl: 0 };
+    const derivedFcl = Math.round(shipments * 0.65);
+    bucket.fcl += derivedFcl;
+    bucket.lcl += Math.max(shipments - derivedFcl, 0);
+    map.set(label, bucket);
+  });
+
+  return Array.from(map.entries())
+    .map(([lane, stats]) => ({
+      lane,
+      fclShipments: Math.max(Math.round(stats.fcl), 0),
+      lclShipments: Math.max(Math.round(stats.lcl), 0),
+    }))
+    .filter((point) => point.fclShipments + point.lclShipments > 0)
+    .sort(
+      (a, b) =>
+        b.fclShipments +
+        b.lclShipments -
+        (a.fclShipments + a.lclShipments),
+    )
+    .slice(0, 6);
 }
 
 type KpiCardProps = {
@@ -202,7 +225,8 @@ type ShipperDetailModalProps = {
   routeKpis: IyRouteKpis | null;
   loading: boolean;
   error: string | null;
-  companyProfile?: IyCompanyProfile | null;
+  companyProfile?: any;
+  companyEnrichment?: any;
   profileLoading?: boolean;
   profileError?: string | null;
   isSaved?: boolean;
@@ -219,6 +243,7 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
   loading,
   error,
   companyProfile,
+  companyEnrichment,
   profileLoading = false,
   profileError = null,
   isSaved = false,
@@ -229,7 +254,19 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
 }) => {
   if (!isOpen || !shipper) return null;
 
-  const profile = companyProfile ?? null;
+  const rawProfile = companyProfile ?? null;
+  const profileKey =
+    shipper.companyKey ||
+    shipper.key ||
+    shipper.companyId ||
+    shipper.title ||
+    "";
+  const normalizedProfile = rawProfile
+    ? normalizeIyCompanyProfile(rawProfile, profileKey)
+    : null;
+  const normalizedCompany =
+    (companyEnrichment?.normalized_company as Record<string, any>) ?? {};
+  const logisticsKpis = companyEnrichment?.logistics_kpis ?? {};
 
   const {
     title,
@@ -244,28 +281,77 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
     primaryRouteSummary,
   } = shipper;
 
-  const displayTitle =
-    profile?.title || title || shipper.name || shipper.normalizedName || "Unknown company";
-  const displayAddress = profile?.address || address || "Address not available";
-  const displayCountry = profile?.country_code || countryCode || "Unknown";
+  const rawProfileData = (rawProfile?.data ?? rawProfile) || {};
+  const fallbackWebsite =
+    rawProfileData?.website ??
+    rawProfileData?.company_website ??
+    rawProfileData?.url ??
+    null;
+  const fallbackPhone =
+    rawProfileData?.phone_number ??
+    rawProfileData?.phone ??
+    rawProfileData?.company_phone ??
+    null;
+  const fallbackDomain =
+    rawProfileData?.domain ??
+    rawProfileData?.company_domain ??
+    rawProfileData?.website_domain ??
+    null;
 
-  const displayWebsite = normalizeWebsite(profile?.website || shipperWebsite || null);
+  const displayTitle =
+    (normalizedCompany?.name as string) ||
+    normalizedProfile?.title ||
+    title ||
+    shipper.name ||
+    shipper.normalizedName ||
+    "Unknown company";
+  const displayAddress =
+    (normalizedCompany?.hq as string) ||
+    normalizedProfile?.address ||
+    address ||
+    "Address not available";
+  const displayCountry =
+    (normalizedCompany?.country as string) ||
+    normalizedProfile?.country_code ||
+    countryCode ||
+    "Unknown";
+
+  const websiteSource =
+    (normalizedCompany?.website as string) ||
+    (normalizedCompany?.domain as string) ||
+    normalizedProfile?.website ||
+    fallbackWebsite ||
+    shipperWebsite ||
+    null;
+  const displayWebsite = normalizeWebsite(websiteSource);
   const websiteLabel = displayWebsite
     ? displayWebsite.replace(/^https?:\/\//i, "").replace(/\/$/, "")
     : null;
-  const displayPhone = profile?.phone_number || shipperPhone || null;
+  const displayPhone =
+    (normalizedCompany?.phone as string) ||
+    normalizedProfile?.phone_number ||
+    fallbackPhone ||
+    shipperPhone ||
+    null;
 
-  const derivedDomain = profile?.domain
-    ? profile.domain.replace(/^https?:\/\//i, "")
-    : (() => {
-        if (!displayWebsite) return shipperDomain ?? null;
-        try {
-          const parsed = new URL(displayWebsite);
-          return parsed.hostname.replace(/^www\./i, "");
-        } catch {
-          return shipperDomain ?? null;
-        }
-      })();
+  const derivedDomain = (() => {
+    const candidate =
+      (normalizedCompany?.domain as string) ||
+      normalizedProfile?.domain ||
+      fallbackDomain ||
+      shipperDomain ||
+      null;
+    if (candidate) {
+      return candidate.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+    }
+    if (!displayWebsite) return null;
+    try {
+      const parsed = new URL(displayWebsite);
+      return parsed.hostname.replace(/^www\./i, "");
+    } catch {
+      return null;
+    }
+  })();
 
   const logoUrl = derivedDomain
     ? getCompanyLogoUrl(derivedDomain)
@@ -273,41 +359,39 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
     ? getCompanyLogoUrl(shipperDomain)
     : undefined;
 
-  const fclKpi = profile?.containers_load?.find(
-    (c) => c.load_type?.toUpperCase() === "FCL",
-  );
-  const lclKpi = profile?.containers_load?.find(
-    (c) => c.load_type?.toUpperCase() === "LCL",
-  );
-  const totalContainers = (fclKpi?.shipments ?? 0) + (lclKpi?.shipments ?? 0);
-  const fclRatio = fclKpi?.shipments_perc ?? (totalContainers ? (fclKpi?.shipments ?? 0) / totalContainers : 0);
-  const lclRatio = lclKpi?.shipments_perc ?? (totalContainers ? (lclKpi?.shipments ?? 0) / totalContainers : 0);
+  const totalFcl =
+    coerceNumber(
+      logisticsKpis?.fcl_shipments ??
+        logisticsKpis?.shipments_fcl ??
+        logisticsKpis?.fcl,
+    ) ?? null;
+  const totalLcl =
+    coerceNumber(
+      logisticsKpis?.lcl_shipments ??
+        logisticsKpis?.shipments_lcl ??
+        logisticsKpis?.lcl,
+    ) ?? null;
+  const totalVolume = (totalFcl ?? 0) + (totalLcl ?? 0);
+  const fclShareLabel = formatShare(totalFcl, totalVolume || null);
+  const lclShareLabel = formatShare(totalLcl, totalVolume || null);
 
-  const monthlySeries = React.useMemo(
-    () => buildMonthlyActivitySeries(profile, fclRatio || 0),
-    [profile, fclRatio],
-  );
-  const hasMonthlySeries = monthlySeries.length > 0;
-  const shipmentsFromSeries = monthlySeries.reduce(
-    (sum, point) => sum + point.fclShipments + point.lclShipments,
-    0,
-  );
-  const teuFromSeries = monthlySeries.reduce(
-    (sum, point) => sum + point.totalTeu,
-    0,
-  );
   const shipmentsKpi =
-    shipmentsFromSeries || routeKpis?.shipmentsLast12m || profile?.total_shipments || totalShipments || null;
-  const teuKpi = teuFromSeries || routeKpis?.teuLast12m || null;
-  const spendKpi = routeKpis?.estSpendUsd ?? null;
-  const lastShipmentDate = profile?.last_shipment_date ?? mostRecentShipment ?? null;
+    coerceNumber(logisticsKpis?.shipments_12m) ??
+    routeKpis?.shipmentsLast12m ??
+    normalizedProfile?.total_shipments ??
+    totalShipments ??
+    null;
+  const teuKpi =
+    coerceNumber(logisticsKpis?.teus_12m) ?? routeKpis?.teuLast12m ?? null;
+  const spendKpi =
+    coerceNumber(logisticsKpis?.est_spend_usd) ?? routeKpis?.estSpendUsd ?? null;
+  const lastShipmentDate =
+    logisticsKpis?.last_shipment_date ??
+    normalizedProfile?.last_shipment_date ??
+    mostRecentShipment ??
+    null;
 
-  const totalFcl = fclKpi?.shipments ?? null;
-  const totalLcl = lclKpi?.shipments ?? null;
-  const fclShareLabel = formatShare(totalFcl, totalContainers);
-  const lclShareLabel = formatShare(totalLcl, totalContainers);
-
-  const primaryTopRoute = profile?.top_routes?.[0] ?? null;
+  const primaryTopRoute = normalizedProfile?.top_routes?.[0] ?? null;
   const topRouteLabel =
     formatRouteLabel(primaryTopRoute) ||
     routeKpis?.topRouteLast12m ||
@@ -318,16 +402,24 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
       ? `${formatNumber(primaryTopRoute.shipments)} shipments`
       : undefined;
 
-  const mostRecentRouteData = profile?.most_recent_route ?? null;
+  const mostRecentRouteData = normalizedProfile?.most_recent_route ?? null;
   const mostRecentRouteLabel =
     formatRouteLabel(mostRecentRouteData) || routeKpis?.mostRecentRoute || "No recent route";
   const mostRecentRouteSub = mostRecentRouteData?.last_shipment_date
     ? `Last shipment ${formatDateValue(mostRecentRouteData.last_shipment_date)}`
     : undefined;
 
-  const supplierSample = profile?.suppliers_sample ?? topSuppliers ?? [];
+  const supplierSample = normalizedProfile?.suppliers_sample ?? topSuppliers ?? [];
+
+  const laneSeries = React.useMemo(
+    () => buildLaneActivitySeries(logisticsKpis, normalizedProfile),
+    [logisticsKpis, normalizedProfile],
+  );
+  const hasLaneSeries = laneSeries.length > 0;
 
   const statusHasMessage = loading || error || profileLoading || profileError;
+  const enrichmentUnavailable =
+    !companyEnrichment && !profileLoading && !loading;
 
   const topKpis: KpiCardProps[] = [
     {
@@ -461,13 +553,18 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
         </div>
 
         <div className="max-h-[calc(90vh-96px)] overflow-y-auto px-6 pb-8">
-          {statusHasMessage && (
+          {(statusHasMessage || enrichmentUnavailable) && (
             <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               {loading && <div>Loading shipment insights…</div>}
               {error && !loading && <div className="text-red-600">{error}</div>}
               {profileLoading && <div>Loading company profile…</div>}
               {profileError && !profileLoading && (
                 <div className="text-red-600">{profileError}</div>
+              )}
+              {enrichmentUnavailable && (
+                <div className="text-indigo-600">
+                  AI enrichment not available for this company yet.
+                </div>
               )}
             </div>
           )}
@@ -506,29 +603,31 @@ const ShipperDetailModal: React.FC<ShipperDetailModalProps> = ({
 
           <div className="mt-8">
             <h3 className="text-sm font-semibold text-slate-700">
-              Activity last 12 months
+              Top lanes (last 12 months)
             </h3>
-            <p className="text-xs text-slate-500">Monthly shipments split between FCL and LCL services.</p>
-            {hasMonthlySeries ? (
+            <p className="text-xs text-slate-500">
+              FCL vs LCL shipment mix across the leading trade lanes.
+            </p>
+            {hasLaneSeries ? (
               <div className="mt-4 h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlySeries}>
+                  <BarChart data={laneSeries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="period" tickLine={false} tick={{ fontSize: 10 }} />
+                    <XAxis dataKey="lane" tickLine={false} tick={{ fontSize: 10 }} />
                     <YAxis allowDecimals={false} />
                     <Tooltip
-                      formatter={(value: number) => formatNumber(value as number)}
+                      formatter={(value: number) => `${formatNumber(value as number)} shipments`}
                       labelFormatter={(label) => label}
                     />
                     <Legend />
-                    <Bar dataKey="fclShipments" name="FCL" stackId="shipments" fill="#4f46e5" />
-                    <Bar dataKey="lclShipments" name="LCL" stackId="shipments" fill="#10b981" />
+                    <Bar dataKey="fclShipments" name="FCL" stackId="lanes" fill="#4f46e5" />
+                    <Bar dataKey="lclShipments" name="LCL" stackId="lanes" fill="#10b981" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             ) : (
               <p className="mt-3 text-sm text-slate-500">
-                No time-series data available for this company yet.
+                Lane-level shipment data is not available for this company yet.
               </p>
             )}
           </div>

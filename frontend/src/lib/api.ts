@@ -1097,34 +1097,82 @@ export async function iyCompanyStats(
   }
 }
 
-export async function getIyCompanyProfile(
-  keyOrSlug: string,
-): Promise<IyCompanyProfile> {
-  const slug = extractCompanySlug(keyOrSlug);
-  if (!slug) {
-    throw new Error("getIyCompanyProfile: empty company slug");
+function buildIyCompanyRoute(input: any): IyCompanyProfileRoute | null {
+  if (!input || typeof input !== "object") return null;
+  const origin =
+    input.origin ??
+    input.origin_port ??
+    input.origin_country ??
+    input.origin_country_code ??
+    null;
+  const destination =
+    input.destination ??
+    input.destination_port ??
+    input.destination_country ??
+    input.destination_country_code ??
+    null;
+  const label =
+    input.label ??
+    input.route ??
+    (origin && destination
+      ? `${origin} → ${destination}`
+      : origin || destination || null);
+  const shipments =
+    input.shipments ??
+    input.count ??
+    input.volume ??
+    input.shipments_12m ??
+    null;
+  const teu = input.teu ?? input.teus ?? null;
+  const lastRouteShipment =
+    input.last_shipment_date ??
+    input.lastShipmentDate ??
+    input.last_shipment ??
+    null;
+  if (!label && !origin && !destination) return null;
+  return {
+    label,
+    origin: origin ?? null,
+    destination: destination ?? null,
+    shipments: typeof shipments === "number" ? shipments : null,
+    teu: typeof teu === "number" ? teu : null,
+    last_shipment_date: lastRouteShipment ?? null,
+  };
+}
+
+function collectIyCompanyRoutes(value: any): IyCompanyProfileRoute[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map(buildIyCompanyRoute).filter(Boolean) as IyCompanyProfileRoute[];
   }
-
-  const brandDomain = inferDomainFromSlug(slug);
-
-  const url = withGatewayKey(
-    `${API_BASE}/public/iy/companyProfile?company=${encodeURIComponent(slug)}`,
-  );
-
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { accept: "application/json" },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `companyProfile ${res.status}: ${text || res.statusText}`,
-    );
+  if (typeof value === "object") {
+    const arr: IyCompanyProfileRoute[] = [];
+    if (Array.isArray(value.top)) {
+      arr.push(
+        ...(value.top
+          .map(buildIyCompanyRoute)
+          .filter(Boolean) as IyCompanyProfileRoute[]),
+      );
+    }
+    if (Array.isArray(value.routes)) {
+      arr.push(
+        ...(value.routes
+          .map(buildIyCompanyRoute)
+          .filter(Boolean) as IyCompanyProfileRoute[]),
+      );
+    }
+    return arr;
   }
+  return [];
+}
 
-  const json: any = await res.json().catch(() => ({}));
-  const data = json?.data ?? {};
+export function normalizeIyCompanyProfile(
+  rawProfile: any,
+  keyOrSlug?: string,
+): IyCompanyProfile {
+  const slug = keyOrSlug ? extractCompanySlug(keyOrSlug) : "";
+  const brandDomain = slug ? inferDomainFromSlug(slug) : null;
+  const data = rawProfile?.data ?? rawProfile ?? {};
   const rawWebsite =
     typeof data.website === "string" && data.website.trim().length
       ? data.website.trim()
@@ -1136,80 +1184,15 @@ export async function getIyCompanyProfile(
     data.lastShipment ??
     null;
 
-  const buildRoute = (input: any): IyCompanyProfileRoute | null => {
-    if (!input || typeof input !== "object") return null;
-    const origin =
-      input.origin ??
-      input.origin_port ??
-      input.origin_country ??
-      input.origin_country_code ??
-      null;
-    const destination =
-      input.destination ??
-      input.destination_port ??
-      input.destination_country ??
-      input.destination_country_code ??
-      null;
-    const label =
-      input.label ??
-      input.route ??
-      (origin && destination
-        ? `${origin} → ${destination}`
-        : origin || destination || null);
-    const shipments =
-      input.shipments ??
-      input.count ??
-      input.volume ??
-      input.shipments_12m ??
-      null;
-    const teu = input.teu ?? input.teus ?? null;
-    const lastRouteShipment =
-      input.last_shipment_date ??
-      input.lastShipmentDate ??
-      input.last_shipment ??
-      null;
-    if (!label && !origin && !destination) return null;
-    return {
-      label,
-      origin: origin ?? null,
-      destination: destination ?? null,
-      shipments: typeof shipments === "number" ? shipments : null,
-      teu: typeof teu === "number" ? teu : null,
-      last_shipment_date: lastRouteShipment ?? null,
-    };
-  };
-
-  const collectRoutes = (value: any): IyCompanyProfileRoute[] => {
-    if (!value) return [];
-    if (Array.isArray(value)) {
-      return value.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[];
-    }
-    if (typeof value === "object") {
-      const arr: IyCompanyProfileRoute[] = [];
-      if (Array.isArray(value.top)) {
-        arr.push(
-          ...(value.top.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[]),
-        );
-      }
-      if (Array.isArray(value.routes)) {
-        arr.push(
-          ...(value.routes.map(buildRoute).filter(Boolean) as IyCompanyProfileRoute[]),
-        );
-      }
-      return arr;
-    }
-    return [];
-  };
-
   const mostRecentRoute =
-    buildRoute(
+    buildIyCompanyRoute(
       data.most_recent_route ??
         data.routes?.most_recent ??
         data.routes?.mostRecent ??
         data.routes?.recent ??
         null,
     ) ??
-    buildRoute(
+    buildIyCompanyRoute(
       Array.isArray(data.routes)
         ? data.routes[0]
         : Array.isArray(data.top_routes)
@@ -1224,7 +1207,7 @@ export async function getIyCompanyProfile(
     data.routes?.top_routes ??
     data.routes ??
     null;
-  const topRoutes = collectRoutes(topRoutesRaw);
+  const topRoutes = collectIyCompanyRoutes(topRoutesRaw);
 
   const suppliersSample = Array.isArray(data.suppliers_sample)
     ? data.suppliers_sample.filter((item: unknown) => typeof item === "string")
@@ -1245,7 +1228,8 @@ export async function getIyCompanyProfile(
     last_shipment_date: lastShipmentDate ?? null,
     most_recent_route: mostRecentRoute,
     top_routes: topRoutes.length ? topRoutes : null,
-    suppliers_sample: suppliersSample && suppliersSample.length ? suppliersSample : null,
+    suppliers_sample:
+      suppliersSample && suppliersSample.length ? suppliersSample : null,
     containers_load: Array.isArray(data.containers_load)
       ? data.containers_load
       : null,
@@ -1253,6 +1237,51 @@ export async function getIyCompanyProfile(
       data.time_series && typeof data.time_series === "object"
         ? data.time_series
         : null,
+  };
+}
+
+export async function getIyCompanyProfile(
+  keyOrSlug: string,
+  query?: string,
+): Promise<{ rawProfile: any; enrichment: any }> {
+  const companyKey = ensureCompanyKey(keyOrSlug);
+  if (!companyKey) {
+    throw new Error("getIyCompanyProfile: company key is required");
+  }
+
+  const res = await fetch(withGatewayKey(`${IY_API_BASE}/public/iy/companyProfile`), {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      companyKey,
+      user_goal: "company profile enrichment",
+      query: query ?? null,
+    }),
+  });
+
+  const text = await res.text().catch(() => "");
+  let json: any = {};
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = {};
+    }
+  }
+
+  if (!res.ok || json?.ok === false) {
+    const message = json?.message || json?.error || text || res.statusText;
+    throw new Error(
+      message ? `companyProfile ${res.status}: ${message}` : `companyProfile ${res.status}`,
+    );
+  }
+
+  return {
+    rawProfile: json?.companyProfile ?? null,
+    enrichment: json?.enrichment ?? null,
   };
 }
 

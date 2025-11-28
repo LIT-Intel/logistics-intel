@@ -5,6 +5,7 @@ import {
   getSavedCompanies,
   getIyCompanyProfile,
   getIyRouteKpisForCompany,
+  normalizeIyCompanyProfile,
   type IyCompanyProfile,
   type IyRouteKpis,
 } from "@/lib/api";
@@ -79,7 +80,11 @@ export default function CommandCenter() {
     ])
       .then(([profileData, routeData]) => {
         if (cancelled) return;
-        setProfile(profileData);
+        const normalized =
+          profileData?.rawProfile
+            ? normalizeIyCompanyProfile(profileData.rawProfile, companyKey)
+            : null;
+        setProfile(normalized);
         setRouteKpis(routeData);
       })
       .catch((error: any) => {
