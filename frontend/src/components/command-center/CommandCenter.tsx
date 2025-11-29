@@ -74,12 +74,12 @@ export default function CommandCenter() {
     setDetailError(null);
 
     Promise.all([
-      getIyCompanyProfile(companyKey),
+      getIyCompanyProfile({ companyKey }),
       getIyRouteKpisForCompany({ companyKey }),
     ])
-      .then(([profileData, routeData]) => {
+      .then(([profileResult, routeData]) => {
         if (cancelled) return;
-        setProfile(profileData);
+        setProfile(profileResult.companyProfile);
         setRouteKpis(routeData);
       })
       .catch((error: any) => {
