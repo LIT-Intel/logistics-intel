@@ -6,7 +6,7 @@ import {
   searchShippers,
   getIyCompanyProfile,
   listSavedCompanies,
-  saveIyCompanyToCrm,
+  saveCompanyToCommandCenter,
   ensureCompanyKey,
   type IyShipperHit,
   type IyCompanyProfile,
@@ -240,7 +240,7 @@ export default function SearchPage() {
 
       setSavingCompanyId(companyId);
       try {
-        await saveIyCompanyToCrm({
+        await saveCompanyToCommandCenter({
           shipper,
           profile:
             profileOverride ||
@@ -505,6 +505,7 @@ export default function SearchPage() {
         shipper={selectedShipper}
         loadingProfile={profileLoading}
         profile={companyProfile}
+        routeKpis={companyProfile?.routeKpis ?? null}
         enrichment={companyEnrichment}
         error={profileError}
         isSaved={isShipperSaved(selectedShipper)}
