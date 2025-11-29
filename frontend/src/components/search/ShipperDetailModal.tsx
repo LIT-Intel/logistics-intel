@@ -24,7 +24,13 @@ import {
 } from "@heroicons/react/24/outline";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
-import type { IyShipperHit, IyCompanyProfile } from "@/lib/api";
+import {
+  type IyShipperHit,
+  type IyCompanyProfile,
+  type IyRouteKpis,
+  getFclShipments12m,
+  getLclShipments12m,
+} from "@/lib/api";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -75,6 +81,79 @@ const monthLabel = (value: string) => {
   }
   return value;
 };
+
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "").trim();
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizeEnrichmentList(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") return entry.trim();
+        if (entry && typeof entry === "object") {
+          if ("text" in entry && typeof (entry as any).text === "string") {
+            return ((entry as any).text as string).trim();
+          }
+          if ("value" in entry && typeof (entry as any).value === "string") {
+            return ((entry as any).value as string).trim();
+          }
+          if ("description" in entry && typeof (entry as any).description === "string") {
+            return ((entry as any).description as string).trim();
+          }
+          if ("title" in entry && typeof (entry as any).title === "string") {
+            const title = ((entry as any).title as string).trim();
+            const desc =
+              typeof (entry as any).description === "string"
+                ? (entry as any).description.trim()
+                : "";
+            return desc ? `${title} – ${desc}` : title;
+          }
+        }
+        return "";
+      })
+      .filter((item) => item.length > 0);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\n+/)
+      .map((line) => line.replace(/^[*-]\s*/, "").trim())
+      .filter((line) => line.length > 0);
+  }
+  return [];
+}
+
+function pickEnrichmentSummary(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const candidates = [
+    (value as any).summary,
+    (value as any).overview,
+    (value as any).description,
+    (value as any).narrative,
+    (value as any).highlights,
+    (value as any).ai_summary,
+    (value as any)?.ai?.summary,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+  return null;
+}
 
 const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -130,6 +209,7 @@ type ShipperDetailModalProps = {
   shipper: IyShipperHit | null;
   loadingProfile: boolean;
   profile: IyCompanyProfile | null;
+  routeKpis?: IyRouteKpis | null;
   enrichment: any | null;
   error: string | null;
   onClose: () => void;
@@ -146,6 +226,7 @@ export default function ShipperDetailModal({
   shipper,
   loadingProfile,
   profile,
+  routeKpis = null,
   enrichment,
   error,
   onClose,
@@ -156,43 +237,75 @@ export default function ShipperDetailModal({
   if (!isOpen || !shipper) return null;
 
   const normalizedWebsite = React.useMemo(() => {
-    const profileWebsite = normalizeWebsite(profile?.website ?? null);
-    if (profileWebsite) return profileWebsite;
-    const fallback = shipper.domain ? normalizeWebsite(shipper.domain) : null;
-    return fallback;
-  }, [profile?.website, shipper.domain]);
+    const profileWebsite =
+      profile?.website ||
+      (profile?.domain ? `https://${profile.domain}` : null);
+    const hitWebsite =
+      shipper.website ||
+      (shipper.domain ? `https://${shipper.domain}` : null);
+    return normalizeWebsite(profileWebsite ?? hitWebsite ?? null);
+  }, [profile?.website, profile?.domain, shipper.website, shipper.domain]);
 
-  const displayPhone =
-    profile?.phone ?? shipper.phone ?? shipper.contact?.phone ?? null;
+  const normalizedPhone =
+    profile?.phoneNumber ??
+    profile?.phone ??
+    shipper.phone ??
+    ((shipper as any)?.contact?.phone ?? null);
 
-  const companyId = profile?.companyId ?? shipper.key ?? shipper.companyId ?? "";
-  const domain = profile?.domain ?? shipper.domain ?? null;
+  const companyId =
+    profile?.key ??
+    profile?.companyId ??
+    shipper.key ??
+    shipper.companyId ??
+    "";
+  const domain = profile?.domain ?? shipper.domain ?? shipper.website ?? null;
   const logoUrl = domain ? getCompanyLogoUrl(domain) : undefined;
 
-  const containers = profile?.containers ?? null;
-  const kpis = profile?.routeKpis ?? null;
+  const resolvedRouteKpis = routeKpis ?? profile?.routeKpis ?? null;
   const shipments12m =
-    kpis?.shipmentsLast12m ??
-    (typeof shipper.totalShipments === "number" ? shipper.totalShipments : null);
-  const teu12m = kpis?.teuLast12m ?? null;
-  const estSpend12m = profile?.estSpendUsd12m ?? null;
-  const fclShipments12m = containers?.fclShipments12m ?? null;
-  const lclShipments12m = containers?.lclShipments12m ?? null;
-  const lastShipmentDate = profile?.lastShipmentDate ?? shipper.mostRecentShipment ?? null;
+    coerceNumber(resolvedRouteKpis?.shipmentsLast12m) ??
+    coerceNumber(profile?.totalShipments) ??
+    coerceNumber(shipper.totalShipments) ??
+    coerceNumber(shipper.shipmentsLast12m);
+  const teu12m =
+    coerceNumber(resolvedRouteKpis?.teuLast12m) ??
+    coerceNumber(shipper.teusLast12m);
+  const estSpend12m =
+    coerceNumber(resolvedRouteKpis?.estSpendUsd12m) ??
+    coerceNumber(profile?.estSpendUsd12m) ??
+    coerceNumber(shipper.estSpendLast12m);
+  const fclShipments12m = getFclShipments12m(profile);
+  const lclShipments12m = getLclShipments12m(profile);
+  const lastShipmentDate =
+    profile?.lastShipmentDate ??
+    shipper.lastShipmentDate ??
+    shipper.mostRecentShipment ??
+    null;
   const topRouteLast12m =
-    kpis?.topRouteLast12m ?? shipper.primaryRouteSummary ?? shipper.primaryRoute ?? null;
+    resolvedRouteKpis?.topRouteLast12m ??
+    shipper.primaryRouteSummary ??
+    shipper.primaryRoute ??
+    null;
   const mostRecentRoute =
-    kpis?.mostRecentRoute ?? shipper.primaryRouteSummary ?? shipper.primaryRoute ?? null;
-  const topRoutes = Array.isArray(kpis?.topRoutesLast12m)
-    ? kpis!.topRoutesLast12m.slice(0, 5)
+    resolvedRouteKpis?.mostRecentRoute ??
+    shipper.primaryRouteSummary ??
+    shipper.primaryRoute ??
+    null;
+  const topRoutes = Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
+    ? resolvedRouteKpis.topRoutesLast12m.slice(0, 5)
     : [];
 
-  const activity = Array.isArray(profile?.timeSeries) ? profile!.timeSeries : [];
-  const chartData = activity.map((point) => ({
-    monthLabel: monthLabel(point.month),
-    fcl: point.fclShipments ?? 0,
-    lcl: point.lclShipments ?? 0,
-  }));
+  const chartData = React.useMemo(
+    () =>
+      Array.isArray(profile?.timeSeries)
+        ? profile.timeSeries.slice(-12).map((point) => ({
+            monthLabel: monthLabel(point.month),
+            fcl: coerceNumber(point.fclShipments) ?? 0,
+            lcl: coerceNumber(point.lclShipments) ?? 0,
+          }))
+        : [],
+    [profile?.timeSeries],
+  );
 
   const supplierList = React.useMemo(() => {
     const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
@@ -206,6 +319,75 @@ export default function ShipperDetailModal({
       .filter((value: string) => Boolean(value))
       .slice(0, 6);
   }, [profile?.topSuppliers, shipper.topSuppliers]);
+
+  const enrichmentSummary = React.useMemo(
+    () => pickEnrichmentSummary(enrichment),
+    [enrichment],
+  );
+  const enrichmentOpportunities = React.useMemo(
+    () =>
+      normalizeEnrichmentList(
+        enrichment?.opportunities ??
+          enrichment?.opportunityInsights ??
+          enrichment?.opportunity_insights ??
+          enrichment?.ai?.opportunities ??
+          enrichment?.opportunityBullets,
+      ),
+    [enrichment],
+  );
+  const enrichmentRisks = React.useMemo(
+    () =>
+      normalizeEnrichmentList(
+        enrichment?.risks ??
+          enrichment?.riskInsights ??
+          enrichment?.risk_insights ??
+          enrichment?.watchouts ??
+          enrichment?.ai?.risks,
+      ),
+    [enrichment],
+  );
+  const enrichmentTalkingPoints = React.useMemo(
+    () =>
+      normalizeEnrichmentList(
+        enrichment?.talkingPoints ??
+          enrichment?.recommendedTalkingPoints ??
+          enrichment?.recommended_actions ??
+          enrichment?.actions ??
+          enrichment?.ai?.talkingPoints,
+      ),
+    [enrichment],
+  );
+  const enrichmentExtraSections = React.useMemo(() => {
+    if (!Array.isArray(enrichment?.sections)) return [];
+    return enrichment.sections
+      .map((section: any) => {
+        const label =
+          typeof section?.title === "string"
+            ? section.title
+            : typeof section?.label === "string"
+              ? section.label
+              : null;
+        const items = normalizeEnrichmentList(
+          section?.items ??
+            section?.bullets ??
+            section?.points ??
+            section?.content,
+        );
+        if (!label || items.length === 0) return null;
+        return { label, items };
+      })
+      .filter(
+        (entry): entry is { label: string; items: string[] } => Boolean(entry),
+      );
+  }, [enrichment]);
+
+  const hasEnrichmentContent = Boolean(
+    enrichmentSummary ||
+      enrichmentOpportunities.length ||
+      enrichmentRisks.length ||
+      enrichmentTalkingPoints.length ||
+      enrichmentExtraSections.length,
+  );
 
   const showEnrichmentBanner = !enrichment && !loadingProfile;
 
@@ -287,13 +469,13 @@ export default function ShipperDetailModal({
                     </span>
                   </a>
                 )}
-                {displayPhone && (
+                {normalizedPhone && (
                   <a
-                    href={`tel:${displayPhone}`}
+                    href={`tel:${normalizedPhone}`}
                     className="inline-flex items-center gap-1"
                   >
                     <PhoneIcon className="h-4 w-4" />
-                    <span>{displayPhone}</span>
+                    <span>{normalizedPhone}</span>
                   </a>
                 )}
               </div>
@@ -440,11 +622,11 @@ export default function ShipperDetailModal({
                   </p>
                 ) : (
                   <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-                    {topRoutes.map((lane) => (
-                      <li key={lane.route} className="flex items-center justify-between gap-2">
+                    {topRoutes.map((lane, idx) => (
+                      <li key={`${lane.route}-${idx}`} className="flex items-center justify-between gap-2">
                         <span className="truncate">{lane.route}</span>
                         <span className="text-[11px] text-slate-500">
-                          {formatNumber(lane.shipments)} shipments
+                          {formatNumber(lane.shipments ?? null)} shipments
                         </span>
                       </li>
                     ))}
@@ -454,6 +636,89 @@ export default function ShipperDetailModal({
             </div>
 
             <div className="space-y-4">
+              {enrichment && (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    AI insights
+                  </p>
+                  {hasEnrichmentContent ? (
+                    <>
+                      {enrichmentSummary && (
+                        <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
+                          {enrichmentSummary}
+                        </p>
+                      )}
+                      {enrichmentOpportunities.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Opportunities
+                          </p>
+                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                            {enrichmentOpportunities.map((item, idx) => (
+                              <li key={`opp-${idx}`} className="flex items-start gap-2">
+                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                <span className="leading-snug">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {enrichmentRisks.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Risks
+                          </p>
+                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                            {enrichmentRisks.map((item, idx) => (
+                              <li key={`risk-${idx}`} className="flex items-start gap-2">
+                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                <span className="leading-snug">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {enrichmentTalkingPoints.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Recommended talking points
+                          </p>
+                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                            {enrichmentTalkingPoints.map((item, idx) => (
+                              <li key={`talk-${idx}`} className="flex items-start gap-2">
+                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                <span className="leading-snug">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {enrichmentExtraSections.map((section, sectionIdx) => (
+                        <div className="mt-3" key={`${section.label}-${sectionIdx}`}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            {section.label}
+                          </p>
+                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                            {section.items.map((item, idx) => (
+                              <li
+                                key={`${section.label}-${sectionIdx}-${idx}`}
+                                className="flex items-start gap-2"
+                              >
+                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                <span className="leading-snug">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      AI enrichment response available but no structured insights were returned.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Top suppliers (sample)

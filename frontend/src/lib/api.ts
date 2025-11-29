@@ -44,6 +44,19 @@ export const API_BASE = resolveApiBase();
 const SEARCH_GATEWAY_BASE = API_BASE;
 const IY_API_BASE = API_BASE;
 
+export function coerceNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "").trim();
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 // Frontend API key for calling the API Gateway
 const LIT_GATEWAY_KEY =
   (typeof import.meta !== "undefined" &&
@@ -106,7 +119,9 @@ export interface IyShipperHit {
   shipmentsLast12m?: number | null;
   teusLast12m?: number | null;
   estSpendLast12m?: number | null;
+  mostRecentShipment?: string | null;
   primaryRouteSummary?: string | null;
+  primaryRoute?: string | null;
   lastShipmentDate?: string | null;
   topSuppliers?: string[] | null;
 }
@@ -128,35 +143,41 @@ export interface IySearchResponse {
 
 export type IyRouteTopRoute = {
   route: string;
-  shipments: number;
+  shipments: number | null;
   teu?: number | null;
+  fclShipments?: number | null;
+  lclShipments?: number | null;
 };
 
-export type IyRouteKpis = {
+export interface IyRouteKpis {
   shipmentsLast12m: number | null;
   teuLast12m: number | null;
+  estSpendUsd12m: number | null;
   topRouteLast12m: string | null;
   mostRecentRoute: string | null;
   sampleSize: number | null;
   topRoutesLast12m: IyRouteTopRoute[];
-};
+}
 
-export type IyMonthlyActivity = {
+export interface IyTimeSeriesPoint {
   month: string;
-  fclShipments: number;
-  lclShipments: number;
-};
+  fclShipments: number | null;
+  lclShipments: number | null;
+}
 
 export type IyCompanyContainers = {
   fclShipments12m: number | null;
   lclShipments12m: number | null;
 };
 
-export type IyCompanyProfile = {
+export interface IyCompanyProfile {
+  key: string;
   companyId: string;
+  name: string;
   title: string;
   domain: string | null;
   website: string | null;
+  phoneNumber: string | null;
   phone: string | null;
   address: string | null;
   countryCode: string | null;
@@ -164,16 +185,48 @@ export type IyCompanyProfile = {
   estSpendUsd12m: number | null;
   totalShipments: number | null;
   routeKpis: IyRouteKpis | null;
-  timeSeries: IyMonthlyActivity[];
+  timeSeries: IyTimeSeriesPoint[];
   containers: IyCompanyContainers | null;
   topSuppliers?: string[] | null;
-  // Legacy fields for compatibility with older UI
+  // Legacy/raw passthrough fields for compatibility with older UI
   time_series?: Record<string, any>;
   containers_load?: Array<Record<string, any>>;
   top_routes?: Array<Record<string, any>>;
   most_recent_route?: Record<string, any> | null;
   suppliers_sample?: string[];
-};
+}
+
+export function getFclShipments12m(
+  profile?: IyCompanyProfile | null,
+): number | null {
+  if (!profile) return null;
+  const direct =
+    (profile as any).fclShipments12m ?? (profile as any).fcl_shipments_12m;
+  const fromContainers = profile.containers
+    ? (profile.containers.fclShipments12m ??
+        (profile.containers as any).fcl_shipments_12m ??
+        (profile.containers as any).fcl ??
+        null)
+    : null;
+  const candidate = direct ?? fromContainers;
+  return coerceNumber(candidate);
+}
+
+export function getLclShipments12m(
+  profile?: IyCompanyProfile | null,
+): number | null {
+  if (!profile) return null;
+  const direct =
+    (profile as any).lclShipments12m ?? (profile as any).lcl_shipments_12m;
+  const fromContainers = profile.containers
+    ? (profile.containers.lclShipments12m ??
+        (profile.containers as any).lcl_shipments_12m ??
+        (profile.containers as any).lcl ??
+        null)
+    : null;
+  const candidate = direct ?? fromContainers;
+  return coerceNumber(candidate);
+}
 
 export interface IyBolDetail {
   bol_number: string;
@@ -866,6 +919,15 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
     normalizeString(entry?.mostRecentShipment) ??
     normalizeString(entry?.last_activity) ??
     null;
+  const mostRecentShipment =
+    normalizeString(entry?.mostRecentShipment) ??
+    normalizeString(entry?.lastShipmentDate) ??
+    normalizeString(entry?.last_activity) ??
+    null;
+  const primaryRoute =
+    normalizeString(entry?.primaryRoute) ??
+    normalizeString(entry?.primary_route) ??
+    primaryRouteSummary;
 
   const companyKey = companyId || fallbackKey;
 
@@ -893,7 +955,9 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
     teusLast12m,
     estSpendLast12m,
     primaryRouteSummary,
+    primaryRoute: primaryRoute ?? null,
     lastShipmentDate,
+    mostRecentShipment,
     topSuppliers:
       Array.isArray(entry?.topSuppliers) || Array.isArray(entry?.top_suppliers)
         ? (entry?.topSuppliers ?? entry?.top_suppliers)?.filter(
@@ -1115,7 +1179,7 @@ function normalizeContainers(raw: any): IyCompanyContainers | null {
   };
 }
 
-function normalizeTimeSeries(raw: any): IyMonthlyActivity[] {
+function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
   if (raw?.timeSeries && Array.isArray(raw.timeSeries)) {
     return raw.timeSeries.map((entry: any) => ({
       month: String(entry?.month ?? ""),
@@ -1185,21 +1249,36 @@ function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
           .filter((value: unknown): value is string => typeof value === "string")
           .join(" → ");
       if (!route && !entry?.shipments) return null;
+      const shipments =
+        coerceNumber(
+          entry?.shipments ??
+            entry?.total_shipments ??
+            entry?.shipments_12m ??
+            entry?.shipments12m ??
+            entry?.count,
+        ) ?? null;
       return {
         route: route || "Route",
-        shipments:
-          coerceNumber(
-            entry?.shipments ??
-              entry?.total_shipments ??
-              entry?.shipments_12m ??
-              entry?.shipments12m ??
-              entry?.count,
-          ) ?? 0,
+        shipments,
         teu: coerceNumber(entry?.teu ?? entry?.teu_12m) ?? null,
+        fclShipments:
+          coerceNumber(
+            entry?.fclShipments ??
+              entry?.fcl_shipments ??
+              entry?.shipments_fcl ??
+              entry?.fcl,
+          ) ?? null,
+        lclShipments:
+          coerceNumber(
+            entry?.lclShipments ??
+              entry?.lcl_shipments ??
+              entry?.shipments_lcl ??
+              entry?.lcl,
+          ) ?? null,
       };
     })
     .filter((value): value is IyRouteTopRoute => Boolean(value))
-    .sort((a, b) => b.shipments - a.shipments);
+    .sort((a, b) => (b.shipments ?? 0) - (a.shipments ?? 0));
 }
 
 function normalizeRouteKpis(raw: any): IyRouteKpis | null {
@@ -1207,6 +1286,12 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
     return {
       shipmentsLast12m: coerceNumber(raw.routeKpis.shipmentsLast12m) ?? null,
       teuLast12m: coerceNumber(raw.routeKpis.teuLast12m) ?? null,
+      estSpendUsd12m:
+        coerceNumber(
+          raw.routeKpis.estSpendUsd12m ??
+            raw.routeKpis.est_spend_usd ??
+            raw.routeKpis.estSpend,
+        ) ?? null,
       topRouteLast12m: raw.routeKpis.topRouteLast12m ?? null,
       mostRecentRoute: raw.routeKpis.mostRecentRoute ?? null,
       sampleSize: coerceNumber(raw.routeKpis.sampleSize) ?? null,
@@ -1228,6 +1313,10 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   return {
     shipmentsLast12m: coerceNumber(raw.total_shipments ?? raw.shipments_12m) ?? null,
     teuLast12m: coerceNumber(raw.teu_12m ?? raw.teu12m) ?? null,
+    estSpendUsd12m:
+      coerceNumber(
+        raw.estSpendUsd12m ?? raw.est_spend_usd ?? raw.estimated_spend_12m,
+      ) ?? null,
     topRouteLast12m: topRoutes[0]?.route ?? null,
     mostRecentRoute:
       raw?.most_recent_route?.route ??
@@ -1247,6 +1336,7 @@ function normalizeCompanyProfile(
   const companyId = ensureCompanyKey(
     profileData.company_id ?? profileData.companyKey ?? companyKey,
   );
+  const profileKey = ensureCompanyKey(profileData.key ?? companyId);
 
   const routeKpis = normalizeRouteKpis(profileData);
   const timeSeries = normalizeTimeSeries(profileData);
@@ -1269,16 +1359,38 @@ function normalizeCompanyProfile(
         })()
       : null);
 
+  const phoneCandidate =
+    profileData.phoneNumber ??
+    profileData.phone ??
+    profileData.phone_number ??
+    profileData.company_phone ??
+    null;
+
   return {
+    key: profileKey,
     companyId,
-    title: typeof profileData.title === "string" ? profileData.title : "",
+    name:
+      typeof profileData.name === "string"
+        ? profileData.name
+        : typeof profileData.title === "string"
+          ? profileData.title
+          : profileKey,
+    title:
+      typeof profileData.title === "string"
+        ? profileData.title
+        : typeof profileData.name === "string"
+          ? profileData.name
+          : profileKey,
     domain: domainValue,
     website: websiteValue,
+    phoneNumber: typeof phoneCandidate === "string" ? phoneCandidate : null,
     phone:
-      profileData.phone ??
-      profileData.phone_number ??
-      profileData.company_phone ??
-      null,
+      typeof phoneCandidate === "string"
+        ? phoneCandidate
+        : profileData.phone ??
+            profileData.phone_number ??
+            profileData.company_phone ??
+            null,
     address: profileData.address ?? profileData.company_address ?? null,
     countryCode:
       profileData.country_code ??
@@ -1697,6 +1809,8 @@ export async function getIyRouteKpisForCompany(
   }
 }
 
+export const getIyRouteKpis = getIyRouteKpisForCompany;
+
 export async function listSavedCompanies(
   stage = "prospect",
 ): Promise<CommandCenterRecord[]> {
@@ -1966,6 +2080,8 @@ export async function saveIyCompanyToCrm(opts: {
   shipper: IyShipperHit;
   profile: IyCompanyProfile | null;
   stage?: string;
+  provider?: string;
+  source?: string;
 }) {
   const rawId =
     opts.shipper.key ??
@@ -1984,8 +2100,9 @@ export async function saveIyCompanyToCrm(opts: {
     body: JSON.stringify({
       company_id: companyId,
       stage: opts.stage ?? "prospect",
-      provider: "iy-dma",
+      provider: opts.provider ?? "iy-dma",
       payload: {
+        source: opts.source ?? "importyeti",
         shipper: opts.shipper,
         profile: opts.profile,
       },
@@ -1999,6 +2116,15 @@ export async function saveIyCompanyToCrm(opts: {
   }
 
   return resp.json().catch(() => ({}));
+}
+
+export async function saveCompanyToCommandCenter(opts: {
+  shipper: IyShipperHit;
+  profile: IyCompanyProfile | null;
+  stage?: string;
+  source?: string;
+}) {
+  return saveIyCompanyToCrm(opts);
 }
 
 export function buildCompanyShipmentsUrl(
