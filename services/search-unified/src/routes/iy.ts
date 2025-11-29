@@ -6,6 +6,7 @@ import {
   type Response,
   type NextFunction,
 } from "express";
+import { runGeminiAgent, type LitGeminiInput } from "../ai/geminiAgent.js";
 
 const router = Router();
 
@@ -99,7 +100,8 @@ async function iySearch(
   const searchPath = (() => {
     const basePath = "/company/search";
     const qs = new URLSearchParams();
-    qs.set("q", trimmed);
+    // ImportYeti accepts "name" for text search
+    qs.set("name", trimmed);
     return `${basePath}?${qs.toString()}`;
   })();
 
@@ -155,7 +157,8 @@ async function iySearch(
     let domain =
       row?.domain ??
       row?.company_domain ??
-      (row?.website_domain ?? null);
+      row?.website_domain ??
+      null;
 
     if (!domain && website) {
       try {
@@ -419,7 +422,135 @@ router.post(
 );
 
 // -----------------------------------------------------------------------------
-// GET /public/iy/companyProfile
+// Helper: shrink ImportYeti company JSON for Gemini
+// -----------------------------------------------------------------------------
+
+function buildGeminiCompanyProfile(raw: any) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const topSuppliersSource =
+    raw.topSuppliers ??
+    raw.top_suppliers ??
+    raw.suppliers ??
+    [];
+
+  const topSuppliers = Array.isArray(topSuppliersSource)
+    ? topSuppliersSource.slice(0, 10)
+    : [];
+
+  const hsSource =
+    raw.hs_codes ??
+    raw.top_hs_codes ??
+    raw.hsCodes ??
+    [];
+
+  const topHsCodes = Array.isArray(hsSource) ? hsSource.slice(0, 10) : [];
+
+  const lanesSource =
+    raw.top_lanes ??
+    raw.routes ??
+    raw.trade_lanes ??
+    [];
+
+  const topLanes = Array.isArray(lanesSource) ? lanesSource.slice(0, 10) : [];
+
+  return {
+    key: raw.key ?? raw.companyKey ?? null,
+    name: raw.title ?? raw.name ?? null,
+    website: raw.website ?? null,
+    domain: raw.domain ?? null,
+    phone: raw.phone ?? null,
+    address: raw.company_address ?? raw.address ?? null,
+    country: raw.company_country ?? raw.country ?? null,
+    country_code:
+      raw.country_code ??
+      raw.company_country_code ??
+      null,
+    total_shipments:
+      raw.total_shipments ??
+      raw.totalShipments ??
+      null,
+    last_shipment_date:
+      raw.last_shipment_date ??
+      raw.most_recent_shipment ??
+      raw.mostRecentShipment ??
+      null,
+    top_suppliers: topSuppliers,
+    top_hs_codes: topHsCodes,
+    top_lanes: topLanes,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Helper: fetch ImportYeti company profile by key or name
+// -----------------------------------------------------------------------------
+
+async function getImportYetiCompanyProfile(args: {
+  companyKey?: string;
+  name?: string;
+}) {
+  const companyKey = (args.companyKey ?? "").trim();
+  const name = (args.name ?? "").trim();
+
+  if (!companyKey && !name) {
+    const err: any = new Error("companyKey or name is required");
+    err.status = 400;
+    throw err;
+  }
+
+  // 1) If we have an explicit companyKey (e.g. "company/wahoo-fitness"),
+  //    use that directly.
+  if (companyKey) {
+    const slug = companyKey.startsWith("company/")
+      ? companyKey.slice("company/".length)
+      : companyKey;
+
+    const path = `/company/${encodeURIComponent(slug)}`;
+    const resp = await iyGet<any>(path);
+    return resp;
+  }
+
+  // 2) Fallback: search by name, then hydrate the first hit's key.
+  const searchQs = new URLSearchParams();
+  searchQs.set("q", name);
+  const searchPath = `/company/search?${searchQs.toString()}`;
+
+  const searchResp = await iyGet<{ data?: any[] }>(searchPath);
+  const rows = Array.isArray(searchResp?.data) ? searchResp.data : [];
+  const first = rows[0];
+
+  if (!first) {
+    const err: any = new Error(
+      `No ImportYeti company found for name "${name}"`,
+    );
+    err.status = 404;
+    throw err;
+  }
+
+  const rawKey: string =
+    (first.key as string) ||
+    (first.slug as string) ||
+    (first.company_slug as string) ||
+    (first.company_id as string) ||
+    "";
+
+  const key = rawKey.trim();
+  if (!key) {
+    const err: any = new Error(
+      `ImportYeti search returned a company without a usable key for "${name}"`,
+    );
+    err.status = 500;
+    throw err;
+  }
+
+  const slug = key.startsWith("company/") ? key.slice("company/".length) : key;
+  const path = `/company/${encodeURIComponent(slug)}`;
+  const profile = await iyGet<any>(path);
+  return profile;
+}
+
+// -----------------------------------------------------------------------------
+// GET /public/iy/companyProfile  (raw ImportYeti profile by query param)
 // -----------------------------------------------------------------------------
 
 router.get(
@@ -447,6 +578,92 @@ router.get(
       return res.json(resp);
     } catch (err) {
       return next(err);
+    }
+  },
+);
+
+// -----------------------------------------------------------------------------
+// POST /public/iy/companyProfile
+// Used by frontend to get ImportYeti profile + Gemini enrichment.
+// -----------------------------------------------------------------------------
+
+router.post(
+  "/companyProfile",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { companyKey, name, user_goal, query } = (req.body ?? {}) as {
+        companyKey?: string;
+        name?: string;
+        user_goal?: string;
+        query?: string;
+      };
+
+      if (!companyKey && !name) {
+        return res.status(400).json({
+          ok: false,
+          error_code: "missing_company_id",
+          message: "companyKey or name is required",
+        });
+      }
+
+      // 1) Fetch ImportYeti profile
+      const companyProfile = await getImportYetiCompanyProfile({
+        companyKey,
+        name,
+      });
+
+      // 2) Build trimmed company profile for Gemini
+      const geminiCompanyProfile = buildGeminiCompanyProfile(companyProfile);
+
+      const litInput: LitGeminiInput = {
+        company_profile: geminiCompanyProfile,
+        lit_search_context: {
+          query: query ?? null,
+        },
+        user_goal:
+          user_goal || "Enrich company profile for LIT Command Center",
+      };
+
+      // 3) Call Gemini agent with hard timeout so Gateway doesn't 504
+      let enrichment: any | null = null;
+
+      try {
+        const timeoutMs = 12000;
+
+        enrichment = await Promise.race([
+          runGeminiAgent(litInput),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs),
+          ),
+        ]);
+      } catch (agentErr) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "POST /public/iy/companyProfile Gemini agent failed or timed out; returning base profile only",
+          agentErr,
+        );
+        enrichment = null;
+      }
+
+      return res.json({
+        ok: true,
+        companyProfile,
+        enrichment,
+      });
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.error("POST /public/iy/companyProfile error", err);
+
+      const status =
+        typeof err?.status === "number" && err.status >= 400 && err.status < 600
+          ? err.status
+          : 500;
+
+      return res.status(status).json({
+        ok: false,
+        error_code: "company_profile_error",
+        message: err?.message ?? "Failed to load company profile",
+      });
     }
   },
 );
@@ -489,6 +706,10 @@ router.get(
     }
   },
 );
+
+// -----------------------------------------------------------------------------
+// GET /public/iy/companyProfileRaw  (debug helper)
+// -----------------------------------------------------------------------------
 
 router.get(
   "/companyProfileRaw",

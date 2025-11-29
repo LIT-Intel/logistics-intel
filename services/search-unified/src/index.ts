@@ -12,6 +12,8 @@ import iyRouter from "./routes/iy.js";
 import publicRoutes from "./routes/public.js";
 import searchCompanies from "./routes/searchCompanies.js";
 import statusRoutes from "./routes/status.js";
+// AI router (Gemini enrichment)
+import { aiRouter } from "./ai/index.js";
 
 const app = express();
 
@@ -77,6 +79,11 @@ app.use("/public/iy", iyRouter);
 // Campaign / CRM routes
 app.use(campaigns);
 
+// AI routes (Gemini agent)
+//   GET  /ai/test
+//   POST /ai/enrich-company
+app.use("/ai", aiRouter);
+
 // Central error handler
 app.use(
   (
@@ -99,10 +106,14 @@ app.use(
       error.message ||
       (status >= 500 ? "Internal server error" : "Request failed");
 
-    if (status >= 500) {
-      // eslint-disable-next-line no-console
-      console.error("search-unified error:", err);
-    }
+    // Keep logging so we can see any ImportYeti or Gemini issues server-side
+    // eslint-disable-next-line no-console
+    console.error("search-unified error:", {
+      status,
+      errorCode,
+      message,
+      err,
+    });
 
     res.status(status).json({
       ok: false,
@@ -123,3 +134,4 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 export default app;
+
