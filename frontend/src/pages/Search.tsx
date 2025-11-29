@@ -8,9 +8,9 @@ import {
   listSavedCompanies,
   saveCompanyToCrm,
   ensureCompanyKey,
+  getIyRouteKpisForCompany,
   type IyShipperHit,
   type IyRouteKpis,
-  type IyMonthlySeriesPoint,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -124,37 +124,48 @@ export default function SearchPage() {
     setSelectedShipper(shipper);
     setIsModalOpen(true);
 
-    setRouteKpisLoading(true);
-    setRouteKpisError(null);
-    try {
-      const kpis = buildMockRouteKpisFromShipper(shipper);
-      setRouteKpis(kpis);
-    } catch (err) {
-      console.error("Failed to build mock route KPIs", err);
-      setRouteKpis(null);
-      setRouteKpisError("Unable to derive route KPI sample for this shipper.");
-    } finally {
-      setRouteKpisLoading(false);
-    }
-
-    setCompanyProfile(null);
-    setCompanyEnrichment(null);
-    setProfileError(null);
-    setProfileLoading(true);
-    const keyOrSlug =
+    const canonicalId =
       getCanonicalCompanyId(shipper) ||
       shipper.key ||
       shipper.companyKey ||
       shipper.companyId ||
       shipper.title ||
       "";
-    if (!keyOrSlug) {
+
+    setRouteKpis(null);
+    setRouteKpisError(null);
+    if (!canonicalId) {
+      setRouteKpisError("Missing company identifier");
+      setRouteKpisLoading(false);
+    } else {
+      setRouteKpisLoading(true);
+      getIyRouteKpisForCompany({ companyKey: canonicalId })
+        .then((kpis) => {
+          setRouteKpis(kpis);
+        })
+        .catch((err: any) => {
+          console.error("getIyRouteKpisForCompany failed", err);
+          setRouteKpis(null);
+          setRouteKpisError(
+            err?.message || "Failed to load shipment KPIs",
+          );
+        })
+        .finally(() => {
+          setRouteKpisLoading(false);
+        });
+    }
+
+    setCompanyProfile(null);
+    setCompanyEnrichment(null);
+    setProfileError(null);
+    setProfileLoading(true);
+    if (!canonicalId) {
       setProfileError("Missing company identifier");
       setProfileLoading(false);
       return;
     }
     getIyCompanyProfile(
-      keyOrSlug,
+      canonicalId,
       query || shipper.name || shipper.title || "",
     )
       .then(({ rawProfile, enrichment }) => {
@@ -743,90 +754,3 @@ const GeminiMark = () => (
   </svg>
 );
 
-function buildMockRouteKpisFromShipper(shipper: IyShipperHit): IyRouteKpis {
-  const total =
-    typeof shipper.totalShipments === "number" ? shipper.totalShipments : 0;
-  const base = total || 1200;
-
-  const teuFactor = 0.4;
-  const spendPerShipment = 1500;
-
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-
-  const monthlySeries: IyMonthlySeriesPoint[] = months.map((label, index) => {
-    const seasonalFactor = 0.7 + (index % 4) * 0.15;
-    const shipmentsTotal = Math.round((base / 12) * seasonalFactor);
-
-    const fclShare = 0.7;
-    const shipmentsFcl = Math.round(shipmentsTotal * fclShare);
-    const shipmentsLcl = Math.max(0, shipmentsTotal - shipmentsFcl);
-
-    const teuFcl = Math.round(shipmentsFcl * teuFactor);
-    const teuLcl = Math.round(shipmentsLcl * teuFactor * 0.6);
-
-    const estSpendUsdFcl = shipmentsFcl * spendPerShipment * 1.1;
-    const estSpendUsdLcl = shipmentsLcl * spendPerShipment * 0.7;
-
-    return {
-      monthLabel: label,
-      shipmentsFcl,
-      shipmentsLcl,
-      teuFcl,
-      teuLcl,
-      estSpendUsdFcl,
-      estSpendUsdLcl,
-    };
-  });
-
-  const shipmentsLast12m = monthlySeries.reduce(
-    (sum, m) => sum + m.shipmentsFcl + m.shipmentsLcl,
-    0,
-  );
-
-  const teuLast12m = monthlySeries.reduce(
-    (sum, m) => sum + (m.teuFcl ?? 0) + (m.teuLcl ?? 0),
-    0,
-  );
-
-  const estSpendUsd = monthlySeries.reduce(
-    (sum, m) => sum + (m.estSpendUsdFcl ?? 0) + (m.estSpendUsdLcl ?? 0),
-    0,
-  );
-
-  return {
-    shipmentsLast12m,
-    teuLast12m,
-    estSpendUsd,
-    topRouteLast12m: "Ocean FCL + LCL mix",
-    mostRecentRoute: "China → US main gateways",
-    sampleSize: shipmentsLast12m,
-    topRoutesLast12m: [
-      {
-        route: "FCL dominant lanes",
-        shipments: Math.round(shipmentsLast12m * 0.65),
-        teu: Math.round(teuLast12m * 0.7),
-        estSpendUsd: estSpendUsd * 0.7,
-      },
-      {
-        route: "LCL + mixed lanes",
-        shipments: Math.round(shipmentsLast12m * 0.35),
-        teu: Math.round(teuLast12m * 0.3),
-        estSpendUsd: estSpendUsd * 0.3,
-      },
-    ],
-    monthlySeries,
-  };
-}

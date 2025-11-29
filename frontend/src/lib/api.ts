@@ -142,6 +142,24 @@ export type IyMonthlySeriesPoint = {
   estSpendUsdLcl?: number | null;
 };
 
+const MONTH_ABBREVIATIONS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+const MONTH_ABBREVIATIONS_LOWER = MONTH_ABBREVIATIONS.map((label) =>
+  label.toLowerCase(),
+);
+
 export type IyRouteKpis = {
   shipmentsLast12m?: number | null;
   teuLast12m?: number | null;
@@ -156,6 +174,11 @@ export type IyRouteKpis = {
     estSpendUsd?: number | null;
   }>;
   monthlySeries?: IyMonthlySeriesPoint[];
+  monthly?: Array<{
+    month: string;
+    fcl: number;
+    lcl: number;
+  }>;
   contact?: IyCompanyContact;
 };
 
@@ -1570,6 +1593,230 @@ export function computeIyRouteKpisFromShipments(
   };
 }
 
+function coerceNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function resolveMonthIndex(value: unknown, fallbackIndex: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const normalized = Math.max(
+      0,
+      Math.min(MONTH_ABBREVIATIONS.length - 1, Math.round(value)),
+    );
+    return normalized;
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.getMonth();
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized) {
+      const isoMatch = normalized.match(/(\d{4})[-/](\d{1,2})/);
+      if (isoMatch) {
+        const idx = Number(isoMatch[2]) - 1;
+        if (Number.isInteger(idx) && idx >= 0 && idx < 12) {
+          return idx;
+        }
+      }
+      const parsed = new Date(normalized);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.getMonth();
+      }
+      const short = normalized.slice(0, 3);
+      const shortIndex = MONTH_ABBREVIATIONS_LOWER.indexOf(short);
+      if (shortIndex >= 0) return shortIndex;
+    }
+  }
+
+  return fallbackIndex % MONTH_ABBREVIATIONS.length;
+}
+
+function extractMonthlyFromStats(
+  stats: IyCompanyStats | (Record<string, any> & { [key: string]: any }) | null,
+): IyRouteKpis["monthly"] {
+  if (!stats) return undefined;
+  const buckets = new Map<number, { fcl: number; lcl: number }>();
+
+  const updateBucket = (
+    monthIndex: number,
+    fcl?: number | null,
+    lcl?: number | null,
+  ) => {
+    const bucket = buckets.get(monthIndex) ?? { fcl: 0, lcl: 0 };
+    bucket.fcl += fcl ?? 0;
+    bucket.lcl += lcl ?? 0;
+    buckets.set(monthIndex, bucket);
+  };
+
+  const arraySources = [
+    (stats as any)?.monthlyShipments,
+    (stats as any)?.monthly_shipments,
+    (stats as any)?.shipments_by_month,
+  ];
+  const arraySource = arraySources.find(
+    (candidate) => Array.isArray(candidate) && candidate.length,
+  );
+  if (Array.isArray(arraySource)) {
+    arraySource.slice(-12).forEach((entry: any, idx: number) => {
+      const labelValue =
+        entry?.month ??
+        entry?.monthLabel ??
+        entry?.label ??
+        entry?.date ??
+        entry?.period;
+      const monthIndex = resolveMonthIndex(labelValue, idx);
+      const fclValue = coerceNumber(
+        entry?.fcl_shipments ?? entry?.shipments_fcl ?? entry?.fcl,
+      );
+      const lclValue = coerceNumber(
+        entry?.lcl_shipments ?? entry?.shipments_lcl ?? entry?.lcl,
+      );
+      updateBucket(monthIndex, fclValue ?? 0, lclValue ?? 0);
+    });
+  }
+
+  const fclMonthlyObj =
+    (stats as any)?.ocean_fcl_monthly ?? (stats as any)?.fcl_monthly;
+  const lclMonthlyObj =
+    (stats as any)?.ocean_lcl_monthly ?? (stats as any)?.lcl_monthly;
+  if (fclMonthlyObj || lclMonthlyObj) {
+    const keys = new Set<string>([
+      ...Object.keys(fclMonthlyObj ?? {}),
+      ...Object.keys(lclMonthlyObj ?? {}),
+    ]);
+    let idx = 0;
+    keys.forEach((key) => {
+      const monthIndex = resolveMonthIndex(key, idx);
+      const fclValue = coerceNumber(fclMonthlyObj?.[key]) ?? 0;
+      const lclValue = coerceNumber(lclMonthlyObj?.[key]) ?? 0;
+      updateBucket(monthIndex, fclValue, lclValue);
+      idx += 1;
+    });
+  }
+
+  const monthly = MONTH_ABBREVIATIONS.map((label, idx) => {
+    const bucket = buckets.get(idx);
+    return {
+      month: label,
+      fcl: Math.round(bucket?.fcl ?? 0),
+      lcl: Math.round(bucket?.lcl ?? 0),
+    };
+  });
+
+  const hasData = monthly.some((point) => point.fcl > 0 || point.lcl > 0);
+  return hasData ? monthly : undefined;
+}
+
+function extractTopRoutesFromStats(
+  stats: IyCompanyStats | (Record<string, any> & { [key: string]: any }) | null,
+): IyRouteKpis["topRoutesLast12m"] {
+  if (!stats) return undefined;
+  const routeSources = [
+    (stats as any)?.topRoutesLast12m,
+    (stats as any)?.top_routes_last_12m,
+    (stats as any)?.top_routes_12m,
+    (stats as any)?.topRoutes,
+    (stats as any)?.top_routes,
+    (stats as any)?.topLanes,
+    (stats as any)?.top_lanes,
+    (stats as any)?.routes,
+  ];
+  const source = routeSources.find(
+    (candidate) => Array.isArray(candidate) && candidate.length,
+  );
+  if (!Array.isArray(source)) {
+    return undefined;
+  }
+
+  const normalized = source
+    .map((entry: any) => {
+      const routeLabel =
+        entry?.route ??
+        entry?.lane ??
+        [entry?.origin, entry?.destination]
+          .filter((value: unknown): value is string => typeof value === "string")
+          .join(" → ") ??
+        [
+          entry?.origin_port ??
+            entry?.origin_country_code ??
+            entry?.origin_country ??
+            entry?.origin_country_name,
+          entry?.dest_port ??
+            entry?.destination_port ??
+            entry?.dest_country_code ??
+            entry?.destination_country ??
+            entry?.destination_country_name,
+        ]
+          .filter(
+            (value: unknown): value is string => typeof value === "string",
+          )
+          .join(" → ");
+
+      const shipments =
+        coerceNumber(
+          entry?.shipments ??
+            entry?.total_shipments ??
+            entry?.shipments_12m ??
+            entry?.shipments12m ??
+            entry?.count ??
+            entry?.volume,
+        ) ?? 0;
+
+      const teu = coerceNumber(entry?.teu ?? entry?.teu_12m) ?? undefined;
+      const estSpend =
+        coerceNumber(entry?.est_spend_usd ?? entry?.estimated_spend) ?? undefined;
+
+      if (!routeLabel && shipments === 0) {
+        return null;
+      }
+
+      return {
+        route: routeLabel || "Route",
+        shipments,
+        teu,
+        estSpendUsd: estSpend,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .sort((a, b) => b.shipments - a.shipments);
+
+  return normalized.length ? normalized : undefined;
+}
+
+function mapStatsToRouteKpis(
+  stats: IyCompanyStats | (Record<string, any> & { [key: string]: any }) | null,
+): Partial<IyRouteKpis> {
+  if (!stats) return {};
+
+  const monthly = extractMonthlyFromStats(stats);
+  const topRoutesLast12m = extractTopRoutesFromStats(stats);
+  const shipmentsFromMonthly = monthly
+    ? monthly.reduce((sum, point) => sum + point.fcl + point.lcl, 0)
+    : undefined;
+  const teuFromStats =
+    coerceNumber((stats as any)?.teu_last_12m ?? (stats as any)?.teu_12m) ??
+    undefined;
+  const estSpendUsd =
+    coerceNumber(
+      (stats as any)?.est_spend_usd ??
+        (stats as any)?.estimated_spend_12m ??
+        (stats as any)?.spend_12m ??
+        (stats as any)?.ocean_spend_12m,
+    ) ?? undefined;
+
+  return {
+    monthly,
+    topRoutesLast12m,
+    shipmentsLast12m: shipmentsFromMonthly ?? undefined,
+    teuLast12m: teuFromStats ?? undefined,
+    estSpendUsd,
+  };
+}
+
 export async function getIyRouteKpisForCompany(
   params: { companyKey: string; limit?: number; offset?: number },
   signal?: AbortSignal,
@@ -1588,6 +1835,16 @@ export async function getIyRouteKpisForCompany(
     0,
     Number.isFinite(offsetCandidate) ? offsetCandidate : 0,
   );
+  let contact: IyCompanyContact | undefined;
+  let baseKpis: IyRouteKpis = {
+    topRouteLast12m: null,
+    mostRecentRoute: null,
+    sampleSize: 0,
+    shipmentsLast12m: 0,
+    teuLast12m: 0,
+    topRoutesLast12m: [],
+  };
+
   try {
     const result = await iyFetchCompanyBols(
       { companyKey, limit, offset },
@@ -1599,32 +1856,49 @@ export async function getIyRouteKpisForCompany(
         ok: result.ok,
         total: result.total,
       });
-      return null;
-    }
-    const kpis = computeIyRouteKpisFromShipments(result.shipments);
-    let contact: IyCompanyContact | undefined;
-    const firstBol = result.shipments[0];
-    if (firstBol?.bol) {
-      try {
-        const detail = await getIyBolDetail(firstBol.bol, signal);
-        if (detail) {
-          contact = deriveContactFromBol(detail);
+    } else {
+      baseKpis = computeIyRouteKpisFromShipments(result.shipments);
+      const firstBol = result.shipments[0];
+      if (firstBol?.bol) {
+        try {
+          const detail = await getIyBolDetail(firstBol.bol, signal);
+          if (detail) {
+            contact = deriveContactFromBol(detail);
+          }
+        } catch (lookupError) {
+          console.warn(
+            "getIyRouteKpisForCompany contact lookup failed",
+            lookupError,
+          );
         }
-      } catch (lookupError) {
-        console.warn(
-          "getIyRouteKpisForCompany contact lookup failed",
-          lookupError,
-        );
       }
     }
-    return {
-      ...kpis,
-      contact,
-    };
   } catch (error) {
     console.error("getIyRouteKpisForCompany", error);
-    return null;
   }
+
+  const slug = extractCompanySlug(companyKey);
+  let statsEnhancements: Partial<IyRouteKpis> = {};
+  if (slug) {
+    try {
+      const stats = await iyCompanyStats({ company: slug }, signal);
+      statsEnhancements = mapStatsToRouteKpis(stats);
+    } catch (statsError) {
+      console.warn("getIyRouteKpisForCompany stats lookup failed", statsError);
+    }
+  }
+
+  const { topRoutesLast12m: statsRoutes, ...restStats } = statsEnhancements;
+  const merged: IyRouteKpis = {
+    ...baseKpis,
+    ...restStats,
+    topRoutesLast12m: statsRoutes ?? baseKpis.topRoutesLast12m,
+  };
+
+  return {
+    ...merged,
+    contact,
+  };
 }
 
 export async function listSavedCompanies(
