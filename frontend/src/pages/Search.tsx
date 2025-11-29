@@ -6,11 +6,9 @@ import {
   searchShippers,
   getIyCompanyProfile,
   listSavedCompanies,
-  saveCompanyToCrm,
+  saveIyCompanyToCrm,
   ensureCompanyKey,
   type IyShipperHit,
-  type IyRouteKpis,
-  type IyMonthlySeriesPoint,
   type IyCompanyProfile,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
@@ -47,11 +45,9 @@ export default function SearchPage() {
   const [destCountry, setDestCountry] = useState("");
   const [destPostal, setDestPostal] = useState("");
 
-  const [routeKpis, setRouteKpis] = useState<IyRouteKpis | null>(null);
-  const [routeKpisLoading, setRouteKpisLoading] = useState(false);
-  const [routeKpisError, setRouteKpisError] = useState<string | null>(null);
   const [companyProfile, setCompanyProfile] =
     useState<IyCompanyProfile | null>(null);
+  const [companyEnrichment, setCompanyEnrichment] = useState<any | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [savedCompanies, setSavedCompanies] = useState<{ company_id: string }[]>(
@@ -125,26 +121,20 @@ export default function SearchPage() {
     setSelectedShipper(shipper);
     setIsModalOpen(true);
 
-    setRouteKpisLoading(true);
-    setRouteKpisError(null);
-    try {
-      const kpis = buildMockRouteKpisFromShipper(shipper);
-      setRouteKpis(kpis);
-    } catch (err) {
-      console.error("Failed to build mock route KPIs", err);
-      setRouteKpis(null);
-      setRouteKpisError("Unable to derive route KPI sample for this shipper.");
-    } finally {
-      setRouteKpisLoading(false);
-    }
-
     setCompanyProfile(null);
+    setCompanyEnrichment(null);
     setProfileError(null);
     setProfileLoading(true);
-    const keyOrSlug = shipper.key || shipper.title || "";
-    getIyCompanyProfile(keyOrSlug)
-      .then((profile) => {
-        setCompanyProfile(profile);
+    const canonicalKey = getCanonicalCompanyId(shipper);
+    if (!canonicalKey) {
+      setProfileError("Unable to determine company identifier.");
+      setProfileLoading(false);
+      return;
+    }
+    getIyCompanyProfile({ companyKey: canonicalKey, query })
+      .then(({ companyProfile, enrichment }) => {
+        setCompanyProfile(companyProfile);
+        setCompanyEnrichment(enrichment);
       })
       .catch((err: any) => {
         console.error("getIyCompanyProfile failed", err);
@@ -160,6 +150,9 @@ export default function SearchPage() {
   const handleModalClose = () => {
     setIsModalOpen(false);
     setSelectedShipper(null);
+    setCompanyProfile(null);
+    setCompanyEnrichment(null);
+    setProfileError(null);
   };
 
   useEffect(() => {
@@ -216,8 +209,16 @@ export default function SearchPage() {
     [savedCompanyIds],
   );
 
+  const selectedCompanyId = useMemo(
+    () => getCanonicalCompanyId(selectedShipper),
+    [selectedShipper],
+  );
+
   const handleSaveToCommandCenter = useCallback(
-    async (shipper?: IyShipperHit | null) => {
+    async (
+      shipper?: IyShipperHit | null,
+      profileOverride?: IyCompanyProfile | null,
+    ) => {
       if (!shipper) return;
       const companyId = getCanonicalCompanyId(shipper);
       if (!companyId) {
@@ -239,7 +240,12 @@ export default function SearchPage() {
 
       setSavingCompanyId(companyId);
       try {
-        await saveCompanyToCrm({ company: shipper });
+        await saveIyCompanyToCrm({
+          shipper,
+          profile:
+            profileOverride ||
+            (selectedCompanyId === companyId ? companyProfile : null),
+        });
         setSavedCompanies((prev) => {
           if (
             prev.some(
@@ -275,7 +281,14 @@ export default function SearchPage() {
         setSavingCompanyId(null);
       }
     },
-    [getCanonicalCompanyId, savedCompanyIds, savingCompanyId, toast],
+    [savedCompanyIds, savingCompanyId, toast, selectedCompanyId, companyProfile],
+  );
+
+  const handleModalSave = useCallback(
+    (payload: { shipper: IyShipperHit; profile: IyCompanyProfile | null }) => {
+      void handleSaveToCommandCenter(payload.shipper, payload.profile);
+    },
+    [handleSaveToCommandCenter],
   );
 
   const hasAdvancedFilters =
@@ -348,8 +361,6 @@ export default function SearchPage() {
     setDestCountry("");
     setDestPostal("");
   };
-
-  const selectedCompanyId = getCanonicalCompanyId(selectedShipper);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -492,16 +503,13 @@ export default function SearchPage() {
       <ShipperDetailModal
         isOpen={isModalOpen}
         shipper={selectedShipper}
-        routeKpis={routeKpis}
-        loading={routeKpisLoading}
-        error={routeKpisError}
-        companyProfile={companyProfile}
-        profileLoading={profileLoading}
-        profileError={profileError}
+        loadingProfile={profileLoading}
+        profile={companyProfile}
+        enrichment={companyEnrichment}
+        error={profileError}
         isSaved={isShipperSaved(selectedShipper)}
         onClose={handleModalClose}
-        onSaveToCommandCenter={handleSaveToCommandCenter}
-        onToggleSaved={handleSaveToCommandCenter}
+        onSaveToCommandCenter={handleModalSave}
         saveLoading={Boolean(
           selectedCompanyId && savingCompanyId === selectedCompanyId,
         )}
@@ -624,92 +632,4 @@ export default function SearchPage() {
       )}
     </div>
   );
-}
-
-function buildMockRouteKpisFromShipper(shipper: IyShipperHit): IyRouteKpis {
-  const total =
-    typeof shipper.totalShipments === "number" ? shipper.totalShipments : 0;
-  const base = total || 1200;
-
-  const teuFactor = 0.4;
-  const spendPerShipment = 1500;
-
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-
-  const monthlySeries: IyMonthlySeriesPoint[] = months.map((label, index) => {
-    const seasonalFactor = 0.7 + (index % 4) * 0.15;
-    const shipmentsTotal = Math.round((base / 12) * seasonalFactor);
-
-    const fclShare = 0.7;
-    const shipmentsFcl = Math.round(shipmentsTotal * fclShare);
-    const shipmentsLcl = Math.max(0, shipmentsTotal - shipmentsFcl);
-
-    const teuFcl = Math.round(shipmentsFcl * teuFactor);
-    const teuLcl = Math.round(shipmentsLcl * teuFactor * 0.6);
-
-    const estSpendUsdFcl = shipmentsFcl * spendPerShipment * 1.1;
-    const estSpendUsdLcl = shipmentsLcl * spendPerShipment * 0.7;
-
-    return {
-      monthLabel: label,
-      shipmentsFcl,
-      shipmentsLcl,
-      teuFcl,
-      teuLcl,
-      estSpendUsdFcl,
-      estSpendUsdLcl,
-    };
-  });
-
-  const shipmentsLast12m = monthlySeries.reduce(
-    (sum, m) => sum + m.shipmentsFcl + m.shipmentsLcl,
-    0,
-  );
-
-  const teuLast12m = monthlySeries.reduce(
-    (sum, m) => sum + (m.teuFcl ?? 0) + (m.teuLcl ?? 0),
-    0,
-  );
-
-  const estSpendUsd = monthlySeries.reduce(
-    (sum, m) => sum + (m.estSpendUsdFcl ?? 0) + (m.estSpendUsdLcl ?? 0),
-    0,
-  );
-
-  return {
-    shipmentsLast12m,
-    teuLast12m,
-    estSpendUsd,
-    topRouteLast12m: "Ocean FCL + LCL mix",
-    mostRecentRoute: "China → US main gateways",
-    sampleSize: shipmentsLast12m,
-    topRoutesLast12m: [
-      {
-        route: "FCL dominant lanes",
-        shipments: Math.round(shipmentsLast12m * 0.65),
-        teu: Math.round(teuLast12m * 0.7),
-        estSpendUsd: estSpendUsd * 0.7,
-      },
-      {
-        route: "LCL + mixed lanes",
-        shipments: Math.round(shipmentsLast12m * 0.35),
-        teu: Math.round(teuLast12m * 0.3),
-        estSpendUsd: estSpendUsd * 0.3,
-      },
-    ],
-    monthlySeries,
-  };
 }

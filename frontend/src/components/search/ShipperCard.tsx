@@ -70,6 +70,7 @@ export default function ShipperCard({
   const displayName = shipper.title || shipper.name || "LIT Search shipper";
   const flagEmoji = countryCodeToEmoji(shipper.countryCode);
   const address = buildAddress(shipper);
+  // TODO: replace logo.dev lookup with Gemini 3 enrichment service for official logos.
   const logoUrl = getCompanyLogoUrl(shipper.domain ?? shipper.website ?? undefined);
   const website = normalizeWebsite(shipper.website ?? shipper.domain ?? null);
   const topRoute =
@@ -80,19 +81,22 @@ export default function ShipperCard({
 
   return (
     <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      <div className="flex items-start gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         <CompanyAvatar
           name={displayName}
           logoUrl={logoUrl ?? undefined}
           className="rounded-full"
           size="lg"
         />
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-semibold text-slate-900" title={displayName}>
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="max-w-full text-sm font-semibold text-slate-900" title={displayName}>
               {displayName}
             </p>
             {flagEmoji && <span className="text-lg leading-none">{flagEmoji}</span>}
+            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-600">
+              AI enrichment
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1">
@@ -104,10 +108,10 @@ export default function ShipperCard({
                 href={website.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
+                className="inline-flex max-w-[160px] items-center gap-1 text-indigo-600 hover:underline"
               >
                 <Globe className="h-3 w-3" />
-                <span className="truncate max-w-[140px]">{website.label}</span>
+                <span className="truncate">{website.label}</span>
               </a>
             )}
           </div>
@@ -116,7 +120,7 @@ export default function ShipperCard({
           <button
             type="button"
             onClick={() => !saving && onToggleSaved(shipper)}
-            className="rounded-full border border-slate-200 p-2 text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="ml-auto rounded-full border border-slate-200 p-2 text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
             aria-label={isSaved ? "Remove from saved" : "Save company"}
             disabled={saving}
           >
