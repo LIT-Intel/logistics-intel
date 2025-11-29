@@ -209,6 +209,11 @@ export default function SearchPage() {
     [savedCompanyIds],
   );
 
+  const selectedCompanyId = useMemo(
+    () => getCanonicalCompanyId(selectedShipper),
+    [selectedShipper],
+  );
+
   const handleSaveToCommandCenter = useCallback(
     async (
       shipper?: IyShipperHit | null,
@@ -276,14 +281,7 @@ export default function SearchPage() {
         setSavingCompanyId(null);
       }
     },
-    [
-      getCanonicalCompanyId,
-      savedCompanyIds,
-      savingCompanyId,
-      toast,
-      selectedCompanyId,
-      companyProfile,
-    ],
+    [savedCompanyIds, savingCompanyId, toast, selectedCompanyId, companyProfile],
   );
 
   const handleModalSave = useCallback(
@@ -363,8 +361,6 @@ export default function SearchPage() {
     setDestCountry("");
     setDestPostal("");
   };
-
-  const selectedCompanyId = getCanonicalCompanyId(selectedShipper);
 
   return (
     <div className="min-h-screen bg-slate-50">
