@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import CommandIcon from '../../components/common/CommandIcon';
 import CreateCompanyModal from '../../components/company/CreateCompanyModal';
 import Workspace from '../../components/company/Workspace';
 import LitPageHeader from '../../components/ui/LitPageHeader';
+import { getIyCompanyProfile, type IyCompanyProfile } from '../../lib/api';
 
 type CompanyLite = { id: string; name: string; kpis?: any; charts?: any; ai?: any };
 
@@ -11,6 +11,11 @@ const LS_KEY = 'lit_companies';
 export default function Companies() {
   const [open, setOpen] = useState(false);
   const [companies, setCompanies] = useState<CompanyLite[]>([]);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [companyProfile, setCompanyProfile] = useState<IyCompanyProfile | null>(null);
+  const [companyEnrichment, setCompanyEnrichment] = useState<any | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -60,6 +65,53 @@ export default function Companies() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(companies)); } catch {}
   }, [companies]);
 
+  useEffect(() => {
+    if (!companies.length) {
+      setActiveCompanyId(null);
+      return;
+    }
+    setActiveCompanyId((prev) => {
+      if (prev && companies.some((company) => String(company.id) === String(prev))) {
+        return prev;
+      }
+      const first = companies[0];
+      return first ? String(first.id) : null;
+    });
+  }, [companies]);
+
+  useEffect(() => {
+    if (!activeCompanyId) {
+      setCompanyProfile(null);
+      setCompanyEnrichment(null);
+      return;
+    }
+    let active = true;
+    async function loadProfile() {
+      setProfileLoading(true);
+      setProfileError(null);
+      try {
+        const response = await getIyCompanyProfile({
+          companyKey: activeCompanyId,
+          userGoal:
+            "Populate LIT Command Center for this company with KPIs, spend analysis and pre-call brief",
+        });
+        if (!active) return;
+        setCompanyProfile(response.companyProfile ?? null);
+        setCompanyEnrichment(response.enrichment ?? null);
+      } catch (err: any) {
+        if (!active) return;
+        console.error("Command Center company load failed", err);
+        setProfileError(err?.message || "Failed to load company profile");
+      } finally {
+        if (active) setProfileLoading(false);
+      }
+    }
+    loadProfile();
+    return () => {
+      active = false;
+    };
+  }, [activeCompanyId]);
+
   function onCreated(id: string, name: string) {
     const fresh: CompanyLite = {
       id,
@@ -78,7 +130,16 @@ export default function Companies() {
       </div>
       <div className='w-full pl-[5px] pr-[5px]'>
         {/* Render Workspace once (includes left rail + main) */}
-        <Workspace companies={companies} onAdd={() => setOpen(true)} />
+        <Workspace
+          companies={companies}
+          onAdd={() => setOpen(true)}
+          activeCompanyId={activeCompanyId}
+          onActiveCompanyChange={setActiveCompanyId}
+          companyProfile={companyProfile}
+          enrichment={companyEnrichment}
+          loading={profileLoading}
+          error={profileError}
+        />
       </div>
       <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />
     </div>

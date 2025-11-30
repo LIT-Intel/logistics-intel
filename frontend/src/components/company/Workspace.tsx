@@ -11,6 +11,7 @@ import {
   saveCampaign,
   saveCompanyToCrm,
   enrichCompany,
+  type IyCompanyProfile,
 } from '../../lib/api';
 
 function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
@@ -88,13 +89,44 @@ function Tabs({ tabs, value, onChange }: { tabs: string[]; value: string; onChan
   );
 }
 
-export default function Workspace({ companies, onAdd }: { companies: any[]; onAdd: () => void }) {
-  const [activeId, setActiveId] = useState(companies[0]?.id);
+type WorkspaceProps = {
+  companies: any[];
+  onAdd: () => void;
+  activeCompanyId?: string | null;
+  onActiveCompanyChange?: (companyId: string | null) => void;
+  companyProfile?: IyCompanyProfile | null;
+  enrichment?: any | null;
+  loading?: boolean;
+  error?: string | null;
+};
+
+export default function Workspace({
+  companies,
+  onAdd,
+  activeCompanyId,
+  onActiveCompanyChange,
+  companyProfile = null,
+  enrichment = null,
+  loading: profileLoading = false,
+  error: profileError = null,
+}: WorkspaceProps) {
+  const [activeId, setActiveId] = useState<string | null>(companies[0]?.id ?? null);
   const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || '') as string;
   const aiEnabled = !!aiVendor;
   const [query, setQuery] = useState('');
   const [filterRfp, setFilterRfp] = useState(false);
   const [filterCampaign, setFilterCampaign] = useState(false);
+
+  useEffect(() => {
+    if (!activeCompanyId) return;
+    if (activeCompanyId !== activeId) {
+      setActiveId(activeCompanyId);
+    }
+  }, [activeCompanyId, activeId]);
+
+  useEffect(() => {
+    onActiveCompanyChange?.(activeId ?? null);
+  }, [activeId, onActiveCompanyChange]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let base = companies;
@@ -123,6 +155,140 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   const [campaignName, setCampaignName] = useState('Follow-up Campaign');
   const [campaignChannel, setCampaignChannel] = useState<'email' | 'linkedin'>('email');
 
+  const gemini = enrichment ?? {};
+  const normalizedCompany = gemini?.normalized_company ?? null;
+  const logisticsKpis = gemini?.logistics_kpis ?? null;
+  const spendAnalysis = gemini?.spend_analysis ?? null;
+  const ccEnrichment = gemini?.command_center_enrichment ?? null;
+  const salesAssets = gemini?.sales_assets ?? null;
+  const preCallBrief = salesAssets?.pre_call_brief ?? null;
+  const crmSavePayload = gemini?.crm_save_payload ?? null;
+  const predictiveInsights = gemini?.predictive_insights ?? null;
+
+  const shipments12m =
+    logisticsKpis?.shipments_12m ??
+    companyProfile?.routeKpis?.shipmentsLast12m ??
+    companyProfile?.totalShipments ??
+    null;
+  const teus12m =
+    logisticsKpis?.teus_12m ??
+    companyProfile?.routeKpis?.teuLast12m ??
+    null;
+  const estSpendTotal =
+    spendAnalysis?.estimated_12m_spend_total ??
+    companyProfile?.estSpendUsd12m ??
+    null;
+
+  const displayName =
+    normalizedCompany?.name ??
+    companyProfile?.title ??
+    companyProfile?.name ??
+    companies.find((c) => String(c.id) === String(activeId))?.name ??
+    'Company';
+  const displayWebsite =
+    normalizedCompany?.website ??
+    companyProfile?.website ??
+    companyProfile?.rawWebsite ??
+    null;
+  const displayDomain =
+    normalizedCompany?.domain ??
+    companyProfile?.domain ??
+    null;
+  const displayCountry =
+    normalizedCompany?.country ??
+    companyProfile?.country ??
+    companyProfile?.countryCode ??
+    null;
+  const locationLabel =
+    normalizedCompany?.location ??
+    (([normalizedCompany?.city ?? null, normalizedCompany?.state ?? null, displayCountry ?? null]
+      .filter((value) => Boolean(value))
+      .join(', ')) ||
+      companyProfile?.address ||
+      companyProfile?.country ||
+      null);
+  const primaryCompanyId =
+    companyProfile?.companyId ??
+    normalizedCompany?.company_id ??
+    (activeId ? String(activeId) : null) ??
+    '—';
+
+  const quickSummary = ccEnrichment?.quick_summary ?? null;
+  const recommendedPriority = ccEnrichment?.recommended_priority ?? null;
+  const alerts = Array.isArray(ccEnrichment?.alerts) ? ccEnrichment.alerts : [];
+
+  const crmPayload = useMemo(() => {
+    const baseCompanyId =
+      crmSavePayload?.company_id ??
+      normalizedCompany?.company_id ??
+      companyProfile?.companyId ??
+      (activeId ? String(activeId) : null);
+
+    return {
+      company_id: baseCompanyId,
+      stage: crmSavePayload?.stage ?? 'prospect',
+      provider: crmSavePayload?.provider ?? 'importyeti+gemini',
+      payload: {
+        ...(crmSavePayload?.payload ?? {}),
+        name: displayName,
+        website: displayWebsite,
+        domain: displayDomain,
+        phone:
+          normalizedCompany?.phone ??
+          companyProfile?.phoneNumber ??
+          null,
+        country: displayCountry,
+        city: normalizedCompany?.city ?? null,
+        state: normalizedCompany?.state ?? null,
+        total_shipments: companyProfile?.totalShipments ?? null,
+        shipments_12m: shipments12m,
+        teus_12m: teus12m,
+        primary_trade_lanes: logisticsKpis?.top_lanes ?? [],
+        tags: normalizedCompany?.tags ?? [],
+        opportunity_score: predictiveInsights?.opportunity_score ?? null,
+        rfp_likelihood_score:
+          predictiveInsights?.rfp_likelihood_score ?? null,
+        recommended_priority: recommendedPriority ?? null,
+      },
+    };
+  }, [
+    activeId,
+    companyProfile,
+    crmSavePayload,
+    displayDomain,
+    displayName,
+    displayWebsite,
+    displayCountry,
+    logisticsKpis,
+    normalizedCompany,
+    predictiveInsights,
+    recommendedPriority,
+    shipments12m,
+    spendAnalysis,
+    teus12m,
+  ]);
+
+  const preCallData = useMemo(
+    () => ({
+      name: displayName,
+      kpis: {
+        ...(overview?.kpis || {}),
+        shipments12m: shipments12m ?? overview?.kpis?.shipments12m,
+        teus12m: teus12m ?? overview?.kpis?.teus12m,
+        estSpendUsd12m: estSpendTotal ?? overview?.kpis?.estSpendUsd12m,
+      },
+      charts: overview?.charts,
+      ai: {
+        summary: preCallBrief?.summary ?? quickSummary ?? overview?.ai?.summary ?? '',
+        bullets:
+          (Array.isArray(preCallBrief?.bullets) && preCallBrief?.bullets) ||
+          overview?.ai?.bullets ||
+          [],
+      },
+    }),
+    [displayName, overview, shipments12m, teus12m, estSpendTotal, preCallBrief, quickSummary],
+  );
+
   // RFP lanes upload/editor bound to universal company id (Command Center)
   const rfpKey = useMemo(() => `lit_rfp_payload_${String(activeId || '')}`, [activeId]);
   const [rfpPayload, setRfpPayload] = useState<any | null>(null);
@@ -141,14 +307,14 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
   }
 
   useEffect(() => {
-    // Ensure an active selection when companies load or change
+    if (activeCompanyId) return;
     if (!activeId && companies && companies.length > 0) {
       setActiveId(companies[0].id);
     } else if (activeId && companies && companies.length > 0) {
       const exists = companies.some(c => String(c.id) === String(activeId));
       if (!exists) setActiveId(companies[0].id);
     }
-  }, [companies]);
+  }, [companies, activeCompanyId, activeId]);
 
   useEffect(() => {
     let ignore = false;
@@ -283,6 +449,18 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
     return () => { cancel = true; };
   }, [tab, activeId]);
 
+  if (profileLoading) {
+    return <div className='p-4 text-sm text-slate-500'>Loading Command Center…</div>;
+  }
+
+  if (profileError) {
+    return <div className='p-4 text-sm text-rose-500'>{profileError}</div>;
+  }
+
+  if (!companyProfile && !normalizedCompany) {
+    return <div className='p-4 text-sm text-slate-500'>No company selected.</div>;
+  }
+
   return (
     <div className='w-full mx-auto flex flex-col lg:flex-row gap-[5px] pl-[5px] pr-[5px]'>
       <aside className='w-[340px] shrink-0'>
@@ -321,12 +499,32 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
             <>
               <div className='flex items-center justify-between gap-4 flex-wrap'>
                 <div>
-            <h1 className='text-3xl md:text-3xl font-extrabold tracking-tight text-slate-900'>{active.name}</h1>
-                    <div className='text-xs text-slate-500'>ID: {active?.company_id ?? active?.id ?? '—'}</div>
+            <h1 className='text-3xl md:text-3xl font-extrabold tracking-tight text-slate-900'>{displayName}</h1>
+                    <div className='text-xs text-slate-500'>ID: {primaryCompanyId}</div>
                 </div>
                 <div className='flex items-center gap-2'>
                     <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
-                      try { await saveCompanyToCrm({ company_id: String(active?.company_id ?? active?.id ?? ''), company_name: active.name, source:'companies' }); alert('Saved to CRM'); } catch(e:any){ alert('Save failed: '+ String(e?.message||e)); }
+                      try {
+                        if (crmPayload?.company_id) {
+                          await saveCompanyToCrm({
+                            company: {
+                              company_id: crmPayload.company_id,
+                              stage: crmPayload.stage,
+                              provider: crmPayload.provider,
+                              payload: crmPayload.payload,
+                            },
+                          });
+                        } else {
+                          await saveCompanyToCrm({
+                            company_id: String(active?.company_id ?? active?.id ?? ''),
+                            company_name: displayName,
+                            source: 'companies',
+                          });
+                        }
+                        alert('Saved to CRM');
+                      } catch(e:any){
+                        alert('Save failed: '+ String(e?.message||e));
+                      }
                   }}>Save</button>
                   <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-xs' onClick={async()=>{
                       try { await enrichCompany({ company_id: String(active?.company_id ?? active?.id ?? '') }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
@@ -343,6 +541,16 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                 {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
                 {!loading && !error && tab === 'Overview' && overview && (
                   <div className='mt-3 space-y-4'>
+                    {alerts.length > 0 && (
+                      <div className='rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'>
+                        <p className='font-semibold uppercase tracking-wide text-[10px] text-amber-600'>Alerts</p>
+                        <ul className='mt-2 space-y-1'>
+                          {alerts.map((alert, idx) => (
+                            <li key={`alert-${idx}`}>{typeof alert === 'string' ? alert : alert?.message ?? ''}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {primaryContact && (
                       <FeaturedContact c={primaryContact} onSetPrimary={(id)=> setContacts(prev=> prev.map((c:any)=> ({...c, is_primary: String(c.id)===String(id), isPrimary: String(c.id)===String(id)})))} />
                     )}
@@ -362,7 +570,7 @@ export default function Workspace({ companies, onAdd }: { companies: any[]; onAd
                       <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const data = pdf.output('datauristring'); await fetch('/api/lit/crm/emailPdf', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ data, filename:'company.pdf', to:'' }) }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
                     </div>
                     <section id='company-pdf-root'>
-                      <PreCallBriefing company={{ name: overview.name, kpis: overview.kpis || overview.kpi || overview.k, charts: overview.charts, ai: overview.ai }} />
+                      <PreCallBriefing company={preCallData} />
                     </section>
                   </div>
                 )}
