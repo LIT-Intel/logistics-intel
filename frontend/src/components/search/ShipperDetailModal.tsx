@@ -358,6 +358,8 @@ export default function ShipperDetailModal({
       .slice(0, 6);
   }, [profile?.suppliersSample, profile?.topSuppliers, shipper.topSuppliers]);
 
+  const aiSuppliers = React.useMemo(() => suppliers.slice(0, 4), [suppliers]);
+
 
   const enrichmentSummary = React.useMemo(
     () => pickEnrichmentSummary(enrichment),
@@ -526,8 +528,6 @@ export default function ShipperDetailModal({
     const percentage = value > 1 ? value : value * 100;
     return `${percentage.toFixed(0)}% of spend`;
   }, []);
-
-  const aiSuppliers = suppliers.slice(0, 4);
 
   const handleSaveClick = () => {
     if (!shipper || saveLoading) return;
