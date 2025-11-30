@@ -30,6 +30,7 @@ import {
   type IyRouteKpis,
   getFclShipments12m,
   getLclShipments12m,
+  getIyCompanyBolDetails,
 } from "@/lib/api";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -236,6 +237,9 @@ export default function ShipperDetailModal({
 }: ShipperDetailModalProps) {
   if (!isOpen || !shipper) return null;
 
+  const [laneData, setLaneData] = React.useState<any[]>([]);
+  const [laneLoading, setLaneLoading] = React.useState(false);
+
   const normalizedWebsite = React.useMemo(() => {
     const profileWebsite =
       profile?.website ||
@@ -260,6 +264,36 @@ export default function ShipperDetailModal({
     "";
   const domain = profile?.domain ?? shipper.domain ?? shipper.website ?? null;
   const logoUrl = domain ? getCompanyLogoUrl(domain) : undefined;
+
+  React.useEffect(() => {
+    if (!shipper?.key) return;
+    let active = true;
+
+    async function loadBolLanes() {
+      setLaneLoading(true);
+      try {
+        const resp = await getIyCompanyBolDetails(shipper.key, 12);
+        if (!active) return;
+        const rows = Array.isArray(resp?.rows) ? resp.rows : [];
+        setLaneData(rows);
+      } catch (error) {
+        console.warn("loadBolLanes error", error);
+        if (active) {
+          setLaneData([]);
+        }
+      } finally {
+        if (active) {
+          setLaneLoading(false);
+        }
+      }
+    }
+
+    loadBolLanes();
+
+    return () => {
+      active = false;
+    };
+  }, [shipper?.key]);
 
   const resolvedRouteKpis = routeKpis ?? profile?.routeKpis ?? null;
   const shipments12m =
@@ -324,6 +358,101 @@ export default function ShipperDetailModal({
   }, [profile?.suppliersSample, profile?.topSuppliers, shipper.topSuppliers]);
 
   const aiSuppliers = suppliers.slice(0, 4);
+
+  const summarizeLanes = React.useCallback((rows: any[]) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { top12: [], recent6: [] };
+    }
+
+    const points = rows
+      .map((row: any) => {
+        const shippedOn = row?.shipped_on;
+        if (!shippedOn) return null;
+        const date = new Date(shippedOn);
+        if (Number.isNaN(date.getTime())) return null;
+
+        const originCity = row?.origin_city ?? "";
+        const originCode = row?.origin_country_code ?? "";
+        const destCity = row?.dest_city ?? "";
+        const destCode = row?.dest_country_code ?? "";
+
+        const originLabel = [originCity, originCode]
+          .filter((value: string) => Boolean(value))
+          .join(", ");
+        const destLabel = [destCity, destCode]
+          .filter((value: string) => Boolean(value))
+          .join(", ");
+
+        if (!originLabel || !destLabel) return null;
+
+        const laneLabel = `${originLabel} → ${destLabel}`;
+        const teu = Number(row?.teu ?? 0) || 0;
+
+        return {
+          date,
+          laneLabel,
+          originLabel,
+          destLabel,
+          teu,
+        };
+      })
+      .filter(
+        (
+          point,
+        ): point is {
+          date: Date;
+          laneLabel: string;
+          originLabel: string;
+          destLabel: string;
+          teu: number;
+        } => Boolean(point),
+      );
+
+    if (!points.length) return { top12: [], recent6: [] };
+
+    points.sort((a, b) => a.date.getTime() - b.date.getTime());
+    const lastDate = points[points.length - 1].date;
+
+    const buildWindow = (months: number) => {
+      const start = new Date(lastDate);
+      start.setMonth(start.getMonth() - months);
+      return points.filter((point) => point.date > start && point.date <= lastDate);
+    };
+
+    const aggregate = (windowPoints: typeof points) => {
+      if (!windowPoints.length) return [];
+      const map = new Map<
+        string,
+        { lane: string; shipments: number; teu: number }
+      >();
+      for (const point of windowPoints) {
+        const existing = map.get(point.laneLabel);
+        if (existing) {
+          existing.shipments += 1;
+          existing.teu += point.teu;
+        } else {
+          map.set(point.laneLabel, {
+            lane: point.laneLabel,
+            shipments: 1,
+            teu: point.teu,
+          });
+        }
+      }
+      return Array.from(map.values())
+        .sort((a, b) => b.shipments - a.shipments)
+        .slice(0, 5);
+    };
+
+    return {
+      top12: aggregate(buildWindow(12)),
+      recent6: aggregate(buildWindow(6)),
+    };
+  }, []);
+
+  const { top12, recent6 } = React.useMemo(
+    () => summarizeLanes(laneData),
+    [laneData, summarizeLanes],
+  );
 
   const enrichmentSummary = React.useMemo(
     () => pickEnrichmentSummary(enrichment),
@@ -429,29 +558,6 @@ export default function ShipperDetailModal({
   );
 
   const showEnrichmentBanner = !hasAiSummary && !loadingProfile;
-
-  const topLaneLabels = React.useMemo(() => {
-    if (resolvedRouteKpis?.topRoutesLast12m?.length) {
-      return resolvedRouteKpis.topRoutesLast12m
-        .map((lane) => lane.route)
-        .filter((value): value is string => Boolean(value));
-    }
-    if (profile?.topRoutes?.length) {
-      return profile.topRoutes
-        .map((lane) => lane.label)
-        .filter((value): value is string => Boolean(value));
-    }
-    return [];
-  }, [resolvedRouteKpis?.topRoutesLast12m, profile?.topRoutes]);
-
-  const recentLaneLabels = React.useMemo(() => {
-    if (resolvedRouteKpis?.recentTopRoutes?.length) {
-      return resolvedRouteKpis.recentTopRoutes
-        .map((lane) => lane.route)
-        .filter((value): value is string => Boolean(value));
-    }
-    return [];
-  }, [resolvedRouteKpis?.recentTopRoutes]);
 
   const kpiItems: KpiTileProps[] = [
     {
@@ -599,12 +705,16 @@ export default function ShipperDetailModal({
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Top lanes (last 12m)
               </p>
-              {topLaneLabels.length === 0 ? (
-                <p className="mt-1 text-sm text-slate-500">Not available yet</p>
+              {laneLoading ? (
+                <p className="mt-1 text-sm text-slate-500">Loading lanes…</p>
+              ) : top12.length === 0 ? (
+                <p className="mt-1 text-sm text-slate-500">Not available</p>
               ) : (
                 <ul className="mt-1 space-y-1 text-xs font-semibold text-slate-800">
-                  {topLaneLabels.map((lane, idx) => (
-                    <li key={`${lane}-${idx}`}>{lane}</li>
+                  {top12.map((lane, idx) => (
+                    <li key={`${lane.lane}-${idx}`}>
+                      {lane.lane} ({lane.shipments} shipments)
+                    </li>
                   ))}
                 </ul>
               )}
@@ -613,12 +723,16 @@ export default function ShipperDetailModal({
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Recent lanes (last 6m)
               </p>
-              {recentLaneLabels.length === 0 ? (
-                <p className="mt-1 text-sm text-slate-500">Not available yet</p>
+              {laneLoading ? (
+                <p className="mt-1 text-sm text-slate-500">Loading lanes…</p>
+              ) : recent6.length === 0 ? (
+                <p className="mt-1 text-sm text-slate-500">Not available</p>
               ) : (
                 <ul className="mt-1 space-y-1 text-xs font-semibold text-slate-800">
-                  {recentLaneLabels.map((lane, idx) => (
-                    <li key={`${lane}-${idx}`}>{lane}</li>
+                  {recent6.map((lane, idx) => (
+                    <li key={`${lane.lane}-${idx}`}>
+                      {lane.lane} ({lane.shipments} shipments)
+                    </li>
                   ))}
                 </ul>
               )}

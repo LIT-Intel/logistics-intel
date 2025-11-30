@@ -1870,6 +1870,40 @@ export async function getIyCompanyProfile({
   };
 }
 
+export async function getIyCompanyBolDetails(
+  companyKey: string,
+  months = 12,
+) {
+  const normalizedKey = ensureCompanyKey(companyKey);
+  const res = await fetch(
+    withGatewayKey(`${SEARCH_GATEWAY_BASE}/public/iy/companyBolDetails`),
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        company_id: normalizedKey,
+        months,
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error("getIyCompanyBolDetails failed", res.status, text);
+    return { ok: false, rows: [], total: 0 };
+  }
+
+  const json = await res.json().catch(() => null);
+  if (!json) {
+    return { ok: false, rows: [], total: 0 };
+  }
+
+  return json;
+}
+
 export async function searchShippers(
   params: { q: string; page?: number; pageSize?: number },
   signal?: AbortSignal,
