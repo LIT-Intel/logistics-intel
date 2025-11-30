@@ -57,6 +57,12 @@ export function coerceNumber(value: unknown): number | null {
   return null;
 }
 
+export function toNumberOrNull(input: unknown): number | null {
+  if (input == null) return null;
+  const n = typeof input === "number" ? input : Number(input);
+  return Number.isFinite(n) ? n : null;
+}
+
 // Frontend API key for calling the API Gateway
 const LIT_GATEWAY_KEY =
   (typeof import.meta !== "undefined" &&
@@ -163,6 +169,14 @@ export interface IyTimeSeriesPoint {
   month: string;
   fclShipments: number | null;
   lclShipments: number | null;
+}
+
+export interface IyMonthlySeriesPoint extends IyTimeSeriesPoint {
+  monthLabel: string;
+  shipmentsFcl: number;
+  shipmentsLcl: number;
+  totalShipments: number;
+  teu: number;
 }
 
 export type IyCompanyContainers = {
@@ -1328,98 +1342,295 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   };
 }
 
+type RawTimeSeriesEntry = {
+  shipments?: unknown;
+  teu?: unknown;
+};
+
+type NormalizedRouteKpis = IyRouteKpis & {
+  estSpendUsd?: number | null;
+  monthlySeries?: IyMonthlySeriesPoint[];
+};
+
+function parseIyDate(value: string): Date | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function normalizeIyCompanyProfilePayload(
+  rawPayload: unknown,
+  opts?: { fallbackCompanyKey?: string },
+): IyCompanyProfile {
+  const isRecord = (value: unknown): value is Record<string, any> =>
+    Boolean(value) && typeof value === "object";
+  const readString = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  };
+
+  const envelope = isRecord(rawPayload) ? (rawPayload as Record<string, any>) : {};
+  const src = isRecord(envelope.data) ? (envelope.data as Record<string, any>) : envelope;
+
+  const fallbackKeyOrName =
+    readString(opts?.fallbackCompanyKey) ??
+    readString(src.company_id) ??
+    readString(src.companyKey) ??
+    readString(src.companyId) ??
+    readString(src.key) ??
+    readString(src.slug) ??
+    readString(src.company_name) ??
+    readString(src.name) ??
+    null;
+
+  const companyId = ensureCompanyKey(fallbackKeyOrName ?? "unknown-company");
+  const key = ensureCompanyKey(readString(src.key) ?? companyId);
+
+  const title =
+    readString(src.title) ??
+    readString(src.name) ??
+    readString(src.company_name) ??
+    fallbackKeyOrName ??
+    "Unknown company";
+  const name = readString(src.name) ?? title;
+  const website = readString(src.website);
+  const domain =
+    readString(src.domain) ??
+    (website ? deriveDomainCandidate(website) ?? null : null);
+
+  const phoneNumber =
+    readString(src.phone_number) ??
+    readString(src.phoneNumber) ??
+    readString(src.phone) ??
+    null;
+
+  const address =
+    readString(src.address_plain) ??
+    readString(src.address) ??
+    readString(src.company_address) ??
+    null;
+
+  const country =
+    readString(src.country) ?? readString(src.country_name) ?? null;
+  const countryCode =
+    readString(src.country_code) ??
+    readString(src.countryCode) ??
+    readString(src.country_iso) ??
+    null;
+
+  const totalShipments =
+    toNumberOrNull(
+      src.total_shipments ?? src.shipments_12m ?? src.shipments12m,
+    ) ?? null;
+
+  const lastShipmentDate =
+    (isRecord(src.date_range) && readString(src.date_range.end_date)) ??
+    readString(src.last_shipment_date) ??
+    readString(src.lastShipmentDate) ??
+    readString(src.last_activity) ??
+    null;
+
+  const containersLoad = Array.isArray(src.containers_load)
+    ? src.containers_load
+    : [];
+
+  const getShipmentsForLoad = (loadType: string): number | null => {
+    const row = containersLoad.find(
+      (entry: any) =>
+        String(entry?.load_type ?? "")
+          .toUpperCase()
+          .trim() === loadType.toUpperCase(),
+    );
+    return row ? toNumberOrNull(row.shipments) : null;
+  };
+
+  const fclShipments12m = getShipmentsForLoad("FCL");
+  const lclShipments12m = getShipmentsForLoad("LCL");
+
+  const containers: IyCompanyContainers | null =
+    fclShipments12m != null || lclShipments12m != null
+      ? {
+          fclShipments12m: fclShipments12m ?? null,
+          lclShipments12m: lclShipments12m ?? null,
+        }
+      : null;
+
+  const timeSeriesRaw = isRecord(src.time_series)
+    ? (src.time_series as Record<string, RawTimeSeriesEntry>)
+    : null;
+
+  type SeriesPoint = { date: Date; shipments: number; teu: number };
+  const allPoints: SeriesPoint[] = [];
+
+  if (timeSeriesRaw) {
+    for (const [label, value] of Object.entries(timeSeriesRaw)) {
+      const parsedDate = parseIyDate(label);
+      if (!parsedDate) continue;
+      const shipments = toNumberOrNull((value as any)?.shipments) ?? 0;
+      const teu = toNumberOrNull((value as any)?.teu) ?? 0;
+      allPoints.push({ date: parsedDate, shipments, teu });
+    }
+  }
+
+  allPoints.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  let shipmentsLast12m: number | null = null;
+  let teuLast12m: number | null = null;
+  let monthlySeriesPoints: IyMonthlySeriesPoint[] | null = null;
+
+  if (allPoints.length) {
+    const lastDate = allPoints[allPoints.length - 1].date;
+    const windowStart = new Date(lastDate);
+    windowStart.setFullYear(windowStart.getFullYear() - 1);
+
+    const inWindow = allPoints.filter(
+      (point) => point.date > windowStart && point.date <= lastDate,
+    );
+
+    if (inWindow.length) {
+      shipmentsLast12m = inWindow.reduce(
+        (sum, point) => sum + point.shipments,
+        0,
+      );
+      teuLast12m = inWindow.reduce((sum, point) => sum + point.teu, 0);
+
+      const totalLoadShipments =
+        (fclShipments12m ?? 0) + (lclShipments12m ?? 0);
+      const fclShare =
+        totalLoadShipments > 0
+          ? (fclShipments12m ?? 0) / totalLoadShipments
+          : 1;
+      const lclShare = 1 - fclShare;
+
+      monthlySeriesPoints = inWindow.map((point) => {
+        const fcl = Math.round(point.shipments * fclShare);
+        const lcl = point.shipments - fcl;
+        const monthLabel = `${point.date.getFullYear()}-${String(
+          point.date.getMonth() + 1,
+        ).padStart(2, "0")}`;
+        return {
+          month: monthLabel,
+          monthLabel,
+          fclShipments: fcl,
+          lclShipments: lcl,
+          shipmentsFcl: fcl,
+          shipmentsLcl: lcl,
+          totalShipments: point.shipments,
+          teu: point.teu,
+        };
+      });
+    }
+  }
+
+  const sharedMonthlySeries: IyMonthlySeriesPoint[] =
+    monthlySeriesPoints ?? [];
+
+  const totalShippingCost = toNumberOrNull(src.total_shipping_cost);
+  let estSpendUsd12m: number | null = null;
+
+  if (
+    totalShippingCost != null &&
+    teuLast12m != null &&
+    teuLast12m > 0
+  ) {
+    const containersRaw = Array.isArray(src.containers) ? src.containers : [];
+    const totalTeu = containersRaw.reduce((sum: number, row: any) => {
+      const teu = toNumberOrNull(row?.teu) ?? 0;
+      return sum + teu;
+    }, 0);
+
+    if (totalTeu > 0) {
+      const costPerTeu = totalShippingCost / totalTeu;
+      estSpendUsd12m = Math.round(costPerTeu * teuLast12m);
+    }
+  }
+
+  let suppliersSample: string[] | null = null;
+  if (Array.isArray(src.suppliers_table)) {
+    suppliersSample = src.suppliers_table
+      .map((row: any) =>
+        readString(row?.supplier_name ?? row?.supplier ?? row?.name),
+      )
+      .filter((value): value is string => Boolean(value))
+      .slice(0, 4);
+    if (!suppliersSample.length) {
+      suppliersSample = null;
+    }
+  }
+
+  const topSuppliers =
+    suppliersSample ?? normalizeTopSuppliers(src) ?? null;
+
+  const topRoutes = Array.isArray(src.top_routes) ? src.top_routes : [];
+  const mostRecentRoute = isRecord(src.most_recent_route)
+    ? src.most_recent_route
+    : null;
+
+  const routeKpisBase: IyRouteKpis = {
+    shipmentsLast12m,
+    teuLast12m,
+    estSpendUsd12m,
+    topRouteLast12m: null,
+    mostRecentRoute: null,
+    sampleSize: shipmentsLast12m,
+    topRoutesLast12m: [],
+  };
+
+  const routeKpis = routeKpisBase as NormalizedRouteKpis;
+  routeKpis.estSpendUsd = estSpendUsd12m;
+  if (sharedMonthlySeries.length) {
+    routeKpis.monthlySeries = sharedMonthlySeries;
+  }
+
+  const normalized: IyCompanyProfile = {
+    key,
+    companyId,
+    name,
+    title,
+    domain,
+    website,
+    phoneNumber,
+    phone: phoneNumber,
+    address,
+    countryCode,
+    lastShipmentDate,
+    estSpendUsd12m,
+    totalShipments: totalShipments ?? shipmentsLast12m,
+    routeKpis,
+    timeSeries: sharedMonthlySeries as IyTimeSeriesPoint[],
+    containers: containers ?? normalizeContainers(src),
+    topSuppliers,
+    time_series: src.time_series,
+    containers_load: containersLoad,
+    top_routes: topRoutes,
+    most_recent_route: mostRecentRoute,
+    suppliers_sample: suppliersSample ?? src.suppliers_sample ?? undefined,
+  };
+
+  Object.assign(normalized as Record<string, any>, {
+    country,
+    rawWebsite: website,
+    suppliersSample,
+    containersLoad,
+    mostRecentRoute,
+    topRoutes,
+  });
+
+  return normalized;
+}
+
 function normalizeCompanyProfile(
   rawProfile: any,
   companyKey: string,
 ): IyCompanyProfile {
-  const profileData = rawProfile?.data ?? rawProfile ?? {};
-  const companyId = ensureCompanyKey(
-    profileData.company_id ?? profileData.companyKey ?? companyKey,
-  );
-  const profileKey = ensureCompanyKey(profileData.key ?? companyId);
-
-  const routeKpis = normalizeRouteKpis(profileData);
-  const timeSeries = normalizeTimeSeries(profileData);
-  const containers = normalizeContainers(profileData);
-  const topSuppliers = normalizeTopSuppliers(profileData);
-
-  const websiteValue = typeof profileData.website === "string" ? profileData.website : null;
-  const domainValue =
-    profileData.domain ??
-    (websiteValue
-      ? (() => {
-          try {
-            const parsed = new URL(
-              websiteValue.startsWith("http") ? websiteValue : `https://${websiteValue}`,
-            );
-            return parsed.hostname.replace(/^www\./i, "");
-          } catch {
-            return null;
-          }
-        })()
-      : null);
-
-  const phoneCandidate =
-    profileData.phoneNumber ??
-    profileData.phone ??
-    profileData.phone_number ??
-    profileData.company_phone ??
-    null;
-
-  return {
-    key: profileKey,
-    companyId,
-    name:
-      typeof profileData.name === "string"
-        ? profileData.name
-        : typeof profileData.title === "string"
-          ? profileData.title
-          : profileKey,
-    title:
-      typeof profileData.title === "string"
-        ? profileData.title
-        : typeof profileData.name === "string"
-          ? profileData.name
-          : profileKey,
-    domain: domainValue,
-    website: websiteValue,
-    phoneNumber: typeof phoneCandidate === "string" ? phoneCandidate : null,
-    phone:
-      typeof phoneCandidate === "string"
-        ? phoneCandidate
-        : profileData.phone ??
-            profileData.phone_number ??
-            profileData.company_phone ??
-            null,
-    address: profileData.address ?? profileData.company_address ?? null,
-    countryCode:
-      profileData.country_code ??
-      profileData.countryCode ??
-      profileData.country ??
-      null,
-    lastShipmentDate:
-      profileData.last_shipment_date ??
-      profileData.lastShipment ??
-      profileData.lastShipmentDate ??
-      null,
-    estSpendUsd12m:
-      coerceNumber(
-        profileData.est_spend_usd ??
-          profileData.estimated_spend_12m ??
-          profileData.spend_12m,
-      ) ?? null,
-    totalShipments:
-      coerceNumber(profileData.total_shipments ?? profileData.shipments_12m) ?? null,
-    routeKpis,
-    timeSeries,
-    containers,
-    topSuppliers,
-    time_series: profileData.time_series,
-    containers_load: profileData.containers_load,
-    top_routes: profileData.top_routes,
-    most_recent_route: profileData.most_recent_route,
-    suppliers_sample: profileData.suppliers_sample,
-  };
+  return normalizeIyCompanyProfilePayload(rawProfile, {
+    fallbackCompanyKey: companyKey,
+  });
 }
 
 export async function getIyCompanyProfile({
