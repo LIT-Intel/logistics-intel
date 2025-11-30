@@ -282,23 +282,17 @@ export default function ShipperDetailModal({
     shipper.mostRecentShipment ??
     null;
   const topRouteLast12m =
-    resolvedRouteKpis?.topRouteLast12m ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
+    profile?.routeKpis?.topRouteLast12m ??
+    profile?.topRoutes?.[0]?.label ??
     null;
   const mostRecentRoute =
-    resolvedRouteKpis?.mostRecentRoute ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const topRoutes = Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
-    ? resolvedRouteKpis.topRoutesLast12m.slice(0, 5)
-    : [];
+    profile?.routeKpis?.mostRecentRoute ?? null;
 
   const chartData = React.useMemo(
     () =>
       Array.isArray(profile?.timeSeries)
         ? profile.timeSeries.slice(-12).map((point) => ({
+            month: point.month,
             monthLabel: monthLabel(point.month),
             fcl: coerceNumber(point.fclShipments) ?? 0,
             lcl: coerceNumber(point.lclShipments) ?? 0,
@@ -307,8 +301,23 @@ export default function ShipperDetailModal({
     [profile?.timeSeries],
   );
 
+  const chartRangeLabel = React.useMemo(() => {
+    if (!chartData.length) return null;
+    const first = chartData[0];
+    const last = chartData[chartData.length - 1];
+    if (!first?.month || !last?.month) return null;
+    const startYear = first.month.slice(0, 4);
+    const endYear = last.month.slice(0, 4);
+    if (!startYear || !endYear) return null;
+    return `${startYear} – ${endYear}`;
+  }, [chartData]);
+
   const supplierList = React.useMemo(() => {
-    const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
+    const list =
+      profile?.suppliersSample ??
+      profile?.topSuppliers ??
+      shipper.topSuppliers ??
+      [];
     if (!Array.isArray(list)) return [];
     return list
       .map((entry: any) =>
@@ -318,7 +327,9 @@ export default function ShipperDetailModal({
       )
       .filter((value: string) => Boolean(value))
       .slice(0, 6);
-  }, [profile?.topSuppliers, shipper.topSuppliers]);
+  }, [profile?.suppliersSample, profile?.topSuppliers, shipper.topSuppliers]);
+
+  const aiSuppliers = supplierList.slice(0, 4);
 
   const enrichmentSummary = React.useMemo(
     () => pickEnrichmentSummary(enrichment),
@@ -382,14 +393,46 @@ export default function ShipperDetailModal({
   }, [enrichment]);
 
   const hasEnrichmentContent = Boolean(
-    enrichmentSummary ||
-      enrichmentOpportunities.length ||
+    enrichmentOpportunities.length ||
       enrichmentRisks.length ||
       enrichmentTalkingPoints.length ||
       enrichmentExtraSections.length,
   );
 
   const showEnrichmentBanner = !enrichment && !loadingProfile;
+
+  const aiSummaryFromEnrichment =
+    typeof enrichment?.summary === "string" && enrichment.summary.trim().length
+      ? enrichment.summary.trim()
+      : enrichmentSummary;
+
+  const aiSummary = React.useMemo(() => {
+    if (aiSummaryFromEnrichment) return aiSummaryFromEnrichment;
+    if (!profile) return null;
+    const parts: string[] = [];
+    const companyLabel =
+      profile.title || profile.name || shipper.title || "This company";
+    const countryLabel = profile.country || profile.countryCode || "Unknown";
+    parts.push(`${companyLabel} is an importer in ${countryLabel}.`);
+    if (shipments12m != null) {
+      parts.push(
+        `They show roughly ${Number(shipments12m).toLocaleString()} shipments over the last 12 months.`,
+      );
+    }
+    if (teu12m != null) {
+      parts.push(`That's about ${Number(teu12m).toLocaleString()} TEU.`);
+    }
+    if (estSpend12m != null) {
+      parts.push(
+        `Estimated ocean spend is around $${Number(estSpend12m).toLocaleString()}.`,
+      );
+    }
+    if (aiSuppliers.length) {
+      const keySuppliers = aiSuppliers.slice(0, 3).join(", ");
+      parts.push(`Key suppliers include ${keySuppliers}.`);
+    }
+    return parts.length ? parts.join(" ") : null;
+  }, [aiSummaryFromEnrichment, profile, shipments12m, teu12m, estSpend12m, aiSuppliers, shipper.title]);
 
   const kpiItems: KpiTileProps[] = [
     {
@@ -562,6 +605,11 @@ export default function ShipperDetailModal({
                     <p className="text-xs text-slate-500">
                       Monthly shipments split between FCL and LCL services.
                     </p>
+                    {chartRangeLabel && (
+                      <p className="text-xs text-slate-500">
+                        Data window: {chartRangeLabel}
+                      </p>
+                    )}
                   </div>
                   {loadingProfile && (
                     <p className="text-xs text-slate-400">Loading trend…</p>
@@ -612,42 +660,26 @@ export default function ShipperDetailModal({
                 )}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Top lanes (last 12m)
-                </p>
-                {topRoutes.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Lane-level shipment data is not available for this company yet.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-                    {topRoutes.map((lane, idx) => (
-                      <li key={`${lane.route}-${idx}`} className="flex items-center justify-between gap-2">
-                        <span className="truncate">{lane.route}</span>
-                        <span className="text-[11px] text-slate-500">
-                          {formatNumber(lane.shipments ?? null)} shipments
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
             </div>
 
             <div className="space-y-4">
-              {enrichment && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    AI insights
-                  </p>
-                  {hasEnrichmentContent ? (
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  AI insights
+                </p>
+                <div className="mt-2 text-sm text-slate-700">
+                  {aiSummary ?? "AI insights not available for this company yet."}
+                </div>
+                {aiSuppliers.length > 0 && (
+                  <ul className="mt-3 list-inside list-disc text-sm text-slate-600">
+                    {aiSuppliers.map((name) => (
+                      <li key={name}>{name}</li>
+                    ))}
+                  </ul>
+                )}
+                {enrichment ? (
+                  hasEnrichmentContent ? (
                     <>
-                      {enrichmentSummary && (
-                        <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
-                          {enrichmentSummary}
-                        </p>
-                      )}
                       {enrichmentOpportunities.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -681,7 +713,7 @@ export default function ShipperDetailModal({
                       {enrichmentTalkingPoints.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Recommended talking points
+                            Talking points
                           </p>
                           <ul className="mt-1 space-y-1 text-xs text-slate-700">
                             {enrichmentTalkingPoints.map((item, idx) => (
@@ -693,32 +725,36 @@ export default function ShipperDetailModal({
                           </ul>
                         </div>
                       )}
-                      {enrichmentExtraSections.map((section, sectionIdx) => (
-                        <div className="mt-3" key={`${section.label}-${sectionIdx}`}>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            {section.label}
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {section.items.map((item, idx) => (
-                              <li
-                                key={`${section.label}-${sectionIdx}-${idx}`}
-                                className="flex items-start gap-2"
-                              >
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
+                      {enrichmentExtraSections.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {enrichmentExtraSections.map((section, sectionIdx) => (
+                            <div key={`${section.label}-${sectionIdx}`}>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {section.label}
+                              </p>
+                              <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                                {section.items.map((item, idx) => (
+                                  <li
+                                    key={`${section.label}-${sectionIdx}-${idx}`}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                    <span className="leading-snug">{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </>
                   ) : (
                     <p className="mt-2 text-xs text-slate-500">
                       AI enrichment response available but no structured insights were returned.
                     </p>
-                  )}
-                </div>
-              )}
+                  )
+                ) : null}
+              </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Top suppliers (sample)

@@ -153,6 +153,7 @@ export type IyRouteTopRoute = {
   teu?: number | null;
   fclShipments?: number | null;
   lclShipments?: number | null;
+  estSpendUsd?: number | null;
 };
 
 export interface IyRouteKpis {
@@ -163,6 +164,9 @@ export interface IyRouteKpis {
   mostRecentRoute: string | null;
   sampleSize: number | null;
   topRoutesLast12m: IyRouteTopRoute[];
+  monthlySeries?: IyMonthlySeriesPoint[];
+  estSpendUsd?: number | null;
+  contact?: IyCompanyContact;
 }
 
 export interface IyTimeSeriesPoint {
@@ -184,6 +188,15 @@ export type IyCompanyContainers = {
   lclShipments12m: number | null;
 };
 
+export type IyCompanyProfileRoute = {
+  label: string | null;
+  origin: string | null;
+  destination: string | null;
+  shipments: number | null;
+  teu: number | null;
+  lastShipmentDate: string | null;
+};
+
 export interface IyCompanyProfile {
   key: string;
   companyId: string;
@@ -201,6 +214,12 @@ export interface IyCompanyProfile {
   routeKpis: IyRouteKpis | null;
   timeSeries: IyTimeSeriesPoint[];
   containers: IyCompanyContainers | null;
+  country?: string | null;
+  topRoutes?: IyCompanyProfileRoute[] | null;
+  mostRecentRoute?: IyCompanyProfileRoute | null;
+  suppliersSample?: string[] | null;
+  containersLoad?: Array<Record<string, any>>;
+  rawWebsite?: string | null;
   topSuppliers?: string[] | null;
   // Legacy/raw passthrough fields for compatibility with older UI
   time_series?: Record<string, any>;
@@ -1347,9 +1366,12 @@ type RawTimeSeriesEntry = {
   teu?: unknown;
 };
 
-type NormalizedRouteKpis = IyRouteKpis & {
-  estSpendUsd?: number | null;
-  monthlySeries?: IyMonthlySeriesPoint[];
+type RawBol = {
+  date_formatted?: string;
+  Country?: string;
+  country_code?: string;
+  supplier_address_country?: string;
+  supplier_address_country_code?: string;
 };
 
 function parseIyDate(value: string): Date | null {
@@ -1360,6 +1382,15 @@ function parseIyDate(value: string): Date | null {
   const [, dd, mm, yyyy] = match;
   const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseBolDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  const parsed = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 export function normalizeIyCompanyProfilePayload(
@@ -1437,6 +1468,10 @@ export function normalizeIyCompanyProfilePayload(
 
   const containersLoad = Array.isArray(src.containers_load)
     ? src.containers_load
+    : [];
+
+  const recentBols = Array.isArray((src as any).recent_bols)
+    ? ((src as any).recent_bols as RawBol[])
     : [];
 
   const getShipmentsForLoad = (loadType: string): number | null => {
@@ -1530,6 +1565,74 @@ export function normalizeIyCompanyProfilePayload(
   const sharedMonthlySeries: IyMonthlySeriesPoint[] =
     monthlySeriesPoints ?? [];
 
+  const destCountryName =
+    readString(src.company_address_country) ?? country;
+  const destCountryCode =
+    readString(src.company_address_country_code) ?? countryCode;
+
+  type LaneAgg = {
+    key: string;
+    label: string;
+    shipments: number;
+  };
+
+  const laneMap = new Map<string, LaneAgg>();
+  let mostRecentRouteLabel: string | null = null;
+  let mostRecentDate: Date | null = null;
+
+  for (const bol of recentBols) {
+    const d = parseBolDate(bol?.date_formatted);
+    const originName =
+      readString(bol?.supplier_address_country) ??
+      readString(bol?.Country) ??
+      null;
+    const originCode =
+      readString(bol?.supplier_address_country_code) ??
+      readString(bol?.country_code) ??
+      null;
+
+    if (!originName && !originCode) continue;
+    if (!destCountryName && !destCountryCode) continue;
+
+    const originShort = originCode ?? originName ?? "";
+    const destShort = destCountryCode ?? destCountryName ?? "";
+
+    if (!originShort || !destShort) continue;
+
+    const label = `${originShort} → ${destShort}`;
+    const existing = laneMap.get(label);
+    if (existing) {
+      existing.shipments += 1;
+    } else {
+      laneMap.set(label, { key: label, label, shipments: 1 });
+    }
+
+    if (d && (!mostRecentDate || d > mostRecentDate)) {
+      mostRecentDate = d;
+      mostRecentRouteLabel = label;
+    }
+  }
+
+  const topLaneAgg = Array.from(laneMap.values())
+    .sort((a, b) => b.shipments - a.shipments)
+    .slice(0, 5);
+
+  const normalizedTopRoutes: IyCompanyProfileRoute[] = topLaneAgg.map(
+    (lane) => {
+      const [originLabel, destinationLabel] = lane.label.split("→").map((part) =>
+        part ? part.trim() : "",
+      );
+      return {
+        label: lane.label,
+        origin: originLabel || null,
+        destination: destinationLabel || null,
+        shipments: lane.shipments,
+        teu: null,
+        lastShipmentDate: null,
+      };
+    },
+  );
+
   const totalShippingCost = toNumberOrNull(src.total_shipping_cost);
   let estSpendUsd12m: number | null = null;
 
@@ -1566,26 +1669,31 @@ export function normalizeIyCompanyProfilePayload(
   const topSuppliers =
     suppliersSample ?? normalizeTopSuppliers(src) ?? null;
 
-  const topRoutes = Array.isArray(src.top_routes) ? src.top_routes : [];
-  const mostRecentRoute = isRecord(src.most_recent_route)
-    ? src.most_recent_route
-    : null;
+  const topRoutesForKpis: IyRouteTopRoute[] = normalizedTopRoutes.map(
+    (lane) => ({
+      route: lane.label ?? "",
+      shipments: lane.shipments ?? null,
+      teu: lane.teu ?? null,
+      estSpendUsd: null,
+    }),
+  );
 
-  const routeKpisBase: IyRouteKpis = {
+  const routeKpis: IyRouteKpis = {
     shipmentsLast12m,
     teuLast12m,
     estSpendUsd12m,
-    topRouteLast12m: null,
-    mostRecentRoute: null,
+    topRouteLast12m: normalizedTopRoutes[0]?.label ?? null,
+    mostRecentRoute: mostRecentRouteLabel ?? null,
     sampleSize: shipmentsLast12m,
-    topRoutesLast12m: [],
+    topRoutesLast12m: topRoutesForKpis,
+    monthlySeries: sharedMonthlySeries,
+    estSpendUsd: estSpendUsd12m,
   };
 
-  const routeKpis = routeKpisBase as NormalizedRouteKpis;
-  routeKpis.estSpendUsd = estSpendUsd12m;
-  if (sharedMonthlySeries.length) {
-    routeKpis.monthlySeries = sharedMonthlySeries;
-  }
+  const rawTopRoutes = Array.isArray(src.top_routes) ? src.top_routes : [];
+  const mostRecentRouteRaw = isRecord(src.most_recent_route)
+    ? src.most_recent_route
+    : null;
 
   const normalized: IyCompanyProfile = {
     key,
@@ -1604,22 +1712,19 @@ export function normalizeIyCompanyProfilePayload(
     routeKpis,
     timeSeries: sharedMonthlySeries as IyTimeSeriesPoint[],
     containers: containers ?? normalizeContainers(src),
+    country,
+    topRoutes: normalizedTopRoutes.length ? normalizedTopRoutes : null,
+    mostRecentRoute: normalizedTopRoutes[0] ?? null,
+    suppliersSample,
+    containersLoad,
+    rawWebsite: website,
     topSuppliers,
     time_series: src.time_series,
     containers_load: containersLoad,
-    top_routes: topRoutes,
-    most_recent_route: mostRecentRoute,
+    top_routes: rawTopRoutes,
+    most_recent_route: mostRecentRouteRaw,
     suppliers_sample: suppliersSample ?? src.suppliers_sample ?? undefined,
   };
-
-  Object.assign(normalized as Record<string, any>, {
-    country,
-    rawWebsite: website,
-    suppliersSample,
-    containersLoad,
-    mostRecentRoute,
-    topRoutes,
-  });
 
   return normalized;
 }
