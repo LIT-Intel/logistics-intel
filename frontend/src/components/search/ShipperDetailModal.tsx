@@ -281,13 +281,6 @@ export default function ShipperDetailModal({
     shipper.lastShipmentDate ??
     shipper.mostRecentShipment ??
     null;
-  const topRouteLast12m =
-    profile?.routeKpis?.topRouteLast12m ??
-    profile?.topRoutes?.[0]?.label ??
-    null;
-  const mostRecentRoute =
-    profile?.routeKpis?.mostRecentRoute ?? null;
-
   const chartData = React.useMemo(() => {
     if (!Array.isArray(profile?.timeSeries)) return [];
     return profile.timeSeries.slice(-12).map((point) => {
@@ -437,6 +430,29 @@ export default function ShipperDetailModal({
 
   const showEnrichmentBanner = !hasAiSummary && !loadingProfile;
 
+  const topLaneLabels = React.useMemo(() => {
+    if (resolvedRouteKpis?.topRoutesLast12m?.length) {
+      return resolvedRouteKpis.topRoutesLast12m
+        .map((lane) => lane.route)
+        .filter((value): value is string => Boolean(value));
+    }
+    if (profile?.topRoutes?.length) {
+      return profile.topRoutes
+        .map((lane) => lane.label)
+        .filter((value): value is string => Boolean(value));
+    }
+    return [];
+  }, [resolvedRouteKpis?.topRoutesLast12m, profile?.topRoutes]);
+
+  const recentLaneLabels = React.useMemo(() => {
+    if (resolvedRouteKpis?.recentTopRoutes?.length) {
+      return resolvedRouteKpis.recentTopRoutes
+        .map((lane) => lane.route)
+        .filter((value): value is string => Boolean(value));
+    }
+    return [];
+  }, [resolvedRouteKpis?.recentTopRoutes]);
+
   const kpiItems: KpiTileProps[] = [
     {
       label: "Shipments (12m)",
@@ -581,19 +597,31 @@ export default function ShipperDetailModal({
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Top route (last 12m)
+                Top lanes (last 12m)
               </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {topRouteLast12m || "Not available yet"}
-              </p>
+              {topLaneLabels.length === 0 ? (
+                <p className="mt-1 text-sm text-slate-500">Not available yet</p>
+              ) : (
+                <ul className="mt-1 space-y-1 text-xs font-semibold text-slate-800">
+                  {topLaneLabels.map((lane, idx) => (
+                    <li key={`${lane}-${idx}`}>{lane}</li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Most recent route
+                Recent lanes (last 6m)
               </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {mostRecentRoute || "Not available yet"}
-              </p>
+              {recentLaneLabels.length === 0 ? (
+                <p className="mt-1 text-sm text-slate-500">Not available yet</p>
+              ) : (
+                <ul className="mt-1 space-y-1 text-xs font-semibold text-slate-800">
+                  {recentLaneLabels.map((lane, idx) => (
+                    <li key={`${lane}-${idx}`}>{lane}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 

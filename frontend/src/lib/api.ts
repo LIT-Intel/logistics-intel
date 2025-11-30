@@ -164,6 +164,7 @@ export interface IyRouteKpis {
   mostRecentRoute: string | null;
   sampleSize: number | null;
   topRoutesLast12m: IyRouteTopRoute[];
+  recentTopRoutes?: IyRouteTopRoute[];
   monthlySeries?: IyMonthlySeriesPoint[];
   estSpendUsd?: number | null;
   contact?: IyCompanyContact;
@@ -1331,6 +1332,9 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
       topRoutesLast12m: Array.isArray(raw.routeKpis.topRoutesLast12m)
         ? (raw.routeKpis.topRoutesLast12m as IyRouteTopRoute[])
         : [],
+      recentTopRoutes: Array.isArray(raw.routeKpis.recentTopRoutes)
+        ? (raw.routeKpis.recentTopRoutes as IyRouteTopRoute[])
+        : [],
     };
   }
 
@@ -1358,6 +1362,7 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
       null,
     sampleSize: coerceNumber(raw.sample_size ?? raw.sampleSize) ?? null,
     topRoutesLast12m: topRoutes,
+    recentTopRoutes: [],
   };
 }
 
@@ -1372,6 +1377,12 @@ type RawBol = {
   country_code?: string;
   supplier_address_country?: string;
   supplier_address_country_code?: string;
+  supplier_address_location?: string;
+  supplier_address_loc?: string;
+  company_address_country?: string;
+  company_address_country_code?: string;
+  company_address_loc?: string;
+  TEU?: number | string;
 };
 
 function parseIyDate(value: string): Date | null {
@@ -1474,6 +1485,44 @@ export function normalizeIyCompanyProfilePayload(
     ? ((src as any).recent_bols as RawBol[])
     : [];
 
+  const buildLaneLabels = (bol: RawBol) => {
+    const originCity =
+      readString(bol.supplier_address_location) ??
+      readString(bol.supplier_address_loc) ??
+      readString(bol.Country) ??
+      null;
+    const originCode =
+      readString(bol.supplier_address_country_code) ??
+      readString(bol.country_code) ??
+      null;
+    const destCountry =
+      readString(bol.company_address_country) ??
+      readString(src.company_address_country) ??
+      readString(src.country) ??
+      null;
+    const destCode =
+      readString(bol.company_address_country_code) ??
+      readString(src.company_address_country_code) ??
+      readString(src.country_code) ??
+      null;
+
+    const originLabel = [originCity, originCode]
+      .filter((value): value is string => Boolean(value))
+      .join(", ");
+    const destLabel = [destCountry, destCode]
+      .filter((value): value is string => Boolean(value))
+      .join(", ");
+
+    const label =
+      originLabel && destLabel ? `${originLabel} → ${destLabel}` : null;
+
+    return {
+      originLabel: originLabel || null,
+      destLabel: destLabel || null,
+      label,
+    };
+  };
+
   const getShipmentsForLoad = (loadType: string): number | null => {
     const row = containersLoad.find(
       (entry: any) =>
@@ -1565,73 +1614,103 @@ export function normalizeIyCompanyProfilePayload(
   const sharedMonthlySeries: IyMonthlySeriesPoint[] =
     monthlySeriesPoints ?? [];
 
-  const destCountryName =
-    readString(src.company_address_country) ?? country;
-  const destCountryCode =
-    readString(src.company_address_country_code) ?? countryCode;
-
-  type LaneAgg = {
-    key: string;
+  type LanePoint = {
+    date: Date;
     label: string;
-    shipments: number;
+    origin: string;
+    destination: string;
+    teu: number;
   };
 
-  const laneMap = new Map<string, LaneAgg>();
-  let mostRecentRouteLabel: string | null = null;
-  let mostRecentDate: Date | null = null;
+  const lanePoints: LanePoint[] = [];
 
   for (const bol of recentBols) {
-    const d = parseBolDate(bol?.date_formatted);
-    const originName =
-      readString(bol?.supplier_address_country) ??
-      readString(bol?.Country) ??
-      null;
-    const originCode =
-      readString(bol?.supplier_address_country_code) ??
-      readString(bol?.country_code) ??
-      null;
-
-    if (!originName && !originCode) continue;
-    if (!destCountryName && !destCountryCode) continue;
-
-    const originShort = originCode ?? originName ?? "";
-    const destShort = destCountryCode ?? destCountryName ?? "";
-
-    if (!originShort || !destShort) continue;
-
-    const label = `${originShort} → ${destShort}`;
-    const existing = laneMap.get(label);
-    if (existing) {
-      existing.shipments += 1;
-    } else {
-      laneMap.set(label, { key: label, label, shipments: 1 });
-    }
-
-    if (d && (!mostRecentDate || d > mostRecentDate)) {
-      mostRecentDate = d;
-      mostRecentRouteLabel = label;
-    }
+    const date = parseBolDate(bol?.date_formatted);
+    if (!date) continue;
+    const { originLabel, destLabel, label } = buildLaneLabels(bol);
+    if (!label || !originLabel || !destLabel) continue;
+    const teu = toNumberOrNull(bol.TEU) ?? 0;
+    lanePoints.push({
+      date,
+      label,
+      origin: originLabel,
+      destination: destLabel,
+      teu,
+    });
   }
 
-  const topLaneAgg = Array.from(laneMap.values())
-    .sort((a, b) => b.shipments - a.shipments)
-    .slice(0, 5);
+  let topLanes12m: IyCompanyProfileRoute[] = [];
+  let recentLanes6m: IyCompanyProfileRoute[] = [];
+  let mostRecentRouteLabel: string | null = null;
 
-  const normalizedTopRoutes: IyCompanyProfileRoute[] = topLaneAgg.map(
-    (lane) => {
-      const [originLabel, destinationLabel] = lane.label.split("→").map((part) =>
-        part ? part.trim() : "",
+  if (lanePoints.length) {
+    lanePoints.sort((a, b) => a.date.getTime() - b.date.getTime());
+    const lastLaneDate = lanePoints[lanePoints.length - 1].date;
+
+    const laneWindow = (months: number) => {
+      const start = new Date(lastLaneDate);
+      start.setMonth(start.getMonth() - months);
+      return lanePoints.filter(
+        (point) => point.date > start && point.date <= lastLaneDate,
       );
-      return {
-        label: lane.label,
-        origin: originLabel || null,
-        destination: destinationLabel || null,
-        shipments: lane.shipments,
-        teu: null,
-        lastShipmentDate: null,
-      };
-    },
-  );
+    };
+
+    const aggregateLanes = (points: LanePoint[]): IyCompanyProfileRoute[] => {
+      if (!points.length) return [];
+      const map = new Map<
+        string,
+        {
+          label: string;
+          origin: string;
+          destination: string;
+          shipments: number;
+          teu: number;
+          lastDate: Date;
+        }
+      >();
+
+      for (const point of points) {
+        const existing = map.get(point.label);
+        if (existing) {
+          existing.shipments += 1;
+          existing.teu += point.teu;
+          if (point.date > existing.lastDate) {
+            existing.lastDate = point.date;
+          }
+        } else {
+          map.set(point.label, {
+            label: point.label,
+            origin: point.origin,
+            destination: point.destination,
+            shipments: 1,
+            teu: point.teu,
+            lastDate: point.date,
+          });
+        }
+      }
+
+      return Array.from(map.values())
+        .sort((a, b) => b.shipments - a.shipments)
+        .slice(0, 5)
+        .map((lane) => {
+          const shipmentLabel = lane.shipments.toLocaleString();
+          return {
+            label: `${lane.label} (${shipmentLabel} shipments)`,
+            origin: lane.origin,
+            destination: lane.destination,
+            shipments: lane.shipments,
+            teu: lane.teu,
+            lastShipmentDate: lane.lastDate.toISOString(),
+          } as IyCompanyProfileRoute;
+        });
+    };
+
+    topLanes12m = aggregateLanes(laneWindow(12));
+    recentLanes6m = aggregateLanes(laneWindow(6));
+
+    const mostRecentPoint = lanePoints[lanePoints.length - 1];
+    mostRecentRouteLabel = mostRecentPoint ? mostRecentPoint.label : null;
+  }
 
   const totalShippingCost = toNumberOrNull(src.total_shipping_cost);
   let estSpendUsd12m: number | null = null;
@@ -1669,23 +1748,31 @@ export function normalizeIyCompanyProfilePayload(
   const topSuppliers =
     suppliersSample ?? normalizeTopSuppliers(src) ?? null;
 
-  const topRoutesForKpis: IyRouteTopRoute[] = normalizedTopRoutes.map(
-    (lane) => ({
-      route: lane.label ?? "",
-      shipments: lane.shipments ?? null,
-      teu: lane.teu ?? null,
-      estSpendUsd: null,
-    }),
+  const mapProfileRouteToTopRoute = (
+    lane: IyCompanyProfileRoute,
+  ): IyRouteTopRoute => ({
+    route: lane.label ?? "",
+    shipments: lane.shipments ?? null,
+    teu: lane.teu ?? null,
+    estSpendUsd: null,
+  });
+
+  const topRoutesForKpis: IyRouteTopRoute[] = topLanes12m.map(
+    mapProfileRouteToTopRoute,
+  );
+  const recentTopRoutesForKpis: IyRouteTopRoute[] = recentLanes6m.map(
+    mapProfileRouteToTopRoute,
   );
 
   const routeKpis: IyRouteKpis = {
     shipmentsLast12m,
     teuLast12m,
     estSpendUsd12m,
-    topRouteLast12m: normalizedTopRoutes[0]?.label ?? null,
+    topRouteLast12m: topLanes12m[0]?.label ?? null,
     mostRecentRoute: mostRecentRouteLabel ?? null,
     sampleSize: shipmentsLast12m,
     topRoutesLast12m: topRoutesForKpis,
+    recentTopRoutes: recentTopRoutesForKpis,
     monthlySeries: sharedMonthlySeries,
     estSpendUsd: estSpendUsd12m,
   };
@@ -1713,8 +1800,8 @@ export function normalizeIyCompanyProfilePayload(
     timeSeries: sharedMonthlySeries as IyTimeSeriesPoint[],
     containers: containers ?? normalizeContainers(src),
     country,
-    topRoutes: normalizedTopRoutes.length ? normalizedTopRoutes : null,
-    mostRecentRoute: normalizedTopRoutes[0] ?? null,
+    topRoutes: topLanes12m.length ? topLanes12m : null,
+    mostRecentRoute: topLanes12m[0] ?? null,
     suppliersSample,
     containersLoad,
     rawWebsite: website,
@@ -2065,6 +2152,7 @@ export function computeIyRouteKpisFromShipments(
     shipmentsLast12m,
     teuLast12m,
     topRoutesLast12m: topRoutes,
+    recentTopRoutes: [],
   };
 }
 
