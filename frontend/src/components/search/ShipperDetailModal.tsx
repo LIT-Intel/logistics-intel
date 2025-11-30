@@ -288,18 +288,19 @@ export default function ShipperDetailModal({
   const mostRecentRoute =
     profile?.routeKpis?.mostRecentRoute ?? null;
 
-  const chartData = React.useMemo(
-    () =>
-      Array.isArray(profile?.timeSeries)
-        ? profile.timeSeries.slice(-12).map((point) => ({
-            month: point.month,
-            monthLabel: monthLabel(point.month),
-            fcl: coerceNumber(point.fclShipments) ?? 0,
-            lcl: coerceNumber(point.lclShipments) ?? 0,
-          }))
-        : [],
-    [profile?.timeSeries],
-  );
+  const chartData = React.useMemo(() => {
+    if (!Array.isArray(profile?.timeSeries)) return [];
+    return profile.timeSeries.slice(-12).map((point) => {
+      const monthValue = point.month ?? "";
+      const label = monthLabel(monthValue);
+      return {
+        month: label || monthValue,
+        monthLabel: label || monthValue,
+        fcl: coerceNumber(point.fclShipments) ?? 0,
+        lcl: coerceNumber(point.lclShipments) ?? 0,
+      };
+    });
+  }, [profile?.timeSeries]);
 
   const chartRangeLabel = React.useMemo(() => {
     if (!chartData.length) return null;
@@ -312,7 +313,7 @@ export default function ShipperDetailModal({
     return `${startYear} – ${endYear}`;
   }, [chartData]);
 
-  const supplierList = React.useMemo(() => {
+  const suppliers = React.useMemo(() => {
     const list =
       profile?.suppliersSample ??
       profile?.topSuppliers ??
@@ -329,7 +330,7 @@ export default function ShipperDetailModal({
       .slice(0, 6);
   }, [profile?.suppliersSample, profile?.topSuppliers, shipper.topSuppliers]);
 
-  const aiSuppliers = supplierList.slice(0, 4);
+  const aiSuppliers = suppliers.slice(0, 4);
 
   const enrichmentSummary = React.useMemo(
     () => pickEnrichmentSummary(enrichment),
@@ -392,15 +393,6 @@ export default function ShipperDetailModal({
       );
   }, [enrichment]);
 
-  const hasEnrichmentContent = Boolean(
-    enrichmentOpportunities.length ||
-      enrichmentRisks.length ||
-      enrichmentTalkingPoints.length ||
-      enrichmentExtraSections.length,
-  );
-
-  const showEnrichmentBanner = !enrichment && !loadingProfile;
-
   const aiSummaryFromEnrichment =
     typeof enrichment?.summary === "string" && enrichment.summary.trim().length
       ? enrichment.summary.trim()
@@ -433,6 +425,17 @@ export default function ShipperDetailModal({
     }
     return parts.length ? parts.join(" ") : null;
   }, [aiSummaryFromEnrichment, profile, shipments12m, teu12m, estSpend12m, aiSuppliers, shipper.title]);
+
+  const hasAiSummary = Boolean(aiSummaryFromEnrichment || aiSummary);
+
+  const hasEnrichmentContent = Boolean(
+    enrichmentOpportunities.length ||
+      enrichmentRisks.length ||
+      enrichmentTalkingPoints.length ||
+      enrichmentExtraSections.length,
+  );
+
+  const showEnrichmentBanner = !hasAiSummary && !loadingProfile;
 
   const kpiItems: KpiTileProps[] = [
     {
@@ -664,9 +667,9 @@ export default function ShipperDetailModal({
 
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  AI insights
-                </p>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  AI Insights
+                </h3>
                 <div className="mt-2 text-sm text-slate-700">
                   {aiSummary ?? "AI insights not available for this company yet."}
                 </div>
@@ -754,32 +757,6 @@ export default function ShipperDetailModal({
                     </p>
                   )
                 ) : null}
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Top suppliers (sample)
-                </p>
-                {supplierList.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Supplier details will appear here once available from LIT Search data.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                    {supplierList.map((supplier) => (
-                      <li key={supplier} className="flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                        <span className="truncate">{supplier}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-xs text-slate-500">
-                <p className="font-medium text-slate-700">What you’re seeing</p>
-                <p className="mt-1">
-                  Cards and KPIs are based on ImportYeti DMA data. As we add more stats (lanes, vendor mix, service levels), they’ll show up here automatically.
-                </p>
               </div>
             </div>
           </div>

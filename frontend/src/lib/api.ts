@@ -1543,8 +1543,8 @@ export function normalizeIyCompanyProfilePayload(
       const lclShare = 1 - fclShare;
 
       monthlySeriesPoints = inWindow.map((point) => {
-        const fcl = Math.round(point.shipments * fclShare);
-        const lcl = point.shipments - fcl;
+        const fcl = point.shipments * fclShare;
+        const lcl = point.shipments * lclShare;
         const monthLabel = `${point.date.getFullYear()}-${String(
           point.date.getMonth() + 1,
         ).padStart(2, "0")}`;
