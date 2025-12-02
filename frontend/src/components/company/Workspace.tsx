@@ -501,18 +501,6 @@ export default function Workspace({
     return <div className='p-4 text-sm text-rose-500'>{profileError}</div>;
   }
 
-  if (!companyProfile && !normalizedCompany) {
-    return savedRecords.length === 0 ? (
-      <div className='p-6 text-sm text-slate-500'>
-        Save a shipper from LIT Search to unlock Command Center insights.
-      </div>
-    ) : (
-      <div className='p-6 text-sm text-slate-500'>
-        Select a saved company to view KPIs and AI insights.
-      </div>
-    );
-  }
-
   return (
     <div className='w-full mx-auto flex flex-col lg:flex-row gap-[5px] pl-[5px] pr-[5px]'>
       <aside className='w-[340px] shrink-0'>
