@@ -11,6 +11,7 @@ import {
   saveCampaign,
   enrichCompany,
   type IyCompanyProfile,
+  type SavedCompanyRecord,
 } from '../../lib/api';
 
 function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
@@ -115,7 +116,9 @@ type WorkspaceProps = {
   loading?: boolean;
   error?: string | null;
   onSaveToCommandCenter?: () => Promise<void> | void;
-  savedCompanies?: string[];
+  savedCompanies?: SavedCompanyRecord[];
+  savedCompaniesLoading?: boolean;
+  savedCompaniesError?: string | null;
 };
 
 export default function Workspace({
@@ -129,6 +132,8 @@ export default function Workspace({
   error: profileError = null,
   onSaveToCommandCenter,
   savedCompanies = [],
+  savedCompaniesLoading = false,
+  savedCompaniesError = null,
 }: WorkspaceProps) {
   const [activeId, setActiveId] = useState<string | null>(companies[0]?.id ?? null);
   const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || '') as string;
@@ -162,7 +167,27 @@ export default function Workspace({
     } catch {}
     return base;
   }, [companies, query, filterRfp, filterCampaign]);
-  const active = useMemo(() => companies.find(c => c.id === activeId), [companies, activeId]);
+  const active = useMemo(() => {
+    const localMatch = companies.find(c => String(c.id) === String(activeId));
+    if (localMatch) return localMatch;
+    const savedMatch = savedRecords.find(
+      (record) => record?.company_id && String(record.company_id) === String(activeId),
+    );
+    if (savedMatch) {
+      return {
+        id: savedMatch.company_id,
+        company_id: savedMatch.company_id,
+        name: savedMatch.payload?.name ?? savedMatch.company_id,
+        kpis: {
+          shipments12m: savedMatch.payload?.shipments_12m ?? 0,
+          teus12m: savedMatch.payload?.teus_12m ?? 0,
+        },
+        stage: savedMatch.stage,
+        provider: savedMatch.provider,
+      };
+    }
+    return null;
+  }, [companies, savedRecords, activeId]);
   const [tab, setTab] = useState('Overview');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -260,8 +285,11 @@ export default function Workspace({
     [displayName, overview, shipments12m, teus12m, estSpendTotal, preCallBrief, quickSummary],
   );
 
-  const savedIds = savedCompanies ?? [];
-  const savedCount = savedIds.length;
+  const savedRecords = savedCompanies ?? [];
+  const savedIds = savedRecords
+    .map((record) => record?.company_id)
+    .filter((id): id is string => Boolean(id));
+  const savedCount = savedRecords.length;
   const savedSubtitle =
     savedCount === 0
       ? "No saved companies yet. Save a shipper from LIT Search to get started."
@@ -280,6 +308,15 @@ export default function Workspace({
       setIsSaving(false);
     }
   }, [onSaveToCommandCenter]);
+
+  const handleSelectCompany = useCallback(
+    (companyId: string | null) => {
+      if (!companyId) return;
+      setActiveId(companyId);
+      setTab('Overview');
+    },
+    [],
+  );
 
   // RFP lanes upload/editor bound to universal company id (Command Center)
   const rfpKey = useMemo(() => `lit_rfp_payload_${String(activeId || '')}`, [activeId]);
@@ -462,6 +499,62 @@ export default function Workspace({
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-slate-50 transition'>Add</button>
           </div>
           <p className='mb-3 text-[11px] text-slate-500'>{savedSubtitle}</p>
+          <div className='mb-4 rounded-2xl border border-slate-200 bg-white/85 p-3'>
+            <div className='mb-2 flex items-center justify-between'>
+              <span className='text-xs font-semibold uppercase tracking-wide text-slate-600'>
+                Saved Companies
+              </span>
+              {savedCompaniesLoading && (
+                <span className='text-[10px] text-slate-500'>Loading…</span>
+              )}
+            </div>
+            {savedCompaniesError && !savedCompaniesLoading && (
+              <p className='mb-2 text-xs text-rose-600'>{savedCompaniesError}</p>
+            )}
+            {savedCompaniesLoading ? (
+              <p className='text-xs text-slate-500'>Loading saved companies…</p>
+            ) : savedRecords.length === 0 ? (
+              <p className='text-xs text-slate-500'>
+                No saved companies yet. Save a shipper from LIT Search to get started.
+              </p>
+            ) : (
+              <ul className='space-y-1'>
+                {savedRecords.map((record) => {
+                  const id = record.company_id;
+                  if (!id) return null;
+                  const name = record.payload?.name || id;
+                  const shipments =
+                    typeof record.payload?.shipments_12m === 'number'
+                      ? record.payload.shipments_12m.toLocaleString()
+                      : '—';
+                  const teus =
+                    typeof record.payload?.teus_12m === 'number'
+                      ? record.payload.teus_12m.toLocaleString()
+                      : '—';
+                  const isActive = String(activeId ?? '') === String(id);
+                  return (
+                    <li key={id}>
+                      <button
+                        type='button'
+                        className={[
+                          'w-full text-left px-3 py-2 rounded-xl text-sm transition',
+                          isActive
+                            ? 'bg-indigo-50 text-indigo-900 border border-indigo-100'
+                            : 'border border-transparent hover:bg-slate-50 text-slate-700',
+                        ].join(' ')}
+                        onClick={() => handleSelectCompany(id)}
+                      >
+                        <div className='font-medium truncate'>{name}</div>
+                        <div className='text-xs text-slate-500'>
+                          {shipments} shipments · {teus} TEU
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
           <div className='mb-3'>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
             <div className='mt-2 flex items-center gap-3 text-xs text-slate-700'>
@@ -481,7 +574,7 @@ export default function Workspace({
                   key={c.id}
                   c={c}
                   active={c.id === activeId}
-                  onClick={() => { setActiveId(c.id); setTab('Overview'); }}
+                  onClick={() => handleSelectCompany(String(c.id))}
                   flags={{ inRfp, inCampaign }}
                   saved={savedIds.includes(String(c.id))}
                 />

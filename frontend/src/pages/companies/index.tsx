@@ -4,9 +4,11 @@ import Workspace from '../../components/company/Workspace';
 import LitPageHeader from '../../components/ui/LitPageHeader';
 import {
   getIyCompanyProfile,
+  fetchSavedCompanies,
   saveCompanyToCrm,
   type CrmSaveRequest,
   type IyCompanyProfile,
+  type SavedCompanyRecord,
 } from '../../lib/api';
 
 type CompanyLite = { id: string; name: string; kpis?: any; charts?: any; ai?: any };
@@ -21,7 +23,44 @@ export default function Companies() {
   const [companyEnrichment, setCompanyEnrichment] = useState<any | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [savedCompanies, setSavedCompanies] = useState<string[]>([]);
+  const [savedCompanies, setSavedCompanies] = useState<SavedCompanyRecord[]>([]);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [savedError, setSavedError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSaved() {
+      setIsLoadingSaved(true);
+      setSavedError(null);
+      try {
+        const records = await fetchSavedCompanies();
+        if (!cancelled) {
+          setSavedCompanies(records);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setSavedError(err?.message ?? 'Failed to load saved companies');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSaved(false);
+        }
+      }
+    }
+    loadSaved();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshSavedCompanies = useCallback(async () => {
+    try {
+      const records = await fetchSavedCompanies();
+      setSavedCompanies(records);
+    } catch (err: any) {
+      setSavedError(err?.message ?? 'Failed to load saved companies');
+    }
+  }, []);
+
 
   useEffect(() => {
     try {
@@ -212,10 +251,23 @@ export default function Companies() {
       console.error("Save to Command Center failed", response.message);
       return;
     }
-    setSavedCompanies((prev) =>
-      prev.includes(crmPayload.company_id) ? prev : [...prev, crmPayload.company_id],
-    );
-  }, [crmPayload]);
+    setSavedCompanies((prev) => {
+      if (prev.some((record) => record.company_id === crmPayload.company_id)) {
+        return prev;
+      }
+      return [
+        {
+          company_id: crmPayload.company_id,
+          stage: crmPayload.stage,
+          provider: crmPayload.provider,
+          payload: crmPayload.payload,
+          saved_at: new Date().toISOString(),
+        },
+        ...prev,
+      ];
+    });
+    refreshSavedCompanies();
+  }, [crmPayload, refreshSavedCompanies]);
 
   return (
     <div className='min-h-screen w-full bg-gradient-to-br from-gray-50 to-white'>
@@ -235,6 +287,8 @@ export default function Companies() {
           error={profileError}
           onSaveToCommandCenter={handleSaveToCommandCenter}
           savedCompanies={savedCompanies}
+          savedCompaniesLoading={isLoadingSaved}
+          savedCompaniesError={savedError}
         />
       </div>
       <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />
