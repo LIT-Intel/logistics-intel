@@ -1,8 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import CreateCompanyModal from '../../components/company/CreateCompanyModal';
 import Workspace from '../../components/company/Workspace';
 import LitPageHeader from '../../components/ui/LitPageHeader';
-import { getIyCompanyProfile, type IyCompanyProfile } from '../../lib/api';
+import {
+  getIyCompanyProfile,
+  saveCompanyToCrm,
+  type CrmSaveRequest,
+  type IyCompanyProfile,
+} from '../../lib/api';
 
 type CompanyLite = { id: string; name: string; kpis?: any; charts?: any; ai?: any };
 
@@ -16,6 +21,7 @@ export default function Companies() {
   const [companyEnrichment, setCompanyEnrichment] = useState<any | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [savedCompanies, setSavedCompanies] = useState<string[]>([]);
 
   useEffect(() => {
     try {
@@ -123,6 +129,94 @@ export default function Companies() {
     setCompanies(prev => [fresh, ...prev]);
   }
 
+  const normalizedCompany = companyEnrichment?.normalized_company ?? null;
+  const logisticsKpis = companyEnrichment?.logistics_kpis ?? null;
+  const ccEnrichment = companyEnrichment?.command_center_enrichment ?? null;
+  const predictiveInsights = companyEnrichment?.predictive_insights ?? null;
+
+  const displayName = normalizedCompany?.name ?? companyProfile?.title ?? companyProfile?.name ?? "Company";
+  const displayWebsite =
+    normalizedCompany?.website ?? companyProfile?.website ?? companyProfile?.rawWebsite ?? null;
+  const displayDomain = normalizedCompany?.domain ?? companyProfile?.domain ?? null;
+  const displayCountry =
+    normalizedCompany?.country ?? companyProfile?.country ?? companyProfile?.countryCode ?? null;
+
+  const shipments12m =
+    logisticsKpis?.shipments_12m ??
+    companyProfile?.routeKpis?.shipmentsLast12m ??
+    companyProfile?.totalShipments ??
+    null;
+  const teus12m =
+    logisticsKpis?.teus_12m ??
+    companyProfile?.routeKpis?.teuLast12m ??
+    null;
+
+  const crmPayload = useMemo<CrmSaveRequest | null>(() => {
+    if (!activeCompanyId) return null;
+
+    if (companyEnrichment?.crm_save_payload) {
+      const enriched = companyEnrichment.crm_save_payload as CrmSaveRequest;
+      return {
+        company_id: enriched.company_id ?? activeCompanyId,
+        stage: enriched.stage ?? "prospect",
+        provider: enriched.provider ?? "importyeti+gemini",
+        payload: enriched.payload ?? {},
+      };
+    }
+
+    return {
+      company_id: activeCompanyId,
+      stage: "prospect",
+      provider: "importyeti+gemini",
+      payload: {
+        name: displayName,
+        website: displayWebsite,
+        domain: displayDomain,
+        phone: normalizedCompany?.phone ?? companyProfile?.phoneNumber ?? null,
+        country: displayCountry,
+        city: normalizedCompany?.city ?? null,
+        state: normalizedCompany?.state ?? null,
+        total_shipments: companyProfile?.totalShipments ?? null,
+        shipments_12m: shipments12m,
+        teus_12m: teus12m,
+        primary_trade_lanes: logisticsKpis?.top_lanes ?? [],
+        tags: normalizedCompany?.tags ?? [],
+        opportunity_score: predictiveInsights?.opportunity_score ?? null,
+        rfp_likelihood_score: predictiveInsights?.rfp_likelihood_score ?? null,
+        recommended_priority: ccEnrichment?.recommended_priority ?? null,
+      },
+    };
+  }, [
+    activeCompanyId,
+    ccEnrichment?.recommended_priority,
+    companyEnrichment,
+    companyProfile,
+    displayDomain,
+    displayName,
+    displayWebsite,
+    displayCountry,
+    logisticsKpis,
+    normalizedCompany,
+    predictiveInsights,
+    shipments12m,
+    teus12m,
+  ]);
+
+  const handleSaveToCommandCenter = useCallback(async () => {
+    if (!crmPayload) {
+      console.warn("No CRM payload available for save");
+      return;
+    }
+    const response = await saveCompanyToCrm(crmPayload);
+    if (!response.ok) {
+      console.error("Save to Command Center failed", response.message);
+      return;
+    }
+    setSavedCompanies((prev) =>
+      prev.includes(crmPayload.company_id) ? prev : [...prev, crmPayload.company_id],
+    );
+  }, [crmPayload]);
+
   return (
     <div className='min-h-screen w-full bg-gradient-to-br from-gray-50 to-white'>
       <div className='pl-[5px] pr-[5px] pt-[5px]'>
@@ -139,6 +233,8 @@ export default function Companies() {
           enrichment={companyEnrichment}
           loading={profileLoading}
           error={profileError}
+          onSaveToCommandCenter={handleSaveToCommandCenter}
+          savedCompanies={savedCompanies}
         />
       </div>
       <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign, Sparkles } from 'lucide-react';
 import PreCallBriefing from '../company/PreCallBriefing';
 import CompanyFirmographics from './CompanyFirmographics';
@@ -9,7 +9,6 @@ import {
   kpiFrom,
   recallCompany,
   saveCampaign,
-  saveCompanyToCrm,
   enrichCompany,
   type IyCompanyProfile,
 } from '../../lib/api';
@@ -28,7 +27,19 @@ const Pill = ({ children }: { children: React.ReactNode }) => (
   <span className='px-2 py-0.5 rounded-full text-xs bg-white/70 border border-white/60 shadow-sm'>{children}</span>
 );
 
-function CompanyCard({ c, active, onClick, flags }: { c: any; active: boolean; onClick: () => void; flags?: { inRfp?: boolean; inCampaign?: boolean } }) {
+function CompanyCard({
+  c,
+  active,
+  onClick,
+  flags,
+  saved = false,
+}: {
+  c: any;
+  active: boolean;
+  onClick: () => void;
+  flags?: { inRfp?: boolean; inCampaign?: boolean };
+  saved?: boolean;
+}) {
   const city   = c.city || c.meta?.city || '—';
   const state  = c.state || c.meta?.state || '';
   const domain = c.domain || c.website || c.meta?.website || '';
@@ -49,6 +60,11 @@ function CompanyCard({ c, active, onClick, flags }: { c: any; active: boolean; o
       <div className='flex items-center justify-between gap-2'>
         <div className='font-semibold text-[16px] pr-1 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-violet-500'>{c.name}</div>
         <div className='flex items-center gap-1'>
+          {saved && (
+            <span className='inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700'>
+              Saved
+            </span>
+          )}
           {flags?.inRfp && <span title='In RFP' className='inline-block w-2.5 h-2.5 rounded-full bg-violet-600' />}
           {flags?.inCampaign && <span title='In Campaign' className='inline-block w-2.5 h-2.5 rounded-full bg-blue-600' />}
         </div>
@@ -98,6 +114,8 @@ type WorkspaceProps = {
   enrichment?: any | null;
   loading?: boolean;
   error?: string | null;
+  onSaveToCommandCenter?: () => Promise<void> | void;
+  savedCompanies?: string[];
 };
 
 export default function Workspace({
@@ -109,6 +127,8 @@ export default function Workspace({
   enrichment = null,
   loading: profileLoading = false,
   error: profileError = null,
+  onSaveToCommandCenter,
+  savedCompanies = [],
 }: WorkspaceProps) {
   const [activeId, setActiveId] = useState<string | null>(companies[0]?.id ?? null);
   const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || '') as string;
@@ -154,6 +174,7 @@ export default function Workspace({
   const primaryContact = useMemo(() => contacts.find((c: any) => c.isPrimary || c.is_primary), [contacts]);
   const [campaignName, setCampaignName] = useState('Follow-up Campaign');
   const [campaignChannel, setCampaignChannel] = useState<'email' | 'linkedin'>('email');
+  const [isSaving, setIsSaving] = useState(false);
 
   const gemini = enrichment ?? {};
   const normalizedCompany = gemini?.normalized_company ?? null;
@@ -162,7 +183,6 @@ export default function Workspace({
   const ccEnrichment = gemini?.command_center_enrichment ?? null;
   const salesAssets = gemini?.sales_assets ?? null;
   const preCallBrief = salesAssets?.pre_call_brief ?? null;
-  const crmSavePayload = gemini?.crm_save_payload ?? null;
   const predictiveInsights = gemini?.predictive_insights ?? null;
 
   const shipments12m =
@@ -207,66 +227,17 @@ export default function Workspace({
       companyProfile?.address ||
       companyProfile?.country ||
       null);
-  const primaryCompanyId =
+  const resolvedCompanyId =
     companyProfile?.companyId ??
     normalizedCompany?.company_id ??
     (activeId ? String(activeId) : null) ??
-    '—';
+    null;
+  const primaryCompanyId = resolvedCompanyId ?? '—';
+  const hasCompanyId = Boolean(resolvedCompanyId);
 
   const quickSummary = ccEnrichment?.quick_summary ?? null;
   const recommendedPriority = ccEnrichment?.recommended_priority ?? null;
   const alerts = Array.isArray(ccEnrichment?.alerts) ? ccEnrichment.alerts : [];
-
-  const crmPayload = useMemo(() => {
-    const baseCompanyId =
-      crmSavePayload?.company_id ??
-      normalizedCompany?.company_id ??
-      companyProfile?.companyId ??
-      (activeId ? String(activeId) : null);
-
-    return {
-      company_id: baseCompanyId,
-      stage: crmSavePayload?.stage ?? 'prospect',
-      provider: crmSavePayload?.provider ?? 'importyeti+gemini',
-      payload: {
-        ...(crmSavePayload?.payload ?? {}),
-        name: displayName,
-        website: displayWebsite,
-        domain: displayDomain,
-        phone:
-          normalizedCompany?.phone ??
-          companyProfile?.phoneNumber ??
-          null,
-        country: displayCountry,
-        city: normalizedCompany?.city ?? null,
-        state: normalizedCompany?.state ?? null,
-        total_shipments: companyProfile?.totalShipments ?? null,
-        shipments_12m: shipments12m,
-        teus_12m: teus12m,
-        primary_trade_lanes: logisticsKpis?.top_lanes ?? [],
-        tags: normalizedCompany?.tags ?? [],
-        opportunity_score: predictiveInsights?.opportunity_score ?? null,
-        rfp_likelihood_score:
-          predictiveInsights?.rfp_likelihood_score ?? null,
-        recommended_priority: recommendedPriority ?? null,
-      },
-    };
-  }, [
-    activeId,
-    companyProfile,
-    crmSavePayload,
-    displayDomain,
-    displayName,
-    displayWebsite,
-    displayCountry,
-    logisticsKpis,
-    normalizedCompany,
-    predictiveInsights,
-    recommendedPriority,
-    shipments12m,
-    spendAnalysis,
-    teus12m,
-  ]);
 
   const preCallData = useMemo(
     () => ({
@@ -288,6 +259,27 @@ export default function Workspace({
     }),
     [displayName, overview, shipments12m, teus12m, estSpendTotal, preCallBrief, quickSummary],
   );
+
+  const savedIds = savedCompanies ?? [];
+  const savedCount = savedIds.length;
+  const savedSubtitle =
+    savedCount === 0
+      ? "No saved companies yet. Save a shipper from LIT Search to get started."
+      : `${savedCount} compan${savedCount === 1 ? "y" : "ies"} saved from LIT Search`;
+
+  const isCompanySaved = resolvedCompanyId
+    ? savedIds.includes(resolvedCompanyId)
+    : false;
+
+  const handleSaveToCommandCenterClick = useCallback(async () => {
+    if (!onSaveToCommandCenter) return;
+    try {
+      setIsSaving(true);
+      await onSaveToCommandCenter();
+    } finally {
+      setIsSaving(false);
+    }
+  }, [onSaveToCommandCenter]);
 
   // RFP lanes upload/editor bound to universal company id (Command Center)
   const rfpKey = useMemo(() => `lit_rfp_payload_${String(activeId || '')}`, [activeId]);
@@ -469,6 +461,7 @@ export default function Workspace({
             <h2 className='text-sm font-semibold'>Command Center</h2>
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-slate-50 transition'>Add</button>
           </div>
+          <p className='mb-3 text-[11px] text-slate-500'>{savedSubtitle}</p>
           <div className='mb-3'>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
             <div className='mt-2 flex items-center gap-3 text-xs text-slate-700'>
@@ -484,7 +477,14 @@ export default function Workspace({
                 const cc = localStorage.getItem('lit_campaigns_companies'); const carr = cc? JSON.parse(cc):[]; inCampaign = Array.isArray(carr) && carr.includes(String(c.id));
               } catch {}
               return (
-                <CompanyCard key={c.id} c={c} active={c.id === activeId} onClick={() => { setActiveId(c.id); setTab('Overview'); }} flags={{ inRfp, inCampaign }} />
+                <CompanyCard
+                  key={c.id}
+                  c={c}
+                  active={c.id === activeId}
+                  onClick={() => { setActiveId(c.id); setTab('Overview'); }}
+                  flags={{ inRfp, inCampaign }}
+                  saved={savedIds.includes(String(c.id))}
+                />
               );
             })}
             {filtered.length === 0 && (
@@ -503,29 +503,13 @@ export default function Workspace({
                     <div className='text-xs text-slate-500'>ID: {primaryCompanyId}</div>
                 </div>
                 <div className='flex items-center gap-2'>
-                    <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
-                      try {
-                        if (crmPayload?.company_id) {
-                          await saveCompanyToCrm({
-                            company: {
-                              company_id: crmPayload.company_id,
-                              stage: crmPayload.stage,
-                              provider: crmPayload.provider,
-                              payload: crmPayload.payload,
-                            },
-                          });
-                        } else {
-                          await saveCompanyToCrm({
-                            company_id: String(active?.company_id ?? active?.id ?? ''),
-                            company_name: displayName,
-                            source: 'companies',
-                          });
-                        }
-                        alert('Saved to CRM');
-                      } catch(e:any){
-                        alert('Save failed: '+ String(e?.message||e));
-                      }
-                  }}>Save</button>
+                    <button
+                      className='px-3 py-1.5 rounded border text-xs disabled:opacity-60 disabled:cursor-not-allowed'
+                      onClick={handleSaveToCommandCenterClick}
+                      disabled={isSaving || !onSaveToCommandCenter || !hasCompanyId}
+                    >
+                      {isSaving ? 'Saving...' : isCompanySaved ? 'Saved' : 'Save'}
+                    </button>
                   <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-xs' onClick={async()=>{
                       try { await enrichCompany({ company_id: String(active?.company_id ?? active?.id ?? '') }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
                   }}>Enrich Now</button>
@@ -828,7 +812,13 @@ export default function Workspace({
                         </label>
                       </div>
                       <div className='mt-3 flex gap-2'>
-                        <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await saveCompanyToCrm({ company_id: String(activeId), company_name: active?.name || 'Company', source:'companies' }); alert('Saved to CRM'); }catch(e:any){ alert('Save failed: '+ String(e?.message||e)); } }}>Save to CRM</button>
+                        <button
+                          className='px-3 py-2 rounded border text-sm disabled:opacity-60 disabled:cursor-not-allowed'
+                          onClick={handleSaveToCommandCenterClick}
+                          disabled={isSaving || !onSaveToCommandCenter || !hasCompanyId}
+                        >
+                          {isSaving ? 'Saving…' : isCompanySaved ? 'Saved' : 'Save to CRM'}
+                        </button>
                         <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await enrichCompany({ company_id: String(activeId) }); alert('Enrichment queued'); }catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); } }}>Enrich Now</button>
                       </div>
                     </div>

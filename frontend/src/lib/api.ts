@@ -2456,62 +2456,48 @@ type SaveCompanyToCrmInput =
   | { company: Record<string, any> }
   | Record<string, any>;
 
-export async function saveCompanyToCrm(
-  input: SaveCompanyToCrmInput,
-): Promise<any> {
-  const company =
-    (input as { company?: Record<string, any> }).company ?? input ?? {};
-  const rawId =
-    (company as any)?.companyKey ||
-    (company as any)?.key ||
-    (company as any)?.company_id ||
-    (company as any)?.companyId ||
-    (company as any)?.id ||
-    (company as any)?.name ||
-    (company as any)?.company_name ||
-    (company as any)?.title ||
-    "";
-  const companyId = ensureCompanyKey(rawId);
-  if (!companyId) {
-    console.warn("[LIT] saveCompanyToCrm called with invalid company payload:", {
-      company,
-      rawId,
-    });
-    throw new Error("saveCompanyToCrm requires a valid company id");
-  }
+// --- CRM / Command Center types -----------------------------
 
+export type CrmSaveRequest = {
+  company_id: string;
+  stage: string;
+  provider: string;
+  payload: any;
+};
+
+export type CrmSaveResponse = {
+  ok: boolean;
+  message?: string;
+  received?: CrmSaveRequest;
+};
+
+export async function saveCompanyToCrm(
+  input: CrmSaveRequest,
+): Promise<CrmSaveResponse> {
   const res = await fetch(
     withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: "prospect",
-        provider: "importyeti",
-        payload: company,
-      }),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
     },
   );
 
   if (!res.ok) {
-    let errorBody: any = null;
-    try {
-      errorBody = await res.json();
-    } catch {
-      // swallow parse error
-    }
-    if (typeof window !== "undefined") {
-      console.warn("[LIT] saveCompanyToCrm failed", {
-        status: res.status,
-        statusText: res.statusText,
-        errorBody,
-      });
-    }
-    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
+    const text = await res.text().catch(() => "");
+    console.error("saveCompanyToCrm failed", res.status, text);
+    return { ok: false, message: text || `HTTP ${res.status}` };
   }
 
-  return res.json();
+  const json = (await res.json().catch(() => null)) as any;
+  return {
+    ok: Boolean(json?.ok ?? true),
+    message: json?.message ?? "",
+    received: json?.received,
+  };
 }
 
 export async function saveIyCompanyToCrm(opts: {
