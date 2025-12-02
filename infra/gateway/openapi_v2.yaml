@@ -164,8 +164,13 @@ paths:
     options:
       operationId: cors_crmSaveCompany
       security: []
-      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
-      responses: { "200": { description: "ok" } }
+      x-google-backend:
+        address: __SERVICE_URL__
+        jwt_audience: __SERVICE_URL__
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200":
+          description: "ok"
     post:
       operationId: crmSaveCompany
       security: []
