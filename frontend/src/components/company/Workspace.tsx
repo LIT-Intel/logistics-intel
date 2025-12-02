@@ -14,6 +14,16 @@ import {
   type SavedCompanyRecord,
 } from '../../lib/api';
 
+const resolveSavedCompanyId = (record: SavedCompanyRecord | (SavedCompanyRecord & { companyId?: string; id?: string }) | null | undefined) => {
+  if (!record) return null;
+  return (
+    record.company_id ??
+    (record as any).companyId ??
+    (record as any).id ??
+    null
+  );
+};
+
 function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
   const s = Math.max(0, Number(shipments12m||0));
   if (mode === 'ocean') {
@@ -172,14 +182,16 @@ export default function Workspace({
   const active = useMemo(() => {
     const localMatch = companies.find(c => String(c.id) === String(activeId));
     if (localMatch) return localMatch;
-    const savedMatch = savedRecords.find(
-      (record) => record?.company_id && String(record.company_id) === String(activeId),
-    );
+    const savedMatch = savedRecords.find((record) => {
+      const id = resolveSavedCompanyId(record);
+      return id && String(id) === String(activeId);
+    });
     if (savedMatch) {
+      const id = resolveSavedCompanyId(savedMatch);
       return {
-        id: savedMatch.company_id,
-        company_id: savedMatch.company_id,
-        name: savedMatch.payload?.name ?? savedMatch.company_id,
+        id,
+        company_id: id,
+        name: savedMatch.payload?.name ?? id,
         kpis: {
           shipments12m: savedMatch.payload?.shipments_12m ?? 0,
           teus12m: savedMatch.payload?.teus_12m ?? 0,
@@ -287,9 +299,9 @@ export default function Workspace({
     [displayName, overview, shipments12m, teus12m, estSpendTotal, preCallBrief, quickSummary],
   );
 
-  const savedRecords = savedCompanies ?? [];
+  const savedRecords = Array.isArray(savedCompanies) ? savedCompanies : [];
   const savedIds = savedRecords
-    .map((record) => record?.company_id)
+    .map((record) => resolveSavedCompanyId(record))
     .filter((id): id is string => Boolean(id));
   const savedCount = savedRecords.length;
   const savedSubtitle =
@@ -522,7 +534,7 @@ export default function Workspace({
             ) : (
               <ul className='space-y-1'>
                 {savedRecords.map((record) => {
-                  const id = record.company_id;
+                  const id = resolveSavedCompanyId(record);
                   if (!id) return null;
                   const name = record.payload?.name || id;
                   const shipments =
