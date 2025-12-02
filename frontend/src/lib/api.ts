@@ -2514,8 +2514,7 @@ export async function saveCompanyToCrm(
 }
 
 export async function fetchSavedCompanies(): Promise<SavedCompanyRecord[]> {
-  const url = withGatewayKey(`${API_BASE}/crm/savedCompanies`);
-  const res = await fetch(url, {
+  const res = await fetch(`${API_BASE}/crm/savedCompanies`, {
     method: "GET",
     headers: { "content-type": "application/json" },
   });
@@ -2524,14 +2523,13 @@ export async function fetchSavedCompanies(): Promise<SavedCompanyRecord[]> {
     throw new Error(`fetchSavedCompanies failed: ${res.status}`);
   }
 
-  const json = await res.json().catch(() => ({}));
-  const candidates =
-    (json && Array.isArray(json.companies) && json.companies) ||
-    (json && Array.isArray(json.records) && json.records) ||
-    (json && Array.isArray(json.data) && json.data) ||
-    (Array.isArray(json) ? json : []);
-
-  return candidates as SavedCompanyRecord[];
+  const json = await res.json();
+  const companies = Array.isArray(json?.companies)
+    ? json.companies
+    : Array.isArray(json)
+      ? json
+      : [];
+  return companies as SavedCompanyRecord[];
 }
 
 export async function saveIyCompanyToCrm(opts: {

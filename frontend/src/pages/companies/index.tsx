@@ -24,12 +24,12 @@ export default function Companies() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [savedCompanies, setSavedCompanies] = useState<SavedCompanyRecord[]>([]);
-  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [savedLoading, setSavedLoading] = useState(false);
   const [savedError, setSavedError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     async function loadSaved() {
-      setIsLoadingSaved(true);
+      setSavedLoading(true);
       setSavedError(null);
       try {
         const records = await fetchSavedCompanies();
@@ -42,7 +42,7 @@ export default function Companies() {
         }
       } finally {
         if (!cancelled) {
-          setIsLoadingSaved(false);
+          setSavedLoading(false);
         }
       }
     }
@@ -50,15 +50,6 @@ export default function Companies() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const refreshSavedCompanies = useCallback(async () => {
-    try {
-      const records = await fetchSavedCompanies();
-      setSavedCompanies(records);
-    } catch (err: any) {
-      setSavedError(err?.message ?? 'Failed to load saved companies');
-    }
   }, []);
 
 
@@ -266,8 +257,7 @@ export default function Companies() {
         ...prev,
       ];
     });
-    refreshSavedCompanies();
-  }, [crmPayload, refreshSavedCompanies]);
+  }, [crmPayload]);
 
   return (
     <div className='min-h-screen w-full bg-gradient-to-br from-gray-50 to-white'>
@@ -287,8 +277,9 @@ export default function Companies() {
           error={profileError}
           onSaveToCommandCenter={handleSaveToCommandCenter}
           savedCompanies={savedCompanies}
-          savedCompaniesLoading={isLoadingSaved}
-          savedCompaniesError={savedError}
+          savedLoading={savedLoading}
+          savedError={savedError}
+          onSelectCompany={setActiveCompanyId}
         />
       </div>
       <CreateCompanyModal open={open} onClose={() => setOpen(false)} onCreated={onCreated} />

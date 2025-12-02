@@ -116,9 +116,10 @@ type WorkspaceProps = {
   loading?: boolean;
   error?: string | null;
   onSaveToCommandCenter?: () => Promise<void> | void;
-  savedCompanies?: SavedCompanyRecord[];
-  savedCompaniesLoading?: boolean;
-  savedCompaniesError?: string | null;
+  savedCompanies: SavedCompanyRecord[];
+  savedLoading?: boolean;
+  savedError?: string | null;
+  onSelectCompany?: (id: string) => void;
 };
 
 export default function Workspace({
@@ -132,8 +133,9 @@ export default function Workspace({
   error: profileError = null,
   onSaveToCommandCenter,
   savedCompanies = [],
-  savedCompaniesLoading = false,
-  savedCompaniesError = null,
+  savedLoading = false,
+  savedError = null,
+  onSelectCompany,
 }: WorkspaceProps) {
   const [activeId, setActiveId] = useState<string | null>(companies[0]?.id ?? null);
   const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || '') as string;
@@ -314,8 +316,9 @@ export default function Workspace({
       if (!companyId) return;
       setActiveId(companyId);
       setTab('Overview');
+      onSelectCompany?.(companyId);
     },
-    [],
+    [onSelectCompany],
   );
 
   // RFP lanes upload/editor bound to universal company id (Command Center)
@@ -487,7 +490,15 @@ export default function Workspace({
   }
 
   if (!companyProfile && !normalizedCompany) {
-    return <div className='p-4 text-sm text-slate-500'>No company selected.</div>;
+    return savedRecords.length === 0 ? (
+      <div className='p-6 text-sm text-slate-500'>
+        Save a shipper from LIT Search to unlock Command Center insights.
+      </div>
+    ) : (
+      <div className='p-6 text-sm text-slate-500'>
+        Select a saved company to view KPIs and AI insights.
+      </div>
+    );
   }
 
   return (
@@ -499,24 +510,15 @@ export default function Workspace({
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-slate-50 transition'>Add</button>
           </div>
           <p className='mb-3 text-[11px] text-slate-500'>{savedSubtitle}</p>
-          <div className='mb-4 rounded-2xl border border-slate-200 bg-white/85 p-3'>
-            <div className='mb-2 flex items-center justify-between'>
-              <span className='text-xs font-semibold uppercase tracking-wide text-slate-600'>
-                Saved Companies
-              </span>
-              {savedCompaniesLoading && (
-                <span className='text-[10px] text-slate-500'>Loading…</span>
-              )}
-            </div>
-            {savedCompaniesError && !savedCompaniesLoading && (
-              <p className='mb-2 text-xs text-rose-600'>{savedCompaniesError}</p>
-            )}
-            {savedCompaniesLoading ? (
-              <p className='text-xs text-slate-500'>Loading saved companies…</p>
-            ) : savedRecords.length === 0 ? (
-              <p className='text-xs text-slate-500'>
+          <div className='mt-4 rounded-2xl border border-slate-100 bg-white p-3 h-[420px] overflow-y-auto'>
+            {savedLoading ? (
+              <div className='text-sm text-slate-400'>Loading saved companies…</div>
+            ) : savedError ? (
+              <div className='text-sm text-red-500'>{savedError}</div>
+            ) : !savedRecords.length ? (
+              <div className='text-sm text-slate-400'>
                 No saved companies yet. Save a shipper from LIT Search to get started.
-              </p>
+              </div>
             ) : (
               <ul className='space-y-1'>
                 {savedRecords.map((record) => {
@@ -525,28 +527,27 @@ export default function Workspace({
                   const name = record.payload?.name || id;
                   const shipments =
                     typeof record.payload?.shipments_12m === 'number'
-                      ? record.payload.shipments_12m.toLocaleString()
-                      : '—';
+                      ? record.payload.shipments_12m
+                      : null;
                   const teus =
                     typeof record.payload?.teus_12m === 'number'
-                      ? record.payload.teus_12m.toLocaleString()
-                      : '—';
+                      ? record.payload.teus_12m
+                      : null;
                   const isActive = String(activeId ?? '') === String(id);
+                  const classes = [
+                    'w-full rounded-xl px-3 py-2 text-left text-sm transition',
+                    isActive ? 'bg-indigo-50 text-indigo-900' : 'hover:bg-slate-50 text-slate-800',
+                  ].join(' ');
                   return (
                     <li key={id}>
                       <button
                         type='button'
-                        className={[
-                          'w-full text-left px-3 py-2 rounded-xl text-sm transition',
-                          isActive
-                            ? 'bg-indigo-50 text-indigo-900 border border-indigo-100'
-                            : 'border border-transparent hover:bg-slate-50 text-slate-700',
-                        ].join(' ')}
+                        className={classes}
                         onClick={() => handleSelectCompany(id)}
                       >
                         <div className='font-medium truncate'>{name}</div>
-                        <div className='text-xs text-slate-500'>
-                          {shipments} shipments · {teus} TEU
+                        <div className='mt-0.5 text-xs text-slate-500'>
+                          {shipments ?? '—'} shipments · {teus ?? '—'} TEU
                         </div>
                       </button>
                     </li>
