@@ -514,15 +514,11 @@ export default function Workspace({
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-slate-50 transition'>Add</button>
           </div>
           <p className='mb-3 text-[11px] text-slate-500'>{savedSubtitle}</p>
-          <div className="mt-4 h-[420px] rounded-2xl border border-slate-100 bg-white p-3 overflow-y-auto">
-            {savedLoading ? (
-              <div className="text-sm text-slate-400">Loading saved companies…</div>
-            ) : savedError ? (
-              <div className="text-sm text-red-500">{savedError}</div>
-            ) : !savedCompanies || savedCompanies.length === 0 ? (
-              <div className="text-sm text-slate-400">
+          <div className="mt-4 h-[420px] overflow-y-auto">
+            {!savedCompanies || savedCompanies.length === 0 ? (
+              <p className="text-sm text-slate-400">
                 No saved companies yet. Save a shipper from LIT Search to get started.
-              </div>
+              </p>
             ) : (
               <ul className="space-y-1">
                 {savedCompanies.map((record) => {
@@ -532,16 +528,17 @@ export default function Workspace({
                   const shipments = record.payload?.shipments_12m;
                   const teus = record.payload?.teus_12m;
                   const isActive = activeCompanyId === id;
+
                   return (
                     <li key={id}>
                       <button
                         type="button"
-                        className={cn(
+                        className={[
                           "w-full rounded-xl px-3 py-2 text-left text-sm transition",
                           isActive
                             ? "bg-indigo-50 text-indigo-900"
                             : "hover:bg-slate-50 text-slate-800",
-                        )}
+                        ].join(" ")}
                         onClick={() => onSelectCompany?.(id)}
                       >
                         <div className="font-medium truncate">{name}</div>

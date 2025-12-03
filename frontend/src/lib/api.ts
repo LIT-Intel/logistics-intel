@@ -2513,23 +2513,32 @@ export async function saveCompanyToCrm(
   };
 }
 
-export async function fetchSavedCompanies(): Promise<SavedCompanyRecord[]> {
+export async function fetchSavedCompanies(): Promise<{
+  ok: boolean;
+  companies: SavedCompanyRecord[];
+  total: number;
+}> {
   const res = await fetch(`${API_BASE}/crm/savedCompanies`, {
     method: "GET",
     headers: { "content-type": "application/json" },
   });
 
   if (!res.ok) {
-    throw new Error(`fetchSavedCompanies failed: ${res.status}`);
+    throw new Error(`Status ${res.status}`);
   }
 
   const json = await res.json();
   const companies = Array.isArray(json?.companies)
-    ? json.companies
-    : Array.isArray(json)
-      ? json
-      : [];
-  return companies as SavedCompanyRecord[];
+    ? (json.companies as SavedCompanyRecord[])
+    : [];
+  const total =
+    typeof json?.total === "number" ? json.total : companies.length;
+  const ok = json?.ok !== false;
+  return {
+    ok,
+    companies,
+    total,
+  };
 }
 
 export async function saveIyCompanyToCrm(opts: {

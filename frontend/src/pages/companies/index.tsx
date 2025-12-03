@@ -32,9 +32,9 @@ export default function Companies() {
       setSavedLoading(true);
       setSavedError(null);
       try {
-        const records = await fetchSavedCompanies();
+        const resp = await fetchSavedCompanies();
         if (!cancelled) {
-          setSavedCompanies(records);
+          setSavedCompanies(resp.companies ?? []);
         }
       } catch (err: any) {
         if (!cancelled) {
