@@ -14,6 +14,10 @@ import {
   type SavedCompanyRecord,
 } from '../../lib/api';
 
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ');
+}
+
 const resolveSavedCompanyId = (record: SavedCompanyRecord | (SavedCompanyRecord & { companyId?: string; id?: string }) | null | undefined) => {
   if (!record) return null;
   return (
@@ -126,7 +130,7 @@ type WorkspaceProps = {
   loading?: boolean;
   error?: string | null;
   onSaveToCommandCenter?: () => Promise<void> | void;
-  savedCompanies: SavedCompanyRecord[];
+  savedCompanies?: SavedCompanyRecord[];
   savedLoading?: boolean;
   savedError?: string | null;
   onSelectCompany?: (id: string) => void;
@@ -510,44 +514,39 @@ export default function Workspace({
             <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-slate-50 transition'>Add</button>
           </div>
           <p className='mb-3 text-[11px] text-slate-500'>{savedSubtitle}</p>
-          <div className='mt-4 rounded-2xl border border-slate-100 bg-white p-3 h-[420px] overflow-y-auto'>
+          <div className="mt-4 h-[420px] rounded-2xl border border-slate-100 bg-white p-3 overflow-y-auto">
             {savedLoading ? (
-              <div className='text-sm text-slate-400'>Loading saved companies…</div>
+              <div className="text-sm text-slate-400">Loading saved companies…</div>
             ) : savedError ? (
-              <div className='text-sm text-red-500'>{savedError}</div>
-            ) : !savedRecords.length ? (
-              <div className='text-sm text-slate-400'>
+              <div className="text-sm text-red-500">{savedError}</div>
+            ) : !savedCompanies || savedCompanies.length === 0 ? (
+              <div className="text-sm text-slate-400">
                 No saved companies yet. Save a shipper from LIT Search to get started.
               </div>
             ) : (
-              <ul className='space-y-1'>
-                {savedRecords.map((record) => {
+              <ul className="space-y-1">
+                {savedCompanies.map((record) => {
                   const id = resolveSavedCompanyId(record);
                   if (!id) return null;
                   const name = record.payload?.name || id;
-                  const shipments =
-                    typeof record.payload?.shipments_12m === 'number'
-                      ? record.payload.shipments_12m
-                      : null;
-                  const teus =
-                    typeof record.payload?.teus_12m === 'number'
-                      ? record.payload.teus_12m
-                      : null;
-                  const isActive = String(activeId ?? '') === String(id);
-                  const classes = [
-                    'w-full rounded-xl px-3 py-2 text-left text-sm transition',
-                    isActive ? 'bg-indigo-50 text-indigo-900' : 'hover:bg-slate-50 text-slate-800',
-                  ].join(' ');
+                  const shipments = record.payload?.shipments_12m;
+                  const teus = record.payload?.teus_12m;
+                  const isActive = activeCompanyId === id;
                   return (
                     <li key={id}>
                       <button
-                        type='button'
-                        className={classes}
-                        onClick={() => handleSelectCompany(id)}
+                        type="button"
+                        className={cn(
+                          "w-full rounded-xl px-3 py-2 text-left text-sm transition",
+                          isActive
+                            ? "bg-indigo-50 text-indigo-900"
+                            : "hover:bg-slate-50 text-slate-800",
+                        )}
+                        onClick={() => onSelectCompany?.(id)}
                       >
-                        <div className='font-medium truncate'>{name}</div>
-                        <div className='mt-0.5 text-xs text-slate-500'>
-                          {shipments ?? '—'} shipments · {teus ?? '—'} TEU
+                        <div className="font-medium truncate">{name}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">
+                          {shipments ?? "—"} shipments · {teus ?? "—"} TEU
                         </div>
                       </button>
                     </li>
