@@ -2506,8 +2506,6 @@ export type CrmSavedCompany = {
     shipments_12m?: number;
     teus_12m?: number;
     [key: string]: any;
-    teus_12m?: number;
-    [key: string]: any;
   };
   saved_at?: string;
 };
