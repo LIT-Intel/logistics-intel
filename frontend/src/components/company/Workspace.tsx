@@ -134,7 +134,6 @@ type WorkspaceProps = {
   onSaveToCommandCenter?: () => Promise<void> | void;
   savedCompanies?: CrmSavedCompany[];
   savedCompaniesLoading?: boolean;
-  savedError?: string | null;
   onSelectCompany?: (id: string) => void;
 };
 
@@ -150,7 +149,6 @@ export default function Workspace({
   onSaveToCommandCenter,
   savedCompanies = [],
   savedCompaniesLoading = false,
-  savedError = null,
   onSelectCompany,
 }: WorkspaceProps) {
   const [activeId, setActiveId] = useState<string | null>(companies[0]?.id ?? null);
