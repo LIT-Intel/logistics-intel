@@ -2529,7 +2529,7 @@ export async function getSavedCompanies(
   });
 
   if (!resp.ok) {
-    console.error("getSavedCompanies: HTTP error", resp.status);
+    console.error("getSavedCompanies: HTTP", resp.status);
     return [];
   }
 
@@ -2537,7 +2537,7 @@ export async function getSavedCompanies(
   try {
     json = await resp.json();
   } catch (err) {
-    console.error("getSavedCompanies: failed to parse JSON", err);
+    console.error("getSavedCompanies: bad JSON", err);
     return [];
   }
 
