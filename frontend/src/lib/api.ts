@@ -2493,9 +2493,9 @@ export async function saveCompanyToCrm(
 
 export type CrmSavedCompany = {
   company_id: string;
-  stage: string;
-  provider: string;
-  payload: {
+  stage?: string;
+  provider?: string;
+  payload?: {
     name?: string;
     website?: string;
     domain?: string;
@@ -2504,6 +2504,8 @@ export type CrmSavedCompany = {
     city?: string;
     state?: string;
     shipments_12m?: number;
+    teus_12m?: number;
+    [key: string]: any;
     teus_12m?: number;
     [key: string]: any;
   };
