@@ -25,12 +25,10 @@ export default function Companies() {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [savedCompanies, setSavedCompanies] = useState<CrmSavedCompany[]>([]);
   const [savedCompaniesLoading, setSavedCompaniesLoading] = useState(false);
-  const [savedError, setSavedError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     async function loadSaved() {
       setSavedCompaniesLoading(true);
-      setSavedError(null);
       try {
         const companies = await getSavedCompanies();
         if (!cancelled) {
@@ -38,7 +36,6 @@ export default function Companies() {
         }
       } catch (err: any) {
         if (!cancelled) {
-          setSavedError(err?.message ?? 'Failed to load saved companies');
           setSavedCompanies([]);
         }
       } finally {
@@ -277,7 +274,6 @@ export default function Companies() {
           onSaveToCommandCenter={handleSaveToCommandCenter}
           savedCompanies={savedCompanies}
           savedCompaniesLoading={savedCompaniesLoading}
-          savedError={savedError}
           onSelectCompany={setActiveCompanyId}
         />
       </div>
