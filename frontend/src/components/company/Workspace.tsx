@@ -11,14 +11,16 @@ import {
   saveCampaign,
   enrichCompany,
   type IyCompanyProfile,
-  type SavedCompanyRecord,
+  type CrmSavedCompany,
 } from '../../lib/api';
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
 }
 
-const resolveSavedCompanyId = (record: SavedCompanyRecord | (SavedCompanyRecord & { companyId?: string; id?: string }) | null | undefined) => {
+const resolveSavedCompanyId = (
+  record: CrmSavedCompany | (CrmSavedCompany & { companyId?: string; id?: string }) | null | undefined,
+) => {
   if (!record) return null;
   return (
     record.company_id ??
@@ -130,8 +132,8 @@ type WorkspaceProps = {
   loading?: boolean;
   error?: string | null;
   onSaveToCommandCenter?: () => Promise<void> | void;
-  savedCompanies?: SavedCompanyRecord[];
-  savedLoading?: boolean;
+  savedCompanies?: CrmSavedCompany[];
+  savedCompaniesLoading?: boolean;
   savedError?: string | null;
   onSelectCompany?: (id: string) => void;
 };
@@ -147,7 +149,7 @@ export default function Workspace({
   error: profileError = null,
   onSaveToCommandCenter,
   savedCompanies = [],
-  savedLoading = false,
+  savedCompaniesLoading = false,
   savedError = null,
   onSelectCompany,
 }: WorkspaceProps) {
@@ -308,10 +310,9 @@ export default function Workspace({
     .map((record) => resolveSavedCompanyId(record))
     .filter((id): id is string => Boolean(id));
   const savedCount = savedRecords.length;
-  const savedSubtitle =
-    savedCount === 0
-      ? "No saved companies yet. Save a shipper from LIT Search to get started."
-      : `${savedCount} compan${savedCount === 1 ? "y" : "ies"} saved from LIT Search`;
+  const savedSubtitle = savedCompaniesLoading
+    ? "Loading..."
+    : `${savedCount} ${savedCount === 1 ? "company" : "companies"}`;
 
   const isCompanySaved = resolvedCompanyId
     ? savedIds.includes(resolvedCompanyId)
@@ -515,20 +516,23 @@ export default function Workspace({
           </div>
           <p className='mb-3 text-[11px] text-slate-500'>{savedSubtitle}</p>
           <div className="mt-4 h-[420px] overflow-y-auto">
-            {!savedCompanies || savedCompanies.length === 0 ? (
-              <p className="text-sm text-slate-400">
+            {savedCompaniesLoading ? (
+              <div className="text-sm text-slate-400">Loading saved shippers…</div>
+            ) : savedError ? (
+              <div className="text-sm text-red-500">{savedError}</div>
+            ) : savedRecords.length === 0 ? (
+              <div className="text-sm text-slate-400">
                 No saved companies yet. Save a shipper from LIT Search to get started.
-              </p>
+              </div>
             ) : (
               <ul className="space-y-1">
-                {savedCompanies.map((record) => {
+                {savedRecords.map((record) => {
                   const id = resolveSavedCompanyId(record);
                   if (!id) return null;
                   const name = record.payload?.name || id;
                   const shipments = record.payload?.shipments_12m;
                   const teus = record.payload?.teus_12m;
                   const isActive = activeCompanyId === id;
-
                   return (
                     <li key={id}>
                       <button
@@ -536,15 +540,17 @@ export default function Workspace({
                         className={[
                           "w-full rounded-xl px-3 py-2 text-left text-sm transition",
                           isActive
-                            ? "bg-indigo-50 text-indigo-900"
-                            : "hover:bg-slate-50 text-slate-800",
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "bg-white text-slate-700 hover:bg-slate-50",
                         ].join(" ")}
                         onClick={() => onSelectCompany?.(id)}
                       >
                         <div className="font-medium truncate">{name}</div>
-                        <div className="mt-0.5 text-xs text-slate-500">
-                          {shipments ?? "—"} shipments · {teus ?? "—"} TEU
-                        </div>
+                        {typeof shipments === 'number' && (
+                          <div className="text-xs text-slate-400">
+                            {shipments} shipments · {typeof teus === 'number' ? teus : '—'} TEU
+                          </div>
+                        )}
                       </button>
                     </li>
                   );

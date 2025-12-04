@@ -2391,17 +2391,6 @@ export async function getCompanyKpis(
   }
 }
 
-// Saved companies list (for future UI)
-export async function getSavedCompanies(signal?: AbortSignal) {
-  const url = `/api/lit/crm/savedCompanies`;
-  const r = await fetch(url, {
-    headers: { accept: "application/json" },
-    signal,
-  });
-  if (!r.ok) return { rows: [] };
-  return r.json();
-}
-
 // --- Filters singleton cache with 10m TTL ---
 let _filtersCache: { data: any; expires: number } | null = null;
 let _filtersInflight: Promise<any> | null = null;
@@ -2471,18 +2460,7 @@ export type CrmSaveResponse = {
   received?: CrmSaveRequest;
 };
 
-export type SavedCompanyRecord = {
-  company_id: string;
-  stage?: string | null;
-  provider?: string | null;
-  payload?: {
-    name?: string;
-    shipments_12m?: number;
-    teus_12m?: number;
-    [key: string]: any;
-  } | null;
-  saved_at?: string;
-};
+const CRM_BASE = API_BASE;
 
 export async function saveCompanyToCrm(
   input: CrmSaveRequest,
@@ -2513,32 +2491,54 @@ export async function saveCompanyToCrm(
   };
 }
 
-export async function fetchSavedCompanies(): Promise<{
+export type CrmSavedCompany = {
+  company_id: string;
+  stage: string;
+  provider: string;
+  payload: {
+    name?: string;
+    website?: string;
+    domain?: string;
+    phone?: string;
+    country?: string;
+    city?: string;
+    state?: string;
+    shipments_12m?: number;
+    teus_12m?: number;
+    [key: string]: any;
+  };
+  saved_at?: string;
+};
+
+export type CrmSavedCompaniesResponse = {
   ok: boolean;
-  companies: SavedCompanyRecord[];
-  total: number;
-}> {
-  const res = await fetch(`${API_BASE}/crm/savedCompanies`, {
+  companies: CrmSavedCompany[];
+};
+
+export async function getSavedCompanies(
+  stage?: string,
+): Promise<CrmSavedCompany[]> {
+  const url = new URL("/crm/savedCompanies", CRM_BASE);
+  if (stage) url.searchParams.set("stage", stage);
+
+  const resp = await fetch(url.toString(), {
     method: "GET",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+    },
   });
 
-  if (!res.ok) {
-    throw new Error(`Status ${res.status}`);
+  if (!resp.ok) {
+    return [];
   }
 
-  const json = await res.json();
-  const companies = Array.isArray(json?.companies)
-    ? (json.companies as SavedCompanyRecord[])
-    : [];
-  const total =
-    typeof json?.total === "number" ? json.total : companies.length;
-  const ok = json?.ok !== false;
-  return {
-    ok,
-    companies,
-    total,
-  };
+  const json = (await resp.json().catch(() => null)) as
+    | Partial<CrmSavedCompaniesResponse>
+    | null;
+  if (!json || !Array.isArray(json.companies)) {
+    return [];
+  }
+  return json.companies;
 }
 
 export async function saveIyCompanyToCrm(opts: {
