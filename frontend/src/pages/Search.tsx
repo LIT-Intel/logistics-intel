@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
 import SearchFilters from "@/components/search/SearchFilters";
+import SearchWorkspacePanel, {
+  type WorkspaceTab,
+} from "@/components/search/SearchWorkspacePanel";
 import {
   searchShippers,
   getIyCompanyProfile,
@@ -54,6 +57,10 @@ export default function SearchPage() {
     [],
   );
   const [savingCompanyId, setSavingCompanyId] = useState<string | null>(null);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] =
+    useState<WorkspaceTab>("overview");
+  const [workspaceSelection, setWorkspaceSelection] =
+    useState<IyShipperHit | null>(null);
   const { toast } = useToast();
 
   const savedCompanyIds = useMemo(() => {
@@ -117,7 +124,12 @@ export default function SearchPage() {
     void fetchShippers(query, 1);
   };
 
+  const handleWorkspaceSelect = useCallback((shipper: IyShipperHit) => {
+    setWorkspaceSelection(shipper);
+  }, []);
+
   const handleCardClick = (shipper: IyShipperHit) => {
+    setWorkspaceSelection(shipper);
     setSelectedShipper(shipper);
     setIsModalOpen(true);
 
@@ -187,7 +199,7 @@ export default function SearchPage() {
     return () => controller.abort();
   }, []);
 
-  const getCanonicalCompanyId = (shipper: IyShipperHit | null) => {
+  function getCanonicalCompanyId(shipper: IyShipperHit | null) {
     if (!shipper) return "";
     return ensureCompanyKey(
       shipper.companyKey ||
@@ -197,7 +209,29 @@ export default function SearchPage() {
         shipper.title ||
         "",
     );
-  };
+  }
+
+  const selectedWorkspaceCompany = useMemo(() => {
+    if (!workspaceSelection) return null;
+    const key = getCanonicalCompanyId(workspaceSelection);
+    if (!key) return null;
+    const title =
+      workspaceSelection.title ||
+      (workspaceSelection as any).company_name ||
+      workspaceSelection.name ||
+      "Company";
+    const subtitle = [workspaceSelection.city, workspaceSelection.state, workspaceSelection.country]
+      .filter((value) => Boolean(value))
+      .join(", ");
+
+    return {
+      key,
+      title,
+      subtitle: subtitle || null,
+      shipper: workspaceSelection,
+      isSaved: savedCompanyIds.has(key),
+    };
+  }, [workspaceSelection, savedCompanyIds]);
 
   const isShipperSaved = useCallback(
     (shipper?: IyShipperHit | null) => {
@@ -351,6 +385,27 @@ export default function SearchPage() {
     destPostal,
   ]);
 
+  useEffect(() => {
+    if (!filteredResults.length) {
+      if (workspaceSelection !== null) {
+        setWorkspaceSelection(null);
+      }
+      return;
+    }
+    const selectedId = workspaceSelection
+      ? getCanonicalCompanyId(workspaceSelection)
+      : null;
+    if (
+      selectedId &&
+      filteredResults.some(
+        (shipper) => getCanonicalCompanyId(shipper) === selectedId,
+      )
+    ) {
+      return;
+    }
+    setWorkspaceSelection(filteredResults[0]);
+  }, [filteredResults, workspaceSelection]);
+
   const handleResetAdvancedFilters = () => {
     setOriginCity("");
     setOriginState("");
@@ -436,68 +491,110 @@ export default function SearchPage() {
               Search failed: {error}. Try again.
             </span>
           )}
-          {!error && !loading && (
+          {!error && !loading && query && (
             <span>
               Showing {filteredResults.length} of {total} results for{" "}
               <span className="font-semibold">"{query}"</span>
             </span>
           )}
+          {!error && !loading && !query && (
+            <span>Enter a company name to start searching the index.</span>
+          )}
           {loading && <span>Searching LIT Search…</span>}
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredResults.map((shipper) => {
-            const companyId = getCanonicalCompanyId(shipper);
-            const saved = companyId ? savedCompanyIds.has(companyId) : false;
-            const saving = companyId ? savingCompanyId === companyId : false;
-            return (
-              <div key={shipper.key || shipper.title} className="text-left">
-                <ShipperCard
-                  shipper={shipper}
-                  onViewDetails={handleCardClick}
-                  onToggleSaved={handleSaveToCommandCenter}
-                  isSaved={saved}
-                  saving={saving}
-                />
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row">
+          <div className="flex w-full flex-col gap-4 lg:w-[42%] xl:w-[38%]">
+            <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Results
               </div>
-            );
-          })}
-        </div>
-
-        {total > PAGE_SIZE && (
-          <div className="mt-6 flex items-center justify-between text-xs text-slate-600">
-            <span>
-              Page {page} • {total.toLocaleString()} total companies
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const next = Math.max(1, page - 1);
-                  setPage(next);
-                  void fetchShippers(query, next);
-                }}
-                disabled={page <= 1 || loading}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const maxPage = Math.ceil(total / PAGE_SIZE);
-                  const next = Math.min(maxPage, page + 1);
-                  setPage(next);
-                  void fetchShippers(query, next);
-                }}
-                disabled={loading || results.length < PAGE_SIZE}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next
-              </button>
+              <div className="mt-3 flex-1 overflow-y-auto">
+                <div className="flex flex-col gap-4">
+                  {filteredResults.map((shipper) => {
+                    const companyId = getCanonicalCompanyId(shipper);
+                    const saved = companyId ? savedCompanyIds.has(companyId) : false;
+                    const saving = companyId ? savingCompanyId === companyId : false;
+                    return (
+                      <div
+                        key={shipper.key || shipper.title}
+                        className="text-left"
+                        onClick={() => handleWorkspaceSelect(shipper)}
+                      >
+                        <ShipperCard
+                          shipper={shipper}
+                          onViewDetails={handleCardClick}
+                          onToggleSaved={handleSaveToCommandCenter}
+                          isSaved={saved}
+                          saving={saving}
+                        />
+                      </div>
+                    );
+                  })}
+                  {!filteredResults.length && !loading && (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500">
+                      {query
+                        ? "No shippers match your filters. Try adjusting your search."
+                        : "Start typing to see ImportYeti shippers appear here."}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {total > PAGE_SIZE && (
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
+                <span>
+                  Page {page} • {total.toLocaleString()} total companies
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = Math.max(1, page - 1);
+                      setPage(next);
+                      void fetchShippers(query, next);
+                    }}
+                    disabled={page <= 1 || loading}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const maxPage = Math.ceil(total / PAGE_SIZE);
+                      const next = Math.min(maxPage, page + 1);
+                      setPage(next);
+                      void fetchShippers(query, next);
+                    }}
+                    disabled={loading || results.length < PAGE_SIZE}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="flex flex-1 rounded-2xl border border-slate-200 bg-white shadow-sm min-h-[520px]">
+            <SearchWorkspacePanel
+              activeTab={activeWorkspaceTab}
+              onTabChange={setActiveWorkspaceTab}
+              selectedCompany={
+                selectedWorkspaceCompany
+                  ? {
+                      key: selectedWorkspaceCompany.key,
+                      title: selectedWorkspaceCompany.title,
+                      subtitle: selectedWorkspaceCompany.subtitle,
+                      isSaved: selectedWorkspaceCompany.isSaved,
+                    }
+                  : null
+              }
+            />
+          </div>
+        </div>
       </main>
 
       <ShipperDetailModal
