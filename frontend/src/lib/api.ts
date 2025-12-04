@@ -2509,9 +2509,17 @@ export type CrmSavedCompaniesResponse = {
   companies: CrmSavedCompany[];
 };
 
+export type SavedCompanySummary = {
+  id: string;
+  name: string;
+  shipments12m: number;
+  teus12m: number;
+  raw: CrmSavedCompany | null;
+};
+
 export async function getSavedCompanies(
   stage?: string,
-): Promise<CrmSavedCompany[]> {
+): Promise<{ ok: boolean; records: SavedCompanySummary[] }> {
   const url = new URL("/crm/savedCompanies", API_BASE);
   if (stage) {
     url.searchParams.set("stage", stage);
@@ -2526,7 +2534,7 @@ export async function getSavedCompanies(
 
   if (!resp.ok) {
     console.error("getSavedCompanies: HTTP", resp.status);
-    return [];
+    return { ok: false, records: [] };
   }
 
   let json: any;
@@ -2534,17 +2542,69 @@ export async function getSavedCompanies(
     json = await resp.json();
   } catch (err) {
     console.error("getSavedCompanies: bad JSON", err);
-    return [];
+    return { ok: false, records: [] };
   }
 
-  const raw = json?.companies ?? json?.records ?? json?.data ?? [];
-
-  if (!Array.isArray(raw)) {
-    console.error("getSavedCompanies: expected array, got", raw);
-    return [];
+  if (json?.ok === false) {
+    return { ok: false, records: [] };
   }
 
-  return raw as CrmSavedCompany[];
+  const candidateArrays = [
+    json?.companies,
+    json?.records,
+    json?.data,
+    json?.rows,
+    json?.data?.rows,
+  ];
+
+  let recordsSource: any[] | null = null;
+  for (const candidate of candidateArrays) {
+    if (Array.isArray(candidate)) {
+      recordsSource = candidate;
+      break;
+    }
+  }
+
+  if (!recordsSource && json?.record) {
+    recordsSource = [json.record];
+  }
+
+  if (!recordsSource) {
+    recordsSource = [];
+  }
+
+  if (!Array.isArray(recordsSource)) {
+    console.error("getSavedCompanies: expected array, got", recordsSource);
+    return { ok: false, records: [] };
+  }
+
+  const normalized: SavedCompanySummary[] = recordsSource
+    .map((entry: any) => {
+      if (!entry || typeof entry !== "object") return null;
+      const raw = entry as CrmSavedCompany;
+      const id = String(
+        raw?.company_id ?? (raw as any)?.companyId ?? (raw as any)?.id ?? "",
+      ).trim();
+      if (!id) return null;
+      const payload = raw?.payload ?? {};
+      const name =
+        payload?.name ??
+        payload?.profile?.name ??
+        payload?.shipper?.company_name ??
+        "";
+      const shipments12m = Number(payload?.shipments_12m ?? 0) || 0;
+      const teus12m = Number(payload?.teus_12m ?? 0) || 0;
+      return {
+        id,
+        name: name || id,
+        shipments12m,
+        teus12m,
+        raw,
+      } satisfies SavedCompanySummary;
+    })
+    .filter((record): record is SavedCompanySummary => Boolean(record));
+
+  return { ok: true, records: normalized };
 }
 
 export async function saveIyCompanyToCrm(opts: {

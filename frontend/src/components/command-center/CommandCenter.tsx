@@ -7,6 +7,7 @@ import {
   getIyRouteKpisForCompany,
   type IyCompanyProfile,
   type IyRouteKpis,
+  type SavedCompanySummary,
 } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import CommandCenterLayout from "@/components/command-center/CommandCenterLayout";
@@ -22,6 +23,41 @@ function recordKey(record: CommandCenterRecord) {
   );
 }
 
+function summaryToCommandCenterRecord(
+  summary: SavedCompanySummary,
+): CommandCenterRecord {
+  const shipments = Array.isArray(summary.raw?.payload?.shipments)
+    ? summary.raw?.payload?.shipments
+    : [];
+  const address =
+    summary.raw?.payload?.profile?.address ??
+    summary.raw?.payload?.shipper?.address ??
+    null;
+  const country =
+    summary.raw?.payload?.profile?.country_code ??
+    summary.raw?.payload?.shipper?.country_code ??
+    null;
+  const lastActivity =
+    summary.raw?.payload?.last_activity ??
+    summary.raw?.payload?.shipper?.last_activity ??
+    null;
+  return {
+    company: {
+      company_id: summary.id,
+      name: summary.name || summary.id,
+      source: "importyeti",
+      address,
+      country_code: country,
+      kpis: {
+        shipments_12m: summary.shipments12m,
+        last_activity: lastActivity,
+      },
+    },
+    shipments,
+    created_at: summary.raw?.saved_at ?? new Date().toISOString(),
+  };
+}
+
 export default function CommandCenter() {
   const [savedCompanies, setSavedCompanies] = useState<CommandCenterRecord[]>([]);
   const [savedLoading, setSavedLoading] = useState(true);
@@ -33,25 +69,47 @@ export default function CommandCenter() {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-    setSavedLoading(true);
-    setSavedError(null);
-    getSavedCompanies(controller.signal)
-      .then((response) => {
-        const rows = Array.isArray(response?.rows) ? response.rows : [];
-        setSavedCompanies(rows as CommandCenterRecord[]);
+    let cancelled = false;
+
+    async function load() {
+      setSavedLoading(true);
+      setSavedError(null);
+      try {
+        const res = await getSavedCompanies();
+        if (cancelled) return;
+        if (!res.ok) {
+          setSavedCompanies([]);
+          setSelectedKey(null);
+          setSavedError("Failed to load saved companies");
+          return;
+        }
+        const summaries = Array.isArray(res.records) ? res.records : [];
+        const records = summaries.map(summaryToCommandCenterRecord);
+        setSavedCompanies(records);
         setSelectedKey((prev) => {
-          if (prev && rows.some((row: CommandCenterRecord) => recordKey(row) === prev)) {
+          if (prev && records.some((record) => recordKey(record) === prev)) {
             return prev;
           }
-          return rows.length ? recordKey(rows[0] as CommandCenterRecord) : null;
+          return records.length ? recordKey(records[0]) : null;
         });
-      })
-      .catch((error: any) => {
+      } catch (error: any) {
+        if (cancelled) return;
+        console.error("CommandCenter getSavedCompanies failed", error);
+        setSavedCompanies([]);
+        setSelectedKey(null);
         setSavedError(error?.message ?? "Failed to load saved companies");
-      })
-      .finally(() => setSavedLoading(false));
-    return () => controller.abort();
+      } finally {
+        if (!cancelled) {
+          setSavedLoading(false);
+        }
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const selectedRecord = useMemo(() => {

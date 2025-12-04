@@ -30,10 +30,28 @@ export default function Companies() {
     async function loadSaved() {
       setSavedCompaniesLoading(true);
       try {
-        const companies = await getSavedCompanies();
-        if (!cancelled) {
-          setSavedCompanies(companies);
+        const response = await getSavedCompanies();
+        if (cancelled) return;
+        if (!response.ok) {
+          setSavedCompanies([]);
+          return;
         }
+        const normalized = response.records.map((record) => {
+          const payload = {
+            ...(record.raw?.payload ?? {}),
+            name: record.name,
+            shipments_12m: record.shipments12m,
+            teus_12m: record.teus12m,
+          };
+          return {
+            company_id: record.id,
+            stage: record.raw?.stage ?? "prospect",
+            provider: record.raw?.provider ?? "crm",
+            payload,
+            saved_at: record.raw?.saved_at,
+          };
+        });
+        setSavedCompanies(normalized);
       } catch (err: any) {
         if (!cancelled) {
           setSavedCompanies([]);
