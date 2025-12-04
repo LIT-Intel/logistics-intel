@@ -2497,12 +2497,6 @@ export type CrmSavedCompany = {
   provider?: string;
   payload?: {
     name?: string;
-    website?: string;
-    domain?: string;
-    phone?: string;
-    country?: string;
-    city?: string;
-    state?: string;
     shipments_12m?: number;
     teus_12m?: number;
     [key: string]: any;
