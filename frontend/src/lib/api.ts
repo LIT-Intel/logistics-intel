@@ -2513,7 +2513,9 @@ export async function getSavedCompanies(
   stage?: string,
 ): Promise<CrmSavedCompany[]> {
   const url = new URL("/crm/savedCompanies", API_BASE);
-  if (stage) url.searchParams.set("stage", stage);
+  if (stage) {
+    url.searchParams.set("stage", stage);
+  }
 
   const resp = await fetch(url.toString(), {
     method: "GET",
