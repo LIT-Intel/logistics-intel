@@ -2518,7 +2518,7 @@ export type CrmSavedCompaniesResponse = {
 export async function getSavedCompanies(
   stage?: string,
 ): Promise<CrmSavedCompany[]> {
-  const url = new URL("/crm/savedCompanies", CRM_BASE);
+  const url = new URL("/crm/savedCompanies", API_BASE);
   if (stage) url.searchParams.set("stage", stage);
 
   const resp = await fetch(url.toString(), {
@@ -2529,16 +2529,26 @@ export async function getSavedCompanies(
   });
 
   if (!resp.ok) {
+    console.error("getSavedCompanies: HTTP error", resp.status);
     return [];
   }
 
-  const json = (await resp.json().catch(() => null)) as
-    | Partial<CrmSavedCompaniesResponse>
-    | null;
-  if (!json || !Array.isArray(json.companies)) {
+  let json: any;
+  try {
+    json = await resp.json();
+  } catch (err) {
+    console.error("getSavedCompanies: failed to parse JSON", err);
     return [];
   }
-  return json.companies;
+
+  const raw = json?.companies ?? json?.records ?? json?.data ?? [];
+
+  if (!Array.isArray(raw)) {
+    console.error("getSavedCompanies: expected array, got", raw);
+    return [];
+  }
+
+  return raw as CrmSavedCompany[];
 }
 
 export async function saveIyCompanyToCrm(opts: {
