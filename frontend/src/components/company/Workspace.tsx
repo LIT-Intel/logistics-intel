@@ -1,979 +1,643 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Package as PackageIcon, Ship as ShipIcon, Newspaper, Linkedin as LinkedinIcon, TrendingUp, DollarSign, Sparkles } from 'lucide-react';
-import PreCallBriefing from '../company/PreCallBriefing';
-import CompanyFirmographics from './CompanyFirmographics';
-import { exportCompanyPdf } from '../pdf/exportCompanyPdf';
-import { buildPreCallPrompt } from '../../lib/ai';
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  getCompanyShipments,
-  kpiFrom,
-  recallCompany,
-  saveCampaign,
-  enrichCompany,
-  type IyCompanyProfile,
-  type CrmSavedCompany,
-} from '../../lib/api';
+  Building2,
+  DollarSign,
+  Globe,
+  Ship,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
+import type { CrmSavedCompany, IyCompanyProfile } from "@/lib/api";
+import { buildCompanySnapshot, type CompanySnapshot } from "@/components/common/companyViewModel";
 
 function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(' ');
+  return classes.filter(Boolean).join(" ");
 }
 
-const resolveSavedCompanyId = (
-  record: CrmSavedCompany | (CrmSavedCompany & { companyId?: string; id?: string }) | null | undefined,
-) => {
-  if (!record) return null;
-  return (
-    record.company_id ??
-    (record as any).companyId ??
-    (record as any).id ??
-    null
-  );
-};
+type WorkspaceTab = "Overview" | "Shipments" | "Contacts" | "Campaigns" | "RFP notes";
 
-function estimateSpend(shipments12m: number, mode: 'ocean'|'air') {
-  const s = Math.max(0, Number(shipments12m||0));
-  if (mode === 'ocean') {
-    // rough: $1,200 per shipment placeholder
-    return Math.round(s * 1200);
-  }
-  // air: $2.50/kg equivalent placeholder (assume 400kg avg)
-  return Math.round(s * 2.5 * 400);
-}
-
-const Pill = ({ children }: { children: React.ReactNode }) => (
-  <span className='px-2 py-0.5 rounded-full text-xs bg-white/70 border border-white/60 shadow-sm'>{children}</span>
-);
-
-function CompanyCard({
-  c,
-  active,
-  onClick,
-  flags,
-  saved = false,
-}: {
-  c: any;
-  active: boolean;
-  onClick: () => void;
-  flags?: { inRfp?: boolean; inCampaign?: boolean };
-  saved?: boolean;
-}) {
-  const city   = c.city || c.meta?.city || '—';
-  const state  = c.state || c.meta?.state || '';
-  const domain = c.domain || c.website || c.meta?.website || '';
-
-  return (
-    <button
-      onClick={onClick}
-      className={[
-        'company-card',
-        'w-full text-left rounded-xl p-3 mb-2 transition',
-        'shadow-sm hover:shadow',
-        'border',
-        active ? 'active border-indigo-500 bg-[rgba(106,90,249,0.08)]' : 'border-gray-200 bg-white',
-        'hover:-translate-y-[1px] relative'
-      ].join(' ')}
-    >
-      {/* removed gradient accent bar */}
-      <div className='flex items-center justify-between gap-2'>
-        <div className='font-semibold text-[16px] pr-1 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-400 to-violet-500'>{c.name}</div>
-        <div className='flex items-center gap-1'>
-          {saved && (
-            <span className='inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700'>
-              Saved
-            </span>
-          )}
-          {flags?.inRfp && <span title='In RFP' className='inline-block w-2.5 h-2.5 rounded-full bg-violet-600' />}
-          {flags?.inCampaign && <span title='In Campaign' className='inline-block w-2.5 h-2.5 rounded-full bg-blue-600' />}
-        </div>
-      </div>
-      <div className='text-[11px] text-slate-500'>ID: {String(c.id || c.company_id || '—')}</div>
-      <div className='mt-0.5 text-[11px] text-slate-600'>
-        {city}{state ? `, ${state}` : ''}
-      </div>
-      {domain ? (
-        <div className='mt-1.5'>
-          <a
-            href={domain.startsWith('http') ? domain : `https://${domain}`}
-            target='_blank' rel='noreferrer'
-            className='inline-flex items-center gap-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-700 hover:text-gray-900'
-          >
-            <span className='h-1.5 w-1.5 rounded-full bg-gray-400' />
-            {domain.replace(/^https?:\/\//, '')}
-          </a>
-        </div>
-      ) : null}
-      <div className='mt-2 grid grid-cols-2 gap-2 text-[10px]'>
-        <div className='text-slate-500'>Shipments 12M</div>
-        <div className='text-right text-slate-900 font-semibold text-sm'>{(c.kpis?.shipments12m ?? 0).toLocaleString()}</div>
-        <div className='text-slate-500'>Last</div>
-        <div className='text-right text-slate-700'>{c.kpis?.lastActivity || '—'}</div>
-      </div>
-    </button>
-  );
-}
-
-function Tabs({ tabs, value, onChange }: { tabs: string[]; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className='flex gap-2 border-b border-white/60 mb-4'>
-      {tabs.map(t => (
-        <button key={t} onClick={() => onChange(t)} className={`px-3 py-2 text-sm ${value === t ? 'border-b-2 border-slate-900 font-semibold' : 'text-slate-500'}`}>{t}</button>
-      ))}
-    </div>
-  );
-}
+const WORKSPACE_TABS: WorkspaceTab[] = [
+  "Overview",
+  "Shipments",
+  "Contacts",
+  "Campaigns",
+  "RFP notes",
+];
 
 type WorkspaceProps = {
-  companies: any[];
-  onAdd: () => void;
-  activeCompanyId?: string | null;
-  onActiveCompanyChange?: (companyId: string | null) => void;
-  companyProfile?: IyCompanyProfile | null;
-  enrichment?: any | null;
-  loading?: boolean;
-  error?: string | null;
-  onSaveToCommandCenter?: () => Promise<void> | void;
-  savedCompanies?: CrmSavedCompany[];
-  savedCompaniesLoading?: boolean;
-  onSelectCompany?: (id: string) => void;
+  companies: CrmSavedCompany[];
+  activeCompanyId: string | null;
+  onSelectCompany: (id: string) => void;
+  iyProfile: IyCompanyProfile | null;
+  enrichment: any | null;
+  isLoadingProfile?: boolean;
+  errorProfile?: string | null;
+  onSaveCompany: (company: CrmSavedCompany | IyCompanyProfile) => Promise<void>;
 };
 
 export default function Workspace({
   companies,
-  onAdd,
   activeCompanyId,
-  onActiveCompanyChange,
-  companyProfile = null,
-  enrichment = null,
-  loading: profileLoading = false,
-  error: profileError = null,
-  onSaveToCommandCenter,
-  savedCompanies = [],
-  savedCompaniesLoading = false,
   onSelectCompany,
+  iyProfile,
+  enrichment,
+  isLoadingProfile = false,
+  errorProfile = null,
+  onSaveCompany,
 }: WorkspaceProps) {
-  const [activeId, setActiveId] = useState<string | null>(companies[0]?.id ?? null);
-  const aiVendor = (((import.meta as any)?.env?.VITE_AI_VENDOR) || '') as string;
-  const aiEnabled = !!aiVendor;
-  const [query, setQuery] = useState('');
-  const [filterRfp, setFilterRfp] = useState(false);
-  const [filterCampaign, setFilterCampaign] = useState(false);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("Overview");
 
   useEffect(() => {
-    if (!activeCompanyId) return;
-    if (activeCompanyId !== activeId) {
-      setActiveId(activeCompanyId);
-    }
-  }, [activeCompanyId, activeId]);
+    setActiveTab("Overview");
+  }, [activeCompanyId]);
 
-  useEffect(() => {
-    onActiveCompanyChange?.(activeId ?? null);
-  }, [activeId, onActiveCompanyChange]);
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let base = companies;
-    if (q) base = base.filter(c => String(c.name || '').toLowerCase().includes(q));
-    try {
-      const rRaw = localStorage.getItem('lit_rfps');
-      const rfps = rRaw ? JSON.parse(rRaw) : [];
-      const rIds = new Set((Array.isArray(rfps) ? rfps : []).map((r:any)=> String(r.companyId||'')));
-      const cRaw = localStorage.getItem('lit_campaigns_companies');
-      const cIds = new Set(((cRaw ? JSON.parse(cRaw) : []) as string[]).map(x=> String(x)));
-      if (filterRfp) base = base.filter(c => rIds.has(String(c.id)));
-      if (filterCampaign) base = base.filter(c => cIds.has(String(c.id)));
-    } catch {}
-    return base;
-  }, [companies, query, filterRfp, filterCampaign]);
-  const active = useMemo(() => {
-    const localMatch = companies.find(c => String(c.id) === String(activeId));
-    if (localMatch) return localMatch;
-    const savedMatch = savedRecords.find((record) => {
-      const id = resolveSavedCompanyId(record);
-      return id && String(id) === String(activeId);
+  const activeCompany = useMemo(
+    () => companies.find((record) => record.company_id === activeCompanyId) ?? null,
+    [companies, activeCompanyId],
+  );
+
+  const snapshot = useMemo(() => {
+    if (!iyProfile && !activeCompany) return null;
+    return buildCompanySnapshot({
+      profile: iyProfile,
+      enrichment,
+      fallback: activeCompany
+        ? {
+            companyId: activeCompany.company_id,
+            name:
+              (activeCompany.payload as any)?.normalized_company?.name ??
+              activeCompany.payload?.name ??
+              activeCompany.company_id,
+            payload: activeCompany.payload ?? null,
+          }
+        : null,
     });
-    if (savedMatch) {
-      const id = resolveSavedCompanyId(savedMatch);
-      return {
-        id,
-        company_id: id,
-        name: savedMatch.payload?.name ?? id,
-        kpis: {
-          shipments12m: savedMatch.payload?.shipments_12m ?? 0,
-          teus12m: savedMatch.payload?.teus_12m ?? 0,
-        },
-        stage: savedMatch.stage,
-        provider: savedMatch.provider,
-      };
-    }
-    return null;
-  }, [companies, savedRecords, activeId]);
-  const [tab, setTab] = useState('Overview');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [overview, setOverview] = useState<any | null>(null);
-  const [shipments, setShipments] = useState<any[]>([]);
-  const [threads, setThreads] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
-  const [contacts, setContacts] = useState<any[]>([]);
-  const primaryContact = useMemo(() => contacts.find((c: any) => c.isPrimary || c.is_primary), [contacts]);
-  const [campaignName, setCampaignName] = useState('Follow-up Campaign');
-  const [campaignChannel, setCampaignChannel] = useState<'email' | 'linkedin'>('email');
-  const [isSaving, setIsSaving] = useState(false);
+  }, [iyProfile, enrichment, activeCompany]);
 
-  const gemini = enrichment ?? {};
-  const normalizedCompany = gemini?.normalized_company ?? null;
-  const logisticsKpis = gemini?.logistics_kpis ?? null;
-  const spendAnalysis = gemini?.spend_analysis ?? null;
-  const ccEnrichment = gemini?.command_center_enrichment ?? null;
-  const salesAssets = gemini?.sales_assets ?? null;
-  const preCallBrief = salesAssets?.pre_call_brief ?? null;
-  const predictiveInsights = gemini?.predictive_insights ?? null;
-
-  const shipments12m =
-    logisticsKpis?.shipments_12m ??
-    companyProfile?.routeKpis?.shipmentsLast12m ??
-    companyProfile?.totalShipments ??
-    null;
-  const teus12m =
-    logisticsKpis?.teus_12m ??
-    companyProfile?.routeKpis?.teuLast12m ??
-    null;
-  const estSpendTotal =
-    spendAnalysis?.estimated_12m_spend_total ??
-    companyProfile?.estSpendUsd12m ??
-    null;
-
-  const displayName =
-    normalizedCompany?.name ??
-    companyProfile?.title ??
-    companyProfile?.name ??
-    companies.find((c) => String(c.id) === String(activeId))?.name ??
-    'Company';
-  const displayWebsite =
-    normalizedCompany?.website ??
-    companyProfile?.website ??
-    companyProfile?.rawWebsite ??
-    null;
-  const displayDomain =
-    normalizedCompany?.domain ??
-    companyProfile?.domain ??
-    null;
-  const displayCountry =
-    normalizedCompany?.country ??
-    companyProfile?.country ??
-    companyProfile?.countryCode ??
-    null;
-  const locationLabel =
-    normalizedCompany?.location ??
-    (([normalizedCompany?.city ?? null, normalizedCompany?.state ?? null, displayCountry ?? null]
-      .filter((value) => Boolean(value))
-      .join(', ')) ||
-      companyProfile?.address ||
-      companyProfile?.country ||
-      null);
-  const resolvedCompanyId =
-    companyProfile?.companyId ??
-    normalizedCompany?.company_id ??
-    (activeId ? String(activeId) : null) ??
-    null;
-  const primaryCompanyId = resolvedCompanyId ?? '—';
-  const hasCompanyId = Boolean(resolvedCompanyId);
-
-  const quickSummary = ccEnrichment?.quick_summary ?? null;
-  const recommendedPriority = ccEnrichment?.recommended_priority ?? null;
-  const alerts = Array.isArray(ccEnrichment?.alerts) ? ccEnrichment.alerts : [];
-
-  const preCallData = useMemo(
-    () => ({
-      name: displayName,
-      kpis: {
-        ...(overview?.kpis || {}),
-        shipments12m: shipments12m ?? overview?.kpis?.shipments12m,
-        teus12m: teus12m ?? overview?.kpis?.teus12m,
-        estSpendUsd12m: estSpendTotal ?? overview?.kpis?.estSpendUsd12m,
-      },
-      charts: overview?.charts,
-      ai: {
-        summary: preCallBrief?.summary ?? quickSummary ?? overview?.ai?.summary ?? '',
-        bullets:
-          (Array.isArray(preCallBrief?.bullets) && preCallBrief?.bullets) ||
-          overview?.ai?.bullets ||
-          [],
-      },
-    }),
-    [displayName, overview, shipments12m, teus12m, estSpendTotal, preCallBrief, quickSummary],
-  );
-
-  const savedRecords = Array.isArray(savedCompanies) ? savedCompanies : [];
-  const savedIds = savedRecords
-    .map((record) => resolveSavedCompanyId(record))
-    .filter((id): id is string => Boolean(id));
-  const savedCount = savedRecords.length;
-  const savedSubtitle = savedCompaniesLoading
-    ? "Loading..."
-    : `${savedCount} ${savedCount === 1 ? "company" : "companies"}`;
-
-  const isCompanySaved = resolvedCompanyId
-    ? savedIds.includes(resolvedCompanyId)
-    : false;
-
-  const handleSaveToCommandCenterClick = useCallback(async () => {
-    if (!onSaveToCommandCenter) return;
-    try {
-      setIsSaving(true);
-      await onSaveToCommandCenter();
-    } finally {
-      setIsSaving(false);
-    }
-  }, [onSaveToCommandCenter]);
-
-  const handleSelectCompany = useCallback(
-    (companyId: string | null) => {
-      if (!companyId) return;
-      setActiveId(companyId);
-      setTab('Overview');
-      onSelectCompany?.(companyId);
-    },
-    [onSelectCompany],
-  );
-
-  // RFP lanes upload/editor bound to universal company id (Command Center)
-  const rfpKey = useMemo(() => `lit_rfp_payload_${String(activeId || '')}`, [activeId]);
-  const [rfpPayload, setRfpPayload] = useState<any | null>(null);
-
-  function deriveKpisFromPayload(payload: any) {
-    if (!payload || !Array.isArray(payload.lanes)) return null;
-    const shipments12m = payload.lanes.reduce((s: number, ln: any) => s + (Number(ln?.demand?.shipments_per_year || 0)), 0);
-    const origins = new Map<string, number>(); const dests = new Map<string, number>();
-    for (const ln of payload.lanes) {
-      const o = ln?.origin?.port || ln?.origin?.country; if (o) origins.set(o, (origins.get(o) || 0) + 1);
-      const d = ln?.destination?.port || ln?.destination?.country; if (d) dests.set(d, (dests.get(d) || 0) + 1);
-    }
-    const originsTop = Array.from(origins.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
-    const destsTop = Array.from(dests.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
-    return { shipments12m, originsTop, destsTop };
-  }
-
-  useEffect(() => {
-    if (activeCompanyId) return;
-    if (!activeId && companies && companies.length > 0) {
-      setActiveId(companies[0].id);
-    } else if (activeId && companies && companies.length > 0) {
-      const exists = companies.some(c => String(c.id) === String(activeId));
-      if (!exists) setActiveId(companies[0].id);
-    }
-  }, [companies, activeCompanyId, activeId]);
-
-  useEffect(() => {
-    let ignore = false;
-    async function load() {
-      if (!activeId) return;
-      setLoading(true);
-      setError(null);
-      try {
-        // Fetch shipments
-        try {
-          const s = await getCompanyShipments(String(activeId), { limit: 20, offset: 0 });
-          if (!ignore) setShipments(Array.isArray(s?.rows) ? s.rows : []);
-        } catch {
-          if (!ignore) setShipments([]);
-        }
-
-        // Try to find company via search for KPIs (dynamic import to avoid build-time linkage)
-        let match: any = null;
-        try {
-          const mod = await import('../../lib/api');
-          if ((mod as any).searchCompanies) {
-            const res = await (mod as any).searchCompanies({
-              q: null,
-              origin: null,
-              dest: null,
-              hs: null,
-              limit: 50,
-              offset: 0,
-            });
-            const items = Array.isArray((res as any)?.rows) ? (res as any).rows : [];
-            match = items.find((x: any) => String(x?.company_id) === String(activeId)) || null;
-          }
-        } catch {}
-
-        const baseName = active?.name || match?.company_name || 'Company';
-        const k = kpiFrom(match || ({} as any));
-        // Merge KPIs from any uploaded lanes stored under this company id
-        try {
-          const raw = localStorage.getItem(rfpKey);
-          if (raw) {
-            const payload = JSON.parse(raw);
-            setRfpPayload(payload);
-            const dk = deriveKpisFromPayload(payload);
-            if (dk) {
-              k.shipments12m = dk.shipments12m || k.shipments12m;
-              (k as any).destsTop = dk.destsTop || (k as any).destsTop;
-              (k as any).originsTop = dk.originsTop || (k as any).originsTop;
-            }
-          } else {
-            setRfpPayload(null);
-          }
-        } catch {}
-        // Build charts placeholder and get AI recall
-        const prompt = buildPreCallPrompt({
-          company: {
-            id: String(activeId),
-            name: baseName,
-            shipments12m: k.shipments12m || 0,
-            lastActivity: (k.lastActivity as any) || null,
-            originsTop: k.originsTop || [],
-            destsTop: k.destsTop || [],
-            carriersTop: k.carriersTop || [],
-          },
-          shipments: shipments || [],
-        });
-        let ai: any = { summary: 'Pending enrichment…', bullets: ['—'] };
-        try {
-          const r = await recallCompany({ company_id: String(activeId), questions: [prompt] });
-          ai = { summary: r?.summary || ai.summary, bullets: Array.isArray(r?.bullets) ? r.bullets : ai.bullets };
-        } catch {}
-
-        const charts = {
-          growth: [
-            { y: 100, x: '2022' },
-            { y: 120, x: '2023' },
-            { y: 140, x: '2024' },
-          ],
-          ecosystem: [
-            { label: 'Core', value: 40 },
-            { label: 'New', value: 30 },
-            { label: 'Other', value: 30 },
-          ],
-          competition: [
-            { k: 'Scale', [baseName]: 7, Market: 7 },
-            { k: 'Reliability', [baseName]: 8, Market: 7 },
-            { k: 'Speed', [baseName]: 7, Market: 7 },
-          ],
-          sourcing: (k.originsTop || []).map((c: string, i: number) => ({ country: c, pct: [60, 25, 15, 10][i] || 10 })),
-        };
-
-        if (!ignore) setOverview({ name: baseName, kpis: k, charts, ai });
-
-        // Activity fetch (best-effort)
-        try {
-          const mod = await import('../../lib/api');
-          if ((mod as any).getEmailThreads) {
-            const t = await (mod as any).getEmailThreads(String(activeId));
-            if (!ignore) setThreads(Array.isArray(t?.threads) ? t.threads : (Array.isArray(t) ? t : []));
-          }
-        } catch {}
-        try {
-          const mod = await import('../../lib/api');
-          if ((mod as any).getCalendarEvents) {
-            const ev = await (mod as any).getCalendarEvents(String(activeId));
-            if (!ignore) setEvents(Array.isArray(ev?.events) ? ev.events : (Array.isArray(ev) ? ev : []));
-          }
-        } catch {}
-      } catch (e: any) {
-        if (!ignore) setError(String(e?.message ?? e));
-      } finally {
-        if (!ignore) setLoading(false);
-      }
-    }
-    load();
-    return () => { ignore = true; };
-  }, [activeId]);
-
-  // Load contacts when Contacts tab is opened
-  useEffect(() => {
-    let cancel = false;
-    async function loadContacts() {
-      if (tab !== 'Contacts' || !activeId) return;
-        try {
-          const api = await import('../../lib/api');
-          const c: any = await (api as any).listContacts(String(activeId));
-          if (!cancel) setContacts(Array.isArray(c?.contacts) ? c.contacts : (Array.isArray(c) ? c : []));
-        } catch {
-        if (!cancel) setContacts([]);
-      }
-    }
-    loadContacts();
-    return () => { cancel = true; };
-  }, [tab, activeId]);
-
-  if (profileLoading) {
-    return <div className='p-4 text-sm text-slate-500'>Loading Command Center…</div>;
-  }
-
-  if (profileError) {
-    return <div className='p-4 text-sm text-rose-500'>{profileError}</div>;
-  }
+  const handleSaveClick = async () => {
+    const target = iyProfile ?? activeCompany;
+    if (!target) return;
+    await onSaveCompany(target);
+  };
 
   return (
-    <div className='w-full mx-auto flex flex-col lg:flex-row gap-[5px] pl-[5px] pr-[5px]'>
-      <aside className='w-[340px] shrink-0'>
-        <div className='rounded-3xl p-4 bg-white/90 backdrop-blur border border-white/70 shadow-[0_10px_40px_-10px_rgba(30,64,175,0.25)]'>
-          <div className='mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white text-slate-900 border-b border-[#eee]'>
-            <h2 className='text-sm font-semibold'>Command Center</h2>
-            <button onClick={onAdd} className='text-xs px-2 py-1 rounded-lg border bg-white hover:bg-slate-50 transition'>Add</button>
-          </div>
-          <p className='mb-3 text-[11px] text-slate-500'>{savedSubtitle}</p>
-          <div className="mt-4 h-[420px] overflow-y-auto">
-            {savedCompaniesLoading ? (
-              <div className="text-sm text-slate-400">Loading saved shippers…</div>
-            ) : savedError ? (
-              <div className="text-sm text-red-500">{savedError}</div>
-            ) : savedRecords.length === 0 ? (
-              <div className="text-sm text-slate-400">
-                No saved companies yet. Save a shipper from LIT Search to get started.
+    <div className="min-h-screen bg-slate-100 p-6 text-slate-900">
+      <div className="mx-auto flex max-w-7xl gap-4">
+        <SavedCompaniesRail
+          companies={companies}
+          activeCompanyId={activeCompanyId}
+          onSelectCompany={onSelectCompany}
+        />
+        <section className="flex-1">
+          {isLoadingProfile ? (
+            <PanelShell>
+              <div className="flex flex-col items-center justify-center gap-3 py-10 text-sm text-slate-500">
+                <Sparkles className="h-6 w-6 animate-spin text-indigo-400" />
+                <p>Loading Command Center…</p>
               </div>
-            ) : (
-              <ul className="space-y-1">
-                {savedRecords.map((record) => {
-                  const id = resolveSavedCompanyId(record);
-                  if (!id) return null;
-                  const name = record.payload?.name || id;
-                  const shipments = record.payload?.shipments_12m;
-                  const teus = record.payload?.teus_12m;
-                  const isActive = activeCompanyId === id;
-                  return (
-                    <li key={id}>
-                      <button
-                        type="button"
-                        className={[
-                          "w-full rounded-xl px-3 py-2 text-left text-sm transition",
-                          isActive
-                            ? "bg-indigo-50 text-indigo-700"
-                            : "bg-white text-slate-700 hover:bg-slate-50",
-                        ].join(" ")}
-                        onClick={() => onSelectCompany?.(id)}
-                      >
-                        <div className="font-medium truncate">{name}</div>
-                        {typeof shipments === 'number' && (
-                          <div className="text-xs text-slate-400">
-                            {shipments} shipments · {typeof teus === 'number' ? teus : '—'} TEU
-                          </div>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-          <div className='mb-3'>
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder='Search companies…' className='w-full text-sm border rounded-lg px-3 py-2 bg-white/70' />
-            <div className='mt-2 flex items-center gap-3 text-xs text-slate-700'>
-              <label className='flex items-center gap-1'><input type='checkbox' checked={filterRfp} onChange={e=> setFilterRfp(e.target.checked)} /> Has RFP</label>
-              <label className='flex items-center gap-1'><input type='checkbox' checked={filterCampaign} onChange={e=> setFilterCampaign(e.target.checked)} /> In Campaign</label>
-            </div>
-          </div>
-          <div className='max-h-[70vh] overflow-auto pr-1 sm:pr-2'>
-            {filtered.map(c => {
-              let inRfp=false, inCampaign=false;
-              try {
-                const rr = localStorage.getItem('lit_rfps'); const arr = rr? JSON.parse(rr):[]; inRfp = Array.isArray(arr) && arr.some((r:any)=> String(r.companyId||'')===String(c.id));
-                const cc = localStorage.getItem('lit_campaigns_companies'); const carr = cc? JSON.parse(cc):[]; inCampaign = Array.isArray(carr) && carr.includes(String(c.id));
-              } catch {}
-              return (
-                <CompanyCard
-                  key={c.id}
-                  c={c}
-                  active={c.id === activeId}
-                  onClick={() => handleSelectCompany(String(c.id))}
-                  flags={{ inRfp, inCampaign }}
-                  saved={savedIds.includes(String(c.id))}
-                />
-              );
-            })}
-            {filtered.length === 0 && (
-              <div className='text-xs text-slate-500 py-6 text-center'>No companies match “{query}”.</div>
-            )}
-          </div>
-        </div>
-      </aside>
-      <main className='flex-1 min-w-0 p-[5px] max-w-none'>
-        <div className='company-detail rounded-3xl p-6 bg-white/90 backdrop-blur border border-slate-200 shadow-[0_10px_40px_-10px_rgba(2,6,23,0.08)]'>
-          {active ? (
-            <>
-              <div className='flex items-center justify-between gap-4 flex-wrap'>
-                <div>
-            <h1 className='text-3xl md:text-3xl font-extrabold tracking-tight text-slate-900'>{displayName}</h1>
-                    <div className='text-xs text-slate-500'>ID: {primaryCompanyId}</div>
-                </div>
-                <div className='flex items-center gap-2'>
-                    <button
-                      className='px-3 py-1.5 rounded border text-xs disabled:opacity-60 disabled:cursor-not-allowed'
-                      onClick={handleSaveToCommandCenterClick}
-                      disabled={isSaving || !onSaveToCommandCenter || !hasCompanyId}
-                    >
-                      {isSaving ? 'Saving...' : isCompanySaved ? 'Saved' : 'Save'}
-                    </button>
-                  <button className='rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-md px-3 py-1.5 text-xs' onClick={async()=>{
-                      try { await enrichCompany({ company_id: String(active?.company_id ?? active?.id ?? '') }); alert('Enrichment queued'); } catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); }
-                  }}>Enrich Now</button>
-                  <button className='px-3 py-1.5 rounded border text-xs disabled:opacity-60' title={aiEnabled? 'AI Recall' : 'Connect AI in Settings → Providers'} disabled={!aiEnabled}
-                    onClick={async()=>{
-                      try { await recallCompany({ company_id: String(active?.company_id ?? active?.id ?? '') }); alert('AI Recall requested'); } catch(e:any){ alert('Recall failed: '+ String(e?.message||e)); }
-                  }}>AI Recall</button>
-                </div>
+            </PanelShell>
+          ) : errorProfile ? (
+            <PanelShell>
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {errorProfile}
               </div>
-              <div className='mt-4'>
-                <Tabs tabs={["Overview", "Pre-Call", "Contacts", "Shipments", "RFP", "Activity", "Campaigns", "Settings"]} value={tab} onChange={setTab} />
-                {loading && (<div className='text-sm text-slate-600'>Loading…</div>)}
-                {error && (<div className='text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3'>{error}</div>)}
-                {!loading && !error && tab === 'Overview' && overview && (
-                  <div className='mt-3 space-y-4'>
-                    {alerts.length > 0 && (
-                      <div className='rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800'>
-                        <p className='font-semibold uppercase tracking-wide text-[10px] text-amber-600'>Alerts</p>
-                        <ul className='mt-2 space-y-1'>
-                          {alerts.map((alert, idx) => (
-                            <li key={`alert-${idx}`}>{typeof alert === 'string' ? alert : alert?.message ?? ''}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {primaryContact && (
-                      <FeaturedContact c={primaryContact} onSetPrimary={(id)=> setContacts(prev=> prev.map((c:any)=> ({...c, is_primary: String(c.id)===String(id), isPrimary: String(c.id)===String(id)})))} />
-                    )}
-                    <div className='grid gap-4 md:grid-cols-2'>
-                      <CompanyFirmographics company={{ id: String(activeId), name: overview.name }} />
-                      <RfpPanel primary={primaryContact || undefined} onAddCampaign={async()=>{
-                        try { await saveCampaign({ name: `${overview?.name||'Company'} — Outreach`, channel: 'email', company_ids: [String(activeId)] }); alert('Added to Campaigns'); } catch(e:any){ alert('Failed: '+ String(e?.message||e)); }
-                      }} />
-                    </div>
-                    <ContactsList rows={contacts as any} onSelect={()=>{}} onSetPrimary={(id)=> setContacts(prev=> prev.map((c:any)=> ({...c, is_primary: String(c.id)===String(id), isPrimary: String(c.id)===String(id)})))} />
-                  </div>
-                )}
-                {!loading && !error && tab === 'Pre-Call' && overview && (
-                  <div className='mt-3'>
-                    <div className='flex items-center justify-end gap-2'>
-                      <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); pdf.save('company.pdf'); }catch(e:any){ alert('PDF failed: '+ String(e?.message||e)); } }}>Save PDF</button>
-                      <button className='rounded border px-3 py-1.5 text-sm' onClick={async()=>{ try{ const pdf=await exportCompanyPdf('company-pdf-root','Company.pdf'); const data = pdf.output('datauristring'); await fetch('/api/lit/crm/emailPdf', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ data, filename:'company.pdf', to:'' }) }); alert('Email queued'); }catch(e:any){ alert('Email failed: '+ String(e?.message||e)); } }}>Email PDF</button>
-                    </div>
-                    <section id='company-pdf-root'>
-                      <PreCallBriefing company={preCallData} />
-                    </section>
-                  </div>
-                )}
-                {!loading && !error && tab === 'Shipments' && (
-                  <div className='mt-3'>
-                    {shipments.length === 0 ? (
-                      <div className='text-sm text-slate-600'>No recent shipments.</div>
-                    ) : (
-                      <div className='overflow-x-auto rounded border'>
-                        <table className='w-full text-sm'>
-                          <thead className='sticky top-0 bg-white'>
-                            <tr className='[&>th]:py-2 [&>th]:text-left'>
-                              <th>Date</th><th>Mode</th><th>Origin</th><th>Destination</th><th>Carrier</th><th>Value (USD)</th><th>Weight (kg)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {shipments.map((r: any, i: number) => (
-                              <tr key={i} className='border-t'>
-                                <td>{r.shipped_on || r.date || '—'}</td>
-                                <td className='capitalize'>{String(r.mode || '').toLowerCase()}</td>
-                                <td>{r.origin || r.origin_country || '—'}</td>
-                                <td>{r.destination || r.dest_country || '—'}</td>
-                                <td>{r.carrier || '—'}</td>
-                                <td>{(r.value_usd ? Number(r.value_usd).toLocaleString() : '—')}</td>
-                                <td>{(r.weight_kg ? Number(r.weight_kg).toLocaleString() : '—')}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                    {/* RFP lanes upload/editor bound to Command Center company with manual overrides */}
-                    <div className='mt-4 rounded border p-3'>
-                      <div className='flex items-center gap-2 mb-3'>
-                        <input id='cc-lanes-file' type='file' accept='.xlsx,.xls,.csv,application/json' className='hidden' onChange={async (e) => {
-                          try {
-                            const f = (e.target as HTMLInputElement).files && (e.target as HTMLInputElement).files![0]; if (!f) return;
-                            const mod = await import('../../lib/rfp/ingest');
-                            // @ts-ignore
-                            const payload = await mod.ingestWorkbook(f);
-                            setRfpPayload(payload);
-                            try { localStorage.setItem(rfpKey, JSON.stringify(payload)); } catch {}
-                            const dk = deriveKpisFromPayload(payload);
-                            if (dk && overview) {
-                              setOverview({ ...overview, kpis: { ...(overview.kpis||{}), shipments12m: dk.shipments12m, originsTop: dk.originsTop, destsTop: dk.destsTop } });
-                            }
-                            const el = document.getElementById('cc-lanes-file') as HTMLInputElement | null; if (el) el.value = '';
-                          } catch { alert('Import failed'); }
-                        }} />
-                        <button className='px-3 py-1.5 rounded border text-xs' onClick={() => { const el = document.getElementById('cc-lanes-file') as HTMLInputElement | null; if (el) el.click(); }}>Import Lanes</button>
-                        <button className='px-3 py-1.5 rounded border text-xs' onClick={() => { try { localStorage.setItem(rfpKey, JSON.stringify(rfpPayload || {})); alert('Saved'); } catch { alert('Save failed'); } }}>Save</button>
-                        <button className='px-3 py-1.5 rounded border text-xs text-red-600' onClick={() => { try { localStorage.removeItem(rfpKey); } catch {} setRfpPayload(null); alert('Reset'); }}>Reset</button>
-                      </div>
-                      <div className='grid grid-cols-1 md:grid-cols-3 gap-3 mb-3'>
-                        <div className='text-xs'>
-                          <div className='mb-1 font-medium'>Shipments (12M) Override</div>
-                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 120' onChange={(e)=>{
-                            const v = Number(e.target.value||0);
-                            if (overview) setOverview({ ...overview, kpis: { ...(overview.kpis||{}), shipments12m: v } });
-                          }} />
-                        </div>
-                        <div className='text-xs'>
-                          <div className='mb-1 font-medium'>Total Air Revenue (USD)</div>
-                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 250000' onChange={(e)=>{ /* reserved for future charts */ }} />
-                        </div>
-                        <div className='text-xs'>
-                          <div className='mb-1 font-medium'>Total Ocean Revenue (USD)</div>
-                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 500000' onChange={(e)=>{ /* reserved */ }} />
-                        </div>
-                        <div className='text-xs'>
-                          <div className='mb-1 font-medium'>Total Trucking Revenue (USD)</div>
-                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 120000' onChange={(e)=>{ /* reserved */ }} />
-                        </div>
-                        <div className='text-xs'>
-                          <div className='mb-1 font-medium'>Total Drayage Revenue (USD)</div>
-                          <input className='w-full border rounded px-2 py-1 text-sm' placeholder='e.g., 80000' onChange={(e)=>{ /* reserved */ }} />
-                        </div>
-                      </div>
-                      {rfpPayload && Array.isArray(rfpPayload.lanes) && rfpPayload.lanes.length > 0 ? (
-                        <div className='overflow-auto'>
-                          <table className='w-full text-sm border'>
-                            <thead className='bg-slate-50'>
-                              <tr><th className='p-2 border'>Service</th><th className='p-2 border'>Equipment</th><th className='p-2 border'>POL</th><th className='p-2 border'>POD</th><th className='p-2 border'>Origin Country</th><th className='p-2 border'>Dest Country</th><th className='p-2 border'>Shipments</th><th className='p-2 border'>Avg Kg</th><th className='p-2 border'>Avg CBM</th></tr>
-                            </thead>
-                            <tbody>
-                              {rfpPayload.lanes.map((ln: any, i: number) => (
-                                <tr key={i}>
-                                  <td className='p-2 border'>{ln.mode || '—'}</td>
-                                  <td className='p-2 border'>{ln.equipment || '—'}</td>
-                                  <td className='p-2 border'>{ln.origin?.port || '—'}</td>
-                                  <td className='p-2 border'>{ln.destination?.port || '—'}</td>
-                                  <td className='p-2 border'>{ln.origin?.country || '—'}</td>
-                                  <td className='p-2 border'>{ln.destination?.country || '—'}</td>
-                                  <td className='p-2 border'>{ln.demand?.shipments_per_year || 0}</td>
-                                  <td className='p-2 border'>{ln.demand?.avg_weight_kg || 0}</td>
-                                  <td className='p-2 border'>{ln.demand?.avg_volume_cbm || 0}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className='text-xs text-slate-600'>No uploaded lanes for this company.</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {!loading && !error && tab === 'Contacts' && (
-                  <div className='mt-3'>
-                    <div className='mb-3 flex items-center gap-2'>
-                      <button className='px-3 py-1.5 rounded border text-xs' onClick={async()=>{
-                        try {
-                          const api = await import('../../lib/api');
-                          await (api as any).enrichContacts(String(activeId));
-                          setTimeout(async()=>{
-                            try {
-                              const c: any = await (api as any).listContacts(String(activeId));
-                              setContacts(Array.isArray(c?.contacts) ? c.contacts : (Array.isArray(c) ? c : []));
-                            } catch {}
-                          }, 1200);
-                        } catch(e:any){ alert('Enrich contacts failed: '+ String(e?.message||e)); }
-                      }}>Enrich Contacts</button>
-                    </div>
-                    <div className='grid gap-4 md:grid-cols-2'>
-                      {/* Featured primary contact */}
-                      <div className='md:col-span-2'>
-                        {Array.isArray(contacts) && contacts.find((c:any)=> c.is_primary || c.isPrimary) ? (
-                          <div className='rounded-2xl border bg-white p-4'>
-                            <div className='text-sm font-semibold mb-2'>Primary Contact</div>
-                            <div className='flex items-center justify-between gap-3'>
-                              <div className='min-w-0'>
-                                <div className='font-medium truncate'>{(contacts.find((c:any)=> c.is_primary || c.isPrimary)?.full_name) || (contacts.find((c:any)=> c.is_primary || c.isPrimary)?.name) || '—'}</div>
-                                <div className='text-xs text-slate-600'>{contacts.find((c:any)=> c.is_primary || c.isPrimary)?.title || '—'}</div>
-                              </div>
-                              <button className='px-3 py-1.5 rounded border text-xs' onClick={()=>{
-                                const pid = contacts.find((c:any)=> c.is_primary || c.isPrimary)?.id;
-                                if (!pid) return;
-                                setContacts(prev=> prev.map((c:any)=> ({...c, is_primary: String(c.id)===String(pid), isPrimary: String(c.id)===String(pid)})));
-                              }}>Set Primary</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className='rounded-2xl border bg-white p-4 text-sm text-slate-600'>No primary contact yet.</div>
-                        )}
-                      </div>
-                      {/* Contacts list */}
-                      <div className='md:col-span-2'>
-                        <div className='rounded-2xl border bg-white p-4'>
-                          <div className='text-sm font-semibold mb-2'>All Contacts</div>
-                          {contacts.length === 0 ? (
-                            <div className='text-sm text-slate-600'>No contacts to show.</div>
-                          ) : (
-                            <div className='divide-y'>
-                              {contacts.map((c:any, i:number)=> (
-                                <div key={i} className='py-2 flex items-center justify-between gap-3'>
-                                  <div className='min-w-0'>
-                                    <div className='font-medium truncate'>{c.full_name || c.name || '—'}</div>
-                                    <div className='text-xs text-slate-600 truncate'>{c.title || '—'}{c.department? ` • ${c.department}`: ''}{c.location? ` • ${c.location}`: ''}</div>
-                                  </div>
-                                  <div className='flex items-center gap-2'>
-                                    <button className='px-2 py-1 rounded border text-xs' onClick={()=>{
-                                      setContacts(prev=> prev.map((x:any)=> ({...x, is_primary: String(x.id)===String(c.id), isPrimary: String(x.id)===String(c.id)})));
-                                    }}>Set Primary</button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {!loading && !error && tab === 'Activity' && (
-                  <div className='mt-3 grid grid-cols-1 md:grid-cols-2 gap-3'>
-                    <div className='rounded-lg border p-3'>
-                      <div className='font-medium mb-2'>Email Threads</div>
-                      {threads.length === 0 ? <div className='text-sm text-slate-600'>No recent threads.</div> : (
-                        <ul className='text-sm list-disc pl-4'>{threads.slice(0,10).map((t:any,i:number)=>(<li key={i}>{t.subject || t.snippet || 'Thread'}</li>))}</ul>
-                      )}
-                    </div>
-                    <div className='rounded-lg border p-3'>
-                      <div className='font-medium mb-2'>Calendar Events</div>
-                      {events.length === 0 ? <div className='text-sm text-slate-600'>No upcoming events.</div> : (
-                        <ul className='text-sm list-disc pl-4'>{events.slice(0,10).map((e:any,i:number)=>(<li key={i}>{e.title || e.summary || 'Event'}</li>))}</ul>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {!loading && !error && tab === 'RFP' && (
-                  <div className='mt-3'>
-                    <RfpPanel primary={contacts.find(c=> c.isPrimary) || undefined} onAddCampaign={async()=>{
-                      try { await saveCampaign({ name: `${overview?.name||'Company'} — Outreach`, channel: 'email', company_ids: [String(activeId)] }); alert('Added to Campaigns'); } catch(e:any){ alert('Failed: '+ String(e?.message||e)); }
-                    }} />
-                    <div className='mt-4 text-sm text-slate-600'>Assign this contact to the active campaign or RFP. Add sequencing later.</div>
-                  </div>
-                )}
-                {!loading && !error && tab === 'Campaigns' && (
-                  <div className='mt-3 flex flex-col sm:flex-row gap-2 items-start'>
-                    <input className='border rounded px-3 py-2 text-sm' value={campaignName} onChange={e=>setCampaignName(e.target.value)} placeholder='Campaign name' />
-                    <select className='border rounded px-3 py-2 text-sm' value={campaignChannel} onChange={e=>setCampaignChannel(e.target.value as any)}>
-                      <option value='email'>Email</option>
-                      <option value='linkedin'>LinkedIn</option>
-                    </select>
-                    <button className='px-3 py-2 rounded bg-gradient-to-r from-blue-600 to-blue-500 text-white text-sm' onClick={async()=>{
-                      try {
-                        await saveCampaign({ name: campaignName, channel: campaignChannel, company_ids: [String(activeId)] });
-                        alert('Campaign created');
-                      } catch(e:any){ alert('Save failed: '+ String(e?.message||e)); }
-                    }}>Create</button>
-                  </div>
-                )}
-                {!loading && !error && tab === 'Settings' && (
-                  <div className='mt-3 flex flex-col gap-4'>
-                    <div className='rounded-xl border p-4 bg-white/95'>
-                      <div className='grid grid-cols-1 md:grid-cols-2 gap-3 text-sm'>
-                        <label className='block'>
-                          <div className='text-slate-600 mb-1'>Company Name</div>
-                          <input className='w-full border rounded px-3 py-2'
-                            defaultValue={active?.name||''}
-                            onBlur={(e)=>{
-                              const v=e.target.value; if(!v) return; const key='lit_companies';
-                              try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, name:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{}
-                            }} />
-                        </label>
-                        <label className='block'>
-                          <div className='text-slate-600 mb-1'>Website</div>
-                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.website||''}
-                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, website:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
-                        </label>
-                        <label className='block'>
-                          <div className='text-slate-600 mb-1'>Email</div>
-                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.email||''}
-                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, email:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
-                        </label>
-                        <label className='block'>
-                          <div className='text-slate-600 mb-1'>Phone</div>
-                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.phone||''}
-                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, phone:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
-                        </label>
-                        <label className='block'>
-                          <div className='text-slate-600 mb-1'>City</div>
-                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.city||''}
-                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, city:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
-                        </label>
-                        <label className='block'>
-                          <div className='text-slate-600 mb-1'>State</div>
-                          <input className='w-full border rounded px-3 py-2' defaultValue={(active as any)?.state||''}
-                            onBlur={(e)=>{ const v=e.target.value; const key='lit_companies'; try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; const next=Array.isArray(arr)? arr.map((c:any)=> String(c.id)===String(activeId)? { ...c, state:v }: c): arr; localStorage.setItem(key, JSON.stringify(next)); window.dispatchEvent(new StorageEvent('storage',{key})); }catch{} }} />
-                        </label>
-                        <label className='block md:col-span-2'>
-                          <div className='text-slate-600 mb-1'>Products (comma-separated)</div>
-                          <input className='w-full border rounded px-3 py-2' defaultValue={(overview as any)?.products?.join(', ')||''}
-                            onBlur={(e)=>{ const raw=e.target.value; const products = raw.split(',').map(s=>s.trim()).filter(Boolean); setOverview(prev => prev? { ...prev, products }: prev); }} />
-                        </label>
-                      </div>
-                      <div className='mt-3 flex gap-2'>
-                        <button
-                          className='px-3 py-2 rounded border text-sm disabled:opacity-60 disabled:cursor-not-allowed'
-                          onClick={handleSaveToCommandCenterClick}
-                          disabled={isSaving || !onSaveToCommandCenter || !hasCompanyId}
-                        >
-                          {isSaving ? 'Saving…' : isCompanySaved ? 'Saved' : 'Save to CRM'}
-                        </button>
-                        <button className='px-3 py-2 rounded border text-sm' onClick={async()=>{ try{ await enrichCompany({ company_id: String(activeId) }); alert('Enrichment queued'); }catch(e:any){ alert('Enrich failed: '+ String(e?.message||e)); } }}>Enrich Now</button>
-                      </div>
-                    </div>
-                    {/* Archive / Delete / Remove from lists */}
-                    <button className='px-3 py-2 rounded border text-sm text-amber-700' onClick={()=>{
-                      try {
-                        const key = 'lit_companies';
-                        const raw = localStorage.getItem(key); const arr = raw? JSON.parse(raw):[];
-                        const next = Array.isArray(arr)? arr.map((c:any)=> String(c?.id)===String(activeId)? { ...c, archived: true }: c): arr;
-                        localStorage.setItem(key, JSON.stringify(next));
-                        window.dispatchEvent(new StorageEvent('storage', { key }));
-                        alert('Archived');
-                      } catch { alert('Archive failed'); }
-                    }}>Archive Company</button>
-                    <button className='px-3 py-2 rounded border text-sm text-red-700' onClick={()=>{
-                      if (!confirm('Remove this company from Command Center?')) return;
-                      try {
-                        const key = 'lit_companies';
-                        const raw = localStorage.getItem(key); const arr = raw? JSON.parse(raw):[];
-                        const next = Array.isArray(arr)? arr.filter((c:any)=> String(c?.id)!==String(activeId)) : arr;
-                        localStorage.setItem(key, JSON.stringify(next));
-                        window.dispatchEvent(new StorageEvent('storage', { key }));
-                        // Remove related local data
-                        try { localStorage.removeItem(`lit_rfp_payload_${String(activeId)}`); } catch {}
-                        try {
-                          const rr = localStorage.getItem('lit_rfps');
-                          const rarr = rr? JSON.parse(rr):[];
-                          localStorage.setItem('lit_rfps', JSON.stringify((Array.isArray(rarr)? rarr.filter((r:any)=> String(r?.companyId)!==String(activeId)) : rarr)));
-                        } catch {}
-                        try {
-                          const cc = localStorage.getItem('lit_campaigns_companies');
-                          const carr = cc? JSON.parse(cc):[];
-                          localStorage.setItem('lit_campaigns_companies', JSON.stringify((Array.isArray(carr)? carr.filter((id:string)=> String(id)!==String(activeId)) : carr)));
-                        } catch {}
-                        alert('Removed');
-                      } catch { alert('Remove failed'); }
-                    }}>Remove Company</button>
-                    <button className='px-3 py-2 rounded border text-sm' onClick={()=>{
-                      // Remove from Campaign
-                      try {
-                        const cc = localStorage.getItem('lit_campaigns_companies'); const carr = cc? JSON.parse(cc):[];
-                        const next = Array.isArray(carr)? carr.filter((id:string)=> String(id)!==String(activeId)) : carr;
-                        localStorage.setItem('lit_campaigns_companies', JSON.stringify(next));
-                        alert('Removed from Campaign list');
-                      } catch { alert('Failed'); }
-                    }}>Remove from Campaign</button>
-                  </div>
-                )}
+            </PanelShell>
+          ) : !snapshot ? (
+            <PanelShell>
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <Sparkles className="h-10 w-10 text-indigo-300" />
+                <p className="max-w-md text-sm text-slate-500">
+                  Save a company from LIT Search to explore KPIs, AI insights, and shipment
+                  intelligence inside Command Center.
+                </p>
               </div>
-            </>
+            </PanelShell>
           ) : (
-            <div className='flex items-center justify-center min-h-[420px]'>
-              <div className='relative text-center max-w-xl px-6'>
-                <Sparkles className='absolute inset-0 m-auto w-48 h-48 text-indigo-300 opacity-15 pointer-events-none' />
-                <p className='relative font-bold text-slate-900'>This is your COMPANY ENRICHMENT COMMAND CENTER — select a company on the left to view KPIs, shipments, contacts, and AI insights.</p>
-              </div>
+            <div className="space-y-6">
+              <WorkspaceHeader
+                snapshot={snapshot}
+                onSaveClick={handleSaveClick}
+                isSaveDisabled={!iyProfile && !activeCompany}
+              />
+              <HeroBanner snapshot={snapshot} />
+              <WorkspaceTabsSection
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                snapshot={snapshot}
+                enrichment={enrichment}
+              />
+              <ChartsAndLanes snapshot={snapshot} />
             </div>
           )}
-        </div>
-      </main>
+        </section>
+      </div>
     </div>
   );
 }
 
+type SavedCompaniesRailProps = {
+  companies: CrmSavedCompany[];
+  activeCompanyId: string | null;
+  onSelectCompany: (id: string) => void;
+};
+
+const SavedCompaniesRail: React.FC<SavedCompaniesRailProps> = ({
+  companies,
+  activeCompanyId,
+  onSelectCompany,
+}) => {
+  const [isOpen, setIsOpen] = useState(true);
+
+  const items = useMemo(
+    () =>
+      companies.map((record) => {
+        const payload = record.payload ?? {};
+        const normalized = (payload as any)?.normalized_company ?? {};
+        const name =
+          normalized?.name ??
+          (payload as any)?.profile?.name ??
+          payload?.name ??
+          record.company_id;
+        const city = normalized?.city ?? (payload as any)?.profile?.city ?? null;
+        const state = normalized?.state ?? (payload as any)?.profile?.state ?? null;
+        const country = normalized?.country ?? (payload as any)?.profile?.country ?? null;
+        const shipments = (payload as any)?.shipments_12m ?? null;
+        return {
+          id: record.company_id,
+          name,
+          location: [city, state, country].filter(Boolean).join(", ") || "Location unknown",
+          shipments:
+            typeof shipments === "number" && Number.isFinite(shipments) ? shipments : null,
+        };
+      }),
+    [companies],
+  );
+
+  return (
+    <aside
+      className={cn(
+        "relative flex flex-col rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-200",
+        isOpen ? "w-72" : "w-14",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-3">
+        {isOpen ? (
+          <div className="flex flex-col">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Saved companies
+            </span>
+            <span className="mt-1 text-xs text-slate-500">{companies.length} companies</span>
+          </div>
+        ) : (
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            CC
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          className="rounded-full border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+        >
+          {isOpen ? "←" : "→"}
+        </button>
+      </div>
+      <div className="flex-1 overflow-hidden">
+        {items.length === 0 ? (
+          <div className="px-3 py-4 text-[11px] text-slate-500">
+            No saved companies yet – save from Search to see them here.
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {items.map((item) => {
+              const isActive = item.id === activeCompanyId;
+              const initials = item.name
+                .split(" ")
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((chunk) => chunk[0]?.toUpperCase() ?? "")
+                .join("")
+                .padEnd(2, "·");
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectCompany(item.id)}
+                    className={cn(
+                      "flex w-full items-start gap-3 px-3 py-3 text-left text-xs transition-colors",
+                      isActive
+                        ? "bg-indigo-50/80 border-l-4 border-l-[#5C4DFF]"
+                        : "hover:bg-slate-50",
+                    )}
+                  >
+                    <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gradient-to-br from-[#5C4DFF] to-[#7F5CFF] text-[11px] font-semibold text-white shadow-sm">
+                      {initials}
+                    </div>
+                    {isOpen && (
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[11px] font-semibold tracking-[0.16em] text-slate-800">
+                          {item.name.toUpperCase()}
+                        </p>
+                        <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">{item.location}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-400">
+                          Shipments 12m: {item.shipments?.toLocaleString() ?? "—"}
+                        </p>
+                      </div>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </aside>
+  );
+};
+
+type HeaderProps = {
+  snapshot: CompanySnapshot;
+  onSaveClick: () => void;
+  isSaveDisabled: boolean;
+};
+
+const WorkspaceHeader: React.FC<HeaderProps> = ({ snapshot, onSaveClick, isSaveDisabled }) => {
+  return (
+    <header className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
+            Workspace
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+            Command Center
+          </h1>
+          <p className="mt-1 text-xs text-slate-500">
+            Saved shippers, shipment KPIs, and pre-call prep in one view.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+            <span className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
+              <span className="text-base leading-none">{getCountryFlag(snapshot.countryCode)}</span>
+              <span>
+                {snapshot.displayName} · {snapshot.countryName || "HQ"}
+              </span>
+            </span>
+            <span>
+              Source: <span className="font-semibold text-indigo-600">LIT Search Intelligence</span> · Gemini auto-enriched from
+              public customs data
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-800 hover:bg-slate-100"
+          >
+            Export PDF
+          </button>
+          <button
+            type="button"
+            className="rounded-full bg-slate-900 px-4 py-2 text-xs font-medium text-white shadow-md shadow-slate-400/40 hover:bg-black"
+          >
+            Generate brief
+          </button>
+          <button
+            type="button"
+            onClick={onSaveClick}
+            disabled={isSaveDisabled}
+            className="rounded-full border border-indigo-600 px-4 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Save to CRM
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+type HeroProps = {
+  snapshot: CompanySnapshot;
+};
+
+const HeroBanner: React.FC<HeroProps> = ({ snapshot }) => {
+  const initials = snapshot.displayName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((chunk) => chunk[0]?.toUpperCase() ?? "")
+    .join("")
+    .padEnd(2, "·");
+
+  const lastShipment = snapshot.recentShipmentDate
+    ? new Date(snapshot.recentShipmentDate).toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "—";
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-sky-50 via-white to-indigo-50 p-6 shadow-sm">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.6fr)]">
+        <div className="flex items-start gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#5C4DFF] to-[#7F5CFF] text-lg font-semibold text-white shadow-lg">
+            {initials}
+          </div>
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+                {snapshot.displayName}
+              </h2>
+              <p className="text-sm text-slate-500">{snapshot.address ?? "Address unavailable"}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <Badge icon={<Building2 className="h-3 w-3" />}>Verified shipper</Badge>
+              <Badge icon={<Globe className="h-3 w-3" />}>{snapshot.domain ?? snapshot.website ?? "No website"}</Badge>
+            </div>
+            <div className="text-xs text-slate-600">
+              Contacts available soon · Gemini insights ready for this company
+            </div>
+          </div>
+        </div>
+        <div className="flex h-full flex-col justify-between rounded-2xl border border-[#5C4DFF]/40 bg-white/80 px-4 py-4 shadow-sm">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Most recent shipment
+          </p>
+          <p className="mt-2 text-xl font-semibold tracking-tight text-[#5C4DFF]">{lastShipment}</p>
+          <p className="mt-1 text-xs text-slate-600">
+            {snapshot.topRouteLabel ?? "Route data not available"}
+          </p>
+          <div className="mt-3 text-[11px] text-slate-500">Live import data synced from customs filings.</div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+type TabsSectionProps = {
+  activeTab: WorkspaceTab;
+  onTabChange: (tab: WorkspaceTab) => void;
+  snapshot: CompanySnapshot;
+  enrichment: any | null;
+};
+
+const WorkspaceTabsSection: React.FC<TabsSectionProps> = ({ activeTab, onTabChange, snapshot, enrichment }) => {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 text-xs">
+        {WORKSPACE_TABS.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => onTabChange(tab)}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-sm font-medium transition",
+              tab === activeTab
+                ? "bg-indigo-600 text-white shadow-sm"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+            )}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.5fr)]">
+        <div>{renderTabContent(activeTab, snapshot, enrichment)}</div>
+        <div className="space-y-3">
+          <KpiTile
+            icon={<Ship className="h-4 w-4" />}
+            label="Shipments (12m)"
+            value={formatNumber(snapshot.shipments12m)}
+            accent="from-emerald-50 to-emerald-100"
+          />
+          <KpiTile
+            icon={<TrendingUp className="h-4 w-4" />}
+            label="TEU (12m)"
+            value={formatNumber(snapshot.teus12m)}
+            accent="from-sky-50 to-sky-100"
+          />
+          <KpiTile
+            icon={<DollarSign className="h-4 w-4" />}
+            label="Est. Spend (12m)"
+            value={formatCurrency(snapshot.estSpend12m)}
+            accent="from-amber-50 to-amber-100"
+          />
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const ChartsAndLanes: React.FC<{ snapshot: CompanySnapshot }> = ({ snapshot }) => {
+  const maxVolume = snapshot.timeSeries.reduce((acc, point) => {
+    const total = point.fcl + point.lcl;
+    return total > acc ? total : acc;
+  }, 0);
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900">Shipment activity</h3>
+          <span className="text-xs text-slate-500">Last 12 months</span>
+        </div>
+        {snapshot.timeSeries.length === 0 ? (
+          <div className="mt-6 text-xs text-slate-500">No shipment time series available.</div>
+        ) : (
+          <div className="mt-6 flex items-end gap-3 overflow-x-auto">
+            {snapshot.timeSeries.map((point) => {
+              const total = point.fcl + point.lcl;
+              const height = maxVolume ? Math.max((total / maxVolume) * 120, 6) : 6;
+              const fclHeight = maxVolume ? Math.max((point.fcl / maxVolume) * 120, 2) : 2;
+              const lclHeight = Math.max(height - fclHeight, 2);
+              return (
+                <div key={point.label} className="flex flex-col items-center gap-2 text-xs text-slate-500">
+                  <div className="flex w-6 flex-col justify-end gap-0.5">
+                    <div
+                      className="rounded-t-md bg-indigo-500"
+                      style={{ height: `${fclHeight}px` }}
+                    />
+                    <div className="rounded-b-md bg-slate-300" style={{ height: `${lclHeight}px` }} />
+                  </div>
+                  <span className="text-[10px] text-slate-500">{point.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900">Top lanes</h3>
+          <span className="text-xs text-slate-500">12m volume</span>
+        </div>
+        {snapshot.topRoutes.length === 0 ? (
+          <div className="mt-6 text-xs text-slate-500">No lane data available.</div>
+        ) : (
+          <ul className="mt-4 space-y-3 text-sm text-slate-700">
+            {snapshot.topRoutes.slice(0, 6).map((lane) => (
+              <li key={lane.label} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                <p className="font-medium text-slate-900">{lane.label}</p>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  {formatNumber(lane.shipments) ?? "—"} shipments · {formatNumber(lane.teu) ?? "—"} TEU
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+};
+
+const Badge: React.FC<{ icon?: React.ReactNode; children: React.ReactNode }> = ({ icon, children }) => (
+  <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-600 shadow-sm">
+    {icon}
+    {children}
+  </span>
+);
+
+const KpiTile: React.FC<{ icon: React.ReactNode; label: string; value: string; accent: string }> = ({
+  icon,
+  label,
+  value,
+  accent,
+}) => (
+  <div className={cn("rounded-2xl border border-slate-100 px-4 py-3", `bg-gradient-to-br ${accent}`)}>
+    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+      {icon}
+      {label}
+    </div>
+    <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
+  </div>
+);
+
+const renderTabContent = (
+  tab: WorkspaceTab,
+  snapshot: CompanySnapshot,
+  enrichment: any | null,
+) => {
+  switch (tab) {
+    case "Overview": {
+      return (
+        <div className="space-y-4 text-sm text-slate-600">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <p>{snapshot.aiSummary ?? "No AI summary available yet for this company."}</p>
+          </div>
+          {snapshot.keySuppliers.length > 0 && (
+            <div className="rounded-2xl border border-slate-100 px-4 py-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Key suppliers</h4>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                {snapshot.keySuppliers.slice(0, 5).map((supplier) => (
+                  <li key={supplier}>{supplier}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      );
+    }
+    case "Shipments": {
+      return snapshot.timeSeries.length === 0 ? (
+        <div className="text-xs text-slate-500">No shipment history yet.</div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-100">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-2">Month</th>
+                <th className="px-4 py-2 text-right">FCL</th>
+                <th className="px-4 py-2 text-right">LCL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.timeSeries.map((point) => (
+                <tr key={point.label} className="border-t text-slate-600">
+                  <td className="px-4 py-2">{point.label}</td>
+                  <td className="px-4 py-2 text-right">{formatNumber(point.fcl)}</td>
+                  <td className="px-4 py-2 text-right">{formatNumber(point.lcl)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    case "Contacts": {
+      const contacts = enrichment?.logistics_kpis?.contacts ?? [];
+      return contacts.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-xs text-slate-500">
+          No contacts enriched yet. Once Lusha/ZoomInfo sync is wired, they’ll appear here.
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {contacts.map((contact: any) => (
+            <li key={contact.email} className="rounded-2xl border border-slate-100 px-4 py-3">
+              <p className="font-medium text-slate-900">{contact.name}</p>
+              <p className="text-xs text-slate-500">{contact.title}</p>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    case "Campaigns": {
+      const campaigns = enrichment?.sales_assets?.campaign_support ?? [];
+      return campaigns.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-xs text-slate-500">
+          No recommended campaigns yet. Gemini will surface playbooks once available.
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {campaigns.map((campaign: any, index: number) => (
+            <li key={`${campaign?.name ?? index}`} className="rounded-2xl border border-slate-100 px-4 py-3">
+              <p className="font-medium text-slate-900">{campaign?.name ?? `Campaign ${index + 1}`}</p>
+              <p className="text-xs text-slate-500">{campaign?.summary ?? "Auto-generated sequence"}</p>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    case "RFP notes": {
+      const notes =
+        enrichment?.sales_assets?.rfp_support?.notes ??
+        enrichment?.command_center_enrichment?.rfp_notes ??
+        [];
+      return notes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-xs text-slate-500">
+          No RFP notes yet. Upload an RFP to see structured guidance.
+        </div>
+      ) : (
+        <ul className="list-disc space-y-2 pl-4 text-sm text-slate-600">
+          {notes.map((note: string, index: number) => (
+            <li key={`${note}-${index}`}>{note}</li>
+          ))}
+        </ul>
+      );
+    }
+    default:
+      return null;
+  }
+};
+
+const formatNumber = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return Number(value).toLocaleString();
+};
+
+const formatCurrency = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return `$${Math.round(Number(value)).toLocaleString()}`;
+};
+
+const getCountryFlag = (code?: string | null) => {
+  if (!code) return "🌐";
+  const normalized = code.trim().slice(0, 2).toUpperCase();
+  if (normalized.length !== 2) return "🌐";
+  return normalized
+    .split("")
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+};
+
+const PanelShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">{children}</div>
+);
