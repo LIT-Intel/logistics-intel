@@ -100,10 +100,9 @@ export default function SearchWorkspacePanel({
       null,
     address:
       selectedCompany.shipper.address ??
-      [selectedCompany.shipper.city, selectedCompany.shipper.state, selectedCompany.shipper.country]
+      ([selectedCompany.shipper.city, selectedCompany.shipper.state, selectedCompany.shipper.country]
         .filter(Boolean)
-        .join(", ") ||
-      null,
+        .join(", ") || null),
     country: selectedCompany.shipper.country ?? null,
     country_code: selectedCompany.shipper.countryCode ?? null,
     domain: selectedCompany.shipper.domain ?? selectedCompany.shipper.website ?? null,
