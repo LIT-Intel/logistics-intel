@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import SearchFilters from "@/components/search/SearchFilters";
 import SearchResultCard from "@/components/search/SearchResultCard";
+import SearchWorkspacePanel, {
+  type SearchWorkspaceTab,
+} from "@/components/search/SearchWorkspacePanel";
 import {
   searchShippers,
   getIyCompanyProfile,
@@ -56,6 +59,10 @@ export default function SearchPage() {
   const [savingCompanyId, setSavingCompanyId] = useState<string | null>(null);
   const [profileCache, setProfileCache] = useState<Record<string, IyCompanyProfile | null>>({});
   const prefetchedKeysRef = useRef<Set<string>>(new Set());
+  const [activeWorkspaceTab, setActiveWorkspaceTab] =
+    useState<SearchWorkspaceTab>("overview");
+  const [selectedWorkspaceCompany, setSelectedWorkspaceCompany] =
+    useState<IyShipperHit | null>(null);
   const { toast } = useToast();
 
   const savedCompanyIds = useMemo(() => {
@@ -134,6 +141,7 @@ export default function SearchPage() {
   };
 
   const handleCardClick = (shipper: IyShipperHit) => {
+    setSelectedWorkspaceCompany(shipper);
     setSelectedShipper(shipper);
     setIsModalOpen(true);
 
@@ -376,6 +384,47 @@ export default function SearchPage() {
     });
   }, [filteredResults, prefetchProfile]);
 
+  useEffect(() => {
+    if (!filteredResults.length) {
+      setSelectedWorkspaceCompany(null);
+      return;
+    }
+    setSelectedWorkspaceCompany((prev) => {
+      if (!prev) return filteredResults[0];
+      const prevId = getCanonicalCompanyId(prev);
+      if (
+        prevId &&
+        filteredResults.some(
+          (shipper) => getCanonicalCompanyId(shipper) === prevId,
+        )
+      ) {
+        return prev;
+      }
+      return filteredResults[0];
+    });
+  }, [filteredResults]);
+
+  useEffect(() => {
+    setActiveWorkspaceTab("overview");
+  }, [selectedWorkspaceMeta?.companyKey]);
+
+  const selectedWorkspaceMeta = useMemo(() => {
+    if (!selectedWorkspaceCompany) return null;
+    const companyKey = getCanonicalCompanyId(selectedWorkspaceCompany);
+    if (!companyKey) return null;
+    const subtitle = [selectedWorkspaceCompany.city, selectedWorkspaceCompany.state, selectedWorkspaceCompany.country]
+      .filter((value) => Boolean(value))
+      .join(", ") || null;
+    return {
+      companyKey,
+      title: selectedWorkspaceCompany.title || selectedWorkspaceCompany.name || "Company",
+      subtitle,
+      shipper: selectedWorkspaceCompany,
+      isSaved: savedCompanyIds.has(companyKey),
+      initialProfile: profileCache[companyKey] ?? null,
+    };
+  }, [selectedWorkspaceCompany, savedCompanyIds, profileCache]);
+
 
   const handleResetAdvancedFilters = () => {
     setOriginCity("");
@@ -474,70 +523,92 @@ export default function SearchPage() {
           {loading && <span>Searching LIT Search…</span>}
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredResults.map((shipper) => {
-            const companyId = getCanonicalCompanyId(shipper);
-            const saved = companyId ? savedCompanyIds.has(companyId) : false;
-            const saving = companyId ? savingCompanyId === companyId : false;
-            const hydratedProfile = companyId ? profileCache[companyId] ?? null : null;
-            return (
-              <SearchResultCard
-                key={shipper.key || shipper.title}
-                shipper={shipper}
-                isSaved={saved}
-                saving={saving}
-                profile={hydratedProfile}
-                onToggleSave={() =>
-                  handleSaveToCommandCenter(shipper, hydratedProfile ?? null)
-                }
-                onOpenDetails={() => handleCardClick(shipper)}
-              />
-            );
-          })}
-        </div>
-
-        {!filteredResults.length && !loading && (
-          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-10 text-center text-sm text-slate-500">
-            {query
-              ? "No shippers match your filters. Try adjusting your search."
-              : "Start typing to see ImportYeti shippers appear here."}
-          </div>
-        )}
-
-        {total > PAGE_SIZE && (
-          <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
-            <span>
-              Page {page} • {total.toLocaleString()} total companies
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const next = Math.max(1, page - 1);
-                  setPage(next);
-                  void fetchShippers(query, next);
-                }}
-                disabled={page <= 1 || loading}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const maxPage = Math.ceil(total / PAGE_SIZE);
-                  const next = Math.min(maxPage, page + 1);
-                  setPage(next);
-                  void fetchShippers(query, next);
-                }}
-                disabled={loading || results.length < PAGE_SIZE}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next
-              </button>
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row">
+          <div className="flex w-full flex-col gap-4 lg:w-[42%] xl:w-[38%]">
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Results
+              </div>
+              <div className="mt-3 space-y-3">
+                {filteredResults.map((shipper) => {
+                  const companyId = getCanonicalCompanyId(shipper);
+                  const saved = companyId ? savedCompanyIds.has(companyId) : false;
+                  const saving = companyId ? savingCompanyId === companyId : false;
+                  const hydratedProfile = companyId ? profileCache[companyId] ?? null : null;
+                  const isActive =
+                    !!companyId && !!selectedWorkspaceMeta && companyId === selectedWorkspaceMeta.companyKey;
+                  return (
+                    <SearchResultCard
+                      key={shipper.key || shipper.title}
+                      shipper={shipper}
+                      isSaved={saved}
+                      saving={saving}
+                      isActive={isActive}
+                      profile={hydratedProfile}
+                      onToggleSave={() =>
+                        handleSaveToCommandCenter(shipper, hydratedProfile ?? null)
+                      }
+                      onOpenDetails={() => handleCardClick(shipper)}
+                      onSelect={() => setSelectedWorkspaceCompany(shipper)}
+                    />
+                  );
+                })}
+                {!filteredResults.length && !loading && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-10 text-center text-sm text-slate-500">
+                    {query
+                      ? "No shippers match your filters. Try adjusting your search."
+                      : "Start typing to see ImportYeti shippers appear here."}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {total > PAGE_SIZE && (
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span>
+                    Page {page} • {total.toLocaleString()} total companies
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.max(1, page - 1);
+                        setPage(next);
+                        void fetchShippers(query, next);
+                      }}
+                      disabled={page <= 1 || loading}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const maxPage = Math.ceil(total / PAGE_SIZE);
+                        const next = Math.min(maxPage, page + 1);
+                        setPage(next);
+                        void fetchShippers(query, next);
+                      }}
+                      disabled={loading || results.length < PAGE_SIZE}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="flex flex-1 rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <SearchWorkspacePanel
+              activeTab={activeWorkspaceTab}
+              onTabChange={setActiveWorkspaceTab}
+              selectedCompany={selectedWorkspaceMeta}
+            />
+          </div>
+        </div>
       </main>
 
       <ShipperDetailModal

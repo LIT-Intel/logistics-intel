@@ -10,6 +10,7 @@ export type CompanySnapshot = {
   state: string | null;
   countryCode: string | null;
   countryName: string | null;
+  locationLabel: string;
   shipments12m: number | null;
   teus12m: number | null;
   estSpend12m: number | null;
@@ -217,6 +218,18 @@ export function buildCompanySnapshot({
     (fallback?.payload?.website as string | undefined) ??
     null;
 
+  const locationLabel =
+    normalized?.hq_address ||
+    [
+      normalized?.city ?? city,
+      normalized?.state ?? state,
+      normalized?.country ?? countryName,
+    ]
+      .filter((value) => Boolean(value))
+      .join(", ") ||
+    address ||
+    "Location unavailable";
+
   const rawMonthlySeries: any[] = Array.isArray(routeKpis?.monthlySeries)
     ? (routeKpis!.monthlySeries as any[])
     : Array.isArray(profile?.timeSeries)
@@ -249,6 +262,7 @@ export function buildCompanySnapshot({
     state,
     countryCode,
     countryName,
+    locationLabel,
     shipments12m,
     teus12m,
     estSpend12m,

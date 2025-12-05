@@ -347,14 +347,18 @@ const HeroBanner: React.FC<HeroProps> = ({ snapshot }) => {
               <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
                 {snapshot.displayName}
               </h2>
-              <p className="text-sm text-slate-500">{snapshot.address ?? "Address unavailable"}</p>
+              <p className="text-sm text-slate-500">{snapshot.locationLabel}</p>
+              <p className="text-xs text-slate-500">
+                {snapshot.countryName ?? "Global"} · {(snapshot.tags[0] ?? "Global shipper").toUpperCase()}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs text-slate-600">
               <Badge icon={<Building2 className="h-3 w-3" />}>Verified shipper</Badge>
               <Badge icon={<Globe className="h-3 w-3" />}>{snapshot.domain ?? snapshot.website ?? "No website"}</Badge>
+              <Badge icon={<Sparkles className="h-3 w-3" />}>Gemini enriched</Badge>
             </div>
             <div className="text-xs text-slate-600">
-              Contacts available soon · Gemini insights ready for this company
+              Contacts available soon · Live import data refreshed by Gemini every few hours.
             </div>
           </div>
         </div>

@@ -10,8 +10,10 @@ type SearchResultCardProps = {
   shipper: IyShipperHit;
   isSaved: boolean;
   saving: boolean;
+  isActive?: boolean;
   onToggleSave: () => void;
   onOpenDetails: () => void;
+  onSelect?: () => void;
   profile?: IyCompanyProfile | null;
 };
 
@@ -19,8 +21,10 @@ export default function SearchResultCard({
   shipper,
   isSaved,
   saving,
+  isActive = false,
   onToggleSave,
   onOpenDetails,
+  onSelect,
   profile = null,
 }: SearchResultCardProps) {
   const companyKey =
@@ -67,7 +71,21 @@ export default function SearchResultCard({
       .join("") || "CC";
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyUp={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect?.();
+        }
+      }}
+      className={cn(
+        "flex h-full flex-col justify-between rounded-3xl border bg-white p-5 shadow-sm transition",
+        isActive ? "border-indigo-500 shadow-xl shadow-indigo-100" : "border-slate-200 hover:border-indigo-300",
+      )}
+    >
       <div>
         <div className="flex items-start gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#5C4DFF] to-[#7F5CFF] text-sm font-semibold text-white shadow-md">
@@ -103,7 +121,10 @@ export default function SearchResultCard({
       <div className="mt-6 flex items-center justify-between">
         <button
           type="button"
-          onClick={onToggleSave}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleSave();
+          }}
           disabled={saving}
           className={cn(
             "rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition",
@@ -119,7 +140,10 @@ export default function SearchResultCard({
           </span>
           <button
             type="button"
-            onClick={onOpenDetails}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenDetails();
+            }}
             className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 hover:text-slate-900"
           >
             Details →
