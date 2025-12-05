@@ -288,12 +288,12 @@ const KpiCard: React.FC<{ label: string; value: string }> = ({ label, value }) =
   </div>
 );
 
-const formatNumber = (value: number | null | undefined) => {
+function formatNumber(value: number | null | undefined) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return Number(value).toLocaleString();
-};
+}
 
-const formatCurrency = (value: number | null | undefined) => {
+function formatCurrency(value: number | null | undefined) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return `$${Math.round(Number(value)).toLocaleString()}`;
-};
+}

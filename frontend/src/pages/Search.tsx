@@ -404,10 +404,6 @@ export default function SearchPage() {
     });
   }, [filteredResults]);
 
-  useEffect(() => {
-    setActiveWorkspaceTab("overview");
-  }, [selectedWorkspaceMeta?.companyKey]);
-
   const selectedWorkspaceMeta = useMemo(() => {
     if (!selectedWorkspaceCompany) return null;
     const companyKey = getCanonicalCompanyId(selectedWorkspaceCompany);
@@ -424,6 +420,10 @@ export default function SearchPage() {
       initialProfile: profileCache[companyKey] ?? null,
     };
   }, [selectedWorkspaceCompany, savedCompanyIds, profileCache]);
+
+  useEffect(() => {
+    setActiveWorkspaceTab("overview");
+  }, [selectedWorkspaceMeta?.companyKey]);
 
 
   const handleResetAdvancedFilters = () => {

@@ -173,12 +173,12 @@ const MetricCard: React.FC<{ icon: React.ReactNode; label: string; value: string
   </div>
 );
 
-const formatNumber = (value: number | null) => {
+function formatNumber(value: number | null) {
   if (value == null || Number.isNaN(value)) return "—";
   return Number(value).toLocaleString();
-};
+}
 
-const formatLastActivity = (value: string | null) => {
+function formatLastActivity(value: string | null) {
   if (!value) return "No recent activity";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Unknown";
@@ -192,4 +192,4 @@ const formatLastActivity = (value: string | null) => {
   if (diffMonths < 12) return `${diffMonths} months ago`;
   const diffYears = Math.floor(diffMonths / 12);
   return diffYears === 1 ? "1 year ago" : `${diffYears} years ago`;
-};
+}
