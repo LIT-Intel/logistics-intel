@@ -2,12 +2,14 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import SearchFilters from "@/components/search/SearchFilters";
 import SearchResultCard from "@/components/search/SearchResultCard";
+import SearchWorkspacePanel, {
+  type SearchWorkspaceTab,
+} from "@/components/search/SearchWorkspacePanel";
 import {
   searchShippers,
   getIyCompanyProfile,
@@ -42,6 +44,7 @@ export default function SearchPage() {
     useState<IyShipperHit | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+
   const [originCity, setOriginCity] = useState("");
   const [originState, setOriginState] = useState("");
   const [originCountry, setOriginCountry] = useState("");
@@ -56,16 +59,20 @@ export default function SearchPage() {
   const [companyEnrichment, setCompanyEnrichment] = useState<any | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [savedCompanies, setSavedCompanies] = useState<{ company_id: string }[]>(
-    [],
-  );
+
+  const [savedCompanies, setSavedCompanies] = useState<{
+    company_id: string;
+  }[]>([]);
   const [savingCompanyId, setSavingCompanyId] = useState<string | null>(null);
-  const [profileCache, setProfileCache] = useState<
-    Record<string, IyCompanyProfile | null>
-  >({});
-  const prefetchedKeysRef = useRef<Set<string>>(new Set());
+
+  const [activeWorkspaceTab, setActiveWorkspaceTab] =
+    useState<SearchWorkspaceTab>("overview");
+  const [selectedWorkspaceCompany, setSelectedWorkspaceCompany] =
+    useState<IyShipperHit | null>(null);
+
   const { toast } = useToast();
 
+  // --- saved company IDs for pill state ---
   const savedCompanyIds = useMemo(() => {
     const ids = new Set<string>();
     savedCompanies.forEach((entry) => {
@@ -75,20 +82,7 @@ export default function SearchPage() {
     return ids;
   }, [savedCompanies]);
 
-  const prefetchProfile = useCallback(async (companyKey: string) => {
-    if (!companyKey || prefetchedKeysRef.current.has(companyKey)) return;
-    prefetchedKeysRef.current.add(companyKey);
-    try {
-      const response = await getIyCompanyProfile({ companyKey });
-      setProfileCache((prev) => ({
-        ...prev,
-        [companyKey]: response.companyProfile,
-      }));
-    } catch {
-      setProfileCache((prev) => ({ ...prev, [companyKey]: null }));
-    }
-  }, []);
-
+  // --- basic search call (only 1 ImportYeti call per search) ---
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
       setResults([]);
@@ -141,6 +135,7 @@ export default function SearchPage() {
     void fetchShippers(query, 1);
   };
 
+  // canonical ID helper
   function getCanonicalCompanyId(shipper: IyShipperHit | null) {
     if (!shipper) return "";
     return ensureCompanyKey(
@@ -153,46 +148,49 @@ export default function SearchPage() {
     );
   }
 
-    const handleCardClick = (shipper: IyShipperHit) => {
+  const isShipperSaved = useCallback(
+    (shipper?: IyShipperHit | null) => {
+      if (!shipper) return false;
+      const companyId = getCanonicalCompanyId(shipper);
+      if (!companyId) return false;
+      return savedCompanyIds.has(companyId);
+    },
+    [savedCompanyIds],
+  );
+
+  const selectedCompanyId = useMemo(
+    () => getCanonicalCompanyId(selectedShipper),
+    [selectedShipper],
+  );
+
+  // --- open modal and fetch profile (single ImportYeti profile call) ---
+  const handleCardClick = (shipper: IyShipperHit) => {
     setSelectedWorkspaceCompany(shipper);
     setSelectedShipper(shipper);
     setIsModalOpen(true);
 
+    setCompanyProfile(null);
     setCompanyEnrichment(null);
     setProfileError(null);
+    setProfileLoading(true);
 
     const canonicalKey = getCanonicalCompanyId(shipper);
     if (!canonicalKey) {
-      setCompanyProfile(null);
-      setProfileLoading(false);
       setProfileError("Unable to determine company identifier.");
-      return;
-    }
-
-    // If we already have a cached profile for this company, use it and avoid a new ImportYeti call
-    const cached = profileCache[canonicalKey];
-    if (cached !== undefined) {
-      setCompanyProfile(cached);
       setProfileLoading(false);
       return;
     }
-
-    // Otherwise fetch once, then cache it
-    setCompanyProfile(null);
-    setProfileLoading(true);
 
     getIyCompanyProfile({ companyKey: canonicalKey, query })
-      .then(({ companyProfile: nextProfile, enrichment }) => {
-        setCompanyProfile(nextProfile);
+      .then(({ companyProfile, enrichment }) => {
+        setCompanyProfile(companyProfile);
         setCompanyEnrichment(enrichment);
-        setProfileCache((prev) => ({
-          ...prev,
-          [canonicalKey]: nextProfile,
-        }));
       })
       .catch((err: any) => {
         console.error("getIyCompanyProfile failed", err);
-        setProfileError(err?.message || "Failed to load company profile");
+        setProfileError(
+          err?.message || "Failed to load company profile",
+        );
       })
       .finally(() => {
         setProfileLoading(false);
@@ -207,8 +205,8 @@ export default function SearchPage() {
     setProfileError(null);
   };
 
+  // --- load saved companies once (from our backend, not ImportYeti) ---
   useEffect(() => {
-    const controller = new AbortController();
     listSavedCompanies("prospect")
       .then((rows) => {
         const normalized = Array.isArray(rows)
@@ -236,24 +234,9 @@ export default function SearchPage() {
       .catch((err) => {
         console.error("listSavedCompanies failed", err);
       });
-    return () => controller.abort();
   }, []);
 
-  const isShipperSaved = useCallback(
-    (shipper?: IyShipperHit | null) => {
-      if (!shipper) return false;
-      const companyId = getCanonicalCompanyId(shipper);
-      if (!companyId) return false;
-      return savedCompanyIds.has(companyId);
-    },
-    [savedCompanyIds],
-  );
-
-  const selectedCompanyId = useMemo(
-    () => getCanonicalCompanyId(selectedShipper),
-    [selectedShipper],
-  );
-
+  // --- save to Command Center (reuses profile if we already have it) ---
   const handleSaveToCommandCenter = useCallback(
     async (
       shipper?: IyShipperHit | null,
@@ -282,7 +265,9 @@ export default function SearchPage() {
       try {
         await saveCompanyToCommandCenter({
           shipper,
-          profile: profileOverride || companyProfile,
+          profile:
+            profileOverride ||
+            (selectedCompanyId === companyId ? companyProfile : null),
         });
         setSavedCompanies((prev) => {
           if (
@@ -319,7 +304,7 @@ export default function SearchPage() {
         setSavingCompanyId(null);
       }
     },
-    [savedCompanyIds, savingCompanyId, toast, companyProfile],
+    [savedCompanyIds, savingCompanyId, toast, selectedCompanyId, companyProfile],
   );
 
   const handleModalSave = useCallback(
@@ -329,6 +314,7 @@ export default function SearchPage() {
     [handleSaveToCommandCenter],
   );
 
+  // --- advanced filters (front-end only) ---
   const hasAdvancedFilters =
     originCity ||
     originState ||
@@ -389,14 +375,68 @@ export default function SearchPage() {
     destPostal,
   ]);
 
+  // keep workspace selection in sync with the current filtered list
   useEffect(() => {
-    filteredResults.slice(0, 5).forEach((shipper) => {
-      const key = getCanonicalCompanyId(shipper);
-      if (key) {
-        void prefetchProfile(key);
+    if (!filteredResults.length) {
+      setSelectedWorkspaceCompany(null);
+      return;
+    }
+    setSelectedWorkspaceCompany((prev) => {
+      if (!prev) return filteredResults[0];
+      const prevId = getCanonicalCompanyId(prev);
+      if (
+        prevId &&
+        filteredResults.some(
+          (shipper) => getCanonicalCompanyId(shipper) === prevId,
+        )
+      ) {
+        return prev;
       }
+      return filteredResults[0];
     });
-  }, [filteredResults, prefetchProfile]);
+  }, [filteredResults]);
+
+  // workspace meta (no background ImportYeti calls; profile only if already loaded)
+  const selectedWorkspaceMeta = useMemo(() => {
+    if (!selectedWorkspaceCompany) return null;
+    const companyKey = getCanonicalCompanyId(selectedWorkspaceCompany);
+    if (!companyKey) return null;
+
+    const subtitle =
+      [
+        selectedWorkspaceCompany.city,
+        selectedWorkspaceCompany.state,
+        selectedWorkspaceCompany.country,
+      ]
+        .filter(Boolean)
+        .join(", ") || null;
+
+    const hasSameProfile =
+      selectedShipper &&
+      getCanonicalCompanyId(selectedShipper) === companyKey &&
+      companyProfile;
+
+    return {
+      companyKey,
+      title:
+        selectedWorkspaceCompany.title ||
+        selectedWorkspaceCompany.name ||
+        "Company",
+      subtitle,
+      shipper: selectedWorkspaceCompany,
+      isSaved: savedCompanyIds.has(companyKey),
+      initialProfile: hasSameProfile ? companyProfile : null,
+    };
+  }, [
+    selectedWorkspaceCompany,
+    selectedShipper,
+    companyProfile,
+    savedCompanyIds,
+  ]);
+
+  useEffect(() => {
+    setActiveWorkspaceTab("overview");
+  }, [selectedWorkspaceMeta?.companyKey]);
 
   const handleResetAdvancedFilters = () => {
     setOriginCity("");
@@ -418,8 +458,8 @@ export default function SearchPage() {
               LIT Search Shipper Search
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Search the LIT Search DMA index for verified shippers, view live
-              BOL activity, and save companies to Command Center.
+              Search the LIT Search DMA index for verified shippers, view
+              live BOL activity, and save companies to Command Center.
             </p>
           </div>
         </div>
@@ -495,94 +535,96 @@ export default function SearchPage() {
           {loading && <span>Searching LIT Search…</span>}
         </div>
 
-        {/* Results in responsive grid, no right-hand workspace panel */}
-        <div className="mt-6">
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row">
+          <div className="flex w-full flex-col gap-4 lg:w-[42%] xl:w-[38%]">
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Results
               </div>
-              {total > 0 && (
-                <div className="text-[11px] text-slate-500">
-                  {total.toLocaleString()} companies in index
-                </div>
-              )}
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredResults.map((shipper) => {
-                const companyId = getCanonicalCompanyId(shipper);
-                const saved = companyId ? savedCompanyIds.has(companyId) : false;
-                const saving = companyId
-                  ? savingCompanyId === companyId
-                  : false;
-                const hydratedProfile = companyId
-                  ? profileCache[companyId] ?? null
-                  : null;
-                const isActive =
-                  !!companyId && !!selectedCompanyId && companyId === selectedCompanyId;
+              <div className="mt-3 space-y-3">
+                {filteredResults.map((shipper) => {
+                  const companyId = getCanonicalCompanyId(shipper);
+                  const saved = companyId
+                    ? savedCompanyIds.has(companyId)
+                    : false;
+                  const saving = companyId
+                    ? savingCompanyId === companyId
+                    : false;
+                  const isActive =
+                    !!companyId &&
+                    !!selectedWorkspaceMeta &&
+                    companyId === selectedWorkspaceMeta.companyKey;
 
-                return (
-                  <SearchResultCard
-                    key={shipper.key || shipper.title || shipper.name}
-                    shipper={shipper}
-                    isSaved={saved}
-                    saving={saving}
-                    isActive={isActive}
-                    profile={hydratedProfile}
-                    onToggleSave={() =>
-                      handleSaveToCommandCenter(shipper, hydratedProfile ?? null)
-                    }
-                    onOpenDetails={() => handleCardClick(shipper)}
-                    onSelect={() => handleCardClick(shipper)}
-                  />
-                );
-              })}
-              {!filteredResults.length && !loading && (
-                <div className="col-span-full rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-10 text-center text-sm text-slate-500">
-                  {query
-                    ? "No shippers match your filters. Try adjusting your search."
-                    : "Start typing to see ImportYeti shippers appear here."}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {total > PAGE_SIZE && (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span>
-                  Page {page} • {total.toLocaleString()} total companies
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = Math.max(1, page - 1);
-                      setPage(next);
-                      void fetchShippers(query, next);
-                    }}
-                    disabled={page <= 1 || loading}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const maxPage = Math.ceil(total / PAGE_SIZE);
-                      const next = Math.min(maxPage, page + 1);
-                      setPage(next);
-                      void fetchShippers(query, next);
-                    }}
-                    disabled={loading || results.length < PAGE_SIZE}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Next
-                  </button>
-                </div>
+                  return (
+                    <SearchResultCard
+                      key={shipper.key || shipper.title}
+                      shipper={shipper}
+                      isSaved={saved}
+                      saving={saving}
+                      isActive={isActive}
+                      onToggleSave={() =>
+                        handleSaveToCommandCenter(shipper, null)
+                      }
+                      onOpenDetails={() => handleCardClick(shipper)}
+                      onSelect={() => setSelectedWorkspaceCompany(shipper)}
+                    />
+                  );
+                })}
+                {!filteredResults.length && !loading && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-10 text-center text-sm text-slate-500">
+                    {query
+                      ? "No shippers match your filters. Try adjusting your search."
+                      : "Start typing to see ImportYeti shippers appear here."}
+                  </div>
+                )}
               </div>
             </div>
-          )}
+
+            {total > PAGE_SIZE && (
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span>
+                    Page {page} • {total.toLocaleString()} total companies
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.max(1, page - 1);
+                        setPage(next);
+                        void fetchShippers(query, next);
+                      }}
+                      disabled={page <= 1 || loading}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const maxPage = Math.ceil(total / PAGE_SIZE);
+                        const next = Math.min(maxPage, page + 1);
+                        setPage(next);
+                        void fetchShippers(query, next);
+                      }}
+                      disabled={loading || results.length < PAGE_SIZE}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-1 rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <SearchWorkspacePanel
+              activeTab={activeWorkspaceTab}
+              onTabChange={setActiveWorkspaceTab}
+              selectedCompany={selectedWorkspaceMeta}
+            />
+          </div>
         </div>
       </main>
 
@@ -617,102 +659,92 @@ export default function SearchPage() {
               <button
                 type="button"
                 onClick={() => setFiltersOpen(false)}
-                className="text-sm font-medium text-slate-500 hover:text-slate-800"
+                className="text-xs font-medium text-slate-500 hover:text-slate-800"
               >
                 Close
               </button>
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <h3 className="text-xs font-semibold text-slate-700">
                   Origin
-                </p>
+                </h3>
                 <div className="mt-2 space-y-2">
                   <input
                     value={originCity}
                     onChange={(e) => setOriginCity(e.target.value)}
-                    placeholder="City"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="City"
                   />
                   <input
                     value={originState}
                     onChange={(e) => setOriginState(e.target.value)}
-                    placeholder="State / Province"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="State"
                   />
                   <input
                     value={originCountry}
                     onChange={(e) => setOriginCountry(e.target.value)}
-                    placeholder="Country"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="Country"
                   />
                   <input
                     value={originPostal}
                     onChange={(e) => setOriginPostal(e.target.value)}
-                    placeholder="Postal code"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="Postal code"
                   />
                 </div>
               </div>
-
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <h3 className="text-xs font-semibold text-slate-700">
                   Destination
-                </p>
+                </h3>
                 <div className="mt-2 space-y-2">
                   <input
                     value={destCity}
                     onChange={(e) => setDestCity(e.target.value)}
-                    placeholder="City"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="City"
                   />
                   <input
                     value={destState}
                     onChange={(e) => setDestState(e.target.value)}
-                    placeholder="State / Province"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="State"
                   />
                   <input
                     value={destCountry}
                     onChange={(e) => setDestCountry(e.target.value)}
-                    placeholder="Country"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="Country"
                   />
                   <input
                     value={destPostal}
                     onChange={(e) => setDestPostal(e.target.value)}
-                    placeholder="Postal code"
                     className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                    placeholder="Postal code"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-between">
+            <div className="mt-4 flex items-center justify-between text-xs">
               <button
                 type="button"
                 onClick={handleResetAdvancedFilters}
-                className="text-xs font-medium text-slate-500 hover:text-slate-800"
+                className="text-slate-500 hover:text-slate-800"
               >
-                Reset
+                Clear all
               </button>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFiltersOpen(false)}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltersOpen(false)}
-                  className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500"
-                >
-                  Apply filters
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(false)}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+              >
+                Apply filters
+              </button>
             </div>
           </div>
         </div>
