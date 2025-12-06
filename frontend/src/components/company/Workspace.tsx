@@ -8,21 +8,14 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { CrmSavedCompany, IyCompanyProfile } from "@/lib/api";
-import { buildCompanySnapshot, type CompanySnapshot } from "@/components/common/companyViewModel";
+import CompanyActivityChart from "@/components/command-center/CompanyActivityChart";
+import {
+  buildCompanySnapshot,
+  type CompanySnapshot,
+} from "@/components/common/companyViewModel";
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
-
-type WorkspaceTab = "Overview" | "Shipments" | "Contacts" | "Campaigns" | "RFP notes";
-
-const WORKSPACE_TABS: WorkspaceTab[] = [
-  "Overview",
-  "Shipments",
-  "Contacts",
-  "Campaigns",
-  "RFP notes",
-];
+const tabList = ["Overview", "Shipments", "Contacts", "Campaigns", "RFP notes"] as const;
+type WorkspaceTab = (typeof tabList)[number];
 
 type WorkspaceProps = {
   companies: CrmSavedCompany[];
@@ -33,6 +26,34 @@ type WorkspaceProps = {
   isLoadingProfile?: boolean;
   errorProfile?: string | null;
   onSaveCompany: (company: CrmSavedCompany | IyCompanyProfile) => Promise<void>;
+  companiesLoading?: boolean;
+};
+
+type ContactFilters = {
+  search: string;
+  title: string;
+  location: string;
+};
+
+type NormalizedContact = {
+  id: string;
+  name: string;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  city?: string | null;
+  state?: string | null;
+  company?: string | null;
+  source?: string | null;
+};
+
+type CampaignRecord = {
+  id: string;
+  name: string;
+  channel?: string | null;
+  personas?: string | null;
+  status?: string | null;
+  summary?: string | null;
 };
 
 export default function Workspace({
@@ -44,41 +65,89 @@ export default function Workspace({
   isLoadingProfile = false,
   errorProfile = null,
   onSaveCompany,
+  companiesLoading = false,
 }: WorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("Overview");
+  const [contactFilters, setContactFilters] = useState<ContactFilters>({
+    search: "",
+    title: "",
+    location: "",
+  });
 
   useEffect(() => {
     setActiveTab("Overview");
   }, [activeCompanyId]);
 
-  const activeCompany = useMemo(
+  const activeRecord = useMemo(
     () => companies.find((record) => record.company_id === activeCompanyId) ?? null,
     [companies, activeCompanyId],
   );
 
   const snapshot = useMemo(() => {
-    if (!iyProfile && !activeCompany) return null;
+    if (!iyProfile && !activeRecord) return null;
     return buildCompanySnapshot({
       profile: iyProfile,
       enrichment,
-      fallback: activeCompany
+      fallback: activeRecord
         ? {
-            companyId: activeCompany.company_id,
+            companyId: activeRecord.company_id,
             name:
-              (activeCompany.payload as any)?.normalized_company?.name ??
-              activeCompany.payload?.name ??
-              activeCompany.company_id,
-            payload: activeCompany.payload ?? null,
+              (activeRecord.payload as any)?.normalized_company?.name ??
+              activeRecord.payload?.name ??
+              activeRecord.company_id,
+            payload: activeRecord.payload ?? null,
           }
         : null,
     });
-  }, [iyProfile, enrichment, activeCompany]);
+  }, [iyProfile, enrichment, activeRecord]);
+
+  const contacts = useMemo(() => normalizeContacts(enrichment), [enrichment]);
+  const filteredContacts = useMemo(
+    () => filterContacts(contacts, contactFilters),
+    [contacts, contactFilters],
+  );
+  const campaigns = useMemo(() => normalizeCampaigns(enrichment), [enrichment]);
+  const rfpNotes = useMemo(() => normalizeRfpNotes(enrichment), [enrichment]);
 
   const handleSaveClick = async () => {
-    const target = iyProfile ?? activeCompany;
+    const target = iyProfile ?? activeRecord;
     if (!target) return;
     await onSaveCompany(target);
   };
+
+  if (isLoadingProfile && !snapshot) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6 text-sm text-slate-500">
+        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+          Loading Command Center…
+        </div>
+      </div>
+    );
+  }
+
+  if (errorProfile) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+        <div className="max-w-md rounded-2xl border border-rose-200 bg-rose-50 px-6 py-4 text-sm text-rose-700 shadow-sm">
+          {errorProfile}
+        </div>
+      </div>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6 text-center">
+        <div className="rounded-2xl border border-slate-200 bg-white px-8 py-10 shadow-sm">
+          <Sparkles className="mx-auto mb-3 h-8 w-8 text-indigo-300" />
+          <p className="text-sm text-slate-600">
+            Save a company from LIT Search to populate Command Center with live KPIs and Gemini
+            insights.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 p-6 text-slate-900">
@@ -87,49 +156,24 @@ export default function Workspace({
           companies={companies}
           activeCompanyId={activeCompanyId}
           onSelectCompany={onSelectCompany}
+          isLoading={companiesLoading}
         />
-        <section className="flex-1">
-          {isLoadingProfile ? (
-            <PanelShell>
-              <div className="flex flex-col items-center justify-center gap-3 py-10 text-sm text-slate-500">
-                <Sparkles className="h-6 w-6 animate-spin text-indigo-400" />
-                <p>Loading Command Center…</p>
-              </div>
-            </PanelShell>
-          ) : errorProfile ? (
-            <PanelShell>
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {errorProfile}
-              </div>
-            </PanelShell>
-          ) : !snapshot ? (
-            <PanelShell>
-              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                <Sparkles className="h-10 w-10 text-indigo-300" />
-                <p className="max-w-md text-sm text-slate-500">
-                  Save a company from LIT Search to explore KPIs, AI insights, and shipment
-                  intelligence inside Command Center.
-                </p>
-              </div>
-            </PanelShell>
-          ) : (
-            <div className="space-y-6">
-              <WorkspaceHeader
-                snapshot={snapshot}
-                onSaveClick={handleSaveClick}
-                isSaveDisabled={!iyProfile && !activeCompany}
-              />
-              <HeroBanner snapshot={snapshot} />
-              <WorkspaceTabsSection
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                snapshot={snapshot}
-                enrichment={enrichment}
-              />
-              <ChartsAndLanes snapshot={snapshot} />
-            </div>
-          )}
-        </section>
+        <div className="flex flex-1 flex-col gap-6">
+          <WorkspaceHeader snapshot={snapshot} onSaveClick={handleSaveClick} hasSelection={Boolean(activeRecord || iyProfile)} />
+          <HeroBanner snapshot={snapshot} companyRecord={activeRecord} />
+          <WorkspaceTabsSection
+            snapshot={snapshot}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            contacts={contacts}
+            filteredContacts={filteredContacts}
+            contactFilters={contactFilters}
+            onContactFiltersChange={setContactFilters}
+            campaigns={campaigns}
+            rfpNotes={rfpNotes}
+          />
+          <ChartsAndLanes snapshot={snapshot} />
+        </div>
       </div>
     </div>
   );
@@ -139,46 +183,64 @@ type SavedCompaniesRailProps = {
   companies: CrmSavedCompany[];
   activeCompanyId: string | null;
   onSelectCompany: (id: string) => void;
+  isLoading: boolean;
 };
 
 const SavedCompaniesRail: React.FC<SavedCompaniesRailProps> = ({
   companies,
   activeCompanyId,
   onSelectCompany,
+  isLoading,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
-
-  const items = useMemo(
-    () =>
-      companies.map((record) => {
-        const payload = record.payload ?? {};
-        const normalized = (payload as any)?.normalized_company ?? {};
-        const name =
-          normalized?.name ??
-          (payload as any)?.profile?.name ??
-          payload?.name ??
-          record.company_id;
-        const city = normalized?.city ?? (payload as any)?.profile?.city ?? null;
-        const state = normalized?.state ?? (payload as any)?.profile?.state ?? null;
-        const country = normalized?.country ?? (payload as any)?.profile?.country ?? null;
-        const shipments = (payload as any)?.shipments_12m ?? null;
-        return {
-          id: record.company_id,
-          name,
-          location: [city, state, country].filter(Boolean).join(", ") || "Location unknown",
-          shipments:
-            typeof shipments === "number" && Number.isFinite(shipments) ? shipments : null,
-        };
-      }),
-    [companies],
-  );
+  const items = useMemo(() => {
+    return companies.map((record) => {
+      const payload = record.payload ?? {};
+      const normalized = (payload as any)?.normalized_company ?? {};
+      const name =
+        normalized.name ??
+        (payload as any)?.profile?.name ??
+        payload?.name ??
+        record.company_id;
+      const code =
+        normalized.code ??
+        (
+          name
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((chunk) => chunk[0]?.toUpperCase() ?? "")
+            .join("") || "—"
+        );
+      const city = normalized.city ?? (payload as any)?.profile?.city ?? null;
+      const state = normalized.state ?? (payload as any)?.profile?.state ?? null;
+      const country = normalized.country ?? (payload as any)?.profile?.country ?? null;
+      const shipments = (payload as any)?.shipments_12m ?? null;
+      const recentShipment =
+        (payload as any)?.last_shipment_date ??
+        (payload as any)?.recent_shipment ??
+        null;
+      const routeLabel =
+        (payload as any)?.top_route_label ??
+        (payload as any)?.most_recent_route?.label ??
+        null;
+      return {
+        id: record.company_id,
+        name,
+        code: code.slice(0, 2).padEnd(2, "·"),
+        location: [city, state, country].filter(Boolean).join(", ") || "Location unavailable",
+        shipments,
+        recentShipment,
+        routeLabel,
+      };
+    });
+  }, [companies]);
 
   return (
     <aside
-      className={cn(
-        "relative flex flex-col rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-200",
-        isOpen ? "w-72" : "w-14",
-      )}
+      className={`relative flex flex-col rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-200 ${
+        isOpen ? "w-72" : "w-12"
+      }`}
     >
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-3">
         {isOpen ? (
@@ -189,67 +251,66 @@ const SavedCompaniesRail: React.FC<SavedCompaniesRailProps> = ({
             <span className="mt-1 text-xs text-slate-500">{companies.length} companies</span>
           </div>
         ) : (
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <span className="mx-auto text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             CC
           </span>
         )}
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}
-          className="rounded-full border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[10px] text-slate-500 hover:bg-slate-100"
         >
           {isOpen ? "←" : "→"}
         </button>
       </div>
-      <div className="flex-1 overflow-hidden">
-        {items.length === 0 ? (
-          <div className="px-3 py-4 text-[11px] text-slate-500">
-            No saved companies yet – save from Search to see them here.
-          </div>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {items.map((item) => {
-              const isActive = item.id === activeCompanyId;
-              const initials = item.name
-                .split(" ")
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((chunk) => chunk[0]?.toUpperCase() ?? "")
-                .join("")
-                .padEnd(2, "·");
+      {isOpen && (
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="px-3 py-4 text-[11px] text-slate-500">Loading saved companies…</div>
+          ) : !items.length ? (
+            <div className="px-3 py-4 text-[11px] text-slate-500">
+              No saved companies yet. Save a shipper from LIT Search to see it here.
+            </div>
+          ) : (
+            items.map((company) => {
+              const isActive = company.id === activeCompanyId;
               return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectCompany(item.id)}
-                    className={cn(
-                      "flex w-full items-start gap-3 px-3 py-3 text-left text-xs transition-colors",
-                      isActive
-                        ? "bg-indigo-50/80 border-l-4 border-l-[#5C4DFF]"
-                        : "hover:bg-slate-50",
+                <button
+                  key={company.id}
+                  type="button"
+                  onClick={() => onSelectCompany(company.id)}
+                  className={`flex w-full items-start gap-3 px-3 py-3 text-left text-xs transition-colors ${
+                    isActive
+                      ? "bg-indigo-50/80 border-l-4 border-l-[#5C4DFF]"
+                      : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gradient-to-br from-[#5C4DFF] to-[#7F5CFF] text-[11px] font-semibold text-white shadow-sm">
+                    {company.code}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-semibold tracking-[0.16em] text-slate-800">
+                      {company.name.toUpperCase()}
+                    </p>
+                    <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">{company.location}</p>
+                    <p className="mt-0.5 text-[10px] text-slate-400">
+                      {company.recentShipment
+                        ? `Recent: ${formatDate(company.recentShipment)}`
+                        : "No recent shipment"}
+                      {company.routeLabel ? ` · ${company.routeLabel}` : ""}
+                    </p>
+                    {typeof company.shipments === "number" && (
+                      <p className="text-[10px] text-slate-400">
+                        {company.shipments.toLocaleString()} shipments · 12m
+                      </p>
                     )}
-                  >
-                    <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gradient-to-br from-[#5C4DFF] to-[#7F5CFF] text-[11px] font-semibold text-white shadow-sm">
-                      {initials}
-                    </div>
-                    {isOpen && (
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[11px] font-semibold tracking-[0.16em] text-slate-800">
-                          {item.name.toUpperCase()}
-                        </p>
-                        <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">{item.location}</p>
-                        <p className="mt-0.5 text-[10px] text-slate-400">
-                          Shipments 12m: {item.shipments?.toLocaleString() ?? "—"}
-                        </p>
-                      </div>
-                    )}
-                  </button>
-                </li>
+                  </div>
+                </button>
               );
-            })}
-          </ul>
-        )}
-      </div>
+            })
+          )}
+        </div>
+      )}
     </aside>
   );
 };
@@ -257,58 +318,47 @@ const SavedCompaniesRail: React.FC<SavedCompaniesRailProps> = ({
 type HeaderProps = {
   snapshot: CompanySnapshot;
   onSaveClick: () => void;
-  isSaveDisabled: boolean;
+  hasSelection: boolean;
 };
 
-const WorkspaceHeader: React.FC<HeaderProps> = ({ snapshot, onSaveClick, isSaveDisabled }) => {
+const WorkspaceHeader: React.FC<HeaderProps> = ({ snapshot, onSaveClick, hasSelection }) => {
   return (
-    <header className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
-            Workspace
-          </p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
-            Command Center
-          </h1>
-          <p className="mt-1 text-xs text-slate-500">
-            Saved shippers, shipment KPIs, and pre-call prep in one view.
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-            <span className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
-              <span className="text-base leading-none">{getCountryFlag(snapshot.countryCode)}</span>
-              <span>
-                {snapshot.displayName} · {snapshot.countryName || "HQ"}
-              </span>
-            </span>
-            <span>
-              Source: <span className="font-semibold text-indigo-600">LIT Search Intelligence</span> · Gemini auto-enriched from
-              public customs data
-            </span>
-          </div>
+    <header className="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
+          Workspace
+        </p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+          Command Center
+        </h1>
+        <p className="mt-1 text-xs text-slate-500">
+          Saved shippers, shipment KPIs, and pre-call prep in one view.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+          <span className="inline-flex items-center gap-2 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
+            <span className="text-base leading-none">{getCountryFlag(snapshot.countryCode)}</span>
+            <span>{snapshot.displayName} · {snapshot.countryName || "HQ"}</span>
+          </span>
+          <span>
+            Source: <span className="font-semibold text-indigo-600">LIT Search Intelligence</span> · Gemini auto-enriched from public customs data
+          </span>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-800 hover:bg-slate-100"
-          >
-            Export PDF
-          </button>
-          <button
-            type="button"
-            className="rounded-full bg-slate-900 px-4 py-2 text-xs font-medium text-white shadow-md shadow-slate-400/40 hover:bg-black"
-          >
-            Generate brief
-          </button>
-          <button
-            type="button"
-            onClick={onSaveClick}
-            disabled={isSaveDisabled}
-            className="rounded-full border border-indigo-600 px-4 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Save to CRM
-          </button>
-        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-800 hover:bg-slate-100">
+          Export PDF
+        </button>
+        <button className="rounded-full bg-slate-900 px-4 py-2 text-xs font-medium text-white shadow-md shadow-slate-400/40 hover:bg-black">
+          Generate brief
+        </button>
+        <button
+          type="button"
+          onClick={onSaveClick}
+          disabled={!hasSelection}
+          className="rounded-full border border-indigo-600 px-4 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Save to CRM
+        </button>
       </div>
     </header>
   );
@@ -316,9 +366,10 @@ const WorkspaceHeader: React.FC<HeaderProps> = ({ snapshot, onSaveClick, isSaveD
 
 type HeroProps = {
   snapshot: CompanySnapshot;
+  companyRecord: CrmSavedCompany | null;
 };
 
-const HeroBanner: React.FC<HeroProps> = ({ snapshot }) => {
+const HeroBanner: React.FC<HeroProps> = ({ snapshot, companyRecord }) => {
   const initials = snapshot.displayName
     .split(" ")
     .filter(Boolean)
@@ -327,50 +378,90 @@ const HeroBanner: React.FC<HeroProps> = ({ snapshot }) => {
     .join("")
     .padEnd(2, "·");
 
-  const lastShipment = snapshot.recentShipmentDate
-    ? new Date(snapshot.recentShipmentDate).toLocaleDateString(undefined, {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "—";
+  const payload = companyRecord?.payload ?? {};
+  const phone = (payload as any)?.phone ?? (payload as any)?.profile?.phone ?? null;
+  const website = snapshot.domain ?? snapshot.website;
+  const lastShipmentLabel = snapshot.recentShipmentDate
+    ? formatDate(snapshot.recentShipmentDate)
+    : "No shipments logged";
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-sky-50 via-white to-indigo-50 p-6 shadow-sm">
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.6fr)]">
-        <div className="flex items-start gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#5C4DFF] to-[#7F5CFF] text-lg font-semibold text-white shadow-lg">
-            {initials}
-          </div>
-          <div className="space-y-3">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#5C4DFF] to-[#7F5CFF] text-lg font-semibold text-white shadow-sm">
+              {initials}
+            </div>
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-                {snapshot.displayName}
-              </h2>
-              <p className="text-sm text-slate-500">{snapshot.locationLabel}</p>
-              <p className="text-xs text-slate-500">
-                {snapshot.countryName ?? "Global"} · {(snapshot.tags[0] ?? "Global shipper").toUpperCase()}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-2xl font-semibold tracking-tight text-slate-900">
+                  {snapshot.displayName}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200/80">
+                  <span className="text-base leading-none">{getCountryFlag(snapshot.countryCode)}</span>
+                  <span>{snapshot.countryName ?? "Global"} HQ</span>
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-600">{snapshot.locationLabel}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-800">
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5">
+                  <span className="h-3 w-3 rounded-full bg-gradient-to-br from-indigo-400 to-sky-400" />
+                  <span>{snapshot.countryName || "Worldwide"} operations</span>
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span>Verified shipper</span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-4 text-xs text-slate-700 md:grid-cols-3">
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Contacts
               </p>
+              {phone && <p className="text-sm text-slate-900">{phone}</p>}
+              {website && (
+                <a href={website.startsWith("http") ? website : `https://${website}`} target="_blank" rel="noreferrer" className="text-sm text-indigo-700">
+                  {website.replace(/^https?:\/\//, "")}
+                </a>
+              )}
             </div>
-            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-              <Badge icon={<Building2 className="h-3 w-3" />}>Verified shipper</Badge>
-              <Badge icon={<Globe className="h-3 w-3" />}>{snapshot.domain ?? snapshot.website ?? "No website"}</Badge>
-              <Badge icon={<Sparkles className="h-3 w-3" />}>Gemini enriched</Badge>
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Supply chain focus
+              </p>
+              <p>Insights powered by LIT Search + Gemini enrichment for this company.</p>
             </div>
-            <div className="text-xs text-slate-600">
-              Contacts available soon · Live import data refreshed by Gemini every few hours.
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Current play
+              </p>
+              <p>Use the tabs below to prep campaigns, contacts, RFP notes, and shipment intel.</p>
             </div>
           </div>
         </div>
         <div className="flex h-full flex-col justify-between rounded-2xl border border-[#5C4DFF]/40 bg-white/80 px-4 py-4 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Most recent shipment
-          </p>
-          <p className="mt-2 text-xl font-semibold tracking-tight text-[#5C4DFF]">{lastShipment}</p>
-          <p className="mt-1 text-xs text-slate-600">
-            {snapshot.topRouteLabel ?? "Route data not available"}
-          </p>
-          <div className="mt-3 text-[11px] text-slate-500">Live import data synced from customs filings.</div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Most recent shipment
+            </p>
+            <p className="mt-2 text-xl font-semibold tracking-tight text-[#5C4DFF]">
+              {lastShipmentLabel}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              {snapshot.topRouteLabel ?? "Route data not available"}
+            </p>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-medium text-white shadow-sm hover:bg-slate-800">
+              Open shipment timeline
+            </button>
+            <button className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-900 hover:bg-slate-50">
+              View historical shipments
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -378,51 +469,278 @@ const HeroBanner: React.FC<HeroProps> = ({ snapshot }) => {
 };
 
 type TabsSectionProps = {
+  snapshot: CompanySnapshot;
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
-  snapshot: CompanySnapshot;
-  enrichment: any | null;
+  contacts: NormalizedContact[];
+  filteredContacts: NormalizedContact[];
+  contactFilters: ContactFilters;
+  onContactFiltersChange: (filters: ContactFilters) => void;
+  campaigns: CampaignRecord[];
+  rfpNotes: string[];
 };
 
-const WorkspaceTabsSection: React.FC<TabsSectionProps> = ({ activeTab, onTabChange, snapshot, enrichment }) => {
+const WorkspaceTabsSection: React.FC<TabsSectionProps> = ({
+  snapshot,
+  activeTab,
+  onTabChange,
+  contacts,
+  filteredContacts,
+  contactFilters,
+  onContactFiltersChange,
+  campaigns,
+  rfpNotes,
+}) => {
+  const [noteDraft, setNoteDraft] = useState("");
+
+  const shipmentsTable = snapshot.timeSeries;
+
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 text-xs">
-        {WORKSPACE_TABS.map((tab) => (
+        {tabList.map((tab) => (
           <button
             key={tab}
-            type="button"
             onClick={() => onTabChange(tab)}
-            className={cn(
-              "rounded-full px-3 py-1.5 text-sm font-medium transition",
-              tab === activeTab
-                ? "bg-indigo-600 text-white shadow-sm"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-            )}
+            className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+              tab === activeTab ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
           >
             {tab}
           </button>
         ))}
       </div>
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.5fr)]">
-        <div>{renderTabContent(activeTab, snapshot, enrichment)}</div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,2.1fr)_minmax(0,2fr)] text-xs text-slate-700">
         <div className="space-y-3">
+          {activeTab === "Overview" && (
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">Narrative snapshot</h4>
+                <p className="mt-1 text-sm text-slate-700">
+                  {snapshot.aiSummary ??
+                    "Gemini insights are still processing for this company. Once enrichment completes, you'll see the latest guidance here."}
+                </p>
+              </div>
+              {snapshot.keySuppliers.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Key suppliers
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-700">
+                    {snapshot.keySuppliers.slice(0, 5).map((supplier) => (
+                      <li key={supplier}>{supplier}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "Shipments" && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-slate-900">Shipment view</h4>
+              {shipmentsTable.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No time-series data yet. Once this company has activity in ImportYeti, monthly FCL/LCL breakdowns will appear here.
+                </p>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-slate-200">
+                  <table className="min-w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Month</th>
+                        <th className="px-3 py-2">FCL</th>
+                        <th className="px-3 py-2">LCL</th>
+                        <th className="px-3 py-2">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shipmentsTable.map((row) => (
+                        <tr key={row.label} className="odd:bg-white even:bg-slate-50">
+                          <td className="px-3 py-2 font-medium text-slate-900">{row.label}</td>
+                          <td className="px-3 py-2">{formatNumber(row.fcl)}</td>
+                          <td className="px-3 py-2">{formatNumber(row.lcl)}</td>
+                          <td className="px-3 py-2">{formatNumber(row.fcl + row.lcl)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "Contacts" && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-slate-900">Contacts</h4>
+              <p>
+                This panel hydrates from Gemini/CRM enrichment. Filter to quickly find the right persona for outreach.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Search
+                  </label>
+                  <input
+                    value={contactFilters.search}
+                    onChange={(e) => onContactFiltersChange({ ...contactFilters, search: e.target.value })}
+                    placeholder="Name, title or email"
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Title contains
+                  </label>
+                  <input
+                    value={contactFilters.title}
+                    onChange={(e) => onContactFiltersChange({ ...contactFilters, title: e.target.value })}
+                    placeholder="e.g. director, vp"
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    City / State
+                  </label>
+                  <input
+                    value={contactFilters.location}
+                    onChange={(e) => onContactFiltersChange({ ...contactFilters, location: e.target.value })}
+                    placeholder="e.g. Bentonville, AR"
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                {filteredContacts.length === 0 ? (
+                  <p className="text-[11px] italic text-slate-500">
+                    No contacts match the current filters or enrichment is still running.
+                  </p>
+                ) : (
+                  filteredContacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-semibold text-indigo-700">
+                          {contact.name
+                            .split(" ")
+                            .filter(Boolean)
+                            .slice(0, 2)
+                            .map((part) => part[0])
+                            .join("")}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-900">{contact.name}</p>
+                          {contact.title && <p className="text-[11px] text-slate-600">{contact.title}</p>}
+                          <p className="text-[11px] text-slate-500">
+                            {[contact.city, contact.state].filter(Boolean).join(", ") || "Location unknown"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right text-[11px] text-slate-600">
+                        {contact.email && <p>{contact.email}</p>}
+                        {contact.phone && <p className="mt-0.5">{contact.phone}</p>}
+                        {contact.source && (
+                          <p className="mt-0.5 text-slate-400">Source: {contact.source}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "Campaigns" && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-slate-900">Campaigns</h4>
+              {campaigns.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No campaign support data from Gemini yet. Once campaign recommendations are available, they will display here.
+                </p>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-slate-200">
+                  <table className="min-w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Channel</th>
+                        <th className="px-3 py-2">Target personas</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campaigns.map((campaign) => (
+                        <tr key={campaign.id} className="odd:bg-white even:bg-slate-50">
+                          <td className="px-3 py-2 font-medium text-slate-900">
+                            {campaign.name}
+                            {campaign.summary && (
+                              <div className="text-[11px] font-normal text-slate-500">{campaign.summary}</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">{campaign.channel ?? "—"}</td>
+                          <td className="px-3 py-2">{campaign.personas ?? "—"}</td>
+                          <td className="px-3 py-2 text-emerald-700">{campaign.status ?? "Planned"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "RFP notes" && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-slate-900">RFP notes</h4>
+              {rfpNotes.length > 0 ? (
+                <ul className="list-disc space-y-1 pl-4">
+                  {rfpNotes.map((note, index) => (
+                    <li key={`${note}-${index}`}>{note}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  No Gemini-generated RFP notes for this company yet. Capture your own below.
+                </p>
+              )}
+              <textarea
+                rows={5}
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                placeholder="Ex: Walmart TPEB ocean RFP expected Q3. Priorities: rate stability, Tacoma dwell, MX pilot lanes."
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/70"
+              />
+              <p className="text-[10px] text-slate-400">
+                Notes stay local for now; sync with CRM after Save to CRM.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-3 text-xs text-slate-700 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3">
           <KpiTile
             icon={<Ship className="h-4 w-4" />}
             label="Shipments (12m)"
             value={formatNumber(snapshot.shipments12m)}
+            badge="Live"
             accent="from-emerald-50 to-emerald-100"
           />
           <KpiTile
             icon={<TrendingUp className="h-4 w-4" />}
             label="TEU (12m)"
             value={formatNumber(snapshot.teus12m)}
+            badge="Indexed"
             accent="from-sky-50 to-sky-100"
           />
           <KpiTile
             icon={<DollarSign className="h-4 w-4" />}
-            label="Est. Spend (12m)"
+            label="Est. spend (12m)"
             value={formatCurrency(snapshot.estSpend12m)}
+            badge="Modeled"
             accent="from-amber-50 to-amber-100"
           />
         </div>
@@ -431,208 +749,213 @@ const WorkspaceTabsSection: React.FC<TabsSectionProps> = ({ activeTab, onTabChan
   );
 };
 
-const ChartsAndLanes: React.FC<{ snapshot: CompanySnapshot }> = ({ snapshot }) => {
-  const maxVolume = snapshot.timeSeries.reduce((acc, point) => {
-    const total = point.fcl + point.lcl;
-    return total > acc ? total : acc;
-  }, 0);
+type KpiTileProps = {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  badge?: string;
+  accent: string;
+};
 
+const KpiTile: React.FC<KpiTileProps> = ({ icon, label, value, badge, accent }) => (
+  <div className={`flex flex-col justify-between rounded-2xl border border-slate-200 bg-gradient-to-br ${accent} px-4 py-3 shadow-sm`}>
+    <div className="flex items-center justify-between text-xs text-slate-700">
+      <span className="font-semibold">{label}</span>
+      {badge && (
+        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+          {badge}
+        </span>
+      )}
+    </div>
+    <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{value}</p>
+    <span className="mt-2 text-sm text-slate-700">{icon}</span>
+  </div>
+);
+
+type ChartsProps = {
+  snapshot: CompanySnapshot;
+};
+
+const ChartsAndLanes: React.FC<ChartsProps> = ({ snapshot }) => {
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">Shipment activity</h3>
-          <span className="text-xs text-slate-500">Last 12 months</span>
-        </div>
-        {snapshot.timeSeries.length === 0 ? (
-          <div className="mt-6 text-xs text-slate-500">No shipment time series available.</div>
-        ) : (
-          <div className="mt-6 flex items-end gap-3 overflow-x-auto">
-            {snapshot.timeSeries.map((point) => {
-              const total = point.fcl + point.lcl;
-              const height = maxVolume ? Math.max((total / maxVolume) * 120, 6) : 6;
-              const fclHeight = maxVolume ? Math.max((point.fcl / maxVolume) * 120, 2) : 2;
-              const lclHeight = Math.max(height - fclHeight, 2);
-              return (
-                <div key={point.label} className="flex flex-col items-center gap-2 text-xs text-slate-500">
-                  <div className="flex w-6 flex-col justify-end gap-0.5">
-                    <div
-                      className="rounded-t-md bg-indigo-500"
-                      style={{ height: `${fclHeight}px` }}
-                    />
-                    <div className="rounded-b-md bg-slate-300" style={{ height: `${lclHeight}px` }} />
-                  </div>
-                  <span className="text-[10px] text-slate-500">{point.label}</span>
-                </div>
-              );
-            })}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Sea shipments over time</h2>
+            <p className="text-xs text-slate-500">Last 12 months · FCL vs LCL mix</p>
           </div>
-        )}
-      </div>
-      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">Top lanes</h3>
-          <span className="text-xs text-slate-500">12m volume</span>
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <div className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600" />
+              FCL
+            </div>
+            <div className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-lime-400" />
+              LCL
+            </div>
+          </div>
         </div>
-        {snapshot.topRoutes.length === 0 ? (
-          <div className="mt-6 text-xs text-slate-500">No lane data available.</div>
-        ) : (
-          <ul className="mt-4 space-y-3 text-sm text-slate-700">
-            {snapshot.topRoutes.slice(0, 6).map((lane) => (
-              <li key={lane.label} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                <p className="font-medium text-slate-900">{lane.label}</p>
-                <div className="mt-1 text-[11px] text-slate-500">
-                  {formatNumber(lane.shipments) ?? "—"} shipments · {formatNumber(lane.teu) ?? "—"} TEU
+        <CompanyActivityChart data={snapshot.timeSeries} />
+      </div>
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
+          <SummaryCard title="Top origin" value={(snapshot.topRoutes[0]?.label?.split("→")[0]?.trim() ?? "—")} helper="Based on TEU" />
+          <SummaryCard title="Top destination" value={(snapshot.topRoutes[0]?.label?.split("→")[1]?.trim() ?? "—")} helper="Most recent 12m" />
+          <SummaryCard title="Lane concentration" value="Top 5 lanes" helper="Auto-calculated" />
+          <SummaryCard title="Carrier diversification" value="Use shipment view" helper="Monitor mix" />
+        </div>
+        <div className="flex flex-1 flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Top lanes (12m)</h3>
+              <p className="text-xs text-slate-500">Derived from ImportYeti routes</p>
+            </div>
+          </div>
+          <div className="mt-3 space-y-2 text-xs">
+            {snapshot.topRoutes.length === 0 ? (
+              <p className="text-slate-500">No lane data yet for this company.</p>
+            ) : (
+              snapshot.topRoutes.slice(0, 5).map((lane) => (
+                <div
+                  key={lane.label}
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  <div>
+                    <p className="text-[11px] font-medium text-slate-900">{lane.label}</p>
+                    <p className="text-[11px] text-slate-600">
+                      {formatNumber(lane.shipments)} shipments
+                    </p>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-600">
+                    <p>{formatNumber(lane.teu)} TEU</p>
+                    {lane.estSpendUsd != null && (
+                      <p className="text-slate-400">{formatCurrency(lane.estSpendUsd)}</p>
+                    )}
+                  </div>
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
+              ))
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );
 };
 
-const Badge: React.FC<{ icon?: React.ReactNode; children: React.ReactNode }> = ({ icon, children }) => (
-  <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-600 shadow-sm">
-    {icon}
-    {children}
-  </span>
-);
+type SummaryCardProps = {
+  title: string;
+  value: string;
+  helper?: string;
+};
 
-const KpiTile: React.FC<{ icon: React.ReactNode; label: string; value: string; accent: string }> = ({
-  icon,
-  label,
-  value,
-  accent,
-}) => (
-  <div className={cn("rounded-2xl border border-slate-100 px-4 py-3", `bg-gradient-to-br ${accent}`)}>
-    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-      {icon}
-      {label}
-    </div>
-    <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
+const SummaryCard: React.FC<SummaryCardProps> = ({ title, value, helper }) => (
+  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+    <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+    {helper && <p className="text-[11px] text-slate-500">{helper}</p>}
   </div>
 );
 
-const renderTabContent = (
-  tab: WorkspaceTab,
-  snapshot: CompanySnapshot,
-  enrichment: any | null,
-) => {
-  switch (tab) {
-    case "Overview": {
-      return (
-        <div className="space-y-4 text-sm text-slate-600">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-            <p>{snapshot.aiSummary ?? "No AI summary available yet for this company."}</p>
-          </div>
-          {snapshot.keySuppliers.length > 0 && (
-            <div className="rounded-2xl border border-slate-100 px-4 py-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Key suppliers</h4>
-              <ul className="mt-2 list-disc space-y-1 pl-4">
-                {snapshot.keySuppliers.slice(0, 5).map((supplier) => (
-                  <li key={supplier}>{supplier}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      );
+function normalizeContacts(enrichment: any): NormalizedContact[] {
+  if (!enrichment) return [];
+  const candidateSources = [
+    enrichment?.contacts,
+    enrichment?.command_center_enrichment?.contacts,
+    enrichment?.sales_assets?.contacts,
+    enrichment?.logistics_kpis?.contacts,
+    enrichment?.contact_enrichment,
+  ];
+  for (const source of candidateSources) {
+    if (Array.isArray(source) && source.length) {
+      return source
+        .map((entry, index) => {
+          const location = (entry?.location as string | undefined) ??
+            [entry?.city, entry?.state].filter(Boolean).join(", ");
+          return {
+            id: String(entry?.id ?? `${entry?.email ?? index}` ?? index),
+            name: entry?.name ?? entry?.full_name ?? entry?.contact_name ?? "",
+            title: entry?.title ?? entry?.role ?? entry?.position ?? null,
+            email: entry?.email ?? entry?.email_address ?? null,
+            phone: entry?.phone ?? entry?.phone_number ?? entry?.phoneNumber ?? null,
+            city: entry?.city ?? null,
+            state: entry?.state ?? null,
+            company: entry?.company ?? entry?.organization ?? null,
+            source: entry?.source ?? entry?.provider ?? null,
+            location,
+          } satisfies NormalizedContact;
+        })
+        .filter((contact) => Boolean(contact.name));
     }
-    case "Shipments": {
-      return snapshot.timeSeries.length === 0 ? (
-        <div className="text-xs text-slate-500">No shipment history yet.</div>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-100">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-2">Month</th>
-                <th className="px-4 py-2 text-right">FCL</th>
-                <th className="px-4 py-2 text-right">LCL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.timeSeries.map((point) => (
-                <tr key={point.label} className="border-t text-slate-600">
-                  <td className="px-4 py-2">{point.label}</td>
-                  <td className="px-4 py-2 text-right">{formatNumber(point.fcl)}</td>
-                  <td className="px-4 py-2 text-right">{formatNumber(point.lcl)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-    case "Contacts": {
-      const contacts = enrichment?.logistics_kpis?.contacts ?? [];
-      return contacts.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-xs text-slate-500">
-          No contacts enriched yet. Once Lusha/ZoomInfo sync is wired, they’ll appear here.
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {contacts.map((contact: any) => (
-            <li key={contact.email} className="rounded-2xl border border-slate-100 px-4 py-3">
-              <p className="font-medium text-slate-900">{contact.name}</p>
-              <p className="text-xs text-slate-500">{contact.title}</p>
-            </li>
-          ))}
-        </ul>
-      );
-    }
-    case "Campaigns": {
-      const campaigns = enrichment?.sales_assets?.campaign_support ?? [];
-      return campaigns.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-xs text-slate-500">
-          No recommended campaigns yet. Gemini will surface playbooks once available.
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {campaigns.map((campaign: any, index: number) => (
-            <li key={`${campaign?.name ?? index}`} className="rounded-2xl border border-slate-100 px-4 py-3">
-              <p className="font-medium text-slate-900">{campaign?.name ?? `Campaign ${index + 1}`}</p>
-              <p className="text-xs text-slate-500">{campaign?.summary ?? "Auto-generated sequence"}</p>
-            </li>
-          ))}
-        </ul>
-      );
-    }
-    case "RFP notes": {
-      const notes =
-        enrichment?.sales_assets?.rfp_support?.notes ??
-        enrichment?.command_center_enrichment?.rfp_notes ??
-        [];
-      return notes.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-xs text-slate-500">
-          No RFP notes yet. Upload an RFP to see structured guidance.
-        </div>
-      ) : (
-        <ul className="list-disc space-y-2 pl-4 text-sm text-slate-600">
-          {notes.map((note: string, index: number) => (
-            <li key={`${note}-${index}`}>{note}</li>
-          ))}
-        </ul>
-      );
-    }
-    default:
-      return null;
   }
-};
+  return [];
+}
 
-const formatNumber = (value: number | null | undefined) => {
+function filterContacts(contacts: NormalizedContact[], filters: ContactFilters) {
+  const search = filters.search.trim().toLowerCase();
+  const titleFilter = filters.title.trim().toLowerCase();
+  const locationFilter = filters.location.trim().toLowerCase();
+  return contacts.filter((contact) => {
+    const matchesSearch =
+      !search ||
+      contact.name.toLowerCase().includes(search) ||
+      (contact.title ?? "").toLowerCase().includes(search) ||
+      (contact.email ?? "").toLowerCase().includes(search);
+    const matchesTitle = !titleFilter || (contact.title ?? "").toLowerCase().includes(titleFilter);
+    const loc = [contact.city, contact.state].filter(Boolean).join(", ").toLowerCase();
+    const matchesLocation = !locationFilter || loc.includes(locationFilter);
+    return matchesSearch && matchesTitle && matchesLocation;
+  });
+}
+
+function normalizeCampaigns(enrichment: any): CampaignRecord[] {
+  if (!enrichment) return [];
+  const sources = [
+    enrichment?.sales_assets?.campaign_support,
+    enrichment?.command_center_enrichment?.campaigns,
+    enrichment?.campaigns,
+  ];
+  for (const source of sources) {
+    if (Array.isArray(source) && source.length) {
+      return source.map((entry, index) => ({
+        id: String(entry?.id ?? entry?.name ?? index),
+        name: entry?.name ?? `Campaign ${index + 1}`,
+        channel: entry?.channel ?? entry?.type ?? null,
+        personas: entry?.target_personas ?? entry?.personas ?? null,
+        status: entry?.status ?? entry?.state ?? null,
+        summary: entry?.summary ?? entry?.description ?? null,
+      }));
+    }
+  }
+  return [];
+}
+
+function normalizeRfpNotes(enrichment: any): string[] {
+  const notes =
+    enrichment?.sales_assets?.rfp_support?.notes ??
+    enrichment?.command_center_enrichment?.rfp_notes ??
+    [];
+  return Array.isArray(notes) ? notes.filter((note): note is string => typeof note === "string" && note.trim().length > 0) : [];
+}
+
+function formatNumber(value: number | null | undefined) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return Number(value).toLocaleString();
-};
+}
 
-const formatCurrency = (value: number | null | undefined) => {
+function formatCurrency(value: number | null | undefined) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return `$${Math.round(Number(value)).toLocaleString()}`;
-};
+}
 
-const getCountryFlag = (code?: string | null) => {
+function formatDate(value: string | null | undefined) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getCountryFlag(code?: string | null) {
   if (!code) return "🌐";
   const normalized = code.trim().slice(0, 2).toUpperCase();
   if (normalized.length !== 2) return "🌐";
@@ -640,8 +963,4 @@ const getCountryFlag = (code?: string | null) => {
     .split("")
     .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
     .join("");
-};
-
-const PanelShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">{children}</div>
-);
+}

@@ -179,6 +179,7 @@ export default function Companies() {
       isLoadingProfile={profileLoading || savedCompaniesLoading}
       errorProfile={profileError}
       onSaveCompany={handleSaveToCommandCenter}
+      companiesLoading={savedCompaniesLoading}
     />
   );
 }
