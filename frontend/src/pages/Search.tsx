@@ -57,7 +57,9 @@ export default function SearchPage() {
     [],
   );
   const [savingCompanyId, setSavingCompanyId] = useState<string | null>(null);
-  const [profileCache, setProfileCache] = useState<Record<string, IyCompanyProfile | null>>({});
+  const [profileCache, setProfileCache] = useState<
+    Record<string, IyCompanyProfile | null>
+  >({});
   const prefetchedKeysRef = useRef<Set<string>>(new Set());
   const [activeWorkspaceTab, setActiveWorkspaceTab] =
     useState<SearchWorkspaceTab>("overview");
@@ -80,7 +82,10 @@ export default function SearchPage() {
       prefetchedKeysRef.current.add(companyKey);
       try {
         const response = await getIyCompanyProfile({ companyKey });
-        setProfileCache((prev) => ({ ...prev, [companyKey]: response.companyProfile }));
+        setProfileCache((prev) => ({
+          ...prev,
+          [companyKey]: response.companyProfile,
+        }));
       } catch {
         setProfileCache((prev) => ({ ...prev, [companyKey]: null }));
       }
@@ -108,19 +113,19 @@ export default function SearchPage() {
       const rows: IyShipperHit[] = Array.isArray(json.results)
         ? json.results
         : Array.isArray(json.rows)
-          ? json.rows
-          : Array.isArray(json.data?.rows)
-            ? json.data.rows
-            : Array.isArray(json.data)
-              ? json.data
-              : [];
+        ? json.rows
+        : Array.isArray(json.data?.rows)
+        ? json.data.rows
+        : Array.isArray(json.data)
+        ? json.data
+        : [];
 
       const totalFromApi: number =
         typeof json.total === "number"
           ? json.total
           : typeof json.data?.total === "number"
-            ? json.data.total
-            : rows.length;
+          ? json.data.total
+          : rows.length;
 
       setResults(rows);
       setTotal(totalFromApi);
@@ -162,9 +167,7 @@ export default function SearchPage() {
       })
       .catch((err: any) => {
         console.error("getIyCompanyProfile failed", err);
-        setProfileError(
-          err?.message || "Failed to load company profile",
-        );
+        setProfileError(err?.message || "Failed to load company profile");
       })
       .finally(() => {
         setProfileLoading(false);
@@ -338,9 +341,7 @@ export default function SearchPage() {
             ?.toLowerCase()
             .includes(originCountry.toLowerCase())) &&
         (!originPostal ||
-          shipper.postalCode
-            ?.toLowerCase()
-            .includes(originPostal.toLowerCase()));
+          shipper.postalCode?.toLowerCase().includes(originPostal.toLowerCase()));
 
       const matchesDest =
         (!destCity ||
@@ -408,12 +409,20 @@ export default function SearchPage() {
     if (!selectedWorkspaceCompany) return null;
     const companyKey = getCanonicalCompanyId(selectedWorkspaceCompany);
     if (!companyKey) return null;
-    const subtitle = [selectedWorkspaceCompany.city, selectedWorkspaceCompany.state, selectedWorkspaceCompany.country]
-      .filter((value) => Boolean(value))
-      .join(", ") || null;
+    const subtitle =
+      [
+        selectedWorkspaceCompany.city,
+        selectedWorkspaceCompany.state,
+        selectedWorkspaceCompany.country,
+      ]
+        .filter((value) => Boolean(value))
+        .join(", ") || null;
     return {
       companyKey,
-      title: selectedWorkspaceCompany.title || selectedWorkspaceCompany.name || "Company",
+      title:
+        selectedWorkspaceCompany.title ||
+        selectedWorkspaceCompany.name ||
+        "Company",
       subtitle,
       shipper: selectedWorkspaceCompany,
       isSaved: savedCompanyIds.has(companyKey),
@@ -424,7 +433,6 @@ export default function SearchPage() {
   useEffect(() => {
     setActiveWorkspaceTab("overview");
   }, [selectedWorkspaceMeta?.companyKey]);
-
 
   const handleResetAdvancedFilters = () => {
     setOriginCity("");
@@ -446,8 +454,8 @@ export default function SearchPage() {
               LIT Search Shipper Search
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Search the LIT Search DMA index for verified shippers, view
-              live BOL activity, and save companies to Command Center.
+              Search the LIT Search DMA index for verified shippers, view live
+              BOL activity, and save companies to Command Center.
             </p>
           </div>
         </div>
@@ -533,10 +541,16 @@ export default function SearchPage() {
                 {filteredResults.map((shipper) => {
                   const companyId = getCanonicalCompanyId(shipper);
                   const saved = companyId ? savedCompanyIds.has(companyId) : false;
-                  const saving = companyId ? savingCompanyId === companyId : false;
-                  const hydratedProfile = companyId ? profileCache[companyId] ?? null : null;
+                  const saving = companyId
+                    ? savingCompanyId === companyId
+                    : false;
+                  const hydratedProfile = companyId
+                    ? profileCache[companyId] ?? null
+                    : null;
                   const isActive =
-                    !!companyId && !!selectedWorkspaceMeta && companyId === selectedWorkspaceMeta.companyKey;
+                    !!companyId &&
+                    !!selectedWorkspaceMeta &&
+                    companyId === selectedWorkspaceMeta.companyKey;
                   return (
                     <SearchResultCard
                       key={shipper.key || shipper.title}
@@ -546,7 +560,10 @@ export default function SearchPage() {
                       isActive={isActive}
                       profile={hydratedProfile}
                       onToggleSave={() =>
-                        handleSaveToCommandCenter(shipper, hydratedProfile ?? null)
+                        handleSaveToCommandCenter(
+                          shipper,
+                          hydratedProfile ?? null,
+                        )
                       }
                       onOpenDetails={() => handleCardClick(shipper)}
                       onSelect={() => setSelectedWorkspaceCompany(shipper)}
@@ -636,108 +653,103 @@ export default function SearchPage() {
                   Filters
                 </p>
                 <h2 className="text-xl font-semibold text-slate-900">
-                  Origin & destination
+                  Origin &amp; destination
                 </h2>
-                <p className="text-sm text-slate-500">
-                  Filter results by city, state, country, or postal code. Filters
-                  are applied locally to the current results.
+                <p className="mt-1 text-xs text-slate-500">
+                  Narrow the search by origin and destination metadata from the
+                  shipment history.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setFiltersOpen(false)}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
               >
                 Close
               </button>
             </div>
 
-            <div className="mt-6 grid gap-6 md:grid-cols-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 rounded-2xl bg-slate-50 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Origin
                 </p>
-                <div className="mt-2 space-y-2">
+                <div className="grid gap-2 text-xs">
                   <input
                     value={originCity}
                     onChange={(e) => setOriginCity(e.target.value)}
                     placeholder="City"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                   <input
                     value={originState}
                     onChange={(e) => setOriginState(e.target.value)}
                     placeholder="State / Province"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                   <input
                     value={originCountry}
                     onChange={(e) => setOriginCountry(e.target.value)}
                     placeholder="Country"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                   <input
                     value={originPostal}
                     onChange={(e) => setOriginPostal(e.target.value)}
                     placeholder="Postal code"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                 </div>
               </div>
 
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <div className="space-y-2 rounded-2xl bg-slate-50 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Destination
                 </p>
-                <div className="mt-2 space-y-2">
+                <div className="grid gap-2 text-xs">
                   <input
                     value={destCity}
                     onChange={(e) => setDestCity(e.target.value)}
                     placeholder="City"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                   <input
                     value={destState}
                     onChange={(e) => setDestState(e.target.value)}
                     placeholder="State / Province"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                   <input
                     value={destCountry}
                     onChange={(e) => setDestCountry(e.target.value)}
                     placeholder="Country"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                   <input
                     value={destPostal}
                     onChange={(e) => setDestPostal(e.target.value)}
                     placeholder="Postal code"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs text-slate-500">
-                Client-side filters are applied on top of search results.
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleResetAdvancedFilters}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltersOpen(false)}
-                  className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                >
-                  Done
-                </button>
-              </div>
+            <div className="mt-4 flex items-center justify-between text-xs">
+              <button
+                type="button"
+                onClick={handleResetAdvancedFilters}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                Reset all
+              </button>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(false)}
+                className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-slate-800"
+              >
+                Apply filters
+              </button>
             </div>
           </div>
         </div>
