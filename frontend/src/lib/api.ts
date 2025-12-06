@@ -57,6 +57,12 @@ export function coerceNumber(value: unknown): number | null {
   return null;
 }
 
+export function toNumberOrNull(input: unknown): number | null {
+  if (input == null) return null;
+  const n = typeof input === "number" ? input : Number(input);
+  return Number.isFinite(n) ? n : null;
+}
+
 // Frontend API key for calling the API Gateway
 const LIT_GATEWAY_KEY =
   (typeof import.meta !== "undefined" &&
@@ -147,6 +153,7 @@ export type IyRouteTopRoute = {
   teu?: number | null;
   fclShipments?: number | null;
   lclShipments?: number | null;
+  estSpendUsd?: number | null;
 };
 
 export interface IyRouteKpis {
@@ -157,17 +164,37 @@ export interface IyRouteKpis {
   mostRecentRoute: string | null;
   sampleSize: number | null;
   topRoutesLast12m: IyRouteTopRoute[];
+  recentTopRoutes?: IyRouteTopRoute[];
+  monthlySeries?: IyMonthlySeriesPoint[];
+  estSpendUsd?: number | null;
+  contact?: IyCompanyContact;
 }
 
 export interface IyTimeSeriesPoint {
   month: string;
   fclShipments: number | null;
-  lclShipments: number | null;
+}
+
+export interface IyMonthlySeriesPoint extends IyTimeSeriesPoint {
+  monthLabel: string;
+  shipmentsFcl: number;
+  shipmentsLcl: number;
+  totalShipments: number;
+  teu: number;
 }
 
 export type IyCompanyContainers = {
   fclShipments12m: number | null;
   lclShipments12m: number | null;
+};
+
+export type IyCompanyProfileRoute = {
+  label: string | null;
+  origin: string | null;
+  destination: string | null;
+  shipments: number | null;
+  teu: number | null;
+  lastShipmentDate: string | null;
 };
 
 export interface IyCompanyProfile {
@@ -187,6 +214,12 @@ export interface IyCompanyProfile {
   routeKpis: IyRouteKpis | null;
   timeSeries: IyTimeSeriesPoint[];
   containers: IyCompanyContainers | null;
+  country?: string | null;
+  topRoutes?: IyCompanyProfileRoute[] | null;
+  mostRecentRoute?: IyCompanyProfileRoute | null;
+  suppliersSample?: string[] | null;
+  containersLoad?: Array<Record<string, any>>;
+  rawWebsite?: string | null;
   topSuppliers?: string[] | null;
   // Legacy/raw passthrough fields for compatibility with older UI
   time_series?: Record<string, any>;
@@ -1298,6 +1331,9 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
       topRoutesLast12m: Array.isArray(raw.routeKpis.topRoutesLast12m)
         ? (raw.routeKpis.topRoutesLast12m as IyRouteTopRoute[])
         : [],
+      recentTopRoutes: Array.isArray(raw.routeKpis.recentTopRoutes)
+        ? (raw.routeKpis.recentTopRoutes as IyRouteTopRoute[])
+        : [],
     };
   }
 
@@ -1325,101 +1361,467 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
       null,
     sampleSize: coerceNumber(raw.sample_size ?? raw.sampleSize) ?? null,
     topRoutesLast12m: topRoutes,
+    recentTopRoutes: [],
   };
+}
+
+type RawTimeSeriesEntry = {
+  shipments?: unknown;
+  teu?: unknown;
+};
+
+type RawBol = {
+  date_formatted?: string;
+  Country?: string;
+  country_code?: string;
+  supplier_address_country?: string;
+  supplier_address_country_code?: string;
+  supplier_address_location?: string;
+  supplier_address_loc?: string;
+  company_address_country?: string;
+  company_address_country_code?: string;
+  company_address_loc?: string;
+  TEU?: number | string;
+};
+
+function parseIyDate(value: string): Date | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseBolDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  const parsed = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function normalizeIyCompanyProfilePayload(
+  rawPayload: unknown,
+  opts?: { fallbackCompanyKey?: string },
+): IyCompanyProfile {
+  const isRecord = (value: unknown): value is Record<string, any> =>
+    Boolean(value) && typeof value === "object";
+  const readString = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  };
+
+  const envelope = isRecord(rawPayload) ? (rawPayload as Record<string, any>) : {};
+  const src = isRecord(envelope.data) ? (envelope.data as Record<string, any>) : envelope;
+
+  const fallbackKeyOrName =
+    readString(opts?.fallbackCompanyKey) ??
+    readString(src.company_id) ??
+    readString(src.companyKey) ??
+    readString(src.companyId) ??
+    readString(src.key) ??
+    readString(src.slug) ??
+    readString(src.company_name) ??
+    readString(src.name) ??
+    null;
+
+  const companyId = ensureCompanyKey(fallbackKeyOrName ?? "unknown-company");
+  const key = ensureCompanyKey(readString(src.key) ?? companyId);
+
+  const title =
+    readString(src.title) ??
+    readString(src.name) ??
+    readString(src.company_name) ??
+    fallbackKeyOrName ??
+    "Unknown company";
+  const name = readString(src.name) ?? title;
+  const website = readString(src.website);
+  const domain =
+    readString(src.domain) ??
+    (website ? deriveDomainCandidate(website) ?? null : null);
+
+  const phoneNumber =
+    readString(src.phone_number) ??
+    readString(src.phoneNumber) ??
+    readString(src.phone) ??
+    null;
+
+  const address =
+    readString(src.address_plain) ??
+    readString(src.address) ??
+    readString(src.company_address) ??
+    null;
+
+  const country =
+    readString(src.country) ?? readString(src.country_name) ?? null;
+  const countryCode =
+    readString(src.country_code) ??
+    readString(src.countryCode) ??
+    readString(src.country_iso) ??
+    null;
+
+  const totalShipments =
+    toNumberOrNull(
+      src.total_shipments ?? src.shipments_12m ?? src.shipments12m,
+    ) ?? null;
+
+  const lastShipmentDate =
+    (isRecord(src.date_range) && readString(src.date_range.end_date)) ??
+    readString(src.last_shipment_date) ??
+    readString(src.lastShipmentDate) ??
+    readString(src.last_activity) ??
+    null;
+
+  const containersLoad = Array.isArray(src.containers_load)
+    ? src.containers_load
+    : [];
+
+  const recentBols = Array.isArray((src as any).recent_bols)
+    ? ((src as any).recent_bols as RawBol[])
+    : [];
+
+  const buildLaneLabels = (bol: RawBol) => {
+    const originCity =
+      readString(bol.supplier_address_location) ??
+      readString(bol.supplier_address_loc) ??
+      readString(bol.Country) ??
+      null;
+    const originCode =
+      readString(bol.supplier_address_country_code) ??
+      readString(bol.country_code) ??
+      null;
+    const destCountry =
+      readString(bol.company_address_country) ??
+      readString(src.company_address_country) ??
+      readString(src.country) ??
+      null;
+    const destCode =
+      readString(bol.company_address_country_code) ??
+      readString(src.company_address_country_code) ??
+      readString(src.country_code) ??
+      null;
+
+    const originLabel = [originCity, originCode]
+      .filter((value): value is string => Boolean(value))
+      .join(", ");
+    const destLabel = [destCountry, destCode]
+      .filter((value): value is string => Boolean(value))
+      .join(", ");
+
+    const label =
+      originLabel && destLabel ? `${originLabel} → ${destLabel}` : null;
+
+    return {
+      originLabel: originLabel || null,
+      destLabel: destLabel || null,
+      label,
+    };
+  };
+
+  const getShipmentsForLoad = (loadType: string): number | null => {
+    const row = containersLoad.find(
+      (entry: any) =>
+        String(entry?.load_type ?? "")
+          .toUpperCase()
+          .trim() === loadType.toUpperCase(),
+    );
+    return row ? toNumberOrNull(row.shipments) : null;
+  };
+
+  const fclShipments12m = getShipmentsForLoad("FCL");
+  const lclShipments12m = getShipmentsForLoad("LCL");
+
+  const containers: IyCompanyContainers | null =
+    fclShipments12m != null || lclShipments12m != null
+      ? {
+          fclShipments12m: fclShipments12m ?? null,
+          lclShipments12m: lclShipments12m ?? null,
+        }
+      : null;
+
+  const timeSeriesRaw = isRecord(src.time_series)
+    ? (src.time_series as Record<string, RawTimeSeriesEntry>)
+    : null;
+
+  type SeriesPoint = { date: Date; shipments: number; teu: number };
+  const allPoints: SeriesPoint[] = [];
+
+  if (timeSeriesRaw) {
+    for (const [label, value] of Object.entries(timeSeriesRaw)) {
+      const parsedDate = parseIyDate(label);
+      if (!parsedDate) continue;
+      const shipments = toNumberOrNull((value as any)?.shipments) ?? 0;
+      const teu = toNumberOrNull((value as any)?.teu) ?? 0;
+      allPoints.push({ date: parsedDate, shipments, teu });
+    }
+  }
+
+  allPoints.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  let shipmentsLast12m: number | null = null;
+  let teuLast12m: number | null = null;
+  let monthlySeriesPoints: IyMonthlySeriesPoint[] | null = null;
+
+  if (allPoints.length) {
+    const lastDate = allPoints[allPoints.length - 1].date;
+    const windowStart = new Date(lastDate);
+    windowStart.setFullYear(windowStart.getFullYear() - 1);
+
+    const inWindow = allPoints.filter(
+      (point) => point.date > windowStart && point.date <= lastDate,
+    );
+
+    if (inWindow.length) {
+      shipmentsLast12m = inWindow.reduce(
+        (sum, point) => sum + point.shipments,
+        0,
+      );
+      teuLast12m = inWindow.reduce((sum, point) => sum + point.teu, 0);
+
+      const totalLoadShipments =
+        (fclShipments12m ?? 0) + (lclShipments12m ?? 0);
+      const fclShare =
+        totalLoadShipments > 0
+          ? (fclShipments12m ?? 0) / totalLoadShipments
+          : 1;
+      const lclShare = 1 - fclShare;
+
+      monthlySeriesPoints = inWindow.map((point) => {
+        const fcl = point.shipments * fclShare;
+        const lcl = point.shipments * lclShare;
+        const monthLabel = `${point.date.getFullYear()}-${String(
+          point.date.getMonth() + 1,
+        ).padStart(2, "0")}`;
+        return {
+          month: monthLabel,
+          monthLabel,
+          fclShipments: fcl,
+          lclShipments: lcl,
+          shipmentsFcl: fcl,
+          shipmentsLcl: lcl,
+          totalShipments: point.shipments,
+          teu: point.teu,
+        };
+      });
+    }
+  }
+
+  const sharedMonthlySeries: IyMonthlySeriesPoint[] =
+    monthlySeriesPoints ?? [];
+
+  type LanePoint = {
+    date: Date;
+    label: string;
+    origin: string;
+    destination: string;
+    teu: number;
+  };
+
+  const lanePoints: LanePoint[] = [];
+
+  for (const bol of recentBols) {
+    const date = parseBolDate(bol?.date_formatted);
+    if (!date) continue;
+    const { originLabel, destLabel, label } = buildLaneLabels(bol);
+    if (!label || !originLabel || !destLabel) continue;
+    const teu = toNumberOrNull(bol.TEU) ?? 0;
+    lanePoints.push({
+      date,
+      label,
+      origin: originLabel,
+      destination: destLabel,
+      teu,
+    });
+  }
+
+  let topLanes12m: IyCompanyProfileRoute[] = [];
+  let recentLanes6m: IyCompanyProfileRoute[] = [];
+  let mostRecentRouteLabel: string | null = null;
+
+  if (lanePoints.length) {
+    lanePoints.sort((a, b) => a.date.getTime() - b.date.getTime());
+    const lastLaneDate = lanePoints[lanePoints.length - 1].date;
+
+    const laneWindow = (months: number) => {
+      const start = new Date(lastLaneDate);
+      start.setMonth(start.getMonth() - months);
+      return lanePoints.filter(
+        (point) => point.date > start && point.date <= lastLaneDate,
+      );
+    };
+
+    const aggregateLanes = (points: LanePoint[]): IyCompanyProfileRoute[] => {
+      if (!points.length) return [];
+      const map = new Map<
+        string,
+        {
+          label: string;
+          origin: string;
+          destination: string;
+          shipments: number;
+          teu: number;
+          lastDate: Date;
+        }
+      >();
+
+      for (const point of points) {
+        const existing = map.get(point.label);
+        if (existing) {
+          existing.shipments += 1;
+          existing.teu += point.teu;
+          if (point.date > existing.lastDate) {
+            existing.lastDate = point.date;
+          }
+        } else {
+          map.set(point.label, {
+            label: point.label,
+            origin: point.origin,
+            destination: point.destination,
+            shipments: 1,
+            teu: point.teu,
+            lastDate: point.date,
+          });
+        }
+      }
+
+      return Array.from(map.values())
+        .sort((a, b) => b.shipments - a.shipments)
+        .slice(0, 5)
+        .map((lane) => {
+          const shipmentLabel = lane.shipments.toLocaleString();
+          return {
+            label: `${lane.label} (${shipmentLabel} shipments)`,
+            origin: lane.origin,
+            destination: lane.destination,
+            shipments: lane.shipments,
+            teu: lane.teu,
+            lastShipmentDate: lane.lastDate.toISOString(),
+          } as IyCompanyProfileRoute;
+        });
+    };
+
+    topLanes12m = aggregateLanes(laneWindow(12));
+    recentLanes6m = aggregateLanes(laneWindow(6));
+
+    const mostRecentPoint = lanePoints[lanePoints.length - 1];
+    mostRecentRouteLabel = mostRecentPoint ? mostRecentPoint.label : null;
+  }
+
+  const totalShippingCost = toNumberOrNull(src.total_shipping_cost);
+  let estSpendUsd12m: number | null = null;
+
+  if (
+    totalShippingCost != null &&
+    teuLast12m != null &&
+    teuLast12m > 0
+  ) {
+    const containersRaw = Array.isArray(src.containers) ? src.containers : [];
+    const totalTeu = containersRaw.reduce((sum: number, row: any) => {
+      const teu = toNumberOrNull(row?.teu) ?? 0;
+      return sum + teu;
+    }, 0);
+
+    if (totalTeu > 0) {
+      const costPerTeu = totalShippingCost / totalTeu;
+      estSpendUsd12m = Math.round(costPerTeu * teuLast12m);
+    }
+  }
+
+  let suppliersSample: string[] | null = null;
+  if (Array.isArray(src.suppliers_table)) {
+    suppliersSample = src.suppliers_table
+      .map((row: any) =>
+        readString(row?.supplier_name ?? row?.supplier ?? row?.name),
+      )
+      .filter((value): value is string => Boolean(value))
+      .slice(0, 4);
+    if (!suppliersSample.length) {
+      suppliersSample = null;
+    }
+  }
+
+  const topSuppliers =
+    suppliersSample ?? normalizeTopSuppliers(src) ?? null;
+
+  const mapProfileRouteToTopRoute = (
+    lane: IyCompanyProfileRoute,
+  ): IyRouteTopRoute => ({
+    route: lane.label ?? "",
+    shipments: lane.shipments ?? null,
+    teu: lane.teu ?? null,
+    estSpendUsd: null,
+  });
+
+  const topRoutesForKpis: IyRouteTopRoute[] = topLanes12m.map(
+    mapProfileRouteToTopRoute,
+  );
+  const recentTopRoutesForKpis: IyRouteTopRoute[] = recentLanes6m.map(
+    mapProfileRouteToTopRoute,
+  );
+
+  const routeKpis: IyRouteKpis = {
+    shipmentsLast12m,
+    teuLast12m,
+    estSpendUsd12m,
+    topRouteLast12m: topLanes12m[0]?.label ?? null,
+    mostRecentRoute: mostRecentRouteLabel ?? null,
+    sampleSize: shipmentsLast12m,
+    topRoutesLast12m: topRoutesForKpis,
+    recentTopRoutes: recentTopRoutesForKpis,
+    monthlySeries: sharedMonthlySeries,
+    estSpendUsd: estSpendUsd12m,
+  };
+
+  const rawTopRoutes = Array.isArray(src.top_routes) ? src.top_routes : [];
+  const mostRecentRouteRaw = isRecord(src.most_recent_route)
+    ? src.most_recent_route
+    : null;
+
+  const normalized: IyCompanyProfile = {
+    key,
+    companyId,
+    name,
+    title,
+    domain,
+    website,
+    phoneNumber,
+    phone: phoneNumber,
+    address,
+    countryCode,
+    lastShipmentDate,
+    estSpendUsd12m,
+    totalShipments: totalShipments ?? shipmentsLast12m,
+    routeKpis,
+    timeSeries: sharedMonthlySeries as IyTimeSeriesPoint[],
+    containers: containers ?? normalizeContainers(src),
+    country,
+    topRoutes: topLanes12m.length ? topLanes12m : null,
+    mostRecentRoute: topLanes12m[0] ?? null,
+    suppliersSample,
+    containersLoad,
+    rawWebsite: website,
+    topSuppliers,
+    time_series: src.time_series,
+    containers_load: containersLoad,
+    top_routes: rawTopRoutes,
+    most_recent_route: mostRecentRouteRaw,
+    suppliers_sample: suppliersSample ?? src.suppliers_sample ?? undefined,
+  };
+
+  return normalized;
 }
 
 function normalizeCompanyProfile(
   rawProfile: any,
   companyKey: string,
 ): IyCompanyProfile {
-  const profileData = rawProfile?.data ?? rawProfile ?? {};
-  const companyId = ensureCompanyKey(
-    profileData.company_id ?? profileData.companyKey ?? companyKey,
-  );
-  const profileKey = ensureCompanyKey(profileData.key ?? companyId);
-
-  const routeKpis = normalizeRouteKpis(profileData);
-  const timeSeries = normalizeTimeSeries(profileData);
-  const containers = normalizeContainers(profileData);
-  const topSuppliers = normalizeTopSuppliers(profileData);
-
-  const websiteValue = typeof profileData.website === "string" ? profileData.website : null;
-  const domainValue =
-    profileData.domain ??
-    (websiteValue
-      ? (() => {
-          try {
-            const parsed = new URL(
-              websiteValue.startsWith("http") ? websiteValue : `https://${websiteValue}`,
-            );
-            return parsed.hostname.replace(/^www\./i, "");
-          } catch {
-            return null;
-          }
-        })()
-      : null);
-
-  const phoneCandidate =
-    profileData.phoneNumber ??
-    profileData.phone ??
-    profileData.phone_number ??
-    profileData.company_phone ??
-    null;
-
-  return {
-    key: profileKey,
-    companyId,
-    name:
-      typeof profileData.name === "string"
-        ? profileData.name
-        : typeof profileData.title === "string"
-          ? profileData.title
-          : profileKey,
-    title:
-      typeof profileData.title === "string"
-        ? profileData.title
-        : typeof profileData.name === "string"
-          ? profileData.name
-          : profileKey,
-    domain: domainValue,
-    website: websiteValue,
-    phoneNumber: typeof phoneCandidate === "string" ? phoneCandidate : null,
-    phone:
-      typeof phoneCandidate === "string"
-        ? phoneCandidate
-        : profileData.phone ??
-            profileData.phone_number ??
-            profileData.company_phone ??
-            null,
-    address: profileData.address ?? profileData.company_address ?? null,
-    countryCode:
-      profileData.country_code ??
-      profileData.countryCode ??
-      profileData.country ??
-      null,
-    lastShipmentDate:
-      profileData.last_shipment_date ??
-      profileData.lastShipment ??
-      profileData.lastShipmentDate ??
-      null,
-    estSpendUsd12m:
-      coerceNumber(
-        profileData.est_spend_usd ??
-          profileData.estimated_spend_12m ??
-          profileData.spend_12m,
-      ) ?? null,
-    totalShipments:
-      coerceNumber(profileData.total_shipments ?? profileData.shipments_12m) ?? null,
-    routeKpis,
-    timeSeries,
-    containers,
-    topSuppliers,
-    time_series: profileData.time_series,
-    containers_load: profileData.containers_load,
-    top_routes: profileData.top_routes,
-    most_recent_route: profileData.most_recent_route,
-    suppliers_sample: profileData.suppliers_sample,
-  };
+  return normalizeIyCompanyProfilePayload(rawProfile, {
+    fallbackCompanyKey: companyKey,
+  });
 }
 
 export async function getIyCompanyProfile({
@@ -1465,6 +1867,40 @@ export async function getIyCompanyProfile({
     companyProfile,
     enrichment: json?.enrichment ?? null,
   };
+}
+
+export async function getIyCompanyBolDetails(
+  companyKey: string,
+  months = 12,
+) {
+  const normalizedKey = ensureCompanyKey(companyKey);
+  const res = await fetch(
+    withGatewayKey(`${SEARCH_GATEWAY_BASE}/public/iy/companyBolDetails`),
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        company_id: normalizedKey,
+        months,
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error("getIyCompanyBolDetails failed", res.status, text);
+    return { ok: false, rows: [], total: 0 };
+  }
+
+  const json = await res.json().catch(() => null);
+  if (!json) {
+    return { ok: false, rows: [], total: 0 };
+  }
+
+  return json;
 }
 
 export async function searchShippers(
@@ -1749,6 +2185,7 @@ export function computeIyRouteKpisFromShipments(
     shipmentsLast12m,
     teuLast12m,
     topRoutesLast12m: topRoutes,
+    recentTopRoutes: [],
   };
 }
 
@@ -1953,17 +2390,6 @@ export async function getCompanyKpis(
   }
 }
 
-// Saved companies list (for future UI)
-export async function getSavedCompanies(signal?: AbortSignal) {
-  const url = `/api/lit/crm/savedCompanies`;
-  const r = await fetch(url, {
-    headers: { accept: "application/json" },
-    signal,
-  });
-  if (!r.ok) return { rows: [] };
-  return r.json();
-}
-
 // --- Filters singleton cache with 10m TTL ---
 let _filtersCache: { data: any; expires: number } | null = null;
 let _filtersInflight: Promise<any> | null = null;
@@ -2018,62 +2444,166 @@ type SaveCompanyToCrmInput =
   | { company: Record<string, any> }
   | Record<string, any>;
 
-export async function saveCompanyToCrm(
-  input: SaveCompanyToCrmInput,
-): Promise<any> {
-  const company =
-    (input as { company?: Record<string, any> }).company ?? input ?? {};
-  const rawId =
-    (company as any)?.companyKey ||
-    (company as any)?.key ||
-    (company as any)?.company_id ||
-    (company as any)?.companyId ||
-    (company as any)?.id ||
-    (company as any)?.name ||
-    (company as any)?.company_name ||
-    (company as any)?.title ||
-    "";
-  const companyId = ensureCompanyKey(rawId);
-  if (!companyId) {
-    console.warn("[LIT] saveCompanyToCrm called with invalid company payload:", {
-      company,
-      rawId,
-    });
-    throw new Error("saveCompanyToCrm requires a valid company id");
-  }
+// --- CRM / Command Center types -----------------------------
 
+export type CrmSaveRequest = {
+  company_id: string;
+  stage: string;
+  provider: string;
+  payload: any;
+};
+
+export type CrmSaveResponse = {
+  ok: boolean;
+  message?: string;
+  received?: CrmSaveRequest;
+};
+
+const CRM_BASE = API_BASE;
+
+export async function saveCompanyToCrm(
+  input: CrmSaveRequest,
+): Promise<CrmSaveResponse> {
   const res = await fetch(
     withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: "prospect",
-        provider: "importyeti",
-        payload: company,
-      }),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
     },
   );
 
   if (!res.ok) {
-    let errorBody: any = null;
-    try {
-      errorBody = await res.json();
-    } catch {
-      // swallow parse error
-    }
-    if (typeof window !== "undefined") {
-      console.warn("[LIT] saveCompanyToCrm failed", {
-        status: res.status,
-        statusText: res.statusText,
-        errorBody,
-      });
-    }
-    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
+    const text = await res.text().catch(() => "");
+    console.error("saveCompanyToCrm failed", res.status, text);
+    return { ok: false, message: text || `HTTP ${res.status}` };
   }
 
-  return res.json();
+  const json = (await res.json().catch(() => null)) as any;
+  return {
+    ok: Boolean(json?.ok ?? true),
+    message: json?.message ?? "",
+    received: json?.received,
+  };
+}
+
+export type CrmSavedCompany = {
+  company_id: string;
+  stage?: string;
+  provider?: string;
+  payload?: {
+    name?: string;
+    shipments_12m?: number;
+    teus_12m?: number;
+    [key: string]: any;
+  };
+  saved_at?: string;
+};
+
+export type CrmSavedCompaniesResponse = {
+  ok: boolean;
+  companies: CrmSavedCompany[];
+};
+
+export type SavedCompanySummary = {
+  id: string;
+  name: string;
+  shipments12m: number;
+  teus12m: number;
+  raw: CrmSavedCompany | null;
+};
+
+export async function getSavedCompanies(
+  stage?: string,
+): Promise<{ ok: boolean; records: SavedCompanySummary[] }> {
+  const url = new URL("/crm/savedCompanies", API_BASE);
+  if (stage) {
+    url.searchParams.set("stage", stage);
+  }
+
+  const resp = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "content-type": "application/json",
+    },
+  });
+
+  if (!resp.ok) {
+    console.error("getSavedCompanies: HTTP", resp.status);
+    return { ok: false, records: [] };
+  }
+
+  let json: any;
+  try {
+    json = await resp.json();
+  } catch (err) {
+    console.error("getSavedCompanies: bad JSON", err);
+    return { ok: false, records: [] };
+  }
+
+  if (json?.ok === false) {
+    return { ok: false, records: [] };
+  }
+
+  const candidateArrays = [
+    json?.companies,
+    json?.records,
+    json?.data,
+    json?.rows,
+    json?.data?.rows,
+  ];
+
+  let recordsSource: any[] | null = null;
+  for (const candidate of candidateArrays) {
+    if (Array.isArray(candidate)) {
+      recordsSource = candidate;
+      break;
+    }
+  }
+
+  if (!recordsSource && json?.record) {
+    recordsSource = [json.record];
+  }
+
+  if (!recordsSource) {
+    recordsSource = [];
+  }
+
+  if (!Array.isArray(recordsSource)) {
+    console.error("getSavedCompanies: expected array, got", recordsSource);
+    return { ok: false, records: [] };
+  }
+
+  const normalized: SavedCompanySummary[] = recordsSource
+    .map((entry: any) => {
+      if (!entry || typeof entry !== "object") return null;
+      const raw = entry as CrmSavedCompany;
+      const id = String(
+        raw?.company_id ?? (raw as any)?.companyId ?? (raw as any)?.id ?? "",
+      ).trim();
+      if (!id) return null;
+      const payload = raw?.payload ?? {};
+      const name =
+        payload?.name ??
+        payload?.profile?.name ??
+        payload?.shipper?.company_name ??
+        "";
+      const shipments12m = Number(payload?.shipments_12m ?? 0) || 0;
+      const teus12m = Number(payload?.teus_12m ?? 0) || 0;
+      return {
+        id,
+        name: name || id,
+        shipments12m,
+        teus12m,
+        raw,
+      } satisfies SavedCompanySummary;
+    })
+    .filter((record): record is SavedCompanySummary => Boolean(record));
+
+  return { ok: true, records: normalized };
 }
 
 export async function saveIyCompanyToCrm(opts: {
@@ -2418,3 +2948,7 @@ export async function listContactsLushia(
     ? res.json()
     : ({ error: await res.text(), status: res.status } as any);
 }
+
+// Helper functions for modal KPI calculations.
+// Kept generic on purpose so we don't break types if the backend shape changes.
+

@@ -44,9 +44,16 @@ const formatNumber = (value: number | null | undefined) => {
   return numberFormatter.format(value);
 };
 
-const formatCurrency = (value: number | null | undefined) => {
+const formatCurrency = (
+  value: number | null | undefined,
+  currency = "USD",
+) => {
   if (value == null || Number.isNaN(value)) return "—";
-  return currencyFormatter.format(value);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value);
 };
 
 const formatDateLabel = (value: string | null | undefined) => {
@@ -270,10 +277,38 @@ export default function ShipperDetailModal({
   const teu12m =
     coerceNumber(resolvedRouteKpis?.teuLast12m) ??
     coerceNumber(shipper.teusLast12m);
-  const estSpend12m =
-    coerceNumber(resolvedRouteKpis?.estSpendUsd12m) ??
-    coerceNumber(profile?.estSpendUsd12m) ??
-    coerceNumber(shipper.estSpendLast12m);
+  const geminiEnrichment: any = enrichment ?? null;
+  const spendAnalysis = geminiEnrichment?.spend_analysis ?? null;
+
+  const totalEstimatedSpend12m: number | null =
+    typeof spendAnalysis?.estimated_12m_spend_total === "number"
+      ? spendAnalysis.estimated_12m_spend_total
+      : coerceNumber(resolvedRouteKpis?.estSpendUsd12m) ??
+          coerceNumber(profile?.estSpendUsd12m) ??
+          coerceNumber(shipper.estSpendLast12m);
+
+  const spendCurrency: string =
+    spendAnalysis?.currency && typeof spendAnalysis.currency === "string"
+      ? spendAnalysis.currency
+      : "USD";
+
+  type SpendLane = {
+    lane?: string;
+    origin?: string;
+    destination?: string;
+    teus_12m?: number;
+    shipments_12m?: number;
+    estimated_12m_spend?: number;
+    share_of_spend?: number;
+  };
+
+  const spendLanes: SpendLane[] = Array.isArray(spendAnalysis?.lanes)
+    ? (spendAnalysis.lanes as SpendLane[])
+    : [];
+
+  const top2SpendLanes: SpendLane[] = spendLanes.slice(0, 2);
+
+  const estSpend12m = totalEstimatedSpend12m;
   const fclShipments12m = getFclShipments12m(profile);
   const lclShipments12m = getLclShipments12m(profile);
   const lastShipmentDate =
@@ -281,34 +316,37 @@ export default function ShipperDetailModal({
     shipper.lastShipmentDate ??
     shipper.mostRecentShipment ??
     null;
-  const topRouteLast12m =
-    resolvedRouteKpis?.topRouteLast12m ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const mostRecentRoute =
-    resolvedRouteKpis?.mostRecentRoute ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const topRoutes = Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
-    ? resolvedRouteKpis.topRoutesLast12m.slice(0, 5)
-    : [];
+  const chartData = React.useMemo(() => {
+    if (!Array.isArray(profile?.timeSeries)) return [];
+    return profile.timeSeries.slice(-12).map((point) => {
+      const monthValue = point.month ?? "";
+      const label = monthLabel(monthValue);
+      return {
+        month: label || monthValue,
+        monthLabel: label || monthValue,
+        fcl: coerceNumber(point.fclShipments) ?? 0,
+        lcl: coerceNumber(point.lclShipments) ?? 0,
+      };
+    });
+  }, [profile?.timeSeries]);
 
-  const chartData = React.useMemo(
-    () =>
-      Array.isArray(profile?.timeSeries)
-        ? profile.timeSeries.slice(-12).map((point) => ({
-            monthLabel: monthLabel(point.month),
-            fcl: coerceNumber(point.fclShipments) ?? 0,
-            lcl: coerceNumber(point.lclShipments) ?? 0,
-          }))
-        : [],
-    [profile?.timeSeries],
-  );
+  const chartRangeLabel = React.useMemo(() => {
+    if (!chartData.length) return null;
+    const first = chartData[0];
+    const last = chartData[chartData.length - 1];
+    if (!first?.month || !last?.month) return null;
+    const startYear = first.month.slice(0, 4);
+    const endYear = last.month.slice(0, 4);
+    if (!startYear || !endYear) return null;
+    return `${startYear} – ${endYear}`;
+  }, [chartData]);
 
-  const supplierList = React.useMemo(() => {
-    const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
+  const suppliers = React.useMemo(() => {
+    const list =
+      profile?.suppliersSample ??
+      profile?.topSuppliers ??
+      shipper.topSuppliers ??
+      [];
     if (!Array.isArray(list)) return [];
     return list
       .map((entry: any) =>
@@ -318,7 +356,10 @@ export default function ShipperDetailModal({
       )
       .filter((value: string) => Boolean(value))
       .slice(0, 6);
-  }, [profile?.topSuppliers, shipper.topSuppliers]);
+  }, [profile?.suppliersSample, profile?.topSuppliers, shipper.topSuppliers]);
+
+  const aiSuppliers = React.useMemo(() => suppliers.slice(0, 4), [suppliers]);
+
 
   const enrichmentSummary = React.useMemo(
     () => pickEnrichmentSummary(enrichment),
@@ -381,15 +422,49 @@ export default function ShipperDetailModal({
       );
   }, [enrichment]);
 
+  const aiSummaryFromEnrichment =
+    typeof enrichment?.summary === "string" && enrichment.summary.trim().length
+      ? enrichment.summary.trim()
+      : enrichmentSummary;
+
+  const aiSummary = React.useMemo(() => {
+    if (aiSummaryFromEnrichment) return aiSummaryFromEnrichment;
+    if (!profile) return null;
+    const parts: string[] = [];
+    const companyLabel =
+      profile.title || profile.name || shipper.title || "This company";
+    const countryLabel = profile.country || profile.countryCode || "Unknown";
+    parts.push(`${companyLabel} is an importer in ${countryLabel}.`);
+    if (shipments12m != null) {
+      parts.push(
+        `They show roughly ${Number(shipments12m).toLocaleString()} shipments over the last 12 months.`,
+      );
+    }
+    if (teu12m != null) {
+      parts.push(`That's about ${Number(teu12m).toLocaleString()} TEU.`);
+    }
+    if (estSpend12m != null) {
+      parts.push(
+        `Estimated ocean spend is around $${Number(estSpend12m).toLocaleString()}.`,
+      );
+    }
+    if (aiSuppliers.length) {
+      const keySuppliers = aiSuppliers.slice(0, 3).join(", ");
+      parts.push(`Key suppliers include ${keySuppliers}.`);
+    }
+    return parts.length ? parts.join(" ") : null;
+  }, [aiSummaryFromEnrichment, profile, shipments12m, teu12m, estSpend12m, aiSuppliers, shipper.title]);
+
+  const hasAiSummary = Boolean(aiSummaryFromEnrichment || aiSummary);
+
   const hasEnrichmentContent = Boolean(
-    enrichmentSummary ||
-      enrichmentOpportunities.length ||
+    enrichmentOpportunities.length ||
       enrichmentRisks.length ||
       enrichmentTalkingPoints.length ||
       enrichmentExtraSections.length,
   );
 
-  const showEnrichmentBanner = !enrichment && !loadingProfile;
+  const showEnrichmentBanner = !hasAiSummary && !loadingProfile;
 
   const kpiItems: KpiTileProps[] = [
     {
@@ -406,7 +481,10 @@ export default function ShipperDetailModal({
     },
     {
       label: "Est. spend (12m)",
-      value: formatCurrency(estSpend12m),
+      value:
+        typeof totalEstimatedSpend12m === "number"
+          ? formatCurrency(totalEstimatedSpend12m, spendCurrency)
+          : "—",
       icon: CurrencyDollarIcon,
       accent: "emerald",
     },
@@ -429,6 +507,27 @@ export default function ShipperDetailModal({
       accent: "slate",
     },
   ];
+
+  const formatLaneLabel = React.useCallback((lane: SpendLane) => {
+    if (lane?.lane && typeof lane.lane === "string" && lane.lane.trim().length) {
+      return lane.lane.trim();
+    }
+    const origin =
+      lane?.origin && typeof lane.origin === "string" ? lane.origin.trim() : "";
+    const destination =
+      lane?.destination && typeof lane.destination === "string"
+        ? lane.destination.trim()
+        : "";
+    if (!origin && !destination) return "Lane not available";
+    if (!origin || !destination) return origin || destination;
+    return `${origin} → ${destination}`;
+  }, []);
+
+  const formatShare = React.useCallback((value?: number) => {
+    if (value == null || Number.isNaN(value)) return null;
+    const percentage = value > 1 ? value : value * 100;
+    return `${percentage.toFixed(0)}% of spend`;
+  }, []);
 
   const handleSaveClick = () => {
     if (!shipper || saveLoading) return;
@@ -535,19 +634,83 @@ export default function ShipperDetailModal({
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Top route (last 12m)
+                Top origin lane
               </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {topRouteLast12m || "Not available yet"}
-              </p>
+              {top2SpendLanes[0] ? (
+                <div className="space-y-1 text-xs text-slate-700">
+                  <div className="font-medium">
+                    {formatLaneLabel(top2SpendLanes[0])}
+                  </div>
+                  <div className="text-slate-500">
+                    {typeof top2SpendLanes[0].shipments_12m === "number"
+                      ? `${top2SpendLanes[0].shipments_12m.toLocaleString()} shipments`
+                      : null}
+                    {typeof top2SpendLanes[0].teus_12m === "number" &&
+                    top2SpendLanes[0].teus_12m > 0 ? (
+                      <>
+                        {typeof top2SpendLanes[0].shipments_12m === "number" ? " • " : ""}
+                        {top2SpendLanes[0].teus_12m.toLocaleString()} TEU
+                      </>
+                    ) : null}
+                  </div>
+                  {typeof top2SpendLanes[0].estimated_12m_spend === "number" ||
+                  typeof top2SpendLanes[0].share_of_spend === "number" ? (
+                    <div className="text-slate-600">
+                      {typeof top2SpendLanes[0].estimated_12m_spend === "number"
+                        ? formatCurrency(top2SpendLanes[0].estimated_12m_spend, spendCurrency)
+                        : null}
+                      {typeof top2SpendLanes[0].share_of_spend === "number" ? (
+                        <>
+                          {typeof top2SpendLanes[0].estimated_12m_spend === "number" ? " • " : ""}
+                          {formatShare(top2SpendLanes[0].share_of_spend) ?? ""}
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-slate-500">Not available</p>
+              )}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Most recent route
+                Second origin lane
               </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {mostRecentRoute || "Not available yet"}
-              </p>
+              {top2SpendLanes[1] ? (
+                <div className="space-y-1 text-xs text-slate-700">
+                  <div className="font-medium">
+                    {formatLaneLabel(top2SpendLanes[1])}
+                  </div>
+                  <div className="text-slate-500">
+                    {typeof top2SpendLanes[1].shipments_12m === "number"
+                      ? `${top2SpendLanes[1].shipments_12m.toLocaleString()} shipments`
+                      : null}
+                    {typeof top2SpendLanes[1].teus_12m === "number" &&
+                    top2SpendLanes[1].teus_12m > 0 ? (
+                      <>
+                        {typeof top2SpendLanes[1].shipments_12m === "number" ? " • " : ""}
+                        {top2SpendLanes[1].teus_12m.toLocaleString()} TEU
+                      </>
+                    ) : null}
+                  </div>
+                  {typeof top2SpendLanes[1].estimated_12m_spend === "number" ||
+                  typeof top2SpendLanes[1].share_of_spend === "number" ? (
+                    <div className="text-slate-600">
+                      {typeof top2SpendLanes[1].estimated_12m_spend === "number"
+                        ? formatCurrency(top2SpendLanes[1].estimated_12m_spend, spendCurrency)
+                        : null}
+                      {typeof top2SpendLanes[1].share_of_spend === "number" ? (
+                        <>
+                          {typeof top2SpendLanes[1].estimated_12m_spend === "number" ? " • " : ""}
+                          {formatShare(top2SpendLanes[1].share_of_spend) ?? ""}
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-slate-500">Not available</p>
+              )}
             </div>
           </div>
 
@@ -562,6 +725,11 @@ export default function ShipperDetailModal({
                     <p className="text-xs text-slate-500">
                       Monthly shipments split between FCL and LCL services.
                     </p>
+                    {chartRangeLabel && (
+                      <p className="text-xs text-slate-500">
+                        Data window: {chartRangeLabel}
+                      </p>
+                    )}
                   </div>
                   {loadingProfile && (
                     <p className="text-xs text-slate-400">Loading trend…</p>
@@ -612,42 +780,26 @@ export default function ShipperDetailModal({
                 )}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Top lanes (last 12m)
-                </p>
-                {topRoutes.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Lane-level shipment data is not available for this company yet.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-                    {topRoutes.map((lane, idx) => (
-                      <li key={`${lane.route}-${idx}`} className="flex items-center justify-between gap-2">
-                        <span className="truncate">{lane.route}</span>
-                        <span className="text-[11px] text-slate-500">
-                          {formatNumber(lane.shipments ?? null)} shipments
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
             </div>
 
             <div className="space-y-4">
-              {enrichment && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    AI insights
-                  </p>
-                  {hasEnrichmentContent ? (
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  AI Insights
+                </h3>
+                <div className="mt-2 text-sm text-slate-700">
+                  {aiSummary ?? "AI insights not available for this company yet."}
+                </div>
+                {aiSuppliers.length > 0 && (
+                  <ul className="mt-3 list-inside list-disc text-sm text-slate-600">
+                    {aiSuppliers.map((name) => (
+                      <li key={name}>{name}</li>
+                    ))}
+                  </ul>
+                )}
+                {enrichment ? (
+                  hasEnrichmentContent ? (
                     <>
-                      {enrichmentSummary && (
-                        <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
-                          {enrichmentSummary}
-                        </p>
-                      )}
                       {enrichmentOpportunities.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -681,7 +833,7 @@ export default function ShipperDetailModal({
                       {enrichmentTalkingPoints.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Recommended talking points
+                            Talking points
                           </p>
                           <ul className="mt-1 space-y-1 text-xs text-slate-700">
                             {enrichmentTalkingPoints.map((item, idx) => (
@@ -693,57 +845,35 @@ export default function ShipperDetailModal({
                           </ul>
                         </div>
                       )}
-                      {enrichmentExtraSections.map((section, sectionIdx) => (
-                        <div className="mt-3" key={`${section.label}-${sectionIdx}`}>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            {section.label}
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {section.items.map((item, idx) => (
-                              <li
-                                key={`${section.label}-${sectionIdx}-${idx}`}
-                                className="flex items-start gap-2"
-                              >
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
+                      {enrichmentExtraSections.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {enrichmentExtraSections.map((section, sectionIdx) => (
+                            <div key={`${section.label}-${sectionIdx}`}>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {section.label}
+                              </p>
+                              <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                                {section.items.map((item, idx) => (
+                                  <li
+                                    key={`${section.label}-${sectionIdx}-${idx}`}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                    <span className="leading-snug">{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </>
                   ) : (
                     <p className="mt-2 text-xs text-slate-500">
                       AI enrichment response available but no structured insights were returned.
                     </p>
-                  )}
-                </div>
-              )}
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Top suppliers (sample)
-                </p>
-                {supplierList.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Supplier details will appear here once available from LIT Search data.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                    {supplierList.map((supplier) => (
-                      <li key={supplier} className="flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                        <span className="truncate">{supplier}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-xs text-slate-500">
-                <p className="font-medium text-slate-700">What you’re seeing</p>
-                <p className="mt-1">
-                  Cards and KPIs are based on ImportYeti DMA data. As we add more stats (lanes, vendor mix, service levels), they’ll show up here automatically.
-                </p>
+                  )
+                ) : null}
               </div>
             </div>
           </div>
