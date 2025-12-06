@@ -2949,3 +2949,47 @@ export async function listContactsLushia(
     ? res.json()
     : ({ error: await res.text(), status: res.status } as any);
 }
+
+// Helper functions for modal KPI calculations.
+// Kept generic on purpose so we don't break types if the backend shape changes.
+export function getFclShipments12m(
+  routeKpis: any | null | undefined,
+  profile: any | null | undefined,
+): number | null {
+  // Prefer route-level KPI if present
+  if (routeKpis?.shipmentsByMode?.fcl_12m != null) {
+    return routeKpis.shipmentsByMode.fcl_12m;
+  }
+  if (routeKpis?.fcl_12m != null) {
+    return routeKpis.fcl_12m;
+  }
+  // Fallbacks on profile (if it exposes any FCL 12m field)
+  if (profile?.fclShipments12m != null) {
+    return profile.fclShipments12m;
+  }
+  if (profile?.shipmentsFcl12m != null) {
+    return profile.shipmentsFcl12m;
+  }
+  return null;
+}
+
+export function getLclShipments12m(
+  routeKpis: any | null | undefined,
+  profile: any | null | undefined,
+): number | null {
+  // Prefer route-level KPI if present
+  if (routeKpis?.shipmentsByMode?.lcl_12m != null) {
+    return routeKpis.shipmentsByMode.lcl_12m;
+  }
+  if (routeKpis?.lcl_12m != null) {
+    return routeKpis.lcl_12m;
+  }
+  // Fallbacks on profile (if it exposes any LCL 12m field)
+  if (profile?.lclShipments12m != null) {
+    return profile.lclShipments12m;
+  }
+  if (profile?.shipmentsLcl12m != null) {
+    return profile.shipmentsLcl12m;
+  }
+  return null;
+}
