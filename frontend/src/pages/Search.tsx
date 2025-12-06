@@ -153,26 +153,41 @@ export default function SearchPage() {
     );
   }
 
-  const handleCardClick = (shipper: IyShipperHit) => {
+    const handleCardClick = (shipper: IyShipperHit) => {
     setSelectedShipper(shipper);
     setIsModalOpen(true);
 
-    setCompanyProfile(null);
     setCompanyEnrichment(null);
     setProfileError(null);
-    setProfileLoading(true);
 
     const canonicalKey = getCanonicalCompanyId(shipper);
     if (!canonicalKey) {
+      setCompanyProfile(null);
+      setProfileLoading(false);
       setProfileError("Unable to determine company identifier.");
+      return;
+    }
+
+    // 1) If we already have this profile in cache, use it and avoid a new API call
+    const cached = profileCache[canonicalKey];
+    if (cached !== undefined) {
+      setCompanyProfile(cached);
       setProfileLoading(false);
       return;
     }
+
+    // 2) Otherwise, fetch once and store in cache
+    setCompanyProfile(null);
+    setProfileLoading(true);
 
     getIyCompanyProfile({ companyKey: canonicalKey, query })
       .then(({ companyProfile: nextProfile, enrichment }) => {
         setCompanyProfile(nextProfile);
         setCompanyEnrichment(enrichment);
+        setProfileCache((prev) => ({
+          ...prev,
+          [canonicalKey]: nextProfile,
+        }));
       })
       .catch((err: any) => {
         console.error("getIyCompanyProfile failed", err);
