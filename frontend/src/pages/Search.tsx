@@ -154,6 +154,7 @@ export default function SearchPage() {
   }
 
     const handleCardClick = (shipper: IyShipperHit) => {
+    setSelectedWorkspaceCompany(shipper);
     setSelectedShipper(shipper);
     setIsModalOpen(true);
 
@@ -168,7 +169,7 @@ export default function SearchPage() {
       return;
     }
 
-    // 1) If we already have this profile in cache, use it and avoid a new API call
+    // If we already have a cached profile for this company, use it and avoid a new ImportYeti call
     const cached = profileCache[canonicalKey];
     if (cached !== undefined) {
       setCompanyProfile(cached);
@@ -176,7 +177,7 @@ export default function SearchPage() {
       return;
     }
 
-    // 2) Otherwise, fetch once and store in cache
+    // Otherwise fetch once, then cache it
     setCompanyProfile(null);
     setProfileLoading(true);
 
