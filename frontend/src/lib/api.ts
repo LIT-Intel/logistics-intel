@@ -173,7 +173,6 @@ export interface IyRouteKpis {
 export interface IyTimeSeriesPoint {
   month: string;
   fclShipments: number | null;
-  lclShipments: number | null;
 }
 
 export interface IyMonthlySeriesPoint extends IyTimeSeriesPoint {
