@@ -1,4 +1,3 @@
-
 import React from "react";
 import { MapPin, Ship, Sparkles, TrendingUp } from "lucide-react";
 import type { IyCompanyProfile, IyShipperHit } from "@/lib/api";
@@ -12,13 +11,14 @@ type SearchResultCardProps = {
   isSaved: boolean;
   saving: boolean;
   isActive?: boolean;
-  onToggleSave: () => void;
+  // allow the async handler from Search.tsx
+  onToggleSave: () => void | Promise<void>;
   onOpenDetails: () => void;
   onSelect?: () => void;
   profile?: IyCompanyProfile | null;
 };
 
-export default function SearchResultCard({
+const SearchResultCard: React.FC<SearchResultCardProps> = ({
   shipper,
   isSaved,
   saving,
@@ -27,18 +27,28 @@ export default function SearchResultCard({
   onOpenDetails,
   onSelect,
   profile = null,
-}: SearchResultCardProps) {
+}) => {
   const companyKey =
-    shipper.companyKey || shipper.key || shipper.companyId || shipper.title || shipper.name || "";
+    shipper.companyKey ||
+    shipper.key ||
+    shipper.companyId ||
+    shipper.title ||
+    shipper.name ||
+    "";
 
   const fallbackPayload = {
     shipments_12m: shipper.shipmentsLast12m ?? shipper.totalShipments ?? null,
     teus_12m: shipper.teusLast12m ?? null,
-    last_shipment_date: shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null,
-    top_route_label: shipper.primaryRouteSummary ?? shipper.primaryRoute ?? null,
+    last_shipment_date:
+      shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null,
+    top_route_label:
+      shipper.primaryRouteSummary ?? shipper.primaryRoute ?? null,
     address:
       shipper.address ??
-      [shipper.city, shipper.state, shipper.country].filter(Boolean).join(", ") ?? null,
+      [shipper.city, shipper.state, shipper.country]
+        .filter(Boolean)
+        .join(", ") ??
+      null,
     country: shipper.country ?? null,
     country_code: shipper.countryCode ?? null,
     domain: shipper.domain ?? shipper.website ?? null,
@@ -55,14 +65,32 @@ export default function SearchResultCard({
     },
   });
 
-  const shipmentsValue = snapshot.shipments12m ?? shipper.totalShipments ?? shipper.shipmentsLast12m ?? null;
-  const topRoute = snapshot.topRouteLabel ?? "Route data available in details";
+  const shipmentsValue =
+    snapshot.shipments12m ??
+    shipper.totalShipments ??
+    shipper.shipmentsLast12m ??
+    null;
+
+  const topRoute =
+    snapshot.topRouteLabel ?? "Route data available in details";
+
   const activityLabel = formatLastActivity(
-    snapshot.recentShipmentDate ?? shipper.mostRecentShipment ?? shipper.lastShipmentDate ?? null,
+    snapshot.recentShipmentDate ??
+      shipper.mostRecentShipment ??
+      shipper.lastShipmentDate ??
+      null,
   );
+
   const locationLabel =
     fallbackPayload.address || "Location unavailable";
-  const subtitle = [shipper.key, shipper.domain ?? shipper.website ?? "No website"].filter(Boolean).join(" • ");
+
+  const subtitle = [
+    shipper.key,
+    shipper.domain ?? shipper.website ?? "No website",
+  ]
+    .filter(Boolean)
+    .join(" • ");
+
   const initials =
     (shipper.title || shipper.name || "Company")
       .split(" ")
@@ -84,7 +112,9 @@ export default function SearchResultCard({
       }}
       className={cn(
         "flex h-full flex-col justify-between rounded-3xl border bg-white p-5 shadow-sm transition",
-        isActive ? "border-indigo-500 shadow-xl shadow-indigo-100" : "border-slate-200 hover:border-indigo-300",
+        isActive
+          ? "border-indigo-500 shadow-xl shadow-indigo-100"
+          : "border-slate-200 hover:border-indigo-300",
       )}
     >
       <div>
@@ -93,14 +123,22 @@ export default function SearchResultCard({
             {initials}
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-lg font-semibold text-slate-900">{shipper.title || shipper.name || "Company"}</h3>
+            <h3 className="truncate text-lg font-semibold text-slate-900">
+              {shipper.title || shipper.name || "Company"}
+            </h3>
             <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
           </div>
         </div>
+
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-          <Badge icon={<MapPin className="h-3 w-3" />}>{locationLabel}</Badge>
-          <Badge icon={<Sparkles className="h-3 w-3" />}>AI enrichment ready</Badge>
+          <Badge icon={<MapPin className="h-3 w-3" />}>
+            {locationLabel}
+          </Badge>
+          <Badge icon={<Sparkles className="h-3 w-3" />}>
+            AI enrichment ready
+          </Badge>
         </div>
+
         <div className="mt-4 grid gap-3 text-xs text-slate-600">
           <MetricCard
             icon={<Ship className="h-4 w-4 text-indigo-500" />}
@@ -119,22 +157,26 @@ export default function SearchResultCard({
           />
         </div>
       </div>
+
       <div className="mt-6 flex items-center justify-between">
         <button
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            onToggleSave();
+            void onToggleSave();
           }}
           disabled={saving}
           className={cn(
             "rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition",
-            isSaved ? "bg-emerald-500 hover:bg-emerald-600" : "bg-indigo-600 hover:bg-indigo-700",
+            isSaved
+              ? "bg-emerald-500 hover:bg-emerald-600"
+              : "bg-indigo-600 hover:bg-indigo-700",
             saving && "cursor-not-allowed opacity-60",
           )}
         >
           {saving ? "Saving…" : isSaved ? "Saved" : "Save"}
         </button>
+
         <div className="flex items-center gap-3 text-xs">
           <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-indigo-700">
             <Sparkles className="h-3 w-3" /> Ready
@@ -153,22 +195,33 @@ export default function SearchResultCard({
       </div>
     </div>
   );
-}
+};
 
-const Badge: React.FC<{ icon?: React.ReactNode; children: React.ReactNode }> = ({ icon, children }) => (
+export default SearchResultCard;
+
+const Badge: React.FC<{
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ icon, children }) => (
   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
     {icon}
     {children}
   </span>
 );
 
-const MetricCard: React.FC<{ icon: React.ReactNode; label: string; value: string }> = ({ icon, label, value }) => (
+const MetricCard: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}> = ({ icon, label, value }) => (
   <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
     <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm">
       {icon}
     </span>
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
       <p className="text-sm font-semibold text-slate-900">{value}</p>
     </div>
   </div>
