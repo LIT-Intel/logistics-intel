@@ -24,16 +24,13 @@ import SearchFilters from "@/components/search/SearchFilters";
 import SearchWorkspacePanel from "@/components/search/SearchWorkspacePanel";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 
-/**
- * Local filter / tab / stage types
- */
+/* -------------------------------------------------------------------------- */
+/* Local types (so we don't depend on the broken "@/types" barrel)            */
+/* -------------------------------------------------------------------------- */
+
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
 type ActivityFilter = "12m" | "24m" | "all";
-
-type SearchWorkspaceTab = "overview" | "lanes" | "suppliers" | "saved";
-
-type ShipperStage = "prospect" | "customer" | "lost";
 
 type SearchFiltersValue = {
   mode: ModeFilter;
@@ -41,7 +38,31 @@ type SearchFiltersValue = {
   activity: ActivityFilter;
 };
 
-type SearchStage = "prospect" | "customer" | "lost" | "none";
+type SearchWorkspaceTab = "overview" | "lanes" | "suppliers" | "saved";
+
+type ShipperStage = "prospect" | "customer" | "lost";
+type SearchStage = ShipperStage | "none";
+
+type IyCompanyHit = {
+  key: string;
+  title: string;
+  address?: string | null;
+  countryCode?: string | null;
+  totalShipments?: number | null;
+  mostRecentShipment?: string | null;
+  topSuppliers?: string[] | null;
+  // we don't need the rest of the shape here – it just gets passed through
+};
+
+type IyCompanyProfile = any;
+
+type ActivityStats = {
+  shipments12m: number | null;
+  shipments6m: number | null;
+  shipments3m: number | null;
+  shipments1m: number | null;
+  trend: string | null;
+};
 
 type SavedCompanyRecord = {
   id: string;
@@ -49,14 +70,6 @@ type SavedCompanyRecord = {
   name: string;
   stage: SearchStage;
 };
-
-/**
- * We don’t rely on the global Iy types here.
- * Using `any` keeps this file decoupled from the ambient module and
- * avoids the “types/index.ts is not a module” errors.
- */
-type ShipperHit = any;
-type CompanyProfile = any;
 
 type EnrichmentState =
   | { status: "idle" }
@@ -70,7 +83,7 @@ type SearchState =
   | { status: "error"; message: string }
   | {
       status: "loaded";
-      rows: ShipperHit[];
+      results: IyCompanyHit[];
       total: number;
     };
 
@@ -99,12 +112,20 @@ type ActivityState =
   | { status: "error"; message: string }
   | {
       status: "loaded";
-      stats: any;
+      stats: ActivityStats;
     };
 
 type WorkspaceState = {
   activeTab: SearchWorkspaceTab;
 };
+
+type SearchFormState = {
+  companyName: string;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Helpers & defaults                                                         */
+/* -------------------------------------------------------------------------- */
 
 const defaultFilters: SearchFiltersValue = {
   mode: "any",
@@ -123,24 +144,15 @@ const INITIAL_LANES_STATE: LanesState = { status: "idle" };
 const INITIAL_SUPPLIERS_STATE: SuppliersState = { status: "idle" };
 const INITIAL_ACTIVITY_STATE: ActivityState = { status: "idle" };
 
+const defaultSearchFormState: SearchFormState = {
+  companyName: "",
+};
+
 function normalizeStage(stage?: string | null): SearchStage {
   if (!stage) return "none";
   const s = stage.toLowerCase();
   if (s === "prospect" || s === "customer" || s === "lost") return s;
   return "none";
-}
-
-function stageLabel(stage: SearchStage): string {
-  switch (stage) {
-    case "prospect":
-      return "Prospect";
-    case "customer":
-      return "Customer";
-    case "lost":
-      return "Lost";
-    default:
-      return "Not saved";
-  }
 }
 
 function isStageSaved(stage: SearchStage): boolean {
@@ -166,17 +178,10 @@ const activityOptions: { label: string; value: ActivityFilter }[] = [
   { label: "All time", value: "all" },
 ];
 
-type SearchFormState = {
-  companyName: string;
-};
+/* -------------------------------------------------------------------------- */
+/* Saved companies (Command Center)                                          */
+/* -------------------------------------------------------------------------- */
 
-const defaultSearchFormState: SearchFormState = {
-  companyName: "",
-};
-
-/**
- * Saved companies hook (Command Center)
- */
 function useSavedCompanies() {
   const [stageFilter, setStageFilter] = useState<SearchStage | "all">("all");
   const [records, setRecords] = useState<SavedCompanyRecord[]>([]);
@@ -188,16 +193,37 @@ function useSavedCompanies() {
       setLoading(true);
       setError(null);
       try {
-        // listSavedCompanies is typed to return an array (CommandCenterRecord[])
-        const result = await listSavedCompanies();
-        const mapped: SavedCompanyRecord[] = (result || []).map(
-          (r: any): SavedCompanyRecord => ({
-            id: r.id ?? r.companyKey ?? r.company_id ?? "",
-            companyKey: r.companyKey ?? r.company_id ?? "",
-            name: r.name ?? r.payload?.name ?? "",
-            stage: normalizeStage(r.stage),
-          }),
-        );
+        // API helper is typed to return CommandCenterRecord[], not { records: [] }
+        const resultAny: any = await listSavedCompanies();
+        const list: any[] = Array.isArray(resultAny)
+          ? resultAny
+          : Array.isArray(resultAny?.records)
+            ? resultAny.records
+            : [];
+
+        const mapped: SavedCompanyRecord[] = list.map((r: any) => ({
+          id:
+            r.id ??
+            r.company_id ??
+            r.companyKey ??
+            r.company?.company_id ??
+            r.company?.id ??
+            "",
+          companyKey:
+            r.companyKey ??
+            r.company_id ??
+            r.company?.company_id ??
+            r.company?.key ??
+            "",
+          name:
+            r.name ??
+            r.company?.name ??
+            r.payload?.name ??
+            r.company_name ??
+            "",
+          stage: normalizeStage(r.stage),
+        }));
+
         setRecords(mapped);
         if (stage) {
           setStageFilter(stage);
@@ -234,22 +260,26 @@ function useSavedCompanies() {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Page component                                                             */
+/* -------------------------------------------------------------------------- */
+
 export default function SearchPage() {
   const [form, setForm] = useState<SearchFormState>(defaultSearchFormState);
-  const [filters, setFilters] = useState<SearchFiltersValue>(defaultFilters);
-  const [workspace, setWorkspace] = useState<WorkspaceState>(defaultWorkspace);
-
-  const [selectedShipper, setSelectedShipper] = useState<ShipperHit | null>(
-    null,
-  );
-  const [profile, setProfile] = useState<CompanyProfile | null>(null);
+  const [filters, setFilters] =
+    useState<SearchFiltersValue>(defaultFilters);
+  const [workspace, setWorkspace] =
+    useState<WorkspaceState>(defaultWorkspace);
+  const [selectedShipper, setSelectedShipper] =
+    useState<IyCompanyHit | null>(null);
+  const [profile, setProfile] = useState<IyCompanyProfile | null>(null);
 
   const [searchState, setSearchState] =
     useState<SearchState>(INITIAL_SEARCH_STATE);
-  const [lanesState, setLanesState] = useState<LanesState>(INITIAL_LANES_STATE);
-  const [suppliersState, setSuppliersState] = useState<SuppliersState>(
-    INITIAL_SUPPLIERS_STATE,
-  );
+  const [lanesState, setLanesState] =
+    useState<LanesState>(INITIAL_LANES_STATE);
+  const [suppliersState, setSuppliersState] =
+    useState<SuppliersState>(INITIAL_SUPPLIERS_STATE);
   const [activityState, setActivityState] =
     useState<ActivityState>(INITIAL_ACTIVITY_STATE);
 
@@ -260,7 +290,6 @@ export default function SearchPage() {
   const [savedStage, setSavedStage] = useState<SearchStage>("none");
 
   const [debouncedName] = useDebounce(form.companyName.trim(), 400);
-
   const [lastQueryKey, setLastQueryKey] = useState<string | null>(null);
 
   const [shipperSyncKey, setShipperSyncKey] = useState<string | null>(null);
@@ -284,23 +313,23 @@ export default function SearchPage() {
 
   const summaryScrollRef = useRef<HTMLDivElement | null>(null);
 
-  const shipperHit = useMemo<ShipperHit | null>(() => {
+  const shipperHit = useMemo(() => {
     if (!selectedShipper) return null;
     const baseKey = selectedShipper.key;
-    if (!baseKey) return selectedShipper;
+    if (!baseKey) return null;
     if (!shipperSyncKey) return selectedShipper;
     if (baseKey === shipperSyncKey) return selectedShipper;
 
     const found =
       searchState.status === "loaded"
-        ? searchState.rows.find((row: any) => row.key === shipperSyncKey)
+        ? searchState.results.find((row) => row.key === shipperSyncKey)
         : null;
     return found || selectedShipper;
   }, [selectedShipper, shipperSyncKey, searchState]);
 
   const normalizedActivity = useMemo(() => {
     if (activityState.status !== "loaded") return null;
-    const stats: any = activityState.stats || {};
+    const stats = activityState.stats;
     return {
       shipments12m: stats.shipments12m ?? null,
       shipments6m: stats.shipments6m ?? null,
@@ -328,7 +357,6 @@ export default function SearchPage() {
   }, [enrichment.status]);
 
   const activeTab = workspace.activeTab;
-
   const canSearch = !!debouncedName;
 
   const scrollSummaryIntoView = useCallback(() => {
@@ -340,109 +368,8 @@ export default function SearchPage() {
     }
   }, []);
 
-  /**
-   * Company profile loader – aligned with getIyCompanyProfile({ companyKey, query, userGoal })
-   */
-  const loadCompanyProfile = useCallback(
-    async (companyKey: string, name?: string | null) => {
-      setProfile(null);
-      setEnrichment({ status: "loading" });
+  /* ---------------------------- core search effect ---------------------------- */
 
-      try {
-        const result: any = await getIyCompanyProfile({
-          companyKey,
-          query: name || debouncedName || "",
-          userGoal:
-            "Summarize this shipper for LIT Search: trade lanes, shipment volume, and pre-call briefing insights.",
-        });
-
-        const profile =
-          result?.companyProfile ?? result?.profile ?? result?.normalizedCompany;
-
-        if (!profile) {
-          setEnrichment({
-            status: "error",
-            message: "No company profile found for this shipper.",
-          });
-          return;
-        }
-
-        setProfile(profile);
-
-        const cachedSummary =
-          result?.cachedSummary ??
-          result?.enrichment?.command_center_enrichment?.quick_summary ??
-          null;
-
-        if (cachedSummary) {
-          setEnrichment({ status: "ready", summary: cachedSummary });
-        } else {
-          setEnrichment({ status: "idle" });
-        }
-      } catch (err: any) {
-        setEnrichment({
-          status: "error",
-          message:
-            err?.message ||
-            "Unable to load company profile. ImportYeti or Gemini may be temporarily unavailable.",
-        });
-      }
-    },
-    [debouncedName],
-  );
-
-  /**
-   * Company stats loader – aligned with iyCompanyStats({ company, range })
-   */
-  const loadCompanyStats = useCallback(
-    async (companyKey: string) => {
-      setLanesState({ status: "loading" });
-      setSuppliersState({ status: "loading" });
-      setActivityState({ status: "loading" });
-
-      try {
-        const result: any = await iyCompanyStats({
-          company: companyKey,
-          range: filters.activity,
-        });
-
-        setLanesState({
-          status: "loaded",
-          lanes: result?.lanes ?? [],
-          shipments12m: result?.activity?.shipments12m ?? null,
-        });
-
-        setSuppliersState({
-          status: "loaded",
-          suppliers: result?.suppliers ?? [],
-        });
-
-        setActivityState({
-          status: "loaded",
-          stats:
-            result?.activity ?? {
-              shipments12m: null,
-              shipments6m: null,
-              shipments3m: null,
-              shipments1m: null,
-              trend: null,
-            },
-        });
-      } catch (err: any) {
-        const msg =
-          err?.message || "Unable to load company stats. Try again later.";
-        setLanesState({ status: "error", message: msg });
-        setSuppliersState({ status: "error", message: msg });
-        setActivityState({ status: "error", message: msg });
-      }
-    },
-    [filters.activity],
-  );
-
-  /**
-   * Search effect – aligned with searchShippers typings (q, page, pageSize).
-   * Extra filters are cast to any so we don’t fight the SDK’s narrower input type.
-   */
   useEffect(() => {
     if (!debouncedName) {
       setSearchState(INITIAL_SEARCH_STATE);
@@ -486,45 +413,45 @@ export default function SearchPage() {
       lastUpdatedAt: null,
     });
     setSavedStage("none");
-    setWorkspace((prev) => ({ ...prev, activeTab: "overview" }));
+    setWorkspace((prev: WorkspaceState) => ({
+      ...prev,
+      activeTab: "overview",
+    }));
 
     void (async () => {
       try {
-        const rawResult = await searchShippers({
+        const result = await searchShippers({
           q: debouncedName,
           page: 1,
           pageSize: 25,
-          // extra filters are accepted by backend; cast keeps TS happy
-        } as any);
+        });
 
         if (cancelled) return;
 
-        const result: any = rawResult || {};
-        const rows: ShipperHit[] = result.rows ?? result.data ?? [];
-        const total: number =
-          result.total ?? (Array.isArray(rows) ? rows.length : 0);
+        const results: IyCompanyHit[] = (result as any)?.results ?? [];
+        const total: number = (result as any)?.total ?? results.length;
 
         setSearchState({
           status: "loaded",
-          rows,
+          results,
           total,
         });
 
-        if (rows.length === 1) {
-          const single = rows[0];
+        if (results.length === 1) {
+          const single = results[0];
           setSelectedShipper(single);
           setShipperSyncKey(single.key ?? null);
           if (single.key) {
-            void loadCompanyProfile(single.key, single.title);
+            void loadCompanyProfile(single.key);
             void loadCompanyStats(single.key);
             scrollSummaryIntoView();
           }
-        } else if (rows.length > 1) {
-          const top = rows[0];
+        } else if (results.length > 1) {
+          const top = results[0];
           setSelectedShipper(top);
           setShipperSyncKey(top.key ?? null);
           if (top.key) {
-            void loadCompanyProfile(top.key, top.title);
+            void loadCompanyProfile(top.key);
             void loadCompanyStats(top.key);
             scrollSummaryIntoView();
           }
@@ -543,17 +470,102 @@ export default function SearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    debouncedName,
-    filters,
-    lastQueryKey,
-    loadCompanyProfile,
-    loadCompanyStats,
-    scrollSummaryIntoView,
-  ]);
+  }, [debouncedName, filters, lastQueryKey, scrollSummaryIntoView]);
+
+  /* ------------------------- company profile + stats ------------------------- */
+
+  const loadCompanyProfile = useCallback(async (companyKey: string) => {
+    setProfile(null);
+    setEnrichment(INITIAL_ENRICHMENT);
+
+    try {
+      const result: any = await getIyCompanyProfile({
+        companyKey,
+      });
+
+      const companyProfile: IyCompanyProfile | undefined =
+        result?.companyProfile;
+
+      if (!companyProfile) {
+        setEnrichment({ status: "error", message: "No profile found." });
+        return;
+      }
+
+      setProfile(companyProfile);
+
+      const summary: string | undefined =
+        result?.enrichment?.summary ??
+        result?.enrichment?.cachedSummary ??
+        result?.cachedSummary ??
+        result?.summary;
+
+      if (summary) {
+        setEnrichment({ status: "ready", summary });
+      } else {
+        setEnrichment({
+          status: "idle",
+        });
+      }
+    } catch (err: any) {
+      setEnrichment({
+        status: "error",
+        message:
+          err?.message ||
+          "Unable to load company profile. ImportYeti may be temporarily unavailable.",
+      });
+    }
+  }, []);
+
+  const loadCompanyStats = useCallback(
+    async (companyKey: string) => {
+      setLanesState({ status: "loading" });
+      setSuppliersState({ status: "loading" });
+      setActivityState({ status: "loading" });
+
+      try {
+        const result: any = await iyCompanyStats({
+          company: companyKey,
+          range: filters.activity,
+        });
+
+        setLanesState({
+          status: "loaded",
+          lanes: result?.lanes ?? [],
+          shipments12m: result?.activity?.shipments12m ?? null,
+        });
+
+        setSuppliersState({
+          status: "loaded",
+          suppliers: result?.suppliers ?? [],
+        });
+
+        const activity: ActivityStats = {
+          shipments12m: result?.activity?.shipments12m ?? null,
+          shipments6m: result?.activity?.shipments6m ?? null,
+          shipments3m: result?.activity?.shipments3m ?? null,
+          shipments1m: result?.activity?.shipments1m ?? null,
+          trend: result?.activity?.trend ?? null,
+        };
+
+        setActivityState({
+          status: "loaded",
+          stats: activity,
+        });
+      } catch (err: any) {
+        const msg =
+          err?.message || "Unable to load company stats. Try again later.";
+        setLanesState({ status: "error", message: msg });
+        setSuppliersState({ status: "error", message: msg });
+        setActivityState({ status: "error", message: msg });
+      }
+    },
+    [filters.activity],
+  );
+
+  /* ------------------------------ event handlers ----------------------------- */
 
   const onSearchInputChange = (value: string) => {
-    setForm((prev) => ({
+    setForm((prev: SearchFormState) => ({
       ...prev,
       companyName: value,
     }));
@@ -564,17 +576,17 @@ export default function SearchPage() {
   };
 
   const onWorkspaceTabChange = (tab: SearchWorkspaceTab) => {
-    setWorkspace((prev) => ({ ...prev, activeTab: tab }));
+    setWorkspace((prev: WorkspaceState) => ({ ...prev, activeTab: tab }));
   };
 
-  const onSelectShipper = (hit: ShipperHit) => {
+  const onSelectShipper = (hit: IyCompanyHit) => {
     setSelectedShipper(hit);
     setShipperSyncKey(hit.key ?? null);
-    setWorkspace((prev) => ({ ...prev, activeTab: "overview" }));
+    setWorkspace((prev: WorkspaceState) => ({ ...prev, activeTab: "overview" }));
     setEnrichment(INITIAL_ENRICHMENT);
 
     if (hit.key) {
-      void loadCompanyProfile(hit.key, hit.title);
+      void loadCompanyProfile(hit.key);
       void loadCompanyStats(hit.key);
       scrollSummaryIntoView();
     }
@@ -582,8 +594,53 @@ export default function SearchPage() {
 
   const onRefreshProfile = async () => {
     if (!shipperHit?.key) return;
+
     setEnrichment({ status: "loading" });
-    await loadCompanyProfile(shipperHit.key, shipperHit.title);
+
+    try {
+      const updated: any = await getIyCompanyProfile({
+        companyKey: shipperHit.key,
+      });
+
+      const companyProfile: IyCompanyProfile | undefined =
+        updated?.companyProfile;
+
+      if (!companyProfile) {
+        setEnrichment({
+          status: "error",
+          message: "Unable to refresh profile from ImportYeti.",
+        });
+        return;
+      }
+
+      setProfile(companyProfile);
+
+      const summary: string | undefined =
+        updated?.enrichment?.summary ??
+        updated?.enrichment?.cachedSummary ??
+        updated?.cachedSummary ??
+        updated?.summary;
+
+      setEnrichment(
+        summary
+          ? {
+              status: "ready",
+              summary,
+            }
+          : {
+              status: "ready",
+              summary:
+                "Profile refreshed. Gemini enrichment will be available soon.",
+            },
+      );
+    } catch (err: any) {
+      setEnrichment({
+        status: "error",
+        message:
+          err?.message ||
+          "Unable to refresh profile. ImportYeti or Gemini may be temporarily unavailable.",
+      });
+    }
   };
 
   const onSaveToCommandCenter = async (stage: ShipperStage) => {
@@ -608,21 +665,19 @@ export default function SearchPage() {
         void reloadSavedCompanies();
       }, 400);
     } catch (err: any) {
-      // eslint-disable-next-line no-console
       console.error("saveCompanyToCommandCenter error", err);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleCardSaveClick = async (hit: ShipperHit) => {
-    // For now, this behaves like “View details”: select and load profile/stats.
+  const handleCardSaveClick = async (hit: IyCompanyHit) => {
     setSelectedShipper(hit);
     setShipperSyncKey(hit.key ?? null);
-    setWorkspace((prev) => ({ ...prev, activeTab: "overview" }));
+    setWorkspace((prev: WorkspaceState) => ({ ...prev, activeTab: "overview" }));
 
     if (hit.key) {
-      void loadCompanyProfile(hit.key, hit.title);
+      void loadCompanyProfile(hit.key);
       void loadCompanyStats(hit.key);
       scrollSummaryIntoView();
     }
@@ -639,18 +694,20 @@ export default function SearchPage() {
   const handleSavedCompanyClick = (record: SavedCompanyRecord) => {
     const hit =
       searchState.status === "loaded"
-        ? searchState.rows.find((row: any) => row.key === record.companyKey)
+        ? searchState.results.find((row) => row.key === record.companyKey)
         : null;
 
     if (hit) {
       onSelectShipper(hit);
     } else {
-      setForm((prev) => ({
+      setForm((prev: SearchFormState) => ({
         ...prev,
         companyName: record.name || "",
       }));
     }
   };
+
+  /* --------------------------- main left panel UI ---------------------------- */
 
   const mainContent = useMemo(() => {
     if (!canSearch) {
@@ -660,8 +717,8 @@ export default function SearchPage() {
             Enter a company name to search the LIT DMA index.
           </p>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground/80">
-            You&apos;ll see top shippers, recent activity, lanes, suppliers, and
-            Command Center status for each company.
+            You&apos;ll see top shippers, recent activity, lanes, suppliers,
+            and Command Center status for each company.
           </p>
         </div>
       );
@@ -694,8 +751,7 @@ export default function SearchPage() {
 
     if (
       searchState.status === "loaded" &&
-      searchState.rows &&
-      searchState.rows.length === 0
+      (!searchState.results || searchState.results.length === 0)
     ) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
@@ -720,14 +776,14 @@ export default function SearchPage() {
           </div>
 
           <div className="space-y-3" ref={summaryScrollRef}>
-            {searchState.rows.map((row: any) => (
+            {searchState.results.map((row) => (
               <SearchResultCard
                 key={row.key || row.title}
                 shipper={row}
                 isSaved={
                   !!savedCompanies.find((r) => r.companyKey === row.key)
                 }
-                onClick={() => onSelectShipper(row)}
+                onViewDetails={() => onSelectShipper(row)}
                 onSave={() => handleCardSaveClick(row)}
               />
             ))}
@@ -740,11 +796,13 @@ export default function SearchPage() {
   }, [
     canSearch,
     debouncedName,
-    handleCardSaveClick,
     onSelectShipper,
     savedCompanies,
     searchState,
+    handleCardSaveClick,
   ]);
+
+  /* ----------------------------------- JSX ---------------------------------- */
 
   return (
     <div className="flex h-full flex-col">
@@ -783,7 +841,10 @@ export default function SearchPage() {
                         key={opt.value}
                         type="button"
                         onClick={() =>
-                          setFilters((prev) => ({ ...prev, mode: opt.value }))
+                          setFilters((prev: SearchFiltersValue) => ({
+                            ...prev,
+                            mode: opt.value,
+                          }))
                         }
                         className={cn(
                           "rounded-full px-2 py-0.5 text-[11px]",
@@ -806,7 +867,7 @@ export default function SearchPage() {
                         key={opt.value}
                         type="button"
                         onClick={() =>
-                          setFilters((prev) => ({
+                          setFilters((prev: SearchFiltersValue) => ({
                             ...prev,
                             region: opt.value,
                           }))
@@ -832,7 +893,7 @@ export default function SearchPage() {
                         key={opt.value}
                         type="button"
                         onClick={() =>
-                          setFilters((prev) => ({
+                          setFilters((prev: SearchFiltersValue) => ({
                             ...prev,
                             activity: opt.value,
                           }))
@@ -862,8 +923,8 @@ export default function SearchPage() {
                     {enrichmentReadyLabel || "AI enrichment ready"}
                   </span>
                   <span className="text-[11px] text-amber-900/80">
-                    Gemini will summarize trade activity and risk once a
-                    company is selected.
+                    Gemini will summarize trade activity and risk once a company
+                    is selected.
                   </span>
                 </div>
               </div>
@@ -917,25 +978,27 @@ export default function SearchPage() {
 
           <section className="flex min-h-[400px] flex-col rounded-xl border bg-white p-3 shadow-sm md:p-4">
             <SearchWorkspacePanel
-              activeTab={activeTab}
-              onTabChange={onWorkspaceTabChange}
-              shipper={shipperHit}
-              profile={profile}
-              activity={normalizedActivity}
-              lanes={normalizedLanes}
-              suppliers={normalizedSuppliers}
-              enrichment={enrichment}
-              enrichmentReadyLabel={enrichmentReadyLabel}
-              searchState={searchState}
-              onRefreshProfile={onRefreshProfile}
-              onSaveStage={handleStageChangeFromPanel}
-              savedCompanies={savedCompanies}
-              savedLoading={savedLoading}
-              savedError={savedError}
-              onSavedStageFilterChange={handleStageFilterChange}
-              activeStageFilter={stageFilter}
-              onSavedCompanyClick={handleSavedCompanyClick}
-              commandCenterStatus={shipperCommandCenterStatus}
+              {...({
+                activeTab,
+                onTabChange: onWorkspaceTabChange,
+                shipper: shipperHit,
+                profile,
+                activity: normalizedActivity,
+                lanes: normalizedLanes,
+                suppliers: normalizedSuppliers,
+                enrichment,
+                enrichmentReadyLabel,
+                searchState,
+                onRefreshProfile,
+                onSaveStage: handleStageChangeFromPanel,
+                savedCompanies,
+                savedLoading,
+                savedError,
+                onSavedStageFilterChange: handleStageFilterChange,
+                activeStageFilter: stageFilter,
+                onSavedCompanyClick: handleSavedCompanyClick,
+                commandCenterStatus: shipperCommandCenterStatus,
+              } as any)}
             />
           </section>
         </div>
@@ -952,8 +1015,8 @@ export default function SearchPage() {
             searchState.status === "error"
               ? searchState.message
               : enrichment.status === "error"
-              ? enrichment.message
-              : undefined
+                ? enrichment.message
+                : null
           }
           onClose={() => setSelectedShipper(null)}
           onSaveToCommandCenter={onSaveToCommandCenter}
