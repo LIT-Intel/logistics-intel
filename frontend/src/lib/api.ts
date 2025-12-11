@@ -2254,6 +2254,7 @@ export async function listSavedCompanies(
   const res = await fetch(
     withGatewayKey(
       `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=${encodeURIComponent(stage)}`,
+
     ),
     {
       method: "GET",
@@ -2951,4 +2952,3 @@ export async function listContactsLushia(
 
 // Helper functions for modal KPI calculations.
 // Kept generic on purpose so we don't break types if the backend shape changes.
-
