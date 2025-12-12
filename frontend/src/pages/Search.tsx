@@ -1,578 +1,467 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import SearchResultCard from "@/components/search/SearchResultCard";
-import SearchWorkspacePanel, {
-  type SearchWorkspaceTab,
-} from "@/components/search/SearchWorkspacePanel";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
+import ShipperCard from "@/components/search/ShipperCard";
 import SearchFilters from "@/components/search/SearchFilters";
-import { cn } from "@/lib/utils";
 import {
-  searchShippers,
+  ensureCompanyKey,
+  getIyCompanyProfile,
   listSavedCompanies,
   saveCompanyToCommandCenter,
-  getIyCompanyProfile,
-  type IyShipperHit,
+  searchShippers,
   type IyCompanyProfile,
+  type IyShipperHit,
 } from "@/lib/api";
-
-// -----------------------------------------------------------------------------
-// Local filter type to match SearchFilters
-// -----------------------------------------------------------------------------
+import { useToast } from "@/components/ui/use-toast";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
 type ActivityFilter = "12m" | "24m" | "all";
 
-type SearchFiltersValue = {
-  mode: ModeFilter;
-  region: RegionFilter;
-  activity: ActivityFilter;
-};
-
-// -----------------------------------------------------------------------------
-// Saved companies list (for showing saved state in cards / panel)
-// -----------------------------------------------------------------------------
-
-type SavedCompanyRecord = {
-  id: string;
-  companyKey: string;
-  name: string;
-  stage: string | null;
-};
-
-type SearchState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "loaded"; rows: IyShipperHit[]; total: number };
-
-const defaultFilters: SearchFiltersValue = {
-  mode: "any",
-  region: "global",
-  activity: "12m",
-};
-
-const INITIAL_SEARCH_STATE: SearchState = { status: "idle" };
-
-// Small debounce hook
-function useDebouncedValue<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState<T>(value);
-
-  useEffect(() => {
-    const handle = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(handle);
-  }, [value, delay]);
-
-  return debounced;
-}
+const PAGE_SIZE = 25;
 
 export default function SearchPage() {
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<SearchFiltersValue>(defaultFilters);
-  const [searchState, setSearchState] =
-    useState<SearchState>(INITIAL_SEARCH_STATE);
+  const { toast } = useToast();
+
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedName, setDebouncedName] = useState("");
+
+  const [mode, setMode] = useState<ModeFilter>("any");
+  const [region, setRegion] = useState<RegionFilter>("global");
+  const [activity, setActivity] = useState<ActivityFilter>("12m");
+
+  const [page, setPage] = useState(1);
+  const [results, setResults] = useState<IyShipperHit[]>([]);
+  const [total, setTotal] = useState(0);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [selectedShipper, setSelectedShipper] = useState<IyShipperHit | null>(
     null,
   );
-  const [profile, setProfile] = useState<IyCompanyProfile | null>(null);
-  const [enrichment, setEnrichment] = useState<any | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const [companyProfile, setCompanyProfile] =
+    useState<IyCompanyProfile | null>(null);
+  const [companyEnrichment, setCompanyEnrichment] = useState<any | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  const [savedCompanies, setSavedCompanies] = useState<SavedCompanyRecord[]>(
+  const [savedCompanies, setSavedCompanies] = useState<{ company_id: string }[]>(
     [],
   );
-  const [savedLoading, setSavedLoading] = useState(false);
-
-  const [activeTab, setActiveTab] =
-    useState<SearchWorkspaceTab>("overview");
-  const [saving, setSaving] = useState(false);
-
-  const debouncedQuery = useDebouncedValue(query.trim(), 400);
-  const summaryRef = useRef<HTMLDivElement | null>(null);
+  const [savingCompanyId, setSavingCompanyId] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Load saved companies (Command Center)
+  // Debounce search input (no third-party deps)
   // ---------------------------------------------------------------------------
 
-  const reloadSavedCompanies = useCallback(async () => {
-    setSavedLoading(true);
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedName(searchInput.trim());
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
+  // ---------------------------------------------------------------------------
+  // Command Center saved companies (badge + card state)
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    listSavedCompanies()
+      .then((rows) => {
+        const normalized = Array.isArray(rows)
+          ? rows
+              .map((record: any) => {
+                const rawId = (
+                  record?.company?.company_id ??
+                  record?.company_id ??
+                  record?.company?.id ??
+                  record?.id ??
+                  ""
+                ).trim();
+                const companyId = ensureCompanyKey(rawId);
+                return companyId ? { company_id: companyId } : null;
+              })
+              .filter(
+                (entry): entry is { company_id: string } => Boolean(entry),
+              )
+          : [];
+
+        setSavedCompanies(normalized);
+      })
+      .catch((err) => {
+        console.error("listSavedCompanies failed", err);
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  const savedCompanyIds = useMemo(() => {
+    const ids = new Set<string>();
+    savedCompanies.forEach((entry) => {
+      const normalized = ensureCompanyKey(entry?.company_id ?? "");
+      if (normalized) ids.add(normalized);
+    });
+    return ids;
+  }, [savedCompanies]);
+
+  const getCanonicalCompanyId = (shipper: IyShipperHit | null) => {
+    if (!shipper) return "";
+    return ensureCompanyKey(
+      shipper.companyKey ||
+        shipper.key ||
+        shipper.companyId ||
+        shipper.name ||
+        shipper.title ||
+        "",
+    );
+  };
+
+  const selectedCompanyId = useMemo(
+    () => getCanonicalCompanyId(selectedShipper),
+    [selectedShipper],
+  );
+
+  const isShipperSaved = useCallback(
+    (shipper?: IyShipperHit | null) => {
+      if (!shipper) return false;
+      const companyId = getCanonicalCompanyId(shipper);
+      if (!companyId) return false;
+      return savedCompanyIds.has(companyId);
+    },
+    [savedCompanyIds],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Search shippers
+  // ---------------------------------------------------------------------------
+
+  const fetchShippers = useCallback(async (q: string, pageNum: number) => {
+    if (!q.trim()) {
+      setResults([]);
+      setTotal(0);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const res = await listSavedCompanies();
-      setSavedCompanies(res.records);
-    } catch (err) {
-      console.error("listSavedCompanies failed", err);
-      setSavedCompanies([]);
+      const payload = await searchShippers({
+        q,
+        page: pageNum,
+        pageSize: PAGE_SIZE,
+      });
+
+      setResults(payload.results);
+      setTotal(payload.total);
+    } catch (err: any) {
+      console.error("searchShippers error:", err);
+      setError(err?.message || "Search failed");
+      setResults([]);
+      setTotal(0);
     } finally {
-      setSavedLoading(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void reloadSavedCompanies();
-  }, [reloadSavedCompanies]);
-
-  const isCompanySaved = useCallback(
-    (companyKey?: string | null) => {
-      if (!companyKey) return false;
-      return savedCompanies.some((r) => r.companyKey === companyKey);
-    },
-    [savedCompanies],
-  );
+    setPage(1);
+    void fetchShippers(debouncedName, 1);
+    // Filters are part of the UX; triggering a refresh here preserves
+    // expected behavior even if the backend ignores these fields.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedName, mode, region, activity]);
 
   // ---------------------------------------------------------------------------
-  // Search shippers (ImportYeti DMA via /public/iy/searchShippers)
+  // View details
   // ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    if (!debouncedQuery) {
-      setSearchState(INITIAL_SEARCH_STATE);
-      setSelectedShipper(null);
-      setProfile(null);
-      setEnrichment(null);
-      setProfileError(null);
+  const handleCardClick = (shipper: IyShipperHit) => {
+    setSelectedShipper(shipper);
+    setIsModalOpen(true);
+
+    setCompanyProfile(null);
+    setCompanyEnrichment(null);
+    setProfileError(null);
+    setProfileLoading(true);
+
+    const canonicalKey = getCanonicalCompanyId(shipper);
+    if (!canonicalKey) {
+      setProfileError("Unable to determine company identifier.");
+      setProfileLoading(false);
       return;
     }
 
-    let cancelled = false;
-
-    setSearchState({ status: "loading" });
-    setSelectedShipper(null);
-    setProfile(null);
-    setEnrichment(null);
-    setProfileError(null);
-
-    async function run() {
-      try {
-        const result = await searchShippers({
-          q: debouncedQuery,
-          pageSize: 25,
-          mode: filters.mode,
-          region: filters.region,
-          activity: filters.activity,
-        });
-
-        if (cancelled) return;
-
-        setSearchState({
-          status: "loaded",
-          rows: result.rows,
-          total: result.total,
-        });
-
-        if (result.rows.length > 0) {
-          const first = result.rows[0];
-          handleSelectShipper(first, false);
-        }
-      } catch (err: any) {
-        if (cancelled) return;
-        console.error("searchShippers failed", err);
-        setSearchState({
-          status: "error",
-          message:
-            err?.message ||
-            "Unable to load shippers. Please try again.",
-        });
-      }
-    }
-
-    void run();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQuery, filters.mode, filters.region, filters.activity]);
-
-  // ---------------------------------------------------------------------------
-  // Load profile + enrichment for ShipperDetailModal and as initialProfile
-  // for SearchWorkspacePanel
-  // ---------------------------------------------------------------------------
-
-  const loadProfileForShipper = useCallback(
-    async (shipper: IyShipperHit) => {
-      if (!shipper?.key) {
-        setProfile(null);
-        setEnrichment(null);
-        return;
-      }
-
-      setProfileLoading(true);
-      setProfileError(null);
-
-      try {
-        const response = await getIyCompanyProfile({
-          companyKey: shipper.key,
-          userGoal:
-            "Populate LIT Search detail modal and workspace panel with company intelligence",
-        });
-
-        setProfile(response.companyProfile ?? null);
-        setEnrichment(response.enrichment ?? null);
-      } catch (err: any) {
+    getIyCompanyProfile({
+      companyKey: canonicalKey,
+      query: debouncedName,
+      userGoal:
+        "Populate LIT Search detail modal with KPIs, spend analysis and pre-call brief",
+    })
+      .then(({ companyProfile, enrichment }) => {
+        setCompanyProfile(companyProfile);
+        setCompanyEnrichment(enrichment);
+      })
+      .catch((err: any) => {
         console.error("getIyCompanyProfile failed", err);
-        setProfile(null);
-        setEnrichment(null);
-        setProfileError(
-          err?.message || "Unable to load company profile",
-        );
-      } finally {
+        setProfileError(err?.message || "Failed to load company profile");
+      })
+      .finally(() => {
         setProfileLoading(false);
-      }
-    },
-    [],
-  );
+      });
+  };
 
-  // When user selects a card
-  const handleSelectShipper = useCallback(
-    (shipper: IyShipperHit, scrollIntoView = true) => {
-      setSelectedShipper(shipper);
-      setActiveTab("overview");
-      void loadProfileForShipper(shipper);
-
-      if (scrollIntoView && summaryRef.current) {
-        summaryRef.current.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }
-    },
-    [loadProfileForShipper],
-  );
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setSelectedShipper(null);
+    setCompanyProfile(null);
+    setCompanyEnrichment(null);
+    setProfileError(null);
+  };
 
   // ---------------------------------------------------------------------------
-  // Save to Command Center (used by cards & modal)
+  // Save to Command Center
   // ---------------------------------------------------------------------------
 
   const handleSaveToCommandCenter = useCallback(
-    async (shipper: IyShipperHit, profileForSave: IyCompanyProfile | null) => {
-      if (!shipper?.key) return;
-      setSaving(true);
+    async (
+      shipper?: IyShipperHit | null,
+      profileOverride?: IyCompanyProfile | null,
+    ) => {
+      if (!shipper) return;
+      const companyId = getCanonicalCompanyId(shipper);
+      if (!companyId) {
+        toast({
+          variant: "destructive",
+          title: "Missing company ID",
+          description: "Unable to save this company.",
+        });
+        return;
+      }
+      if (savedCompanyIds.has(companyId)) {
+        toast({
+          title: "Already saved",
+          description: "This company is already in Command Center.",
+        });
+        return;
+      }
+      if (savingCompanyId === companyId) return;
+
+      setSavingCompanyId(companyId);
       try {
         await saveCompanyToCommandCenter({
-          companyKey: shipper.key,
-          name:
-            profileForSave?.companyName ??
-            shipper.title ??
-            shipper.name ??
-            "Company",
+          shipper,
+          profile:
+            profileOverride ||
+            (selectedCompanyId === companyId ? companyProfile : null),
           stage: "prospect",
         });
 
-        // Optimistically update local saved list
         setSavedCompanies((prev) => {
-          if (prev.some((r) => r.companyKey === shipper.key)) {
+          if (
+            prev.some((entry) => ensureCompanyKey(entry.company_id) === companyId)
+          ) {
             return prev;
           }
-          return [
-            ...prev,
-            {
-              id: shipper.key,
-              companyKey: shipper.key,
-              name:
-                shipper.title ??
-                shipper.name ??
-                profileForSave?.companyName ??
-                "Company",
-              stage: "prospect",
-            },
-          ];
+          return [...prev, { company_id: companyId }];
         });
-      } catch (err) {
-        console.error("saveCompanyToCommandCenter failed", err);
+
+        toast({
+          title: "Saved to Command Center",
+          description: `${
+            shipper.title || shipper.name || "Company"
+          } has been saved.`,
+        });
+      } catch (saveError) {
+        const message =
+          saveError instanceof Error
+            ? saveError.message
+            : "Unable to save this company right now.";
+        toast({
+          variant: "destructive",
+          title: "Save failed",
+          description: message,
+        });
+        console.error("[LIT] Save to Command Center failed", {
+          shipper,
+          error: saveError,
+          companyId,
+        });
       } finally {
-        setSaving(false);
+        setSavingCompanyId(null);
       }
     },
-    [],
+    [
+      companyProfile,
+      savingCompanyId,
+      savedCompanyIds,
+      selectedCompanyId,
+      toast,
+    ],
   );
 
-  const handleToggleSaveFromCard = useCallback(
-    async (shipper: IyShipperHit) => {
-      if (isCompanySaved(shipper.key)) {
-        // For now, no unsave API; just no-op.
-        return;
-      }
-      await handleSaveToCommandCenter(shipper, profile);
+  const handleModalSave = useCallback(
+    (payload: { shipper: IyShipperHit; profile: IyCompanyProfile | null }) => {
+      void handleSaveToCommandCenter(payload.shipper, payload.profile);
     },
-    [handleSaveToCommandCenter, isCompanySaved, profile],
+    [handleSaveToCommandCenter],
   );
-
-  // ---------------------------------------------------------------------------
-  // Derived values for UI
-  // ---------------------------------------------------------------------------
-
-  const canSearch = Boolean(debouncedQuery);
-
-  const selectedCompanyForWorkspace = useMemo(() => {
-    if (!selectedShipper) return null;
-
-    const companyKey =
-      selectedShipper.key ||
-      selectedShipper.companyKey ||
-      selectedShipper.companyId ||
-      selectedShipper.title ||
-      selectedShipper.name ||
-      "";
-
-    const subtitle =
-      selectedShipper.address ||
-      [selectedShipper.city, selectedShipper.state, selectedShipper.country]
-        .filter(Boolean)
-        .join(", ") ||
-      null;
-
-    return {
-      companyKey,
-      title:
-        selectedShipper.title ??
-        selectedShipper.name ??
-        "Company",
-      subtitle,
-      shipper: selectedShipper,
-      isSaved: isCompanySaved(companyKey),
-      initialProfile: profile,
-    };
-  }, [isCompanySaved, profile, selectedShipper]);
-
-  const mainContent = useMemo(() => {
-    if (!canSearch) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
-          <p className="text-base font-medium">
-            Enter a company name to search the LIT DMA index.
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground/80 max-w-xl">
-            You&apos;ll see top shippers, recent activity, lanes, suppliers,
-            and Command Center status for each company.
-          </p>
-        </div>
-      );
-    }
-
-    if (searchState.status === "loading") {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <div>
-            <p className="font-medium">Searching ImportYeti…</p>
-            <p className="text-sm text-muted-foreground/80">
-              This usually takes just a few seconds.
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    if (searchState.status === "error") {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-red-500">
-          <p className="font-medium">Unable to load shippers</p>
-          <p className="text-sm text-muted-foreground/80 max-w-md">
-            {searchState.message}
-          </p>
-        </div>
-      );
-    }
-
-    if (
-      searchState.status === "loaded" &&
-      searchState.rows.length === 0
-    ) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-          <p className="font-medium">No shippers match your filters</p>
-          <p className="text-sm text-muted-foreground/80 max-w-md">
-            Try relaxing your filters or searching for a slightly broader
-            company name.
-          </p>
-        </div>
-      );
-    }
-
-    if (searchState.status === "loaded") {
-      return (
-        <div className="flex h-full flex-col gap-4" ref={summaryRef}>
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div>
-              Showing{" "}
-              <span className="font-medium">
-                {searchState.total}
-              </span>{" "}
-              shippers for{" "}
-              <span className="font-medium">
-                &ldquo;{debouncedQuery}&rdquo;
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {searchState.rows.map((row) => {
-              const companyKey =
-                row.key ||
-                row.companyKey ||
-                row.companyId ||
-                row.title ||
-                row.name ||
-                "";
-              return (
-                <SearchResultCard
-                  key={companyKey}
-                  shipper={row}
-                  isSaved={isCompanySaved(companyKey)}
-                  saving={saving}
-                  isActive={selectedShipper?.key === row.key}
-                  onToggleSave={() => handleToggleSaveFromCard(row)}
-                  onOpenDetails={() => handleSelectShipper(row)}
-                  onSelect={() => handleSelectShipper(row)}
-                  profile={profile}
-                />
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    return null;
-  }, [
-    canSearch,
-    debouncedQuery,
-    handleSelectShipper,
-    handleToggleSaveFromCard,
-    isCompanySaved,
-    profile,
-    saving,
-    searchState,
-    selectedShipper?.key,
-  ]);
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="border-b bg-white/60 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:px-6 md:py-5">
+    <div className="min-h-screen bg-slate-50">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
+            <h1 className="text-xl font-semibold text-slate-900">
               LIT Search Shipper Search
             </h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Search the LIT Search DMA index for verified shippers, view
-              live BOL activity, and save companies to Command Center.
+            <p className="mt-1 text-xs text-slate-500">
+              Search the LIT Search DMA index for verified shippers, view live
+              BOL activity, and save companies to Command Center.
             </p>
           </div>
 
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center md:gap-4">
-              <div className="flex-1">
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Company name
-                </label>
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search for Nike, Walmart, Mohawk, etc."
-                  className="h-10 w-full rounded-lg border border-input bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
-                />
-              </div>
-
-              <SearchFilters
-                value={filters}
-                onChange={setFilters}
-                className="md:self-end"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2 rounded-full border border-dashed border-amber-300 bg-amber-50/70 px-3 py-1.5 text-amber-800">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm">
-                  <span className="text-[11px] font-semibold">AI</span>
-                </span>
-                <div className="flex flex-col">
-                  <span className="font-medium">
-                    AI enrichment runs automatically
-                  </span>
-                  <span className="text-[11px] text-amber-900/80">
-                    Gemini summarizes trade and risk once a company is
-                    selected.
-                  </span>
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-2 rounded-full border border-dashed border-amber-300 bg-amber-50 px-3 py-1.5 text-amber-800">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm">
+                <span className="text-[11px] font-semibold">AI</span>
+              </span>
+              Gemini runs enrichment automatically after you open details.
+            </span>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
-        <div className="grid h-full gap-4 lg:grid-cols-[minmax(0,_1.9fr)_minmax(0,_2.1fr)]">
-          {/* Left pane: result list */}
-          <section className="flex min-h-[400px] flex-col rounded-xl border bg-white p-3 shadow-sm md:p-4">
-            <header className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <div className="text-xs font-medium text-muted-foreground">
-                  RESULTS
-                </div>
-                {searchState.status === "loaded" &&
-                  searchState.total > 0 &&
-                  debouncedQuery && (
-                    <div className="text-xs text-muted-foreground/80">
-                      Showing{" "}
-                      <span className="font-semibold">
-                        {searchState.total}
-                      </span>{" "}
-                      shippers for{" "}
-                      <span className="font-semibold">
-                        &ldquo;{debouncedQuery}&rdquo;
-                      </span>
-                    </div>
-                  )}
-              </div>
-            </header>
-
-            <div className="relative flex-1">
-              <div className="absolute inset-0 overflow-y-auto pr-2">
-                {mainContent}
-              </div>
-            </div>
-          </section>
-
-          {/* Right pane: workspace panel */}
-          <section className="flex min-h-[400px] flex-col rounded-xl border bg-white p-3 shadow-sm md:p-4">
-            <SearchWorkspacePanel
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              selectedCompany={selectedCompanyForWorkspace}
+      <main className="mx-auto max-w-6xl px-4 pb-10 pt-5 md:px-6">
+        <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-slate-600">
+              Company name
+            </label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="Search shippers (e.g. Nike, Home Depot)"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
             />
-          </section>
+          </div>
+
+          <div className="flex flex-wrap gap-2 md:flex-nowrap">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                setPage(1);
+                setDebouncedName(searchInput.trim());
+              }}
+              className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Searching…" : "Search"}
+            </button>
+          </div>
         </div>
 
-        {/* Detail modal */}
-        <ShipperDetailModal
-          isOpen={!!selectedShipper}
-          shipper={selectedShipper}
-          loadingProfile={profileLoading}
-          profile={profile}
-          enrichment={enrichment}
-          error={profileError}
-          onClose={() => setSelectedShipper(null)}
-          onSaveToCommandCenter={({ shipper, profile }) =>
-            handleSaveToCommandCenter(shipper, profile)
-          }
-          saveLoading={saving}
-          isSaved={
-            selectedShipper ? isCompanySaved(selectedShipper.key) : false
-          }
-        />
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
+          <SearchFilters
+            value={{ mode, region, activity }}
+            onChange={(next) => {
+              setMode(next.mode);
+              setRegion(next.region);
+              setActivity(next.activity);
+            }}
+            className="flex-1"
+          />
+        </div>
+
+        <div className="mt-4 text-xs text-slate-500">
+          {error && (
+            <span className="text-rose-600">
+              Search failed: {error}. Try again.
+            </span>
+          )}
+          {!error && !loading && (
+            <span>
+              Showing {results.length} of {total} results for{" "}
+              <span className="font-semibold">&quot;{debouncedName}&quot;</span>
+            </span>
+          )}
+          {loading && <span>Searching LIT Search…</span>}
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {results.map((shipper) => {
+            const companyId = getCanonicalCompanyId(shipper);
+            const saved = companyId ? savedCompanyIds.has(companyId) : false;
+            const saving = companyId ? savingCompanyId === companyId : false;
+            return (
+              <div key={shipper.key || shipper.title} className="text-left">
+                <ShipperCard
+                  shipper={shipper}
+                  onViewDetails={handleCardClick}
+                  onToggleSaved={handleSaveToCommandCenter}
+                  isSaved={saved}
+                  saving={saving}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {total > PAGE_SIZE && (
+          <div className="mt-6 flex items-center justify-between text-xs text-slate-600">
+            <span>
+              Page {page} • {total.toLocaleString()} total companies
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.max(1, page - 1);
+                  setPage(next);
+                  void fetchShippers(debouncedName, next);
+                }}
+                disabled={page <= 1 || loading}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const maxPage = Math.ceil(total / PAGE_SIZE);
+                  const next = Math.min(maxPage, page + 1);
+                  setPage(next);
+                  void fetchShippers(debouncedName, next);
+                }}
+                disabled={loading || results.length < PAGE_SIZE}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </main>
+
+      <ShipperDetailModal
+        isOpen={isModalOpen}
+        shipper={selectedShipper}
+        loadingProfile={profileLoading}
+        profile={companyProfile}
+        routeKpis={companyProfile?.routeKpis ?? null}
+        enrichment={companyEnrichment}
+        error={profileError}
+        isSaved={isShipperSaved(selectedShipper)}
+        onClose={handleModalClose}
+        onSaveToCommandCenter={handleModalSave}
+        saveLoading={Boolean(
+          selectedCompanyId && savingCompanyId === selectedCompanyId,
+        )}
+      />
     </div>
   );
 }
