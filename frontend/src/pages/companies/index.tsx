@@ -73,13 +73,14 @@ export default function Companies() {
       setCompanyEnrichment(null);
       return;
     }
+    const safeCompanyId = activeCompanyId;
     let isActive = true;
     async function loadProfile() {
       setProfileLoading(true);
       setProfileError(null);
       try {
         const response = await getIyCompanyProfile({
-          companyKey: activeCompanyId,
+          companyKey: safeCompanyId,
           userGoal:
             "Populate LIT Command Center for this company with KPIs, spend analysis and pre-call brief",
         });
