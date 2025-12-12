@@ -98,8 +98,16 @@ export async function registerWithEmailPassword({ fullName, email, password }) {
   if (!email || !password) throw new Error("Email and password required");
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   if (fullName) {
-    try { await updateProfile(cred.user, { displayName: fullName }); } catch {}
+    try {
+      await updateProfile(cred.user, { displayName: fullName });
+    } catch {
+      /* ignore optional profile update failure */
+    }
   }
-  try { await sendEmailVerification(cred.user); } catch {}
+  try {
+    await sendEmailVerification(cred.user);
+  } catch {
+    /* ignore optional email verification failure */
+  }
   return cred?.user || null;
 }

@@ -11,7 +11,13 @@ function computeGreeting(now = new Date()) {
 
 function getWelcomeMessage(userName, lastLoginIso) {
   let last = lastLoginIso;
-  try { if (!last && typeof window !== 'undefined') last = localStorage.getItem('lit:lastLogin'); } catch {}
+  try {
+    if (!last && typeof window !== 'undefined') {
+      last = localStorage.getItem('lit:lastLogin');
+    }
+  } catch {
+    /* ignore localStorage read failure */
+  }
   const base = computeGreeting();
   const name = userName && String(userName).trim() ? `, ${userName}` : '';
   if (!last) return `${base}${name}!`;
@@ -23,7 +29,13 @@ function getWelcomeMessage(userName, lastLoginIso) {
 
 export default function WelcomeBanner({ userName = 'there', lastLoginIso = null }) {
   useEffect(() => {
-    try { if (typeof window !== 'undefined') localStorage.setItem('lit:lastLogin', new Date().toISOString()); } catch {}
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('lit:lastLogin', new Date().toISOString());
+      }
+    } catch {
+      /* ignore localStorage write failure */
+    }
   }, []);
   const text = useMemo(() => getWelcomeMessage(userName, lastLoginIso), [userName, lastLoginIso]);
   return (

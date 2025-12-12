@@ -25,10 +25,16 @@ export default function RFPStudio() {
       const raw = localStorage.getItem('lit_rfps');
       const arr = raw ? JSON.parse(raw) : [];
       if (Array.isArray(arr)) setRfps(arr);
-    } catch {}
+    } catch {
+      /* ignore localStorage read failure */
+    }
   }, []);
   useEffect(() => {
-    try { localStorage.setItem('lit_rfps', JSON.stringify(rfps)); } catch {}
+    try {
+      localStorage.setItem('lit_rfps', JSON.stringify(rfps));
+    } catch {
+      /* ignore localStorage write failure */
+    }
   }, [rfps]);
   const [activeId, setActiveId] = useState('rfp_001');
   const [quoteData, setQuoteData] = useState({
@@ -101,9 +107,15 @@ export default function RFPStudio() {
         const next = [fresh, ...arr];
         localStorage.setItem(key, JSON.stringify(next));
         // notify other tabs
-        try { window.dispatchEvent(new StorageEvent('storage', { key })); } catch {}
+        try {
+          window.dispatchEvent(new StorageEvent('storage', { key }));
+        } catch {
+          /* ignore cross-tab notification failure */
+        }
       }
-    } catch {}
+    } catch {
+      /* ignore localStorage failures */
+    }
   }
   const [proposalSummary, setProposalSummary] = useState('');
   const [proposalSolution, setProposalSolution] = useState('');
@@ -120,8 +132,6 @@ export default function RFPStudio() {
 
   const generateQuoteEmailHTML = (_quote) => '';
 
-  if (isLoading) { return null; }
-
   // keep page accessible; gating can be added later
 
   async function loadKpisForActive() {
@@ -137,13 +147,17 @@ export default function RFPStudio() {
           const cc = ccRaw ? JSON.parse(ccRaw) : [];
           const rec = Array.isArray(cc) ? cc.find((c)=> String(c?.id)===cid) : null;
           if (rec && rec.name) name = rec.name;
-        } catch {}
+        } catch {
+          /* ignore localStorage read failure */
+        }
         let derived = null;
         try {
           const raw = localStorage.getItem(`lit_rfp_payload_${cid}`);
           const saved = raw ? JSON.parse(raw) : null;
           derived = deriveKpisFromPayload(saved);
-        } catch {}
+        } catch {
+          /* ignore localStorage read failure */
+        }
         setCompany({
           companyId: cid,
           companyName: name,
@@ -194,13 +208,13 @@ export default function RFPStudio() {
       setLanes(lanesAgg);
       const baseline = lanesAgg.reduce((sum, l)=> sum + (Number(l.value_usd||0)), 0) || (shipments12m * 8650);
       let proposed = baseline * 0.87;
-      try {
-        const bench = await rfpGetCompanyShipments; // placeholder keep existing benchmark logic below
-      } catch {}
+      // Placeholder: benchmark logic via rfpGetBenchmark below
       try {
         const bench = await rfpGetBenchmark({ mode: 'ocean', lanes: lanesAgg.map(l=> ({ o: l.origin_country, d: l.dest_country, vol: l.shipments })) });
         if (bench && typeof bench.proposedUsd === 'number') proposed = bench.proposedUsd;
-      } catch {}
+      } catch {
+        /* ignore benchmark fetch failure */
+      }
       const savings = Math.max(0, baseline - proposed);
       const pct = baseline > 0 ? (savings / baseline) : 0;
       setFinModel({ baseline, proposed, savings, pct });
@@ -222,7 +236,9 @@ export default function RFPStudio() {
       } else {
         setRfpPayload(null); setPriced(null);
       }
-    } catch {}
+    } catch {
+      /* ignore localStorage read/parse failure */
+    }
     loadKpisForActive();
   }, [activeId]);
 
@@ -312,7 +328,11 @@ export default function RFPStudio() {
                 }));
                 // Save uploaded lanes keyed by universal company id if present
                 const keySuffix = (activeRfp?.companyId || company?.companyId || id || activeId) || activeId;
-                try { localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(payload)); } catch {}
+                try {
+                  localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(payload));
+                } catch {
+                  /* ignore localStorage write failure */
+                }
                 ensureCompanyInCommandCenter(keySuffix, name);
               } catch(err){ alert('Import failed'); }
             }} />
@@ -320,12 +340,21 @@ export default function RFPStudio() {
             <Button variant="outline" className="border-slate-200" onClick={()=>{
               const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
               if (!keySuffix || !rfpPayload) { alert('Nothing to save'); return; }
-              try { localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(rfpPayload)); alert('RFP data saved'); } catch { alert('Save failed'); }
+              try {
+                localStorage.setItem(STORAGE_PREFIX + keySuffix, JSON.stringify(rfpPayload));
+                alert('RFP data saved');
+              } catch {
+                alert('Save failed');
+              }
             }}>Save Data</Button>
             <Button variant="outline" className="border-slate-200 text-red-600" onClick={()=>{
               const keySuffix = (activeRfp?.companyId || company?.companyId || activeId) || activeId;
               if (!keySuffix) return;
-              try { localStorage.removeItem(STORAGE_PREFIX + keySuffix); } catch {}
+              try {
+                localStorage.removeItem(STORAGE_PREFIX + keySuffix);
+              } catch {
+                /* ignore localStorage delete failure */
+              }
               setRfpPayload(null); setPriced(null);
               alert('RFP data reset');
             }}>Reset Data</Button>
@@ -511,7 +540,13 @@ export default function RFPStudio() {
                       setRfpPayload(prev => {
                         const lanes = (prev.lanes||[]).map(ln => ({ ...ln, mode }));
                         const next = { ...prev, lanes };
-                        try { if (activeId) localStorage.setItem(STORAGE_PREFIX + activeId, JSON.stringify(next)); } catch {}
+                        try {
+                          if (activeId) {
+                            localStorage.setItem(STORAGE_PREFIX + activeId, JSON.stringify(next));
+                          }
+                        } catch {
+                          /* ignore localStorage write failure */
+                        }
                         return next;
                       });
                     }}>
@@ -598,7 +633,18 @@ export default function RFPStudio() {
                       <input type="date" className="w-full border rounded px-3 py-2" defaultValue={activeRfp?.due||''} onBlur={(e)=> setRfps(prev=> prev.map(x=> x.id===activeId? { ...x, due: e.target.value }: x))} />
                     </label>
                     <label className="block md:col-span-2"><div className="text-slate-600 mb-1">Requirements</div>
-                      <textarea className="w-full h-24 p-3 border rounded-lg" placeholder="Add requirements…" onBlur={(e)=>{ try { const key = `rfp_req_${activeId}`; localStorage.setItem(key, e.target.value); } catch {} }} />
+                      <textarea
+                        className="w-full h-24 p-3 border rounded-lg"
+                        placeholder="Add requirements…"
+                        onBlur={(e) => {
+                          try {
+                            const key = `rfp_req_${activeId}`;
+                            localStorage.setItem(key, e.target.value);
+                          } catch {
+                            /* ignore localStorage write failure */
+                          }
+                        }}
+                      />
                     </label>
                     <label className="block md:col-span-2"><div className="text-slate-600 mb-1">Products (comma-separated)</div>
                       <input className="w-full border rounded px-3 py-2" defaultValue={Array.isArray(company?.products)? company.products.join(', '): ''} onBlur={(e)=> setCompany(prev=> ({ ...(prev||{}), products: e.target.value.split(',').map(s=>s.trim()).filter(Boolean) }))} />
@@ -618,7 +664,9 @@ export default function RFPStudio() {
                         const body={ company: company||{}, proposal:{ executiveSummary: proposalSummary, solutionOffering: proposalSolution}, financials: finModel||{} };
                         const r= await rfpExportPdf(body);
                         if(r?.pdfUrl){ window.open(r.pdfUrl,'_blank'); return; }
-                      } catch {}
+                      } catch {
+                        /* ignore server-side export failure */
+                      }
                       // Fallback to client-side export if we have payload
                       if (rfpPayload && priced) {
                         const html = toHtml(rfpPayload, priced);
@@ -642,7 +690,9 @@ export default function RFPStudio() {
                           const a = document.createElement('a'); a.href=url; a.download=`${(rfps.find(x=>x.id===activeId)?.name||'proposal').replace(/\s+/g,'-')}.html`; a.click(); URL.revokeObjectURL(url);
                           return;
                         }
-                      } catch {}
+                      } catch {
+                        /* ignore server-side export failure */
+                      }
                       if (rfpPayload && priced) {
                         const html = toHtml(rfpPayload, priced);
                         const blob = new Blob([html], { type:'text/html' });

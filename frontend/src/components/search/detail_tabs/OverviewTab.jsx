@@ -9,23 +9,10 @@ import {
 import { format } from 'date-fns';
 
 export default function OverviewTab({ company, isLoading }) {
-  if (!isLoading && !company) {
-    return (
-      <div className="text-center py-8 text-gray-600">
-        No overview data available for this company.
-      </div>
-    );
-  }
-  // Helper function for formatting weight
-  const formatWeight = (weightKg) => {
-    if (!weightKg) return 'N/A';
-    if (weightKg >= 1000000) return `${(weightKg / 1000000).toFixed(1)}M kg`;
-    if (weightKg >= 1000) return `${(weightKg / 1000).toFixed(0)}K kg`;
-    return `${weightKg.toFixed(0)} kg`;
-  };
-
   const analytics = useMemo(() => {
-    if (!company) return { totalShipments: 0, topRoute: 'N/A', topCarriers: [], modeBreakdown: [] };
+    if (!company) {
+      return { totalShipments: 0, topRoute: 'N/A', topCarriers: [], modeBreakdown: [] };
+    }
 
     return {
       totalShipments: company.shipments_12m || 0,
@@ -34,6 +21,14 @@ export default function OverviewTab({ company, isLoading }) {
       modeBreakdown: company.mode_breakdown || [],
     };
   }, [company]);
+
+  // Helper function for formatting weight
+  const formatWeight = (weightKg) => {
+    if (!weightKg) return 'N/A';
+    if (weightKg >= 1000000) return `${(weightKg / 1000000).toFixed(1)}M kg`;
+    if (weightKg >= 1000) return `${(weightKg / 1000).toFixed(0)}K kg`;
+    return `${weightKg.toFixed(0)} kg`;
+  };
 
   const getModeIcon = (mode) => {
     const icons = {
@@ -50,6 +45,14 @@ export default function OverviewTab({ company, isLoading }) {
     return (
       <div className="flex items-center justify-center py-8">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!company) {
+    return (
+      <div className="text-center py-8 text-gray-600">
+        No overview data available for this company.
       </div>
     );
   }

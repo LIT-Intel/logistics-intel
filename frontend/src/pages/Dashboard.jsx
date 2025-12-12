@@ -41,7 +41,9 @@ export default function Dashboard() {
       const arr = JSON.parse(localStorage.getItem('lit_companies') || '[]');
       const savedCount = Array.isArray(arr) ? arr.length : 0;
       setData((d) => ({ ...d, savedCompanies: savedCount }));
-    } catch {}
+    } catch {
+      /* ignore localStorage read failure */
+    }
   }, []);
 
   useEffect(() => {
