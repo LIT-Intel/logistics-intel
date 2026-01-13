@@ -42,7 +42,6 @@ export default function CampaignsPage() {
   const [activeId, setActiveId] = useState(null);
   const [sequenceById, setSequenceById] = useState({});
 
-  // This useEffect now handles all initial data loading and access checks
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -52,7 +51,6 @@ export default function CampaignsPage() {
       try {
         const userData = user || null;
 
-        // Check if user has access to campaigns feature
         if (userData && !checkFeatureAccess(userData, 'campaigns')) {
           console.log('CampaignsPage: User does not have campaigns access');
           setHasAccess(false);
@@ -62,28 +60,23 @@ export default function CampaignsPage() {
         }
 
         setHasAccess(true);
-        // Load campaigns via Gateway
         try {
-          const resp = await api.get('/crm/campaigns');
-          setCampaigns(asArray(resp));
-          setDebugInfo(prev => prev + `\nLoaded ${asArray(resp).length} campaigns.`);
+          const resp = await api.getCrmCampaigns();
+          const rows = asArray(resp);
+          setCampaigns(rows);
+          setDebugInfo(prev => prev + `\nLoaded ${rows.length} campaigns.`);
         } catch (campaignError) {
-          console.warn('CampaignsPage: /public/campaigns unavailable, using placeholder list.');
-          // Fallback placeholder so the page renders without error until BE is wired
-          const placeholder = [
-            { id: 'c1', name: 'Q1 Freight Leads', status: 'Running', open: 68, reply: 24 },
-            { id: 'c2', name: 'Warehouse Buyer Outreach', status: 'Draft', open: 0, reply: 0 },
-          ];
-          setCampaigns(placeholder);
-          setError(null);
+          console.warn('CampaignsPage: Failed to load campaigns:', campaignError);
+          setError('Failed to load campaigns. Please try again.');
+          setCampaigns([]);
         }
 
       } catch (e) {
         console.error("CampaignsPage: Critical error loading user or initial data:", e);
-        const errorMsg = `Failed to load initial data (user/access): ${e.message}`;
+        const errorMsg = `Failed to load initial data: ${e.message}`;
         setError(errorMsg);
         setHasAccess(false);
-        setDebugInfo(`CRITICAL ERROR: ${errorMsg}`);
+        setDebugInfo(`ERROR: ${errorMsg}`);
       } finally {
         setIsLoading(false);
       }
@@ -106,44 +99,34 @@ export default function CampaignsPage() {
     setIsCreating(true);
   };
 
-  const handleSave = async (_campaignData) => {
-    // Re-trigger loadData after save to refresh all relevant data
-    // This assumes `Campaign.create` and `Campaign.update` are successful.
-    // In a real app, you might want more granular updates or success/error handling here.
-    // Placeholder: wire to Gateway create/update endpoints when available
+  const handleSave = async (campaignData) => {
     setIsCreating(false);
     setEditingCampaign(null);
-    setIsLoading(true); // Indicate loading while re-fetching campaigns
+    setIsLoading(true);
     try {
-      const resp = await api.get('/crm/campaigns');
+      if (editingCampaign) {
+        console.warn('Update campaign not yet implemented');
+      } else {
+        await api.createCrmCampaign({
+          name: campaignData.name || 'New Campaign',
+          sequence: campaignData.sequence || [],
+          settings: campaignData.settings || {},
+        });
+      }
+      const resp = await api.getCrmCampaigns();
       setCampaigns(asArray(resp));
       setError(null);
-    } catch (_e) {
-      // Maintain placeholder list on save
-      setCampaigns(prev => prev.length ? prev : [
-        { id: 'c1', name: 'Q1 Freight Leads', status: 'Running', open: 68, reply: 24 },
-        { id: 'c2', name: 'Warehouse Buyer Outreach', status: 'Draft', open: 0, reply: 0 },
-      ]);
-      setError(null);
+    } catch (e) {
+      console.error('Failed to save campaign:', e);
+      setError('Failed to save campaign');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDelete = async (campaignId) => {
-    // Placeholder: DELETE via Gateway when available, then re-fetch
-    setIsLoading(true);
-    try {
-      const resp = await api.get('/crm/campaigns');
-      setCampaigns(asArray(resp));
-      setError(null);
-    } catch (_e) {
-      // Keep placeholder minus the deleted id
-      setCampaigns(prev => prev.filter(c => c.id !== campaignId));
-      setError(null);
-    } finally {
-      setIsLoading(false);
-    }
+    console.warn('Delete campaign not yet implemented');
+    setCampaigns(prev => prev.filter(c => c.id !== campaignId));
   };
 
   const handleToggle = async (campaignId, status) => {

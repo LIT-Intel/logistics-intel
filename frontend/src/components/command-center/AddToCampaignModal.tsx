@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { getCrmCampaigns, addCompanyToCampaign } from "@/lib/api";
 
-type Campaign = { id: string; name: string };
+type Campaign = { id: number; name: string };
 
 export default function AddToCampaignModal({ open, onClose, company }:{ open:boolean; onClose:()=>void; company:{company_id?:string|null; name:string} }) {
   const [list, setList] = useState<Campaign[]|null>(null);
@@ -10,20 +11,25 @@ export default function AddToCampaignModal({ open, onClose, company }:{ open:boo
   useEffect(()=>{ if(open){ (async()=>{
     setLoading(true);
     try{
-      const r = await fetch("/api/lit/public/listCampaigns"); // GET
-      if(!r.ok) throw new Error(String(r.status));
-      const data = await r.json();
-      setList(data?.rows || []);
-    }catch{ setList([]); } finally{ setLoading(false); }
+      const data = await getCrmCampaigns();
+      const rows = Array.isArray(data?.rows) ? data.rows : Array.isArray(data) ? data : [];
+      setList(rows);
+    }catch(err){
+      console.error('Failed to load campaigns:', err);
+      setList([]);
+    } finally{ setLoading(false); }
   })(); } },[open]);
 
-  async function add(id:string) {
+  async function add(id:number) {
     try{
-      const r = await fetch("/api/lit/public/campaigns/addCompany", {
-        method:"POST", headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ campaign_id:id, company_id: company.company_id ?? null, name: company.name })
+      if (!company.company_id) {
+        throw new Error('Company ID is required');
+      }
+      await addCompanyToCampaign({
+        campaign_id: id,
+        company_id: company.company_id,
+        contact_ids: []
       });
-      if(!r.ok) throw new Error(String(r.status));
       toast.success("Added to campaign");
       onClose();
       document.dispatchEvent(new Event("lit:campaign-kpi:refresh"));

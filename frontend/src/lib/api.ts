@@ -2300,6 +2300,147 @@ export async function saveCampaign(body: Record<string, any>) {
   return res.json();
 }
 
+export async function getCrmCompanyDetail(company_id: string, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/companies/${encodeURIComponent(company_id)}`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getCrmCompanyDetail ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getCrmCampaigns(signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getCrmCampaigns ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createCrmCampaign(body: {
+  name: string;
+  sequence: any;
+  settings: any;
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`createCrmCampaign ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getCrmCampaignDetail(campaign_id: number, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns/${campaign_id}`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getCrmCampaignDetail ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function addCompanyToCampaign(params: {
+  campaign_id: number;
+  company_id: string;
+  contact_ids?: string[];
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns/${params.campaign_id}/addCompany`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      company_id: params.company_id,
+      contact_ids: params.contact_ids || [],
+    }),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`addCompanyToCampaign ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function enrichCrmCompanyContacts(company_id: string, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/companies/${encodeURIComponent(company_id)}/enrichContacts`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`enrichCrmCompanyContacts ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getRfpCompanyContext(company_id: string, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/rfp/company/${encodeURIComponent(company_id)}/context`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getRfpCompanyContext ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function generateRfp(body: {
+  company_id: string;
+  lanes: any[];
+  owner?: string;
+  template?: string;
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/rfp/generate`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`generateRfp ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createRfpWorkspace(body: {
+  company_id: string;
+  name: string;
+  lanes: any[];
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/rfp/workspace`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`createRfpWorkspace ${res.status}`);
+  }
+  return res.json();
+}
+
 export const api = {
   searchCompanies,
   getFilterOptions,
@@ -2313,6 +2454,15 @@ export const api = {
   getCalendarEvents,
   createAlert,
   kpiFrom,
+  getCrmCompanyDetail,
+  getCrmCampaigns,
+  createCrmCampaign,
+  getCrmCampaignDetail,
+  addCompanyToCampaign,
+  enrichCrmCompanyContacts,
+  getRfpCompanyContext,
+  generateRfp,
+  createRfpWorkspace,
 };
 
 export async function fetchCompanyLanes(params: {

@@ -44,3 +44,18 @@ export async function rfpExportPdf(body:any){
 export async function rfpAddToCampaign(body:{ companyId:string; title:string; html:string; pdfUrl?:string; }) {
   return fetch(`${BASE}/campaigns/createFromRfp`, { method:'POST', headers: HDRS, body: JSON.stringify(body) }).then(ok);
 }
+
+export async function rfpGetCompanyContext(company_id: string) {
+  const url = `${BASE}/rfp/company/${encodeURIComponent(company_id)}/context`;
+  return fetch(url, { headers: HDRS }).then(ok);
+}
+
+export async function rfpGenerate(body: { company_id: string; lanes: any[]; owner?: string; template?: string }) {
+  const url = `${BASE}/rfp/generate`;
+  return fetch(url, { method: 'POST', headers: HDRS, body: JSON.stringify(body) }).then(ok);
+}
+
+export async function rfpCreateWorkspace(body: { company_id: string; name: string; lanes: any[] }) {
+  const url = `${BASE}/rfp/workspace`;
+  return fetch(url, { method: 'POST', headers: HDRS, body: JSON.stringify(body) }).then(ok);
+}
