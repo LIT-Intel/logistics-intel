@@ -201,3 +201,168 @@ paths:
           required: false
           type: string
       responses: { "200": { description: "ok" } }
+
+  /crm/companies/{company_id}:
+    options:
+      operationId: cors_crmGetCompany
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    get:
+      operationId: crmGetCompany
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - name: company_id
+          in: path
+          required: true
+          type: string
+      responses: { "200": { description: "ok" } }
+
+  /crm/companies/{company_id}/enrichContacts:
+    options:
+      operationId: cors_crmEnrichContacts
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    post:
+      operationId: crmEnrichContacts
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - name: company_id
+          in: path
+          required: true
+          type: string
+      responses: { "200": { description: "ok" } }
+
+  /crm/campaigns:
+    options:
+      operationId: cors_crmCampaigns
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    get:
+      operationId: crmGetCampaigns
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    post:
+      operationId: crmCreateCampaign
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              name: { type: string }
+              sequence: { type: object }
+              settings: { type: object }
+      responses: { "200": { description: "ok" } }
+
+  /crm/campaigns/{campaign_id}:
+    options:
+      operationId: cors_crmGetCampaign
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    get:
+      operationId: crmGetCampaign
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - name: campaign_id
+          in: path
+          required: true
+          type: integer
+      responses: { "200": { description: "ok" } }
+
+  /crm/campaigns/{campaign_id}/addCompany:
+    options:
+      operationId: cors_crmAddCompanyToCampaign
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    post:
+      operationId: crmAddCompanyToCampaign
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - name: campaign_id
+          in: path
+          required: true
+          type: integer
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              company_id: { type: string }
+              contact_ids: { type: array, items: { type: string } }
+      responses: { "200": { description: "ok" } }
+
+  /rfp/company/{company_id}/context:
+    options:
+      operationId: cors_rfpGetContext
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    get:
+      operationId: rfpGetContext
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - name: company_id
+          in: path
+          required: true
+          type: string
+      responses: { "200": { description: "ok" } }
+
+  /rfp/generate:
+    options:
+      operationId: cors_rfpGenerate
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    post:
+      operationId: rfpGenerate
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              company_id: { type: string }
+              lanes: { type: array, items: { type: object } }
+              owner: { type: string }
+              template: { type: string }
+      responses: { "200": { description: "ok" } }
+
+  /rfp/workspace:
+    options:
+      operationId: cors_rfpWorkspace
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      responses: { "200": { description: "ok" } }
+    post:
+      operationId: rfpWorkspace
+      security: []
+      x-google-backend: { address: __SERVICE_URL__, jwt_audience: __SERVICE_URL__ }
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              company_id: { type: string }
+              name: { type: string }
+              lanes: { type: array, items: { type: object } }
+      responses: { "200": { description: "ok" } }

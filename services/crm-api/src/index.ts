@@ -8,6 +8,9 @@ import contacts from './routes/contacts.js';
 import outreach from './routes/outreach.js';
 import featureFlags from './routes/featureFlags.js';
 import admin from './routes/admin.js';
+import savedCompanies from './routes/savedCompanies.js';
+import campaigns from './routes/campaigns.js';
+import rfp from './routes/rfp.js';
 import { initSchema } from './db.js';
 
 const app = express();
@@ -50,6 +53,9 @@ app.use(contacts);
 app.use(outreach);
 app.use(featureFlags);
 app.use(admin);
+app.use(savedCompanies);
+app.use(campaigns);
+app.use(rfp);
 
 // Public proxy routes (to Gateway)
 app.use('/api/public', publicRouter);

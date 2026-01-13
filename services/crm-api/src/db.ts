@@ -83,6 +83,58 @@ export async function initSchema(): Promise<void> {
       details JSONB,
       created_at TIMESTAMPTZ DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS saved_companies (
+      id BIGSERIAL PRIMARY KEY,
+      company_id TEXT NOT NULL UNIQUE,
+      stage TEXT DEFAULT 'prospect',
+      provider TEXT DEFAULT 'importyeti',
+      payload JSONB NOT NULL,
+      user_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_saved_companies_stage ON saved_companies(stage);
+    CREATE INDEX IF NOT EXISTS idx_saved_companies_user_id ON saved_companies(user_id);
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id BIGSERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      status TEXT DEFAULT 'draft',
+      sequence JSONB,
+      settings JSONB,
+      user_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS campaign_companies (
+      id BIGSERIAL PRIMARY KEY,
+      campaign_id BIGINT REFERENCES campaigns(id) ON DELETE CASCADE,
+      company_id TEXT NOT NULL,
+      contact_ids JSONB,
+      status TEXT DEFAULT 'pending',
+      added_at TIMESTAMPTZ DEFAULT now(),
+      UNIQUE(campaign_id, company_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_campaign_companies_campaign_id ON campaign_companies(campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_campaign_companies_company_id ON campaign_companies(company_id);
+    CREATE TABLE IF NOT EXISTS rfps (
+      id BIGSERIAL PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      name TEXT,
+      lanes JSONB,
+      status TEXT DEFAULT 'draft',
+      files JSONB,
+      user_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_rfps_company_id ON rfps(company_id);
+    CREATE TABLE IF NOT EXISTS user_settings (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT UNIQUE NOT NULL,
+      settings JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
   `);
 }
 
