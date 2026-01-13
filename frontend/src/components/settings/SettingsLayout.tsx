@@ -1,4 +1,5 @@
 import React from "react";
+import AppShell from "@/components/layout/AppShell";
 import SettingsSidebar from "./SettingsSidebar";
 import {
   SETTINGS_SECTIONS,
@@ -19,7 +20,7 @@ import {
 import { KpiCard, SettingsHeader } from "./SettingsPrimitives";
 
 const KPI_DATA = [
-  { title: "Active users", value: "34", helper: "8 pending invites", accent: "indigo" },
+  { title: "Active users", value: "34", helper: "8 pending invites", accent: "blue" },
   { title: "Plan", value: "Growth", helper: "Renews Apr 30", accent: "emerald" },
   { title: "Connected inboxes", value: "11", helper: "Eff. deliverability 99%", accent: "sky" },
   { title: "Alerts", value: "5 live", helper: "2 muted", accent: "slate" },
@@ -61,8 +62,8 @@ export default function SettingsLayout() {
     React.useState<SettingsSectionId>("Profile");
 
   return (
-    <div className="min-h-screen bg-slate-100/70 py-6 text-slate-900 sm:py-10">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 sm:px-6 lg:flex-row lg:gap-8">
+    <AppShell>
+      <div className="flex w-full flex-col gap-6 lg:flex-row lg:gap-8">
         <SettingsSidebar
           sections={SETTINGS_SECTIONS}
           activeSection={activeSection}
@@ -87,6 +88,6 @@ export default function SettingsLayout() {
           {renderSection(activeSection)}
         </main>
       </div>
-    </div>
+    </AppShell>
   );
 }

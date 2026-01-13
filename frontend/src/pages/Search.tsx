@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import AppShell from "@/components/layout/AppShell";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
 import SearchFilters from "@/components/search/SearchFilters";
+import { Search as SearchIcon } from "lucide-react";
 import {
   searchShippers,
   getIyCompanyProfile,
@@ -363,47 +365,27 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">
-              LIT Search Shipper Search
-            </h1>
-            <p className="mt-1 text-xs text-slate-500">
-              Search the LIT Search DMA index for verified shippers, view
-              live BOL activity, and save companies to Command Center.
-            </p>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-4 pb-10 pt-5 md:px-6">
+    <AppShell>
+      <div className="space-y-6">
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm md:flex-row md:items-center"
+          className="flex items-center gap-3 rounded-xl bg-white p-6 shadow-sm border border-slate-200"
         >
-          <div className="flex-1">
-            <label className="text-xs font-medium text-slate-600">
-              Company name
-            </label>
-            <input
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              placeholder="Search shippers (e.g. Nike, Home Depot)"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2 md:flex-nowrap">
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? "Searching…" : "Search"}
-            </button>
-          </div>
+          <SearchIcon className="w-5 h-5 text-slate-400" />
+          <input
+            className="flex-1 text-lg text-slate-900 placeholder-slate-400 focus:outline-none"
+            placeholder="Search companies..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? "Searching…" : "Search"}
+          </button>
         </form>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
@@ -419,12 +401,12 @@ export default function SearchPage() {
           <button
             type="button"
             onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
+            className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            Filters
+            Advanced Filters
             {hasAdvancedFilters && (
-              <span className="ml-2 inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-full bg-slate-900 px-2 text-[10px] font-semibold text-white">
-                +
+              <span className="ml-2 inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-full bg-blue-600 px-2 text-[10px] font-semibold text-white">
+                {Object.values({originCity, originState, originCountry, originPostal, destCity, destState, destCountry, destPostal}).filter(Boolean).length}
               </span>
             )}
           </button>
@@ -445,7 +427,7 @@ export default function SearchPage() {
           {loading && <span>Searching LIT Search…</span>}
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {filteredResults.map((shipper) => {
             const companyId = getCanonicalCompanyId(shipper);
             const saved = companyId ? savedCompanyIds.has(companyId) : false;
@@ -498,7 +480,6 @@ export default function SearchPage() {
             </div>
           </div>
         )}
-      </main>
 
       <ShipperDetailModal
         isOpen={isModalOpen}
@@ -551,25 +532,25 @@ export default function SearchPage() {
                     value={originCity}
                     onChange={(e) => setOriginCity(e.target.value)}
                     placeholder="City"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <input
                     value={originState}
                     onChange={(e) => setOriginState(e.target.value)}
                     placeholder="State / Province"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <input
                     value={originCountry}
                     onChange={(e) => setOriginCountry(e.target.value)}
                     placeholder="Country"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <input
                     value={originPostal}
                     onChange={(e) => setOriginPostal(e.target.value)}
                     placeholder="Postal code"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -583,25 +564,25 @@ export default function SearchPage() {
                     value={destCity}
                     onChange={(e) => setDestCity(e.target.value)}
                     placeholder="City"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <input
                     value={destState}
                     onChange={(e) => setDestState(e.target.value)}
                     placeholder="State / Province"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <input
                     value={destCountry}
                     onChange={(e) => setDestCountry(e.target.value)}
                     placeholder="Country"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <input
                     value={destPostal}
                     onChange={(e) => setDestPostal(e.target.value)}
                     placeholder="Postal code"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -631,6 +612,7 @@ export default function SearchPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </AppShell>
   );
 }

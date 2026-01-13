@@ -50,7 +50,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200">
           {!collapsed && (
             <Link to="/app/dashboard" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center text-white font-bold text-sm">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-bold text-sm">
                 LIT
               </div>
               <span className="font-semibold text-slate-900">Logistics Intel</span>
@@ -58,7 +58,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           )}
           {collapsed && (
             <Link to="/app/dashboard" className="flex items-center justify-center w-full">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center text-white font-bold text-sm">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-bold text-sm">
                 LIT
               </div>
             </Link>
@@ -124,7 +124,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </span>
                   </div>
                 </div>
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center text-white font-semibold">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center text-white font-semibold">
                   <User className="w-5 h-5" />
                 </div>
               </button>
