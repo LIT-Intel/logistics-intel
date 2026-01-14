@@ -3,8 +3,8 @@ import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
 import SearchFilters from "@/components/search/SearchFilters";
 import SearchPageHeader from "@/components/search/SearchPageHeader";
-import { Search as SearchIcon } from "lucide-react";
-import { motion } from "framer-motion";
+import { Search as SearchIcon, Sparkles, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import {
   searchShippers,
@@ -16,6 +16,13 @@ import {
   type IyCompanyProfile,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  getSampleShipperHits,
+  getSampleProfile,
+  getSampleRouteKpis,
+  getSampleEnrichment,
+  isSampleCompany,
+} from "@/lib/mockData";
 
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
@@ -33,6 +40,7 @@ export default function SearchPage() {
   const [page, setPage] = useState(1);
   const [results, setResults] = useState<IyShipperHit[]>([]);
   const [total, setTotal] = useState(0);
+  const [showingSamples, setShowingSamples] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,13 +80,16 @@ export default function SearchPage() {
 
   async function fetchShippers(q: string, pageNum: number) {
     if (!q.trim()) {
-      setResults([]);
-      setTotal(0);
+      const samples = getSampleShipperHits();
+      setResults(samples);
+      setTotal(samples.length);
+      setShowingSamples(true);
       return;
     }
 
     setLoading(true);
     setError(null);
+    setShowingSamples(false);
 
     try {
       const json: any = await searchShippers({
@@ -129,13 +140,31 @@ export default function SearchPage() {
     setCompanyProfile(null);
     setCompanyEnrichment(null);
     setProfileError(null);
-    setProfileLoading(true);
+
     const canonicalKey = getCanonicalCompanyId(shipper);
     if (!canonicalKey) {
       setProfileError("Unable to determine company identifier.");
       setProfileLoading(false);
       return;
     }
+
+    if (isSampleCompany(canonicalKey)) {
+      const sampleProfile = getSampleProfile(canonicalKey);
+      const sampleRouteKpis = getSampleRouteKpis(canonicalKey);
+      const sampleEnrichment = getSampleEnrichment(canonicalKey);
+
+      if (sampleProfile) {
+        setCompanyProfile({
+          ...sampleProfile,
+          routeKpis: sampleRouteKpis,
+        });
+        setCompanyEnrichment(sampleEnrichment);
+      }
+      setProfileLoading(false);
+      return;
+    }
+
+    setProfileLoading(true);
     getIyCompanyProfile({ companyKey: canonicalKey, query })
       .then(({ companyProfile, enrichment }) => {
         setCompanyProfile(companyProfile);
@@ -367,6 +396,21 @@ export default function SearchPage() {
     setDestPostal("");
   };
 
+  const handleDismissSamples = () => {
+    setResults([]);
+    setTotal(0);
+    setShowingSamples(false);
+  };
+
+  useEffect(() => {
+    if (!query.trim() && results.length === 0) {
+      const samples = getSampleShipperHits();
+      setResults(samples);
+      setTotal(samples.length);
+      setShowingSamples(true);
+    }
+  }, []);
+
   return (
     <div className="space-y-6">
       <SearchPageHeader
@@ -375,6 +419,38 @@ export default function SearchPage() {
         savedCompaniesCount={savedCompanies.length}
         onQuickSearch={() => setFiltersOpen(true)}
       />
+
+      <AnimatePresence>
+        {showingSamples && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="relative rounded-xl border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <Sparkles className="h-5 w-5 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-blue-900">
+                  Showing Sample Data
+                </h3>
+                <p className="mt-1 text-xs text-blue-700">
+                  Explore the interface with Fortune 500 companies. Search to see real results from our database.
+                </p>
+              </div>
+              <button
+                onClick={handleDismissSamples}
+                className="flex-shrink-0 rounded-lg p-1 text-blue-600 hover:bg-blue-100 transition-colors"
+                aria-label="Dismiss sample data"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <motion.form
         initial={{ opacity: 0, y: 10 }}
@@ -438,7 +514,12 @@ export default function SearchPage() {
               Search failed: {error}. Try again.
             </span>
           )}
-          {!error && !loading && (
+          {!error && !loading && showingSamples && (
+            <span>
+              Showing {filteredResults.length} sample companies
+            </span>
+          )}
+          {!error && !loading && !showingSamples && query.trim() && (
             <span>
               Showing {filteredResults.length} of {total} results for{" "}
               <span className="font-semibold">"{query}"</span>
@@ -452,16 +533,23 @@ export default function SearchPage() {
             const companyId = getCanonicalCompanyId(shipper);
             const saved = companyId ? savedCompanyIds.has(companyId) : false;
             const saving = companyId ? savingCompanyId === companyId : false;
+            const isSample = isSampleCompany(companyId);
             return (
-              <ShipperCard
-                key={shipper.key || shipper.title}
-                shipper={shipper}
-                onViewDetails={handleCardClick}
-                onToggleSaved={handleSaveToCommandCenter}
-                isSaved={saved}
-                saving={saving}
-                index={index}
-              />
+              <div key={shipper.key || shipper.title} className="relative">
+                {isSample && showingSamples && (
+                  <div className="absolute -right-2 -top-2 z-10 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
+                    SAMPLE
+                  </div>
+                )}
+                <ShipperCard
+                  shipper={shipper}
+                  onViewDetails={handleCardClick}
+                  onToggleSaved={handleSaveToCommandCenter}
+                  isSaved={saved}
+                  saving={saving}
+                  index={index}
+                />
+              </div>
             );
           })}
         </div>
