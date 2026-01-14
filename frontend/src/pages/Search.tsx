@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import AppShell from "@/components/layout/AppShell";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
 import SearchFilters from "@/components/search/SearchFilters";
@@ -365,8 +364,7 @@ export default function SearchPage() {
   };
 
   return (
-    <AppShell>
-      <div className="space-y-6">
+    <div className="space-y-6">
         <form
           onSubmit={handleSubmit}
           className="flex items-center gap-3 rounded-xl bg-white p-6 shadow-sm border border-slate-200"
@@ -612,7 +610,6 @@ export default function SearchPage() {
           </div>
         </div>
       )}
-      </div>
-    </AppShell>
+    </div>
   );
 }

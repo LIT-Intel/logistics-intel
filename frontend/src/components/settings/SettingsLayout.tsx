@@ -1,5 +1,4 @@
 import React from "react";
-import AppShell from "@/components/layout/AppShell";
 import SettingsSidebar from "./SettingsSidebar";
 import {
   SETTINGS_SECTIONS,
@@ -62,8 +61,7 @@ export default function SettingsLayout() {
     React.useState<SettingsSectionId>("Profile");
 
   return (
-    <AppShell>
-      <div className="flex w-full flex-col gap-6 lg:flex-row lg:gap-8">
+    <div className="flex w-full flex-col gap-6 lg:flex-row lg:gap-8">
         <SettingsSidebar
           sections={SETTINGS_SECTIONS}
           activeSection={activeSection}
@@ -88,6 +86,5 @@ export default function SettingsLayout() {
           {renderSection(activeSection)}
         </main>
       </div>
-    </AppShell>
   );
 }

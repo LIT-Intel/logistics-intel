@@ -1,5 +1,4 @@
 import React from "react";
-import AppShell from "@/components/layout/AppShell";
 
 type CommandCenterLayoutProps = {
   title?: string;
@@ -15,7 +14,7 @@ export default function CommandCenterLayout({
   children,
 }: CommandCenterLayoutProps) {
   return (
-    <AppShell>
+    <>
       {(title || subtitle || actions) && (
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
           <div>
@@ -34,6 +33,6 @@ export default function CommandCenterLayout({
         </div>
       )}
       <div>{children}</div>
-    </AppShell>
+    </>
   );
 }

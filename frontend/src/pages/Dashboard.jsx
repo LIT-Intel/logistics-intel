@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
-import AppShell from "@/components/layout/AppShell";
 import { Building2, Mail, FileText, Activity, ArrowRight } from "lucide-react";
 import { getSavedCompanies, getCrmCampaigns } from "@/lib/api";
 
@@ -89,27 +88,24 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <AppShell>
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-32 bg-white rounded-xl border border-slate-200 animate-pulse" />
-            ))}
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="h-96 bg-white rounded-xl border border-slate-200 animate-pulse" />
-            <div className="h-96 bg-white rounded-xl border border-slate-200 animate-pulse" />
-          </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-32 bg-white rounded-xl border border-slate-200 animate-pulse" />
+          ))}
         </div>
-      </AppShell>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="h-96 bg-white rounded-xl border border-slate-200 animate-pulse" />
+          <div className="h-96 bg-white rounded-xl border border-slate-200 animate-pulse" />
+        </div>
+      </div>
     );
   }
 
   return (
-    <AppShell>
-      <div className="space-y-6">
-        {/* KPI Summary */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div className="space-y-6">
+      {/* KPI Summary */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <KpiCard
             icon={Building2}
             label="Saved Companies"
@@ -235,6 +231,5 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    </AppShell>
   );
 }
