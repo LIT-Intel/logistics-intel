@@ -3,7 +3,7 @@ import PublicHeader from "@/components/layout/PublicHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { loginWithGoogle, loginWithMicrosoft, registerWithEmailPassword } from "@/auth/firebaseClient";
+import { loginWithGoogle, loginWithMicrosoft, registerWithEmailPassword } from "@/auth/supabaseAuthClient";
 
 export default function Signup() {
   const navigate = useNavigate();

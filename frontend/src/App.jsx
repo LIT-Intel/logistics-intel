@@ -1,7 +1,7 @@
 import React, { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "@/pages/Layout";
-import CustomLoginPage from "@/components/layout/CustomLoginPage";
+import ModernLoginPage from "@/components/layout/ModernLoginPage";
 import { useAuth } from "@/auth/AuthProvider";
 
 // Lazy-load primary pages
@@ -16,7 +16,7 @@ const CampaignBuilder= lazy(() => import("@/pages/CampaignBuilder"));
 const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));
 const RFPStudio      = lazy(() => import("@/pages/RFPStudio"));
 const Settings       = lazy(() => import("@/pages/SettingsPage"));
-const Billing        = lazy(() => import("@/pages/Billing"));
+const Billing        = lazy(() => import("@/pages/BillingNew"));
 const AffiliateDash  = lazy(() => import("@/pages/AffiliateDashboard"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminSettings  = lazy(() => import("@/pages/AdminSettings"));
@@ -96,9 +96,9 @@ export default function App() {
             <Layout currentPageName="Command Center"><CompaniesIndex /></Layout>
           }
         />
-        <Route path="/login" element={<CustomLoginPage onClose={() => {}} />} />
+        <Route path="/login" element={<ModernLoginPage />} />
         {/* Alias: /app/login → login page */}
-        <Route path="/app/login" element={<CustomLoginPage onClose={() => {}} />} />
+        <Route path="/app/login" element={<ModernLoginPage />} />
         {/* Alias: /request-demo → signup (temporary) */}
         <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
         <Route path="/signup" element={<Layout currentPageName="Signup"><Signup /></Layout>} />

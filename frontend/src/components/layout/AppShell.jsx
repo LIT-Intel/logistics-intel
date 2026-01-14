@@ -4,7 +4,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { Home, BarChart3, Search, Building2, Mail, Activity, FileText, Box, Settings, CreditCard, Users2, Shield, TrendingUp, Database, Bug } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { checkFeatureAccess } from "@/components/utils/planLimits";
-import { logout } from "@/auth/firebaseClient";
+import { logout } from "@/auth/supabaseAuthClient";
 
 function SideLink({ to, icon: Icon, label }) {
   return (
