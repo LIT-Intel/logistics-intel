@@ -2463,6 +2463,31 @@ export const api = {
   getRfpCompanyContext,
   generateRfp,
   createRfpWorkspace,
+
+  // Generic HTTP methods for hooks/components
+  async get(path: string) {
+    const url = withGatewayKey(`${API_BASE}${path}`);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'accept': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+    return res.json();
+  },
+
+  async post(path: string, body?: any) {
+    const url = withGatewayKey(`${API_BASE}${path}`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'accept': 'application/json'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
+    return res.json();
+  }
 };
 
 export async function fetchCompanyLanes(params: {

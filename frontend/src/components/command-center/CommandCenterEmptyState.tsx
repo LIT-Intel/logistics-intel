@@ -1,7 +1,7 @@
 import React from "react";
 
 import React from "react";
-import { Ship, Package, LineChart } from "lucide-react";
+import { Ship, Box as Package, LineChart } from "lucide-react";
 
 const Tag = ({
   icon: Icon,

@@ -1,7 +1,7 @@
 // frontend/src/components/layout/AppShell.jsx
 import React, { useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { Home, BarChart3, Search, Building2, Mail, Activity, FileText, Package, Settings, CreditCard, Users2, Shield, TrendingUp, Database, Bug } from "lucide-react";
+import { Home, BarChart3, Search, Building2, Mail, Activity, FileText, Box, Settings, CreditCard, Users2, Shield, TrendingUp, Database, Bug } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { checkFeatureAccess } from "@/components/utils/planLimits";
 import { logout } from "@/auth/firebaseClient";
@@ -70,7 +70,7 @@ export default function AppShell({ currentPageName, children }) {
           {!collapsed && <div className="px-4 py-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">Tools</div>}
           <nav className="mb-4">
             <SideLink to="/app/rfp" icon={FileText} label={collapsed ? '' : 'RFP Studio'} />
-            <SideLink to="/app/widgets" icon={Package} label={collapsed ? '' : 'Widgets'} />
+            <SideLink to="/app/widgets" icon={Box} label={collapsed ? '' : 'Widgets'} />
           </nav>
 
           {!collapsed && <div className="px-4 py-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">Account</div>}
@@ -149,7 +149,7 @@ export default function AppShell({ currentPageName, children }) {
               <SideLink to="/app/command-center" icon={Building2} label="Command Center" />
               <SideLink to="/app/campaigns" icon={Mail} label="Campaigns" />
               <SideLink to="/app/rfp" icon={FileText} label="RFP Studio" />
-              <SideLink to="/app/widgets" icon={Package} label="Widgets" />
+              <SideLink to="/app/widgets" icon={Box} label="Widgets" />
               <SideLink to="/app/settings" icon={Settings} label="Settings" />
               <SideLink to="/app/billing" icon={CreditCard} label="Billing" />
               <SideLink to="/app/affiliate" icon={Users2} label="Affiliate" />
