@@ -22,6 +22,18 @@ export default defineConfig(({ mode }) => {
         '@pages': path.resolve(__dirname, './src/pages'),
       },
     },
+    optimizeDeps: {
+      include: ['@supabase/supabase-js'],
+      esbuildOptions: {
+        target: 'esnext',
+      },
+    },
+    build: {
+      target: 'esnext',
+      commonjsOptions: {
+        include: [/@supabase\/supabase-js/, /node_modules/],
+      },
+    },
     server: {
       host: '0.0.0.0',
       port: 8080,
