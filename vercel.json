@@ -1,8 +1,16 @@
 {
   "rewrites": [
     {
-      "source": "/api/lit/:path*",
-      "destination": "https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev/:path*"
+      "source": "/api/importyeti/:endpoint",
+      "destination": "https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/importyeti-proxy/:endpoint"
+    },
+    {
+      "source": "/api/enrichment/gemini",
+      "destination": "https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/gemini-enrichment"
+    },
+    {
+      "source": "/api/enrichment/lusha",
+      "destination": "https://jkmrfiaefxwgbvftohrb.supabase.co/functions/v1/lusha-enrichment"
     }
   ]
 }

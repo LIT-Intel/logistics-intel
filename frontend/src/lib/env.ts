@@ -1,37 +1,36 @@
-const PROXY_BASE = "/api/lit";
+export const API_BASE = "/api";
 
-function readEnvBase(): string {
+export function getSupabaseUrl(): string {
   try {
     const metaEnv = typeof import.meta !== "undefined" ? ((import.meta as any)?.env ?? {}) : {};
-    const processEnv =
-      typeof process !== "undefined" && process.env
-        ? process.env
-        : {};
-    const candidate =
-      metaEnv.API_GATEWAY_BASE ??
-      metaEnv.VITE_API_BASE ??
-      metaEnv.NEXT_PUBLIC_API_BASE ??
-      processEnv.API_GATEWAY_BASE ??
-      processEnv.VITE_API_BASE ??
-      processEnv.NEXT_PUBLIC_API_BASE ??
-      "";
-    if (typeof candidate !== "string") return "";
-    const trimmed = candidate.trim();
-    return trimmed ? trimmed.replace(/\/+$/, "") : "";
+    const processEnv = typeof process !== "undefined" && process.env ? process.env : {};
+    return (
+      metaEnv.VITE_SUPABASE_URL ??
+      processEnv.VITE_SUPABASE_URL ??
+      processEnv.NEXT_PUBLIC_SUPABASE_URL ??
+      ""
+    ).trim();
   } catch {
     return "";
   }
 }
 
-export function getGatewayBase(): string {
-  const envBase = readEnvBase();
-  if (typeof window === "undefined" && envBase) {
-    return envBase;
+export function getSupabaseAnonKey(): string {
+  try {
+    const metaEnv = typeof import.meta !== "undefined" ? ((import.meta as any)?.env ?? {}) : {};
+    const processEnv = typeof process !== "undefined" && process.env ? process.env : {};
+    return (
+      metaEnv.VITE_SUPABASE_ANON_KEY ??
+      processEnv.VITE_SUPABASE_ANON_KEY ??
+      processEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+      ""
+    ).trim();
+  } catch {
+    return "";
   }
-  if (envBase.startsWith("/")) {
-    return envBase || PROXY_BASE;
-  }
-  return PROXY_BASE;
 }
 
-export const API_PROXY_BASE = PROXY_BASE;
+export const API_PROXY_BASE = API_BASE;
+export function getGatewayBase(): string {
+  return API_BASE;
+}
