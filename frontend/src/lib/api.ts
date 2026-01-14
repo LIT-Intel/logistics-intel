@@ -1070,7 +1070,7 @@ async function postIySearchShippers(
   body: { q: string; page: number; pageSize: number },
   signal?: AbortSignal,
 ) {
-  return fetchJson<any>(withGatewayKey(`${API_BASE}/public/iy/searchShippers`), {
+  return fetchJson<any>(`/api/importyeti/searchShippers`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -1097,7 +1097,7 @@ export async function iyCompanyBols(
       : 0;
 
   const response = await fetch(
-    withGatewayKey(`${API_BASE}/public/iy/companyBols`),
+    `/api/importyeti/companyBols`,
     {
       method: "POST",
       headers: {
@@ -1153,9 +1153,9 @@ export async function iyCompanyStats(
   if (params.range) search.set("range", params.range);
   try {
     return await fetchJson<IyCompanyStats>(
-      `${API_BASE}/public/iy/companyStats?${search.toString()}`,
+      `/api/importyeti/companyStats?${search.toString()}`,
       {
-        method: "GET",
+        method: "POST",
         headers: { accept: "application/json" },
         signal,
       },
@@ -1469,17 +1469,10 @@ export async function getIyCompanyProfile({
     return devGetCompanyProfile(normalizedKey);
   }
 
-  const url = withGatewayKey(`${SEARCH_GATEWAY_BASE}/public/iy/companyProfile`);
+  const url = `/api/importyeti/companyProfile?company_id=${encodeURIComponent(normalizedKey)}`;
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      companyKey: normalizedKey,
-      query: query ?? null,
-      user_goal:
-        userGoal ??
-        "Enrich company profile for LIT Command Center from Import activity",
-    }),
   });
 
   if (!resp.ok) {
@@ -1531,7 +1524,7 @@ export async function searchShippers(
   }
 
   const raw = await fetchJson<any>(
-    withGatewayKey(`${API_BASE}/public/iy/searchShippers`),
+    `/api/importyeti/searchShippers`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
