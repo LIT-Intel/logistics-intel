@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { loginWithGoogle, loginWithMicrosoft, loginWithEmailPassword } from "@/auth/firebaseClient";
+import { loginWithGoogle, loginWithMicrosoft, loginWithEmailPassword } from "@/auth/supabaseAuthClient";
 import { useAuth } from "@/auth/AuthProvider";
 import FluidHoverSkin from "@/components/ui/FluidHoverSkin";
 

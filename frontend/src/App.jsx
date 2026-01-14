@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import ModernLoginPage from "@/components/layout/ModernLoginPage";
+import ModernSignupPage from "@/components/layout/ModernSignupPage";
 import { useAuth } from "@/auth/AuthProvider";
 
 // Lazy-load primary pages
@@ -33,8 +34,9 @@ const CommandCenterPage = lazy(() => import("@/components/command-center/Command
 const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany    = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
+const AuthCallback   = lazy(() => import("@/pages/AuthCallback"));
 
-const DEMO_MODE = !import.meta.env.VITE_FIREBASE_API_KEY;
+const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -49,7 +51,7 @@ export default function App() {
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading…</div>}>
       {/* Marketing / public */}
       <Routes>
-          <Route path="/" element={<Navigate to="/search" replace />} />
+          <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
         {/* Public Company route → use full Company page for consistency */}
         <Route
           path="/company/:id"
@@ -99,9 +101,12 @@ export default function App() {
         <Route path="/login" element={<ModernLoginPage />} />
         {/* Alias: /app/login → login page */}
         <Route path="/app/login" element={<ModernLoginPage />} />
+        {/* Signup page */}
+        <Route path="/signup" element={<ModernSignupPage />} />
         {/* Alias: /request-demo → signup (temporary) */}
         <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
-        <Route path="/signup" element={<Layout currentPageName="Signup"><Signup /></Layout>} />
+        {/* OAuth callback handler */}
+        <Route path="/auth/callback" element={<AuthCallback />} />
         {/* App (protected) */}
         <Route
           path="/app/dashboard"
