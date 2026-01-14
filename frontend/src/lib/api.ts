@@ -10,32 +10,35 @@ function resolveApiBase() {
   const read = (value: unknown) =>
     typeof value === "string" && value.trim().length ? value.trim() : null;
 
+  let candidate: string | null = null;
+
   try {
     // Prefer Vite/Next public envs at build/runtime
     if (typeof import.meta !== "undefined") {
       const metaEnv = (import.meta as any)?.env;
-      const viteBase = read(metaEnv?.VITE_API_BASE);
-      if (viteBase) return viteBase;
-      const nextPublicBase = read(metaEnv?.NEXT_PUBLIC_API_BASE);
-      if (nextPublicBase) return nextPublicBase;
+      candidate = read(metaEnv?.VITE_API_BASE) ?? read(metaEnv?.NEXT_PUBLIC_API_BASE);
     }
   } catch {
     // ignore import.meta access issues
   }
 
-  if (typeof process !== "undefined" && process.env) {
-    const nodeEnvBase = read(process.env.NEXT_PUBLIC_API_BASE);
-    if (nodeEnvBase) return nodeEnvBase;
-    const legacyEnvBase = read((process.env as any).VITE_API_BASE);
-    if (legacyEnvBase) return legacyEnvBase;
+  if (!candidate && typeof process !== "undefined" && process.env) {
+    candidate = read(process.env.NEXT_PUBLIC_API_BASE) ?? read((process.env as any).VITE_API_BASE);
   }
 
-  if (typeof window !== "undefined" && (window as any).__API_BASE__) {
-    const windowBase = read((window as any).__API_BASE__);
-    if (windowBase) return windowBase;
+  if (!candidate && typeof window !== "undefined" && (window as any).__API_BASE__) {
+    candidate = read((window as any).__API_BASE__);
   }
 
-  return "/api/lit";
+  // CRITICAL: In browser context, always use proxy path to avoid CORS
+  // If the candidate is a full URL (not starting with /), use proxy instead
+  if (typeof window !== "undefined") {
+    if (!candidate || !candidate.startsWith("/")) {
+      return "/api/lit";
+    }
+  }
+
+  return candidate || "/api/lit";
 }
 
 // Always call via Vercel proxy from the browser to avoid CORS
