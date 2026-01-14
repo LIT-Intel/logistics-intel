@@ -5,6 +5,24 @@ import {
   CommandCenterRecord,
 } from "@/types/importyeti";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
+import {
+  isDevMode,
+  devGetSavedCompanies,
+  devSaveCompany,
+  devGetCompanyDetail,
+  devSearchCompanies,
+  devGetCompanyProfile,
+  devGetCompanyBols,
+  devSearchShippers,
+  devEnrichContacts,
+  devGetContacts,
+  devGetCampaigns,
+  devCreateCampaign,
+  devAddCompanyToCampaign,
+  devGetRfpContext,
+  devGenerateRfp,
+  devGetFilterOptions,
+} from "@/lib/apiDev";
 
 function resolveApiBase() {
   const read = (value: unknown) =>
@@ -344,6 +362,10 @@ export type CompanySearchInput = Partial<{
 const BASE = "";
 
 export async function getCampaigns(base = API_BASE) {
+  if (isDevMode()) {
+    return devGetCampaigns();
+  }
+
   const root = (base || "").replace(/\/$/, "");
   try {
     const r = await fetch(`${root}/public/campaigns`, {
@@ -439,6 +461,10 @@ export async function getCompanyShipmentsProxy(params: {
 export async function getFilterOptions(
   signal?: AbortSignal,
 ): Promise<FilterOptions> {
+  if (isDevMode()) {
+    return devGetFilterOptions();
+  }
+
   return getFilterOptionsOnce(async (innerSignal) => {
     const res = await fetch(`${API_BASE}/public/getFilterOptions`, {
       method: "GET",
@@ -1439,6 +1465,10 @@ export async function getIyCompanyProfile({
     throw new Error("getIyCompanyProfile: company key is required");
   }
 
+  if (isDevMode()) {
+    return devGetCompanyProfile(normalizedKey);
+  }
+
   const url = withGatewayKey(`${SEARCH_GATEWAY_BASE}/public/iy/companyProfile`);
   const resp = await fetch(url, {
     method: "POST",
@@ -1494,6 +1524,10 @@ export async function searchShippers(
       total: 0,
       meta: { q, page, pageSize },
     };
+  }
+
+  if (isDevMode()) {
+    return devSearchShippers({ q, page, pageSize });
   }
 
   const raw = await fetchJson<any>(
@@ -1817,6 +1851,27 @@ export const getIyRouteKpis = getIyRouteKpisForCompany;
 export async function listSavedCompanies(
   stage = "prospect",
 ): Promise<CommandCenterRecord[]> {
+  if (isDevMode()) {
+    const result = await devGetSavedCompanies(stage);
+    return result.rows.map((row: any) => ({
+      company: {
+        company_id: row.company_id,
+        name: row.company_name,
+        source: row.source,
+        address: row.company_data?.address || null,
+        country_code: row.company_data?.countryCode || row.company_data?.country_code || null,
+        kpis: {
+          shipments_12m: row.company_data?.shipmentsLast12m || row.company_data?.totalShipments || 0,
+          last_activity: row.company_data?.lastShipmentDate || row.company_data?.mostRecentShipment || null,
+        },
+        extras: {
+          top_suppliers: row.company_data?.topSuppliers || [],
+        },
+      },
+      created_at: row.created_at,
+    }));
+  }
+
   const res = await fetch(
     withGatewayKey(
       `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=${encodeURIComponent(stage)}`,
@@ -2043,6 +2098,15 @@ export async function saveCompanyToCrm(
       rawId,
     });
     throw new Error("saveCompanyToCrm requires a valid company id");
+  }
+
+  if (isDevMode()) {
+    return devSaveCompany({
+      company_id: companyId,
+      company,
+      stage: "prospect",
+      provider: "importyeti",
+    });
   }
 
   const res = await fetch(
