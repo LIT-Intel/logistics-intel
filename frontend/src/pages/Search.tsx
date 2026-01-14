@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
 import SearchFilters from "@/components/search/SearchFilters";
+import SearchPageHeader from "@/components/search/SearchPageHeader";
 import { Search as SearchIcon } from "lucide-react";
+import { motion } from "framer-motion";
+import { useAuth } from "@/auth/AuthProvider";
 import {
   searchShippers,
   getIyCompanyProfile,
@@ -21,6 +24,7 @@ type ActivityFilter = "12m" | "24m" | "all";
 const PAGE_SIZE = 25;
 
 export default function SearchPage() {
+  const { user } = useAuth();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ModeFilter>("any");
   const [region, setRegion] = useState<RegionFilter>("global");
@@ -365,26 +369,44 @@ export default function SearchPage() {
 
   return (
     <div className="space-y-6">
-        <form
-          onSubmit={handleSubmit}
-          className="flex items-center gap-3 rounded-xl bg-white p-6 shadow-sm border border-slate-200"
+      <SearchPageHeader
+        userName={user?.email || user?.displayName || 'User'}
+        totalResults={total}
+        savedCompaniesCount={savedCompanies.length}
+        onQuickSearch={() => setFiltersOpen(true)}
+      />
+
+      <motion.form
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        onSubmit={handleSubmit}
+        className="relative flex items-center gap-3 rounded-xl bg-gradient-to-br from-white to-slate-50 p-6 shadow-md border border-slate-200 hover:shadow-lg transition-shadow group"
+      >
+        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+        <motion.div
+          animate={{ scale: loading ? [1, 1.1, 1] : 1 }}
+          transition={{ repeat: loading ? Infinity : 0, duration: 1 }}
         >
-          <SearchIcon className="w-5 h-5 text-slate-400" />
-          <input
-            className="flex-1 text-lg text-slate-900 placeholder-slate-400 focus:outline-none"
-            placeholder="Search companies..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            autoFocus
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Searching…" : "Search"}
-          </button>
-        </form>
+          <SearchIcon className="w-5 h-5 text-blue-500" />
+        </motion.div>
+        <input
+          className="flex-1 text-lg text-slate-900 placeholder-slate-400 focus:outline-none bg-transparent relative z-10"
+          placeholder="Search companies by name, location, or products..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          autoFocus
+        />
+        <motion.button
+          type="submit"
+          disabled={loading}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className="relative z-10 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 transition-all"
+        >
+          {loading ? "Searching…" : "Search"}
+        </motion.button>
+      </motion.form>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
           <SearchFilters
@@ -426,20 +448,20 @@ export default function SearchPage() {
         </div>
 
         <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {filteredResults.map((shipper) => {
+          {filteredResults.map((shipper, index) => {
             const companyId = getCanonicalCompanyId(shipper);
             const saved = companyId ? savedCompanyIds.has(companyId) : false;
             const saving = companyId ? savingCompanyId === companyId : false;
             return (
-              <div key={shipper.key || shipper.title} className="text-left">
-                <ShipperCard
-                  shipper={shipper}
-                  onViewDetails={handleCardClick}
-                  onToggleSaved={handleSaveToCommandCenter}
-                  isSaved={saved}
-                  saving={saving}
-                />
-              </div>
+              <ShipperCard
+                key={shipper.key || shipper.title}
+                shipper={shipper}
+                onViewDetails={handleCardClick}
+                onToggleSaved={handleSaveToCommandCenter}
+                isSaved={saved}
+                saving={saving}
+                index={index}
+              />
             );
           })}
         </div>

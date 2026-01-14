@@ -8,7 +8,9 @@ import {
   Package,
   Phone,
   Ship,
+  TrendingUp,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import type {
   IyCompanyProfile,
   IyRouteKpis,
@@ -16,6 +18,7 @@ import type {
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
+import CommandCenterKpiCard from "./CommandCenterKpiCard";
 import CompanyActivityChart from "./CompanyActivityChart";
 import CommandCenterInsights from "./CommandCenterInsights";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
