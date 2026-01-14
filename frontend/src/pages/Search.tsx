@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 import ShipperCard from "@/components/search/ShipperCard";
+import ShipperListItem from "@/components/search/ShipperListItem";
 import SearchFilters from "@/components/search/SearchFilters";
 import SearchPageHeader from "@/components/search/SearchPageHeader";
+import SearchViewToggle from "@/components/search/SearchViewToggle";
 import { Search as SearchIcon, Sparkles, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
@@ -27,6 +29,7 @@ import {
 type ModeFilter = "any" | "ocean" | "air";
 type RegionFilter = "global" | "americas" | "emea" | "apac";
 type ActivityFilter = "12m" | "24m" | "all";
+type ViewMode = "grid" | "list";
 
 const PAGE_SIZE = 25;
 
@@ -36,6 +39,14 @@ export default function SearchPage() {
   const [mode, setMode] = useState<ModeFilter>("any");
   const [region, setRegion] = useState<RegionFilter>("global");
   const [activity, setActivity] = useState<ActivityFilter>("12m");
+
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('lit_search_view_mode');
+      return (saved === 'list' || saved === 'grid') ? saved : 'grid';
+    }
+    return 'grid';
+  });
 
   const [page, setPage] = useState(1);
   const [results, setResults] = useState<IyShipperHit[]>([]);
@@ -402,6 +413,13 @@ export default function SearchPage() {
     setShowingSamples(false);
   };
 
+  const handleViewModeChange = (newMode: ViewMode) => {
+    setViewMode(newMode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lit_search_view_mode', newMode);
+    }
+  };
+
   useEffect(() => {
     if (!query.trim() && results.length === 0) {
       const samples = getSampleShipperHits();
@@ -494,6 +512,7 @@ export default function SearchPage() {
             }}
             className="flex-1"
           />
+          <SearchViewToggle viewMode={viewMode} onViewModeChange={handleViewModeChange} />
           <button
             type="button"
             onClick={() => setFiltersOpen(true)}
@@ -528,12 +547,33 @@ export default function SearchPage() {
           {loading && <span>Searching LIT Search…</span>}
         </div>
 
-        <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className={viewMode === 'grid' ? "mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3" : "mt-6 space-y-3"}>
           {filteredResults.map((shipper, index) => {
             const companyId = getCanonicalCompanyId(shipper);
             const saved = companyId ? savedCompanyIds.has(companyId) : false;
             const saving = companyId ? savingCompanyId === companyId : false;
             const isSample = isSampleCompany(companyId);
+
+            if (viewMode === 'list') {
+              return (
+                <div key={shipper.key || shipper.title} className="relative">
+                  {isSample && showingSamples && (
+                    <div className="absolute right-2 top-2 z-10 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
+                      SAMPLE
+                    </div>
+                  )}
+                  <ShipperListItem
+                    shipper={shipper}
+                    onViewDetails={handleCardClick}
+                    onToggleSaved={handleSaveToCommandCenter}
+                    isSaved={saved}
+                    saving={saving}
+                    index={index}
+                  />
+                </div>
+              );
+            }
+
             return (
               <div key={shipper.key || shipper.title} className="relative">
                 {isSample && showingSamples && (

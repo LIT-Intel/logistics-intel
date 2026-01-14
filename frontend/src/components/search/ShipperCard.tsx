@@ -180,28 +180,51 @@ export default function ShipperCard({
         transition={{ delay: 0.2 + index * 0.05 }}
         className="relative mt-4 grid gap-3 text-xs md:grid-cols-3"
       >
-        <div className="rounded-xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white px-3 py-2 group-hover:border-blue-100 group-hover:from-blue-50 group-hover:to-white transition-all">
-          <p className="text-[11px] font-semibold uppercase text-slate-500">Total shipments</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900 flex items-center gap-1">
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 px-3 py-2 shadow-sm hover:shadow-md transition-all"
+        >
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-blue-700">
+            <Package className="h-3.5 w-3.5" />
+            <span>Shipments</span>
+          </p>
+          <p className="mt-1 text-sm font-semibold text-blue-900 flex items-center gap-1">
             {formatNumber(shipper.totalShipments ?? shipper.shipmentsLast12m)}
-            {isHovered && <TrendingUp className="w-3 h-3 text-green-600" />}
+            {isHovered && (
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 200 }}
+              >
+                <TrendingUp className="w-3 h-3 text-green-600" />
+              </motion.div>
+            )}
           </p>
-        </div>
-        <div className="rounded-xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white px-3 py-2 group-hover:border-blue-100 group-hover:from-blue-50 group-hover:to-white transition-all">
-          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-500">
-            <Calendar className="h-3 w-3 text-blue-500" />
-            <span>Most recent</span>
+        </motion.div>
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 px-3 py-2 shadow-sm hover:shadow-md transition-all"
+        >
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-emerald-700">
+            <Calendar className="h-3.5 w-3.5" />
+            <span>Last Activity</span>
           </p>
-          <p className="mt-1 text-sm font-medium text-slate-900">
+          <p className="mt-1 text-sm font-medium text-emerald-900">
             {formatDate(shipper.lastShipmentDate ?? shipper.mostRecentShipment)}
           </p>
-        </div>
-        <div className="rounded-xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white px-3 py-2 group-hover:border-blue-100 group-hover:from-blue-50 group-hover:to-white transition-all">
-          <p className="text-[11px] font-semibold uppercase text-slate-500">Top route</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900 truncate" title={topRoute}>
+        </motion.div>
+        <motion.div
+          whileHover={{ scale: 1.02, y: -2 }}
+          className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100 px-3 py-2 shadow-sm hover:shadow-md transition-all"
+        >
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-amber-700">
+            <TrendingUp className="h-3.5 w-3.5" />
+            <span>Top Route</span>
+          </p>
+          <p className="mt-1 text-sm font-semibold text-amber-900 truncate" title={topRoute}>
             {topRoute || "—"}
           </p>
-        </div>
+        </motion.div>
       </motion.div>
 
       <div className="relative mt-4 flex items-center justify-between">
