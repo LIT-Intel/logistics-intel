@@ -1,765 +1,243 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import ShipperDetailModal from "@/components/search/ShipperDetailModal";
-import ShipperCard from "@/components/search/ShipperCard";
-import ShipperListItem from "@/components/search/ShipperListItem";
-import SearchFilters from "@/components/search/SearchFilters";
-import SearchPageHeader from "@/components/search/SearchPageHeader";
-import SearchViewToggle from "@/components/search/SearchViewToggle";
-import { Search as SearchIcon, Sparkles, X } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "@/auth/AuthProvider";
-import {
-  searchShippers,
-  getIyCompanyProfile,
-  listSavedCompanies,
-  saveCompanyToCommandCenter,
-  ensureCompanyKey,
-  type IyShipperHit,
-  type IyCompanyProfile,
-} from "@/lib/api";
-import { useToast } from "@/components/ui/use-toast";
-import {
-  getSampleShipperHits,
-  getSampleProfile,
-  getSampleRouteKpis,
-  getSampleEnrichment,
-  isSampleCompany,
-} from "@/lib/mockData";
+import React, { useState } from "react";
+import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, X } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
-type ModeFilter = "any" | "ocean" | "air";
-type RegionFilter = "global" | "americas" | "emea" | "apac";
-type ActivityFilter = "12m" | "24m" | "all";
-type ViewMode = "grid" | "list";
-
-const PAGE_SIZE = 25;
+const MOCK_COMPANIES = [
+  {
+    id: "1",
+    name: "Acme Logistics Inc",
+    city: "Los Angeles",
+    state: "CA",
+    country: "United States",
+    shipments: 1234,
+    revenue: "$2.5M",
+    mode: "Ocean",
+  },
+  {
+    id: "2",
+    name: "Global Trade Partners",
+    city: "New York",
+    state: "NY",
+    country: "United States",
+    shipments: 856,
+    revenue: "$1.8M",
+    mode: "Air",
+  },
+  {
+    id: "3",
+    name: "Pacific Shipping Co",
+    city: "Seattle",
+    state: "WA",
+    country: "United States",
+    shipments: 2341,
+    revenue: "$4.2M",
+    mode: "Ocean",
+  },
+  {
+    id: "4",
+    name: "Express Freight Services",
+    city: "Chicago",
+    state: "IL",
+    country: "United States",
+    shipments: 567,
+    revenue: "$980K",
+    mode: "Air",
+  },
+];
 
 export default function SearchPage() {
-  const { user } = useAuth();
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<ModeFilter>("any");
-  const [region, setRegion] = useState<RegionFilter>("global");
-  const [activity, setActivity] = useState<ActivityFilter>("12m");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState(MOCK_COMPANIES);
+  const [selectedCompany, setSelectedCompany] = useState(null);
 
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('lit_search_view_mode');
-      return (saved === 'list' || saved === 'grid') ? saved : 'grid';
-    }
-    return 'grid';
-  });
-
-  const [page, setPage] = useState(1);
-  const [results, setResults] = useState<IyShipperHit[]>([]);
-  const [total, setTotal] = useState(0);
-  const [showingSamples, setShowingSamples] = useState(false);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [selectedShipper, setSelectedShipper] =
-    useState<IyShipperHit | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [originCity, setOriginCity] = useState("");
-  const [originState, setOriginState] = useState("");
-  const [originCountry, setOriginCountry] = useState("");
-  const [originPostal, setOriginPostal] = useState("");
-  const [destCity, setDestCity] = useState("");
-  const [destState, setDestState] = useState("");
-  const [destCountry, setDestCountry] = useState("");
-  const [destPostal, setDestPostal] = useState("");
-
-  const [companyProfile, setCompanyProfile] =
-    useState<IyCompanyProfile | null>(null);
-  const [companyEnrichment, setCompanyEnrichment] = useState<any | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [savedCompanies, setSavedCompanies] = useState<{ company_id: string }[]>(
-    [],
-  );
-  const [savingCompanyId, setSavingCompanyId] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const savedCompanyIds = useMemo(() => {
-    const ids = new Set<string>();
-    savedCompanies.forEach((entry) => {
-      const normalized = ensureCompanyKey(entry?.company_id ?? "");
-      if (normalized) ids.add(normalized);
-    });
-    return ids;
-  }, [savedCompanies]);
-
-  async function fetchShippers(q: string, pageNum: number) {
-    if (!q.trim()) {
-      const samples = getSampleShipperHits();
-      setResults(samples);
-      setTotal(samples.length);
-      setShowingSamples(true);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setShowingSamples(false);
-
-    try {
-      const json: any = await searchShippers({
-        q,
-        page: pageNum,
-        pageSize: PAGE_SIZE,
-      });
-
-      const rows: IyShipperHit[] = Array.isArray(json.results)
-        ? json.results
-        : Array.isArray(json.rows)
-          ? json.rows
-          : Array.isArray(json.data?.rows)
-            ? json.data.rows
-            : Array.isArray(json.data)
-              ? json.data
-              : [];
-
-      const totalFromApi: number =
-        typeof json.total === "number"
-          ? json.total
-          : typeof json.data?.total === "number"
-            ? json.data.total
-            : rows.length;
-
-      setResults(rows);
-      setTotal(totalFromApi);
-    } catch (err: any) {
-      console.error("iySearchShippers error:", err);
-      setError(err?.message || "Search failed");
-      setResults([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const handleSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
+  const handleSearch = (e) => {
     e.preventDefault();
-    setPage(1);
-    void fetchShippers(query, 1);
-  };
-
-  const handleCardClick = (shipper: IyShipperHit) => {
-    setSelectedShipper(shipper);
-    setIsModalOpen(true);
-
-    setCompanyProfile(null);
-    setCompanyEnrichment(null);
-    setProfileError(null);
-
-    const canonicalKey = getCanonicalCompanyId(shipper);
-    if (!canonicalKey) {
-      setProfileError("Unable to determine company identifier.");
-      setProfileLoading(false);
+    if (!searchQuery.trim()) {
+      setResults(MOCK_COMPANIES);
       return;
     }
-
-    if (isSampleCompany(canonicalKey)) {
-      const sampleProfile = getSampleProfile(canonicalKey);
-      const sampleRouteKpis = getSampleRouteKpis(canonicalKey);
-      const sampleEnrichment = getSampleEnrichment(canonicalKey);
-
-      if (sampleProfile) {
-        setCompanyProfile({
-          ...sampleProfile,
-          routeKpis: sampleRouteKpis,
-        });
-        setCompanyEnrichment(sampleEnrichment);
-      }
-      setProfileLoading(false);
-      return;
-    }
-
-    setProfileLoading(true);
-    getIyCompanyProfile({ companyKey: canonicalKey, query })
-      .then(({ companyProfile, enrichment }) => {
-        setCompanyProfile(companyProfile);
-        setCompanyEnrichment(enrichment);
-      })
-      .catch((err: any) => {
-        console.error("getIyCompanyProfile failed", err);
-        setProfileError(
-          err?.message || "Failed to load company profile",
-        );
-      })
-      .finally(() => {
-        setProfileLoading(false);
-      });
-  };
-
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setSelectedShipper(null);
-    setCompanyProfile(null);
-    setCompanyEnrichment(null);
-    setProfileError(null);
-  };
-
-  useEffect(() => {
-    const controller = new AbortController();
-    listSavedCompanies("prospect")
-      .then((rows) => {
-        const normalized = Array.isArray(rows)
-          ? rows
-              .map((record: any) => {
-                const rawId = (
-                  record?.company?.company_id ??
-                  record?.company_id ??
-                  record?.company?.id ??
-                  ""
-                ).trim();
-                const companyId = ensureCompanyKey(rawId);
-                return companyId ? { company_id: companyId } : null;
-              })
-              .filter(
-                (
-                  entry,
-                ): entry is {
-                  company_id: string;
-                } => Boolean(entry),
-              )
-          : [];
-        setSavedCompanies(normalized);
-      })
-      .catch((err) => {
-        console.error("listSavedCompanies failed", err);
-      });
-    return () => controller.abort();
-  }, []);
-
-  const getCanonicalCompanyId = (shipper: IyShipperHit | null) => {
-    if (!shipper) return "";
-    return ensureCompanyKey(
-      shipper.companyKey ||
-        shipper.key ||
-        shipper.companyId ||
-        shipper.name ||
-        shipper.title ||
-        "",
+    const filtered = MOCK_COMPANIES.filter((company) =>
+      company.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+    setResults(filtered);
   };
 
-  const isShipperSaved = useCallback(
-    (shipper?: IyShipperHit | null) => {
-      if (!shipper) return false;
-      const companyId = getCanonicalCompanyId(shipper);
-      if (!companyId) return false;
-      return savedCompanyIds.has(companyId);
-    },
-    [savedCompanyIds],
-  );
-
-  const selectedCompanyId = useMemo(
-    () => getCanonicalCompanyId(selectedShipper),
-    [selectedShipper],
-  );
-
-  const handleSaveToCommandCenter = useCallback(
-    async (
-      shipper?: IyShipperHit | null,
-      profileOverride?: IyCompanyProfile | null,
-    ) => {
-      if (!shipper) return;
-      const companyId = getCanonicalCompanyId(shipper);
-      if (!companyId) {
-        toast({
-          variant: "destructive",
-          title: "Missing company ID",
-          description: "Unable to save this company.",
-        });
-        return;
-      }
-      if (savedCompanyIds.has(companyId)) {
-        toast({
-          title: "Already saved",
-          description: "This company is already in Command Center.",
-        });
-        return;
-      }
-      if (savingCompanyId === companyId) return;
-
-      setSavingCompanyId(companyId);
-      try {
-        await saveCompanyToCommandCenter({
-          shipper,
-          profile:
-            profileOverride ||
-            (selectedCompanyId === companyId ? companyProfile : null),
-        });
-        setSavedCompanies((prev) => {
-          if (
-            prev.some(
-              (entry) => ensureCompanyKey(entry.company_id) === companyId,
-            )
-          ) {
-            return prev;
-          }
-          return [...prev, { company_id: companyId }];
-        });
-        toast({
-          title: "Saved to Command Center",
-          description: `${
-            shipper.title || shipper.name || "Company"
-          } has been saved.`,
-        });
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Unable to save this company right now.";
-        toast({
-          variant: "destructive",
-          title: "Save failed",
-          description: message,
-        });
-        console.error("[LIT] Save to Command Center failed", {
-          shipper,
-          error,
-          companyId,
-        });
-      } finally {
-        setSavingCompanyId(null);
-      }
-    },
-    [savedCompanyIds, savingCompanyId, toast, selectedCompanyId, companyProfile],
-  );
-
-  const handleModalSave = useCallback(
-    (payload: { shipper: IyShipperHit; profile: IyCompanyProfile | null }) => {
-      void handleSaveToCommandCenter(payload.shipper, payload.profile);
-    },
-    [handleSaveToCommandCenter],
-  );
-
-  const hasAdvancedFilters =
-    originCity ||
-    originState ||
-    originCountry ||
-    originPostal ||
-    destCity ||
-    destState ||
-    destCountry ||
-    destPostal;
-
-  const filteredResults = useMemo(() => {
-    if (!hasAdvancedFilters) return results;
-    return results.filter((shipper) => {
-      const matchesOrigin =
-        (!originCity ||
-          shipper.city?.toLowerCase().includes(originCity.toLowerCase())) &&
-        (!originState ||
-          shipper.state?.toLowerCase().includes(originState.toLowerCase())) &&
-        (!originCountry ||
-          shipper.country
-            ?.toLowerCase()
-            .includes(originCountry.toLowerCase())) &&
-        (!originPostal ||
-          shipper.postalCode
-            ?.toLowerCase()
-            .includes(originPostal.toLowerCase()));
-
-      const matchesDest =
-        (!destCity ||
-          (shipper.city ?? "")
-            .toLowerCase()
-            .includes(destCity.toLowerCase())) &&
-        (!destState ||
-          (shipper.state ?? "")
-            .toLowerCase()
-            .includes(destState.toLowerCase())) &&
-        (!destCountry ||
-          (shipper.country ?? "")
-            .toLowerCase()
-            .includes(destCountry.toLowerCase())) &&
-        (!destPostal ||
-          (shipper.postalCode ?? "")
-            .toLowerCase()
-            .includes(destPostal.toLowerCase()));
-
-      return matchesOrigin && matchesDest;
-    });
-  }, [
-    results,
-    hasAdvancedFilters,
-    originCity,
-    originState,
-    originCountry,
-    originPostal,
-    destCity,
-    destState,
-    destCountry,
-    destPostal,
-  ]);
-
-  const handleResetAdvancedFilters = () => {
-    setOriginCity("");
-    setOriginState("");
-    setOriginCountry("");
-    setOriginPostal("");
-    setDestCity("");
-    setDestState("");
-    setDestCountry("");
-    setDestPostal("");
+  const handleClear = () => {
+    setSearchQuery("");
+    setResults(MOCK_COMPANIES);
   };
-
-  const handleDismissSamples = () => {
-    setResults([]);
-    setTotal(0);
-    setShowingSamples(false);
-  };
-
-  const handleViewModeChange = (newMode: ViewMode) => {
-    setViewMode(newMode);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lit_search_view_mode', newMode);
-    }
-  };
-
-  useEffect(() => {
-    if (!query.trim() && results.length === 0) {
-      const samples = getSampleShipperHits();
-      setResults(samples);
-      setTotal(samples.length);
-      setShowingSamples(true);
-    }
-  }, []);
 
   return (
-    <div className="space-y-6">
-      <SearchPageHeader
-        userName={user?.email || user?.displayName || 'User'}
-        totalResults={total}
-        savedCompaniesCount={savedCompanies.length}
-        onQuickSearch={() => setFiltersOpen(true)}
-      />
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Company Search</h1>
+            <p className="text-gray-600 mt-1">
+              Find and analyze companies (Mock Data Mode)
+            </p>
+          </div>
+          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+            Mock Data
+          </Badge>
+        </div>
 
-      <AnimatePresence>
-        {showingSamples && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="relative rounded-xl border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0">
-                <Sparkles className="h-5 w-5 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-semibold text-blue-900">
-                  Showing Sample Data
-                </h3>
-                <p className="mt-1 text-xs text-blue-700">
-                  Explore the interface with Fortune 500 companies. Search to see real results from our database.
-                </p>
-              </div>
+        <form onSubmit={handleSearch} className="flex gap-3">
+          <div className="flex-1 relative">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="Search companies..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-10 h-12 text-lg"
+            />
+            {searchQuery && (
               <button
-                onClick={handleDismissSamples}
-                className="flex-shrink-0 rounded-lg p-1 text-blue-600 hover:bg-blue-100 transition-colors"
-                aria-label="Dismiss sample data"
+                type="button"
+                onClick={handleClear}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <motion.form
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        onSubmit={handleSubmit}
-        className="relative flex items-center gap-3 rounded-xl bg-gradient-to-br from-white to-slate-50 p-6 shadow-md border border-slate-200 hover:shadow-lg transition-shadow group"
-      >
-        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-        <motion.div
-          animate={{ scale: loading ? [1, 1.1, 1] : 1 }}
-          transition={{ repeat: loading ? Infinity : 0, duration: 1 }}
-        >
-          <SearchIcon className="w-5 h-5 text-blue-500" />
-        </motion.div>
-        <input
-          className="flex-1 text-lg text-slate-900 placeholder-slate-400 focus:outline-none bg-transparent relative z-10"
-          placeholder="Search companies by name, location, or products..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          autoFocus
-        />
-        <motion.button
-          type="submit"
-          disabled={loading}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className="relative z-10 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 transition-all"
-        >
-          {loading ? "Searching…" : "Search"}
-        </motion.button>
-      </motion.form>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
-          <SearchFilters
-            value={{ mode, region, activity }}
-            onChange={(next) => {
-              setMode(next.mode);
-              setRegion(next.region);
-              setActivity(next.activity);
-            }}
-            className="flex-1"
-          />
-          <SearchViewToggle viewMode={viewMode} onViewModeChange={handleViewModeChange} />
-          <button
-            type="button"
-            onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Advanced Filters
-            {hasAdvancedFilters && (
-              <span className="ml-2 inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-full bg-blue-600 px-2 text-[10px] font-semibold text-white">
-                {Object.values({originCity, originState, originCountry, originPostal, destCity, destState, destCountry, destPostal}).filter(Boolean).length}
-              </span>
             )}
-          </button>
-        </div>
+          </div>
+          <Button type="submit" size="lg" className="px-8">
+            Search
+          </Button>
+        </form>
 
-        <div className="mt-4 text-xs text-slate-500">
-          {error && (
-            <span className="text-rose-600">
-              Search failed: {error}. Try again.
-            </span>
-          )}
-          {!error && !loading && showingSamples && (
-            <span>
-              Showing {filteredResults.length} sample companies
-            </span>
-          )}
-          {!error && !loading && !showingSamples && query.trim() && (
-            <span>
-              Showing {filteredResults.length} of {total} results for{" "}
-              <span className="font-semibold">"{query}"</span>
-            </span>
-          )}
-          {loading && <span>Searching LIT Search…</span>}
-        </div>
+        <div className="grid gap-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Showing {results.length} companies
+            </p>
+          </div>
 
-        <div className={viewMode === 'grid' ? "mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3" : "mt-6 space-y-3"}>
-          {filteredResults.map((shipper, index) => {
-            const companyId = getCanonicalCompanyId(shipper);
-            const saved = companyId ? savedCompanyIds.has(companyId) : false;
-            const saving = companyId ? savingCompanyId === companyId : false;
-            const isSample = isSampleCompany(companyId);
-
-            if (viewMode === 'list') {
-              return (
-                <div key={shipper.key || shipper.title} className="relative">
-                  {isSample && showingSamples && (
-                    <div className="absolute right-2 top-2 z-10 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
-                      SAMPLE
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {results.map((company) => (
+              <Card
+                key={company.id}
+                className="hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => setSelectedCompany(company)}
+              >
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                        <Building2 className="h-6 w-6 text-white" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{company.name}</CardTitle>
+                        <div className="flex items-center gap-1 text-sm text-gray-600 mt-1">
+                          <MapPin className="h-3 w-3" />
+                          <span>
+                            {company.city}, {company.state}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  <ShipperListItem
-                    shipper={shipper}
-                    onViewDetails={handleCardClick}
-                    onToggleSaved={handleSaveToCommandCenter}
-                    isSaved={saved}
-                    saving={saving}
-                    index={index}
-                  />
-                </div>
-              );
-            }
-
-            return (
-              <div key={shipper.key || shipper.title} className="relative">
-                {isSample && showingSamples && (
-                  <div className="absolute -right-2 -top-2 z-10 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
-                    SAMPLE
                   </div>
-                )}
-                <ShipperCard
-                  shipper={shipper}
-                  onViewDetails={handleCardClick}
-                  onToggleSaved={handleSaveToCommandCenter}
-                  isSaved={saved}
-                  saving={saving}
-                  index={index}
-                />
-              </div>
-            );
-          })}
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+                        <Package className="h-3 w-3" />
+                        <span>Shipments</span>
+                      </div>
+                      <p className="text-lg font-semibold">{company.shipments}</p>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+                        <TrendingUp className="h-3 w-3" />
+                        <span>Revenue</span>
+                      </div>
+                      <p className="text-lg font-semibold">{company.revenue}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t">
+                    <Badge variant="secondary">{company.mode}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {results.length === 0 && (
+            <div className="text-center py-12">
+              <SearchIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                No companies found
+              </h3>
+              <p className="text-gray-600">
+                Try adjusting your search query
+              </p>
+            </div>
+          )}
         </div>
 
-        {total > PAGE_SIZE && (
-          <div className="mt-6 flex items-center justify-between text-xs text-slate-600">
-            <span>
-              Page {page} • {total.toLocaleString()} total companies
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const next = Math.max(1, page - 1);
-                  setPage(next);
-                  void fetchShippers(query, next);
-                }}
-                disabled={page <= 1 || loading}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const maxPage = Math.ceil(total / PAGE_SIZE);
-                  const next = Math.min(maxPage, page + 1);
-                  setPage(next);
-                  void fetchShippers(query, next);
-                }}
-                disabled={loading || results.length < PAGE_SIZE}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+        {selectedCompany && (
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setSelectedCompany(null)}
+          >
+            <Card
+              className="max-w-2xl w-full max-h-[80vh] overflow-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-2xl">{selectedCompany.name}</CardTitle>
+                    <p className="text-gray-600 mt-1">
+                      {selectedCompany.city}, {selectedCompany.state}, {selectedCompany.country}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSelectedCompany(null)}
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Total Shipments</p>
+                    <p className="text-2xl font-bold">{selectedCompany.shipments}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Est. Revenue</p>
+                    <p className="text-2xl font-bold">{selectedCompany.revenue}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Primary Mode</p>
+                    <Badge>{selectedCompany.mode}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Status</p>
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                      Active
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t">
+                  <Button className="w-full" onClick={() => alert("Save feature coming soon!")}>
+                    Save to Command Center
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
-
-      <ShipperDetailModal
-        isOpen={isModalOpen}
-        shipper={selectedShipper}
-        loadingProfile={profileLoading}
-        profile={companyProfile}
-        routeKpis={companyProfile?.routeKpis ?? null}
-        enrichment={companyEnrichment}
-        error={profileError}
-        isSaved={isShipperSaved(selectedShipper)}
-        onClose={handleModalClose}
-        onSaveToCommandCenter={handleModalSave}
-        saveLoading={Boolean(
-          selectedCompanyId && savingCompanyId === selectedCompanyId,
-        )}
-      />
-
-      {filtersOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-                  Filters
-                </p>
-                <h2 className="text-xl font-semibold text-slate-900">
-                  Origin & destination
-                </h2>
-                <p className="text-sm text-slate-500">
-                  Filter results by city, state, country, or postal code. Filters
-                  are applied locally to the current results.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFiltersOpen(false)}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-6 grid gap-6 md:grid-cols-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Origin
-                </p>
-                <div className="mt-2 space-y-2">
-                  <input
-                    value={originCity}
-                    onChange={(e) => setOriginCity(e.target.value)}
-                    placeholder="City"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <input
-                    value={originState}
-                    onChange={(e) => setOriginState(e.target.value)}
-                    placeholder="State / Province"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <input
-                    value={originCountry}
-                    onChange={(e) => setOriginCountry(e.target.value)}
-                    placeholder="Country"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <input
-                    value={originPostal}
-                    onChange={(e) => setOriginPostal(e.target.value)}
-                    placeholder="Postal code"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Destination
-                </p>
-                <div className="mt-2 space-y-2">
-                  <input
-                    value={destCity}
-                    onChange={(e) => setDestCity(e.target.value)}
-                    placeholder="City"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <input
-                    value={destState}
-                    onChange={(e) => setDestState(e.target.value)}
-                    placeholder="State / Province"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <input
-                    value={destCountry}
-                    onChange={(e) => setDestCountry(e.target.value)}
-                    placeholder="Country"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <input
-                    value={destPostal}
-                    onChange={(e) => setDestPostal(e.target.value)}
-                    placeholder="Postal code"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs text-slate-500">
-                Client-side filters are applied on top of search results.
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleResetAdvancedFilters}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFiltersOpen(false)}
-                  className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
