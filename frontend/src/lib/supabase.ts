@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js';
+
 let supabaseClient: any = null;
 let supabaseError: Error | null = null;
 
@@ -9,7 +11,6 @@ try {
     console.warn('[LIT] Supabase credentials not found. Development mode will use fallback storage.');
     supabaseError = new Error('Supabase credentials not configured');
   } else {
-    const { createClient } = require('@supabase/supabase-js');
     supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
     console.info('[LIT] Supabase client initialized successfully');
   }
