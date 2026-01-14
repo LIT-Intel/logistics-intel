@@ -35,6 +35,8 @@ const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany    = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
 const AuthCallback   = lazy(() => import("@/pages/AuthCallback"));
+const PrivacyPolicy  = lazy(() => import("@/pages/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
@@ -107,6 +109,9 @@ export default function App() {
         <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
         {/* OAuth callback handler */}
         <Route path="/auth/callback" element={<AuthCallback />} />
+        {/* Legal pages */}
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
         {/* App (protected) */}
         <Route
           path="/app/dashboard"

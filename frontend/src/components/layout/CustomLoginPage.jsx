@@ -211,11 +211,17 @@ export default function CustomLoginPage({ onClose }) {
             </div>
 
             <div className="mt-8 text-sm text-slate-500">
-              Don’t have an account?{" "}
+              Don't have an account?{" "}
               <button className="font-semibold text-[#3C4EF5] hover:underline" type="button" onClick={() => nav("/signup")}>
                 Start your 14‑day trial
               </button>
             </div>
+
+            <p className="mt-6 text-xs text-slate-500 text-center leading-relaxed">
+              By continuing, you agree to Logistics Intel's{" "}
+              <a href="/terms" className="text-[#3C4EF5] hover:underline">Terms of Use</a> and{" "}
+              <a href="/privacy" className="text-[#3C4EF5] hover:underline">Privacy Policy</a>
+            </p>
           </div>
         </div>
       </div>
