@@ -3,10 +3,10 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const gatewayTarget = (env.API_GATEWAY_BASE || env.VITE_API_BASE || env.NEXT_PUBLIC_API_BASE || '').trim()
+  const gatewayTarget = (env.API_GATEWAY_BASE || env.VITE_API_BASE || env.NEXT_PUBLIC_API_BASE || 'https://logistics-intel-gateway-2e68g4k3.uc.gateway.dev').trim()
 
-  if (!gatewayTarget) {
-    throw new Error('API_GATEWAY_BASE env var is required for the /api/lit proxy')
+  if (!env.API_GATEWAY_BASE && !env.VITE_API_BASE && !env.NEXT_PUBLIC_API_BASE) {
+    console.warn('⚠️  No API gateway env var found, using default:', gatewayTarget)
   }
 
   return {
