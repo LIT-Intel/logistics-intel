@@ -299,7 +299,7 @@ async function iyGet<T>(path: string): Promise<T> {
 async function handleSearchShippers(body: any) {
   const q = body.q || body.query || "";
   const page = typeof body.page === "number" ? body.page : 1;
-  const pageSize = typeof body.pageSize === "number" ? body.pageSize : body.limit || 25;
+  const pageSize = typeof body.pageSize === "number" ? body.pageSize : body.limit || 50;
 
   const trimmed = q.trim();
   if (!trimmed || typeof trimmed !== "string") {
@@ -316,16 +316,22 @@ async function handleSearchShippers(body: any) {
     throw new Error("IY_DMA_API_KEY not configured");
   }
 
-  const resp = await fetch(`${IY_BASE_URL}/company/search`, {
+  const offset = (page - 1) * pageSize;
+  const url =
+    `${IY_BASE_URL}/company/search` +
+    `?page_size=${pageSize}` +
+    `&offset=${offset}` +
+    `&name=${encodeURIComponent(trimmed)}`;
+
+  console.log("ImportYeti URL:", url);
+
+  const resp = await fetch(url, {
     method: "POST",
     headers: {
       accept: "application/json",
       "Content-Type": "application/json",
       IYApiKey: IY_API_KEY,
     },
-    body: JSON.stringify({
-      name: trimmed,
-    }),
   });
 
   const text = await resp.text();
@@ -345,13 +351,9 @@ async function handleSearchShippers(body: any) {
   }
 
   const allRows = Array.isArray(json.data) ? json.data : [];
+  const total = json.total ?? allRows.length;
 
-  const start = (page - 1) * pageSize;
-  const end = start + pageSize;
-  const rawRows = allRows.slice(start, end);
-  const total = allRows.length;
-
-  const normalizedRows = rawRows.map((row: any, index: number) => {
+  const normalizedRows = allRows.map((row: any, index: number) => {
     const fallbackTitle = row?.title ?? row?.name ?? row?.company_name ?? `Company ${index + 1}`;
     const normalizedTitle = typeof fallbackTitle === "string" ? fallbackTitle : `Company ${index + 1}`;
 

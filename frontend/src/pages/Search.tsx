@@ -33,6 +33,7 @@ interface MockCompany {
   top_destinations: string[];
   gemini_summary: string;
   risk_flags: string[];
+  importyeti_key?: string;
 }
 
 const MOCK_COMPANIES: MockCompany[] = [
@@ -250,30 +251,36 @@ export default function SearchPage() {
       const response = await searchShippers({ q: query, page: 1, pageSize: 50 });
 
       if (response?.ok && response?.results) {
-        const mappedResults = (response.results || []).map((result: any) => ({
-          id: result.companyId || result.key || `iy-${Date.now()}-${Math.random()}`,
-          name: result.name || result.title || "Unknown Company",
-          city: result.city || "Unknown",
-          state: result.state || "",
-          country: result.country || "United States",
-          country_code: result.countryCode || "US",
-          address: result.address || `${result.city || ""}, ${result.state || ""}`.trim(),
-          website: result.website || result.domain || "",
-          industry: "Import/Export",
-          shipments: result.totalShipments || result.shipmentsLast12m || 0,
-          shipments_12m: result.shipmentsLast12m || 0,
-          teu_estimate: result.teusLast12m || 0,
-          revenue_range: "$1M - $5M",
-          mode: "Ocean",
-          last_shipment: result.mostRecentShipment || result.lastShipmentDate || new Date().toISOString().split('T')[0],
-          status: (result.shipmentsLast12m || 0) > 0 ? "Active" as const : "Inactive" as const,
-          frequency: (result.shipmentsLast12m || 0) > 1000 ? "High" as const : (result.shipmentsLast12m || 0) > 100 ? "Medium" as const : "Low" as const,
-          trend: "flat" as const,
-          top_origins: [],
-          top_destinations: [],
-          gemini_summary: `${result.name || "Company"} - Import/Export business`,
-          risk_flags: [],
-        }));
+        const mappedResults = (response.results || []).map((result: any) => {
+          const parsedAddress = result.address || "";
+          const cityMatch = parsedAddress.match(/^([^,]+)/);
+
+          return {
+            id: result.key || `iy-${Date.now()}-${Math.random()}`,
+            name: result.title || "Unknown Company",
+            city: result.city || (cityMatch ? cityMatch[1] : "Unknown"),
+            state: result.state || "",
+            country: result.country || "United States",
+            country_code: result.countryCode || "US",
+            address: result.address || "",
+            website: result.website || "",
+            industry: "Import/Export",
+            shipments: result.totalShipments || 0,
+            shipments_12m: result.totalShipments || 0,
+            teu_estimate: 0,
+            revenue_range: "$1M - $5M",
+            mode: "Ocean",
+            last_shipment: result.mostRecentShipment || new Date().toISOString().split('T')[0],
+            status: (result.totalShipments || 0) > 0 ? "Active" as const : "Inactive" as const,
+            frequency: (result.totalShipments || 0) > 1000 ? "High" as const : (result.totalShipments || 0) > 100 ? "Medium" as const : "Low" as const,
+            trend: "flat" as const,
+            top_origins: Array.isArray(result.topSuppliers) ? result.topSuppliers.slice(0, 3) : [],
+            top_destinations: [],
+            gemini_summary: `${result.title || "Company"} - Import/Export business`,
+            risk_flags: [],
+            importyeti_key: result.key,
+          };
+        });
 
         setResults(mappedResults);
 
@@ -335,8 +342,8 @@ export default function SearchPage() {
           },
           body: JSON.stringify({
             company_data: {
-              source: "search",
-              source_company_key: company.id,
+              source: "importyeti",
+              source_company_key: company.importyeti_key || company.id,
               name: company.name,
               domain: company.website,
               website: company.website,
