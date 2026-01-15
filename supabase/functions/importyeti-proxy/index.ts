@@ -443,10 +443,12 @@ async function handleCompanyBols(body: any) {
   qs.set("page_size", String(pageSize));
   qs.set("offset", String(offset));
 
-  const bolListPath = `/company/${encodeURIComponent(companyId)}/bols?${qs.toString()}`;
+  const bolListPath = `/company/${companyId}/bols?${qs.toString()}`;
   console.log("🔵 [BOL CHAIN STEP 1] Fetching BOL list");
   console.log("  Company:", companyId);
-  console.log("  URL:", `${IY_BASE_URL}${bolListPath}`);
+  console.log("  Full key passed:", companyId);
+  console.log("  Constructed path:", bolListPath);
+  console.log("  Full URL:", `${IY_BASE_URL}${bolListPath}`);
   console.log("  Method: GET");
   console.log("  Params:", { startDate, endDate, pageSize, offset });
 
@@ -492,7 +494,21 @@ async function handleCompanyBols(body: any) {
       const destParts = [city, state, zip, country].filter(Boolean);
       const destination = destParts.length > 0 ? destParts.join(", ") : b?.company_address ?? null;
       const origin = b?.exit_port || b?.place_of_receipt || b?.entry_port || null;
-      const teu = b?.teu != null && !Number.isNaN(Number(b.teu)) ? Number(b.teu) : undefined;
+
+      let teu: number | undefined = undefined;
+      const teuCandidates = [
+        b?.teu,
+        b?.TEU,
+        b?.container_teu,
+        Array.isArray(b?.containers) && b.containers.length > 0 ? b.containers[0]?.teu : null,
+      ];
+
+      for (const candidate of teuCandidates) {
+        if (candidate != null && !Number.isNaN(Number(candidate))) {
+          teu = Number(candidate);
+          break;
+        }
+      }
 
       detailRows.push({
         bol_number: b?.bol_number ?? null,
