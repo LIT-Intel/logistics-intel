@@ -322,7 +322,15 @@ async function handleSearchShippers(body: any) {
   const pageSize = typeof body.pageSize === "number" ? body.pageSize : body.limit || 50;
 
   const trimmed = q.trim();
+
+  console.log("═══════════════════════════════════════");
+  console.log("🔵 [SEARCH] Company Search Request");
+  console.log("  Query:", trimmed);
+  console.log("  Page:", page);
+  console.log("  Page Size:", pageSize);
+
   if (!trimmed || typeof trimmed !== "string") {
+    console.log("  ⚠️ Empty query - returning empty results");
     return {
       ok: true,
       rows: [],
@@ -343,11 +351,8 @@ async function handleSearchShippers(body: any) {
     `&offset=${offset}` +
     `&name=${encodeURIComponent(trimmed)}`;
 
-  console.log("🧪 TEST FETCH:");
-  console.log("  URL:", url);
-  console.log("  Has API Key:", !!IY_API_KEY);
-  console.log("  API Key length:", IY_API_KEY?.length || 0);
-  console.log("  METHOD: GET");
+  console.log("  Request URL:", url);
+  console.log("  Method: GET");
 
   const resp = await fetch(url, {
     method: "GET",
@@ -376,6 +381,10 @@ async function handleSearchShippers(body: any) {
   const allRows = Array.isArray(json.data) ? json.data : [];
   const total = json.total ?? allRows.length;
 
+  console.log("✅ [SEARCH] Company Search Complete");
+  console.log("  Total Results:", total);
+  console.log("  Rows Returned:", allRows.length);
+
   const normalizedRows = allRows.map((row: any, index: number) => {
     const fallbackTitle = row?.title ?? row?.name ?? row?.company_name ?? `Company ${index + 1}`;
     const normalizedTitle = typeof fallbackTitle === "string" ? fallbackTitle : `Company ${index + 1}`;
@@ -388,6 +397,10 @@ async function handleSearchShippers(body: any) {
 
     const key = row?.key ?? row?.slug ?? row?.company_slug ?? row?.company_id ??
       (slugFromTitle ? `company/${slugFromTitle}` : `company-${index + 1}`);
+
+    if (index === 0) {
+      console.log("  First Company Key:", key);
+    }
 
     const rawWebsite = row?.website ?? row?.company_website ?? row?.url ?? row?.company_url ?? null;
     const website = typeof rawWebsite === "string" && rawWebsite.trim().length ? rawWebsite.trim() : null;
@@ -446,19 +459,66 @@ async function handleSearchShippers(body: any) {
   };
 }
 
+function normalizeCompanyKey(key: string): string {
+  let cleanKey = key.trim();
+
+  if (cleanKey.startsWith("/company/")) {
+    cleanKey = cleanKey.slice("/company/".length);
+  } else if (cleanKey.startsWith("company/")) {
+    cleanKey = cleanKey.slice("company/".length);
+  }
+
+  console.log("[KEY NORMALIZATION]", { input: key, output: cleanKey });
+  return cleanKey;
+}
+
+function convertToISODate(dateStr: string): string {
+  if (!dateStr) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    const [month, day, year] = dateStr.split("/");
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  try {
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0];
+    }
+  } catch {}
+
+  return "";
+}
+
 async function handleCompanyBols(body: any) {
-  const companyId = (body.company_id ?? body.company ?? "").toString().trim();
-  if (!companyId) {
+  const rawCompanyId = (body.company_id ?? body.company ?? "").toString().trim();
+  if (!rawCompanyId) {
     throw new Error("company_id is required");
   }
 
-  const startDate = typeof body.start_date === "string" ? body.start_date : "";
-  const endDate = typeof body.end_date === "string" ? body.end_date : "";
-  const limitRaw = typeof body.limit === "number" ? body.limit : 25;
+  const companySlug = normalizeCompanyKey(rawCompanyId);
+
+  const rawStartDate = typeof body.start_date === "string" ? body.start_date : "";
+  const rawEndDate = typeof body.end_date === "string" ? body.end_date : "";
+  const startDate = convertToISODate(rawStartDate);
+  const endDate = convertToISODate(rawEndDate);
+
+  const limitRaw = typeof body.limit === "number" ? body.limit : 50;
   const offsetRaw = typeof body.offset === "number" ? body.offset : 0;
 
-  const pageSize = Math.max(1, Math.min(50, limitRaw));
+  const pageSize = Math.max(1, Math.min(100, limitRaw));
   const offset = Math.max(0, offsetRaw);
+
+  console.log("═══════════════════════════════════════");
+  console.log("🔵 [BOLS] Starting BOL Index Request");
+  console.log("  Raw Input:", rawCompanyId);
+  console.log("  Normalized Slug:", companySlug);
+  console.log("  Date Range:", startDate, "to", endDate);
+  console.log("  Pagination:", { pageSize, offset });
 
   const qs = new URLSearchParams();
   if (startDate) qs.set("start_date", startDate);
@@ -466,64 +526,65 @@ async function handleCompanyBols(body: any) {
   qs.set("page_size", String(pageSize));
   qs.set("offset", String(offset));
 
-  const bolListPath = `/company/${companyId}/bols?${qs.toString()}`;
-  console.log("🔵 [BOL CHAIN STEP 1] Fetching BOL list");
-  console.log("  Company:", companyId);
-  console.log("  Full key passed:", companyId);
-  console.log("  Constructed path:", bolListPath);
-  console.log("  Full URL:", `${IY_BASE_URL}${bolListPath}`);
-  console.log("  Method: GET");
-  console.log("  Params:", { startDate, endDate, pageSize, offset });
+  const bolListPath = `/company/${companySlug}/bols?${qs.toString()}`;
+  console.log("  Request URL:", `${IY_BASE_URL}${bolListPath}`);
 
   const listResp = await iyGet<{ data: string[] }>(bolListPath);
 
   const bolNumbers = Array.isArray(listResp.data) ? listResp.data : [];
-  console.log("✅ [BOL CHAIN STEP 1 COMPLETE]");
-  console.log("  BOL count:", bolNumbers.length);
-  console.log("  First 5 BOLs:", bolNumbers.slice(0, 5));
+  console.log("✅ [BOLS] BOL Index Retrieved");
+  console.log("  Total BOLs:", bolNumbers.length);
+  console.log("  Sample BOLs:", bolNumbers.slice(0, 3));
 
-  const maxDetail = Math.min(bolNumbers.length, pageSize);
+  const maxDetail = Math.min(bolNumbers.length, 50);
   const toFetch = bolNumbers.slice(0, maxDetail);
 
-  console.log("🔵 [BOL CHAIN STEP 2] Fetching BOL details");
-  console.log("  Total to fetch:", toFetch.length);
-  console.log("  Concurrency:", 5);
+  console.log("═══════════════════════════════════════");
+  console.log("🔵 [BOL] Fetching Individual BOL Payloads");
+  console.log("  Total to Fetch:", toFetch.length);
 
   const detailRows: any[] = [];
+  const fullBolPayloads: any[] = [];
   const concurrency = 5;
 
   for (let i = 0; i < toFetch.length; i += concurrency) {
     const chunk = toFetch.slice(i, i + concurrency);
-    console.log(`  Fetching batch ${Math.floor(i / concurrency) + 1}: ${chunk.join(", ")}`);
     const results = await Promise.allSettled(
       chunk.map((num) => {
         const path = `/bol/${encodeURIComponent(num)}`;
-        console.log(`    GET ${IY_BASE_URL}${path}`);
         return iyGet<any>(path);
       })
     );
 
-    for (const r of results) {
-      if (r.status !== "fulfilled") continue;
-      const b = r.value?.data ?? r.value;
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
+      if (r.status !== "fulfilled") {
+        console.log(`  ⚠️ BOL ${chunk[j]} fetch failed`);
+        continue;
+      }
 
-      const arrival = b?.arrival_date ?? null;
-      const addr = b?.company_address_geocode?.address_components ?? {};
+      const bolPayload = r.value?.data ?? r.value;
+      fullBolPayloads.push(bolPayload);
+
+      console.log(`  ✓ BOL ${chunk[j]} fetched - Keys:`, Object.keys(bolPayload).join(", "));
+
+      const arrival = bolPayload?.arrival_date ?? null;
+      const addr = bolPayload?.company_address_geocode?.address_components ?? {};
       const city = addr.city ?? null;
       const state = addr.state ?? null;
       const zip = addr.zip ?? null;
       const country = addr.country ?? null;
 
       const destParts = [city, state, zip, country].filter(Boolean);
-      const destination = destParts.length > 0 ? destParts.join(", ") : b?.company_address ?? null;
-      const origin = b?.exit_port || b?.place_of_receipt || b?.entry_port || null;
+      const destination = destParts.length > 0 ? destParts.join(", ") : bolPayload?.company_address ?? null;
+      const origin = bolPayload?.exit_port || bolPayload?.place_of_receipt || bolPayload?.entry_port || null;
 
       let teu: number | undefined = undefined;
       const teuCandidates = [
-        b?.teu,
-        b?.TEU,
-        b?.container_teu,
-        Array.isArray(b?.containers) && b.containers.length > 0 ? b.containers[0]?.teu : null,
+        bolPayload?.teu,
+        bolPayload?.TEU,
+        bolPayload?.container_teu,
+        Array.isArray(bolPayload?.containers) && bolPayload.containers.length > 0 ? bolPayload.containers[0]?.teu : null,
       ];
 
       for (const candidate of teuCandidates) {
@@ -534,18 +595,21 @@ async function handleCompanyBols(body: any) {
       }
 
       detailRows.push({
-        bol_number: b?.bol_number ?? null,
+        bol_number: bolPayload?.bol_number ?? null,
         shipped_on: arrival,
         origin,
         destination,
-        origin_country: b?.supplier_country_code ?? null,
+        origin_country: bolPayload?.supplier_country_code ?? null,
         dest_city: city,
         dest_state: state,
         dest_zip: zip,
         dest_country: country,
         teu,
-        hs_code: b?.hs_code ?? null,
-        carrier: b?.carrier_scac_code ?? null,
+        hs_code: bolPayload?.hs_code ?? null,
+        carrier: bolPayload?.carrier_scac_code ?? null,
+        weight: bolPayload?.weight ?? null,
+        containers: bolPayload?.containers ?? [],
+        full_payload: bolPayload,
       });
     }
   }
@@ -556,24 +620,122 @@ async function handleCompanyBols(body: any) {
     return db - da;
   });
 
-  console.log("✅ [BOL CHAIN STEP 2 COMPLETE]");
-  console.log("  Total BOL details fetched:", detailRows.length);
-  console.log("  Sample BOL:", detailRows[0] ? {
-    bol: detailRows[0].bol_number,
-    teu: detailRows[0].teu,
-    origin: detailRows[0].origin,
-    destination: detailRows[0].destination
-  } : "None");
+  console.log("✅ [BOL] BOL Payloads Complete");
+  console.log("  Total Detailed BOLs:", detailRows.length);
+
+  console.log("═══════════════════════════════════════");
+  console.log("🔵 [KPI] Computing Aggregations");
+
+  const kpis = computeKPIs(detailRows);
+
+  console.log("✅ [KPI] Aggregation Complete");
+  console.log("  Total Shipments:", kpis.totalShipments);
+  console.log("  Total TEU:", kpis.totalTeu);
+  console.log("  12M Shipments:", kpis.shipments12m);
+  console.log("  Trend:", kpis.trend);
+  console.log("═══════════════════════════════════════");
 
   const result = {
     ok: true,
     total: detailRows.length,
     rows: detailRows,
-    data: { total: detailRows.length, rows: detailRows },
+    kpis,
+    data: {
+      total: detailRows.length,
+      rows: detailRows,
+      kpis,
+    },
   };
 
-  console.log("🎉 [BOL CHAIN COMPLETE] Returning", result.total, "shipments");
   return result;
+}
+
+function computeKPIs(rows: any[]) {
+  const now = new Date();
+  const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+
+  const last12Months = rows.filter(r => {
+    if (!r.shipped_on) return false;
+    const shipDate = new Date(r.shipped_on);
+    return shipDate >= twelveMonthsAgo && shipDate <= now;
+  });
+
+  const totalTeu = rows.reduce((sum, r) => sum + (r.teu || 0), 0);
+
+  const originPorts: Record<string, number> = {};
+  const destPorts: Record<string, number> = {};
+
+  rows.forEach(r => {
+    if (r.origin) {
+      originPorts[r.origin] = (originPorts[r.origin] || 0) + 1;
+    }
+    if (r.destination) {
+      destPorts[r.destination] = (destPorts[r.destination] || 0) + 1;
+    }
+  });
+
+  const topOriginPorts = Object.entries(originPorts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([port]) => port);
+
+  const topDestPorts = Object.entries(destPorts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([port]) => port);
+
+  const monthlyData: Record<string, { fcl: number; lcl: number; total: number }> = {};
+
+  last12Months.forEach(r => {
+    if (!r.shipped_on) return;
+    const date = new Date(r.shipped_on);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    if (!monthlyData[monthKey]) {
+      monthlyData[monthKey] = { fcl: 0, lcl: 0, total: 0 };
+    }
+
+    monthlyData[monthKey].total += 1;
+
+    if (r.teu && r.teu >= 1) {
+      monthlyData[monthKey].fcl += 1;
+    } else {
+      monthlyData[monthKey].lcl += 1;
+    }
+  });
+
+  const volumeSeries = Object.entries(monthlyData)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, data]) => ({
+      month,
+      fcl: data.fcl,
+      lcl: data.lcl,
+      total: data.total,
+    }));
+
+  let trend: 'up' | 'flat' | 'down' = 'flat';
+  if (volumeSeries.length >= 3) {
+    const recent = volumeSeries.slice(-3).reduce((sum, v) => sum + v.total, 0);
+    const previous = volumeSeries.slice(-6, -3).reduce((sum, v) => sum + v.total, 0);
+
+    if (recent > previous * 1.1) trend = 'up';
+    else if (recent < previous * 0.9) trend = 'down';
+  }
+
+  const lastShipmentDate = rows.length > 0 && rows[0].shipped_on ? rows[0].shipped_on : null;
+
+  return {
+    totalShipments: rows.length,
+    shipments12m: last12Months.length,
+    totalTeu,
+    trend,
+    topOriginPorts,
+    topDestPorts,
+    volumeSeries,
+    lastShipmentDate,
+    fclCount: rows.filter(r => r.teu && r.teu >= 1).length,
+    lclCount: rows.filter(r => !r.teu || r.teu < 1).length,
+  };
 }
 
 async function handleCompanyProfile(params: any) {

@@ -17,7 +17,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [showGate, setShowGate] = useState(false);
-  const [kpis, setKpis] = useState({ teus12m: null, growthRate: null });
+  const [kpis, setKpis] = useState(null);
 
   const companyId = company?.company_id || company?.id || null;
   const companyKey = company?.key || company?.importyeti_key || null;
@@ -67,6 +67,8 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
           console.log('[Modal] ImportYeti BOL Response:', {
             ok: bigResponse.ok,
             rowCount: bigResponse.rows?.length || 0,
+            hasKpis: !!bigResponse.kpis,
+            kpisData: bigResponse.kpis,
             sample: bigResponse.rows?.[0]
           });
 
@@ -74,16 +76,24 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
           if (!abort) {
             setAllRows(bigRows);
             setTableRows(bigRows.slice(0, 50));
-          }
 
-          // Compute KPIs from BOL data
-          if (!abort && bigRows.length > 0) {
-            let totalTeu = 0;
-            for (const row of bigRows) {
-              const teu = typeof row.teu === 'number' ? row.teu : 0;
-              totalTeu += teu;
+            // Use KPIs from edge function response
+            if (bigResponse.kpis) {
+              setKpis(bigResponse.kpis);
+              console.log('[Modal] KPIs set from edge function:', bigResponse.kpis);
+            } else if (bigRows.length > 0) {
+              // Fallback: compute basic KPIs locally
+              let totalTeu = 0;
+              for (const row of bigRows) {
+                const teu = typeof row.teu === 'number' ? row.teu : 0;
+                totalTeu += teu;
+              }
+              setKpis({
+                totalShipments: bigRows.length,
+                totalTeu: Math.round(totalTeu),
+                trend: 'flat'
+              });
             }
-            setKpis({ teus12m: Math.round(totalTeu), growthRate: null });
           }
         } else if (companyId) {
           // Use BigQuery API for LIT-native companies
@@ -101,7 +111,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
             if (!abort && k) {
               const teuVal = k.total_teus_12m ?? k.teus_12m ?? k.total_teus ?? null;
               const growthVal = k.growth_rate ?? null;
-              setKpis({ teus12m: teuVal != null ? Number(teuVal) : null, growthRate: growthVal != null ? Number(growthVal) : null });
+              setKpis({
+                totalTeu: teuVal != null ? Number(teuVal) : null,
+                totalShipments: bigRows.length,
+                trend: growthVal > 0.1 ? 'up' : growthVal < -0.1 ? 'down' : 'flat'
+              });
             }
           } catch (err) {
             if (!abort) {
@@ -138,8 +152,20 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
     return best;
   }, [allRows]);
 
-  // Monthly volumes (TEU if present else count)
+  // Monthly volumes (from KPIs if available, else compute locally)
   const monthlyVolumes = useMemo(() => {
+    // Use volumeSeries from edge function KPIs if available
+    if (kpis?.volumeSeries && Array.isArray(kpis.volumeSeries)) {
+      return kpis.volumeSeries.map(v => ({
+        key: v.month,
+        month: new Date(v.month + '-01').toLocaleString(undefined, { month: 'short' }),
+        volume: v.total || 0,
+        fcl: v.fcl || 0,
+        lcl: v.lcl || 0
+      }));
+    }
+
+    // Fallback: compute from allRows
     const months = [];
     const now = new Date();
     for (let i = 11; i >= 0; i--) {
@@ -157,13 +183,23 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
       if (byKey.has(key)) byKey.get(key).volume += vol;
     }
     return months;
-  }, [allRows]);
+  }, [kpis, allRows]);
 
   const displayTeus = useMemo(() => {
-    if (kpis.teus12m != null) return Number(kpis.teus12m).toLocaleString();
+    if (kpis?.totalTeu != null) return Number(kpis.totalTeu).toLocaleString();
     const fallback = company?.total_teus != null ? Number(company.total_teus) : null;
     return fallback != null ? fallback.toLocaleString() : '—';
   }, [kpis, company]);
+
+  const displayTrend = useMemo(() => {
+    if (!kpis?.trend) return null;
+    const trendMap = {
+      up: { icon: '↗', color: 'text-green-600', label: 'Growing' },
+      down: { icon: '↘', color: 'text-red-600', label: 'Declining' },
+      flat: { icon: '→', color: 'text-gray-600', label: 'Stable' }
+    };
+    return trendMap[kpis.trend] || trendMap.flat;
+  }, [kpis]);
 
   const displayGrowth = useMemo(() => {
     const raw = kpis.growthRate != null ? Number(kpis.growthRate) : (company?.growth_rate != null ? Number(company.growth_rate) : null);
@@ -262,9 +298,18 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <KpiInfo icon={Database} label="Company ID" value={companyId} />
                   <KpiInfo icon={LinkIcon} label="Website" value={website} link />
-                  <KpiInfo icon={Ship} label="Total Shipments (12m)" value={(company?.shipments_12m ?? '—')} />
+                  <KpiInfo icon={Ship} label="Total Shipments (12m)" value={kpis?.totalShipments ?? company?.shipments_12m ?? '—'} />
                   <KpiInfo icon={Box} label="Total TEUs (12m)" value={displayTeus} />
-                  <KpiInfo icon={MapPin} label="Top Trade Route" value={topRoute} />
+                  {displayTrend && (
+                    <div className="p-3 border border-gray-200 rounded-xl bg-white text-center min-h-[96px] flex flex-col items-center justify-center">
+                      <TrendingUp className="w-5 h-5 mb-1" style={{ color: '#7F3DFF' }} />
+                      <div className={`text-xl font-bold ${displayTrend.color}`}>
+                        {displayTrend.icon} {displayTrend.label}
+                      </div>
+                      <div className="text-[11px] uppercase text-gray-500 font-medium mt-1">Trend</div>
+                    </div>
+                  )}
+                  {!displayTrend && <KpiInfo icon={MapPin} label="Top Trade Route" value={topRoute} />}
                 </div>
                 <div className="mt-6">
                   <h4 className="flex items-center text-base font-semibold text-gray-900"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> Sales Intelligence Available</h4>
@@ -277,7 +322,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
                     <Ship className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/>
-                    <div className="text-2xl font-bold">{company?.shipments_12m ?? '—'}</div>
+                    <div className="text-2xl font-bold">{kpis?.totalShipments ?? company?.shipments_12m ?? (allRows.length || '—')}</div>
                     <div className="text-xs uppercase text-gray-500 font-medium mt-1">Total Shipments (12m)</div>
                   </div>
                   <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
@@ -286,13 +331,17 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                     <div className="text-xs uppercase text-gray-500 font-medium mt-1">Total TEUs (12m)</div>
                   </div>
                   <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
-                    <TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: '#7F3DFF' }}/>
-                    <div className="text-2xl font-bold">{displayGrowth}</div>
-                    <div className="text-xs uppercase text-gray-500 font-medium mt-1">Growth Rate (YoY)</div>
+                    <TrendingUp className="w-6 h-6 mx-auto mb-2" style={{ color: displayTrend ? displayTrend.color : '#7F3DFF' }}/>
+                    <div className={`text-2xl font-bold ${displayTrend ? displayTrend.color : ''}`}>
+                      {displayTrend ? `${displayTrend.icon} ${displayTrend.label}` : displayGrowth}
+                    </div>
+                    <div className="text-xs uppercase text-gray-500 font-medium mt-1">
+                      {displayTrend ? 'Trend' : 'Growth Rate (YoY)'}
+                    </div>
                   </div>
                   <div className="p-3 border border-gray-200 rounded-xl bg-white text-center">
                     <MapPin className="w-6 h-6 mx-auto mb-2 text-red-500"/>
-                    <div className="text-lg font-bold">{topRoute}</div>
+                    <div className="text-lg font-bold">{kpis?.topOriginPorts?.[0] && kpis?.topDestPorts?.[0] ? `${kpis.topOriginPorts[0]} → ${kpis.topDestPorts[0]}` : topRoute}</div>
                     <div className="text-xs uppercase text-gray-500 font-medium mt-1">Primary Route</div>
                   </div>
                 </div>
