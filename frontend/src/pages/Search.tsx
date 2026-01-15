@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Eye, ArrowUpRight } from "lucide-react";
+import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Eye, ArrowUpRight, Grid3x3, List } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -188,6 +188,7 @@ export default function SearchPage() {
   const [results, setResults] = useState(MOCK_COMPANIES);
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
   const [saving, setSaving] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,69 +221,48 @@ export default function SearchPage() {
 
     setSaving(true);
     try {
-      const { data: existingCompany, error: checkError } = await supabase
-        .from("companies")
-        .select("company_id")
-        .eq("company_id", company.id)
-        .maybeSingle();
-
-      if (checkError) throw checkError;
-
-      if (!existingCompany) {
-        const { error: insertError } = await supabase.from("companies").insert({
-          company_id: company.id,
-          name: company.name,
-          website: company.website,
-          address: company.address,
-          country: company.country,
-          country_code: company.country_code,
-          industry: company.industry,
-          phone: null,
-          total_shipments: company.shipments,
-          shipments_12m: company.shipments_12m,
-          most_recent_shipment: company.last_shipment,
-          top_suppliers: [],
-          raw_data: company,
-          source: "search",
-          last_fetched_at: new Date().toISOString(),
-        });
-
-        if (insertError) throw insertError;
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) {
+        throw new Error("No valid session");
       }
 
-      const { error: savedError } = await supabase
-        .from("saved_companies")
-        .upsert({
-          user_id: user.id,
-          company_id: company.id,
-          stage: "prospect",
-          saved_at: new Date().toISOString(),
-          last_viewed_at: new Date().toISOString(),
-        }, {
-          onConflict: "user_id,company_id",
-        });
-
-      if (savedError) throw savedError;
-
-      const { error: enrichmentError } = await supabase
-        .from("company_enrichment")
-        .upsert({
-          company_id: company.id,
-          enrichment_type: "gemini",
-          enrichment_data: {
-            summary: company.gemini_summary,
-            risk_flags: company.risk_flags,
-            top_origins: company.top_origins,
-            top_destinations: company.top_destinations,
-            trend: company.trend,
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/save-company`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.session.access_token}`,
           },
-          model_version: "mock-v1",
-          enriched_at: new Date().toISOString(),
-        }, {
-          onConflict: "company_id,enrichment_type",
-        });
+          body: JSON.stringify({
+            company_data: {
+              source: "search",
+              source_company_key: company.id,
+              name: company.name,
+              domain: company.website,
+              website: company.website,
+              address_line1: company.address,
+              city: company.city,
+              state: company.state,
+              country_code: company.country_code,
+              shipments_12m: company.shipments_12m,
+              teu_12m: company.teu_estimate,
+              primary_mode: company.mode,
+              revenue_range: company.revenue_range,
+              most_recent_shipment_date: company.last_shipment,
+              tags: [company.industry, company.frequency],
+              risk_level: company.risk_flags.length > 0 ? "Medium" : "Low",
+              raw_last_search: company,
+            },
+            stage: "prospect",
+          }),
+        }
+      );
 
-      if (enrichmentError) throw enrichmentError;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to save company");
+      }
 
       toast({
         title: "Company saved",
@@ -380,17 +360,45 @@ export default function SearchPage() {
           <p className="text-sm text-slate-600">
             Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
           </p>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">View:</span>
+            <div className="flex rounded-lg border border-slate-200 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  viewMode === "grid"
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Grid3x3 className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  viewMode === "list"
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </motion.div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {results.map((company, index) => (
-            <motion.div
-              key={company.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 + index * 0.05 }}
-            >
-              <Card className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden">
+        {viewMode === "grid" ? (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {results.map((company, index) => (
+              <motion.div
+                key={company.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 + index * 0.05 }}
+              >
+                <Card className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                 <CardHeader className="pb-4">
@@ -486,6 +494,94 @@ export default function SearchPage() {
             </motion.div>
           ))}
         </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Company</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Location</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Shipments (12m)</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">TEU</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Mode</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Last Shipment</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {results.map((company, index) => (
+                    <motion.tr
+                      key={company.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.02 }}
+                      className="hover:bg-slate-50 transition-colors"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+                            <Building2 className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-900">{company.name}</div>
+                            <div className="text-xs text-slate-500">{company.industry}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-900">{company.city}, {company.state}</div>
+                        <div className="text-xs text-slate-500">{company.country_code}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-slate-900">{company.shipments_12m.toLocaleString()}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-slate-900">{company.teu_estimate.toLocaleString()}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                          {getModeIcon(company.mode)}
+                          {company.mode}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-900">
+                          {new Date(company.last_shipment).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
+                          {company.frequency}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedCompany(company)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => saveToCommandCenter(company)}
+                            disabled={saving}
+                          >
+                            <BookmarkPlus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {results.length === 0 && (
           <motion.div
