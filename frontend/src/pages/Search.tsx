@@ -9,6 +9,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import { searchShippers } from "@/lib/api";
+import { fetchCompanyKpis, type CompanyKpiData } from "@/lib/kpiCompute";
 
 interface MockCompany {
   id: string;
@@ -189,6 +190,8 @@ export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<MockCompany[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
+  const [kpiData, setKpiData] = useState<CompanyKpiData | null>(null);
+  const [loadingKpis, setLoadingKpis] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searching, setSearching] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -220,6 +223,40 @@ export default function SearchPage() {
 
     loadSavedCompanies();
   }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadKpis = async () => {
+      if (!selectedCompany || !selectedCompany.importyeti_key) {
+        setKpiData(null);
+        return;
+      }
+
+      setLoadingKpis(true);
+      try {
+        const kpis = await fetchCompanyKpis(selectedCompany.importyeti_key);
+        if (!cancelled && kpis) {
+          setKpiData(kpis);
+        }
+      } catch (error) {
+        console.error('Failed to load KPIs:', error);
+        if (!cancelled) {
+          setKpiData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingKpis(false);
+        }
+      }
+    };
+
+    loadKpis();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompany]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -849,35 +886,46 @@ export default function SearchPage() {
                     <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                       <Package className="h-5 w-5 text-blue-600" />
                       Logistics KPIs
+                      {loadingKpis && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
                     </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                        <p className="text-xs text-slate-600 mb-1">Total Shipments</p>
-                        <p className="text-2xl font-bold text-slate-900">
-                          {selectedCompany.shipments.toLocaleString()}
-                        </p>
+                    {loadingKpis ? (
+                      <div className="text-center py-8 text-slate-600">
+                        Loading real-time shipment data...
                       </div>
-                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                        <p className="text-xs text-slate-600 mb-1">Last 12 Months</p>
-                        <p className="text-2xl font-bold text-slate-900">
-                          {selectedCompany.shipments_12m.toLocaleString()}
-                        </p>
+                    ) : kpiData ? (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                          <p className="text-xs text-slate-600 mb-1">Total TEU (12m)</p>
+                          <p className="text-2xl font-bold text-slate-900">
+                            {kpiData.teu.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                          <p className="text-xs text-slate-600 mb-1">FCL Shipments</p>
+                          <p className="text-2xl font-bold text-slate-900">
+                            {kpiData.fclCount.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                          <p className="text-xs text-slate-600 mb-1">LCL Shipments</p>
+                          <p className="text-2xl font-bold text-slate-900">
+                            {kpiData.lclCount.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                          <p className="text-xs text-slate-600 mb-1">Trend</p>
+                          <p className={`text-2xl font-bold capitalize ${getTrendColor(kpiData.trend)}`}>
+                            {kpiData.trend === "up" && "↑ "}
+                            {kpiData.trend === "down" && "↓ "}
+                            {kpiData.trend}
+                          </p>
+                        </div>
                       </div>
-                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                        <p className="text-xs text-slate-600 mb-1">Est. TEU</p>
-                        <p className="text-2xl font-bold text-slate-900">
-                          {selectedCompany.teu_estimate.toLocaleString()}
-                        </p>
+                    ) : (
+                      <div className="text-center py-8 text-slate-500">
+                        No shipment data available
                       </div>
-                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                        <p className="text-xs text-slate-600 mb-1">Trend</p>
-                        <p className={`text-2xl font-bold capitalize ${getTrendColor(selectedCompany.trend)}`}>
-                          {selectedCompany.trend === "up" && "↑ "}
-                          {selectedCompany.trend === "down" && "↓ "}
-                          {selectedCompany.trend}
-                        </p>
-                      </div>
-                    </div>
+                    )}
                   </section>
 
                   <section>
@@ -885,34 +933,104 @@ export default function SearchPage() {
                       <Globe className="h-5 w-5 text-blue-600" />
                       Trade Routes
                     </h3>
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-700 mb-2">Top Origin Ports</p>
-                        <ul className="space-y-2">
-                          {selectedCompany.top_origins.map((origin, idx) => (
-                            <li key={idx} className="flex items-center gap-2 text-sm text-slate-600">
-                              <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-                                {idx + 1}
-                              </span>
-                              {origin}
-                            </li>
-                          ))}
-                        </ul>
+                    {kpiData ? (
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700 mb-2">Top Origin Ports</p>
+                          {kpiData.topOriginPorts.length > 0 ? (
+                            <ul className="space-y-2">
+                              {kpiData.topOriginPorts.map((origin, idx) => (
+                                <li key={idx} className="flex items-center gap-2 text-sm text-slate-600">
+                                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
+                                    {idx + 1}
+                                  </span>
+                                  {origin}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-slate-500">No origin data</p>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700 mb-2">Top Destination Ports</p>
+                          {kpiData.topDestinationPorts.length > 0 ? (
+                            <ul className="space-y-2">
+                              {kpiData.topDestinationPorts.map((dest, idx) => (
+                                <li key={idx} className="flex items-center gap-2 text-sm text-slate-600">
+                                  <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                                    {idx + 1}
+                                  </span>
+                                  {dest}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-slate-500">No destination data</p>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-700 mb-2">Top Destination Ports</p>
-                        <ul className="space-y-2">
-                          {selectedCompany.top_destinations.map((dest, idx) => (
-                            <li key={idx} className="flex items-center gap-2 text-sm text-slate-600">
-                              <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
-                                {idx + 1}
-                              </span>
-                              {dest}
-                            </li>
-                          ))}
-                        </ul>
+                    ) : (
+                      <div className="text-center py-4 text-slate-500">
+                        No route data available
                       </div>
-                    </div>
+                    )}
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <Ship className="h-5 w-5 text-blue-600" />
+                      12-Month Volume (FCL vs LCL)
+                    </h3>
+                    {kpiData ? (
+                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+                        <div className="relative h-64">
+                          <div className="flex h-full items-end justify-around gap-1">
+                            {kpiData.monthlyVolume.map((month, idx) => {
+                              const maxVol = Math.max(1, ...kpiData.monthlyVolume.map((m) => m.total));
+                              const fclHeight = (month.fcl / maxVol) * 100;
+                              const lclHeight = (month.lcl / maxVol) * 100;
+
+                              return (
+                                <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                                  <div className="w-full flex flex-col items-center gap-0.5 h-48 justify-end">
+                                    {month.fcl > 0 && (
+                                      <div
+                                        className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
+                                        style={{ height: `${fclHeight}%` }}
+                                        title={`FCL: ${month.fcl.toFixed(1)} TEU`}
+                                      />
+                                    )}
+                                    {month.lcl > 0 && (
+                                      <div
+                                        className="w-full bg-green-500 rounded-t transition-all hover:bg-green-600"
+                                        style={{ height: `${lclHeight}%` }}
+                                        title={`LCL: ${month.lcl.toFixed(1)} TEU`}
+                                      />
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-slate-600">{month.month}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-center gap-6 mt-4 text-sm">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                            <span>FCL</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-green-500 rounded"></div>
+                            <span>LCL</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-slate-500">
+                        No volume data available
+                      </div>
+                    )}
                   </section>
 
                   <section>
