@@ -2762,11 +2762,12 @@ export async function getCompanyBols(sourceCompanyKey: string, options?: {
   const headers = await getAuthHeaders();
 
   const res = await fetch(
-    `${SUPABASE_URL}/functions/v1/importyeti-proxy/companyBols`,
+    `${SUPABASE_URL}/functions/v1/importyeti-proxy`,
     {
       method: "POST",
       headers,
       body: JSON.stringify({
+        action: "companyBols",
         company_id: sourceCompanyKey,
         start_date: options?.start_date,
         end_date: options?.end_date,

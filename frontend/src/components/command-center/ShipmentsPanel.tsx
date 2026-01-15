@@ -64,7 +64,7 @@ export default function ShipmentsPanel() {
         }
 
         const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy/companyBols`,
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy`,
           {
             method: "POST",
             headers: {
@@ -72,6 +72,7 @@ export default function ShipmentsPanel() {
               Authorization: `Bearer ${session.session.access_token}`,
             },
             body: JSON.stringify({
+              action: "companyBols",
               company_id: companyKey,
               limit: 50,
               offset: 0,
