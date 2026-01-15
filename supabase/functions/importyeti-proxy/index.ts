@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { createHash } from "node:crypto";
 
 export const config = {
-  verify_jwt: true,
+  verify_jwt: false,
 };
 
 const corsHeaders = {

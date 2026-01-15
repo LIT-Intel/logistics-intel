@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, Globe, Ship, TrendingUp, Box, Clock, Lock, MapPin, Database, Link as LinkIcon, BarChart as BarChartIcon } from 'lucide-react';
-import { getCompanyShipments, getCompanyKpis } from '@/lib/api';
+import { getCompanyShipments, getCompanyKpis, iyCompanyBols } from '@/lib/api';
 import { hasFeature } from '@/lib/access';
 
 export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user, isSaved = false }) {
@@ -20,7 +20,9 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   const [kpis, setKpis] = useState({ teus12m: null, growthRate: null });
 
   const companyId = company?.company_id || company?.id || null;
-  const name = company?.company_name || company?.name || 'Company';
+  const companyKey = company?.key || company?.importyeti_key || null;
+  const isImportYeti = !!companyKey;
+  const name = company?.company_name || company?.name || company?.title || 'Company';
   const website = company?.website || company?.domain || null;
   const hqText = [company?.hq_city, company?.hq_state].filter(Boolean).join(', ');
   const isWhitelisted = String(user?.email || '').toLowerCase() === 'vraymond@logisticintel.com' || String(user?.email || '').toLowerCase() === 'support@logisticintel.com';
@@ -29,31 +31,78 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   useEffect(() => {
     let abort = false;
     async function load() {
-      if (!isOpen || !companyId) return;
+      if (!isOpen) return;
+      if (!companyId && !companyKey) return;
+
       setLoading(true);
       setError('');
       try {
-        // Load large set to power chart and top route
-        const big = await getCompanyShipments(String(companyId), { limit: 1000, offset: 0 });
-        const bigRows = Array.isArray(big?.rows) ? big.rows : [];
-        if (!abort) setAllRows(bigRows);
-        // Load first page for table
-        const first = await getCompanyShipments(String(companyId), { limit: 50, offset: 0 });
-        if (!abort) setTableRows(Array.isArray(first?.rows) ? first.rows : []);
-        // Load KPIs (TEU + Growth)
-        try {
-          const k = await getCompanyKpis({ company_id: String(companyId) });
-          if (!abort && k) {
-            const teuVal = k.total_teus_12m ?? k.teus_12m ?? k.total_teus ?? null;
-            const growthVal = k.growth_rate ?? null;
-            setKpis({ teus12m: teuVal != null ? Number(teuVal) : null, growthRate: growthVal != null ? Number(growthVal) : null });
-          }
-        } catch (err) {
+        // Use ImportYeti BOL API for ImportYeti companies
+        if (isImportYeti && companyKey) {
+          console.log('[Modal] Loading ImportYeti BOL data for:', companyKey);
+          const now = new Date();
+          const endDate = now.toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric'
+          });
+
+          // Load BOL data from ImportYeti
+          const bigResponse = await iyCompanyBols({
+            company_id: companyKey,
+            start_date: '01/01/2019',
+            end_date: endDate,
+            limit: 100,
+            offset: 0,
+          });
+
+          console.log('[Modal] ImportYeti BOL Response:', {
+            ok: bigResponse.ok,
+            rowCount: bigResponse.rows?.length || 0,
+            sample: bigResponse.rows?.[0]
+          });
+
+          const bigRows = Array.isArray(bigResponse?.rows) ? bigResponse.rows : [];
           if (!abort) {
-            console.warn("getCompanyKpis failed", err);
+            setAllRows(bigRows);
+            setTableRows(bigRows.slice(0, 50));
+          }
+
+          // Compute KPIs from BOL data
+          if (!abort && bigRows.length > 0) {
+            let totalTeu = 0;
+            for (const row of bigRows) {
+              const teu = typeof row.teu === 'number' ? row.teu : 0;
+              totalTeu += teu;
+            }
+            setKpis({ teus12m: Math.round(totalTeu), growthRate: null });
+          }
+        } else if (companyId) {
+          // Use BigQuery API for LIT-native companies
+          console.log('[Modal] Loading BigQuery shipments for:', companyId);
+          const big = await getCompanyShipments(String(companyId), { limit: 1000, offset: 0 });
+          const bigRows = Array.isArray(big?.rows) ? big.rows : [];
+          if (!abort) setAllRows(bigRows);
+
+          const first = await getCompanyShipments(String(companyId), { limit: 50, offset: 0 });
+          if (!abort) setTableRows(Array.isArray(first?.rows) ? first.rows : []);
+
+          // Load KPIs from backend
+          try {
+            const k = await getCompanyKpis({ company_id: String(companyId) });
+            if (!abort && k) {
+              const teuVal = k.total_teus_12m ?? k.teus_12m ?? k.total_teus ?? null;
+              const growthVal = k.growth_rate ?? null;
+              setKpis({ teus12m: teuVal != null ? Number(teuVal) : null, growthRate: growthVal != null ? Number(growthVal) : null });
+            }
+          } catch (err) {
+            if (!abort) {
+              console.warn("getCompanyKpis failed", err);
+            }
           }
         }
       } catch (e) {
+        console.error('[Modal] Failed to load shipments:', e);
         if (!abort) {
           setAllRows([]);
           setTableRows([]);
@@ -65,7 +114,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
     }
     load();
     return () => { abort = true; };
-  }, [isOpen, companyId]);
+  }, [isOpen, companyId, companyKey, isImportYeti]);
 
   // Top route from allRows
   const topRoute = useMemo(() => {
@@ -264,40 +313,40 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
               </TabsContent>
 
               {/* Shipments */}
-              <TabsContent value="shipments" className="btn-brand">
-                <div className="btn-brand">
+              <TabsContent value="shipments" className="space-y-4">
+                <div className="flex flex-wrap gap-4 items-end">
                   <div>
-                    <div className="btn-brand">Start date</div>
-                    <input type="date" className="btn-brand" value={dateStart} onChange={(e)=> { setPage(1); setDateStart(e.target.value); }} />
+                    <div className="text-sm font-medium text-gray-700 mb-1">Start date</div>
+                    <input type="date" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" value={dateStart} onChange={(e)=> { setPage(1); setDateStart(e.target.value); }} />
                   </div>
                   <div>
-                    <div className="btn-brand">End date</div>
-                    <input type="date" className="btn-brand" value={dateEnd} onChange={(e)=> { setPage(1); setDateEnd(e.target.value); }} />
+                    <div className="text-sm font-medium text-gray-700 mb-1">End date</div>
+                    <input type="date" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" value={dateEnd} onChange={(e)=> { setPage(1); setDateEnd(e.target.value); }} />
                   </div>
-                  <div className="btn-brand">Page {page} · 50 per page {filteredRows.length ? `· ${filteredRows.length} filtered` : ''}</div>
+                  <div className="text-sm text-gray-600">Page {page} · 50 per page {filteredRows.length ? `· ${filteredRows.length} filtered` : ''}</div>
                 </div>
                 {error && (
-                  <div className="btn-brand">{error}</div>
+                  <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
                 )}
-                <div className="btn-brand">
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
                   {loading ? (
-                    <div className="btn-brand">Loading shipments…</div>
+                    <div className="p-8 text-center text-gray-500">Loading shipments…</div>
                   ) : pagedRows.length === 0 ? (
-                    <div className="btn-brand">No shipment data available.</div>
+                    <div className="p-8 text-center text-gray-500">No shipment data available.</div>
                   ) : (
-                    <table className="btn-brand">
-                      <thead className="btn-brand">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
-                          <th className="btn-brand">Date</th>
-                          <th className="btn-brand">Mode</th>
-                          <th className="btn-brand">Origin</th>
-                          <th className="btn-brand">Destination</th>
-                          <th className="btn-brand">Carrier</th>
-                          <th className="btn-brand">Containers</th>
-                          <th className="btn-brand">TEUs</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Mode</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Origin</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Destination</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Carrier</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">Containers</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">TEUs</th>
                         </tr>
                       </thead>
-                      <tbody className="btn-brand">
+                      <tbody className="divide-y divide-gray-200">
                         {pagedRows.map((r, i) => {
                           const raw = r.shipped_on || r.date || r.snapshot_date || r.shipment_date;
                           const d = raw ? new Date(String(raw)).toLocaleDateString() : '—';
@@ -308,14 +357,14 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                           const containers = r.container_count ?? '—';
                           const teu = r.teu ?? '—';
                           return (
-                            <tr key={i} className="btn-brand">
-                              <td className="btn-brand">{d}</td>
-                              <td className="btn-brand">{String(mode).toLowerCase()}</td>
-                              <td className="btn-brand">{origin}</td>
-                              <td className="btn-brand">{dest}</td>
-                              <td className="btn-brand">{carrier}</td>
-                              <td className="btn-brand">{typeof containers === 'number' ? containers.toLocaleString() : containers}</td>
-                              <td className="btn-brand">{typeof teu === 'number' ? teu.toLocaleString() : teu}</td>
+                            <tr key={i} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-gray-900">{d}</td>
+                              <td className="px-4 py-3 text-gray-900 capitalize">{String(mode).toLowerCase()}</td>
+                              <td className="px-4 py-3 text-gray-900">{origin}</td>
+                              <td className="px-4 py-3 text-gray-900">{dest}</td>
+                              <td className="px-4 py-3 text-gray-900">{carrier}</td>
+                              <td className="px-4 py-3 text-right text-gray-900">{typeof containers === 'number' ? containers.toLocaleString() : containers}</td>
+                              <td className="px-4 py-3 text-right text-gray-900 font-semibold">{typeof teu === 'number' ? teu.toLocaleString() : teu}</td>
                             </tr>
                           );
                         })}
@@ -323,18 +372,22 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                     </table>
                   )}
                 </div>
-                <div className="btn-brand">
+                <div className="flex items-center justify-between">
                   <div />
-                  <div className="btn-brand">
-                    <button className="btn-brand" onClick={()=> setPage((p)=> Math.max(1, p-1))} disabled={page===1}>Prev</button>
-                    <button className="btn-brand" onClick={()=> setPage((p)=> p+1)} disabled={page*50 >= filteredRows.length}>Next</button>
+                  <div className="flex gap-2">
+                    <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" onClick={()=> setPage((p)=> Math.max(1, p-1))} disabled={page===1}>Prev</button>
+                    <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" onClick={()=> setPage((p)=> p+1)} disabled={page*50 >= filteredRows.length}>Next</button>
                   </div>
                 </div>
               </TabsContent>
 
               {/* Contacts */}
-              <TabsContent value="contacts" className="btn-brand">
-                <div className="btn-brand">Contacts are gated.</div>
+              <TabsContent value="contacts" className="space-y-4">
+                <div className="p-8 text-center text-gray-500 border border-gray-200 rounded-xl bg-gray-50">
+                  <Lock className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">Contacts Feature Gated</h4>
+                  <p className="text-sm text-gray-600">Save this company to Command Center and upgrade to access contact information.</p>
+                </div>
               </TabsContent>
             </div>
           </Tabs>
@@ -342,16 +395,16 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
 
         {/* Branded gating overlay */}
         {showGate && (
-          <div className="btn-brand" role="dialog" aria-modal="true" onClick={()=> setShowGate(false)}>
-            <div className="btn-brand" onClick={(e)=> e.stopPropagation()}>
-              <div className="btn-brand" style={{ backgroundColor: '#EEE6FF' }}>
-                <Lock className="btn-brand" style={{ color: '#7F3DFF' }} />
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]" role="dialog" aria-modal="true" onClick={()=> setShowGate(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md mx-4 text-center" onClick={(e)=> e.stopPropagation()}>
+              <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center" style={{ backgroundColor: '#EEE6FF' }}>
+                <Lock className="w-8 h-8" style={{ color: '#7F3DFF' }} />
               </div>
-              <h3 className="btn-brand">Command Center Access</h3>
-              <p className="btn-brand">Saving companies and unlocking features like detailed contacts and AI enrichment requires a paid subscription.</p>
-              <div className="btn-brand">
-                <button className="btn-brand" onClick={()=> setShowGate(false)}>Not now</button>
-                <button className="btn-brand" style={{ backgroundColor: '#7F3DFF' }} onClick={()=> setShowGate(false)}>Upgrade Now</button>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Command Center Access</h3>
+              <p className="text-gray-600 mb-6">Saving companies and unlocking features like detailed contacts and AI enrichment requires a paid subscription.</p>
+              <div className="flex gap-3">
+                <button className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50" onClick={()=> setShowGate(false)}>Not now</button>
+                <button className="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg hover:opacity-90" style={{ backgroundColor: '#7F3DFF' }} onClick={()=> setShowGate(false)}>Upgrade Now</button>
               </div>
             </div>
           </div>

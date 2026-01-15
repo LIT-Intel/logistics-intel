@@ -50,16 +50,26 @@ r.get("/public/getCompanyShipments", async (req: Request, res: Response, next: N
     const [rows] = await bq.query({ query: sql, location: "US" });
     const shipments = (rows as any[]).map((row: any) => ({
       date: row.shipped_on ?? null,
+      shipped_on: row.shipped_on ?? null,
       origin_country: row.origin ?? null,
       dest_country: row.destination ?? null,
+      origin_port: row.origin_port ?? null,
+      origin_city: row.origin_city ?? null,
+      origin_state: row.origin_state ?? null,
+      dest_port: row.dest_port ?? null,
+      dest_city: row.dest_city ?? null,
+      dest_state: row.dest_state ?? null,
       mode: row.mode ?? null,
       hs_code: row.hs_code ?? null,
       carrier: row.carrier ?? null,
+      container_count: row.container_count ? Number(row.container_count) || 0 : 0,
+      teu: row.teu ? Number(row.teu) || 0 : 0,
       value_usd: row.value_usd ? Number(row.value_usd) || 0 : 0,
       gross_weight_kg: row.weight_kg ? Number(row.weight_kg) || 0 : 0,
     }));
 
     res.json({
+      rows: shipments,
       shipments,
       total: Number(rows.length),
     });
