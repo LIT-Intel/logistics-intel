@@ -13,7 +13,12 @@ const corsHeaders = {
 };
 
 const IY_BASE_URL = Deno.env.get("IY_DMA_BASE_URL") || "https://data.importyeti.com/v1.0";
-const IY_API_KEY = Deno.env.get("IY_DMA_API_KEY") || "";
+const IY_API_KEY = Deno.env.get("IY_API_KEY") || "";
+
+console.log("🔑 API KEY CHECK:");
+console.log("  IY_API_KEY present:", !!IY_API_KEY);
+console.log("  IY_API_KEY length:", IY_API_KEY?.length || 0);
+console.log("  First 10 chars:", IY_API_KEY?.substring(0, 10) || "MISSING");
 
 const RATE_LIMITS = {
   searchShippers: { max: 50, window: 60 },
@@ -265,10 +270,17 @@ async function logApiRequest(
 
 async function iyGet<T>(path: string): Promise<T> {
   if (!IY_API_KEY) {
-    throw new Error("IY_DMA_API_KEY not configured");
+    throw new Error("IY_API_KEY not configured");
   }
 
   const url = `${IY_BASE_URL}${path}`;
+
+  console.log("🌐 ImportYeti Request:");
+  console.log("  URL:", url);
+  console.log("  Method: GET");
+  console.log("  Has API Key:", !!IY_API_KEY);
+  console.log("  API Key length:", IY_API_KEY?.length || 0);
+
   const resp = await fetch(url, {
     method: "GET",
     headers: {
@@ -290,8 +302,15 @@ async function iyGet<T>(path: string): Promise<T> {
 
   if (!resp.ok) {
     const message = json?.message || text || resp.statusText;
+    console.error("❌ ImportYeti API Error:");
+    console.error("  Status:", resp.status);
+    console.error("  URL:", url);
+    console.error("  Response:", JSON.stringify(json).substring(0, 200));
+    console.error("  Has API Key:", !!IY_API_KEY);
     throw new Error(`ImportYeti ${resp.status}: ${message}`);
   }
+
+  console.log("✅ ImportYeti Response:", resp.status);
 
   return json as T;
 }
@@ -313,7 +332,7 @@ async function handleSearchShippers(body: any) {
   }
 
   if (!IY_API_KEY) {
-    throw new Error("IY_DMA_API_KEY not configured");
+    throw new Error("IY_API_KEY not configured");
   }
 
   const offset = (page - 1) * pageSize;
@@ -323,8 +342,11 @@ async function handleSearchShippers(body: any) {
     `&offset=${offset}` +
     `&name=${encodeURIComponent(trimmed)}`;
 
-  console.log("ImportYeti URL:", url);
-  console.log("METHOD: GET");
+  console.log("🧪 TEST FETCH:");
+  console.log("  URL:", url);
+  console.log("  Has API Key:", !!IY_API_KEY);
+  console.log("  API Key length:", IY_API_KEY?.length || 0);
+  console.log("  METHOD: GET");
 
   const resp = await fetch(url, {
     method: "GET",
