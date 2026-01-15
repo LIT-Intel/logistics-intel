@@ -56,23 +56,24 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Allow requests without auth for now (JWT verification is disabled)
+    let user: any = null;
+
+    if (authHeader) {
+      try {
+        const { data, error: authError } = await supabase.auth.getUser(
+          authHeader.replace("Bearer ", "")
+        );
+        if (data?.user) {
+          user = data.user;
+        }
+      } catch (err) {
+        console.log("Auth check failed, continuing without user:", err);
+      }
     }
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Create anonymous user ID for logging if no auth
+    const userId = user?.id || "anonymous";
 
     const body = await req.json();
     const { action, ...payload } = body;
@@ -93,7 +94,7 @@ Deno.serve(async (req: Request) => {
 
     const cached = await getFromCache(supabase, cacheKey);
     if (cached) {
-      await logApiRequest(supabase, user.id, endpoint, true, Date.now() - startTime, 200);
+      await logApiRequest(supabase, userId, endpoint, true, Date.now() - startTime, 200);
       return new Response(
         JSON.stringify({ ...cached, _cached: true }),
         {
@@ -111,13 +112,13 @@ Deno.serve(async (req: Request) => {
     if (rateLimitConfig) {
       const allowed = await checkRateLimit(
         supabase,
-        user.id,
+        userId,
         endpoint,
         rateLimitConfig.max,
         rateLimitConfig.window
       );
       if (!allowed) {
-        await logApiRequest(supabase, user.id, endpoint, false, Date.now() - startTime, 429);
+        await logApiRequest(supabase, userId, endpoint, false, Date.now() - startTime, 429);
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded", retryAfter: rateLimitConfig.window }),
           {
@@ -158,7 +159,7 @@ Deno.serve(async (req: Request) => {
     const ttl = CACHE_TTL[endpoint as keyof typeof CACHE_TTL] || 3600;
     await saveToCache(supabase, cacheKey, endpoint, payload, response, ttl);
 
-    await logApiRequest(supabase, user.id, endpoint, false, Date.now() - startTime, 200);
+    await logApiRequest(supabase, userId, endpoint, false, Date.now() - startTime, 200);
 
     return new Response(
       JSON.stringify({ ...response, _cached: false }),

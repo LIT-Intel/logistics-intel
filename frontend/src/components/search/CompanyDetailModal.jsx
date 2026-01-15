@@ -40,6 +40,12 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
         // Use ImportYeti BOL API for ImportYeti companies
         if (isImportYeti && companyKey) {
           console.log('[Modal] Loading ImportYeti BOL data for:', companyKey);
+
+          // Strip "company/" prefix if present
+          const companySlug = companyKey.startsWith('company/')
+            ? companyKey.slice('company/'.length)
+            : companyKey;
+
           const now = new Date();
           const endDate = now.toLocaleDateString('en-US', {
             month: '2-digit',
@@ -47,9 +53,11 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
             year: 'numeric'
           });
 
+          console.log('[Modal] Using company slug:', companySlug);
+
           // Load BOL data from ImportYeti
           const bigResponse = await iyCompanyBols({
-            company_id: companyKey,
+            company_id: companySlug,
             start_date: '01/01/2019',
             end_date: endDate,
             limit: 100,
