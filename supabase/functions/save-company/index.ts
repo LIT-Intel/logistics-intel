@@ -122,6 +122,19 @@ Deno.serve(async (req: Request) => {
 
     if (saveError) throw saveError;
 
+    // Create activity event for company save
+    await supabase
+      .from('lit_activity_events')
+      .insert({
+        user_id: user.id,
+        event_type: 'company_saved',
+        company_id: companyRecord.id,
+        metadata: {
+          description: `Saved ${companyRecord.name} to Command Center`,
+          company_name: companyRecord.name,
+        },
+      });
+
     return new Response(
       JSON.stringify({
         success: true,

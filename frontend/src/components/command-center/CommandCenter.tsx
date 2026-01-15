@@ -10,6 +10,8 @@ import {
 } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { useAuth } from "@/auth/AuthProvider";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/components/ui/use-toast";
 import CommandCenterHeader from "@/components/command-center/CommandCenterHeader";
 import SavedCompaniesPanel from "@/components/command-center/SavedCompaniesPanel";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
@@ -34,6 +36,7 @@ function recordKey(record: CommandCenterRecord) {
 
 export default function CommandCenter() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [savedCompanies, setSavedCompanies] = useState<CommandCenterRecord[]>([]);
   const [savedLoading, setSavedLoading] = useState(true);
   const [savedError, setSavedError] = useState<string | null>(null);
@@ -43,6 +46,7 @@ export default function CommandCenter() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [showingSamples, setShowingSamples] = useState(false);
+  const [generatingBrief, setGeneratingBrief] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -141,24 +145,94 @@ export default function CommandCenter() {
     setSelectedKey(null);
   };
 
+  const handleGenerateBrief = async () => {
+    if (!selectedRecord || !user) {
+      toast({
+        title: "No company selected",
+        description: "Please select a company to generate a brief",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGeneratingBrief(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) {
+        throw new Error("Not authenticated");
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-brief`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.session.access_token}`,
+          },
+          body: JSON.stringify({
+            company_id: selectedRecord.company?.company_id,
+            company_name: selectedRecord.company?.name,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to generate brief");
+      }
+
+      const result = await response.json();
+
+      toast({
+        title: "Brief generated",
+        description: "Pre-call briefing has been generated successfully",
+      });
+
+      console.log("Brief generated:", result);
+    } catch (error: any) {
+      console.error("Brief generation error:", error);
+      toast({
+        title: "Brief generation failed",
+        description: error.message || "Could not generate brief",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingBrief(false);
+    }
+  };
+
+  const handleExportPDF = () => {
+    if (!selectedRecord) {
+      toast({
+        title: "No company selected",
+        description: "Please select a company to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Export coming soon",
+      description: "PDF export functionality will be available in the next update",
+    });
+  };
+
+  const handleAddCompany = () => {
+    toast({
+      title: "Feature coming soon",
+      description: "Manual company addition will be available in the next update. For now, save companies from the Search page.",
+    });
+  };
+
   return (
     <>
       <div className="space-y-6">
         <CommandCenterHeader
           userName={user?.email || user?.displayName || 'User'}
           companiesCount={savedCompanies.length}
-          onGenerateBrief={() => {
-            // TODO: Implement brief generation
-            console.log('Generate brief');
-          }}
-          onExportPDF={() => {
-            // TODO: Implement PDF export
-            console.log('Export PDF');
-          }}
-          onAddCompany={() => {
-            // TODO: Implement add company modal
-            console.log('Add company');
-          }}
+          onGenerateBrief={handleGenerateBrief}
+          onExportPDF={handleExportPDF}
+          onAddCompany={handleAddCompany}
         />
 
         <AnimatePresence>

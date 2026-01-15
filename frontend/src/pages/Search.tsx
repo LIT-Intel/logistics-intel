@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Eye, ArrowUpRight, Grid3x3, List } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -189,6 +189,33 @@ export default function SearchPage() {
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadSavedCompanies = async () => {
+      if (!user) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('lit_saved_companies')
+          .select('company_id, lit_companies!inner(source_company_key)')
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        if (data) {
+          const ids = data
+            .map((item: any) => item.lit_companies?.source_company_key)
+            .filter(Boolean);
+          setSavedCompanyIds(ids);
+        }
+      } catch (error) {
+        console.error('Failed to load saved companies:', error);
+      }
+    };
+
+    loadSavedCompanies();
+  }, [user]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,6 +296,7 @@ export default function SearchPage() {
         description: `${company.name} has been saved to your Command Center`,
       });
 
+      setSavedCompanyIds(prev => [...prev, company.id]);
       setSelectedCompany(null);
     } catch (error: any) {
       console.error("Save error:", error);
@@ -401,6 +429,15 @@ export default function SearchPage() {
                 <Card className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
+                {savedCompanyIds.includes(company.id) && (
+                  <div className="absolute top-3 right-3 z-10">
+                    <Badge className="bg-blue-600 text-white border-0 shadow-sm">
+                      <Bookmark className="h-3 w-3 mr-1 fill-white" />
+                      Saved
+                    </Badge>
+                  </div>
+                )}
+
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -481,12 +518,17 @@ export default function SearchPage() {
                       View Details
                     </Button>
                     <Button
-                      variant="outline"
+                      variant={savedCompanyIds.includes(company.id) ? "secondary" : "outline"}
                       size="sm"
                       onClick={() => saveToCommandCenter(company)}
-                      disabled={saving}
+                      disabled={saving || savedCompanyIds.includes(company.id)}
+                      className={savedCompanyIds.includes(company.id) ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : ""}
                     >
-                      <BookmarkPlus className="h-4 w-4" />
+                      {savedCompanyIds.includes(company.id) ? (
+                        <Bookmark className="h-4 w-4 fill-current" />
+                      ) : (
+                        <BookmarkPlus className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -569,9 +611,14 @@ export default function SearchPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => saveToCommandCenter(company)}
-                            disabled={saving}
+                            disabled={saving || savedCompanyIds.includes(company.id)}
+                            className={savedCompanyIds.includes(company.id) ? "text-blue-600" : ""}
                           >
-                            <BookmarkPlus className="h-4 w-4" />
+                            {savedCompanyIds.includes(company.id) ? (
+                              <Bookmark className="h-4 w-4 fill-current" />
+                            ) : (
+                              <BookmarkPlus className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
                       </td>
@@ -764,12 +811,22 @@ export default function SearchPage() {
 
                 <div className="sticky bottom-0 bg-white border-t border-slate-200 px-8 py-4 flex gap-3">
                   <Button
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
-                    onClick={() => saveToCommandCenter(selectedCompany)}
-                    disabled={saving}
+                    className="flex-1"
+                    variant={selectedCompany && savedCompanyIds.includes(selectedCompany.id) ? "secondary" : "default"}
+                    onClick={() => selectedCompany && saveToCommandCenter(selectedCompany)}
+                    disabled={saving || (selectedCompany && savedCompanyIds.includes(selectedCompany.id))}
                   >
-                    <BookmarkPlus className="h-4 w-4 mr-2" />
-                    {saving ? "Saving..." : "Save to Command Center"}
+                    {selectedCompany && savedCompanyIds.includes(selectedCompany.id) ? (
+                      <>
+                        <Bookmark className="h-4 w-4 mr-2 fill-current" />
+                        Saved to Command Center
+                      </>
+                    ) : (
+                      <>
+                        <BookmarkPlus className="h-4 w-4 mr-2" />
+                        {saving ? "Saving..." : "Save to Command Center"}
+                      </>
+                    )}
                   </Button>
                   <Button variant="outline" onClick={() => setSelectedCompany(null)}>
                     Close
