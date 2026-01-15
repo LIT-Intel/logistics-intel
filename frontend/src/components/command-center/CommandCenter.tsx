@@ -271,7 +271,17 @@ export default function CommandCenter() {
           <SavedCompaniesPanel
             companies={savedCompanies}
             selectedKey={selectedKey}
-            onSelect={setSelectedKey}
+            onSelect={(key) => {
+              setSelectedKey(key);
+              const record = savedCompanies.find((r) => recordKey(r) === key);
+              if (record) {
+                localStorage.setItem("lit:selectedCompany", JSON.stringify({
+                  company_id: record.company?.company_id,
+                  source_company_key: record.company?.company_id,
+                  name: record.company?.name,
+                }));
+              }
+            }}
             loading={savedLoading}
             error={savedError}
           />

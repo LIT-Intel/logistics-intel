@@ -50,8 +50,19 @@ export default function ContactsPanel() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [enriching, setEnriching] = useState(false);
 
+  const [selectedRefresh, setSelectedRefresh] = useState(0);
   const selected = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("lit:selectedCompany") || "null"); } catch { return null; }
+  }, [selectedRefresh]);
+
+  useEffect(() => {
+    const handler = () => setSelectedRefresh(prev => prev + 1);
+    window.addEventListener('storage', handler);
+    const interval = setInterval(handler, 1000);
+    return () => {
+      window.removeEventListener('storage', handler);
+      clearInterval(interval);
+    };
   }, []);
 
   const gated = !isAdmin() && !hasFeature("contacts");

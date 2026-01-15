@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Boxes,
   CalendarClock,
@@ -9,6 +9,8 @@ import {
   Phone,
   Ship,
   TrendingUp,
+  Users,
+  BarChart3,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type {
@@ -18,10 +20,13 @@ import type {
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CommandCenterKpiCard from "./CommandCenterKpiCard";
 import CompanyActivityChart from "./CompanyActivityChart";
 import CommandCenterInsights from "./CommandCenterInsights";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
+import ShipmentsPanel from "./ShipmentsPanel";
+import ContactsPanel from "./ContactsPanel";
 
 type CompanyDetailPanelProps = {
   record: CommandCenterRecord | null;
@@ -283,36 +288,63 @@ export default function CompanyDetailPanel({
         <KpiCard label="Recent shipment" value={formatDate(recentShipmentDate)} icon={CalendarClock} />
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Top route (last 12m)
-          </p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {buildRouteLabel(topRouteLabel)}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Recent route
-          </p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            {buildRouteLabel(recentRouteLabel)}
-          </p>
-        </div>
-      </div>
+      <Tabs defaultValue="overview" className="mt-6">
+        <TabsList className="grid w-full grid-cols-3 lg:w-auto">
+          <TabsTrigger value="overview" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            <span>Overview</span>
+          </TabsTrigger>
+          <TabsTrigger value="shipments" className="flex items-center gap-2">
+            <Ship className="h-4 w-4" />
+            <span>Shipments</span>
+          </TabsTrigger>
+          <TabsTrigger value="contacts" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            <span>Contacts</span>
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="mt-8">
-        <h3 className="text-sm font-semibold text-slate-900">
-          Activity last 12 months
-        </h3>
-        <p className="text-xs text-slate-500">
-          Monthly shipments split between FCL and LCL services.
-        </p>
-        <CompanyActivityChart data={activitySeries} />
-      </div>
+        <TabsContent value="overview" className="mt-6 space-y-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Top route (last 12m)
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {buildRouteLabel(topRouteLabel)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Recent route
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {buildRouteLabel(recentRouteLabel)}
+              </p>
+            </div>
+          </div>
 
-      <CommandCenterInsights insights={insights} />
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Activity last 12 months
+            </h3>
+            <p className="text-xs text-slate-500">
+              Monthly shipments split between FCL and LCL services.
+            </p>
+            <CompanyActivityChart data={activitySeries} />
+          </div>
+
+          <CommandCenterInsights insights={insights} />
+        </TabsContent>
+
+        <TabsContent value="shipments" className="mt-6">
+          <ShipmentsPanel />
+        </TabsContent>
+
+        <TabsContent value="contacts" className="mt-6">
+          <ContactsPanel />
+        </TabsContent>
+      </Tabs>
     </section>
   );
 }
