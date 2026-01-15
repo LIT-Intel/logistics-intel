@@ -1119,44 +1119,23 @@ export async function iyCompanyBols(
       ? params.offset
       : 0;
 
-  const { data: session } = await supabase.auth.getSession();
-  if (!session?.session?.access_token) {
-    throw new Error("Not authenticated");
-  }
-
-  const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy/companyBols`,
+  const { data: responseData, error } = await supabase.functions.invoke(
+    "importyeti-proxy/companyBols",
     {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${session.session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+      body: {
         company_id: companyId,
         limit,
         offset,
-      }),
-      signal,
-    },
+      },
+    }
   );
 
-  const text = await response.text().catch(() => "");
-  let parsed: unknown = {};
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
+  if (error) {
+    console.error("ImportYeti companyBols error:", error);
+    throw new Error(`companyBols failed: ${error.message || "Unknown error"}`);
   }
 
-  if (!response.ok) {
-    const errorPayload =
-      typeof parsed === "object" && parsed !== null ? parsed : {};
-    throw { status: response.status, ...errorPayload };
-  }
-
+  const parsed = responseData;
   const data = typeof parsed === "object" && parsed !== null ? parsed : {};
   const rows = Array.isArray((data as any)?.rows)
     ? (data as any).rows
@@ -1497,35 +1476,27 @@ export async function getIyCompanyProfile({
     return devGetCompanyProfile(normalizedKey);
   }
 
-  const { data: session } = await supabase.auth.getSession();
-  if (!session?.session?.access_token) {
-    throw new Error("Not authenticated");
+  const { data, error } = await supabase.functions.invoke(
+    "importyeti-proxy/companyProfile",
+    {
+      body: { company_id: normalizedKey },
+    }
+  );
+
+  if (error) {
+    console.error("ImportYeti companyProfile error:", error);
+    throw new Error(`getIyCompanyProfile failed: ${error.message || "Unknown error"}`);
   }
 
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy/companyProfile?company_id=${encodeURIComponent(normalizedKey)}`;
-  const resp = await fetch(url, {
-    method: "GET",
-    headers: {
-      "Authorization": `Bearer ${session.session.access_token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`getIyCompanyProfile ${resp.status}: ${text || resp.statusText}`);
-  }
-
-  const json = await resp.json();
-  if (!json || !json.companyProfile) {
+  if (!data || !data.companyProfile) {
     throw new Error("getIyCompanyProfile returned no profile");
   }
 
-  const companyProfile = normalizeCompanyProfile(json.companyProfile, normalizedKey);
+  const companyProfile = normalizeCompanyProfile(data.companyProfile, normalizedKey);
 
   return {
     companyProfile,
-    enrichment: json?.enrichment ?? null,
+    enrichment: data?.enrichment ?? null,
   };
 }
 
@@ -1559,30 +1530,19 @@ export async function searchShippers(
     return devSearchShippers({ q, page, pageSize });
   }
 
-  const { data: session } = await supabase.auth.getSession();
-  if (!session?.session?.access_token) {
-    throw new Error("Not authenticated");
-  }
-
-  const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy/searchShippers`,
+  const { data, error } = await supabase.functions.invoke(
+    "importyeti-proxy/searchShippers",
     {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.session.access_token}`,
-      },
-      body: JSON.stringify({ q, page, pageSize }),
-      signal,
+      body: { q, page, pageSize },
     }
   );
 
-  if (!response.ok) {
-    throw new Error(`Search failed: ${response.status}`);
+  if (error) {
+    console.error("ImportYeti search error:", error);
+    throw new Error(`Search failed: ${error.message || "Unknown error"}`);
   }
 
-  const raw = await response.json();
-  return coerceIySearchResponse(raw, { q, page, pageSize });
+  return coerceIySearchResponse(data, { q, page, pageSize });
 }
 
 export const searchIyShippers = searchShippers;
@@ -2265,8 +2225,6 @@ export async function saveIyCompanyToCrm(opts: {
     });
   }
 
-  const headers = await getAuthHeaders();
-
   const companyData = {
     source: opts.source ?? "importyeti",
     source_company_key: companyKey,
@@ -2286,23 +2244,20 @@ export async function saveIyCompanyToCrm(opts: {
     raw_last_search: opts.shipper,
   };
 
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/save-company`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
+  const { data, error } = await supabase.functions.invoke("save-company", {
+    body: {
       source_company_key: companyKey,
       company_data: companyData,
       stage: opts.stage ?? "prospect",
-    }),
+    },
   });
 
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    console.error("saveIyCompanyToCrm failed", resp.status, text);
-    throw new Error(`saveIyCompanyToCrm ${resp.status}`);
+  if (error) {
+    console.error("saveIyCompanyToCrm failed:", error);
+    throw new Error(`saveIyCompanyToCrm failed: ${error.message || "Unknown error"}`);
   }
 
-  return resp.json().catch(() => ({}));
+  return data || {};
 }
 
 export async function saveCompanyToCommandCenter(opts: {
@@ -2825,23 +2780,16 @@ export async function getCompanyBols(sourceCompanyKey: string, options?: {
  * Used in: Command Center → Pre-Call Briefing
  */
 export async function generateCompanyBrief(companyId: string) {
-  const headers = await getAuthHeaders();
+  const { data, error } = await supabase.functions.invoke("gemini-brief", {
+    body: { company_id: companyId },
+  });
 
-  const res = await fetch(
-    `${SUPABASE_URL}/functions/v1/gemini-brief`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ company_id: companyId }),
-    }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`generateBrief failed: ${res.status} ${text}`);
+  if (error) {
+    console.error("generateCompanyBrief error:", error);
+    throw new Error(`generateBrief failed: ${error.message || "Unknown error"}`);
   }
 
-  return await res.json();
+  return data;
 }
 
 /**
@@ -2855,21 +2803,14 @@ export async function searchContacts(filters: {
   city?: string;
   state?: string;
 }) {
-  const headers = await getAuthHeaders();
+  const { data, error } = await supabase.functions.invoke("lusha-contact-search", {
+    body: filters,
+  });
 
-  const res = await fetch(
-    `${SUPABASE_URL}/functions/v1/lusha-contact-search`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify(filters),
-    }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`searchContacts failed: ${res.status} ${text}`);
+  if (error) {
+    console.error("searchContacts error:", error);
+    throw new Error(`searchContacts failed: ${error.message || "Unknown error"}`);
   }
 
-  return await res.json();
+  return data;
 }

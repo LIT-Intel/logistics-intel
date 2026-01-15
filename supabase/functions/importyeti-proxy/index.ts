@@ -138,10 +138,10 @@ Deno.serve(async (req: Request) => {
         response = await handleCompanyBols(requestData.body || {});
         break;
       case "companyProfile":
-        response = await handleCompanyProfile(requestData.params || {});
+        response = await handleCompanyProfile(requestData.body || requestData.params || {});
         break;
       case "companyStats":
-        response = await handleCompanyStats(requestData.params || {});
+        response = await handleCompanyStats(requestData.body || requestData.params || {});
         break;
       default:
         throw new Error(`Unknown endpoint: ${endpoint}`);
