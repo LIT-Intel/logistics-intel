@@ -506,46 +506,42 @@ async function cacheCompanyData(supabase: any, response: any, requestData: any):
       for (const company of response.rows) {
         if (company.key) {
           await supabase
-            .from("companies")
+            .from("lit_companies")
             .upsert({
-              company_id: company.key,
-              company_key: company.key,
-              company_name: company.title || company.name || "Unknown",
-              domain: company.domain,
-              country_code: company.countryCode,
-              address: company.address,
-              phone: company.phone,
-              website: company.website,
-              shipments_12m: company.totalShipments || 0,
-              total_shipments: company.totalShipments || 0,
-              most_recent_shipment: company.mostRecentShipment,
-              top_suppliers: company.topSuppliers || [],
-              raw_data: company,
               source: "importyeti",
-              last_fetched_at: new Date().toISOString(),
-            }, { onConflict: "company_id" });
+              source_company_key: company.key,
+              name: company.title || company.name || "Unknown",
+              domain: company.domain,
+              website: company.website,
+              phone: company.phone,
+              country_code: company.countryCode,
+              address_line1: company.address,
+              shipments_12m: company.totalShipments || 0,
+              most_recent_shipment_date: company.mostRecentShipment,
+              raw_last_search: company,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: "source,source_company_key" });
         }
       }
     } else if (response.data && typeof response.data === "object") {
       const companyData = response.data;
-      const companyId = requestData.company_id || requestData.company || companyData.key;
+      const companyKey = requestData.company_id || requestData.company || companyData.key;
 
-      if (companyId) {
+      if (companyKey) {
         await supabase
-          .from("companies")
+          .from("lit_companies")
           .upsert({
-            company_id: companyId,
-            company_key: companyId,
-            company_name: companyData.name || companyData.title || "Unknown",
-            domain: companyData.domain,
-            country_code: companyData.country_code,
-            address: companyData.address,
-            phone: companyData.phone,
-            website: companyData.website,
-            raw_data: companyData,
             source: "importyeti",
-            last_fetched_at: new Date().toISOString(),
-          }, { onConflict: "company_id" });
+            source_company_key: companyKey,
+            name: companyData.name || companyData.title || "Unknown",
+            domain: companyData.domain,
+            website: companyData.website,
+            phone: companyData.phone,
+            country_code: companyData.country_code,
+            address_line1: companyData.address,
+            raw_profile: companyData,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "source,source_company_key" });
       }
     }
   } catch (error) {
