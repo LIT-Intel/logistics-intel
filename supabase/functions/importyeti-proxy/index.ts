@@ -302,7 +302,7 @@ async function handleSearchShippers(body: any) {
   const pageSize = typeof body.pageSize === "number" ? body.pageSize : body.limit || 25;
 
   const trimmed = q.trim();
-  if (!trimmed) {
+  if (!trimmed || typeof trimmed !== "string") {
     return {
       ok: true,
       rows: [],
@@ -312,9 +312,39 @@ async function handleSearchShippers(body: any) {
     };
   }
 
-  const searchPath = `/company/search?q=${encodeURIComponent(trimmed)}`;
-  const resp = await iyGet<{ data?: any[] }>(searchPath);
-  const allRows = Array.isArray(resp.data) ? resp.data : [];
+  if (!IY_API_KEY) {
+    throw new Error("IY_DMA_API_KEY not configured");
+  }
+
+  const resp = await fetch(`${IY_BASE_URL}/company/search`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "Content-Type": "application/json",
+      IYApiKey: IY_API_KEY,
+    },
+    body: JSON.stringify({
+      name: trimmed,
+    }),
+  });
+
+  const text = await resp.text();
+  let json: any = {};
+
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { raw: text };
+    }
+  }
+
+  if (!resp.ok) {
+    const message = json?.message || text || resp.statusText;
+    throw new Error(`ImportYeti ${resp.status}: ${message}`);
+  }
+
+  const allRows = Array.isArray(json.data) ? json.data : [];
 
   const start = (page - 1) * pageSize;
   const end = start + pageSize;
