@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { Building2, Mail, FileText, Activity } from "lucide-react";
 import { getSavedCompanies, getCrmCampaigns } from "@/lib/api";
+import { getLitCampaigns } from "@/lib/litCampaigns";
+import { supabase } from "@/lib/supabase";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
 import ActivityFeed from "@/components/dashboard/ActivityFeed";
@@ -20,6 +22,7 @@ export default function Dashboard() {
   const [savedCompanies, setSavedCompanies] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [rfpCount, setRfpCount] = useState(0);
+  const [activities, setActivities] = useState([]);
 
   useDashboardShortcuts();
 
@@ -28,9 +31,11 @@ export default function Dashboard() {
     const load = async () => {
       setLoading(true);
       try {
-        const [companiesRes, campaignsRes] = await Promise.allSettled([
+        const [companiesRes, campaignsRes, rfpsRes, activitiesRes] = await Promise.allSettled([
           getSavedCompanies(),
-          getCrmCampaigns(),
+          getLitCampaigns().catch(() => getCrmCampaigns()),
+          supabase.from('lit_rfps').select('id').eq('status', 'active'),
+          supabase.from('lit_activity_events').select('*').order('created_at', { ascending: false }).limit(10),
         ]);
 
         if (mounted) {
@@ -43,11 +48,32 @@ export default function Dashboard() {
                          Array.isArray(campaignsRes.value) ? campaignsRes.value : [];
             setCampaigns(rows);
           }
-
-          try {
-            const rfps = JSON.parse(localStorage.getItem('lit_rfps') || '[]');
-            setRfpCount(Array.isArray(rfps) ? rfps.length : 0);
-          } catch {}
+          if (rfpsRes.status === 'fulfilled') {
+            setRfpCount(rfpsRes.value?.data?.length || 0);
+          }
+          if (activitiesRes.status === 'fulfilled') {
+            const rawActivities = activitiesRes.value?.data || [];
+            if (rawActivities.length > 0) {
+              const formattedActivities = rawActivities.map(act => ({
+                id: act.id,
+                type: act.event_type === 'company_saved' ? 'company_saved' :
+                      act.event_type === 'contact_enriched' ? 'contact_added' :
+                      act.event_type === 'campaign_created' ? 'campaign_sent' :
+                      act.event_type === 'rfp_generated' ? 'rfp_generated' : 'opportunity',
+                title: act.event_type === 'company_saved' ? 'Company Saved' :
+                       act.event_type === 'contact_enriched' ? 'Contact Added' :
+                       act.event_type === 'campaign_created' ? 'Campaign Created' :
+                       act.event_type === 'rfp_generated' ? 'RFP Generated' : 'Activity',
+                description: act.metadata?.description || act.event_type,
+                timestamp: new Date(act.created_at),
+                link: act.event_type === 'company_saved' ? '/app/command-center' :
+                      act.event_type === 'contact_enriched' ? '/app/command-center' :
+                      act.event_type === 'campaign_created' ? '/app/campaigns' :
+                      act.event_type === 'rfp_generated' ? '/app/rfp-studio' : '/app/dashboard',
+              }));
+              setActivities(formattedActivities);
+            }
+          }
         }
       } catch (err) {
         console.error('Dashboard load error:', err);
@@ -128,7 +154,7 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-6">
-            <ActivityFeed />
+            <ActivityFeed activities={activities} />
 
             {savedCompanies.length > 0 && (
               <motion.div
@@ -144,10 +170,10 @@ export default function Dashboard() {
                   </Link>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {savedCompanies.slice(0, 5).map((company, i) => (
+                  {savedCompanies.slice(0, 5).map((saved, i) => (
                     <Link
-                      key={company?.company?.company_id || i}
-                      to={`/app/command-center?company=${encodeURIComponent(company?.company?.company_id || '')}`}
+                      key={saved?.company_id || i}
+                      to={`/app/command-center?company=${encodeURIComponent(saved?.company_id || '')}`}
                       className="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors group"
                     >
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0 group-hover:scale-110 transition-transform">
@@ -155,14 +181,14 @@ export default function Dashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-slate-900 text-sm truncate">
-                          {company?.company?.name || 'Unknown Company'}
+                          {saved?.company?.name || 'Unknown Company'}
                         </div>
                         <div className="text-xs text-slate-600 mt-0.5 truncate">
-                          {company?.company?.address || company?.company?.country_code || 'Location not available'}
+                          {[saved?.company?.city, saved?.company?.state, saved?.company?.country_code].filter(Boolean).join(', ') || 'Location not available'}
                         </div>
-                        {company?.company?.kpis?.shipments_12m && (
+                        {saved?.company?.shipments_12m && (
                           <div className="text-xs text-slate-500 mt-1">
-                            {Number(company.company.kpis.shipments_12m).toLocaleString()} shipments
+                            {Number(saved.company.shipments_12m).toLocaleString()} shipments
                           </div>
                         )}
                       </div>
