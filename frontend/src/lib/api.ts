@@ -6,6 +6,28 @@ import {
 } from "@/types/importyeti";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
 import { supabase } from "@/lib/supabase";
+
+// Supabase Edge Functions configuration
+const SUPABASE_URL = typeof import.meta !== "undefined"
+  ? (import.meta as any).env?.VITE_SUPABASE_URL
+  : "";
+
+/**
+ * Get authentication headers for Supabase Edge Functions
+ * CRITICAL: Always use this for Edge Function calls
+ */
+async function getAuthHeaders() {
+  const { data: { session }, error } = await supabase.auth.getSession();
+
+  if (error || !session?.access_token) {
+    throw new Error("No active Supabase session");
+  }
+
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${session.access_token}`,
+  };
+}
 import {
   isDevMode,
   devGetSavedCompanies,
@@ -2227,25 +2249,50 @@ export async function saveIyCompanyToCrm(opts: {
     opts.shipper.key ??
     opts.shipper.companyId ??
     (opts.shipper as any)?.company_key ??
+    (opts.shipper as any)?.source_company_key ??
     "";
-  const companyId = ensureCompanyKey(rawId);
-  if (!companyId) {
+  const companyKey = ensureCompanyKey(rawId);
+  if (!companyKey) {
     throw new Error("saveIyCompanyToCrm requires a valid company key");
   }
 
-  const url = withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`);
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      company_id: companyId,
+  if (isDevMode()) {
+    return devSaveCompany({
+      company_id: companyKey,
+      company: opts.shipper,
       stage: opts.stage ?? "prospect",
-      provider: opts.provider ?? "iy-dma",
-      payload: {
-        source: opts.source ?? "importyeti",
-        shipper: opts.shipper,
-        profile: opts.profile,
-      },
+      provider: opts.provider ?? "importyeti",
+    });
+  }
+
+  const headers = await getAuthHeaders();
+
+  const companyData = {
+    source: opts.source ?? "importyeti",
+    source_company_key: companyKey,
+    name: opts.shipper.companyName || opts.shipper.title || "Unknown",
+    domain: opts.shipper.domain,
+    website: opts.shipper.website,
+    phone: opts.shipper.phone,
+    country_code: opts.shipper.countryCode,
+    address_line1: opts.shipper.address,
+    city: opts.shipper.city,
+    state: opts.shipper.state,
+    shipments_12m: opts.shipper.totalShipments || 0,
+    teu_12m: opts.shipper.totalTEU,
+    most_recent_shipment_date: opts.shipper.lastShipmentDate,
+    primary_mode: opts.shipper.primaryMode,
+    raw_profile: opts.profile,
+    raw_last_search: opts.shipper,
+  };
+
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/save-company`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      source_company_key: companyKey,
+      company_data: companyData,
+      stage: opts.stage ?? "prospect",
     }),
   });
 
@@ -2732,4 +2779,97 @@ export async function listContactsLushia(
   return res.ok
     ? res.json()
     : ({ error: await res.text(), status: res.status } as any);
+}
+
+/**
+ * Get company BOLs (shipments) from ImportYeti via Edge Function
+ * Used in: Command Center → Shipments Tab
+ */
+export async function getCompanyBols(sourceCompanyKey: string, options?: {
+  start_date?: string;
+  end_date?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  if (isDevMode()) {
+    return devGetCompanyBols({ company_id: sourceCompanyKey, ...options });
+  }
+
+  const headers = await getAuthHeaders();
+
+  const res = await fetch(
+    `${SUPABASE_URL}/functions/v1/importyeti-proxy/companyBols`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        company_id: sourceCompanyKey,
+        start_date: options?.start_date,
+        end_date: options?.end_date,
+        limit: options?.limit || 25,
+        offset: options?.offset || 0,
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`getCompanyBols failed: ${res.status} ${text}`);
+  }
+
+  return await res.json();
+}
+
+/**
+ * Generate AI-powered company brief using Gemini
+ * Used in: Command Center → Pre-Call Briefing
+ */
+export async function generateCompanyBrief(companyId: string) {
+  const headers = await getAuthHeaders();
+
+  const res = await fetch(
+    `${SUPABASE_URL}/functions/v1/gemini-brief`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ company_id: companyId }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`generateBrief failed: ${res.status} ${text}`);
+  }
+
+  return await res.json();
+}
+
+/**
+ * Search for contacts using Lusha enrichment
+ * Used in: Command Center → Contacts Tab
+ */
+export async function searchContacts(filters: {
+  company?: string;
+  title?: string;
+  department?: string;
+  city?: string;
+  state?: string;
+}) {
+  const headers = await getAuthHeaders();
+
+  const res = await fetch(
+    `${SUPABASE_URL}/functions/v1/lusha-contact-search`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(filters),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`searchContacts failed: ${res.status} ${text}`);
+  }
+
+  return await res.json();
 }
