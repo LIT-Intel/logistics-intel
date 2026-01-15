@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List } from "lucide-react";
+import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
+import { searchShippers } from "@/lib/api";
 
 interface MockCompany {
   id: string;
@@ -185,11 +186,13 @@ export default function SearchPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
-  const [results, setResults] = useState(MOCK_COMPANIES);
+  const [results, setResults] = useState<MockCompany[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
   const [saving, setSaving] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
     const loadSavedCompanies = async () => {
@@ -217,23 +220,81 @@ export default function SearchPage() {
     loadSavedCompanies();
   }, [user]);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) {
-      setResults(MOCK_COMPANIES);
+    const query = searchQuery.trim();
+
+    if (!query) {
+      toast({
+        title: "Search query required",
+        description: "Please enter a company name to search",
+        variant: "destructive",
+      });
       return;
     }
-    const filtered = MOCK_COMPANIES.filter((company) =>
-      company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      company.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      company.industry.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setResults(filtered);
+
+    setSearching(true);
+    setHasSearched(true);
+
+    try {
+      // Call real ImportYeti API via backend
+      const response = await searchShippers({ q: query, page: 1, pageSize: 50 });
+
+      if (response.ok && response.results) {
+        // Map ImportYeti results to our MockCompany format for now
+        const mappedResults = response.results.map((result: any) => ({
+          id: result.company_id || result.id || `iy-${Date.now()}-${Math.random()}`,
+          name: result.company_name || result.name || "Unknown Company",
+          city: result.city || "Unknown",
+          state: result.state || result.region || "",
+          country: result.country || "United States",
+          country_code: result.country_code || "US",
+          address: result.address || `${result.city || ""}, ${result.state || ""}`.trim(),
+          website: result.website || result.domain || "",
+          industry: result.industry || "Import/Export",
+          shipments: result.shipments_12m || result.shipments || 0,
+          shipments_12m: result.shipments_12m || 0,
+          teu_estimate: result.teu_12m || result.teu || 0,
+          revenue_range: result.revenue_range || "$1M - $5M",
+          mode: result.primary_mode || "Ocean",
+          last_shipment: result.most_recent_shipment_date || result.last_shipment || new Date().toISOString().split('T')[0],
+          status: (result.shipments_12m || 0) > 0 ? "Active" as const : "Inactive" as const,
+          frequency: (result.shipments_12m || 0) > 1000 ? "High" as const : (result.shipments_12m || 0) > 100 ? "Medium" as const : "Low" as const,
+          trend: "flat" as const,
+          top_origins: result.top_origins || [],
+          top_destinations: result.top_destinations || [],
+          gemini_summary: result.summary || `${result.company_name || "Company"} - Import/Export business`,
+          risk_flags: [],
+        }));
+
+        setResults(mappedResults);
+
+        if (mappedResults.length === 0) {
+          toast({
+            title: "No results found",
+            description: `No companies found matching "${query}"`,
+          });
+        }
+      } else {
+        throw new Error("Search failed");
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      toast({
+        title: "Search failed",
+        description: "Unable to search companies. Please try again.",
+        variant: "destructive",
+      });
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
   };
 
   const handleClear = () => {
     setSearchQuery("");
-    setResults(MOCK_COMPANIES);
+    setResults([]);
+    setHasSearched(false);
   };
 
   const saveToCommandCenter = async (company: MockCompany) => {
@@ -339,13 +400,9 @@ export default function SearchPage() {
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Company Search</h1>
             <p className="text-slate-600 mt-1">
-              Discover and analyze logistics companies
+              Search real import/export companies via ImportYeti
             </p>
           </div>
-          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-            <SearchIcon className="h-3 w-3 mr-1" />
-            Mock Data Mode
-          </Badge>
         </motion.div>
 
         <motion.form
@@ -374,50 +431,68 @@ export default function SearchPage() {
               </button>
             )}
           </div>
-          <Button type="submit" size="lg" className="px-8 h-14 bg-blue-600 hover:bg-blue-700">
-            Search
+          <Button
+            type="submit"
+            size="lg"
+            className="px-8 h-14 bg-blue-600 hover:bg-blue-700"
+            disabled={searching}
+          >
+            {searching ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Searching...
+              </>
+            ) : (
+              "Search"
+            )}
           </Button>
         </motion.form>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="flex items-center justify-between"
-        >
-          <p className="text-sm text-slate-600">
-            Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
-          </p>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">View:</span>
-            <div className="flex rounded-lg border border-slate-200 bg-white p-1">
-              <button
-                type="button"
-                onClick={() => setViewMode("grid")}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                  viewMode === "grid"
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Grid3x3 className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("list")}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                  viewMode === "list"
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </motion.div>
+        {hasSearched && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="flex items-center justify-between"
+            >
+              <p className="text-sm text-slate-600">
+                {searching ? "Searching..." : (
+                  <>
+                    Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
+                  </>
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">View:</span>
+                <div className="flex rounded-lg border border-slate-200 bg-white p-1">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("grid")}
+                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                      viewMode === "grid"
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Grid3x3 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("list")}
+                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                      viewMode === "list"
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
 
-        {viewMode === "grid" ? (
+            {viewMode === "grid" ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {results.map((company, index) => (
               <motion.div
@@ -630,20 +705,40 @@ export default function SearchPage() {
           </div>
         )}
 
-        {results.length === 0 && (
+          {!searching && results.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center py-16"
+            >
+              <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                <SearchIcon className="h-8 w-8 text-slate-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                No companies found
+              </h3>
+              <p className="text-slate-600">
+                Try adjusting your search query
+              </p>
+            </motion.div>
+          )}
+          </>
+        )}
+
+        {!hasSearched && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-center py-16"
+            className="text-center py-20"
           >
-            <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
-              <SearchIcon className="h-8 w-8 text-slate-400" />
+            <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-6">
+              <SearchIcon className="h-10 w-10 text-blue-600" />
             </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-              No companies found
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">
+              Start Your Search
             </h3>
-            <p className="text-slate-600">
-              Try adjusting your search query
+            <p className="text-slate-600 max-w-md mx-auto">
+              Enter a company name, city, or industry to discover import/export companies
             </p>
           </motion.div>
         )}

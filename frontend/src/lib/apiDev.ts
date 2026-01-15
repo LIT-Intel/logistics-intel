@@ -18,13 +18,16 @@ import {
 } from './mockData';
 import type { IySearchResponse, IyCompanyProfile } from './api';
 
-const DEV_MODE = import.meta.env.VITE_USE_MOCK_DATA === 'true';
+// CRITICAL: Mock data mode is DISABLED by default in production
+// Only enable explicitly for local testing via VITE_USE_MOCK_DATA=true
+const DEV_MODE = import.meta.env.VITE_USE_MOCK_DATA === 'true' && import.meta.env.DEV === true;
 
 if (typeof window !== 'undefined' && DEV_MODE) {
-  console.info('[LIT] 🔧 Development mode active - using Supabase + mock data');
+  console.warn('[LIT] 🔧 MOCK DATA MODE ACTIVE - Real API calls are bypassed!');
 }
 
 export function isDevMode(): boolean {
+  // Mock mode only in local dev, never in production
   return DEV_MODE;
 }
 

@@ -68,25 +68,6 @@ export default function App() {
             <Layout currentPageName="Demo"><SearchPanel /></Layout>
           }
         />
-        {/* Public Search route → render new Search page */}
-        <Route
-          path="/search"
-          element={
-            <Layout currentPageName="Search"><Search /></Layout>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <Layout currentPageName="Settings"><Settings /></Layout>
-          }
-        />
-        <Route
-          path="/search/trends"
-          element={
-            <Layout currentPageName="Search"><SearchTrends /></Layout>
-          }
-        />
         <Route
           path="/demo/company"
           element={
