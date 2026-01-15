@@ -324,12 +324,12 @@ async function handleSearchShippers(body: any) {
     `&name=${encodeURIComponent(trimmed)}`;
 
   console.log("ImportYeti URL:", url);
+  console.log("METHOD: GET");
 
   const resp = await fetch(url, {
-    method: "POST",
+    method: "GET",
     headers: {
       accept: "application/json",
-      "Content-Type": "application/json",
       IYApiKey: IY_API_KEY,
     },
   });
