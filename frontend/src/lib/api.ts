@@ -5,6 +5,7 @@ import {
   CommandCenterRecord,
 } from "@/types/importyeti";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
+import { supabase } from "@/lib/supabase";
 import {
   isDevMode,
   devGetSavedCompanies,
@@ -1096,13 +1097,18 @@ export async function iyCompanyBols(
       ? params.offset
       : 0;
 
+  const { data: session } = await supabase.auth.getSession();
+  if (!session?.session?.access_token) {
+    throw new Error("Not authenticated");
+  }
+
   const response = await fetch(
-    `/api/importyeti/companyBols`,
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy/companyBols`,
     {
       method: "POST",
       headers: {
-        accept: "application/json",
-        "content-type": "application/json",
+        "Authorization": `Bearer ${session.session.access_token}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         company_id: companyId,
@@ -1469,10 +1475,18 @@ export async function getIyCompanyProfile({
     return devGetCompanyProfile(normalizedKey);
   }
 
-  const url = `/api/importyeti/companyProfile?company_id=${encodeURIComponent(normalizedKey)}`;
+  const { data: session } = await supabase.auth.getSession();
+  if (!session?.session?.access_token) {
+    throw new Error("Not authenticated");
+  }
+
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy/companyProfile?company_id=${encodeURIComponent(normalizedKey)}`;
   const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${session.session.access_token}`,
+      "Content-Type": "application/json",
+    },
   });
 
   if (!resp.ok) {
@@ -1523,15 +1537,29 @@ export async function searchShippers(
     return devSearchShippers({ q, page, pageSize });
   }
 
-  const raw = await fetchJson<any>(
-    `/api/importyeti/searchShippers`,
+  const { data: session } = await supabase.auth.getSession();
+  if (!session?.session?.access_token) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/importyeti-proxy/searchShippers`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.session.access_token}`,
+      },
       body: JSON.stringify({ q, page, pageSize }),
       signal,
-    },
+    }
   );
+
+  if (!response.ok) {
+    throw new Error(`Search failed: ${response.status}`);
+  }
+
+  const raw = await response.json();
   return coerceIySearchResponse(raw, { q, page, pageSize });
 }
 
@@ -2006,13 +2034,65 @@ export async function getCompanyKpis(
 
 // Saved companies list (for future UI)
 export async function getSavedCompanies(signal?: AbortSignal) {
-  const url = `/api/lit/crm/savedCompanies`;
-  const r = await fetch(url, {
-    headers: { accept: "application/json" },
-    signal,
-  });
-  if (!r.ok) return { rows: [] };
-  return r.json();
+  try {
+    const { data: user } = await supabase.auth.getUser();
+    if (!user?.user) {
+      return { rows: [] };
+    }
+
+    const { data, error } = await supabase
+      .from('lit_saved_companies')
+      .select(`
+        *,
+        lit_companies (
+          id,
+          source_company_key,
+          name,
+          domain,
+          website,
+          address_line1,
+          city,
+          state,
+          country_code,
+          shipments_12m,
+          teu_12m,
+          fcl_shipments_12m,
+          lcl_shipments_12m,
+          most_recent_shipment_date,
+          top_route_12m,
+          recent_route
+        )
+      `)
+      .eq('user_id', user.user.id)
+      .order('last_viewed_at', { ascending: false });
+
+    if (error) {
+      console.error('getSavedCompanies error:', error);
+      return { rows: [] };
+    }
+
+    const rows = (data || []).map((item: any) => ({
+      company: {
+        company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
+        name: item.lit_companies?.name || 'Unknown Company',
+        domain: item.lit_companies?.domain,
+        address: item.lit_companies?.address_line1 || `${item.lit_companies?.city || ''}, ${item.lit_companies?.state || ''}`.trim(),
+        country_code: item.lit_companies?.country_code,
+        kpis: {
+          shipments_12m: item.lit_companies?.shipments_12m || 0,
+          last_activity: item.lit_companies?.most_recent_shipment_date,
+        },
+      },
+      shipments: [],
+      saved_at: item.created_at,
+      stage: item.stage,
+    }));
+
+    return { rows };
+  } catch (error) {
+    console.error('getSavedCompanies error:', error);
+    return { rows: [] };
+  }
 }
 
 // --- Filters singleton cache with 10m TTL ---
