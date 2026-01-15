@@ -443,21 +443,39 @@ async function handleCompanyBols(body: any) {
   qs.set("page_size", String(pageSize));
   qs.set("offset", String(offset));
 
-  const listResp = await iyGet<{ data: string[] }>(
-    `/company/${encodeURIComponent(companyId)}/bols?${qs.toString()}`
-  );
+  const bolListPath = `/company/${encodeURIComponent(companyId)}/bols?${qs.toString()}`;
+  console.log("🔵 [BOL CHAIN STEP 1] Fetching BOL list");
+  console.log("  Company:", companyId);
+  console.log("  URL:", `${IY_BASE_URL}${bolListPath}`);
+  console.log("  Method: GET");
+  console.log("  Params:", { startDate, endDate, pageSize, offset });
+
+  const listResp = await iyGet<{ data: string[] }>(bolListPath);
 
   const bolNumbers = Array.isArray(listResp.data) ? listResp.data : [];
+  console.log("✅ [BOL CHAIN STEP 1 COMPLETE]");
+  console.log("  BOL count:", bolNumbers.length);
+  console.log("  First 5 BOLs:", bolNumbers.slice(0, 5));
+
   const maxDetail = Math.min(bolNumbers.length, pageSize);
   const toFetch = bolNumbers.slice(0, maxDetail);
+
+  console.log("🔵 [BOL CHAIN STEP 2] Fetching BOL details");
+  console.log("  Total to fetch:", toFetch.length);
+  console.log("  Concurrency:", 5);
 
   const detailRows: any[] = [];
   const concurrency = 5;
 
   for (let i = 0; i < toFetch.length; i += concurrency) {
     const chunk = toFetch.slice(i, i + concurrency);
+    console.log(`  Fetching batch ${Math.floor(i / concurrency) + 1}: ${chunk.join(", ")}`);
     const results = await Promise.allSettled(
-      chunk.map((num) => iyGet<any>(`/bol/${encodeURIComponent(num)}`))
+      chunk.map((num) => {
+        const path = `/bol/${encodeURIComponent(num)}`;
+        console.log(`    GET ${IY_BASE_URL}${path}`);
+        return iyGet<any>(path);
+      })
     );
 
     for (const r of results) {
@@ -499,12 +517,24 @@ async function handleCompanyBols(body: any) {
     return db - da;
   });
 
-  return {
+  console.log("✅ [BOL CHAIN STEP 2 COMPLETE]");
+  console.log("  Total BOL details fetched:", detailRows.length);
+  console.log("  Sample BOL:", detailRows[0] ? {
+    bol: detailRows[0].bol_number,
+    teu: detailRows[0].teu,
+    origin: detailRows[0].origin,
+    destination: detailRows[0].destination
+  } : "None");
+
+  const result = {
     ok: true,
     total: detailRows.length,
     rows: detailRows,
     data: { total: detailRows.length, rows: detailRows },
   };
+
+  console.log("🎉 [BOL CHAIN COMPLETE] Returning", result.total, "shipments");
+  return result;
 }
 
 async function handleCompanyProfile(params: any) {
