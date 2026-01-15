@@ -41,7 +41,6 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // CRITICAL: Log auth header to verify JWT delivery
   const authHeader = req.headers.get("authorization");
   console.log("AUTH HEADER RECEIVED:", authHeader);
 
@@ -70,23 +69,22 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const url = new URL(req.url);
-    const pathParts = url.pathname.split("/").filter(Boolean);
-    const endpoint = pathParts[pathParts.length - 1] || "";
+    const body = await req.json();
+    const { action, ...payload } = body;
 
-    let requestData: ImportYetiRequest;
-    if (req.method === "POST") {
-      const body = await req.json();
-      requestData = { endpoint, method: "POST", body };
-    } else {
-      const params: Record<string, any> = {};
-      url.searchParams.forEach((value, key) => {
-        params[key] = value;
-      });
-      requestData = { endpoint, method: "GET", params };
+    console.log("ACTION:", action);
+
+    if (!action) {
+      return new Response(
+        JSON.stringify({ error: "Missing action parameter" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    const cacheKey = generateCacheKey(endpoint, requestData.params || requestData.body || {});
+    const endpoint = action;
+    const requestData: ImportYetiRequest = { endpoint, method: "POST", body: payload };
+
+    const cacheKey = generateCacheKey(endpoint, payload);
 
     const cached = await getFromCache(supabase, cacheKey);
     if (cached) {
@@ -130,27 +128,30 @@ Deno.serve(async (req: Request) => {
     }
 
     let response;
-    switch (endpoint) {
+    switch (action) {
       case "searchShippers":
-        response = await handleSearchShippers(requestData.body || {});
+        response = await handleSearchShippers(payload);
         break;
       case "companyBols":
-        response = await handleCompanyBols(requestData.body || {});
+        response = await handleCompanyBols(payload);
         break;
       case "companyProfile":
-        response = await handleCompanyProfile(requestData.body || requestData.params || {});
+        response = await handleCompanyProfile(payload);
         break;
       case "companyStats":
-        response = await handleCompanyStats(requestData.body || requestData.params || {});
+        response = await handleCompanyStats(payload);
         break;
       default:
-        throw new Error(`Unknown endpoint: ${endpoint}`);
+        return new Response(
+          JSON.stringify({ error: `Invalid action: ${action}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
     }
 
-    await cacheCompanyData(supabase, response, requestData.body || requestData.params || {});
+    await cacheCompanyData(supabase, response, payload);
 
     const ttl = CACHE_TTL[endpoint as keyof typeof CACHE_TTL] || 3600;
-    await saveToCache(supabase, cacheKey, endpoint, requestData.params || requestData.body || {}, response, ttl);
+    await saveToCache(supabase, cacheKey, endpoint, payload, response, ttl);
 
     await logApiRequest(supabase, user.id, endpoint, false, Date.now() - startTime, 200);
 

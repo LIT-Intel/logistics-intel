@@ -1120,9 +1120,10 @@ export async function iyCompanyBols(
       : 0;
 
   const { data: responseData, error } = await supabase.functions.invoke(
-    "importyeti-proxy/companyBols",
+    "importyeti-proxy",
     {
       body: {
+        action: "companyBols",
         company_id: companyId,
         limit,
         offset,
@@ -1477,9 +1478,12 @@ export async function getIyCompanyProfile({
   }
 
   const { data, error } = await supabase.functions.invoke(
-    "importyeti-proxy/companyProfile",
+    "importyeti-proxy",
     {
-      body: { company_id: normalizedKey },
+      body: {
+        action: "companyProfile",
+        company_id: normalizedKey
+      },
     }
   );
 
@@ -1531,9 +1535,14 @@ export async function searchShippers(
   }
 
   const { data, error } = await supabase.functions.invoke(
-    "importyeti-proxy/searchShippers",
+    "importyeti-proxy",
     {
-      body: { q, page, pageSize },
+      body: {
+        action: "searchShippers",
+        q,
+        page,
+        pageSize
+      },
     }
   );
 
