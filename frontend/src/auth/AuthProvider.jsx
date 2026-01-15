@@ -8,14 +8,30 @@ import {
   listenToAuth,
   logout
 } from "./supabaseAuthClient";
+import { supabase } from "@/lib/supabase";
 
-const AuthCtx = createContext({ user: null, loading: true });
+const AuthCtx = createContext({ user: null, loading: true, authReady: false });
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    // CRITICAL: Check session on mount to set authReady flag
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        setAuthReady(true);
+      }
+    });
+
+    // Listen for auth state changes
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setAuthReady(!!session);
+      }
+    );
+
     const unsub = listenToAuth((u) => {
       if (u) {
         // Elevate admin for specific emails (temporary until roles are persisted server-side)
@@ -35,18 +51,23 @@ export function AuthProvider({ children }) {
       }
       setLoading(false);
     });
-    return () => unsub();
+
+    return () => {
+      unsub();
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   const value = useMemo(() => ({
     user,
     loading,
+    authReady,
     signInWithGoogle,
     signInWithMicrosoft,
     signInWithEmailPassword,
     registerWithEmailPassword,
     logout
-  }), [user, loading]);
+  }), [user, loading, authReady]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

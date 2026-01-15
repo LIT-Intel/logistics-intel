@@ -183,7 +183,7 @@ const MOCK_COMPANIES: MockCompany[] = [
 ];
 
 export default function SearchPage() {
-  const { user } = useAuth();
+  const { user, authReady } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<MockCompany[]>([]);
@@ -224,10 +224,19 @@ export default function SearchPage() {
     e.preventDefault();
     const query = searchQuery.trim();
 
-    if (!query) {
+    if (!query || query.length < 2) {
       toast({
         title: "Search query required",
-        description: "Please enter a company name to search",
+        description: "Please enter at least 2 characters to search",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!authReady) {
+      toast({
+        title: "Authentication required",
+        description: "Please wait for authentication to complete",
         variant: "destructive",
       });
       return;
@@ -240,9 +249,9 @@ export default function SearchPage() {
       // Call real ImportYeti API via backend
       const response = await searchShippers({ q: query, page: 1, pageSize: 50 });
 
-      if (response.ok && response.results) {
+      if (response?.ok && response?.results) {
         // Map ImportYeti results to our MockCompany format for now
-        const mappedResults = response.results.map((result: any) => ({
+        const mappedResults = (response.results || []).map((result: any) => ({
           id: result.company_id || result.id || `iy-${Date.now()}-${Math.random()}`,
           name: result.company_name || result.name || "Unknown Company",
           city: result.city || "Unknown",
@@ -278,14 +287,17 @@ export default function SearchPage() {
       } else {
         throw new Error("Search failed");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Search error:", error);
       toast({
         title: "Search failed",
-        description: "Unable to search companies. Please try again.",
+        description: error.message || "Unable to search companies. Please try again.",
         variant: "destructive",
       });
-      setResults([]);
+      // Safe set results with guard
+      if (setResults) {
+        setResults([]);
+      }
     } finally {
       setSearching(false);
     }
@@ -389,6 +401,19 @@ export default function SearchPage() {
     return "bg-slate-50 text-slate-700 border-slate-200";
   };
 
+  // CRITICAL: Block rendering until auth is ready
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-slate-900 mb-2">Initializing...</h2>
+          <p className="text-slate-600">Please wait while we prepare your search experience</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -435,12 +460,17 @@ export default function SearchPage() {
             type="submit"
             size="lg"
             className="px-8 h-14 bg-blue-600 hover:bg-blue-700"
-            disabled={searching}
+            disabled={!authReady || searchQuery.length < 2 || searching}
           >
             {searching ? (
               <>
                 <Loader2 className="h-5 w-5 mr-2 animate-spin" />
                 Searching...
+              </>
+            ) : !authReady ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Authenticating...
               </>
             ) : (
               "Search"
