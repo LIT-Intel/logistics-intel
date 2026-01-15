@@ -21,21 +21,39 @@ export async function fetchCompanyKpis(
   signal?: AbortSignal
 ): Promise<CompanyKpiData | null> {
   try {
+    const now = new Date();
+    const endDate = now.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric'
+    });
+
     const response = await iyCompanyBols(
       {
         company_id: companyKey,
+        start_date: '01/01/2019',
+        end_date: endDate,
         limit: 100,
         offset: 0,
       },
       signal
     );
 
+    console.log('[KPI] BOL Response:', {
+      ok: response.ok,
+      rowCount: response.rows?.length || 0,
+      sample: response.rows?.[0]
+    });
+
     if (!response.ok || !response.rows || response.rows.length === 0) {
+      console.warn('[KPI] No BOL data available');
       return null;
     }
 
     const shipments = response.rows;
-    return computeKpisFromBols(shipments);
+    const kpis = computeKpisFromBols(shipments);
+    console.log('[KPI] Computed KPIs:', kpis);
+    return kpis;
   } catch (error) {
     console.error('Failed to fetch company KPIs:', error);
     return null;
@@ -62,13 +80,16 @@ function computeKpisFromBols(shipments: any[]): CompanyKpiData {
   let latestDate: Date | null = null;
 
   for (const shipment of shipments) {
-    const teu = typeof shipment.teu === 'number' ? shipment.teu : 0;
-    totalTeu += teu;
+    const teu = typeof shipment.teu === 'number' && shipment.teu !== undefined ? shipment.teu : 0;
+
+    if (teu > 0) {
+      totalTeu += teu;
+    }
 
     const isFcl = teu >= 1;
     if (isFcl) {
       fclCount++;
-    } else {
+    } else if (teu > 0 || !shipment.teu) {
       lclCount++;
     }
 

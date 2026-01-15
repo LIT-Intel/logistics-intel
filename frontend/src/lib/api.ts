@@ -1102,7 +1102,7 @@ async function postIySearchShippers(
 }
 
 export async function iyCompanyBols(
-  params: { company_id: string; limit?: number; offset?: number },
+  params: { company_id: string; limit?: number; offset?: number; start_date?: string; end_date?: string },
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; data: any; rows: any[]; total: number }> {
   const companyId = ensureCompanyKey(params.company_id);
@@ -1119,15 +1119,24 @@ export async function iyCompanyBols(
       ? params.offset
       : 0;
 
+  const body: any = {
+    action: "companyBols",
+    company_id: companyId,
+    limit,
+    offset,
+  };
+
+  if (params.start_date) {
+    body.start_date = params.start_date;
+  }
+  if (params.end_date) {
+    body.end_date = params.end_date;
+  }
+
   const { data: responseData, error } = await supabase.functions.invoke(
     "importyeti-proxy",
     {
-      body: {
-        action: "companyBols",
-        company_id: companyId,
-        limit,
-        offset,
-      },
+      body,
     }
   );
 
