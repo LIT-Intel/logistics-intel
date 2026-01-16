@@ -41,11 +41,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
         if (isImportYeti && companyKey) {
           console.log('[Modal] Loading ImportYeti BOL data for:', companyKey);
 
-          // Strip "company/" prefix if present
-          const companySlug = companyKey.startsWith('company/')
-            ? companyKey.slice('company/'.length)
-            : companyKey;
-
+          // Use company key VERBATIM - ImportYeti needs the full key including "company/" prefix
           const now = new Date();
           const endDate = now.toLocaleDateString('en-US', {
             month: '2-digit',
@@ -53,11 +49,12 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
             year: 'numeric'
           });
 
-          console.log('[Modal] Using company slug:', companySlug);
+          console.log('[Modal] Using company key (verbatim):', companyKey);
+          console.log('[Modal] Date range:', '01/01/2019', 'to', endDate);
 
           // Load BOL data from ImportYeti
           const bigResponse = await iyCompanyBols({
-            company_id: companySlug,
+            company_id: companyKey,
             start_date: '01/01/2019',
             end_date: endDate,
             limit: 100,

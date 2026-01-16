@@ -459,39 +459,34 @@ async function handleSearchShippers(body: any) {
   };
 }
 
-function normalizeCompanyKey(key: string): string {
-  let cleanKey = key.trim();
+function toImportYetiDate(input: string | Date): string {
+  let date: Date;
 
-  if (cleanKey.startsWith("/company/")) {
-    cleanKey = cleanKey.slice("/company/".length);
-  } else if (cleanKey.startsWith("company/")) {
-    cleanKey = cleanKey.slice("company/".length);
-  }
-
-  console.log("[KEY NORMALIZATION]", { input: key, output: cleanKey });
-  return cleanKey;
-}
-
-function convertToISODate(dateStr: string): string {
-  if (!dateStr) return "";
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return dateStr;
-  }
-
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-    const [month, day, year] = dateStr.split("/");
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-
-  try {
-    const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      return date.toISOString().split('T')[0];
+  if (input instanceof Date) {
+    date = input;
+  } else if (typeof input === 'string') {
+    // Handle ISO format YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+      date = new Date(input + 'T00:00:00Z');
+    } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(input)) {
+      // Already in MM/DD/YYYY format
+      return input;
+    } else {
+      date = new Date(input);
     }
-  } catch {}
+  } else {
+    return "";
+  }
 
-  return "";
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const yyyy = date.getFullYear();
+
+  return `${mm}/${dd}/${yyyy}`;
 }
 
 async function handleCompanyBols(body: any) {
@@ -500,12 +495,16 @@ async function handleCompanyBols(body: any) {
     throw new Error("company_id is required");
   }
 
-  const companySlug = normalizeCompanyKey(rawCompanyId);
+  // Use company key VERBATIM - do NOT strip "company/" prefix
+  // ImportYeti expects: /company/company/target-stores-division-of-target-c/bols
+  const companyKey = rawCompanyId;
 
-  const rawStartDate = typeof body.start_date === "string" ? body.start_date : "";
+  // Convert dates to ImportYeti format (MM/DD/YYYY)
+  const rawStartDate = typeof body.start_date === "string" ? body.start_date : "01/01/2019";
   const rawEndDate = typeof body.end_date === "string" ? body.end_date : "";
-  const startDate = convertToISODate(rawStartDate);
-  const endDate = convertToISODate(rawEndDate);
+
+  const startDate = toImportYetiDate(rawStartDate || "2019-01-01");
+  const endDate = toImportYetiDate(rawEndDate || new Date());
 
   const limitRaw = typeof body.limit === "number" ? body.limit : 50;
   const offsetRaw = typeof body.offset === "number" ? body.offset : 0;
@@ -516,8 +515,8 @@ async function handleCompanyBols(body: any) {
   console.log("═══════════════════════════════════════");
   console.log("🔵 [BOLS] Starting BOL Index Request");
   console.log("  Raw Input:", rawCompanyId);
-  console.log("  Normalized Slug:", companySlug);
-  console.log("  Date Range:", startDate, "to", endDate);
+  console.log("  Company Key (verbatim):", companyKey);
+  console.log("  Date Range (MM/DD/YYYY):", startDate, "to", endDate);
   console.log("  Pagination:", { pageSize, offset });
 
   const qs = new URLSearchParams();
@@ -526,8 +525,8 @@ async function handleCompanyBols(body: any) {
   qs.set("page_size", String(pageSize));
   qs.set("offset", String(offset));
 
-  const bolListPath = `/company/${companySlug}/bols?${qs.toString()}`;
-  console.log("  Request URL:", `${IY_BASE_URL}${bolListPath}`);
+  const bolListPath = `/company/${companyKey}/bols?${qs.toString()}`;
+  console.log("  Full URL:", `${IY_BASE_URL}${bolListPath}`);
 
   const listResp = await iyGet<{ data: string[] }>(bolListPath);
 
