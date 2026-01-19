@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, Globe, Ship, TrendingUp, Box, Clock, Lock, MapPin, Database, Link as LinkIcon, BarChart as BarChartIcon } from 'lucide-react';
-import { getCompanyShipments, getCompanyKpis, iyCompanyBols } from '@/lib/api';
+import { getCompanyShipments, getCompanyKpis } from '@/lib/api';
+import { iyGetSnapshot } from '@/lib/iy';
 import { hasFeature } from '@/lib/access';
 
 export default function CompanyDetailModal({ company, isOpen, onClose, onSave, user, isSaved = false }) {
@@ -37,59 +38,44 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
       setLoading(true);
       setError('');
       try {
-        // Use ImportYeti BOL API for ImportYeti companies
+        // Use ImportYeti Snapshot API (1 credit max per company)
         if (isImportYeti && companyKey) {
-          console.log('[Modal] Loading ImportYeti BOL data for:', companyKey);
+          console.log('[Modal] 📦 Fetching snapshot for:', companyKey);
 
-          // Use company key VERBATIM - ImportYeti needs the full key including "company/" prefix
-          const now = new Date();
-          const endDate = now.toLocaleDateString('en-US', {
-            month: '2-digit',
-            day: '2-digit',
-            year: 'numeric'
+          const snapshotResponse = await iyGetSnapshot(companyKey);
+
+          console.log('[Modal] Snapshot Response:', {
+            ok: snapshotResponse.ok,
+            source: snapshotResponse.source,
+            hasSnapshot: !!snapshotResponse.snapshot,
+            snapshot: snapshotResponse.snapshot
           });
 
-          console.log('[Modal] Using company key (verbatim):', companyKey);
-          console.log('[Modal] Date range:', '01/01/2019', 'to', endDate);
+          if (!abort && snapshotResponse.ok && snapshotResponse.snapshot) {
+            const snap = snapshotResponse.snapshot;
+            const rawShipments = snapshotResponse.raw?.shipments || [];
 
-          // Load BOL data from ImportYeti
-          const bigResponse = await iyCompanyBols({
-            company_id: companyKey,
-            start_date: '01/01/2019',
-            end_date: endDate,
-            limit: 100,
-            offset: 0,
-          });
+            // Store shipment rows for table display
+            setAllRows(rawShipments);
+            setTableRows(rawShipments.slice(0, 50));
 
-          console.log('[Modal] ImportYeti BOL Response:', {
-            ok: bigResponse.ok,
-            rowCount: bigResponse.rows?.length || 0,
-            hasKpis: !!bigResponse.kpis,
-            kpisData: bigResponse.kpis,
-            sample: bigResponse.rows?.[0]
-          });
+            // Use pre-computed KPIs from snapshot
+            setKpis({
+              totalShipments: snap.total_shipments || 0,
+              totalTeu: snap.total_teu || 0,
+              trend: snap.trend || 'flat',
+              topPorts: snap.top_ports || [],
+              monthlyVolumes: snap.monthly_volumes || {},
+              shipmentsLast12m: snap.shipments_last_12m || 0,
+            });
 
-          const bigRows = Array.isArray(bigResponse?.rows) ? bigResponse.rows : [];
-          if (!abort) {
-            setAllRows(bigRows);
-            setTableRows(bigRows.slice(0, 50));
-
-            // Use KPIs from edge function response
-            if (bigResponse.kpis) {
-              setKpis(bigResponse.kpis);
-              console.log('[Modal] KPIs set from edge function:', bigResponse.kpis);
-            } else if (bigRows.length > 0) {
-              // Fallback: compute basic KPIs locally
-              let totalTeu = 0;
-              for (const row of bigRows) {
-                const teu = typeof row.teu === 'number' ? row.teu : 0;
-                totalTeu += teu;
-              }
-              setKpis({
-                totalShipments: bigRows.length,
-                totalTeu: Math.round(totalTeu),
-                trend: 'flat'
-              });
+            console.log('[Modal] ✅ Snapshot loaded (credit: ' + (snapshotResponse.source === 'cache' ? '0' : '1') + ')');
+          } else {
+            console.error('[Modal] ❌ Snapshot fetch failed');
+            if (!abort) {
+              setAllRows([]);
+              setTableRows([]);
+              setError('Failed to load company snapshot.');
             }
           }
         } else if (companyId) {
