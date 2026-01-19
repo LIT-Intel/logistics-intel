@@ -432,29 +432,13 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function searchCompaniesProxy(payload: SearchPayload) {
-  const body = {
-    q: payload.q ?? null,
-    origin: Array.isArray(payload.origin) ? payload.origin : [],
-    dest: Array.isArray(payload.dest) ? payload.dest : [],
-    hs: Array.isArray(payload.hs) ? payload.hs : [],
-    limit: Number(payload.limit ?? 12),
-    offset: Number(payload.offset ?? 0),
-  } as const;
-  const r = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-body: JSON.stringify({
-  q: body.q,
-  origin: body.origin.length ? body.origin : null,
-  dest: body.dest.length ? body.dest : null,
-  hs: body.hs.length ? body.hs : null,
-  limit: body.limit,
-  offset: body.offset,
-  });
-  if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
-  return r.json();
+// DISABLED: legacy search proxy (snapshot architecture)
+export async function searchCompaniesProxy() {
+  throw new Error(
+    "searchCompaniesProxy is disabled. Use Supabase lit_company_index for search."
+  );
 }
+
 
 export async function getCompanyShipmentsProxy(params: {
   company_id?: string;
