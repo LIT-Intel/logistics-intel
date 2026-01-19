@@ -432,13 +432,30 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// DISABLED: legacy search proxy (snapshot architecture)
-export async function searchCompaniesProxy() {
-  throw new Error(
-    "searchCompaniesProxy is disabled. Use Supabase lit_company_index for search."
-  );
+export async function searchCompaniesProxy(payload: SearchPayload) {
+  const body = {
+    q: payload.q ?? null,
+    origin: Array.isArray(payload.origin) ? payload.origin : [],
+    dest: Array.isArray(payload.dest) ? payload.dest : [],
+    hs: Array.isArray(payload.hs) ? payload.hs : [],
+    limit: Number(payload.limit ?? 12),
+    offset: Number(payload.offset ?? 0),
+  } as const;
+  const r = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      q: body.q,
+      origin: null,
+      dest: null,
+      hs: null,
+      limit: body.limit,
+      offset: body.offset,
+    }),
+  });
+  if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
+  return r.json();
 }
-
 
 export async function getCompanyShipmentsProxy(params: {
   company_id?: string;
@@ -1472,6 +1489,7 @@ export async function getIyCompanyProfile({
   const { data, error } = await supabase.functions.invoke(
     "importyeti-proxy",
     {
+      mode: "search",
       body: {
         action: "companyProfile",
         company_id: normalizedKey
