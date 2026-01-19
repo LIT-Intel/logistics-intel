@@ -1,92 +1,112 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { iySearchShippers } from "@/lib/iy";
+"use client";
+
+import * as React from "react";
+import { supabase } from "@/lib/supabase";
+
+type CompanyIndexRow = {
+  company_id: string;
+  company_name: string;
+  country?: string;
+  city?: string;
+  total_shipments?: number;
+  total_teu?: number;
+};
 
 type Props = {
-  onSelect?: (row: { id: string; name: string; country?: string }) => void;
+  value: string;
+  onSelect: (row: CompanyIndexRow) => void;
   placeholder?: string;
 };
 
 export default function AutocompleteInput({
+  value,
   onSelect,
-  placeholder = "Search by company name or alias (e.g., UPS, Maersk)…",
+  placeholder = "Search companies",
 }: Props) {
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<Array<{ id: string; name: string; country?: string }>>([]);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = React.useState(value || "");
+  const [results, setResults] = React.useState<CompanyIndexRow[]>([]);
+  const [loading, setLoading] = React.useState(false);
 
-  useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+  // Debounced search
+  React.useEffect(() => {
+    if (!query || query.trim().length < 2) {
+      setResults([]);
+      return;
     }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
 
-  const debounced = useMemo(() => q.trim(), [q]);
+    const handle = setTimeout(() => {
+      runSearch(query);
+    }, 300);
 
-  useEffect(() => {
-    let alive = true;
-    async function run() {
-      if (!debounced) {
-        setRows([]);
-        return;
-      }
-      setLoading(true);
-      const r = await iySearchShippers(debounced, 1);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  async function runSearch(q: string) {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("lit_company_index")
+      .select(
+        `
+        company_id,
+        company_name,
+        country,
+        city,
+        total_shipments,
+        total_teu
+      `
+      )
+      .ilike("company_name", `%${q}%`)
+      .order("total_shipments", { ascending: false })
+      .limit(25);
+
+    if (error) {
+      console.error("Search error:", error);
+      setResults([]);
       setLoading(false);
-      if (!alive) return;
-
-      if (!r.ok) {
-        // CF challenge or plan gate → show empty suggestions without breaking
-        setRows([]);
-        setOpen(true);
-        return;
-      }
-      const data: any = r.data;
-      const arr = Array.isArray(data?.results || data) ? (data.results || data) : [];
-      const mapped = arr.map((it: any) => ({
-        id: String(it.id ?? it.company_id ?? it.slug ?? it.name ?? crypto.randomUUID()),
-        name: String(it.name ?? it.company_name ?? it.slug ?? "Unknown"),
-        country: it.country || it.country_code,
-      }));
-      setRows(mapped);
-      setOpen(true);
+      return;
     }
-    const t = setTimeout(run, 250);
-    return () => { alive = false; clearTimeout(t); };
-  }, [debounced]);
+
+    setResults(data ?? []);
+    setLoading(false);
+  }
 
   return (
-    <div className="relative" ref={boxRef}>
+    <div className="relative w-full">
       <input
-        className="w-full border rounded-lg px-3 py-2 text-sm"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onFocus={() => rows.length && setOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && rows[0]) {
-            onSelect?.(rows[0]);
-            setOpen(false);
-          }
-        }}
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
       />
-      {open && (
-        <div className="absolute z-10 mt-1 w-full bg-white border rounded-lg shadow">
-          {loading && <div className="px-3 py-2 text-xs text-slate-500">Searching…</div>}
-          {!loading && rows.length === 0 && (
-            <div className="px-3 py-2 text-xs text-slate-500">No results yet or temporarily blocked. Try again soon.</div>
-          )}
-          {!loading && rows.map((r) => (
+
+      {loading && (
+        <div className="absolute right-3 top-2 text-xs text-slate-400">
+          Searching…
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
+          {results.map((row) => (
             <button
-              key={r.id}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-              onClick={() => { onSelect?.(r); setOpen(false); }}
+              key={row.company_id}
+              type="button"
+              onClick={() => {
+                onSelect(row);
+                setResults([]);
+              }}
+              className="flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-slate-100"
             >
-              <div className="font-medium">{r.name}</div>
-              {r.country && <div className="text-xs text-slate-500">{r.country}</div>}
+              <span className="font-medium text-slate-900">
+                {row.company_name}
+              </span>
+              <span className="text-xs text-slate-500">
+                {row.city || "—"} {row.country || ""}
+                {row.total_shipments
+                  ? ` • ${row.total_shipments.toLocaleString()} shipments`
+                  : ""}
+              </span>
             </button>
           ))}
         </div>
