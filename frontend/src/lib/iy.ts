@@ -2,54 +2,90 @@ import { getGatewayBase } from "./env";
 
 type Json = Record<string, any>;
 
-function q(obj: Record<string, string | number | undefined>) {
-  const u = new URLSearchParams();
-  Object.entries(obj).forEach(([k, v]) => {
-    if (v !== undefined && v !== null) u.set(k, String(v));
-  });
-  return u.toString();
-}
+/**
+ * IMPORTANT
+ * ----------
+ * This file is SNAPSHOT-ONLY.
+ *
+ * ❌ No ImportYeti search
+ * ❌ No BOL endpoints
+ * ❌ No fan-out logic
+ *
+ * The ONLY allowed behavior:
+ * - Fetch or return a company snapshot via Supabase Edge Function
+ */
 
-async function getJson(path: string): Promise<{ ok: boolean; status: number; data?: Json; text?: string; }> {
-  const base = getGatewayBase();
-  const url = `${base}${path}`;
-  const r = await fetch(url, { method: "GET" });
-  const ct = r.headers.get("content-type") || "";
-  const body = ct.includes("application/json") ? await r.json() : await r.text();
-  return r.ok ? { ok: true, status: r.status, data: body } : { ok: false, status: r.status, data: ct.includes("json") ? body : undefined, text: !ct.includes("json") ? String(body) : undefined };
-}
-
-// DEPRECATED: Direct ImportYeti search - use Supabase lit_company_index instead
-export async function iySearchShippers(qstr: string, page = 1) {
-  return getJson(`/public/iy/searchShippers?${q({ q: qstr, page })}`);
-}
-
-// DEPRECATED: BOL endpoint - use snapshot API instead
-export async function iyCompanyBols(company_id: string, page = 1) {
-  return getJson(`/public/iy/companyBols?${q({ company_id, page })}`);
-}
-
-// DEPRECATED: BOL lookup - use snapshot API instead
-export async function iyBolLookup(number: string) {
-  return getJson(`/public/iy/bol?${q({ number })}`);
-}
-
-// NEW: Snapshot API (1 credit max per company)
+/**
+ * Snapshot API
+ * ------------
+ * Calls Supabase Edge Function:
+ *   POST /functions/v1/importyeti-proxy
+ *
+ * Credit behavior:
+ * - 0 credits if cached (<30 days)
+ * - 1 credit if refreshed
+ */
 export async function iyGetSnapshot(company_id: string) {
-  const base = import.meta.env.VITE_SUPABASE_URL;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!company_id) {
+    throw new Error("iyGetSnapshot: company_id is required");
+  }
 
-  const url = `${base}/functions/v1/importyeti-proxy`;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error("Supabase env vars missing");
+  }
+
+  const url = `${supabaseUrl}/functions/v1/importyeti-proxy`;
 
   const r = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${key}`,
+      "Authorization": `Bearer ${anonKey}`,
     },
     body: JSON.stringify({ company_id }),
   });
 
   const data = await r.json();
-  return r.ok ? { ok: true, ...data } : { ok: false, error: data.error };
+
+  if (!r.ok) {
+    console.error("iyGetSnapshot error:", data);
+    return {
+      ok: false,
+      error: data?.error || "Snapshot fetch failed",
+    };
+  }
+
+  return {
+    ok: true,
+    snapshot: data.snapshot ?? data,
+    source: data.source,
+  };
+}
+
+/**
+ * 🚫 HARD FAIL SAFEGUARDS
+ * ----------------------
+ * If any legacy function is accidentally imported,
+ * we want the app to break loudly instead of silently burning credits.
+ */
+
+export function iySearchShippers(): never {
+  throw new Error(
+    "iySearchShippers is disabled. Use Supabase lit_company_index for search."
+  );
+}
+
+export function iyCompanyBols(): never {
+  throw new Error(
+    "iyCompanyBols is disabled. Snapshot architecture does not support BOL lookups."
+  );
+}
+
+export function iyBolLookup(): never {
+  throw new Error(
+    "iyBolLookup is disabled. Snapshot architecture does not support BOL lookups."
+  );
 }
