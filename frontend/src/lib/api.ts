@@ -444,14 +444,13 @@ export async function searchCompaniesProxy(payload: SearchPayload) {
   const r = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      q: body.q,
-      origin: null,
-      dest: null,
-      hs: null,
-      limit: body.limit,
-      offset: body.offset,
-    }),
+body: JSON.stringify({
+  q: body.q,
+  origin: body.origin.length ? body.origin : null,
+  dest: body.dest.length ? body.dest : null,
+  hs: body.hs.length ? body.hs : null,
+  limit: body.limit,
+  offset: body.offset,
   });
   if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
   return r.json();
