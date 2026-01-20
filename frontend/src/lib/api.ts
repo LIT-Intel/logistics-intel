@@ -1489,9 +1489,8 @@ export async function getIyCompanyProfile({
   const { data, error } = await supabase.functions.invoke(
     "importyeti-proxy",
     {
-      mode: "search",
       body: {
-        action: "companyProfile",
+        action: "company",
         company_id: normalizedKey
       },
     }
@@ -1548,7 +1547,7 @@ export async function searchShippers(
     "importyeti-proxy",
     {
       body: {
-        action: "searchShippers",
+        action: "search",
         q,
         page,
         pageSize
