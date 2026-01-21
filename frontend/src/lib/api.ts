@@ -1183,6 +1183,74 @@ export async function iyCompanyBols(
   return { ok: Boolean((data as any)?.ok ?? true), data, rows, total };
 }
 
+export interface CompanySnapshot {
+  company_id: string;
+  company_name: string;
+  country?: string;
+  city?: string;
+  website?: string;
+  total_shipments: number;
+  total_teu: number;
+  est_spend: number;
+  fcl_count: number;
+  lcl_count: number;
+  last_shipment_date: string | null;
+  trend: 'up' | 'flat' | 'down';
+  top_ports: Array<{ port: string; count: number }>;
+  monthly_volumes: Record<string, { fcl: number; lcl: number }>;
+  shipments_last_12m: number;
+}
+
+export async function fetchCompanySnapshot(
+  companyKey: string,
+  signal?: AbortSignal
+): Promise<{ ok: boolean; source: 'cache' | 'importyeti'; snapshot: CompanySnapshot; raw: any } | null> {
+  const companySlug = normalizeCompanyIdToSlug(companyKey);
+  if (!companySlug) {
+    console.error("[fetchCompanySnapshot] Invalid company key:", companyKey);
+    return null;
+  }
+
+  console.log("[fetchCompanySnapshot] Fetching snapshot for:", companySlug);
+
+  try {
+    const { data: responseData, error } = await supabase.functions.invoke(
+      "importyeti-proxy",
+      {
+        body: {
+          company_id: companySlug,
+        },
+      }
+    );
+
+    if (error) {
+      console.error("[fetchCompanySnapshot] Error:", error);
+      throw new Error(`Snapshot fetch failed: ${error.message || "Unknown error"}`);
+    }
+
+    console.log("[fetchCompanySnapshot] Response:", {
+      ok: responseData?.ok,
+      source: responseData?.source,
+      hasSnapshot: !!responseData?.snapshot
+    });
+
+    if (!responseData || !responseData.ok || !responseData.snapshot) {
+      console.warn("[fetchCompanySnapshot] No snapshot data");
+      return null;
+    }
+
+    return {
+      ok: responseData.ok,
+      source: responseData.source,
+      snapshot: responseData.snapshot,
+      raw: responseData.raw
+    };
+  } catch (error) {
+    console.error("[fetchCompanySnapshot] Fatal error:", error);
+    return null;
+  }
+}
+
 export async function iyCompanyStats(
   params: { company: string; range?: string },
   signal?: AbortSignal,

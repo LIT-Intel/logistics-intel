@@ -9,8 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
-import { searchShippers } from "@/lib/api";
-import { fetchCompanyKpis, type CompanyKpiData } from "@/lib/kpiCompute";
+import { searchShippers, fetchCompanySnapshot, type CompanySnapshot } from "@/lib/api";
 import { parseImportYetiDate, formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -221,8 +220,8 @@ export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<MockCompany[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
-  const [kpiData, setKpiData] = useState<CompanyKpiData | null>(null);
-  const [loadingKpis, setLoadingKpis] = useState(false);
+  const [snapshotData, setSnapshotData] = useState<CompanySnapshot | null>(null);
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searching, setSearching] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -258,31 +257,39 @@ export default function SearchPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadKpis = async () => {
+    const loadSnapshot = async () => {
       if (!selectedCompany || !selectedCompany.importyeti_key) {
-        setKpiData(null);
+        setSnapshotData(null);
         return;
       }
 
-      setLoadingKpis(true);
+      setLoadingSnapshot(true);
+      console.log("[Search] Loading snapshot for:", selectedCompany.importyeti_key);
+
       try {
-        const kpis = await fetchCompanyKpis(selectedCompany.importyeti_key);
-        if (!cancelled && kpis) {
-          setKpiData(kpis);
+        const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
+        if (!cancelled) {
+          if (result && result.snapshot) {
+            console.log("[Search] Snapshot loaded:", result.snapshot);
+            setSnapshotData(result.snapshot);
+          } else {
+            console.warn("[Search] No snapshot data returned");
+            setSnapshotData(null);
+          }
         }
       } catch (error) {
-        console.error('Failed to load KPIs:', error);
+        console.error('[Search] Failed to load snapshot:', error);
         if (!cancelled) {
-          setKpiData(null);
+          setSnapshotData(null);
         }
       } finally {
         if (!cancelled) {
-          setLoadingKpis(false);
+          setLoadingSnapshot(false);
         }
       }
     };
 
-    loadKpis();
+    loadSnapshot();
 
     return () => {
       cancelled = true;
@@ -1035,9 +1042,9 @@ export default function SearchPage() {
                     <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                       <Package className="h-5 w-5 text-blue-600" />
                       Logistics KPIs
-                      {loadingKpis && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+                      {loadingSnapshot && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
                     </h3>
-                    {loadingKpis ? (
+                    {loadingSnapshot ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {['Total TEU', 'FCL', 'LCL', 'Est. Spend'].map((label, idx) => (
                           <div key={idx} className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1049,7 +1056,7 @@ export default function SearchPage() {
                           </div>
                         ))}
                       </div>
-                    ) : kpiData ? (
+                    ) : snapshotData ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
                           <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
@@ -1057,7 +1064,7 @@ export default function SearchPage() {
                             Total TEU
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {kpiData.teu.toLocaleString()}
+                            {snapshotData.total_teu.toLocaleString()}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1066,7 +1073,7 @@ export default function SearchPage() {
                             FCL
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {kpiData.fclCount.toLocaleString()}
+                            {snapshotData.fcl_count.toLocaleString()}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1075,7 +1082,7 @@ export default function SearchPage() {
                             LCL
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {kpiData.lclCount.toLocaleString()}
+                            {snapshotData.lcl_count.toLocaleString()}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1084,7 +1091,7 @@ export default function SearchPage() {
                             Est. Spend
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-blue-600">
-                            ${(300000000 / 1000000).toFixed(1)}M
+                            {formatCurrency(snapshotData.est_spend)}
                           </p>
                         </div>
                       </div>
@@ -1113,7 +1120,7 @@ export default function SearchPage() {
                       <Globe className="h-5 w-5 text-blue-600" />
                       Trade Routes
                     </h3>
-                    {loadingKpis ? (
+                    {loadingSnapshot ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                         {['Origins', 'Destinations'].map((title, colIdx) => (
                           <div key={colIdx}>
@@ -1134,48 +1141,22 @@ export default function SearchPage() {
                           </div>
                         ))}
                       </div>
-                    ) : kpiData ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                        <div>
-                          <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Origins</p>
-                          {kpiData.topOriginPorts.length > 0 ? (
-                            <ul className="space-y-1.5 md:space-y-2">
-                              {kpiData.topOriginPorts.map((origin, idx) => (
-                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                      {idx + 1}
-                                    </span>
-                                    <span className="text-slate-700 truncate">{origin}</span>
-                                  </div>
-                                  <span className="text-slate-500 ml-2 flex-shrink-0">2.4K</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-xs md:text-sm text-slate-500">No origin data</p>
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Destinations</p>
-                          {kpiData.topDestinationPorts.length > 0 ? (
-                            <ul className="space-y-1.5 md:space-y-2">
-                              {kpiData.topDestinationPorts.map((dest, idx) => (
-                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                      {idx + 1}
-                                    </span>
-                                    <span className="text-slate-700 truncate">{dest}</span>
-                                  </div>
-                                  <span className="text-slate-500 ml-2 flex-shrink-0">1.8K</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-xs md:text-sm text-slate-500">No destination data</p>
-                          )}
-                        </div>
+                    ) : snapshotData && snapshotData.top_ports && snapshotData.top_ports.length > 0 ? (
+                      <div>
+                        <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Top Ports</p>
+                        <ul className="space-y-1.5 md:space-y-2">
+                          {snapshotData.top_ports.slice(0, 5).map((portData, idx) => (
+                            <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
+                              <div className="flex items-center gap-2 flex-1">
+                                <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <span className="text-slate-700 truncate">{portData.port}</span>
+                              </div>
+                              <span className="text-slate-500 ml-2 flex-shrink-0">{portData.count}</span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     ) : (
                       <div className="text-center py-4 text-slate-500 text-sm">
@@ -1189,80 +1170,113 @@ export default function SearchPage() {
                       <TrendingUp className="h-5 w-5 text-blue-600" />
                       Shipment Trend
                     </h3>
-                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-4 md:p-6 border border-blue-200">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="h-10 w-10 rounded-lg bg-blue-200 flex items-center justify-center">
-                            <TrendingUp className="h-6 w-6 text-blue-600" />
+                    {snapshotData ? (
+                      <div className={`bg-gradient-to-r rounded-xl p-4 md:p-6 border ${
+                        snapshotData.trend === 'up'
+                          ? 'from-green-50 to-green-100 border-green-200'
+                          : snapshotData.trend === 'down'
+                          ? 'from-red-50 to-red-100 border-red-200'
+                          : 'from-blue-50 to-blue-100 border-blue-200'
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                              snapshotData.trend === 'up'
+                                ? 'bg-green-200'
+                                : snapshotData.trend === 'down'
+                                ? 'bg-red-200'
+                                : 'bg-blue-200'
+                            }`}>
+                              <TrendingUp className={`h-6 w-6 ${
+                                snapshotData.trend === 'up'
+                                  ? 'text-green-600'
+                                  : snapshotData.trend === 'down'
+                                  ? 'text-red-600'
+                                  : 'text-blue-600'
+                              }`} />
+                            </div>
+                            <div>
+                              <p className="text-xs md:text-sm text-slate-600">Recent Trend</p>
+                              <p className="text-base md:text-lg font-bold text-slate-900">
+                                {snapshotData.trend === 'up' ? '↑ Growing' : snapshotData.trend === 'down' ? '↓ Declining' : '→ Stable'}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-xs md:text-sm text-slate-600">12-Month Trend</p>
-                            <p className="text-base md:text-lg font-bold text-slate-900">↑ Growing</p>
-                          </div>
+                          {snapshotData.last_shipment_date && (
+                            <div className="text-right">
+                              <p className="text-xs md:text-sm text-slate-600">Last Shipment</p>
+                              <p className="text-base md:text-lg font-bold text-slate-900">
+                                {formatUserFriendlyDate(snapshotData.last_shipment_date)}
+                              </p>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-right">
-                          <p className="text-xs md:text-sm text-slate-600">vs Previous Year</p>
-                          <p className="text-base md:text-lg font-bold text-green-600">+12.5%</p>
+                        <div className={`h-1 rounded-full overflow-hidden ${
+                          snapshotData.trend === 'up'
+                            ? 'bg-green-200'
+                            : snapshotData.trend === 'down'
+                            ? 'bg-red-200'
+                            : 'bg-blue-200'
+                        }`}>
+                          <div className={`h-full bg-gradient-to-r ${
+                            snapshotData.trend === 'up'
+                              ? 'from-green-400 to-green-600'
+                              : snapshotData.trend === 'down'
+                              ? 'from-red-400 to-red-600'
+                              : 'from-blue-400 to-blue-600'
+                          }`} style={{
+                            width: snapshotData.trend === 'up' ? '75%' : snapshotData.trend === 'down' ? '35%' : '50%'
+                          }}></div>
                         </div>
                       </div>
-                      <div className="h-1 bg-blue-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-blue-400 to-blue-600" style={{ width: '65%' }}></div>
+                    ) : (
+                      <div className="text-center py-4 text-slate-500 text-sm">
+                        No trend data available
                       </div>
-                    </div>
+                    )}
                   </section>
 
                   <section>
                     <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                       <Ship className="h-5 w-5 text-blue-600" />
-                      12-Month Volume (FCL vs LCL)
+                      Shipment Summary
                     </h3>
-                    {kpiData ? (
+                    {snapshotData ? (
                       <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-                        <div className="relative h-64">
-                          <div className="flex h-full items-end justify-around gap-1">
-                            {kpiData.monthlyVolume.map((month, idx) => {
-                              const maxVol = Math.max(1, ...kpiData.monthlyVolume.map((m) => m.total));
-                              const fclHeight = (month.fcl / maxVol) * 100;
-                              const lclHeight = (month.lcl / maxVol) * 100;
-
-                              return (
-                                <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                                  <div className="w-full flex flex-col items-center gap-0.5 h-48 justify-end">
-                                    {month.fcl > 0 && (
-                                      <div
-                                        className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
-                                        style={{ height: `${fclHeight}%` }}
-                                        title={`FCL: ${month.fcl.toFixed(1)} TEU`}
-                                      />
-                                    )}
-                                    {month.lcl > 0 && (
-                                      <div
-                                        className="w-full bg-green-500 rounded-t transition-all hover:bg-green-600"
-                                        style={{ height: `${lclHeight}%` }}
-                                        title={`LCL: ${month.lcl.toFixed(1)} TEU`}
-                                      />
-                                    )}
-                                  </div>
-                                  <span className="text-xs text-slate-600">{month.month}</span>
-                                </div>
-                              );
-                            })}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          <div className="text-center">
+                            <p className="text-xs text-slate-600 mb-1">Total Shipments</p>
+                            <p className="text-2xl font-bold text-slate-900">{snapshotData.total_shipments.toLocaleString()}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-slate-600 mb-1">Last 12 Months</p>
+                            <p className="text-2xl font-bold text-blue-600">{snapshotData.shipments_last_12m.toLocaleString()}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-slate-600 mb-1">Average TEU</p>
+                            <p className="text-2xl font-bold text-slate-900">
+                              {snapshotData.total_shipments > 0
+                                ? (snapshotData.total_teu / snapshotData.total_shipments).toFixed(1)
+                                : '0'}
+                            </p>
                           </div>
                         </div>
-                        <div className="flex items-center justify-center gap-6 mt-4 text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                            <span>FCL</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 bg-green-500 rounded"></div>
-                            <span>LCL</span>
+                        <div className="mt-4 pt-4 border-t border-slate-200">
+                          <div className="flex items-center justify-center gap-6 text-sm">
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                              <span>FCL: {snapshotData.fcl_count}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 bg-green-500 rounded"></div>
+                              <span>LCL: {snapshotData.lcl_count}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div className="text-center py-8 text-slate-500">
-                        No volume data available
+                        No shipment data available
                       </div>
                     )}
                   </section>
