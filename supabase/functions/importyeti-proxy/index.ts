@@ -82,7 +82,7 @@ Deno.serve(async (req: Request) => {
     const iyResponse = await fetch(iyUrl, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${IY_API_KEY}`,
+        "IYApiKey": IY_API_KEY,
         "Accept": "application/json",
       },
     });
@@ -189,25 +189,27 @@ async function handleSearchAction(q: string, page: number = 1, pageSize: number 
   }
 
   try {
-    const iyUrl = `${IY_BASE_URL}/company/search`;
-    const requestBody = {
-      q: q.trim(),
-      page: Math.max(1, Number.isFinite(page) ? Number(page) : 1),
-      pageSize: Math.max(1, Math.min(100, Number.isFinite(pageSize) ? Number(pageSize) : 25)),
-    };
+    const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
+    const validatedPageSize = Math.max(1, Math.min(100, Number.isFinite(pageSize) ? Number(pageSize) : 25));
+    const offset = (validatedPage - 1) * validatedPageSize;
 
+    const url = new URL(`${IY_BASE_URL}/company/search`);
+    url.searchParams.set("name", q.trim());
+    url.searchParams.set("page_size", String(validatedPageSize));
+    url.searchParams.set("offset", String(offset));
+
+    const iyUrl = url.toString();
+
+    console.log("  METHOD: GET");
     console.log("  URL:", iyUrl);
-    console.log("  Request body:", requestBody);
-    console.log("  Auth:", `Bearer ${IY_API_KEY?.substring(0, 10)}...`);
+    console.log("  Auth: IYApiKey (header)");
 
     const iyResponse = await fetch(iyUrl, {
-      method: "POST",
+      method: "GET",
       headers: {
-        "Authorization": `Bearer ${IY_API_KEY}`,
-        "Content-Type": "application/json",
+        "IYApiKey": IY_API_KEY,
         "Accept": "application/json",
       },
-      body: JSON.stringify(requestBody),
     });
 
     if (!iyResponse.ok) {
@@ -227,7 +229,7 @@ async function handleSearchAction(q: string, page: number = 1, pageSize: number 
     const rawPayload = await iyResponse.json();
     console.log("✅ ImportYeti response received");
 
-    const rows = Array.isArray(rawPayload?.results)
+    const results = Array.isArray(rawPayload?.results)
       ? rawPayload.results
       : Array.isArray(rawPayload?.data)
         ? rawPayload.data
@@ -235,13 +237,13 @@ async function handleSearchAction(q: string, page: number = 1, pageSize: number 
           ? rawPayload
           : [];
 
-    const total = rawPayload?.total ?? rawPayload?.pagination?.total ?? rows.length;
+    const total = rawPayload?.total ?? rawPayload?.pagination?.total ?? results.length;
 
     console.log("📊 Search result:", {
-      rows_count: rows.length,
+      results_count: results.length,
       total,
-      page: requestBody.page,
-      pageSize: requestBody.pageSize,
+      page: validatedPage,
+      pageSize: validatedPageSize,
     });
 
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -249,9 +251,9 @@ async function handleSearchAction(q: string, page: number = 1, pageSize: number 
     return new Response(
       JSON.stringify({
         ok: true,
-        rows,
-        page: requestBody.page,
-        pageSize: requestBody.pageSize,
+        results,
+        page: validatedPage,
+        pageSize: validatedPageSize,
         total,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
