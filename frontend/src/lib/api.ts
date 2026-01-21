@@ -827,12 +827,25 @@ export type IySearchRow = {
 
 const IY_COMPANY_KEY_PREFIX = "company/";
 
+export function normalizeCompanyIdToSlug(input: string): string {
+  if (!input) return "";
+  const trimmed = input.trim();
+  const stripped = trimmed.startsWith(IY_COMPANY_KEY_PREFIX)
+    ? trimmed.slice(IY_COMPANY_KEY_PREFIX.length)
+    : trimmed;
+  const lowercased = stripped.toLowerCase();
+  const replaced = lowercased.replace(/[\s_.]+/g, "-");
+  const cleaned = replaced.replace(/[^a-z0-9-]/g, "");
+  const collapsed = cleaned.replace(/-{2,}/g, "-");
+  const trimmed_edges = collapsed.replace(/^-+|-+$/g, "");
+  return trimmed_edges || "unknown";
+}
+
 export function ensureCompanyKey(value: string) {
-  const trimmed = (value ?? "").trim();
-  if (!trimmed) return "";
-  return trimmed.startsWith(IY_COMPANY_KEY_PREFIX)
-    ? trimmed
-    : `${IY_COMPANY_KEY_PREFIX}${trimmed}`;
+  const slug = normalizeCompanyIdToSlug(value);
+  return slug.startsWith(IY_COMPANY_KEY_PREFIX)
+    ? slug
+    : `${IY_COMPANY_KEY_PREFIX}${slug}`;
 }
 
 function deriveDomainCandidate(value: unknown): string | undefined {
@@ -1115,8 +1128,8 @@ export async function iyCompanyBols(
   params: { company_id: string; limit?: number; offset?: number; start_date?: string; end_date?: string },
   signal?: AbortSignal,
 ): Promise<{ ok: boolean; data: any; rows: any[]; total: number }> {
-  const companyId = ensureCompanyKey(params.company_id);
-  if (!companyId) {
+  const companySlug = normalizeCompanyIdToSlug(params.company_id);
+  if (!companySlug) {
     throw new Error("iyCompanyBols requires company_id");
   }
 
@@ -1131,7 +1144,7 @@ export async function iyCompanyBols(
 
   const body: any = {
     action: "companyBols",
-    company_id: companyId,
+    company_id: companySlug,
     limit,
     offset,
   };
@@ -1487,13 +1500,13 @@ export async function getIyCompanyProfile({
   query?: string;
   userGoal?: string;
 }): Promise<{ companyProfile: IyCompanyProfile; enrichment: any | null }> {
-  const normalizedKey = ensureCompanyKey(companyKey);
-  if (!normalizedKey) {
+  const normalizedSlug = normalizeCompanyIdToSlug(companyKey);
+  if (!normalizedSlug) {
     throw new Error("getIyCompanyProfile: company key is required");
   }
 
   if (isDevMode()) {
-    return devGetCompanyProfile(normalizedKey);
+    return devGetCompanyProfile(normalizedSlug);
   }
 
   const { data, error } = await supabase.functions.invoke(
@@ -1501,7 +1514,7 @@ export async function getIyCompanyProfile({
     {
       body: {
         action: "company",
-        company_id: normalizedKey
+        company_id: normalizedSlug
       },
     }
   );

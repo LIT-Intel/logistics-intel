@@ -113,10 +113,10 @@ export default function ShipperListItem({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-base font-semibold text-slate-900 group-hover:text-blue-600 transition-colors truncate" title={displayName}>
+              <p className="text-base font-semibold text-slate-900 group-hover:text-blue-600 transition-colors truncate flex-1 min-w-0" title={displayName}>
                 {displayName}
               </p>
-              {flagEmoji && <span className="text-lg leading-none flex-shrink-0">{flagEmoji}</span>}
+              {flagEmoji && <span className="text-lg leading-none flex-shrink-0 whitespace-nowrap">{flagEmoji}</span>}
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}

@@ -111,10 +111,10 @@ export default function ShipperCard({
           </motion.div>
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="max-w-full text-sm font-semibold text-slate-900 group-hover:text-blue-600 transition-colors" title={displayName}>
+              <p className="max-w-full text-sm font-semibold text-slate-900 group-hover:text-blue-600 transition-colors flex-1" title={displayName}>
                 {displayName}
               </p>
-              {flagEmoji && <span className="text-lg leading-none">{flagEmoji}</span>}
+              {flagEmoji && <span className="text-lg leading-none flex-shrink-0 whitespace-nowrap">{flagEmoji}</span>}
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}

@@ -1,4 +1,4 @@
-import { iyCompanyBols } from './api';
+import { iyCompanyBols, normalizeCompanyIdToSlug } from './api';
 
 export interface CompanyKpiData {
   teu: number;
@@ -21,6 +21,7 @@ export async function fetchCompanyKpis(
   signal?: AbortSignal
 ): Promise<CompanyKpiData | null> {
   try {
+    const normalizedSlug = normalizeCompanyIdToSlug(companyKey);
     const now = new Date();
     const endDate = now.toLocaleDateString('en-US', {
       month: '2-digit',
@@ -30,7 +31,7 @@ export async function fetchCompanyKpis(
 
     const response = await iyCompanyBols(
       {
-        company_id: companyKey,
+        company_id: normalizedSlug,
         start_date: '01/01/2019',
         end_date: endDate,
         limit: 100,

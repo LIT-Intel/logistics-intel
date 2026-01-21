@@ -973,21 +973,21 @@ export default function SearchPage() {
                         className="flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1">
                           <h2 className="text-xl md:text-2xl font-bold text-slate-900 flex-1 min-w-0">{selectedCompany.name}</h2>
-                          <span className="text-2xl md:text-3xl flex-shrink-0">{getCountryFlag(selectedCompany.country_code)}</span>
+                          <span className="text-2xl md:text-3xl flex-shrink-0 whitespace-nowrap">{getCountryFlag(selectedCompany.country_code)}</span>
                         </div>
                         <div className="space-y-1 text-xs md:text-sm">
                           <div className="flex items-start gap-2 text-slate-600">
-                            <MapPin className="h-4 w-4 flex-shrink-0 mt-0.5" />
                             <a
                               href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedCompany.address)}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="hover:text-blue-600 transition-colors line-clamp-2"
+                              className="flex items-start gap-2 hover:text-blue-600 transition-colors group"
                             >
-                              {selectedCompany.address}
-                              <ExternalLink className="h-3 w-3 inline ml-1" />
+                              <MapPin className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                              <span className="line-clamp-2 flex-1">{selectedCompany.address}</span>
+                              <ExternalLink className="h-3 w-3 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </a>
                           </div>
                           {selectedCompany.website && (

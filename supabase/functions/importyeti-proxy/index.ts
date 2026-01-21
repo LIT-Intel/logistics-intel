@@ -39,6 +39,7 @@ Deno.serve(async (req: Request) => {
     console.log("📦 SNAPSHOT REQUEST:", company_id);
 
     const normalizedCompanyKey = normalizeCompanyKey(company_id);
+    console.log("  Normalized slug:", normalizedCompanyKey);
 
     // Check for existing snapshot
     const { data: existingSnapshot, error: fetchError } = await supabase
@@ -117,7 +118,7 @@ Deno.serve(async (req: Request) => {
     const { error: upsertError } = await supabase
       .from("lit_importyeti_company_snapshot")
       .upsert({
-        company_id,
+        company_id: normalizedCompanyKey,
         raw_payload: rawPayload,
         parsed_summary: parsedSummary,
         updated_at: now.toISOString(),
@@ -133,8 +134,8 @@ Deno.serve(async (req: Request) => {
     const { error: indexError } = await supabase
       .from("lit_company_index")
       .upsert({
-        company_id,
-        company_name: rawPayload.name || company_id,
+        company_id: normalizedCompanyKey,
+        company_name: rawPayload.name || normalizedCompanyKey,
         country: rawPayload.country || null,
         city: rawPayload.city || null,
         last_shipment_date: parsedSummary.last_shipment_date || null,
@@ -269,13 +270,23 @@ async function handleSearchAction(q: string, page: number = 1, pageSize: number 
   }
 }
 
+function normalizeCompanyKeyToSlug(input: string): string {
+  if (!input) return "";
+  const trimmed = input.trim();
+  const stripped = trimmed.startsWith("company/")
+    ? trimmed.slice("company/".length)
+    : trimmed;
+  const lowercased = stripped.toLowerCase();
+  const replaced = lowercased.replace(/[\s_.]+/g, "-");
+  const cleaned = replaced.replace(/[^a-z0-9-]/g, "");
+  const collapsed = cleaned.replace(/-{2,}/g, "-");
+  const trimmed_edges = collapsed.replace(/^-+|-+$/g, "");
+  return trimmed_edges || "unknown";
+}
+
 function normalizeCompanyKey(key: string): string {
   if (!key) return "";
-  const trimmed = key.trim();
-  if (trimmed.startsWith("company/")) {
-    return trimmed;
-  }
-  return `company/${trimmed}`;
+  return normalizeCompanyKeyToSlug(key);
 }
 
 function parseCompanySnapshot(raw: any): any {
