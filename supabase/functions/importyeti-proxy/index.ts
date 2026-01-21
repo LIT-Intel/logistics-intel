@@ -22,7 +22,11 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json();
-    const { company_id } = body;
+    const { action, company_id, q, page, pageSize } = body;
+
+    if (action === "search") {
+      return handleSearchAction(q, page, pageSize);
+    }
 
     if (!company_id) {
       return new Response(
@@ -164,6 +168,102 @@ Deno.serve(async (req: Request) => {
     );
   }
 });
+
+async function handleSearchAction(q: string, page: number = 1, pageSize: number = 25) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("🔍 SEARCH REQUEST:", { q, page, pageSize });
+
+  if (!q || typeof q !== "string" || q.trim().length === 0) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "Query (q) is required and must be non-empty" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  if (!IY_API_KEY) {
+    console.error("❌ IY_API_KEY not configured");
+    return new Response(
+      JSON.stringify({ ok: false, error: "ImportYeti API key not configured" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  try {
+    const iyUrl = `${IY_BASE_URL}/company/search`;
+    const requestBody = {
+      q: q.trim(),
+      page: Math.max(1, Number.isFinite(page) ? Number(page) : 1),
+      pageSize: Math.max(1, Math.min(100, Number.isFinite(pageSize) ? Number(pageSize) : 25)),
+    };
+
+    console.log("  URL:", iyUrl);
+    console.log("  Request body:", requestBody);
+    console.log("  Auth:", `Bearer ${IY_API_KEY?.substring(0, 10)}...`);
+
+    const iyResponse = await fetch(iyUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${IY_API_KEY}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!iyResponse.ok) {
+      const errorText = await iyResponse.text();
+      console.error("❌ ImportYeti error:", iyResponse.status, errorText);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "ImportYeti API error",
+          status: iyResponse.status,
+          details: errorText,
+        }),
+        { status: iyResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const rawPayload = await iyResponse.json();
+    console.log("✅ ImportYeti response received");
+
+    const rows = Array.isArray(rawPayload?.results)
+      ? rawPayload.results
+      : Array.isArray(rawPayload?.data)
+        ? rawPayload.data
+        : Array.isArray(rawPayload)
+          ? rawPayload
+          : [];
+
+    const total = rawPayload?.total ?? rawPayload?.pagination?.total ?? rows.length;
+
+    console.log("📊 Search result:", {
+      rows_count: rows.length,
+      total,
+      page: requestBody.page,
+      pageSize: requestBody.pageSize,
+    });
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        rows,
+        page: requestBody.page,
+        pageSize: requestBody.pageSize,
+        total,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error: any) {
+    console.error("❌ Search handler error:", error);
+    return new Response(
+      JSON.stringify({ ok: false, error: error.message || "Search failed" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+}
 
 function parseCompanySnapshot(raw: any): any {
   const shipments = raw.shipments || [];

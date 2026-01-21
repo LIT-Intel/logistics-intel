@@ -1022,9 +1022,12 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
 }
 
 function resolveIySearchArray(raw: any): any[] {
-  if (Array.isArray(raw?.results)) return raw.results;
+  // Edge function returns { ok: true, rows: [...] }
   if (Array.isArray(raw?.rows)) return raw.rows;
+  // Fallback to other common shapes
+  if (Array.isArray(raw?.results)) return raw.results;
   if (Array.isArray(raw?.items)) return raw.items;
+  // Direct array
   if (Array.isArray(raw)) return raw;
   return [];
 }
@@ -1056,13 +1059,18 @@ function coerceIySearchResponse(
   raw: any,
   fallback: { q: string; page: number; pageSize: number },
 ): IySearchResponse {
+  // Handle edge function response shape: { ok: true, rows: [...], page, pageSize, total }
   const items = resolveIySearchArray(raw);
   const rows = items.map(normalizeIyShipperHit);
+
+  // Resolve total from various possible locations
   const totalCandidate =
     raw?.total ?? raw?.meta?.total ?? raw?.data?.total ?? rows.length;
   const total = Number.isFinite(Number(totalCandidate))
     ? Number(totalCandidate)
     : rows.length;
+
+  // Build metadata
   const meta = buildIySearchMeta(raw?.meta ?? {}, fallback);
 
   return {
