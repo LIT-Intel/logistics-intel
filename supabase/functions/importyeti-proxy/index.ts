@@ -38,11 +38,13 @@ Deno.serve(async (req: Request) => {
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("📦 SNAPSHOT REQUEST:", company_id);
 
+    const normalizedCompanyKey = normalizeCompanyKey(company_id);
+
     // Check for existing snapshot
     const { data: existingSnapshot, error: fetchError } = await supabase
       .from("lit_importyeti_company_snapshot")
       .select("*")
-      .eq("company_id", company_id)
+      .eq("company_id", normalizedCompanyKey)
       .maybeSingle();
 
     if (fetchError) {
@@ -74,7 +76,7 @@ Deno.serve(async (req: Request) => {
 
     // Fetch from ImportYeti
     console.log("🌐 Fetching from ImportYeti (1 credit)");
-    const iyUrl = `${IY_BASE_URL}/company/${company_id}`;
+    const iyUrl = `${IY_BASE_URL}/company/${normalizedCompanyKey}`;
 
     console.log("  URL:", iyUrl);
     console.log("  Key:", IY_API_KEY?.substring(0, 10) + "...");
@@ -265,6 +267,15 @@ async function handleSearchAction(q: string, page: number = 1, pageSize: number 
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
+}
+
+function normalizeCompanyKey(key: string): string {
+  if (!key) return "";
+  const trimmed = key.trim();
+  if (trimmed.startsWith("company/")) {
+    return trimmed;
+  }
+  return `company/${trimmed}`;
 }
 
 function parseCompanySnapshot(raw: any): any {
