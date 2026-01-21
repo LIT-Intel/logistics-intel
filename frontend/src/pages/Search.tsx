@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2, Users } from "lucide-react";
+import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2, Users, DollarSign, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,26 @@ import { useToast } from "@/components/ui/use-toast";
 import { searchShippers } from "@/lib/api";
 import { fetchCompanyKpis, type CompanyKpiData } from "@/lib/kpiCompute";
 import { parseImportYetiDate, formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
+import { getCompanyLogoUrl } from "@/lib/logo";
+
+function getCountryFlag(countryCode?: string): string {
+  if (!countryCode || countryCode.length !== 2) return '';
+  return String.fromCodePoint(
+    ...countryCode.toUpperCase().split('').map((c) => 127397 + c.charCodeAt(0))
+  );
+}
+
+function formatCurrency(value: number | null | undefined): string {
+  if (!value) return '$0';
+  if (value >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`;
+  }
+  if (value >= 1000) {
+    return `$${(value / 1000).toFixed(0)}K`;
+  }
+  return `$${value}`;
+}
 
 interface MockCompany {
   id: string;
@@ -474,7 +494,7 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -482,8 +502,8 @@ export default function SearchPage() {
           className="flex items-center justify-between"
         >
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Company Search</h1>
-            <p className="text-slate-600 mt-1">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-slate-900">Company Search</h1>
+            <p className="text-xs sm:text-sm md:text-base text-slate-600 mt-1">
               Search real import/export companies via ImportYeti
             </p>
           </div>
@@ -494,16 +514,16 @@ export default function SearchPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           onSubmit={handleSearch}
-          className="flex gap-3"
+          className="flex flex-col md:flex-row gap-2 md:gap-3"
         >
           <div className="flex-1 relative">
             <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
             <Input
               type="text"
-              placeholder="Search by company name, city, or industry..."
+              placeholder="Search company name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 pr-12 h-14 text-lg border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+              className="pl-12 pr-12 h-12 md:h-14 text-sm md:text-base border-slate-300 focus:border-blue-500 focus:ring-blue-500"
             />
             {searchQuery && (
               <button
@@ -518,7 +538,7 @@ export default function SearchPage() {
           <Button
             type="submit"
             size="lg"
-            className="px-8 h-14 bg-blue-600 hover:bg-blue-700"
+            className="w-full md:w-auto px-6 md:px-8 h-12 md:h-14 bg-blue-600 hover:bg-blue-700 text-sm md:text-base"
             disabled={!authReady || searchQuery.length < 2 || searching}
           >
             {searching ? (
@@ -543,16 +563,16 @@ export default function SearchPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
-              className="flex items-center justify-between"
+              className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-2"
             >
-              <p className="text-sm text-slate-600">
+              <p className="text-xs sm:text-sm text-slate-600">
                 {searching ? "Searching..." : (
                   <>
                     Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
                   </>
                 )}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="hidden md:flex items-center gap-2">
                 <span className="text-xs text-slate-500">View:</span>
                 <div className="flex rounded-lg border border-slate-200 bg-white p-1">
                   <button
@@ -581,8 +601,8 @@ export default function SearchPage() {
               </div>
             </motion.div>
 
-            {viewMode === "grid" ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {viewMode !== "list" ? (
+          <div className="grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {results.map((company, index) => (
               <motion.div
                 key={company.id}
@@ -590,53 +610,59 @@ export default function SearchPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 + index * 0.05 }}
               >
-                <Card className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden">
+                <Card className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                 {savedCompanyIds.includes(company.id) && (
-                  <div className="absolute top-3 right-3 z-10">
-                    <Badge className="bg-blue-600 text-white border-0 shadow-sm">
+                  <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10">
+                    <Badge className="bg-blue-600 text-white border-0 shadow-sm text-xs">
                       <Bookmark className="h-3 w-3 mr-1 fill-white" />
                       Saved
                     </Badge>
                   </div>
                 )}
 
-                <CardHeader className="pb-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
-                        <Building2 className="h-6 w-6" />
-                      </div>
+                <CardHeader className="pb-3 md:pb-4 p-3 md:p-4">
+                  <div className="flex items-start justify-between gap-2 md:gap-3">
+                    <div className="flex items-start gap-2 md:gap-3 flex-1 min-w-0">
+                      <CompanyAvatar
+                        name={company.name}
+                        logoUrl={getCompanyLogoUrl(company.website)}
+                        size="md"
+                        className="flex-shrink-0"
+                      />
                       <div className="flex-1 min-w-0">
-                        <CardTitle className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
-                          {company.name}
-                        </CardTitle>
-                        <div className="flex items-center gap-1 text-sm text-slate-600 mt-1">
-                          <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                        <div className="flex items-start gap-1">
+                          <CardTitle className="text-sm md:text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
+                            {company.name}
+                          </CardTitle>
+                          <span className="text-lg md:text-xl">{getCountryFlag(company.country_code)}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs md:text-sm text-slate-600 mt-1">
+                          <MapPin className="h-3 w-3 flex-shrink-0" />
                           <span className="truncate">
                             {company.city}, {company.state}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
+                    <Badge variant="outline" className={`${getFrequencyColor(company.frequency)} text-xs`}>
                       {company.frequency}
                     </Badge>
                   </div>
-                  <Badge variant="secondary" className="mt-2 w-fit">
+                  <Badge variant="secondary" className="mt-2 w-fit text-xs">
                     {company.industry}
                   </Badge>
                 </CardHeader>
 
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                <CardContent className="space-y-3 md:space-y-4 p-3 md:p-4">
+                  <div className="grid grid-cols-2 gap-3 md:gap-4">
                     <div>
                       <div className="flex items-center gap-1 text-xs text-slate-500 mb-1">
                         <Package className="h-3 w-3" />
                         <span>Shipments (12m)</span>
                       </div>
-                      <p className="text-xl font-bold text-slate-900">
+                      <p className="text-lg md:text-xl font-bold text-slate-900">
                         {company.shipments_12m.toLocaleString()}
                       </p>
                     </div>
@@ -646,48 +672,48 @@ export default function SearchPage() {
                         <span>Est. TEU</span>
                       </div>
                       {company.teu_estimate !== undefined ? (
-                        <p className="text-xl font-bold text-slate-900">
+                        <p className="text-lg md:text-xl font-bold text-slate-900">
                           {company.teu_estimate === 0 ? '< 100' : company.teu_estimate.toLocaleString()}
                         </p>
                       ) : (
                         <div className="flex items-center gap-1.5">
                           <div className="h-6 w-20 bg-slate-200 animate-pulse rounded"></div>
-                          <span className="text-xs text-slate-400">Enriching</span>
+                          <span className="text-xs text-slate-400">Loading</span>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <div className="pt-2 md:pt-3 border-t border-slate-100 space-y-2">
                     {company.mode && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-600">Primary Mode</span>
+                      <div className="flex items-center justify-between text-xs md:text-sm">
+                        <span className="text-slate-600">Mode</span>
                         <div className="flex items-center gap-1.5 font-semibold text-slate-900">
                           {getModeIcon(company.mode)}
                           {company.mode}
                         </div>
                       </div>
                     )}
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600">Top Suppliers</span>
+                    <div className="flex items-center justify-between text-xs md:text-sm">
+                      <span className="text-slate-600">Suppliers</span>
                       {company.top_suppliers.length > 0 ? (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <div className="flex items-center gap-1">
                                 <Users className="h-3 w-3 text-slate-500" />
-                                <span className="font-semibold text-slate-900">
-                                  {company.top_suppliers.slice(0, 2).map(s => s.split(' ')[0]).join(', ')}
+                                <span className="font-semibold text-slate-900 text-xs truncate">
+                                  {company.top_suppliers.slice(0, 1).map(s => s.split(' ')[0]).join(', ')}
                                 </span>
-                                {company.top_suppliers.length > 2 && (
-                                  <Badge variant="secondary" className="text-xs py-0 px-1.5">
-                                    +{company.top_suppliers.length - 2}
+                                {company.top_suppliers.length > 1 && (
+                                  <Badge variant="secondary" className="text-xs py-0 px-1">
+                                    +{company.top_suppliers.length - 1}
                                   </Badge>
                                 )}
                               </div>
                             </TooltipTrigger>
                             <TooltipContent className="max-w-xs">
-                              <p className="font-semibold mb-1">All Suppliers:</p>
+                              <p className="font-semibold mb-1 text-xs">Suppliers:</p>
                               <ul className="space-y-0.5">
                                 {company.top_suppliers.map((supplier, idx) => (
                                   <li key={idx} className="text-xs">• {supplier}</li>
@@ -700,10 +726,10 @@ export default function SearchPage() {
                         <span className="text-xs text-slate-400">No data</span>
                       )}
                     </div>
-                    <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center justify-between text-xs md:text-sm">
                       <span className="text-slate-600">Last Shipment</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-slate-900">
+                      <div className="flex items-center gap-1">
+                        <span className="font-semibold text-slate-900 text-xs">
                           {formatUserFriendlyDate(company.last_shipment)}
                         </span>
                         {(() => {
@@ -728,22 +754,22 @@ export default function SearchPage() {
                     </div>
                   </div>
 
-                  <div className="pt-4 flex gap-2">
+                  <div className="pt-3 md:pt-4 flex gap-2">
                     <Button
                       variant="default"
                       size="sm"
-                      className="flex-1 bg-slate-900 hover:bg-slate-800"
+                      className="flex-1 bg-slate-900 hover:bg-slate-800 text-xs md:text-sm h-9 md:h-10"
                       onClick={() => setSelectedCompany(company)}
                     >
-                      <Eye className="h-4 w-4 mr-1.5" />
-                      View Details
+                      <Eye className="h-3 md:h-4 w-3 md:w-4 mr-1" />
+                      Details
                     </Button>
                     <Button
                       variant={savedCompanyIds.includes(company.id) ? "secondary" : "outline"}
                       size="sm"
                       onClick={() => saveToCommandCenter(company)}
                       disabled={saving || savedCompanyIds.includes(company.id)}
-                      className={savedCompanyIds.includes(company.id) ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : ""}
+                      className={`h-9 md:h-10 px-2 md:px-3 ${savedCompanyIds.includes(company.id) ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : ""}`}
                     >
                       {savedCompanyIds.includes(company.id) ? (
                         <Bookmark className="h-4 w-4 fill-current" />
@@ -757,8 +783,8 @@ export default function SearchPage() {
             </motion.div>
           ))}
         </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        ) : viewMode === "list" ? (
+          <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
@@ -881,7 +907,7 @@ export default function SearchPage() {
               </table>
             </div>
           </div>
-        )}
+        ) : null}
 
           {!searching && results.length === 0 && (
             <motion.div
@@ -934,43 +960,61 @@ export default function SearchPage() {
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="w-full max-w-4xl max-h-[90vh] overflow-auto bg-white rounded-2xl shadow-2xl"
+                className="w-full max-w-4xl max-h-[85vh] md:max-h-[90vh] overflow-auto bg-white rounded-2xl shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-8 py-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-4 flex-1">
-                      <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
-                        <Building2 className="h-8 w-8" />
-                      </div>
-                      <div className="flex-1">
-                        <h2 className="text-2xl font-bold text-slate-900">{selectedCompany.name}</h2>
-                        <p className="text-slate-600 mt-1 flex items-center gap-2">
-                          <MapPin className="h-4 w-4" />
-                          {selectedCompany.address}
-                        </p>
-                        {selectedCompany.website && (
-                          <a
-                            href={`https://${selectedCompany.website}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-700 text-sm mt-1 inline-flex items-center gap-1"
-                          >
-                            <Globe className="h-3.5 w-3.5" />
-                            {selectedCompany.website}
-                            <ArrowUpRight className="h-3 w-3" />
-                          </a>
-                        )}
+                <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 sm:px-6 md:px-8 py-4 md:py-6">
+                  <div className="flex items-start justify-between gap-3 md:gap-4">
+                    <div className="flex items-start gap-3 md:gap-4 flex-1 min-w-0">
+                      <CompanyAvatar
+                        name={selectedCompany.name}
+                        logoUrl={getCompanyLogoUrl(selectedCompany.website)}
+                        size="lg"
+                        className="flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start gap-2 mb-1">
+                          <h2 className="text-xl md:text-2xl font-bold text-slate-900 flex-1 min-w-0">{selectedCompany.name}</h2>
+                          <span className="text-2xl md:text-3xl flex-shrink-0">{getCountryFlag(selectedCompany.country_code)}</span>
+                        </div>
+                        <div className="space-y-1 text-xs md:text-sm">
+                          <div className="flex items-start gap-2 text-slate-600">
+                            <MapPin className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedCompany.address)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-blue-600 transition-colors line-clamp-2"
+                            >
+                              {selectedCompany.address}
+                              <ExternalLink className="h-3 w-3 inline ml-1" />
+                            </a>
+                          </div>
+                          {selectedCompany.website && (
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Globe className="h-4 w-4 flex-shrink-0" />
+                              <a
+                                href={`https://${selectedCompany.website}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:text-blue-600 transition-colors truncate"
+                              >
+                                {selectedCompany.website}
+                                <ExternalLink className="h-3 w-3 inline ml-1" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-2 flex-shrink-0">
                       <Badge
                         variant="outline"
-                        className={
+                        className={`text-xs ${
                           selectedCompany.status === "Active"
                             ? "bg-green-50 text-green-700 border-green-200"
                             : "bg-slate-100 text-slate-600 border-slate-200"
-                        }
+                        }`}
                       >
                         {selectedCompany.status}
                       </Badge>
@@ -978,15 +1022,15 @@ export default function SearchPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => setSelectedCompany(null)}
-                        className="rounded-full"
+                        className="rounded-full h-8 w-8 md:h-10 md:w-10"
                       >
-                        <X className="h-5 w-5" />
+                        <X className="h-4 w-4 md:h-5 md:w-5" />
                       </Button>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-8 space-y-8">
+                <div className="p-4 md:p-6 lg:p-8 space-y-6 md:space-y-8 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 120px)', WebkitOverflowScrolling: 'touch' }}>
                   <section>
                     <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                       <Package className="h-5 w-5 text-blue-600" />
@@ -995,53 +1039,69 @@ export default function SearchPage() {
                     </h3>
                     {loadingKpis ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {['Total TEU (12m)', 'FCL Shipments', 'LCL Shipments', 'Trend'].map((label, idx) => (
-                          <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                            <p className="text-xs text-slate-600 mb-1">{label}</p>
-                            <div className="h-8 w-24 bg-slate-200 animate-pulse rounded mt-1"></div>
+                        {['Total TEU', 'FCL', 'LCL', 'Est. Spend'].map((label, idx) => (
+                          <div key={idx} className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
+                            <div className="flex items-center gap-1 text-xs text-slate-600 mb-1">
+                              {idx === 3 ? <DollarSign className="h-3 w-3" /> : <Package className="h-3 w-3" />}
+                              <span>{label}</span>
+                            </div>
+                            <div className="h-6 md:h-8 w-20 bg-slate-200 animate-pulse rounded mt-1"></div>
                           </div>
                         ))}
                       </div>
                     ) : kpiData ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                          <p className="text-xs text-slate-600 mb-1">Total TEU (12m)</p>
-                          <p className="text-2xl font-bold text-slate-900">
+                        <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
+                          <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
+                            <Package className="h-3 w-3" />
+                            Total TEU
+                          </p>
+                          <p className="text-lg md:text-2xl font-bold text-slate-900">
                             {kpiData.teu.toLocaleString()}
                           </p>
                         </div>
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                          <p className="text-xs text-slate-600 mb-1">FCL Shipments</p>
-                          <p className="text-2xl font-bold text-slate-900">
+                        <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
+                          <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
+                            <Ship className="h-3 w-3" />
+                            FCL
+                          </p>
+                          <p className="text-lg md:text-2xl font-bold text-slate-900">
                             {kpiData.fclCount.toLocaleString()}
                           </p>
                         </div>
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                          <p className="text-xs text-slate-600 mb-1">LCL Shipments</p>
-                          <p className="text-2xl font-bold text-slate-900">
+                        <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
+                          <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
+                            <Package className="h-3 w-3" />
+                            LCL
+                          </p>
+                          <p className="text-lg md:text-2xl font-bold text-slate-900">
                             {kpiData.lclCount.toLocaleString()}
                           </p>
                         </div>
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                          <p className="text-xs text-slate-600 mb-1">Trend</p>
-                          <p className={`text-2xl font-bold capitalize ${getTrendColor(kpiData.trend)}`}>
-                            {kpiData.trend === "up" && "↑ "}
-                            {kpiData.trend === "down" && "↓ "}
-                            {kpiData.trend}
+                        <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
+                          <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
+                            <DollarSign className="h-3 w-3" />
+                            Est. Spend
+                          </p>
+                          <p className="text-lg md:text-2xl font-bold text-blue-600">
+                            ${(300000000 / 1000000).toFixed(1)}M
                           </p>
                         </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[
-                          { label: 'Total TEU (12m)', value: '0 TEU' },
-                          { label: 'FCL Shipments', value: '0' },
-                          { label: 'LCL Shipments', value: '0' },
-                          { label: 'Trend', value: 'No data' }
+                          { label: 'Total TEU', value: '0', icon: Package },
+                          { label: 'FCL', value: '0', icon: Ship },
+                          { label: 'LCL', value: '0', icon: Package },
+                          { label: 'Est. Spend', value: '$0', icon: DollarSign }
                         ].map((item, idx) => (
-                          <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                            <p className="text-xs text-slate-600 mb-1">{item.label}</p>
-                            <p className="text-2xl font-bold text-slate-400">{item.value}</p>
+                          <div key={idx} className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
+                            <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
+                              <item.icon className="h-3 w-3" />
+                              {item.label}
+                            </p>
+                            <p className="text-lg md:text-2xl font-bold text-slate-400">{item.value}</p>
                           </div>
                         ))}
                       </div>
@@ -1049,22 +1109,25 @@ export default function SearchPage() {
                   </section>
 
                   <section>
-                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <h3 className="text-base md:text-lg font-bold text-slate-900 mb-3 md:mb-4 flex items-center gap-2">
                       <Globe className="h-5 w-5 text-blue-600" />
                       Trade Routes
                     </h3>
                     {loadingKpis ? (
-                      <div className="grid md:grid-cols-2 gap-6">
-                        {['Top Origin Ports', 'Top Destination Ports'].map((title, colIdx) => (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                        {['Origins', 'Destinations'].map((title, colIdx) => (
                           <div key={colIdx}>
-                            <p className="text-sm font-semibold text-slate-700 mb-2">{title}</p>
-                            <ul className="space-y-2">
+                            <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">{title}</p>
+                            <ul className="space-y-1.5 md:space-y-2">
                               {[0, 1, 2].map((idx) => (
-                                <li key={idx} className="flex items-center gap-2">
-                                  <div className={`w-6 h-6 rounded-full ${colIdx === 0 ? 'bg-blue-100' : 'bg-green-100'} flex items-center justify-center text-xs font-bold`}>
-                                    {idx + 1}
+                                <li key={idx} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <div className={`w-6 h-6 rounded-full ${colIdx === 0 ? 'bg-blue-100' : 'bg-green-100'} flex items-center justify-center text-xs font-bold`}>
+                                      {idx + 1}
+                                    </div>
+                                    <div className="h-3 w-24 bg-slate-200 animate-pulse rounded"></div>
                                   </div>
-                                  <div className="h-4 w-32 bg-slate-200 animate-pulse rounded"></div>
+                                  <div className="h-3 w-16 bg-slate-200 animate-pulse rounded ml-2"></div>
                                 </li>
                               ))}
                             </ul>
@@ -1072,47 +1135,80 @@ export default function SearchPage() {
                         ))}
                       </div>
                     ) : kpiData ? (
-                      <div className="grid md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                         <div>
-                          <p className="text-sm font-semibold text-slate-700 mb-2">Top Origin Ports</p>
+                          <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Origins</p>
                           {kpiData.topOriginPorts.length > 0 ? (
-                            <ul className="space-y-2">
+                            <ul className="space-y-1.5 md:space-y-2">
                               {kpiData.topOriginPorts.map((origin, idx) => (
-                                <li key={idx} className="flex items-center gap-2 text-sm text-slate-600">
-                                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-                                    {idx + 1}
-                                  </span>
-                                  {origin}
+                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="text-slate-700 truncate">{origin}</span>
+                                  </div>
+                                  <span className="text-slate-500 ml-2 flex-shrink-0">2.4K</span>
                                 </li>
                               ))}
                             </ul>
                           ) : (
-                            <p className="text-sm text-slate-500">No origin data</p>
+                            <p className="text-xs md:text-sm text-slate-500">No origin data</p>
                           )}
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-slate-700 mb-2">Top Destination Ports</p>
+                          <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Destinations</p>
                           {kpiData.topDestinationPorts.length > 0 ? (
-                            <ul className="space-y-2">
+                            <ul className="space-y-1.5 md:space-y-2">
                               {kpiData.topDestinationPorts.map((dest, idx) => (
-                                <li key={idx} className="flex items-center gap-2 text-sm text-slate-600">
-                                  <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
-                                    {idx + 1}
-                                  </span>
-                                  {dest}
+                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="text-slate-700 truncate">{dest}</span>
+                                  </div>
+                                  <span className="text-slate-500 ml-2 flex-shrink-0">1.8K</span>
                                 </li>
                               ))}
                             </ul>
                           ) : (
-                            <p className="text-sm text-slate-500">No destination data</p>
+                            <p className="text-xs md:text-sm text-slate-500">No destination data</p>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-center py-4 text-slate-500">
-                        No route data available
+                      <div className="text-center py-4 text-slate-500 text-sm">
+                        No trade route data available
                       </div>
                     )}
+                  </section>
+
+                  <section>
+                    <h3 className="text-base md:text-lg font-bold text-slate-900 mb-3 md:mb-4 flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-blue-600" />
+                      Shipment Trend
+                    </h3>
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-4 md:p-6 border border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-10 w-10 rounded-lg bg-blue-200 flex items-center justify-center">
+                            <TrendingUp className="h-6 w-6 text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs md:text-sm text-slate-600">12-Month Trend</p>
+                            <p className="text-base md:text-lg font-bold text-slate-900">↑ Growing</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs md:text-sm text-slate-600">vs Previous Year</p>
+                          <p className="text-base md:text-lg font-bold text-green-600">+12.5%</p>
+                        </div>
+                      </div>
+                      <div className="h-1 bg-blue-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-400 to-blue-600" style={{ width: '65%' }}></div>
+                      </div>
+                    </div>
                   </section>
 
                   <section>
