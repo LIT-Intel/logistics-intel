@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2 } from "lucide-react";
+import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import { searchShippers } from "@/lib/api";
 import { fetchCompanyKpis, type CompanyKpiData } from "@/lib/kpiCompute";
+import { parseImportYetiDate, formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
 
 interface MockCompany {
   id: string;
@@ -23,18 +25,21 @@ interface MockCompany {
   industry: string;
   shipments: number;
   shipments_12m: number;
-  teu_estimate: number;
-  revenue_range: string;
-  mode: string;
+  teu_estimate?: number;
+  revenue_range?: string;
+  mode?: string;
   last_shipment: string;
   status: "Active" | "Inactive";
   frequency: "High" | "Medium" | "Low";
   trend: "up" | "flat" | "down";
   top_origins: string[];
   top_destinations: string[];
+  top_suppliers: string[];
   gemini_summary: string;
   risk_flags: string[];
   importyeti_key?: string;
+  enrichment_status?: 'pending' | 'partial' | 'complete';
+  enriched_at?: string;
 }
 
 const MOCK_COMPANIES: MockCompany[] = [
@@ -59,6 +64,7 @@ const MOCK_COMPANIES: MockCompany[] = [
     trend: "up",
     top_origins: ["Shanghai, China", "Shenzhen, China", "Hong Kong"],
     top_destinations: ["Los Angeles", "Long Beach", "Oakland"],
+    top_suppliers: ["Shenzhen Electronics Co", "Shanghai Manufacturer Ltd", "Hong Kong Trading"],
     gemini_summary: "High-frequency ocean importer with consistent Asia-US lanes, specializing in consumer electronics and industrial equipment. Strong track record with major Chinese manufacturers.",
     risk_flags: [],
   },
@@ -83,6 +89,7 @@ const MOCK_COMPANIES: MockCompany[] = [
     trend: "flat",
     top_origins: ["Frankfurt, Germany", "London, UK", "Amsterdam, Netherlands"],
     top_destinations: ["JFK Airport", "Newark", "Boston"],
+    top_suppliers: ["Deutsche Logistics GmbH", "UK Export Partners", "Amsterdam Trade Co"],
     gemini_summary: "Mid-size air freight operator focused on European imports. Diversified supplier base with seasonal peaks in Q4. Reliable payment history.",
     risk_flags: ["Seasonal dependency"],
   },
@@ -107,6 +114,7 @@ const MOCK_COMPANIES: MockCompany[] = [
     trend: "up",
     top_origins: ["Busan, South Korea", "Tokyo, Japan", "Yokohama, Japan"],
     top_destinations: ["Seattle", "Tacoma", "Portland"],
+    top_suppliers: ["Busan Auto Parts", "Tokyo Machinery Corp", "Korea Trading Group"],
     gemini_summary: "Major Pacific Northwest importer with strong Japan and Korea connections. Focus on automotive parts and machinery. Excellent credit rating.",
     risk_flags: [],
   },
@@ -131,6 +139,7 @@ const MOCK_COMPANIES: MockCompany[] = [
     trend: "down",
     top_origins: ["Mexico City, Mexico", "Guadalajara, Mexico", "Monterrey, Mexico"],
     top_destinations: ["Chicago O'Hare", "Indianapolis", "Milwaukee"],
+    top_suppliers: ["Mexico City Export Co", "Guadalajara Freight", "Monterrey Logistics"],
     gemini_summary: "Small air freight operation serving Mexican suppliers. Volume has declined 15% YoY. Single-origin dependency presents risk.",
     risk_flags: ["Volume decline", "Single-origin dependency"],
   },
@@ -155,6 +164,7 @@ const MOCK_COMPANIES: MockCompany[] = [
     trend: "up",
     top_origins: ["Hamburg, Germany", "Rotterdam, Netherlands", "Antwerp, Belgium"],
     top_destinations: ["Miami", "Port Everglades", "Jacksonville"],
+    top_suppliers: ["Hamburg Luxury Goods", "Rotterdam Trading", "Antwerp Auto Parts"],
     gemini_summary: "Established European importer with focus on luxury goods and automotive parts. Growing 20% YoY with strong fundamentals.",
     risk_flags: [],
   },
@@ -179,6 +189,7 @@ const MOCK_COMPANIES: MockCompany[] = [
     trend: "up",
     top_origins: ["Shanghai, China", "Ningbo, China", "Qingdao, China"],
     top_destinations: ["Oakland", "San Francisco", "Richmond"],
+    top_suppliers: ["Shanghai Industrial Co", "Ningbo Manufacturers", "Qingdao Trading Group", "Zhejiang Export Corp"],
     gemini_summary: "Large-scale distribution center handling diverse product categories. Strong relationships with multiple Chinese manufacturers. Expansion planned for 2024.",
     risk_flags: [],
   },
@@ -292,6 +303,9 @@ export default function SearchPage() {
           const parsedAddress = result.address || "";
           const cityMatch = parsedAddress.match(/^([^,]+)/);
 
+          // Parse ImportYeti date format (DD/MM/YYYY)
+          const parsedDate = parseImportYetiDate(result.mostRecentShipment);
+
           return {
             id: result.key || `iy-${Date.now()}-${Math.random()}`,
             name: result.title || "Unknown Company",
@@ -304,18 +318,20 @@ export default function SearchPage() {
             industry: "Import/Export",
             shipments: result.totalShipments || 0,
             shipments_12m: result.totalShipments || 0,
-            teu_estimate: 0,
-            revenue_range: "$1M - $5M",
-            mode: "Ocean",
-            last_shipment: result.mostRecentShipment || new Date().toISOString().split('T')[0],
+            teu_estimate: undefined,
+            revenue_range: undefined,
+            mode: undefined,
+            last_shipment: parsedDate || new Date().toISOString().split('T')[0],
             status: (result.totalShipments || 0) > 0 ? "Active" as const : "Inactive" as const,
             frequency: (result.totalShipments || 0) > 1000 ? "High" as const : (result.totalShipments || 0) > 100 ? "Medium" as const : "Low" as const,
             trend: "flat" as const,
-            top_origins: Array.isArray(result.topSuppliers) ? result.topSuppliers.slice(0, 3) : [],
+            top_origins: [],
             top_destinations: [],
+            top_suppliers: Array.isArray(result.topSuppliers) ? result.topSuppliers : [],
             gemini_summary: `${result.title || "Company"} - Import/Export business`,
             risk_flags: [],
             importyeti_key: result.key,
+            enrichment_status: 'pending' as const,
           };
         });
 
@@ -629,29 +645,86 @@ export default function SearchPage() {
                         <TrendingUp className="h-3 w-3" />
                         <span>Est. TEU</span>
                       </div>
-                      <p className="text-xl font-bold text-slate-900">
-                        {company.teu_estimate.toLocaleString()}
-                      </p>
+                      {company.teu_estimate !== undefined ? (
+                        <p className="text-xl font-bold text-slate-900">
+                          {company.teu_estimate === 0 ? '< 100' : company.teu_estimate.toLocaleString()}
+                        </p>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-6 w-20 bg-slate-200 animate-pulse rounded"></div>
+                          <span className="text-xs text-slate-400">Enriching</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="pt-3 border-t border-slate-100 space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600">Primary Mode</span>
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
-                        {getModeIcon(company.mode)}
-                        {company.mode}
+                    {company.mode && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-600">Primary Mode</span>
+                        <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                          {getModeIcon(company.mode)}
+                          {company.mode}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600">Revenue Range</span>
-                      <span className="font-semibold text-slate-900">{company.revenue_range}</span>
+                      <span className="text-slate-600">Top Suppliers</span>
+                      {company.top_suppliers.length > 0 ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-1">
+                                <Users className="h-3 w-3 text-slate-500" />
+                                <span className="font-semibold text-slate-900">
+                                  {company.top_suppliers.slice(0, 2).map(s => s.split(' ')[0]).join(', ')}
+                                </span>
+                                {company.top_suppliers.length > 2 && (
+                                  <Badge variant="secondary" className="text-xs py-0 px-1.5">
+                                    +{company.top_suppliers.length - 2}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p className="font-semibold mb-1">All Suppliers:</p>
+                              <ul className="space-y-0.5">
+                                {company.top_suppliers.map((supplier, idx) => (
+                                  <li key={idx} className="text-xs">• {supplier}</li>
+                                ))}
+                              </ul>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        <span className="text-xs text-slate-400">No data</span>
+                      )}
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-600">Last Shipment</span>
-                      <span className="font-semibold text-slate-900">
-                        {new Date(company.last_shipment).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-900">
+                          {formatUserFriendlyDate(company.last_shipment)}
+                        </span>
+                        {(() => {
+                          const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                          if (badgeInfo) {
+                            return (
+                              <Badge
+                                variant="secondary"
+                                className={`text-xs py-0 px-1.5 ${
+                                  badgeInfo.color === 'green' ? 'bg-green-50 text-green-700 border-green-200' :
+                                  badgeInfo.color === 'yellow' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                  'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {badgeInfo.label}
+                              </Badge>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </div>
                   </div>
 
@@ -728,17 +801,49 @@ export default function SearchPage() {
                         <div className="text-sm font-semibold text-slate-900">{company.shipments_12m.toLocaleString()}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm font-semibold text-slate-900">{company.teu_estimate.toLocaleString()}</div>
+                        {company.teu_estimate !== undefined ? (
+                          <div className="text-sm font-semibold text-slate-900">
+                            {company.teu_estimate === 0 ? '< 100' : company.teu_estimate.toLocaleString()}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-4 w-16 bg-slate-200 animate-pulse rounded"></div>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
-                          {getModeIcon(company.mode)}
-                          {company.mode}
-                        </div>
+                        {company.mode ? (
+                          <div className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                            {getModeIcon(company.mode)}
+                            {company.mode}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm text-slate-900">
-                          {new Date(company.last_shipment).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        <div className="flex items-center gap-1.5">
+                          <div className="text-sm text-slate-900">
+                            {formatUserFriendlyDate(company.last_shipment)}
+                          </div>
+                          {(() => {
+                            const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                            if (badgeInfo) {
+                              return (
+                                <Badge
+                                  variant="secondary"
+                                  className={`text-xs py-0 px-1.5 ${
+                                    badgeInfo.color === 'green' ? 'bg-green-50 text-green-700 border-green-200' :
+                                    badgeInfo.color === 'yellow' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                    'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {badgeInfo.label}
+                                </Badge>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -889,8 +994,13 @@ export default function SearchPage() {
                       {loadingKpis && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
                     </h3>
                     {loadingKpis ? (
-                      <div className="text-center py-8 text-slate-600">
-                        Loading real-time shipment data...
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {['Total TEU (12m)', 'FCL Shipments', 'LCL Shipments', 'Trend'].map((label, idx) => (
+                          <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                            <p className="text-xs text-slate-600 mb-1">{label}</p>
+                            <div className="h-8 w-24 bg-slate-200 animate-pulse rounded mt-1"></div>
+                          </div>
+                        ))}
                       </div>
                     ) : kpiData ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -922,8 +1032,18 @@ export default function SearchPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-slate-500">
-                        No shipment data available
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[
+                          { label: 'Total TEU (12m)', value: '0 TEU' },
+                          { label: 'FCL Shipments', value: '0' },
+                          { label: 'LCL Shipments', value: '0' },
+                          { label: 'Trend', value: 'No data' }
+                        ].map((item, idx) => (
+                          <div key={idx} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                            <p className="text-xs text-slate-600 mb-1">{item.label}</p>
+                            <p className="text-2xl font-bold text-slate-400">{item.value}</p>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </section>
@@ -933,7 +1053,25 @@ export default function SearchPage() {
                       <Globe className="h-5 w-5 text-blue-600" />
                       Trade Routes
                     </h3>
-                    {kpiData ? (
+                    {loadingKpis ? (
+                      <div className="grid md:grid-cols-2 gap-6">
+                        {['Top Origin Ports', 'Top Destination Ports'].map((title, colIdx) => (
+                          <div key={colIdx}>
+                            <p className="text-sm font-semibold text-slate-700 mb-2">{title}</p>
+                            <ul className="space-y-2">
+                              {[0, 1, 2].map((idx) => (
+                                <li key={idx} className="flex items-center gap-2">
+                                  <div className={`w-6 h-6 rounded-full ${colIdx === 0 ? 'bg-blue-100' : 'bg-green-100'} flex items-center justify-center text-xs font-bold`}>
+                                    {idx + 1}
+                                  </div>
+                                  <div className="h-4 w-32 bg-slate-200 animate-pulse rounded"></div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    ) : kpiData ? (
                       <div className="grid md:grid-cols-2 gap-6">
                         <div>
                           <p className="text-sm font-semibold text-slate-700 mb-2">Top Origin Ports</p>

@@ -1024,6 +1024,8 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
 function resolveIySearchArray(raw: any): any[] {
   // Edge function returns { ok: true, rows: [...] }
   if (Array.isArray(raw?.rows)) return raw.rows;
+  // ImportYeti API returns { data: [...] }
+  if (Array.isArray(raw?.data)) return raw.data;
   // Fallback to other common shapes
   if (Array.isArray(raw?.results)) return raw.results;
   if (Array.isArray(raw?.items)) return raw.items;
