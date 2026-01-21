@@ -35,6 +35,11 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Handle companyBols action - returns BOL array for KPI computation
+    if (action === "companyBols") {
+      return handleCompanyBolsAction(supabase, company_id);
+    }
+
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("📦 SNAPSHOT REQUEST:", company_id);
 
@@ -172,6 +177,83 @@ Deno.serve(async (req: Request) => {
   }
 });
 
+async function handleCompanyBolsAction(supabase: any, company_id: string) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📋 COMPANY BOLS REQUEST:", company_id);
+
+  const normalizedCompanyKey = normalizeCompanyKey(company_id);
+  console.log("  Normalized slug:", normalizedCompanyKey);
+
+  // Fetch snapshot to get BOLs
+  const { data: snapshot, error } = await supabase
+    .from("lit_importyeti_company_snapshot")
+    .select("*")
+    .eq("company_id", normalizedCompanyKey)
+    .maybeSingle();
+
+  if (error) {
+    console.error("❌ Snapshot fetch error:", error);
+    return new Response(
+      JSON.stringify({ ok: false, error: "Failed to fetch snapshot" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  if (!snapshot) {
+    console.log("⚠️  No snapshot found - fetching fresh data");
+    // Fetch fresh data from ImportYeti
+    const iyUrl = `${IY_BASE_URL}/company/${normalizedCompanyKey}`;
+    const iyResponse = await fetch(iyUrl, {
+      method: "GET",
+      headers: {
+        "IYApiKey": IY_API_KEY,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!iyResponse.ok) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Company not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const rawPayload = await iyResponse.json();
+    const data = rawPayload.data || rawPayload;
+    const rows = Array.isArray(data.recent_bols) ? data.recent_bols : [];
+
+    console.log("✅ BOLs fetched:", rows.length);
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        rows,
+        total: rows.length,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Extract BOLs from cached snapshot
+  const rawPayload = snapshot.raw_payload || {};
+  const data = rawPayload.data || rawPayload;
+  const rows = Array.isArray(data.recent_bols) ? data.recent_bols : [];
+
+  console.log("✅ BOLs from cache:", rows.length);
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      rows,
+      total: rows.length,
+      cached_at: snapshot.updated_at,
+    }),
+    { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
 async function handleSearchAction(q: string, page: number = 1, pageSize: number = 25) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("🔍 SEARCH REQUEST:", { q, page, pageSize });
@@ -290,45 +372,71 @@ function normalizeCompanyKey(key: string): string {
 }
 
 function parseCompanySnapshot(raw: any): any {
-  const shipments = raw.shipments || [];
-  const containers = raw.containers || [];
+  // ImportYeti nests all company data under 'data' key
+  const data = raw.data || raw;
 
-  // Calculate TEU
-  let totalTeu = 0;
-  containers.forEach((c: any) => {
-    const size = String(c.size || "").toLowerCase();
-    if (size.includes("20")) totalTeu += 1;
-    else if (size.includes("40")) totalTeu += 2;
-    else if (size.includes("45")) totalTeu += 2.25;
+  const recentBols = Array.isArray(data.recent_bols) ? data.recent_bols : [];
+  const containers = Array.isArray(data.containers) ? data.containers : [];
+
+  // Extract pre-computed ImportYeti metrics
+  const totalShipments = parseInt(String(data.total_shipments || "0"), 10) || 0;
+  const avgTeuPerMonth = data.avg_teu_per_month || {};
+  const totalTeu12m = typeof avgTeuPerMonth["12m"] === "number"
+    ? Math.round(avgTeuPerMonth["12m"] * 12 * 10) / 10
+    : 0;
+  const estSpend = parseFloat(String(data.total_shipping_cost || "0")) || 0;
+
+  // Parse date range
+  const dateRange = data.date_range || {};
+  let lastShipmentDate = null;
+  if (dateRange.end_date) {
+    // ImportYeti format: "DD/MM/YYYY"
+    const parts = dateRange.end_date.split("/");
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      lastShipmentDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+  }
+
+  // Calculate FCL/LCL counts from recent BOLs
+  let fclCount = 0;
+  let lclCount = 0;
+  recentBols.forEach((bol: any) => {
+    if (bol.lcl === true) {
+      lclCount++;
+    } else if (bol.lcl === false) {
+      fclCount++;
+    }
   });
 
-  // Find date range
-  const dates = shipments
-    .map((s: any) => s.arrival_date || s.date)
-    .filter(Boolean)
-    .map((d: string) => new Date(d))
-    .filter((d: Date) => !isNaN(d.getTime()))
-    .sort((a: Date, b: Date) => b.getTime() - a.getTime());
-
-  const lastShipmentDate = dates[0] || null;
-
-  // Calculate trend (last 3 months vs previous 3 months)
+  // Calculate trend from recent BOLs dates
   const now = new Date();
   const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
   const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
 
-  const recentCount = dates.filter((d) => d >= threeMonthsAgo).length;
-  const previousCount = dates.filter((d) => d >= sixMonthsAgo && d < threeMonthsAgo).length;
+  const bolDates = recentBols
+    .map((b: any) => {
+      if (!b.date_formatted) return null;
+      const parts = b.date_formatted.split("/");
+      if (parts.length !== 3) return null;
+      const [day, month, year] = parts;
+      return new Date(`${year}-${month}-${day}`);
+    })
+    .filter((d: any) => d && !isNaN(d.getTime()))
+    .sort((a: Date, b: Date) => b.getTime() - a.getTime());
+
+  const recentCount = bolDates.filter((d: Date) => d >= threeMonthsAgo).length;
+  const previousCount = bolDates.filter((d: Date) => d >= sixMonthsAgo && d < threeMonthsAgo).length;
 
   let trend = "flat";
   if (recentCount > previousCount * 1.1) trend = "up";
   else if (recentCount < previousCount * 0.9) trend = "down";
 
-  // Top ports
+  // Top ports from recent BOLs
   const portCounts: Record<string, number> = {};
-  shipments.forEach((s: any) => {
-    const port = s.arrival_port || s.entry_port || s.port;
-    if (port) {
+  recentBols.forEach((bol: any) => {
+    const port = bol.Consignee_Address || bol.supplier_address_loc;
+    if (port && typeof port === "string") {
       portCounts[port] = (portCounts[port] || 0) + 1;
     }
   });
@@ -338,33 +446,43 @@ function parseCompanySnapshot(raw: any): any {
     .slice(0, 5)
     .map(([port, count]) => ({ port, count }));
 
-  // Monthly volumes
+  // Monthly volumes (basic aggregation from recent BOLs)
   const monthlyVolumes: Record<string, { fcl: number; lcl: number }> = {};
-  shipments.forEach((s: any) => {
-    const date = s.arrival_date || s.date;
-    if (!date) return;
-    const monthKey = date.substring(0, 7); // YYYY-MM
+  recentBols.forEach((bol: any) => {
+    if (!bol.date_formatted) return;
+    const parts = bol.date_formatted.split("/");
+    if (parts.length !== 3) return;
+    const [day, month, year] = parts;
+    const monthKey = `${year}-${month.padStart(2, "0")}`;
+
     if (!monthlyVolumes[monthKey]) {
       monthlyVolumes[monthKey] = { fcl: 0, lcl: 0 };
     }
-    if (s.load_type === "FCL") monthlyVolumes[monthKey].fcl++;
-    else if (s.load_type === "LCL") monthlyVolumes[monthKey].lcl++;
+    if (bol.lcl === true) {
+      monthlyVolumes[monthKey].lcl++;
+    } else if (bol.lcl === false) {
+      monthlyVolumes[monthKey].fcl++;
+    }
   });
 
+  const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+  const shipmentsLast12m = bolDates.filter((d: Date) => d >= oneYearAgo).length;
+
   return {
-    company_id: raw.id || raw.key,
-    company_name: raw.name,
-    country: raw.country,
-    city: raw.city,
-    website: raw.website,
-    total_shipments: shipments.length,
-    total_teu: Math.round(totalTeu * 10) / 10,
-    last_shipment_date: lastShipmentDate?.toISOString().split("T")[0] || null,
+    company_id: data.key || data.id,
+    company_name: data.title || data.name,
+    country: data.country,
+    city: data.city || data.address_plain,
+    website: data.website,
+    total_shipments: totalShipments,
+    total_teu: totalTeu12m,
+    est_spend: estSpend,
+    fcl_count: fclCount,
+    lcl_count: lclCount,
+    last_shipment_date: lastShipmentDate,
     trend,
     top_ports: topPorts,
     monthly_volumes: monthlyVolumes,
-    shipments_last_12m: dates.filter(
-      (d) => d >= new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
-    ).length,
+    shipments_last_12m: shipmentsLast12m || totalShipments,
   };
 }
