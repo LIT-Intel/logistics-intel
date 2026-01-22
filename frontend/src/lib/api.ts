@@ -1203,6 +1203,15 @@ export interface CompanySnapshot {
   top_ports: Array<{ port: string; count: number }>;
   monthly_volumes: Record<string, { fcl: number; lcl: number }>;
   shipments_last_12m: number;
+  timeSeries: Array<{ period: string; fcl: number; lcl: number }>;
+  routeKpis: {
+    shipmentsLast12m: number;
+    teuLast12m: number;
+    estSpendUsd12m: number;
+    fclShipments12m: number;
+    lclShipments12m: number;
+    topRoutesLast12m: Array<{ route: string; shipmentCount: number }>;
+  };
 }
 
 export async function fetchCompanySnapshot(
