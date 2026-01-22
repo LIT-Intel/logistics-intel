@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2, Users, DollarSign, ExternalLink, Phone } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -241,10 +242,10 @@ export default function SearchPage() {
         if (error) throw error;
 
         if (data) {
-          const ids = data
+          const keys = data
             .map((item: any) => item.lit_companies?.source_company_key)
             .filter(Boolean);
-          setSavedCompanyIds(ids);
+          setSavedCompanyIds(keys);
         }
       } catch (error) {
         console.error('Failed to load saved companies:', error);
@@ -549,7 +550,9 @@ export default function SearchPage() {
         description: `${company.name} has been saved to your Command Center`,
       });
 
-      setSavedCompanyIds(prev => [...prev, company.id]);
+      if (company.importyeti_key) {
+        setSavedCompanyIds(prev => [...prev, company.importyeti_key]);
+      }
       setSelectedCompany(null);
     } catch (error: any) {
       console.error("Save error:", error);
@@ -714,7 +717,7 @@ export default function SearchPage() {
                 <Card className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
-                {savedCompanyIds.includes(company.id) && (
+                {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
                   <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10">
                     <Badge className="bg-blue-600 text-white border-0 shadow-sm text-xs">
                       <Bookmark className="h-3 w-3 mr-1 fill-white" />
@@ -866,13 +869,13 @@ export default function SearchPage() {
                       Details
                     </Button>
                     <Button
-                      variant={savedCompanyIds.includes(company.id) ? "secondary" : "outline"}
+                      variant={company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? "secondary" : "outline"}
                       size="sm"
                       onClick={() => saveToCommandCenter(company)}
-                      disabled={saving || savedCompanyIds.includes(company.id)}
-                      className={`h-9 md:h-10 px-2 md:px-3 ${savedCompanyIds.includes(company.id) ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : ""}`}
+                      disabled={saving || (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))}
+                      className={`h-9 md:h-10 px-2 md:px-3 ${company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : ""}`}
                     >
-                      {savedCompanyIds.includes(company.id) ? (
+                      {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
                         <Bookmark className="h-4 w-4 fill-current" />
                       ) : (
                         <BookmarkPlus className="h-4 w-4" />
@@ -991,10 +994,10 @@ export default function SearchPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => saveToCommandCenter(company)}
-                            disabled={saving || savedCompanyIds.includes(company.id)}
-                            className={savedCompanyIds.includes(company.id) ? "text-blue-600" : ""}
+                            disabled={saving || (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))}
+                            className={company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? "text-blue-600" : ""}
                           >
-                            {savedCompanyIds.includes(company.id) ? (
+                            {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
                               <Bookmark className="h-4 w-4 fill-current" />
                             ) : (
                               <BookmarkPlus className="h-4 w-4" />
@@ -1227,6 +1230,67 @@ export default function SearchPage() {
                   </section>
 
                   <section>
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-blue-600" />
+                      Monthly Activity
+                      {loadingSnapshot && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+                    </h3>
+                    {loadingSnapshot ? (
+                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 h-80 flex items-center justify-center">
+                        <div className="text-center">
+                          <Loader2 className="h-8 w-8 animate-spin text-slate-400 mx-auto mb-2" />
+                          <p className="text-sm text-slate-600">Loading monthly data...</p>
+                        </div>
+                      </div>
+                    ) : Object.keys(monthlyVolumes).length > 0 ? (
+                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+                        <div className="h-80 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={Object.entries(monthlyVolumes)
+                                .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+                                .slice(-12)
+                                .map(([month, data]) => ({
+                                  month,
+                                  FCL: data.fcl,
+                                  LCL: data.lcl,
+                                }))}
+                              margin={{ top: 8, right: 12, left: 0, bottom: 8 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                              <XAxis
+                                dataKey="month"
+                                tick={{ fontSize: 12, fill: "#64748b" }}
+                                tickLine={false}
+                              />
+                              <YAxis tick={{ fontSize: 12, fill: "#64748b" }} allowDecimals={false} />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: "#1e293b",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  color: "#f1f5f9",
+                                  fontSize: "12px",
+                                }}
+                                formatter={(value: any) => value.toLocaleString()}
+                              />
+                              <Legend wrapperStyle={{ fontSize: "12px" }} />
+                              <Bar dataKey="FCL" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="LCL" fill="#10b981" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 text-center">
+                        <p className="text-sm text-slate-500">
+                          No monthly shipment data available for this company yet
+                        </p>
+                      </div>
+                    )}
+                  </section>
+
+                  <section>
                     <h3 className="text-base md:text-lg font-bold text-slate-900 mb-3 md:mb-4 flex items-center gap-2">
                       <Globe className="h-5 w-5 text-blue-600" />
                       Trade Routes
@@ -1371,11 +1435,11 @@ export default function SearchPage() {
                 <div className="sticky bottom-0 bg-white border-t border-slate-200 px-8 py-4 flex gap-3">
                   <Button
                     className="flex-1"
-                    variant={selectedCompany && savedCompanyIds.includes(selectedCompany.id) ? "secondary" : "default"}
+                    variant={selectedCompany?.importyeti_key && savedCompanyIds.includes(selectedCompany.importyeti_key) ? "secondary" : "default"}
                     onClick={() => selectedCompany && saveToCommandCenter(selectedCompany)}
-                    disabled={saving || (selectedCompany && savedCompanyIds.includes(selectedCompany.id))}
+                    disabled={saving || (selectedCompany?.importyeti_key && savedCompanyIds.includes(selectedCompany.importyeti_key))}
                   >
-                    {selectedCompany && savedCompanyIds.includes(selectedCompany.id) ? (
+                    {selectedCompany?.importyeti_key && savedCompanyIds.includes(selectedCompany.importyeti_key) ? (
                       <>
                         <Bookmark className="h-4 w-4 mr-2 fill-current" />
                         Saved to Command Center
