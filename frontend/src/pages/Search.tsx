@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2, Users, DollarSign, ExternalLink, Phone } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -1264,7 +1264,7 @@ export default function SearchPage() {
                                 tickLine={false}
                               />
                               <YAxis tick={{ fontSize: 12, fill: "#64748b" }} allowDecimals={false} />
-                              <Tooltip
+                              <RechartsTooltip
                                 contentStyle={{
                                   backgroundColor: "#1e293b",
                                   border: "none",
