@@ -330,7 +330,7 @@ export default function SearchPage() {
   }, [selectedCompany]);
 
   const computeKPIsFromRaw = () => {
-    if (!rawData?.data) {
+    if (!rawData?.snapshot) {
       return {
         totalTEU: 0,
         fclCount: 0,
@@ -341,137 +341,34 @@ export default function SearchPage() {
       };
     }
 
-    const data = rawData.data;
-    const recentBols = data.recent_bols || [];
-
-    const fclCount = recentBols.filter((bol: any) => !bol.lcl).length;
-    const lclCount = recentBols.filter((bol: any) => bol.lcl).length;
-    const totalTEU = data.avg_teu_per_month?.["12m"] ? data.avg_teu_per_month["12m"] * 12 : 0;
+    const snapshot = rawData.snapshot;
 
     return {
-      totalTEU: Math.round(totalTEU),
-      fclCount,
-      lclCount,
-      estSpend: data.total_shipping_cost || 0,
-      totalShipments: data.total_shipments || 0,
-      lastShipmentDate: data.date_range?.end_date || null,
+      totalTEU: snapshot.total_teu || 0,
+      fclCount: snapshot.fcl_count || 0,
+      lclCount: snapshot.lcl_count || 0,
+      estSpend: snapshot.est_spend || 0,
+      totalShipments: snapshot.total_shipments || 0,
+      lastShipmentDate: snapshot.last_shipment_date || null,
     };
   };
 
   const computeMonthlyVolumes = () => {
-    if (!rawData?.data?.recent_bols) {
-      console.warn("[computeMonthlyVolumes] No recent_bols data available");
+    if (!rawData?.snapshot?.monthly_volumes) {
+      console.warn("[computeMonthlyVolumes] No monthly_volumes data in snapshot");
       return {};
     }
 
-    const monthlyData: Record<string, { fcl: number; lcl: number }> = {};
-    const bols = rawData.data.recent_bols;
-
-    console.log("[computeMonthlyVolumes] Processing", bols.length, "BOLs");
-
-    bols.forEach((bol: any, idx: number) => {
-      let dateStr: string | undefined;
-      let teuValue = bol.teu || bol.TEU || 0;
-      let isLcl = bol.lcl || bol.LCL || false;
-
-      if (bol.date_formatted) {
-        dateStr = bol.date_formatted;
-      } else if (bol.date) {
-        dateStr = bol.date;
-      } else if (bol.shipment_date) {
-        dateStr = bol.shipment_date;
-      } else if (bol.created_date) {
-        dateStr = bol.created_date;
-      }
-
-      if (!dateStr) {
-        if (idx === 0) console.warn("[computeMonthlyVolumes] BOL has no date field:", bol);
-        return;
-      }
-
-      let monthKey: string;
-
-      if (dateStr.includes('/')) {
-        const parts = dateStr.split('/');
-        if (parts.length !== 3) {
-          console.warn("[computeMonthlyVolumes] Invalid date format (not MM/DD/YYYY):", dateStr);
-          return;
-        }
-        const [day, month, year] = parts;
-        if (!month || !year) return;
-        monthKey = `${year}-${month.padStart(2, '0')}`;
-      } else if (dateStr.includes('-')) {
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          const [year, month, day] = parts;
-          monthKey = `${year}-${month.padStart(2, '0')}`;
-        } else {
-          console.warn("[computeMonthlyVolumes] Invalid date format (not YYYY-MM-DD):", dateStr);
-          return;
-        }
-      } else {
-        console.warn("[computeMonthlyVolumes] Unable to parse date:", dateStr);
-        return;
-      }
-
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { fcl: 0, lcl: 0 };
-      }
-
-      if (isLcl) {
-        monthlyData[monthKey].lcl += teuValue;
-      } else {
-        monthlyData[monthKey].fcl += teuValue;
-      }
-
-      if (idx < 3) {
-        console.log(`[computeMonthlyVolumes] BOL ${idx}:`, {
-          date: dateStr,
-          monthKey,
-          teu: teuValue,
-          isLcl,
-          type: isLcl ? "LCL" : "FCL"
-        });
-      }
-    });
-
-    console.log("[computeMonthlyVolumes] Final monthly data:", monthlyData);
-    console.log("[computeMonthlyVolumes] Monthly data keys:", Object.keys(monthlyData).sort());
-
-    return monthlyData;
+    return rawData.snapshot.monthly_volumes;
   };
 
   const computeTradeRoutes = () => {
-    if (!rawData?.data?.recent_bols) {
+    if (!rawData?.snapshot?.top_ports) {
       return { origins: [], destinations: [] };
     }
 
-    const originCounts: Record<string, number> = {};
-    const destCounts: Record<string, number> = {};
-
-    rawData.data.recent_bols.forEach((bol: any) => {
-      const origin = bol.origin_port || bol.supplier_address_loc;
-      const dest = bol.destination_port || bol.Consignee_Address;
-
-      if (origin && typeof origin === 'string') {
-        originCounts[origin] = (originCounts[origin] || 0) + 1;
-      }
-      if (dest && typeof dest === 'string') {
-        destCounts[dest] = (destCounts[dest] || 0) + 1;
-      }
-    });
-
-    const origins = Object.entries(originCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([port, count]) => ({ port, count }));
-
-    const destinations = Object.entries(destCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([port, count]) => ({ port, count }));
-
-    return { origins, destinations };
+    const topPorts = rawData.snapshot.top_ports || [];
+    return { origins: topPorts.slice(0, 5), destinations: [] };
   };
 
   const kpis = computeKPIsFromRaw();
@@ -592,23 +489,8 @@ export default function SearchPage() {
 
     setSaving(true);
     try {
-      const { data: session } = await supabase.auth.getSession();
-      console.log("[saveToCommandCenter] Session check:", {
-        hasSession: !!session?.session,
-        hasToken: !!session?.session?.access_token,
-        userId: user?.id,
-      });
-
-      if (!session?.session?.access_token) {
-        throw new Error("No valid session - please log in again");
-      }
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      if (!supabaseUrl) {
-        throw new Error("Supabase URL not configured");
-      }
-
       const payload = {
+        source_company_key: company.importyeti_key || company.id,
         company_data: {
           source: "importyeti",
           source_company_key: company.importyeti_key || company.id,
@@ -634,44 +516,21 @@ export default function SearchPage() {
       console.log("[saveToCommandCenter] Sending payload:", {
         company_name: payload.company_data.name,
         company_key: payload.company_data.source_company_key,
-        url: `${supabaseUrl}/functions/v1/save-company`,
       });
 
-      const response = await fetch(
-        `${supabaseUrl}/functions/v1/save-company`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.session.access_token}`,
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      console.log("[saveToCommandCenter] Response received:", {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
+      const { data: responseData, error } = await supabase.functions.invoke("save-company", {
+        body: payload,
       });
 
-      let responseData: any;
-      try {
-        responseData = await response.json();
-      } catch (e) {
-        console.error("[saveToCommandCenter] Failed to parse response as JSON:", e);
-        throw new Error(`Invalid response from server (HTTP ${response.status})`);
-      }
-
-      if (!response.ok) {
-        console.error("[saveToCommandCenter] Save failed - response error:", responseData);
-        throw new Error(responseData.error || `Failed to save company (HTTP ${response.status})`);
+      if (error) {
+        console.error("[saveToCommandCenter] Save failed:", error);
+        throw new Error(error.message || "Failed to save company");
       }
 
       console.log("[saveToCommandCenter] Save successful:", {
-        success: responseData.success,
-        companyId: responseData.company?.id,
-        savedId: responseData.saved?.id,
+        success: responseData?.success,
+        companyId: responseData?.company?.id,
+        savedId: responseData?.saved?.id,
       });
 
       toast({
@@ -1218,7 +1077,7 @@ export default function SearchPage() {
                     <div className="flex items-start gap-3 md:gap-4 flex-1 min-w-0">
                       <CompanyAvatar
                         name={rawData?.data?.title || rawData?.data?.name || selectedCompany.name}
-                        logoUrl={getCompanyLogoUrl(rawData?.data?.website || selectedCompany.website)}
+                        logoUrl={rawData?.data?.website || selectedCompany.website ? `https://img.logo.dev/${new URL(`https://${rawData?.data?.website || selectedCompany.website}`).hostname}?token=pk_live_1c1b01c012` : undefined}
                         size="lg"
                         className="flex-shrink-0"
                       />
