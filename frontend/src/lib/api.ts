@@ -4,6 +4,10 @@ import {
   ShipmentLite,
   CommandCenterRecord,
 } from "@/types/importyeti";
+import {
+  ImportYetiRawPayload,
+  CompanySnapshotResponse,
+} from "@/types/importyeti-raw";
 import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
 import { supabase } from "@/lib/supabase";
 
@@ -1204,7 +1208,7 @@ export interface CompanySnapshot {
 export async function fetchCompanySnapshot(
   companyKey: string,
   signal?: AbortSignal
-): Promise<{ ok: boolean; source: 'cache' | 'importyeti'; snapshot: CompanySnapshot; raw: any } | null> {
+): Promise<CompanySnapshotResponse | null> {
   const companySlug = normalizeCompanyIdToSlug(companyKey);
   if (!companySlug) {
     console.error("[fetchCompanySnapshot] Invalid company key:", companyKey);
@@ -1231,13 +1235,38 @@ export async function fetchCompanySnapshot(
     console.log("[fetchCompanySnapshot] Response:", {
       ok: responseData?.ok,
       source: responseData?.source,
-      hasSnapshot: !!responseData?.snapshot
+      hasSnapshot: !!responseData?.snapshot,
+      hasRaw: !!responseData?.raw
     });
 
     if (!responseData || !responseData.ok || !responseData.snapshot) {
       console.warn("[fetchCompanySnapshot] No snapshot data");
       return null;
     }
+
+    console.log("━━━━━━━━━━ RAW PAYLOAD INSPECTION ━━━━━━━━━━");
+    console.log("[RAW PAYLOAD] Full structure:", responseData.raw);
+    console.log("[RAW PAYLOAD] Top-level keys:", Object.keys(responseData.raw || {}));
+
+    if (responseData.raw?.data) {
+      console.log("[RAW PAYLOAD] Data keys:", Object.keys(responseData.raw.data));
+      console.log("[RAW PAYLOAD] Total shipments:", responseData.raw.data.total_shipments);
+      console.log("[RAW PAYLOAD] Recent BOLs count:", responseData.raw.data.recent_bols?.length);
+      console.log("[RAW PAYLOAD] Sample BOL:", responseData.raw.data.recent_bols?.[0]);
+      console.log("[RAW PAYLOAD] AVG TEU per month:", responseData.raw.data.avg_teu_per_month);
+      console.log("[RAW PAYLOAD] Total shipping cost:", responseData.raw.data.total_shipping_cost);
+      console.log("[RAW PAYLOAD] Company info:", {
+        name: responseData.raw.data.name,
+        title: responseData.raw.data.title,
+        website: responseData.raw.data.website,
+        phone: responseData.raw.data.phone,
+        country: responseData.raw.data.country,
+        address: responseData.raw.data.address_plain
+      });
+    } else {
+      console.log("[RAW PAYLOAD] Direct keys (no nested data):", Object.keys(responseData.raw || {}));
+    }
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     return {
       ok: responseData.ok,

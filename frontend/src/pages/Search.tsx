@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2, Users, DollarSign, ExternalLink } from "lucide-react";
+import { Search as SearchIcon, Building2, MapPin, TrendingUp, Package, Ship, Plane, Calendar, Globe, X, BookmarkPlus, Bookmark, Eye, ArrowUpRight, Grid3x3, List, Loader2, Users, DollarSign, ExternalLink, Phone } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -220,7 +220,7 @@ export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<MockCompany[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
-  const [snapshotData, setSnapshotData] = useState<CompanySnapshot | null>(null);
+  const [rawData, setRawData] = useState<any>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -259,7 +259,7 @@ export default function SearchPage() {
 
     const loadSnapshot = async () => {
       if (!selectedCompany || !selectedCompany.importyeti_key) {
-        setSnapshotData(null);
+        setRawData(null);
         return;
       }
 
@@ -269,18 +269,18 @@ export default function SearchPage() {
       try {
         const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
         if (!cancelled) {
-          if (result && result.snapshot) {
-            console.log("[Search] Snapshot loaded:", result.snapshot);
-            setSnapshotData(result.snapshot);
+          if (result && result.raw) {
+            console.log("[Search] Raw payload received - using for UI");
+            setRawData(result.raw);
           } else {
-            console.warn("[Search] No snapshot data returned");
-            setSnapshotData(null);
+            console.warn("[Search] No raw data returned");
+            setRawData(null);
           }
         }
       } catch (error) {
         console.error('[Search] Failed to load snapshot:', error);
         if (!cancelled) {
-          setSnapshotData(null);
+          setRawData(null);
         }
       } finally {
         if (!cancelled) {
@@ -295,6 +295,100 @@ export default function SearchPage() {
       cancelled = true;
     };
   }, [selectedCompany]);
+
+  const computeKPIsFromRaw = () => {
+    if (!rawData?.data) {
+      return {
+        totalTEU: 0,
+        fclCount: 0,
+        lclCount: 0,
+        estSpend: 0,
+        totalShipments: 0,
+        lastShipmentDate: null,
+      };
+    }
+
+    const data = rawData.data;
+    const recentBols = data.recent_bols || [];
+
+    const fclCount = recentBols.filter((bol: any) => !bol.lcl).length;
+    const lclCount = recentBols.filter((bol: any) => bol.lcl).length;
+    const totalTEU = data.avg_teu_per_month?.["12m"] ? data.avg_teu_per_month["12m"] * 12 : 0;
+
+    return {
+      totalTEU: Math.round(totalTEU),
+      fclCount,
+      lclCount,
+      estSpend: data.total_shipping_cost || 0,
+      totalShipments: data.total_shipments || 0,
+      lastShipmentDate: data.date_range?.end_date || null,
+    };
+  };
+
+  const computeMonthlyVolumes = () => {
+    if (!rawData?.data?.recent_bols) return {};
+
+    const monthlyData: Record<string, { fcl: number; lcl: number }> = {};
+
+    rawData.data.recent_bols.forEach((bol: any) => {
+      if (!bol.date_formatted) return;
+
+      const [day, month, year] = bol.date_formatted.split('/');
+      if (!month || !year) return;
+
+      const monthKey = `${year}-${month}`;
+
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = { fcl: 0, lcl: 0 };
+      }
+
+      const teu = bol.teu || 0;
+      if (bol.lcl) {
+        monthlyData[monthKey].lcl += teu;
+      } else {
+        monthlyData[monthKey].fcl += teu;
+      }
+    });
+
+    return monthlyData;
+  };
+
+  const computeTradeRoutes = () => {
+    if (!rawData?.data?.recent_bols) {
+      return { origins: [], destinations: [] };
+    }
+
+    const originCounts: Record<string, number> = {};
+    const destCounts: Record<string, number> = {};
+
+    rawData.data.recent_bols.forEach((bol: any) => {
+      const origin = bol.origin_port || bol.supplier_address_loc;
+      const dest = bol.destination_port || bol.Consignee_Address;
+
+      if (origin && typeof origin === 'string') {
+        originCounts[origin] = (originCounts[origin] || 0) + 1;
+      }
+      if (dest && typeof dest === 'string') {
+        destCounts[dest] = (destCounts[dest] || 0) + 1;
+      }
+    });
+
+    const origins = Object.entries(originCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([port, count]) => ({ port, count }));
+
+    const destinations = Object.entries(destCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([port, count]) => ({ port, count }));
+
+    return { origins, destinations };
+  };
+
+  const kpis = computeKPIsFromRaw();
+  const monthlyVolumes = computeMonthlyVolumes();
+  const tradeRoutes = computeTradeRoutes();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -974,40 +1068,57 @@ export default function SearchPage() {
                   <div className="flex items-start justify-between gap-3 md:gap-4">
                     <div className="flex items-start gap-3 md:gap-4 flex-1 min-w-0">
                       <CompanyAvatar
-                        name={selectedCompany.name}
-                        logoUrl={getCompanyLogoUrl(selectedCompany.website)}
+                        name={rawData?.data?.title || rawData?.data?.name || selectedCompany.name}
+                        logoUrl={getCompanyLogoUrl(rawData?.data?.website || selectedCompany.website)}
                         size="lg"
                         className="flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <h2 className="text-xl md:text-2xl font-bold text-slate-900 flex-1 min-w-0">{selectedCompany.name}</h2>
-                          <span className="text-2xl md:text-3xl flex-shrink-0 whitespace-nowrap">{getCountryFlag(selectedCompany.country_code)}</span>
+                          <h2 className="text-xl md:text-2xl font-bold text-slate-900 flex-1 min-w-0">
+                            {rawData?.data?.title || rawData?.data?.name || selectedCompany.name}
+                          </h2>
+                          <span className="text-2xl md:text-3xl flex-shrink-0 whitespace-nowrap">
+                            {getCountryFlag(rawData?.data?.country || selectedCompany.country_code)}
+                          </span>
                         </div>
                         <div className="space-y-1 text-xs md:text-sm">
-                          <div className="flex items-start gap-2 text-slate-600">
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedCompany.address)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-start gap-2 hover:text-blue-600 transition-colors group"
-                            >
-                              <MapPin className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                              <span className="line-clamp-2 flex-1">{selectedCompany.address}</span>
-                              <ExternalLink className="h-3 w-3 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </a>
-                          </div>
-                          {selectedCompany.website && (
+                          {(rawData?.data?.address_plain || selectedCompany.address) && (
+                            <div className="flex items-start gap-2 text-slate-600">
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawData?.data?.address_plain || selectedCompany.address)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-start gap-2 hover:text-blue-600 transition-colors group"
+                              >
+                                <MapPin className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                                <span className="line-clamp-2 flex-1">{rawData?.data?.address_plain || selectedCompany.address}</span>
+                                <ExternalLink className="h-3 w-3 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </a>
+                            </div>
+                          )}
+                          {(rawData?.data?.website || selectedCompany.website) && (
                             <div className="flex items-center gap-2 text-slate-600">
                               <Globe className="h-4 w-4 flex-shrink-0" />
                               <a
-                                href={`https://${selectedCompany.website}`}
+                                href={`https://${rawData?.data?.website || selectedCompany.website}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="hover:text-blue-600 transition-colors truncate"
                               >
-                                {selectedCompany.website}
+                                {rawData?.data?.website || selectedCompany.website}
                                 <ExternalLink className="h-3 w-3 inline ml-1" />
+                              </a>
+                            </div>
+                          )}
+                          {rawData?.data?.phone && (
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Phone className="h-4 w-4 flex-shrink-0" />
+                              <a
+                                href={`tel:${rawData.data.phone}`}
+                                className="hover:text-blue-600 transition-colors truncate"
+                              >
+                                {rawData.data.phone}
                               </a>
                             </div>
                           )}
@@ -1056,7 +1167,7 @@ export default function SearchPage() {
                           </div>
                         ))}
                       </div>
-                    ) : snapshotData ? (
+                    ) : rawData ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
                           <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
@@ -1064,7 +1175,7 @@ export default function SearchPage() {
                             Total TEU
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {snapshotData.total_teu.toLocaleString()}
+                            {kpis.totalTEU > 0 ? kpis.totalTEU.toLocaleString() : '—'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1073,7 +1184,7 @@ export default function SearchPage() {
                             FCL
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {snapshotData.fcl_count.toLocaleString()}
+                            {kpis.fclCount > 0 ? kpis.fclCount.toLocaleString() : '—'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1082,7 +1193,7 @@ export default function SearchPage() {
                             LCL
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {snapshotData.lcl_count.toLocaleString()}
+                            {kpis.lclCount > 0 ? kpis.lclCount.toLocaleString() : '—'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1091,7 +1202,7 @@ export default function SearchPage() {
                             Est. Spend
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-blue-600">
-                            {formatCurrency(snapshotData.est_spend)}
+                            {kpis.estSpend > 0 ? formatCurrency(kpis.estSpend) : '—'}
                           </p>
                         </div>
                       </div>
@@ -1141,22 +1252,44 @@ export default function SearchPage() {
                           </div>
                         ))}
                       </div>
-                    ) : snapshotData && snapshotData.top_ports && snapshotData.top_ports.length > 0 ? (
-                      <div>
-                        <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Top Ports</p>
-                        <ul className="space-y-1.5 md:space-y-2">
-                          {snapshotData.top_ports.slice(0, 5).map((portData, idx) => (
-                            <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
-                              <div className="flex items-center gap-2 flex-1">
-                                <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                  {idx + 1}
-                                </span>
-                                <span className="text-slate-700 truncate">{portData.port}</span>
-                              </div>
-                              <span className="text-slate-500 ml-2 flex-shrink-0">{portData.count}</span>
-                            </li>
-                          ))}
-                        </ul>
+                    ) : rawData && (tradeRoutes.origins.length > 0 || tradeRoutes.destinations.length > 0) ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                        {tradeRoutes.origins.length > 0 && (
+                          <div>
+                            <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Top Origins</p>
+                            <ul className="space-y-1.5 md:space-y-2">
+                              {tradeRoutes.origins.map((portData, idx) => (
+                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="text-slate-700 truncate">{portData.port}</span>
+                                  </div>
+                                  <span className="text-slate-500 ml-2 flex-shrink-0">{portData.count}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {tradeRoutes.destinations.length > 0 && (
+                          <div>
+                            <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Top Destinations</p>
+                            <ul className="space-y-1.5 md:space-y-2">
+                              {tradeRoutes.destinations.map((portData, idx) => (
+                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="text-slate-700 truncate">{portData.port}</span>
+                                  </div>
+                                  <span className="text-slate-500 ml-2 flex-shrink-0">{portData.count}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-4 text-slate-500 text-sm">
@@ -1166,98 +1299,27 @@ export default function SearchPage() {
                   </section>
 
                   <section>
-                    <h3 className="text-base md:text-lg font-bold text-slate-900 mb-3 md:mb-4 flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-blue-600" />
-                      Shipment Trend
-                    </h3>
-                    {snapshotData ? (
-                      <div className={`bg-gradient-to-r rounded-xl p-4 md:p-6 border ${
-                        snapshotData.trend === 'up'
-                          ? 'from-green-50 to-green-100 border-green-200'
-                          : snapshotData.trend === 'down'
-                          ? 'from-red-50 to-red-100 border-red-200'
-                          : 'from-blue-50 to-blue-100 border-blue-200'
-                      }`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                              snapshotData.trend === 'up'
-                                ? 'bg-green-200'
-                                : snapshotData.trend === 'down'
-                                ? 'bg-red-200'
-                                : 'bg-blue-200'
-                            }`}>
-                              <TrendingUp className={`h-6 w-6 ${
-                                snapshotData.trend === 'up'
-                                  ? 'text-green-600'
-                                  : snapshotData.trend === 'down'
-                                  ? 'text-red-600'
-                                  : 'text-blue-600'
-                              }`} />
-                            </div>
-                            <div>
-                              <p className="text-xs md:text-sm text-slate-600">Recent Trend</p>
-                              <p className="text-base md:text-lg font-bold text-slate-900">
-                                {snapshotData.trend === 'up' ? '↑ Growing' : snapshotData.trend === 'down' ? '↓ Declining' : '→ Stable'}
-                              </p>
-                            </div>
-                          </div>
-                          {snapshotData.last_shipment_date && (
-                            <div className="text-right">
-                              <p className="text-xs md:text-sm text-slate-600">Last Shipment</p>
-                              <p className="text-base md:text-lg font-bold text-slate-900">
-                                {formatUserFriendlyDate(snapshotData.last_shipment_date)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                        <div className={`h-1 rounded-full overflow-hidden ${
-                          snapshotData.trend === 'up'
-                            ? 'bg-green-200'
-                            : snapshotData.trend === 'down'
-                            ? 'bg-red-200'
-                            : 'bg-blue-200'
-                        }`}>
-                          <div className={`h-full bg-gradient-to-r ${
-                            snapshotData.trend === 'up'
-                              ? 'from-green-400 to-green-600'
-                              : snapshotData.trend === 'down'
-                              ? 'from-red-400 to-red-600'
-                              : 'from-blue-400 to-blue-600'
-                          }`} style={{
-                            width: snapshotData.trend === 'up' ? '75%' : snapshotData.trend === 'down' ? '35%' : '50%'
-                          }}></div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-4 text-slate-500 text-sm">
-                        No trend data available
-                      </div>
-                    )}
-                  </section>
-
-                  <section>
                     <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                       <Ship className="h-5 w-5 text-blue-600" />
                       Shipment Summary
                     </h3>
-                    {snapshotData ? (
+                    {rawData ? (
                       <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                           <div className="text-center">
                             <p className="text-xs text-slate-600 mb-1">Total Shipments</p>
-                            <p className="text-2xl font-bold text-slate-900">{snapshotData.total_shipments.toLocaleString()}</p>
+                            <p className="text-2xl font-bold text-slate-900">{kpis.totalShipments > 0 ? kpis.totalShipments.toLocaleString() : '—'}</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-xs text-slate-600 mb-1">Last 12 Months</p>
-                            <p className="text-2xl font-bold text-blue-600">{snapshotData.shipments_last_12m.toLocaleString()}</p>
+                            <p className="text-xs text-slate-600 mb-1">Last Shipment</p>
+                            <p className="text-2xl font-bold text-blue-600">{kpis.lastShipmentDate || '—'}</p>
                           </div>
                           <div className="text-center">
                             <p className="text-xs text-slate-600 mb-1">Average TEU</p>
                             <p className="text-2xl font-bold text-slate-900">
-                              {snapshotData.total_shipments > 0
-                                ? (snapshotData.total_teu / snapshotData.total_shipments).toFixed(1)
-                                : '0'}
+                              {kpis.totalShipments > 0 && kpis.totalTEU > 0
+                                ? (kpis.totalTEU / kpis.totalShipments).toFixed(1)
+                                : '—'}
                             </p>
                           </div>
                         </div>
@@ -1265,11 +1327,11 @@ export default function SearchPage() {
                           <div className="flex items-center justify-center gap-6 text-sm">
                             <div className="flex items-center gap-2">
                               <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                              <span>FCL: {snapshotData.fcl_count}</span>
+                              <span>FCL: {kpis.fclCount > 0 ? kpis.fclCount : '—'}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="w-4 h-4 bg-green-500 rounded"></div>
-                              <span>LCL: {snapshotData.lcl_count}</span>
+                              <span>LCL: {kpis.lclCount > 0 ? kpis.lclCount : '—'}</span>
                             </div>
                           </div>
                         </div>
