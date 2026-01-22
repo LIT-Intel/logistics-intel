@@ -260,23 +260,30 @@ export default function SearchPage() {
     if (!user) return;
 
     console.log("[Search] Setting up real-time listener for saved companies");
-    const subscription = supabase
-      .from('lit_saved_companies')
-      .on('*', (payload) => {
-        console.log("[Search] Saved companies real-time update:", payload);
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          loadSavedCompanies();
-        } else if (payload.eventType === 'DELETE') {
-          loadSavedCompanies();
+    const channel = supabase
+      .channel('public:lit_saved_companies')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'lit_saved_companies',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log("[Search] Saved companies real-time update:", payload);
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
+            loadSavedCompanies();
+          }
         }
-      })
+      )
       .subscribe((status) => {
         console.log("[Search] Subscription status:", status);
       });
 
     return () => {
       console.log("[Search] Cleaning up real-time listener");
-      subscription.unsubscribe();
+      channel.unsubscribe();
     };
   }, [user]);
 
