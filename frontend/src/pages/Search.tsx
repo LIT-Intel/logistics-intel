@@ -342,18 +342,6 @@ export default function SearchPage() {
     }
 
     const snapshot = rawData.snapshot;
-    const routeKpis = snapshot.routeKpis;
-
-    if (routeKpis) {
-      return {
-        totalTEU: routeKpis.teuLast12m || 0,
-        fclCount: routeKpis.fclShipments12m || 0,
-        lclCount: routeKpis.lclShipments12m || 0,
-        estSpend: routeKpis.estSpendUsd12m || 0,
-        totalShipments: routeKpis.shipmentsLast12m || 0,
-        lastShipmentDate: snapshot.last_shipment_date || null,
-      };
-    }
 
     return {
       totalTEU: snapshot.total_teu || 0,
@@ -366,31 +354,47 @@ export default function SearchPage() {
   };
 
   const computeMonthlyVolumes = () => {
-    if (!rawData?.snapshot) {
+    if (!rawData) {
       console.warn("[computeMonthlyVolumes] No rawData available");
       return {};
     }
 
     const snapshot = rawData.snapshot;
-
-    if (snapshot?.timeSeries && Array.isArray(snapshot.timeSeries) && snapshot.timeSeries.length > 0) {
-      const result: Record<string, { fcl: number; lcl: number }> = {};
-      snapshot.timeSeries.forEach((item: any) => {
-        if (item.period) {
-          result[item.period] = {
-            fcl: item.fcl || 0,
-            lcl: item.lcl || 0,
-          };
-        }
-      });
-      return result;
-    }
+    const data = rawData.data || {};
 
     if (snapshot?.monthly_volumes && Object.keys(snapshot.monthly_volumes).length > 0) {
       return snapshot.monthly_volumes;
     }
 
-    console.warn("[computeMonthlyVolumes] No timeSeries or monthly_volumes data available");
+    if (!Array.isArray(data.recent_bols) || data.recent_bols.length === 0) {
+      console.warn("[computeMonthlyVolumes] No BOL data available for aggregation");
+      return {};
+    }
+
+    const computed: Record<string, { fcl: number; lcl: number }> = {};
+    (data.recent_bols || []).forEach((bol: any) => {
+      if (!bol.date_formatted) return;
+      const parts = bol.date_formatted.split("/");
+      if (parts.length !== 3) return;
+      const [day, month, year] = parts;
+      const monthKey = `${year}-${month.padStart(2, "0")}`;
+
+      if (!computed[monthKey]) {
+        computed[monthKey] = { fcl: 0, lcl: 0 };
+      }
+      if (bol.lcl === true) {
+        computed[monthKey].lcl++;
+      } else if (bol.lcl === false) {
+        computed[monthKey].fcl++;
+      }
+    });
+
+    if (Object.keys(computed).length > 0) {
+      console.log("[computeMonthlyVolumes] Computed from BOL data:", Object.keys(computed).length, "months");
+      return computed;
+    }
+
+    console.warn("[computeMonthlyVolumes] No monthly_volumes data available");
     return {};
   };
 
@@ -473,37 +477,9 @@ export default function SearchPage() {
           };
         });
 
-        const companyIds = mappedResults
-          .map((r: any) => r.importyeti_key)
-          .filter(Boolean);
+        setResults(mappedResults);
 
-        let indexMap: Record<string, any> = {};
-        if (companyIds.length > 0) {
-          const { data: indexRows } = await supabase
-            .from('lit_company_index')
-            .select('company_id, total_teu, total_shipments, last_shipment_date')
-            .in('company_id', companyIds);
-
-          if (indexRows) {
-            indexMap = Object.fromEntries(
-              indexRows.map(r => [r.company_id, r])
-            );
-          }
-        }
-
-        const enrichedResults = mappedResults.map((r: any) => {
-          const indexData = indexMap[r.importyeti_key];
-          return {
-            ...r,
-            teu_estimate: indexData?.total_teu ?? undefined,
-            shipments_12m: indexData?.total_shipments ?? r.shipments_12m,
-            last_shipment: indexData?.last_shipment_date || r.last_shipment,
-          };
-        });
-
-        setResults(enrichedResults);
-
-        if (enrichedResults.length === 0) {
+        if (mappedResults.length === 0) {
           toast({
             title: "No results found",
             description: `No companies found matching "${query}"`,
@@ -556,37 +532,26 @@ export default function SearchPage() {
         throw new Error("Authentication failed. Please refresh and try again.");
       }
 
-      const kpis = computeKPIsFromRaw();
-      const monthlyVolumes = computeMonthlyVolumes();
-
       const payload = {
         source_company_key: company.importyeti_key || company.id,
         company_data: {
           source: "importyeti",
           source_company_key: company.importyeti_key || company.id,
           name: company.name,
-          domain: company.website || null,
-          website: company.website || null,
-          phone: null,
-          country_code: company.country_code || null,
-          address_line1: company.address || null,
-          city: company.city || null,
-          state: company.state || null,
-          postal_code: null,
+          domain: company.website,
+          website: company.website,
+          address_line1: company.address,
+          city: company.city,
+          state: company.state,
+          country_code: company.country_code,
           shipments_12m: company.shipments_12m || 0,
-          teu_12m: company.teu_estimate || kpis.totalTEU || null,
-          fcl_shipments_12m: kpis.fclCount || null,
-          lcl_shipments_12m: kpis.lclCount || null,
-          est_spend_12m: kpis.estSpend || null,
-          primary_mode: company.mode || null,
-          revenue_range: company.revenue_range || null,
-          most_recent_shipment_date: company.last_shipment || kpis.lastShipmentDate || null,
-          top_route_12m: rawData?.snapshot?.routeKpis?.topRoutesLast12m?.[0]?.route || null,
-          recent_route: null,
+          teu_12m: company.teu_estimate,
+          primary_mode: company.mode,
+          revenue_range: company.revenue_range,
+          most_recent_shipment_date: company.last_shipment,
           tags: [company.industry, company.frequency].filter(Boolean),
           risk_level: company.risk_flags.length > 0 ? "Medium" : "Low",
-          raw_profile: rawData?.raw || null,
-          raw_stats: rawData?.snapshot || null,
+          raw_last_search: company,
         },
         stage: "prospect",
       };

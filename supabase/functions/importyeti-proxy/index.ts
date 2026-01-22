@@ -372,9 +372,13 @@ function normalizeCompanyKey(key: string): string {
 }
 
 function parseCompanySnapshot(raw: any): any {
+  // ImportYeti nests all company data under 'data' key
   const data = raw.data || raw;
-  const recentBols = Array.isArray(data.recent_bols) ? data.recent_bols : [];
 
+  const recentBols = Array.isArray(data.recent_bols) ? data.recent_bols : [];
+  const containers = Array.isArray(data.containers) ? data.containers : [];
+
+  // Extract pre-computed ImportYeti metrics
   const totalShipments = parseInt(String(data.total_shipments || "0"), 10) || 0;
   const avgTeuPerMonth = data.avg_teu_per_month || {};
   const totalTeu12m = typeof avgTeuPerMonth["12m"] === "number"
@@ -382,9 +386,11 @@ function parseCompanySnapshot(raw: any): any {
     : 0;
   const estSpend = parseFloat(String(data.total_shipping_cost || "0")) || 0;
 
+  // Parse date range
   const dateRange = data.date_range || {};
   let lastShipmentDate = null;
   if (dateRange.end_date) {
+    // ImportYeti format: "DD/MM/YYYY"
     const parts = dateRange.end_date.split("/");
     if (parts.length === 3) {
       const [day, month, year] = parts;
@@ -392,6 +398,7 @@ function parseCompanySnapshot(raw: any): any {
     }
   }
 
+  // Calculate FCL/LCL counts from recent BOLs
   let fclCount = 0;
   let lclCount = 0;
   recentBols.forEach((bol: any) => {
@@ -402,6 +409,7 @@ function parseCompanySnapshot(raw: any): any {
     }
   });
 
+  // Calculate trend from recent BOLs dates
   const now = new Date();
   const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
   const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
@@ -424,6 +432,7 @@ function parseCompanySnapshot(raw: any): any {
   if (recentCount > previousCount * 1.1) trend = "up";
   else if (recentCount < previousCount * 0.9) trend = "down";
 
+  // Top ports from recent BOLs
   const portCounts: Record<string, number> = {};
   recentBols.forEach((bol: any) => {
     const port = bol.Consignee_Address || bol.supplier_address_loc;
@@ -437,6 +446,7 @@ function parseCompanySnapshot(raw: any): any {
     .slice(0, 5)
     .map(([port, count]) => ({ port, count }));
 
+  // Monthly volumes (basic aggregation from recent BOLs)
   const monthlyVolumes: Record<string, { fcl: number; lcl: number }> = {};
   recentBols.forEach((bol: any) => {
     if (!bol.date_formatted) return;
@@ -458,9 +468,6 @@ function parseCompanySnapshot(raw: any): any {
   const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
   const shipmentsLast12m = bolDates.filter((d: Date) => d >= oneYearAgo).length;
 
-  const timeSeries = buildTimeSeries12m(monthlyVolumes);
-  const topRoutes = extractTopRoutes(recentBols);
-
   return {
     company_id: data.key || data.id,
     company_name: data.title || data.name,
@@ -477,51 +484,5 @@ function parseCompanySnapshot(raw: any): any {
     top_ports: topPorts,
     monthly_volumes: monthlyVolumes,
     shipments_last_12m: shipmentsLast12m || totalShipments,
-    timeSeries,
-    routeKpis: {
-      shipmentsLast12m: shipmentsLast12m || totalShipments,
-      teuLast12m: totalTeu12m,
-      estSpendUsd12m: estSpend,
-      fclShipments12m: fclCount,
-      lclShipments12m: lclCount,
-      topRoutesLast12m: topRoutes,
-    },
   };
-}
-
-function buildTimeSeries12m(monthlyVolumes: Record<string, { fcl: number; lcl: number }>): Array<{ period: string; fcl: number; lcl: number }> {
-  const now = new Date();
-  const months = [];
-
-  for (let i = 11; i >= 0; i--) {
-    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const period = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-    const data = monthlyVolumes[period] || { fcl: 0, lcl: 0 };
-    months.push({
-      period,
-      fcl: data.fcl || 0,
-      lcl: data.lcl || 0,
-    });
-  }
-
-  return months;
-}
-
-function extractTopRoutes(bols: any[]): Array<{ route: string; shipmentCount: number }> {
-  const routeCounts: Record<string, number> = {};
-
-  bols.forEach((bol: any) => {
-    const origin = bol.origin_port || bol.Port_of_Lading || bol.origin;
-    const destination = bol.destination_port || bol.Port_of_Unlading || bol.destination;
-
-    if (origin && destination) {
-      const route = `${origin} → ${destination}`;
-      routeCounts[route] = (routeCounts[route] || 0) + 1;
-    }
-  });
-
-  return Object.entries(routeCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([route, shipmentCount]) => ({ route, shipmentCount }));
 }
