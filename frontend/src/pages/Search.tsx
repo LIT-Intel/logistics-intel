@@ -233,6 +233,8 @@ export default function SearchPage() {
     const loadSavedCompanies = async () => {
       if (!user) return;
 
+      console.log("[Search] Loading saved companies for user:", user.id);
+
       try {
         const { data, error } = await supabase
           .from('lit_saved_companies')
@@ -245,14 +247,37 @@ export default function SearchPage() {
           const keys = data
             .map((item: any) => item.lit_companies?.source_company_key)
             .filter(Boolean);
+          console.log("[Search] Loaded saved company keys:", keys);
           setSavedCompanyIds(keys);
         }
       } catch (error) {
-        console.error('Failed to load saved companies:', error);
+        console.error('[Search] Failed to load saved companies:', error);
       }
     };
 
     loadSavedCompanies();
+
+    if (!user) return;
+
+    console.log("[Search] Setting up real-time listener for saved companies");
+    const subscription = supabase
+      .from('lit_saved_companies')
+      .on('*', (payload) => {
+        console.log("[Search] Saved companies real-time update:", payload);
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          loadSavedCompanies();
+        } else if (payload.eventType === 'DELETE') {
+          loadSavedCompanies();
+        }
+      })
+      .subscribe((status) => {
+        console.log("[Search] Subscription status:", status);
+      });
+
+    return () => {
+      console.log("[Search] Cleaning up real-time listener");
+      subscription.unsubscribe();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -327,29 +352,84 @@ export default function SearchPage() {
   };
 
   const computeMonthlyVolumes = () => {
-    if (!rawData?.data?.recent_bols) return {};
+    if (!rawData?.data?.recent_bols) {
+      console.warn("[computeMonthlyVolumes] No recent_bols data available");
+      return {};
+    }
 
     const monthlyData: Record<string, { fcl: number; lcl: number }> = {};
+    const bols = rawData.data.recent_bols;
 
-    rawData.data.recent_bols.forEach((bol: any) => {
-      if (!bol.date_formatted) return;
+    console.log("[computeMonthlyVolumes] Processing", bols.length, "BOLs");
 
-      const [day, month, year] = bol.date_formatted.split('/');
-      if (!month || !year) return;
+    bols.forEach((bol: any, idx: number) => {
+      let dateStr: string | undefined;
+      let teuValue = bol.teu || bol.TEU || 0;
+      let isLcl = bol.lcl || bol.LCL || false;
 
-      const monthKey = `${year}-${month}`;
+      if (bol.date_formatted) {
+        dateStr = bol.date_formatted;
+      } else if (bol.date) {
+        dateStr = bol.date;
+      } else if (bol.shipment_date) {
+        dateStr = bol.shipment_date;
+      } else if (bol.created_date) {
+        dateStr = bol.created_date;
+      }
+
+      if (!dateStr) {
+        if (idx === 0) console.warn("[computeMonthlyVolumes] BOL has no date field:", bol);
+        return;
+      }
+
+      let monthKey: string;
+
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length !== 3) {
+          console.warn("[computeMonthlyVolumes] Invalid date format (not MM/DD/YYYY):", dateStr);
+          return;
+        }
+        const [day, month, year] = parts;
+        if (!month || !year) return;
+        monthKey = `${year}-${month.padStart(2, '0')}`;
+      } else if (dateStr.includes('-')) {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          const [year, month, day] = parts;
+          monthKey = `${year}-${month.padStart(2, '0')}`;
+        } else {
+          console.warn("[computeMonthlyVolumes] Invalid date format (not YYYY-MM-DD):", dateStr);
+          return;
+        }
+      } else {
+        console.warn("[computeMonthlyVolumes] Unable to parse date:", dateStr);
+        return;
+      }
 
       if (!monthlyData[monthKey]) {
         monthlyData[monthKey] = { fcl: 0, lcl: 0 };
       }
 
-      const teu = bol.teu || 0;
-      if (bol.lcl) {
-        monthlyData[monthKey].lcl += teu;
+      if (isLcl) {
+        monthlyData[monthKey].lcl += teuValue;
       } else {
-        monthlyData[monthKey].fcl += teu;
+        monthlyData[monthKey].fcl += teuValue;
+      }
+
+      if (idx < 3) {
+        console.log(`[computeMonthlyVolumes] BOL ${idx}:`, {
+          date: dateStr,
+          monthKey,
+          teu: teuValue,
+          isLcl,
+          type: isLcl ? "LCL" : "FCL"
+        });
       }
     });
+
+    console.log("[computeMonthlyVolumes] Final monthly data:", monthlyData);
+    console.log("[computeMonthlyVolumes] Monthly data keys:", Object.keys(monthlyData).sort());
 
     return monthlyData;
   };
@@ -491,7 +571,10 @@ export default function SearchPage() {
   };
 
   const saveToCommandCenter = async (company: MockCompany) => {
+    console.log("[saveToCommandCenter] Starting save for:", company.name, "Key:", company.importyeti_key);
+
     if (!user) {
+      console.warn("[saveToCommandCenter] No authenticated user");
       toast({
         title: "Authentication required",
         description: "Please log in to save companies",
@@ -503,47 +586,86 @@ export default function SearchPage() {
     setSaving(true);
     try {
       const { data: session } = await supabase.auth.getSession();
+      console.log("[saveToCommandCenter] Session check:", {
+        hasSession: !!session?.session,
+        hasToken: !!session?.session?.access_token,
+        userId: user?.id,
+      });
+
       if (!session?.session?.access_token) {
-        throw new Error("No valid session");
+        throw new Error("No valid session - please log in again");
       }
 
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error("Supabase URL not configured");
+      }
+
+      const payload = {
+        company_data: {
+          source: "importyeti",
+          source_company_key: company.importyeti_key || company.id,
+          name: company.name,
+          domain: company.website,
+          website: company.website,
+          address_line1: company.address,
+          city: company.city,
+          state: company.state,
+          country_code: company.country_code,
+          shipments_12m: company.shipments_12m || 0,
+          teu_12m: company.teu_estimate,
+          primary_mode: company.mode,
+          revenue_range: company.revenue_range,
+          most_recent_shipment_date: company.last_shipment,
+          tags: [company.industry, company.frequency].filter(Boolean),
+          risk_level: company.risk_flags.length > 0 ? "Medium" : "Low",
+          raw_last_search: company,
+        },
+        stage: "prospect",
+      };
+
+      console.log("[saveToCommandCenter] Sending payload:", {
+        company_name: payload.company_data.name,
+        company_key: payload.company_data.source_company_key,
+        url: `${supabaseUrl}/functions/v1/save-company`,
+      });
+
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/save-company`,
+        `${supabaseUrl}/functions/v1/save-company`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.session.access_token}`,
           },
-          body: JSON.stringify({
-            company_data: {
-              source: "importyeti",
-              source_company_key: company.importyeti_key || company.id,
-              name: company.name,
-              domain: company.website,
-              website: company.website,
-              address_line1: company.address,
-              city: company.city,
-              state: company.state,
-              country_code: company.country_code,
-              shipments_12m: company.shipments_12m,
-              teu_12m: company.teu_estimate,
-              primary_mode: company.mode,
-              revenue_range: company.revenue_range,
-              most_recent_shipment_date: company.last_shipment,
-              tags: [company.industry, company.frequency],
-              risk_level: company.risk_flags.length > 0 ? "Medium" : "Low",
-              raw_last_search: company,
-            },
-            stage: "prospect",
-          }),
+          body: JSON.stringify(payload),
         }
       );
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to save company");
+      console.log("[saveToCommandCenter] Response received:", {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+
+      let responseData: any;
+      try {
+        responseData = await response.json();
+      } catch (e) {
+        console.error("[saveToCommandCenter] Failed to parse response as JSON:", e);
+        throw new Error(`Invalid response from server (HTTP ${response.status})`);
       }
+
+      if (!response.ok) {
+        console.error("[saveToCommandCenter] Save failed - response error:", responseData);
+        throw new Error(responseData.error || `Failed to save company (HTTP ${response.status})`);
+      }
+
+      console.log("[saveToCommandCenter] Save successful:", {
+        success: responseData.success,
+        companyId: responseData.company?.id,
+        savedId: responseData.saved?.id,
+      });
 
       toast({
         title: "Company saved",
@@ -551,14 +673,22 @@ export default function SearchPage() {
       });
 
       if (company.importyeti_key) {
-        setSavedCompanyIds(prev => [...prev, company.importyeti_key]);
+        setSavedCompanyIds(prev => {
+          const updated = [...prev, company.importyeti_key];
+          console.log("[saveToCommandCenter] Updated savedCompanyIds:", updated);
+          return updated;
+        });
       }
       setSelectedCompany(null);
     } catch (error: any) {
-      console.error("Save error:", error);
+      console.error("[saveToCommandCenter] Fatal error:", {
+        message: error.message,
+        stack: error.stack,
+        company: company.name,
+      });
       toast({
         title: "Save failed",
-        description: error.message || "Could not save company",
+        description: error.message || "Could not save company. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -719,10 +849,19 @@ export default function SearchPage() {
 
                 {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
                   <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10">
-                    <Badge className="bg-blue-600 text-white border-0 shadow-sm text-xs">
-                      <Bookmark className="h-3 w-3 mr-1 fill-white" />
-                      Saved
-                    </Badge>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1.5 bg-blue-600 text-white px-2.5 py-1.5 rounded-lg shadow-md border border-blue-500">
+                            <Bookmark className="h-4 w-4 fill-current" />
+                            <span className="text-xs font-semibold">Saved</span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">This company is saved to your Command Center</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 )}
 
