@@ -1588,6 +1588,56 @@ function normalizeCompanyProfile(
   };
 }
 
+/**
+ * Phase 2.1: Public export for normalizing ImportYeti snapshot data into IyCompanyProfile.
+ * Accepts raw snapshot data and ensures all KPI fields are properly populated.
+ * Returns normalized profile with routeKpis, timeSeries, containers, and all other fields.
+ */
+export function normalizeIyCompanyProfile(
+  rawSnapshot: any,
+  companyKey?: string,
+): IyCompanyProfile {
+  const snapshot = rawSnapshot?.snapshot ?? rawSnapshot;
+  const companyId = ensureCompanyKey(
+    snapshot?.company_id ??
+    snapshot?.companyId ??
+    snapshot?.key ??
+    companyKey ??
+    "unknown"
+  );
+
+  // Handle monthly_volumes -> timeSeries conversion
+  const timeSeriesData = snapshot?.monthly_volumes
+    ? { time_series: snapshot.monthly_volumes }
+    : snapshot;
+
+  // Convert FCL/LCL counts to containers format
+  const containersData = snapshot?.fcl_count !== undefined || snapshot?.lcl_count !== undefined
+    ? {
+        containers_load: [
+          { load_type: "FCL", shipments: snapshot.fcl_count ?? 0 },
+          { load_type: "LCL", shipments: snapshot.lcl_count ?? 0 },
+        ],
+      }
+    : snapshot;
+
+  // Merge all data sources for normalization
+  const mergedData = {
+    ...snapshot,
+    ...timeSeriesData,
+    ...containersData,
+    company_id: companyId,
+    key: companyId,
+    total_shipments: snapshot?.shipments_last_12m ?? snapshot?.total_shipments ?? 0,
+    shipments_12m: snapshot?.shipments_last_12m ?? snapshot?.shipments_12m ?? 0,
+    teu_12m: snapshot?.total_teu ?? snapshot?.teu_12m ?? 0,
+    est_spend_usd: snapshot?.est_spend ?? snapshot?.est_spend_usd ?? 0,
+    last_shipment_date: snapshot?.last_shipment_date,
+  };
+
+  return normalizeCompanyProfile(mergedData, companyId);
+}
+
 export async function getIyCompanyProfile({
   companyKey,
   query,
@@ -1625,7 +1675,7 @@ export async function getIyCompanyProfile({
     throw new Error("getIyCompanyProfile returned no profile");
   }
 
-  const companyProfile = normalizeCompanyProfile(data.companyProfile, normalizedKey);
+  const companyProfile = normalizeCompanyProfile(data.companyProfile, normalizedSlug);
 
   return {
     companyProfile,
@@ -2363,6 +2413,20 @@ export async function saveIyCompanyToCrm(opts: {
     });
   }
 
+  // Phase 1.3: Validate session before attempting save
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.access_token) {
+    console.error("saveIyCompanyToCrm: Failed to get auth session", sessionError);
+    throw new Error("Please sign in again to save companies");
+  }
+
+  // Phase 1.2: Extract KPI fields from profile for database storage
+  const fclShipments = getFclShipments12m(opts.profile);
+  const lclShipments = getLclShipments12m(opts.profile);
+  const estSpend = opts.profile?.routeKpis?.estSpendUsd12m ?? opts.profile?.estSpendUsd12m ?? null;
+  const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
+  const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
+
   const companyData = {
     source: opts.source ?? "importyeti",
     source_company_key: companyKey,
@@ -2378,15 +2442,25 @@ export async function saveIyCompanyToCrm(opts: {
     teu_12m: opts.shipper.totalTEU,
     most_recent_shipment_date: opts.shipper.lastShipmentDate,
     primary_mode: opts.shipper.primaryMode,
+    // Phase 1.2: Add KPI fields
+    fcl_shipments_12m: fclShipments,
+    lcl_shipments_12m: lclShipments,
+    est_spend_12m: estSpend,
+    top_route_12m: topRoute,
+    recent_route: recentRoute,
     raw_profile: opts.profile,
     raw_last_search: opts.shipper,
   };
 
+  // Phase 1.1: Add Authorization header with access token
   const { data, error } = await supabase.functions.invoke("save-company", {
     body: {
       source_company_key: companyKey,
       company_data: companyData,
       stage: opts.stage ?? "prospect",
+    },
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
     },
   });
 

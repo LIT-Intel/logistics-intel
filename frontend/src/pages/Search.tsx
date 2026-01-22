@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
-import { searchShippers, fetchCompanySnapshot, type CompanySnapshot } from "@/lib/api";
+import { searchShippers, fetchCompanySnapshot, normalizeIyCompanyProfile, type CompanySnapshot, type IyCompanyProfile } from "@/lib/api";
 import { parseImportYetiDate, formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -222,6 +222,7 @@ export default function SearchPage() {
   const [results, setResults] = useState<MockCompany[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
   const [rawData, setRawData] = useState<any>(null);
+  const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -293,6 +294,7 @@ export default function SearchPage() {
     const loadSnapshot = async () => {
       if (!selectedCompany || !selectedCompany.importyeti_key) {
         setRawData(null);
+        setNormalizedProfile(null);
         return;
       }
 
@@ -302,18 +304,32 @@ export default function SearchPage() {
       try {
         const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
         if (!cancelled) {
-          if (result && result.raw) {
-            console.log("[Search] Raw payload received - using for UI");
+          if (result && result.snapshot) {
+            console.log("[Search] Snapshot received - normalizing for UI");
             setRawData(result.raw);
+
+            // Phase 2.3: Normalize snapshot data using the new function
+            const profile = normalizeIyCompanyProfile(result, selectedCompany.importyeti_key);
+            setNormalizedProfile(profile);
+            console.log("[Search] Normalized profile:", {
+              hasRouteKpis: !!profile.routeKpis,
+              hasContainers: !!profile.containers,
+              timeSeriesLength: profile.timeSeries?.length,
+              shipmentsLast12m: profile.routeKpis?.shipmentsLast12m,
+              fclShipments: profile.containers?.fclShipments12m,
+              lclShipments: profile.containers?.lclShipments12m,
+            });
           } else {
-            console.warn("[Search] No raw data returned");
+            console.warn("[Search] No snapshot data returned");
             setRawData(null);
+            setNormalizedProfile(null);
           }
         }
       } catch (error) {
         console.error('[Search] Failed to load snapshot:', error);
         if (!cancelled) {
           setRawData(null);
+          setNormalizedProfile(null);
         }
       } finally {
         if (!cancelled) {
@@ -532,6 +548,7 @@ export default function SearchPage() {
         throw new Error("Authentication failed. Please refresh and try again.");
       }
 
+      // Phase 2.3: Include normalized profile data in payload if available
       const payload = {
         source_company_key: company.importyeti_key || company.id,
         company_data: {
@@ -544,13 +561,19 @@ export default function SearchPage() {
           city: company.city,
           state: company.state,
           country_code: company.country_code,
-          shipments_12m: company.shipments_12m || 0,
-          teu_12m: company.teu_estimate,
+          shipments_12m: normalizedProfile?.routeKpis?.shipmentsLast12m ?? (company.shipments_12m || 0),
+          teu_12m: normalizedProfile?.routeKpis?.teuLast12m ?? company.teu_estimate,
+          fcl_shipments_12m: normalizedProfile?.containers?.fclShipments12m ?? null,
+          lcl_shipments_12m: normalizedProfile?.containers?.lclShipments12m ?? null,
+          est_spend_12m: normalizedProfile?.routeKpis?.estSpendUsd12m ?? null,
+          top_route_12m: normalizedProfile?.routeKpis?.topRouteLast12m ?? null,
+          recent_route: normalizedProfile?.routeKpis?.mostRecentRoute ?? null,
           primary_mode: company.mode,
           revenue_range: company.revenue_range,
-          most_recent_shipment_date: company.last_shipment,
+          most_recent_shipment_date: normalizedProfile?.lastShipmentDate ?? company.last_shipment,
           tags: [company.industry, company.frequency].filter(Boolean),
           risk_level: company.risk_flags.length > 0 ? "Medium" : "Low",
+          raw_profile: normalizedProfile,
           raw_last_search: company,
         },
         stage: "prospect",
@@ -1128,10 +1151,15 @@ export default function SearchPage() {
                         className="flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h2 className="text-xl md:text-2xl font-bold text-slate-900 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h2 className="text-xl md:text-2xl font-bold text-slate-900">
                             {rawData?.data?.title || rawData?.data?.name || selectedCompany.name}
                           </h2>
+                          {selectedCompany.importyeti_key && savedCompanyIds.includes(selectedCompany.importyeti_key) && (
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+                              Saved
+                            </Badge>
+                          )}
                           <span className="text-2xl md:text-3xl flex-shrink-0 whitespace-nowrap">
                             {getCountryFlag(rawData?.data?.country || selectedCompany.country_code)}
                           </span>
@@ -1221,7 +1249,7 @@ export default function SearchPage() {
                           </div>
                         ))}
                       </div>
-                    ) : rawData ? (
+                    ) : normalizedProfile ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
                           <p className="flex items-center gap-1 text-xs text-slate-600 mb-1">
@@ -1229,7 +1257,7 @@ export default function SearchPage() {
                             Total TEU
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {kpis.totalTEU > 0 ? kpis.totalTEU.toLocaleString() : '—'}
+                            {normalizedProfile.routeKpis?.teuLast12m ? normalizedProfile.routeKpis.teuLast12m.toLocaleString() : '0'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1238,7 +1266,7 @@ export default function SearchPage() {
                             FCL
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {kpis.fclCount > 0 ? kpis.fclCount.toLocaleString() : '—'}
+                            {normalizedProfile.containers?.fclShipments12m ? normalizedProfile.containers.fclShipments12m.toLocaleString() : '0'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1247,7 +1275,7 @@ export default function SearchPage() {
                             LCL
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-slate-900">
-                            {kpis.lclCount > 0 ? kpis.lclCount.toLocaleString() : '—'}
+                            {normalizedProfile.containers?.lclShipments12m ? normalizedProfile.containers.lclShipments12m.toLocaleString() : '0'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3 md:p-4 border border-slate-200">
@@ -1256,7 +1284,7 @@ export default function SearchPage() {
                             Est. Spend
                           </p>
                           <p className="text-lg md:text-2xl font-bold text-blue-600">
-                            {kpis.estSpend > 0 ? formatCurrency(kpis.estSpend) : '—'}
+                            {normalizedProfile.routeKpis?.estSpendUsd12m ? formatCurrency(normalizedProfile.routeKpis.estSpendUsd12m) : '$0'}
                           </p>
                         </div>
                       </div>
@@ -1293,18 +1321,15 @@ export default function SearchPage() {
                           <p className="text-sm text-slate-600">Loading monthly data...</p>
                         </div>
                       </div>
-                    ) : Object.keys(monthlyVolumes).length > 0 ? (
+                    ) : normalizedProfile && normalizedProfile.timeSeries.length > 0 ? (
                       <div className="mt-4 h-72 w-full bg-slate-50 rounded-xl p-6 border border-slate-200">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
-                            data={Object.entries(monthlyVolumes)
-                              .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-                              .slice(-12)
-                              .map(([period, data]) => ({
-                                period,
-                                fcl: data.fcl,
-                                lcl: data.lcl,
-                              }))}
+                            data={normalizedProfile.timeSeries.slice(-12).map((point) => ({
+                              period: point.month,
+                              fcl: point.fclShipments ?? 0,
+                              lcl: point.lclShipments ?? 0,
+                            }))}
                           >
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                             <XAxis dataKey="period" tickLine={false} tick={{ fontSize: 11 }} />
