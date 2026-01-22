@@ -354,12 +354,48 @@ export default function SearchPage() {
   };
 
   const computeMonthlyVolumes = () => {
-    if (!rawData?.snapshot?.monthly_volumes) {
-      console.warn("[computeMonthlyVolumes] No monthly_volumes data in snapshot");
+    if (!rawData) {
+      console.warn("[computeMonthlyVolumes] No rawData available");
       return {};
     }
 
-    return rawData.snapshot.monthly_volumes;
+    const snapshot = rawData.snapshot;
+    const data = rawData.data || {};
+
+    if (snapshot?.monthly_volumes && Object.keys(snapshot.monthly_volumes).length > 0) {
+      return snapshot.monthly_volumes;
+    }
+
+    if (!Array.isArray(data.recent_bols) || data.recent_bols.length === 0) {
+      console.warn("[computeMonthlyVolumes] No BOL data available for aggregation");
+      return {};
+    }
+
+    const computed: Record<string, { fcl: number; lcl: number }> = {};
+    (data.recent_bols || []).forEach((bol: any) => {
+      if (!bol.date_formatted) return;
+      const parts = bol.date_formatted.split("/");
+      if (parts.length !== 3) return;
+      const [day, month, year] = parts;
+      const monthKey = `${year}-${month.padStart(2, "0")}`;
+
+      if (!computed[monthKey]) {
+        computed[monthKey] = { fcl: 0, lcl: 0 };
+      }
+      if (bol.lcl === true) {
+        computed[monthKey].lcl++;
+      } else if (bol.lcl === false) {
+        computed[monthKey].fcl++;
+      }
+    });
+
+    if (Object.keys(computed).length > 0) {
+      console.log("[computeMonthlyVolumes] Computed from BOL data:", Object.keys(computed).length, "months");
+      return computed;
+    }
+
+    console.warn("[computeMonthlyVolumes] No monthly_volumes data available");
+    return {};
   };
 
   const computeTradeRoutes = () => {
@@ -489,6 +525,13 @@ export default function SearchPage() {
 
     setSaving(true);
     try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        console.error("[saveToCommandCenter] Failed to get auth session:", sessionError);
+        throw new Error("Authentication failed. Please refresh and try again.");
+      }
+
       const payload = {
         source_company_key: company.importyeti_key || company.id,
         company_data: {
@@ -520,6 +563,9 @@ export default function SearchPage() {
 
       const { data: responseData, error } = await supabase.functions.invoke("save-company", {
         body: payload,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (error) {
@@ -1241,50 +1287,50 @@ export default function SearchPage() {
                       {loadingSnapshot && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
                     </h3>
                     {loadingSnapshot ? (
-                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 h-80 flex items-center justify-center">
+                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 h-72 flex items-center justify-center">
                         <div className="text-center">
                           <Loader2 className="h-8 w-8 animate-spin text-slate-400 mx-auto mb-2" />
                           <p className="text-sm text-slate-600">Loading monthly data...</p>
                         </div>
                       </div>
                     ) : Object.keys(monthlyVolumes).length > 0 ? (
-                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-                        <div className="h-80 w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={Object.entries(monthlyVolumes)
-                                .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-                                .slice(-12)
-                                .map(([month, data]) => ({
-                                  month,
-                                  FCL: data.fcl,
-                                  LCL: data.lcl,
-                                }))}
-                              margin={{ top: 8, right: 12, left: 0, bottom: 8 }}
-                            >
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                              <XAxis
-                                dataKey="month"
-                                tick={{ fontSize: 12, fill: "#64748b" }}
-                                tickLine={false}
-                              />
-                              <YAxis tick={{ fontSize: 12, fill: "#64748b" }} allowDecimals={false} />
-                              <RechartsTooltip
-                                contentStyle={{
-                                  backgroundColor: "#1e293b",
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  color: "#f1f5f9",
-                                  fontSize: "12px",
-                                }}
-                                formatter={(value: any) => value.toLocaleString()}
-                              />
-                              <Legend wrapperStyle={{ fontSize: "12px" }} />
-                              <Bar dataKey="FCL" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                              <Bar dataKey="LCL" fill="#10b981" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
+                      <div className="mt-4 h-72 w-full bg-slate-50 rounded-xl p-6 border border-slate-200">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={Object.entries(monthlyVolumes)
+                              .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+                              .slice(-12)
+                              .map(([period, data]) => ({
+                                period,
+                                fcl: data.fcl,
+                                lcl: data.lcl,
+                              }))}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey="period" tickLine={false} tick={{ fontSize: 11 }} />
+                            <YAxis allowDecimals={false} tickLine={false} />
+                            <RechartsTooltip
+                              content={({ active, payload, label }) => {
+                                if (!active || !payload || !payload.length) return null;
+                                const fcl = payload.find((item) => item.dataKey === "fcl")?.value ?? 0;
+                                const lcl = payload.find((item) => item.dataKey === "lcl")?.value ?? 0;
+                                return (
+                                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow">
+                                    <p className="font-semibold text-slate-900">{label}</p>
+                                    <p className="text-slate-600">FCL: {(fcl as number).toLocaleString()}</p>
+                                    <p className="text-slate-600">LCL: {(lcl as number).toLocaleString()}</p>
+                                    <p className="mt-1 font-semibold text-slate-900">
+                                      Total: {((fcl as number) + (lcl as number)).toLocaleString()}
+                                    </p>
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Legend />
+                            <Bar dataKey="fcl" name="FCL" fill="#1d4ed8" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="lcl" name="LCL" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
                       </div>
                     ) : (
                       <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 text-center">
