@@ -1346,50 +1346,60 @@ function normalizeContainers(raw: any): IyCompanyContainers | null {
 }
 
 function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
+  // Generate last 12 months from current date
+  const generateLast12Months = (): { month: string; ts: number }[] => {
+    const months: { month: string; ts: number }[] = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthLabel = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ month: monthLabel, ts: date.getTime() });
+    }
+    return months;
+  };
+
+  const last12Months = generateLast12Months();
+  const dataMap = new Map<string, { fclShipments: number; lclShipments: number }>();
+
+  // Parse existing data if available
   if (raw?.timeSeries && Array.isArray(raw.timeSeries)) {
-    return raw.timeSeries.map((entry: any) => ({
-      month: String(entry?.month ?? ""),
-      fclShipments: coerceNumber(entry?.fclShipments) ?? 0,
-      lclShipments: coerceNumber(entry?.lclShipments) ?? 0,
-    }));
+    raw.timeSeries.forEach((entry: any) => {
+      const monthKey = String(entry?.month ?? "");
+      if (monthKey) {
+        dataMap.set(monthKey, {
+          fclShipments: coerceNumber(entry?.fclShipments) ?? 0,
+          lclShipments: coerceNumber(entry?.lclShipments) ?? 0,
+        });
+      }
+    });
+  } else if (raw?.time_series && typeof raw.time_series === "object") {
+    Object.entries(raw.time_series).forEach(([key, value]) => {
+      if (!value || typeof value !== "object") return;
+      const fcl =
+        coerceNumber((value as any).fcl_shipments) ??
+        coerceNumber((value as any).shipments_fcl) ??
+        coerceNumber((value as any).fcl) ??
+        0;
+      const lcl =
+        coerceNumber((value as any).lcl_shipments) ??
+        coerceNumber((value as any).shipments_lcl) ??
+        coerceNumber((value as any).lcl) ??
+        0;
+      const parsed = new Date(key);
+      const monthLabel = Number.isNaN(parsed.getTime())
+        ? key
+        : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+
+      dataMap.set(monthLabel, { fclShipments: fcl, lclShipments: lcl });
+    });
   }
 
-  if (raw?.time_series && typeof raw.time_series === "object") {
-    const entries = Object.entries(raw.time_series)
-      .map(([key, value]) => {
-        if (!value || typeof value !== "object") return null;
-        const fcl =
-          coerceNumber((value as any).fcl_shipments) ??
-          coerceNumber((value as any).shipments_fcl) ??
-          coerceNumber((value as any).fcl) ??
-          0;
-        const lcl =
-          coerceNumber((value as any).lcl_shipments) ??
-          coerceNumber((value as any).shipments_lcl) ??
-          coerceNumber((value as any).lcl) ??
-          0;
-        const parsed = new Date(key);
-        const monthLabel = Number.isNaN(parsed.getTime())
-          ? key
-          : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
-        return {
-          month: monthLabel,
-          fclShipments: fcl ?? 0,
-          lclShipments: lcl ?? 0,
-          ts: Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime(),
-        };
-      })
-      .filter((entry): entry is { month: string; fclShipments: number; lclShipments: number; ts: number } => Boolean(entry))
-      .sort((a, b) => a.ts - b.ts)
-      .map(({ month, fclShipments, lclShipments }) => ({
-        month,
-        fclShipments,
-        lclShipments,
-      }));
-    return entries.slice(-12);
-  }
-
-  return [];
+  // Fill in all 12 months with data or zeros
+  return last12Months.map(({ month }) => ({
+    month,
+    fclShipments: dataMap.get(month)?.fclShipments ?? 0,
+    lclShipments: dataMap.get(month)?.lclShipments ?? 0,
+  }));
 }
 
 function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
@@ -1606,26 +1616,18 @@ export function normalizeIyCompanyProfile(
     "unknown"
   );
 
-  // Handle monthly_volumes -> timeSeries conversion
-  const timeSeriesData = snapshot?.monthly_volumes
-    ? { time_series: snapshot.monthly_volumes }
-    : snapshot;
-
-  // Convert FCL/LCL counts to containers format
-  const containersData = snapshot?.fcl_count !== undefined || snapshot?.lcl_count !== undefined
-    ? {
-        containers_load: [
-          { load_type: "FCL", shipments: snapshot.fcl_count ?? 0 },
-          { load_type: "LCL", shipments: snapshot.lcl_count ?? 0 },
-        ],
-      }
-    : snapshot;
-
   // Merge all data sources for normalization
   const mergedData = {
     ...snapshot,
-    ...timeSeriesData,
-    ...containersData,
+    // Prioritize monthly_volumes over time_series if it exists
+    time_series: snapshot?.monthly_volumes ?? snapshot?.time_series,
+    // Convert FCL/LCL counts to containers format if available
+    containers_load: (snapshot?.fcl_count !== undefined || snapshot?.lcl_count !== undefined)
+      ? [
+          { load_type: "FCL", shipments: snapshot.fcl_count ?? 0 },
+          { load_type: "LCL", shipments: snapshot.lcl_count ?? 0 },
+        ]
+      : snapshot?.containers_load,
     company_id: companyId,
     key: companyId,
     total_shipments: snapshot?.shipments_last_12m ?? snapshot?.total_shipments ?? 0,

@@ -147,11 +147,23 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error: any) {
-    console.error('Save company error:', error);
+    console.error('Save company error:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      stack: error.stack,
+    });
+
     return new Response(
-      JSON.stringify({ error: error.message || 'Internal server error' }),
+      JSON.stringify({
+        error: error.message || 'Internal server error',
+        details: error.details || null,
+        hint: error.hint || null,
+        code: error.code || null,
+      }),
       {
-        status: 500,
+        status: error.code === '23505' ? 409 : 500, // 409 for duplicate key
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );

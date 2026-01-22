@@ -1325,7 +1325,7 @@ export default function SearchPage() {
                       <div className="mt-4 h-72 w-full bg-slate-50 rounded-xl p-6 border border-slate-200">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
-                            data={normalizedProfile.timeSeries.slice(-12).map((point) => ({
+                            data={normalizedProfile.timeSeries.map((point) => ({
                               period: point.month,
                               fcl: point.fclShipments ?? 0,
                               lcl: point.lclShipments ?? 0,
@@ -1373,7 +1373,7 @@ export default function SearchPage() {
                     </h3>
                     {loadingSnapshot ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                        {['Origins', 'Destinations'].map((title, colIdx) => (
+                        {['Top Routes', 'Most Recent'].map((title, colIdx) => (
                           <div key={colIdx}>
                             <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">{title}</p>
                             <ul className="space-y-1.5 md:space-y-2">
@@ -1392,42 +1392,41 @@ export default function SearchPage() {
                           </div>
                         ))}
                       </div>
-                    ) : rawData && (tradeRoutes.origins.length > 0 || tradeRoutes.destinations.length > 0) ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                        {tradeRoutes.origins.length > 0 && (
-                          <div>
-                            <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Top Origins</p>
-                            <ul className="space-y-1.5 md:space-y-2">
-                              {tradeRoutes.origins.map((portData, idx) => (
-                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                      {idx + 1}
-                                    </span>
-                                    <span className="text-slate-700 truncate">{portData.port}</span>
+                    ) : normalizedProfile?.routeKpis?.topRoutesLast12m && normalizedProfile.routeKpis.topRoutesLast12m.length > 0 ? (
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Top Routes (Last 12 Months)</p>
+                          <ul className="space-y-1.5 md:space-y-2">
+                            {normalizedProfile.routeKpis.topRoutesLast12m.slice(0, 5).map((route, idx) => (
+                              <li key={idx} className="flex items-center justify-between text-xs md:text-sm bg-slate-50 rounded-lg p-2">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-slate-900 font-medium truncate">
+                                      {route.originPort || 'Unknown'} → {route.destPort || 'Unknown'}
+                                    </div>
+                                    {route.sampleSize && (
+                                      <div className="text-xs text-slate-500">
+                                        Sample: {route.sampleSize} shipments
+                                      </div>
+                                    )}
                                   </div>
-                                  <span className="text-slate-500 ml-2 flex-shrink-0">{portData.count}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {tradeRoutes.destinations.length > 0 && (
-                          <div>
-                            <p className="text-xs md:text-sm font-semibold text-slate-700 mb-2">Top Destinations</p>
-                            <ul className="space-y-1.5 md:space-y-2">
-                              {tradeRoutes.destinations.map((portData, idx) => (
-                                <li key={idx} className="flex items-center justify-between text-xs md:text-sm">
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                      {idx + 1}
-                                    </span>
-                                    <span className="text-slate-700 truncate">{portData.port}</span>
-                                  </div>
-                                  <span className="text-slate-500 ml-2 flex-shrink-0">{portData.count}</span>
-                                </li>
-                              ))}
-                            </ul>
+                                </div>
+                                <span className="text-slate-600 font-semibold ml-2 flex-shrink-0">
+                                  {route.shipments ? route.shipments.toLocaleString() : '—'}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        {normalizedProfile.routeKpis.mostRecentRoute && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                            <p className="text-xs font-semibold text-green-900 mb-1">Most Recent Route</p>
+                            <p className="text-sm text-green-800">
+                              {normalizedProfile.routeKpis.mostRecentRoute}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -1443,22 +1442,37 @@ export default function SearchPage() {
                       <Ship className="h-5 w-5 text-blue-600" />
                       Shipment Summary
                     </h3>
-                    {rawData ? (
+                    {loadingSnapshot ? (
+                      <div className="bg-slate-50 rounded-xl p-6 border border-slate-200 h-48 flex items-center justify-center">
+                        <div className="text-center">
+                          <Loader2 className="h-8 w-8 animate-spin text-slate-400 mx-auto mb-2" />
+                          <p className="text-sm text-slate-600">Loading shipment summary...</p>
+                        </div>
+                      </div>
+                    ) : normalizedProfile ? (
                       <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                           <div className="text-center">
                             <p className="text-xs text-slate-600 mb-1">Total Shipments</p>
-                            <p className="text-2xl font-bold text-slate-900">{kpis.totalShipments > 0 ? kpis.totalShipments.toLocaleString() : '—'}</p>
+                            <p className="text-2xl font-bold text-slate-900">
+                              {normalizedProfile.routeKpis?.shipmentsLast12m
+                                ? normalizedProfile.routeKpis.shipmentsLast12m.toLocaleString()
+                                : '—'}
+                            </p>
                           </div>
                           <div className="text-center">
                             <p className="text-xs text-slate-600 mb-1">Last Shipment</p>
-                            <p className="text-2xl font-bold text-blue-600">{kpis.lastShipmentDate || '—'}</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {normalizedProfile.lastShipmentDate
+                                ? formatUserFriendlyDate(normalizedProfile.lastShipmentDate)
+                                : '—'}
+                            </p>
                           </div>
                           <div className="text-center">
                             <p className="text-xs text-slate-600 mb-1">Average TEU</p>
                             <p className="text-2xl font-bold text-slate-900">
-                              {kpis.totalShipments > 0 && kpis.totalTEU > 0
-                                ? (kpis.totalTEU / kpis.totalShipments).toFixed(1)
+                              {normalizedProfile.routeKpis?.shipmentsLast12m > 0 && normalizedProfile.routeKpis?.teuLast12m > 0
+                                ? (normalizedProfile.routeKpis.teuLast12m / normalizedProfile.routeKpis.shipmentsLast12m).toFixed(1)
                                 : '—'}
                             </p>
                           </div>
@@ -1467,11 +1481,11 @@ export default function SearchPage() {
                           <div className="flex items-center justify-center gap-6 text-sm">
                             <div className="flex items-center gap-2">
                               <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                              <span>FCL: {kpis.fclCount > 0 ? kpis.fclCount : '—'}</span>
+                              <span>FCL: {normalizedProfile.containers?.fclShipments12m ?? '—'}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="w-4 h-4 bg-green-500 rounded"></div>
-                              <span>LCL: {kpis.lclCount > 0 ? kpis.lclCount : '—'}</span>
+                              <span>LCL: {normalizedProfile.containers?.lclShipments12m ?? '—'}</span>
                             </div>
                           </div>
                         </div>
