@@ -32,6 +32,19 @@ async function getAuthHeaders() {
     "Authorization": `Bearer ${session.access_token}`,
   };
 }
+
+
+/**
+ * Ensure the current user is authenticated in Supabase.
+ * We intentionally hard-fail before calling protected Edge Functions to avoid 401 loops.
+ */
+async function requireSupabaseSession() {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session?.access_token) {
+    throw new Error("Unauthorized: no active Supabase session. Please sign in again.");
+  }
+  return session;
+}
 import {
   isDevMode,
   devGetSavedCompanies,
@@ -1346,60 +1359,50 @@ function normalizeContainers(raw: any): IyCompanyContainers | null {
 }
 
 function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
-  // Generate last 12 months from current date
-  const generateLast12Months = (): { month: string; ts: number }[] => {
-    const months: { month: string; ts: number }[] = [];
-    const now = new Date();
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthLabel = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      months.push({ month: monthLabel, ts: date.getTime() });
-    }
-    return months;
-  };
-
-  const last12Months = generateLast12Months();
-  const dataMap = new Map<string, { fclShipments: number; lclShipments: number }>();
-
-  // Parse existing data if available
   if (raw?.timeSeries && Array.isArray(raw.timeSeries)) {
-    raw.timeSeries.forEach((entry: any) => {
-      const monthKey = String(entry?.month ?? "");
-      if (monthKey) {
-        dataMap.set(monthKey, {
-          fclShipments: coerceNumber(entry?.fclShipments) ?? 0,
-          lclShipments: coerceNumber(entry?.lclShipments) ?? 0,
-        });
-      }
-    });
-  } else if (raw?.time_series && typeof raw.time_series === "object") {
-    Object.entries(raw.time_series).forEach(([key, value]) => {
-      if (!value || typeof value !== "object") return;
-      const fcl =
-        coerceNumber((value as any).fcl_shipments) ??
-        coerceNumber((value as any).shipments_fcl) ??
-        coerceNumber((value as any).fcl) ??
-        0;
-      const lcl =
-        coerceNumber((value as any).lcl_shipments) ??
-        coerceNumber((value as any).shipments_lcl) ??
-        coerceNumber((value as any).lcl) ??
-        0;
-      const parsed = new Date(key);
-      const monthLabel = Number.isNaN(parsed.getTime())
-        ? key
-        : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
-
-      dataMap.set(monthLabel, { fclShipments: fcl, lclShipments: lcl });
-    });
+    return raw.timeSeries.map((entry: any) => ({
+      month: String(entry?.month ?? ""),
+      fclShipments: coerceNumber(entry?.fclShipments) ?? 0,
+      lclShipments: coerceNumber(entry?.lclShipments) ?? 0,
+    }));
   }
 
-  // Fill in all 12 months with data or zeros
-  return last12Months.map(({ month }) => ({
-    month,
-    fclShipments: dataMap.get(month)?.fclShipments ?? 0,
-    lclShipments: dataMap.get(month)?.lclShipments ?? 0,
-  }));
+  if (raw?.time_series && typeof raw.time_series === "object") {
+    const entries = Object.entries(raw.time_series)
+      .map(([key, value]) => {
+        if (!value || typeof value !== "object") return null;
+        const fcl =
+          coerceNumber((value as any).fcl_shipments) ??
+          coerceNumber((value as any).shipments_fcl) ??
+          coerceNumber((value as any).fcl) ??
+          0;
+        const lcl =
+          coerceNumber((value as any).lcl_shipments) ??
+          coerceNumber((value as any).shipments_lcl) ??
+          coerceNumber((value as any).lcl) ??
+          0;
+        const parsed = new Date(key);
+        const monthLabel = Number.isNaN(parsed.getTime())
+          ? key
+          : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+        return {
+          month: monthLabel,
+          fclShipments: fcl ?? 0,
+          lclShipments: lcl ?? 0,
+          ts: Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime(),
+        };
+      })
+      .filter((entry): entry is { month: string; fclShipments: number; lclShipments: number; ts: number } => Boolean(entry))
+      .sort((a, b) => a.ts - b.ts)
+      .map(({ month, fclShipments, lclShipments }) => ({
+        month,
+        fclShipments,
+        lclShipments,
+      }));
+    return entries.slice(-12);
+  }
+
+  return [];
 }
 
 function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
@@ -1488,10 +1491,15 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   }
   return {
     shipmentsLast12m: coerceNumber(raw.total_shipments ?? raw.shipments_12m) ?? null,
-    teuLast12m: coerceNumber(raw.teu_12m ?? raw.teu12m) ?? null,
+    teuLast12m:
+      (coerceNumber(raw.teu_12m ?? raw.teu12m) ??
+        (() => {
+          const avg = coerceNumber(raw.avg_teu_per_month ?? raw.avgTeuPerMonth);
+          return avg != null ? avg * 12 : null;
+        })()),
     estSpendUsd12m:
       coerceNumber(
-        raw.estSpendUsd12m ?? raw.est_spend_usd ?? raw.estimated_spend_12m,
+        raw.estSpendUsd12m ?? raw.est_spend_usd ?? raw.estimated_spend_12m ?? raw.total_shipping_cost ?? raw.totalShippingCost ?? raw.shipping_cost_12m,
       ) ?? null,
     topRouteLast12m: topRoutes[0]?.route ?? null,
     mostRecentRoute:
@@ -1582,7 +1590,10 @@ function normalizeCompanyProfile(
       coerceNumber(
         profileData.est_spend_usd ??
           profileData.estimated_spend_12m ??
-          profileData.spend_12m,
+          profileData.spend_12m ??
+          profileData.total_shipping_cost ??
+          profileData.totalShippingCost ??
+          profileData.shipping_cost_12m,
       ) ?? null,
     totalShipments:
       coerceNumber(profileData.total_shipments ?? profileData.shipments_12m) ?? null,
@@ -1596,48 +1607,6 @@ function normalizeCompanyProfile(
     most_recent_route: profileData.most_recent_route,
     suppliers_sample: profileData.suppliers_sample,
   };
-}
-
-/**
- * Phase 2.1: Public export for normalizing ImportYeti snapshot data into IyCompanyProfile.
- * Accepts raw snapshot data and ensures all KPI fields are properly populated.
- * Returns normalized profile with routeKpis, timeSeries, containers, and all other fields.
- */
-export function normalizeIyCompanyProfile(
-  rawSnapshot: any,
-  companyKey?: string,
-): IyCompanyProfile {
-  const snapshot = rawSnapshot?.snapshot ?? rawSnapshot;
-  const companyId = ensureCompanyKey(
-    snapshot?.company_id ??
-    snapshot?.companyId ??
-    snapshot?.key ??
-    companyKey ??
-    "unknown"
-  );
-
-  // Merge all data sources for normalization
-  const mergedData = {
-    ...snapshot,
-    // Prioritize monthly_volumes over time_series if it exists
-    time_series: snapshot?.monthly_volumes ?? snapshot?.time_series,
-    // Convert FCL/LCL counts to containers format if available
-    containers_load: (snapshot?.fcl_count !== undefined || snapshot?.lcl_count !== undefined)
-      ? [
-          { load_type: "FCL", shipments: snapshot.fcl_count ?? 0 },
-          { load_type: "LCL", shipments: snapshot.lcl_count ?? 0 },
-        ]
-      : snapshot?.containers_load,
-    company_id: companyId,
-    key: companyId,
-    total_shipments: snapshot?.shipments_last_12m ?? snapshot?.total_shipments ?? 0,
-    shipments_12m: snapshot?.shipments_last_12m ?? snapshot?.shipments_12m ?? 0,
-    teu_12m: snapshot?.total_teu ?? snapshot?.teu_12m ?? 0,
-    est_spend_usd: snapshot?.est_spend ?? snapshot?.est_spend_usd ?? 0,
-    last_shipment_date: snapshot?.last_shipment_date,
-  };
-
-  return normalizeCompanyProfile(mergedData, companyId);
 }
 
 export async function getIyCompanyProfile({
@@ -1654,34 +1623,24 @@ export async function getIyCompanyProfile({
     throw new Error("getIyCompanyProfile: company key is required");
   }
 
+  // Dev stub
   if (isDevMode()) {
     return devGetCompanyProfile(normalizedSlug);
   }
 
-  const { data, error } = await supabase.functions.invoke(
-    "importyeti-proxy",
-    {
-      body: {
-        action: "company",
-        company_id: normalizedSlug
-      },
-    }
-  );
-
-  if (error) {
-    console.error("ImportYeti companyProfile error:", error);
-    throw new Error(`getIyCompanyProfile failed: ${error.message || "Unknown error"}`);
+  // Canonical path: use snapshot response (single model)
+  const snapshotResp = await fetchCompanySnapshot(companyKey);
+  if (!snapshotResp?.raw && !snapshotResp?.snapshot) {
+    throw new Error("getIyCompanyProfile returned no snapshot/raw payload");
   }
 
-  if (!data || !data.companyProfile) {
-    throw new Error("getIyCompanyProfile returned no profile");
-  }
-
-  const companyProfile = normalizeCompanyProfile(data.companyProfile, normalizedSlug);
+  // Prefer raw payload for richer fields; fall back to snapshot
+  const rawPayload = snapshotResp.raw ?? snapshotResp.snapshot ?? {};
+  const companyProfile = normalizeCompanyProfile(rawPayload, companyKey);
 
   return {
     companyProfile,
-    enrichment: data?.enrichment ?? null,
+    enrichment: null, // enrichment is handled by enrichment endpoints, not ImportYeti snapshot
   };
 }
 
@@ -2245,7 +2204,8 @@ export async function getSavedCompanies(signal?: AbortSignal) {
 
     const rows = (data || []).map((item: any) => ({
       company: {
-        company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
+        company_key: item.lit_companies?.source_company_key ?? null,
+        company_id: item.lit_companies?.id ?? null,
         name: item.lit_companies?.name || 'Unknown Company',
         domain: item.lit_companies?.domain,
         address: item.lit_companies?.address_line1 || `${item.lit_companies?.city || ''}, ${item.lit_companies?.state || ''}`.trim(),
@@ -2336,8 +2296,8 @@ export async function saveCompanyToCrm(
     (company as any)?.company_name ||
     (company as any)?.title ||
     "";
-  const companyId = ensureCompanyKey(rawId);
-  if (!companyId) {
+  const companyKey = ensureCompanyKey(rawId);
+  if (!companyKey) {
     console.warn("[LIT] saveCompanyToCrm called with invalid company payload:", {
       company,
       rawId,
@@ -2347,45 +2307,52 @@ export async function saveCompanyToCrm(
 
   if (isDevMode()) {
     return devSaveCompany({
-      company_id: companyId,
+      company_id: companyKey,
       company,
       stage: "prospect",
       provider: "importyeti",
     });
   }
 
-  const res = await fetch(
-    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: "prospect",
-        provider: "importyeti",
-        payload: company,
-      }),
-    },
-  );
+  // Canonical save path: Supabase Edge Function (requires auth)
+  await requireSupabaseSession();
 
-  if (!res.ok) {
-    let errorBody: any = null;
-    try {
-      errorBody = await res.json();
-    } catch {
-      // swallow parse error
-    }
-    if (typeof window !== "undefined") {
-      console.warn("[LIT] saveCompanyToCrm failed", {
-        status: res.status,
-        statusText: res.statusText,
-        errorBody,
-      });
-    }
-    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
+  const companyData = {
+    source: (company as any)?.source ?? "importyeti",
+    source_company_key: companyKey,
+    name: (company as any)?.name ?? (company as any)?.title ?? "Unknown",
+    domain: (company as any)?.domain ?? null,
+    website: (company as any)?.website ?? null,
+    phone: (company as any)?.phone ?? (company as any)?.phoneNumber ?? null,
+    country_code: (company as any)?.country_code ?? (company as any)?.countryCode ?? null,
+    address_line1: (company as any)?.address_line1 ?? (company as any)?.address ?? null,
+    city: (company as any)?.city ?? null,
+    state: (company as any)?.state ?? null,
+    shipments_12m: coerceNumber((company as any)?.shipments_12m ?? (company as any)?.totalShipments) ?? 0,
+    teu_12m: coerceNumber((company as any)?.teu_12m ?? (company as any)?.totalTEU) ?? null,
+    fcl_shipments_12m: coerceNumber((company as any)?.fcl_shipments_12m) ?? null,
+    lcl_shipments_12m: coerceNumber((company as any)?.lcl_shipments_12m) ?? null,
+    most_recent_shipment_date:
+      (company as any)?.most_recent_shipment_date ??
+      (company as any)?.lastShipmentDate ??
+      null,
+    raw_last_search: company,
+  };
+
+  const { data, error } = await supabase.functions.invoke("save-company", {
+    body: {
+      source_company_key: companyKey,
+      company_data: companyData,
+      stage: "prospect",
+    },
+  });
+
+  if (error) {
+    console.error("saveCompanyToCrm failed:", error);
+    throw new Error(`saveCompanyToCrm failed: ${error.message || "Unknown error"}`);
   }
 
-  return res.json();
+  return data || {};
 }
 
 export async function saveIyCompanyToCrm(opts: {
@@ -2415,20 +2382,6 @@ export async function saveIyCompanyToCrm(opts: {
     });
   }
 
-  // Phase 1.3: Validate session before attempting save
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !session?.access_token) {
-    console.error("saveIyCompanyToCrm: Failed to get auth session", sessionError);
-    throw new Error("Please sign in again to save companies");
-  }
-
-  // Phase 1.2: Extract KPI fields from profile for database storage
-  const fclShipments = getFclShipments12m(opts.profile);
-  const lclShipments = getLclShipments12m(opts.profile);
-  const estSpend = opts.profile?.routeKpis?.estSpendUsd12m ?? opts.profile?.estSpendUsd12m ?? null;
-  const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
-  const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
-
   const companyData = {
     source: opts.source ?? "importyeti",
     source_company_key: companyKey,
@@ -2444,25 +2397,17 @@ export async function saveIyCompanyToCrm(opts: {
     teu_12m: opts.shipper.totalTEU,
     most_recent_shipment_date: opts.shipper.lastShipmentDate,
     primary_mode: opts.shipper.primaryMode,
-    // Phase 1.2: Add KPI fields
-    fcl_shipments_12m: fclShipments,
-    lcl_shipments_12m: lclShipments,
-    est_spend_12m: estSpend,
-    top_route_12m: topRoute,
-    recent_route: recentRoute,
     raw_profile: opts.profile,
     raw_last_search: opts.shipper,
   };
 
-  // Phase 1.1: Add Authorization header with access token
+  await requireSupabaseSession();
+
   const { data, error } = await supabase.functions.invoke("save-company", {
     body: {
       source_company_key: companyKey,
       company_data: companyData,
       stage: opts.stage ?? "prospect",
-    },
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
     },
   });
 
