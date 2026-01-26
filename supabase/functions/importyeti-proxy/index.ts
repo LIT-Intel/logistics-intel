@@ -22,15 +22,23 @@ function getEnvConfig(): EnvConfig {
   const warnings: string[] = [];
 
   // Try DMA scheme first (preferred)
-  const dmaPref = Deno.env.get("IY_DMA_SEARCH_URL");
+  // Support both exact name and base URL variants
+  const dmaSearchUrl = Deno.env.get("IY_DMA_SEARCH_URL");
+  const dmaBaseUrl = Deno.env.get("IY_DMA_BASE_URL");
   const dmaKey = Deno.env.get("IY_DMA_API_KEY");
 
-  if (dmaPref && dmaKey) {
+  const dmaUrl = dmaSearchUrl || (dmaBaseUrl ? `${dmaBaseUrl}/company/search` : null);
+
+  if (dmaUrl && dmaKey) {
     return {
-      searchUrl: dmaPref,
-      companyUrl: (slug) =>
-        Deno.env.get("IY_DMA_COMPANY_BOLS_URL")?.replace("{company}", slug) ||
-        dmaPref.replace("/company/search", `/company/${slug}`),
+      searchUrl: dmaUrl,
+      companyUrl: (slug) => {
+        const bolsUrl = Deno.env.get("IY_DMA_COMPANY_BOLS_URL");
+        if (bolsUrl) return bolsUrl.replace("{company}", slug);
+        // Derive from base: /company/search -> /company/<slug>
+        const base = dmaBaseUrl || dmaSearchUrl?.replace("/company/search", "");
+        return base ? `${base}/company/${slug}` : "";
+      },
       apiKey: dmaKey,
       isValid: true,
       warnings,
@@ -43,26 +51,25 @@ function getEnvConfig(): EnvConfig {
   const legacyKey = Deno.env.get("IY_API_KEY");
 
   if (legacyKey) {
+    if (!dmaUrl && !dmaKey) {
+      warnings.push("[Env] Using fallback legacy scheme (IY_API_KEY + IY_BASE_URL)");
+    }
     return {
       searchUrl: `${legacyBase}/company/search`,
       companyUrl: (slug) => `${legacyBase}/company/${slug}`,
       apiKey: legacyKey,
       isValid: true,
-      warnings: dmaPref ? ["DMA_SEARCH_URL missing, using fallback BASE_URL"] : [],
+      warnings,
     };
   }
 
   // No valid config
-  const missing = [];
-  if (!dmaPref && !legacyBase) missing.push("IY_DMA_SEARCH_URL, IY_BASE_URL");
-  if (!dmaKey && !legacyKey) missing.push("IY_DMA_API_KEY, IY_API_KEY");
-
   return {
     searchUrl: "",
     companyUrl: () => "",
     apiKey: "",
     isValid: false,
-    warnings: [],
+    warnings: ["[Env] No valid ImportYeti configuration found"],
   };
 }
 
