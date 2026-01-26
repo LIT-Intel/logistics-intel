@@ -8,18 +8,13 @@ import {
   Layers,
   User,
   Link as LinkIcon,
-  Search,
-  LayoutDashboard,
-  Terminal,
-  Megaphone,
-  Briefcase,
-  Boxes,
   ChevronRight,
   LogOut,
   Bell,
   HelpCircle,
   Plus,
   Loader,
+  Save,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -260,7 +255,7 @@ const Settings = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#F8FAFC]">
+      <div className="flex h-screen items-center justify-center bg-slate-50">
         <Loader className="h-8 w-8 animate-spin text-indigo-600" />
       </div>
     );
@@ -269,32 +264,32 @@ const Settings = () => {
   const tokenPercent = billing ? Math.round((billing.tokens.used / billing.tokens.limit) * 100) : 0;
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] text-slate-800 font-sans overflow-hidden">
+    <div className="flex h-screen bg-slate-50 text-slate-800 font-sans overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-[#1E293B] flex flex-col shrink-0">
-        <div className="p-6 border-b border-slate-700/50">
+      <aside className="w-64 bg-slate-900 flex flex-col shrink-0">
+        <div className="p-6 border-b border-slate-700">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center text-white font-bold text-xs italic">
-              LIT
+            <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center text-white font-bold text-xs">
+              L
             </div>
             <div>
-              <h1 className="text-white font-bold text-lg leading-tight">Trade Intelligence</h1>
-              <p className="text-slate-400 text-[10px] uppercase tracking-widest">Logistic Intel</p>
+              <h1 className="text-white font-bold text-lg leading-tight">Logistics Intel</h1>
+              <p className="text-slate-400 text-[10px] uppercase tracking-wider">Settings</p>
             </div>
           </div>
         </div>
 
         <div className="flex-1 py-4 overflow-y-auto">
-          <div className="px-4 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+          <div className="px-4 mb-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
             Account
           </div>
           <SidebarLink name="Settings" icon={<Settings size={18} />} active={true} />
           <SidebarLink name="Billing" icon={<CreditCard size={18} />} />
         </div>
 
-        <div className="p-4 border-t border-slate-700/50 bg-slate-900/50">
+        <div className="p-4 border-t border-slate-700 bg-slate-800">
           <div
-            className="flex items-center gap-3 text-slate-400 hover:text-white cursor-pointer px-2 py-1"
+            className="flex items-center gap-3 text-slate-400 hover:text-white cursor-pointer px-2 py-1 transition-colors"
             onClick={() => supabase.auth.signOut()}
           >
             <LogOut size={18} />
@@ -327,43 +322,42 @@ const Settings = () => {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-5xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             <div className="flex justify-between items-end mb-8">
               <div>
                 <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Settings</h1>
                 <p className="text-slate-500 mt-1">
-                  Manage your organization, team members, and subscription preferences.
+                  Manage your organization, team, and preferences.
                 </p>
               </div>
-              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between gap-8 mb-1">
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between gap-8 mb-2">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Token Usage</span>
-                  <span className="text-xs font-semibold text-slate-900">{tokenPercent}% Used</span>
+                  <span className="text-sm font-semibold text-slate-900">{tokenPercent}%</span>
                 </div>
-                <div className="w-48 h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${tokenPercent}%` }}></div>
+                <div className="w-56 h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${tokenPercent}%` }}></div>
                 </div>
-                <div className="mt-1 text-[10px] text-slate-400">
-                  {billing?.tokens.used.toLocaleString()} / {billing?.tokens.limit.toLocaleString()} Tokens
+                <div className="mt-2 text-[10px] text-slate-400">
+                  {billing?.tokens.used.toLocaleString()} / {billing?.tokens.limit.toLocaleString()} tokens
                 </div>
               </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-slate-200 mb-8 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-1 border-b border-slate-200 mb-8 overflow-x-auto scrollbar-hide">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-6 py-4 text-sm font-medium transition-all relative shrink-0 ${
-                    activeTab === tab.id ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-800'
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors relative shrink-0 border-b-2 ${
+                    activeTab === tab.id
+                      ? 'border-indigo-600 text-indigo-600'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   {tab.icon}
                   {tab.label}
-                  {activeTab === tab.id && (
-                    <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600 rounded-full" />
-                  )}
                 </button>
               ))}
             </div>
