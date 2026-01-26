@@ -288,11 +288,18 @@ serve(async (req) => {
         );
       }
 
-      const searchUrl = `${envConfig.searchUrl}?q=${encodeURIComponent(query)}`;
-      console.log(`[Search] Query: ${query}, URL: ${searchUrl}`);
+      if (!envConfig.searchUrl) {
+        return new Response(
+          JSON.stringify({ error: "Missing env IY_DMA_SEARCH_URL" }),
+          { status: 500, headers: corsHeaders }
+        );
+      }
+
+      console.log(`[Search] Query: ${query}, URL: ${envConfig.searchUrl}`);
 
       try {
-        const results = await iyFetch(searchUrl, envConfig.apiKey);
+        const searchPayload = JSON.stringify({ q: query, page: page || 1, pageSize: pageSize || 25 });
+        const results = await iyFetch(envConfig.searchUrl, envConfig.apiKey, "POST", searchPayload);
         return new Response(
           JSON.stringify({
             results: results || [],
