@@ -11,6 +11,7 @@ import admin from './routes/admin.js';
 import savedCompanies from './routes/savedCompanies.js';
 import campaigns from './routes/campaigns.js';
 import rfp from './routes/rfp.js';
+import settings from './routes/settings.js';
 import { initSchema } from './db.js';
 
 const app = express();
@@ -56,6 +57,7 @@ app.use(admin);
 app.use(savedCompanies);
 app.use(campaigns);
 app.use(rfp);
+app.use(settings);
 
 // Public proxy routes (to Gateway)
 app.use('/api/public', publicRouter);
