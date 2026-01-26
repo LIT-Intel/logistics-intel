@@ -13,8 +13,12 @@ import {
   Plus,
   Loader,
   Save,
+  AlertCircle,
+  CheckCircle,
+  Trash2,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { settingsApi } from '@/lib/settings';
 
 interface Organization {
   id: string;
@@ -62,111 +66,117 @@ interface BillingInfo {
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('account');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [org, setOrg] = useState<Organization | null>(null);
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
-
-  const API_BASE = '/api/lit';
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('member');
+  const [showInviteForm, setShowInviteForm] = useState(false);
 
   useEffect(() => {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ type, message });
+  };
+
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) return;
+      const [orgData, membersData, billingData, profileData] = await Promise.all([
+        settingsApi.organization.get(),
+        settingsApi.team.members.list(),
+        settingsApi.billing.get(),
+        settingsApi.profile.get(),
+      ]);
 
-      const token = session.data.session.access_token;
-
-      const orgRes = await fetch(`${API_BASE}/settings/organization`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (orgRes.ok) {
-        const data = await orgRes.json();
-        setOrg(data.org);
-        setOrgSettings(data.settings);
-      }
-
-      const membersRes = await fetch(`${API_BASE}/settings/team/members`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (membersRes.ok) {
-        const data = await membersRes.json();
-        setTeamMembers(data.members || []);
-      }
-
-      const billingRes = await fetch(`${API_BASE}/settings/billing`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (billingRes.ok) {
-        const data = await billingRes.json();
-        setBilling(data);
-      }
-
-      const userRes = await fetch(`${API_BASE}/settings/profile`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (userRes.ok) {
-        const data = await userRes.json();
-        setCurrentUser(data.profile);
-      }
+      setOrg(orgData.org);
+      setOrgSettings(orgData.settings);
+      setTeamMembers(membersData.members || []);
+      setBilling(billingData);
+      setCurrentUser(profileData.profile);
     } catch (err) {
       console.error('Error loading settings:', err);
+      showToast('Failed to load settings', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateOrg = async (updates: Partial<Organization>) => {
+  const handleUpdateOrg = async () => {
+    if (!org) return;
     try {
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) return;
-
-      const token = session.data.session.access_token;
-
-      const res = await fetch(`${API_BASE}/settings/organization`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates),
+      setSaving(true);
+      const data = await settingsApi.organization.update({
+        name: org.name,
+        industry: org.industry,
+        region: org.region,
+        timezone: org.timezone,
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        setOrg(data.org);
-      }
+      setOrg(data.org);
+      showToast('Organization updated successfully');
     } catch (err) {
       console.error('Error updating organization:', err);
+      showToast('Failed to update organization', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleBillingPortal = async () => {
     try {
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) return;
-
-      const token = session.data.session.access_token;
-
-      const res = await fetch(`${supabase.supabaseUrl}/functions/v1/billing-portal`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        window.location.href = data.url;
-      }
+      const data = await settingsApi.billing.portal();
+      window.location.href = data.url;
     } catch (err) {
       console.error('Error accessing billing portal:', err);
+      showToast('Failed to open billing portal', 'error');
+    }
+  };
+
+  const handleInviteUser = async () => {
+    if (!inviteEmail) {
+      showToast('Please enter an email address', 'error');
+      return;
+    }
+    try {
+      setSaving(true);
+      await settingsApi.team.members.invite(inviteEmail, inviteRole);
+      setInviteEmail('');
+      setShowInviteForm(false);
+      showToast('Invitation sent successfully');
+      await loadSettings();
+    } catch (err) {
+      console.error('Error inviting user:', err);
+      showToast('Failed to send invitation', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!confirm('Are you sure you want to remove this team member?')) return;
+    try {
+      setSaving(true);
+      await settingsApi.team.members.remove(memberId);
+      showToast('Team member removed');
+      await loadSettings();
+    } catch (err) {
+      console.error('Error removing member:', err);
+      showToast('Failed to remove team member', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -243,11 +253,12 @@ const SettingsPage = () => {
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                   <h2 className="font-bold text-lg text-slate-900">Organization Settings</h2>
                   <button
-                    onClick={() => handleUpdateOrg(org!)}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+                    onClick={handleUpdateOrg}
+                    disabled={saving}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
                   >
-                    <Save size={16} />
-                    Save Changes
+                    {saving ? <Loader size={16} className="animate-spin" /> : <Save size={16} />}
+                    {saving ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
                 <div className="p-8 space-y-6">
@@ -304,15 +315,58 @@ const SettingsPage = () => {
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                   <h2 className="font-bold text-lg text-slate-900">Team Members</h2>
-                  <button className="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+                  <button
+                    onClick={() => setShowInviteForm(!showInviteForm)}
+                    className="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                  >
                     <Plus size={16} />
                     Invite User
                   </button>
                 </div>
+                {showInviteForm && (
+                  <div className="p-6 border-b border-slate-100 bg-indigo-50 space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email Address</label>
+                      <input
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="user@example.com"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Role</label>
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                      >
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleInviteUser}
+                        disabled={saving}
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        {saving ? 'Sending...' : 'Send Invitation'}
+                      </button>
+                      <button
+                        onClick={() => setShowInviteForm(false)}
+                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="divide-y divide-slate-100">
                   {teamMembers.length > 0 ? (
                     teamMembers.map((member) => (
-                      <div key={member.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                      <div key={member.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
                             {member.user?.full_name?.charAt(0).toUpperCase() || member.user?.email?.charAt(0).toUpperCase() || 'U'}
@@ -329,6 +383,13 @@ const SettingsPage = () => {
                           <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
                             Active
                           </span>
+                          <button
+                            onClick={() => handleRemoveMember(member.id)}
+                            disabled={saving}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-600 disabled:text-slate-200"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
                     ))
@@ -625,6 +686,24 @@ const SettingsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 animate-in fade-in slide-in-from-right-4 max-w-sm">
+          <div className={`flex items-center gap-3 px-6 py-4 rounded-xl shadow-lg border ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-red-50 border-red-200 text-red-900'
+          }`}>
+            {toast.type === 'success' ? (
+              <CheckCircle size={18} className="shrink-0" />
+            ) : (
+              <AlertCircle size={18} className="shrink-0" />
+            )}
+            <p className="text-sm font-medium">{toast.message}</p>
+          </div>
+        </div>
+      )}
 
       <style dangerouslySetInnerHTML={{
         __html: `

@@ -375,6 +375,104 @@ r.get('/settings/team/invites', limiter, async (req, res, next) => {
   }
 });
 
+// Invite team member
+r.post('/settings/team/invite', limiter, async (req, res, next) => {
+  try {
+    const authToken = getAuthUserId(req);
+    if (!authToken) return res.status(401).json({ error: 'unauthorized' });
+
+    const body = InviteUserSchema.parse(req.body);
+
+    const { data: user, error: userError } = await supabase.auth.getUser(authToken);
+    if (userError || !user?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: membership, error: memberError } = await supabase
+      .from('org_members')
+      .select('org_id, role')
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+
+    if (memberError) throw memberError;
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      return res.status(403).json({ error: 'insufficient_permissions' });
+    }
+
+    // Check if already member or invited
+    const { data: existingMember } = await supabase
+      .from('org_members')
+      .select('id')
+      .eq('org_id', membership.org_id)
+      .limit(1)
+      .maybeSingle();
+
+    const { data: existingInvite } = await supabase
+      .from('org_invites')
+      .select('id')
+      .eq('org_id', membership.org_id)
+      .eq('email', body.email)
+      .eq('status', 'pending')
+      .limit(1)
+      .maybeSingle();
+
+    if (existingMember || existingInvite) {
+      return res.status(409).json({ error: 'user_already_invited_or_member' });
+    }
+
+    // Create invite
+    const { data: invite, error } = await supabase
+      .from('org_invites')
+      .insert({
+        org_id: membership.org_id,
+        email: body.email,
+        role: body.role,
+        invited_by: user.user.id,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({ invite });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Remove team member
+r.delete('/settings/team/members/:member_id', limiter, async (req, res, next) => {
+  try {
+    const authToken = getAuthUserId(req);
+    if (!authToken) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: user, error: userError } = await supabase.auth.getUser(authToken);
+    if (userError || !user?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: membership, error: memberError } = await supabase
+      .from('org_members')
+      .select('org_id, role')
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+
+    if (memberError) throw memberError;
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      return res.status(403).json({ error: 'insufficient_permissions' });
+    }
+
+    const { error } = await supabase
+      .from('org_members')
+      .delete()
+      .eq('id', req.params.member_id)
+      .eq('org_id', membership.org_id);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Get billing info
 r.get('/settings/billing', limiter, async (req, res, next) => {
   try {
@@ -433,6 +531,180 @@ r.get('/settings/billing', limiter, async (req, res, next) => {
         limit: billing?.token_limit_monthly || 100000,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Get token usage by feature
+r.get('/settings/usage/by-feature', limiter, async (req, res, next) => {
+  try {
+    const authToken = getAuthUserId(req);
+    if (!authToken) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: user, error: userError } = await supabase.auth.getUser(authToken);
+    if (userError || !user?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: membership, error: memberError } = await supabase
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+
+    if (memberError) throw memberError;
+    if (!membership) return res.status(404).json({ error: 'no_organization' });
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const { data: usage, error } = await supabase
+      .from('token_ledger')
+      .select('feature, tokens')
+      .eq('org_id', membership.org_id)
+      .gte('created_at', monthStart.toISOString());
+
+    if (error) throw error;
+
+    const byFeature: Record<string, number> = {};
+    usage.forEach((row) => {
+      byFeature[row.feature] = (byFeature[row.feature] || 0) + row.tokens;
+    });
+
+    res.json({ byFeature });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Get feature toggles for org
+r.get('/settings/features', limiter, async (req, res, next) => {
+  try {
+    const authToken = getAuthUserId(req);
+    if (!authToken) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: user, error: userError } = await supabase.auth.getUser(authToken);
+    if (userError || !user?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: membership, error: memberError } = await supabase
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+
+    if (memberError) throw memberError;
+    if (!membership) return res.status(404).json({ error: 'no_organization' });
+
+    const { data: features, error } = await supabase
+      .from('feature_toggles')
+      .select('*')
+      .eq('org_id', membership.org_id);
+
+    if (error) throw error;
+
+    res.json({ features: features || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Get security audit logs
+r.get('/settings/audit-logs', limiter, async (req, res, next) => {
+  try {
+    const authToken = getAuthUserId(req);
+    if (!authToken) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: user, error: userError } = await supabase.auth.getUser(authToken);
+    if (userError || !user?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: membership, error: memberError } = await supabase
+      .from('org_members')
+      .select('org_id, role')
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+
+    if (memberError) throw memberError;
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      return res.status(403).json({ error: 'insufficient_permissions' });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const { data: logs, error, count } = await supabase
+      .from('security_audit_logs')
+      .select('*', { count: 'exact' })
+      .eq('org_id', membership.org_id)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    res.json({ logs, total: count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// List integrations
+r.get('/settings/integrations', limiter, async (req, res, next) => {
+  try {
+    const authToken = getAuthUserId(req);
+    if (!authToken) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: user, error: userError } = await supabase.auth.getUser(authToken);
+    if (userError || !user?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: membership, error: memberError } = await supabase
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+
+    if (memberError) throw memberError;
+    if (!membership) return res.status(404).json({ error: 'no_organization' });
+
+    const { data: integrations, error } = await supabase
+      .from('integrations')
+      .select('id, org_id, integration_type, name, status, connected_at, last_sync_at, error_message')
+      .eq('org_id', membership.org_id);
+
+    if (error) throw error;
+
+    res.json({ integrations: integrations || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Disconnect integration
+r.delete('/settings/integrations/:integration_id', limiter, async (req, res, next) => {
+  try {
+    const authToken = getAuthUserId(req);
+    if (!authToken) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: user, error: userError } = await supabase.auth.getUser(authToken);
+    if (userError || !user?.user?.id) return res.status(401).json({ error: 'unauthorized' });
+
+    const { data: membership, error: memberError } = await supabase
+      .from('org_members')
+      .select('org_id, role')
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+
+    if (memberError) throw memberError;
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      return res.status(403).json({ error: 'insufficient_permissions' });
+    }
+
+    const { error } = await supabase
+      .from('integrations')
+      .delete()
+      .eq('id', req.params.integration_id)
+      .eq('org_id', membership.org_id);
+
+    if (error) throw error;
+
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
