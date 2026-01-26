@@ -23,10 +23,21 @@ function getEnvConfig(): EnvConfig {
 
   // Try DMA scheme first (preferred)
   // Support both exact name and base URL variants
-  const dmaSearchUrl = Deno.env.get("IY_DMA_SEARCH_URL");
-  const dmaBaseUrl = Deno.env.get("IY_DMA_BASE_URL");
+  let dmaSearchUrl = Deno.env.get("IY_DMA_SEARCH_URL");
+  let dmaBaseUrl = Deno.env.get("IY_DMA_BASE_URL");
   const dmaKey = Deno.env.get("IY_DMA_API_KEY");
 
+  // Defensive: clean up malformed base URLs
+  // If base URL ends with /searches or /company/searches, strip it
+  if (dmaBaseUrl) {
+    const originalBase = dmaBaseUrl;
+    dmaBaseUrl = dmaBaseUrl.replace(/\/company\/searches\/?$/, "").replace(/\/searches\/?$/, "");
+    if (originalBase !== dmaBaseUrl) {
+      warnings.push(`[Env] Corrected IY_DMA_BASE_URL from "${originalBase}" to "${dmaBaseUrl}"`);
+    }
+  }
+
+  // If search URL was not explicitly provided but base was, derive it
   const dmaUrl = dmaSearchUrl || (dmaBaseUrl ? `${dmaBaseUrl}/company/search` : null);
 
   if (dmaUrl && dmaKey) {
