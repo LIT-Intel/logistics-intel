@@ -577,18 +577,121 @@ const Settings = () => {
                   </div>
                 )}
 
-                {/* Placeholder Tabs */}
-                {['features', 'profile', 'integrations'].includes(activeTab) && (
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-                      {tabs.find((t) => t.id === activeTab)?.icon}
+                {/* Profile Tab */}
+                {activeTab === 'profile' && (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100">
+                      <h2 className="font-bold text-lg text-slate-800">Profile Settings</h2>
                     </div>
-                    <h3 className="font-bold text-slate-900 text-lg">
-                      Detailed {tabs.find((t) => t.id === activeTab)?.label} View
-                    </h3>
-                    <p className="text-slate-500 mt-2 max-w-sm mx-auto">
-                      This module contains advanced configuration for your {activeTab} preferences and data sync.
-                    </p>
+                    <div className="p-8 space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Full Name</label>
+                          <input
+                            type="text"
+                            value={currentUser?.full_name || ''}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            placeholder="Your full name"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Job Title</label>
+                          <input
+                            type="text"
+                            value={currentUser?.title || ''}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            placeholder="e.g., Sales Manager"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email</label>
+                          <input
+                            type="email"
+                            readOnly
+                            value={currentUser?.email || ''}
+                            className="w-full bg-slate-100 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-400 cursor-not-allowed"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Phone</label>
+                          <input
+                            type="tel"
+                            value={currentUser?.phone || ''}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            placeholder="+1 (555) 000-0000"
+                          />
+                        </div>
+                      </div>
+                      <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm">
+                        Save Profile
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Features Tab */}
+                {activeTab === 'features' && (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100">
+                      <h2 className="font-bold text-lg text-slate-800">Feature Access</h2>
+                    </div>
+                    <div className="p-8 space-y-6">
+                      <div className="space-y-4">
+                        {[
+                          { name: 'Advanced Search Filters', description: 'Filter by HS codes, port codes, and custom parameters' },
+                          { name: 'Contact Enrichment', description: 'Enrich saved companies with contact information' },
+                          { name: 'Campaign Builder', description: 'Create and manage outreach campaigns' },
+                          { name: 'RFP Studio', description: 'Generate professional RFPs and export to PDF/Excel' },
+                          { name: 'Shipment Analytics', description: 'Advanced analytics on shipment trends' },
+                          { name: 'Custom Dashboards', description: 'Create custom KPI dashboards' },
+                        ].map((feature, i) => (
+                          <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{feature.name}</p>
+                              <p className="text-sm text-slate-600">{feature.description}</p>
+                            </div>
+                            <div className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full whitespace-nowrap">
+                              ENABLED
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Integrations Tab */}
+                {activeTab === 'integrations' && (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100">
+                      <h2 className="font-bold text-lg text-slate-800">Connected Integrations</h2>
+                    </div>
+                    <div className="p-8 space-y-6">
+                      <div className="space-y-4">
+                        {[
+                          { name: 'Gmail', description: 'Send campaigns via Gmail integration', connected: true },
+                          { name: 'Outlook', description: 'Send campaigns via Outlook', connected: false },
+                          { name: 'Google Cloud Storage', description: 'Store RFP documents', connected: true },
+                          { name: 'Slack', description: 'Receive notifications on Slack', connected: false },
+                          { name: 'Salesforce', description: 'Sync leads to Salesforce', connected: false },
+                          { name: 'HubSpot', description: 'Sync leads to HubSpot CRM', connected: false },
+                        ].map((integration, i) => (
+                          <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{integration.name}</p>
+                              <p className="text-sm text-slate-600">{integration.description}</p>
+                            </div>
+                            <button className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                              integration.connected
+                                ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            }`}>
+                              {integration.connected ? 'Disconnect' : 'Connect'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
