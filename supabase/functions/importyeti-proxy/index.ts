@@ -20,12 +20,41 @@ interface EnvConfig {
 
 function getEnvConfig(): EnvConfig {
   const warnings: string[] = [];
+  const debugInfo: string[] = [];
 
-  // Try DMA scheme first (preferred)
-  // Support both exact name and base URL variants
+  // Check what's actually available in environment
+  const allKeys = ["IYApiKey", "IY_DMA_API_KEY", "IY_API_KEY", "IY_DMA_BASE_URL", "IY_BASE_URL", "IY_DMA_SEARCH_URL", "IY_DMA_COMPANY_BOLS_URL"];
+  allKeys.forEach(key => {
+    const val = Deno.env.get(key);
+    debugInfo.push(`${key}=${val ? "SET" : "NOT_SET"}`);
+  });
+  console.log(`[Env] Available keys: ${debugInfo.join(", ")}`);
+
+  // Try Supabase camelCase naming first (IYApiKey)
+  let apiKey = Deno.env.get("IYApiKey");
+  if (apiKey) {
+    warnings.push("[Env] Using IYApiKey (Supabase camelCase)");
+  }
+
+  // Fall back to DMA scheme
+  if (!apiKey) {
+    apiKey = Deno.env.get("IY_DMA_API_KEY");
+    if (apiKey) {
+      warnings.push("[Env] Using IY_DMA_API_KEY (DMA scheme)");
+    }
+  }
+
+  // Fall back to legacy scheme
+  if (!apiKey) {
+    apiKey = Deno.env.get("IY_API_KEY");
+    if (apiKey) {
+      warnings.push("[Env] Using IY_API_KEY (legacy scheme)");
+    }
+  }
+
+  // Now resolve base URL
   let dmaSearchUrl = Deno.env.get("IY_DMA_SEARCH_URL");
   let dmaBaseUrl = Deno.env.get("IY_DMA_BASE_URL");
-  const dmaKey = Deno.env.get("IY_DMA_API_KEY");
 
   // Defensive: clean up malformed base URLs
   // If base URL ends with /searches or /company/searches, strip it
@@ -40,7 +69,8 @@ function getEnvConfig(): EnvConfig {
   // If search URL was not explicitly provided but base was, derive it
   const dmaUrl = dmaSearchUrl || (dmaBaseUrl ? `${dmaBaseUrl}/company/search` : null);
 
-  if (dmaUrl && dmaKey) {
+  if (dmaUrl && apiKey) {
+    console.log(`[Env] Using DMA config - searchUrl: ${dmaUrl}, apiKey: ${apiKey.substring(0, 10)}...`);
     return {
       searchUrl: dmaUrl,
       companyUrl: (slug) => {
@@ -50,7 +80,7 @@ function getEnvConfig(): EnvConfig {
         const base = dmaBaseUrl || dmaSearchUrl?.replace("/company/search", "");
         return base ? `${base}/company/${slug}` : "";
       },
-      apiKey: dmaKey,
+      apiKey,
       isValid: true,
       warnings,
     };
@@ -59,28 +89,29 @@ function getEnvConfig(): EnvConfig {
   // Fall back to legacy scheme
   const legacyBase = Deno.env.get("IY_BASE_URL") ||
     "https://data.importyeti.com/v1.0";
-  const legacyKey = Deno.env.get("IY_API_KEY");
 
-  if (legacyKey) {
-    if (!dmaUrl && !dmaKey) {
-      warnings.push("[Env] Using fallback legacy scheme (IY_API_KEY + IY_BASE_URL)");
+  if (apiKey) {
+    if (!dmaUrl) {
+      warnings.push("[Env] Using fallback legacy base URL (IY_BASE_URL or default)");
     }
+    console.log(`[Env] Using legacy config - base: ${legacyBase}, apiKey: ${apiKey.substring(0, 10)}...`);
     return {
       searchUrl: `${legacyBase}/company/search`,
       companyUrl: (slug) => `${legacyBase}/company/${slug}`,
-      apiKey: legacyKey,
+      apiKey,
       isValid: true,
       warnings,
     };
   }
 
   // No valid config
+  console.error(`[Env] ERROR: No valid ImportYeti API key found. Checked: IYApiKey, IY_DMA_API_KEY, IY_API_KEY`);
   return {
     searchUrl: "",
     companyUrl: () => "",
     apiKey: "",
     isValid: false,
-    warnings: ["[Env] No valid ImportYeti configuration found"],
+    warnings: [...warnings, "[Env] CRITICAL: No valid ImportYeti API key configuration found"],
   };
 }
 

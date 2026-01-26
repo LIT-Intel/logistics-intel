@@ -15,10 +15,18 @@ const stripTrailingSlash = (value: string) =>
 const IY_DMA_SEARCH_URL = stripTrailingSlash(trim(process.env.IY_DMA_SEARCH_URL));
 const IY_DMA_COMPANY_BOLS_URL = stripTrailingSlash(trim(process.env.IY_DMA_COMPANY_BOLS_URL));
 
+// Support multiple naming conventions for API key
+// Try: IYApiKey (Supabase), IY_DMA_API_KEY (DMA scheme), IY_API_KEY (legacy)
+const IY_DMA_API_KEY = trim(
+  process.env.IYApiKey ||
+  process.env.IY_DMA_API_KEY ||
+  process.env.IY_API_KEY
+);
+
 const env = {
   IY_DMA_SEARCH_URL,
   IY_DMA_COMPANY_BOLS_URL,
-  IY_DMA_API_KEY: trim(process.env.IY_DMA_API_KEY),
+  IY_DMA_API_KEY,
   IMPORTYETI_PRO_ENABLED: toBool(process.env.IMPORTYETI_PRO_ENABLED),
 };
 
