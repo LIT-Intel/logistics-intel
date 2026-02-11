@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
-import { searchShippers, getIyCompanyProfile, type IyCompanyProfile } from "@/lib/api";
+import { searchShippers, fetchCompanySnapshot, normalizeIyCompanyProfile, type CompanySnapshot, type IyCompanyProfile } from "@/lib/api";
 import { parseImportYetiDate, formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -221,6 +221,7 @@ export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<MockCompany[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
+  const [rawData, setRawData] = useState<any>(null);
   const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -292,6 +293,7 @@ export default function SearchPage() {
 
     const loadSnapshot = async () => {
       if (!selectedCompany || !selectedCompany.importyeti_key) {
+        setRawData(null);
         setNormalizedProfile(null);
         return;
       }
@@ -300,28 +302,34 @@ export default function SearchPage() {
       console.log("[Search] Loading snapshot for:", selectedCompany.importyeti_key);
 
       try {
-        const { companyProfile } = await getIyCompanyProfile({
-          companyKey: selectedCompany.importyeti_key,
-        });
-
+        const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
         if (!cancelled) {
-          console.log("[Search] Company profile received:", {
-            key: companyProfile?.key,
-            hasRouteKpis: !!companyProfile?.routeKpis,
-            hasContainers: !!companyProfile?.containers,
-            timeSeriesLength: companyProfile?.timeSeries?.length,
-            shipmentsLast12m: companyProfile?.routeKpis?.shipmentsLast12m,
-            fclShipments: companyProfile?.containers?.fclShipments12m,
-            lclShipments: companyProfile?.containers?.lclShipments12m,
-          });
+          if (result && result.snapshot) {
+            console.log("[Search] Snapshot received - normalizing for UI");
+            setRawData(result.raw);
 
-          setNormalizedProfile(companyProfile);
+            // Phase 2.3: Normalize snapshot data using the new function
+            const profile = normalizeIyCompanyProfile(result, selectedCompany.importyeti_key);
+            setNormalizedProfile(profile);
+            console.log("[Search] Normalized profile:", {
+              hasRouteKpis: !!profile.routeKpis,
+              hasContainers: !!profile.containers,
+              timeSeriesLength: profile.timeSeries?.length,
+              shipmentsLast12m: profile.routeKpis?.shipmentsLast12m,
+              fclShipments: profile.containers?.fclShipments12m,
+              lclShipments: profile.containers?.lclShipments12m,
+            });
+          } else {
+            console.warn("[Search] No snapshot data returned");
+            setRawData(null);
+            setNormalizedProfile(null);
+          }
         }
-
       } catch (error) {
         console.error('[Search] Failed to load snapshot:', error);
         if (!cancelled) {
-            setNormalizedProfile(null);
+          setRawData(null);
+          setNormalizedProfile(null);
         }
       } finally {
         if (!cancelled) {
@@ -337,6 +345,87 @@ export default function SearchPage() {
     };
   }, [selectedCompany]);
 
+  const computeKPIsFromRaw = () => {
+    if (!rawData?.snapshot) {
+      return {
+        totalTEU: 0,
+        fclCount: 0,
+        lclCount: 0,
+        estSpend: 0,
+        totalShipments: 0,
+        lastShipmentDate: null,
+      };
+    }
+
+    const snapshot = rawData.snapshot;
+
+    return {
+      totalTEU: snapshot.total_teu || 0,
+      fclCount: snapshot.fcl_count || 0,
+      lclCount: snapshot.lcl_count || 0,
+      estSpend: snapshot.est_spend || 0,
+      totalShipments: snapshot.total_shipments || 0,
+      lastShipmentDate: snapshot.last_shipment_date || null,
+    };
+  };
+
+  const computeMonthlyVolumes = () => {
+    if (!rawData) {
+      console.warn("[computeMonthlyVolumes] No rawData available");
+      return {};
+    }
+
+    const snapshot = rawData.snapshot;
+    const data = rawData.data || {};
+
+    if (snapshot?.monthly_volumes && Object.keys(snapshot.monthly_volumes).length > 0) {
+      return snapshot.monthly_volumes;
+    }
+
+    if (!Array.isArray(data.recent_bols) || data.recent_bols.length === 0) {
+      console.warn("[computeMonthlyVolumes] No BOL data available for aggregation");
+      return {};
+    }
+
+    const computed: Record<string, { fcl: number; lcl: number }> = {};
+    (data.recent_bols || []).forEach((bol: any) => {
+      if (!bol.date_formatted) return;
+      const parts = bol.date_formatted.split("/");
+      if (parts.length !== 3) return;
+      const [day, month, year] = parts;
+      const monthKey = `${year}-${month.padStart(2, "0")}`;
+
+      if (!computed[monthKey]) {
+        computed[monthKey] = { fcl: 0, lcl: 0 };
+      }
+      if (bol.lcl === true) {
+        computed[monthKey].lcl++;
+      } else if (bol.lcl === false) {
+        computed[monthKey].fcl++;
+      }
+    });
+
+    if (Object.keys(computed).length > 0) {
+      console.log("[computeMonthlyVolumes] Computed from BOL data:", Object.keys(computed).length, "months");
+      return computed;
+    }
+
+    console.warn("[computeMonthlyVolumes] No monthly_volumes data available");
+    return {};
+  };
+
+  const computeTradeRoutes = () => {
+    if (!rawData?.snapshot?.top_ports) {
+      return { origins: [], destinations: [] };
+    }
+
+    const topPorts = rawData.snapshot.top_ports || [];
+    return { origins: topPorts.slice(0, 5), destinations: [] };
+  };
+
+  const kpis = computeKPIsFromRaw();
+  const monthlyVolumes = computeMonthlyVolumes();
+  const tradeRoutes = computeTradeRoutes();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1056,15 +1145,15 @@ export default function SearchPage() {
                   <div className="flex items-start justify-between gap-3 md:gap-4">
                     <div className="flex items-start gap-3 md:gap-4 flex-1 min-w-0">
                       <CompanyAvatar
-                        name={normalizedProfile?.title || normalizedProfile?.name || selectedCompany.name}
-                        logoUrl={normalizedProfile?.website || selectedCompany.website ? `https://img.logo.dev/${new URL(`https://${normalizedProfile?.website || selectedCompany.website}`).hostname}?token=pk_live_1c1b01c012` : undefined}
+                        name={rawData?.data?.title || rawData?.data?.name || selectedCompany.name}
+                        logoUrl={rawData?.data?.website || selectedCompany.website ? `https://img.logo.dev/${new URL(`https://${rawData?.data?.website || selectedCompany.website}`).hostname}?token=pk_live_1c1b01c012` : undefined}
                         size="lg"
                         className="flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <h2 className="text-xl md:text-2xl font-bold text-slate-900">
-                            {normalizedProfile?.title || normalizedProfile?.name || selectedCompany.name}
+                            {rawData?.data?.title || rawData?.data?.name || selectedCompany.name}
                           </h2>
                           {selectedCompany.importyeti_key && savedCompanyIds.includes(selectedCompany.importyeti_key) && (
                             <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
@@ -1072,46 +1161,46 @@ export default function SearchPage() {
                             </Badge>
                           )}
                           <span className="text-2xl md:text-3xl flex-shrink-0 whitespace-nowrap">
-                            {getCountryFlag(normalizedProfile?.countryCode || selectedCompany.country_code)}
+                            {getCountryFlag(rawData?.data?.country || selectedCompany.country_code)}
                           </span>
                         </div>
                         <div className="space-y-1 text-xs md:text-sm">
-                          {(normalizedProfile?.address || selectedCompany.address) && (
+                          {(rawData?.data?.address_plain || selectedCompany.address) && (
                             <div className="flex items-start gap-2 text-slate-600">
                               <a
-                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalizedProfile?.address || selectedCompany.address)}`}
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawData?.data?.address_plain || selectedCompany.address)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-start gap-2 hover:text-blue-600 transition-colors group"
                               >
                                 <MapPin className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                                <span className="line-clamp-2 flex-1">{normalizedProfile?.address || selectedCompany.address}</span>
+                                <span className="line-clamp-2 flex-1">{rawData?.data?.address_plain || selectedCompany.address}</span>
                                 <ExternalLink className="h-3 w-3 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </a>
                             </div>
                           )}
-                          {(normalizedProfile?.website || selectedCompany.website) && (
+                          {(rawData?.data?.website || selectedCompany.website) && (
                             <div className="flex items-center gap-2 text-slate-600">
                               <Globe className="h-4 w-4 flex-shrink-0" />
                               <a
-                                href={`https://${normalizedProfile?.website || selectedCompany.website}`}
+                                href={`https://${rawData?.data?.website || selectedCompany.website}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="hover:text-blue-600 transition-colors truncate"
                               >
-                                {normalizedProfile?.website || selectedCompany.website}
+                                {rawData?.data?.website || selectedCompany.website}
                                 <ExternalLink className="h-3 w-3 inline ml-1" />
                               </a>
                             </div>
                           )}
-                          {normalizedProfile?.phone && (
+                          {rawData?.data?.phone && (
                             <div className="flex items-center gap-2 text-slate-600">
                               <Phone className="h-4 w-4 flex-shrink-0" />
                               <a
-                                href={`tel:${normalizedProfile.phone}`}
+                                href={`tel:${rawData.data.phone}`}
                                 className="hover:text-blue-600 transition-colors truncate"
                               >
-                                {normalizedProfile.phone}
+                                {rawData.data.phone}
                               </a>
                             </div>
                           )}
