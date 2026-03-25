@@ -8,14 +8,39 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const IY_BASE_URL = "https://data.importyeti.com/v1.0";
-const IY_API_KEY = (Deno.env.get("IY_API_KEY") || "").trim();
+const SNAPSHOT_TABLE = "lit_importyeti_company_snapshot";
+const INDEX_TABLE = "lit_company_index";
 const SNAPSHOT_TTL_DAYS = 30;
+
+type KeySource =
+  | "IYApiKey"
+  | "IY_DMA_API_KEY"
+  | "IY_API_KEY"
+  | "IMPORTYETI_API_KEY";
+
+type EnvConfig = {
+  apiKey: string;
+  apiKeySource: KeySource | null;
+  searchUrl: string;
+  dmaBaseUrl: string;
+  warnings: string[];
+  isValid: boolean;
+};
+
+type SnapshotRecord = {
+  company_id: string;
+  raw_payload: any;
+  parsed_summary: any;
+  updated_at: string;
+};
 
 type MonthlyPoint = {
   month: string;
   fclShipments: number;
   lclShipments: number;
+  shipments?: number;
+  teu?: number;
+  weight?: number;
 };
 
 type TopRoute = {
@@ -26,57 +51,6 @@ type TopRoute = {
   lclShipments: number | null;
 };
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
-
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const body = await req.json();
-    const { action, company_id, companyKey, q, page, pageSize } = body;
-
-    if (action === "search") {
-      return handleSearchAction(q, page, pageSize);
-    }
-
-    const requestedCompanyId = company_id || companyKey;
-
-    if (!requestedCompanyId) {
-      return jsonResponse(
-        { error: "company_id is required" },
-        400,
-      );
-    }
-
-    if (action === "companyBols") {
-      return handleCompanyBolsAction(supabase, requestedCompanyId);
-    }
-
-    if (
-      action === "company" ||
-      action === "companyProfile" ||
-      action === "companySnapshot"
-    ) {
-      return handleCompanyProfileAction(supabase, requestedCompanyId);
-    }
-
-    return jsonResponse(
-      { error: `Unknown action: ${action}` },
-      400,
-    );
-  } catch (error: any) {
-    console.error("❌ Fatal error:", error);
-    return jsonResponse(
-      { error: error.message || "Internal server error" },
-      500,
-    );
-  }
-});
-
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -85,305 +59,6 @@ function jsonResponse(payload: unknown, status = 200) {
       "Content-Type": "application/json",
     },
   });
-}
-
-async function handleCompanyProfileAction(supabase: any, companyId: string) {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("📦 COMPANY PROFILE REQUEST:", companyId);
-
-  const normalizedCompanyKey = normalizeCompanyKey(companyId);
-  console.log("  Normalized slug:", normalizedCompanyKey);
-
-  const { data: existingSnapshot, error: fetchError } = await supabase
-    .from("lit_importyeti_company_snapshot")
-    .select("*")
-    .eq("company_id", normalizedCompanyKey)
-    .maybeSingle();
-
-  if (fetchError) {
-    console.error("❌ Snapshot fetch error:", fetchError);
-  }
-
-  const now = new Date();
-  const snapshotAge = existingSnapshot
-    ? (now.getTime() - new Date(existingSnapshot.updated_at).getTime()) /
-      (1000 * 60 * 60 * 24)
-    : Infinity;
-
-  console.log("📅 Snapshot age:", snapshotAge.toFixed(1), "days");
-
-  if (existingSnapshot && snapshotAge < SNAPSHOT_TTL_DAYS) {
-    console.log("✅ Using cached snapshot");
-    const cachedProfile = buildCompanyProfileFromSnapshot(
-      existingSnapshot.parsed_summary,
-      existingSnapshot.raw_payload,
-      normalizedCompanyKey,
-    );
-
-    return jsonResponse({
-      ok: true,
-      source: "cache",
-      snapshot: existingSnapshot.parsed_summary,
-      companyProfile: cachedProfile,
-      raw: existingSnapshot.raw_payload,
-      cached_at: existingSnapshot.updated_at,
-    });
-  }
-
-  console.log("🌐 Fetching from ImportYeti");
-  const iyUrl = `${IY_BASE_URL}/company/${normalizedCompanyKey}`;
-
-  console.log("  URL:", iyUrl);
-  console.log("  Auth: IYApiKey");
-
-  const iyResponse = await fetch(iyUrl, {
-    method: "GET",
-    headers: {
-      IYApiKey: IY_API_KEY,
-      Accept: "application/json",
-    },
-  });
-
-  if (!iyResponse.ok) {
-    const errorText = await iyResponse.text();
-    console.error("❌ ImportYeti error:", iyResponse.status, errorText);
-    return jsonResponse(
-      {
-        error: "ImportYeti API error",
-        status: iyResponse.status,
-        details: errorText,
-      },
-      iyResponse.status,
-    );
-  }
-
-  const rawPayload = await iyResponse.json();
-  console.log("✅ ImportYeti response received");
-
-  const parsedSummary = parseCompanySnapshot(rawPayload, normalizedCompanyKey);
-  const companyProfile = buildCompanyProfileFromSnapshot(
-    parsedSummary,
-    rawPayload,
-    normalizedCompanyKey,
-  );
-
-  console.log("📊 Parsed profile:", {
-    shipmentsLast12m: companyProfile.routeKpis?.shipmentsLast12m,
-    teuLast12m: companyProfile.routeKpis?.teuLast12m,
-    estSpendUsd12m: companyProfile.routeKpis?.estSpendUsd12m,
-    timeSeriesPoints: companyProfile.timeSeries?.length,
-    topRoutes: companyProfile.routeKpis?.topRoutesLast12m?.length,
-  });
-
-  const { error: upsertError } = await supabase
-    .from("lit_importyeti_company_snapshot")
-    .upsert({
-      company_id: normalizedCompanyKey,
-      raw_payload: rawPayload,
-      parsed_summary: parsedSummary,
-      updated_at: now.toISOString(),
-    });
-
-  if (upsertError) {
-    console.error("❌ Snapshot save error:", upsertError);
-  } else {
-    console.log("✅ Snapshot saved");
-  }
-
-  const { error: indexError } = await supabase
-    .from("lit_company_index")
-    .upsert({
-      company_id: normalizedCompanyKey,
-      company_name: companyProfile.title || normalizedCompanyKey,
-      country: companyProfile.countryCode || null,
-      city: companyProfile.address || null,
-      last_shipment_date: companyProfile.lastShipmentDate || null,
-      total_shipments: companyProfile.totalShipments || 0,
-      total_teu: companyProfile.routeKpis?.teuLast12m || 0,
-      updated_at: now.toISOString(),
-    });
-
-  if (indexError) {
-    console.error("❌ Index update error:", indexError);
-  } else {
-    console.log("✅ Search index updated");
-  }
-
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-  return jsonResponse({
-    ok: true,
-    source: "importyeti",
-    snapshot: parsedSummary,
-    companyProfile,
-    raw: rawPayload,
-    fetched_at: now.toISOString(),
-  });
-}
-
-async function handleCompanyBolsAction(supabase: any, company_id: string) {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("📋 COMPANY BOLS REQUEST:", company_id);
-
-  const normalizedCompanyKey = normalizeCompanyKey(company_id);
-  console.log("  Normalized slug:", normalizedCompanyKey);
-
-  const { data: snapshot, error } = await supabase
-    .from("lit_importyeti_company_snapshot")
-    .select("*")
-    .eq("company_id", normalizedCompanyKey)
-    .maybeSingle();
-
-  if (error) {
-    console.error("❌ Snapshot fetch error:", error);
-    return jsonResponse({ ok: false, error: "Failed to fetch snapshot" }, 500);
-  }
-
-  if (!snapshot) {
-    console.log("⚠️ No snapshot found - fetching fresh data");
-    const iyUrl = `${IY_BASE_URL}/company/${normalizedCompanyKey}`;
-    const iyResponse = await fetch(iyUrl, {
-      method: "GET",
-      headers: {
-        IYApiKey: IY_API_KEY,
-        Accept: "application/json",
-      },
-    });
-
-    if (!iyResponse.ok) {
-      return jsonResponse({ ok: false, error: "Company not found" }, 404);
-    }
-
-    const rawPayload = await iyResponse.json();
-    const data = rawPayload.data || rawPayload;
-    const rows = Array.isArray(data.recent_bols) ? data.recent_bols : [];
-
-    console.log("✅ BOLs fetched:", rows.length);
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-    return jsonResponse({
-      ok: true,
-      rows,
-      total: rows.length,
-    });
-  }
-
-  const rawPayload = snapshot.raw_payload || {};
-  const data = rawPayload.data || rawPayload;
-  const rows = Array.isArray(data.recent_bols) ? data.recent_bols : [];
-
-  console.log("✅ BOLs from cache:", rows.length);
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-  return jsonResponse({
-    ok: true,
-    rows,
-    total: rows.length,
-    cached_at: snapshot.updated_at,
-  });
-}
-
-async function handleSearchAction(
-  q: string,
-  page: number = 1,
-  pageSize: number = 25,
-) {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("🔍 SEARCH REQUEST:", { q, page, pageSize });
-
-  if (!q || typeof q !== "string" || q.trim().length === 0) {
-    return jsonResponse(
-      { ok: false, error: "Query (q) is required and must be non-empty" },
-      400,
-    );
-  }
-
-  if (!IY_API_KEY) {
-    console.error("❌ IY_API_KEY not configured");
-    return jsonResponse(
-      { ok: false, error: "ImportYeti API key not configured" },
-      500,
-    );
-  }
-
-  try {
-    const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
-    const validatedPageSize = Math.max(
-      1,
-      Math.min(100, Number.isFinite(pageSize) ? Number(pageSize) : 25),
-    );
-    const offset = (validatedPage - 1) * validatedPageSize;
-
-    const url = new URL(`${IY_BASE_URL}/company/search`);
-    url.searchParams.set("name", q.trim());
-    url.searchParams.set("page_size", String(validatedPageSize));
-    url.searchParams.set("offset", String(offset));
-
-    const iyUrl = url.toString();
-
-    console.log("  METHOD: GET");
-    console.log("  URL:", iyUrl);
-    console.log("  Auth: IYApiKey");
-
-    const iyResponse = await fetch(iyUrl, {
-      method: "GET",
-      headers: {
-        IYApiKey: IY_API_KEY,
-        Accept: "application/json",
-      },
-    });
-
-    if (!iyResponse.ok) {
-      const errorText = await iyResponse.text();
-      console.error("❌ ImportYeti error:", iyResponse.status, errorText);
-      return jsonResponse(
-        {
-          ok: false,
-          error: "ImportYeti API error",
-          status: iyResponse.status,
-          details: errorText,
-        },
-        iyResponse.status,
-      );
-    }
-
-    const rawPayload = await iyResponse.json();
-    console.log("✅ ImportYeti response received");
-
-    const results = Array.isArray(rawPayload?.results)
-      ? rawPayload.results
-      : Array.isArray(rawPayload?.data)
-      ? rawPayload.data
-      : Array.isArray(rawPayload)
-      ? rawPayload
-      : [];
-
-    const total =
-      rawPayload?.total ?? rawPayload?.pagination?.total ?? results.length;
-
-    console.log("📊 Search result:", {
-      results_count: results.length,
-      total,
-      page: validatedPage,
-      pageSize: validatedPageSize,
-    });
-
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-    return jsonResponse({
-      ok: true,
-      results,
-      page: validatedPage,
-      pageSize: validatedPageSize,
-      total,
-    });
-  } catch (error: any) {
-    console.error("❌ Search handler error:", error);
-    return jsonResponse(
-      { ok: false, error: error.message || "Search failed" },
-      500,
-    );
-  }
 }
 
 function normalizeCompanyKeyToSlug(input: string): string {
@@ -405,27 +80,6 @@ function normalizeCompanyKey(key: string): string {
   return normalizeCompanyKeyToSlug(key);
 }
 
-function parseImportYetiDate(value: unknown): Date | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  const trimmed = value.trim();
-
-  const ddmmyyyy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (ddmmyyyy) {
-    const [, day, month, year] = ddmmyyyy;
-    const d = new Date(`${year}-${month}-${day}T00:00:00Z`);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function formatMonthKey(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
 function normalizeString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -443,33 +97,79 @@ function normalizeNumber(value: unknown): number | null {
   return null;
 }
 
+function parseImportYetiDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const trimmed = value.trim();
+
+  const slashDate = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashDate) {
+    const [, first, second, year] = slashDate;
+    const a = Number(first);
+    const b = Number(second);
+    const y = Number(year);
+
+    if (a >= 1 && a <= 12 && b >= 1 && b <= 31) {
+      const d = new Date(Date.UTC(y, a - 1, b));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    if (b >= 1 && b <= 12 && a >= 1 && a <= 31) {
+      const d = new Date(Date.UTC(y, b - 1, a));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    return null;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatMonthKey(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
 function estimateBolTeu(bol: any): number {
-  const explicit =
+  return (
+    normalizeNumber(bol?.TEU) ??
+    normalizeNumber(bol?.teu) ??
     normalizeNumber(bol?.total_teu) ??
     normalizeNumber(bol?.container_teu) ??
-    normalizeNumber(bol?.teu) ??
-    normalizeNumber(bol?.containers_count);
+    normalizeNumber(bol?.containers_count) ??
+    normalizeNumber(bol?.container_count) ??
+    (bol?.lcl === true ? 0 : 0)
+  );
+}
 
-  if (explicit != null) return explicit;
-
-  if (bol?.lcl === true) return 0;
-  if (bol?.lcl === false) return 1;
-
-  return 0;
+function estimateBolSpendUsd(bol: any): number {
+  return (
+    normalizeNumber(bol?.shipping_cost) ??
+    normalizeNumber(bol?.shipping_rate_usd) ??
+    normalizeNumber(bol?.rate_usd) ??
+    normalizeNumber(bol?.amount_usd) ??
+    0
+  );
 }
 
 function buildRouteLabel(bol: any): string | null {
   const origin =
+    normalizeString(bol?.shipping_route) ??
     normalizeString(bol?.origin_port) ??
     normalizeString(bol?.supplier_address_loc) ??
     normalizeString(bol?.supplier_address_location) ??
-    normalizeString(bol?.place_of_receipt);
+    normalizeString(bol?.Country) ??
+    normalizeString(bol?.country_code) ??
+    normalizeString(bol?.shipper_address_loc);
 
   const dest =
+    normalizeString(bol?.entry_port) ??
     normalizeString(bol?.destination_port) ??
-    normalizeString(bol?.Consignee_Address) ??
     normalizeString(bol?.company_address_loc) ??
-    normalizeString(bol?.company_address_location);
+    normalizeString(bol?.company_address_country) ??
+    normalizeString(bol?.Consignee_Address) ??
+    normalizeString(bol?.consignee_address_loc);
 
   if (origin && dest) return `${origin} → ${dest}`;
   if (origin) return origin;
@@ -477,107 +177,400 @@ function buildRouteLabel(bol: any): string | null {
   return null;
 }
 
-function buildLast12MonthsSeries(): MonthlyPoint[] {
-  const points: MonthlyPoint[] = [];
-  const now = new Date();
+function inferProfileTitle(snapshot: any, raw: any, companySlug: string): string {
+  return (
+    normalizeString(snapshot?.company_name) ??
+    normalizeString(snapshot?.title) ??
+    normalizeString(raw?.title) ??
+    normalizeString(raw?.name) ??
+    normalizeString(raw?.company_name) ??
+    normalizeString(raw?.company_basename) ??
+    companySlug
+  );
+}
 
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1),
+function inferProfileWebsite(snapshot: any, raw: any): string | null {
+  return (
+    normalizeString(snapshot?.website) ??
+    normalizeString(raw?.website) ??
+    normalizeString(raw?.company_website) ??
+    null
+  );
+}
+
+function inferProfileDomain(snapshot: any, raw: any): string | null {
+  const website = inferProfileWebsite(snapshot, raw);
+  if (!website) return null;
+  try {
+    const parsed = new URL(
+      website.startsWith("http") ? website : `https://${website}`,
     );
-    points.push({
-      month: formatMonthKey(d),
-      fclShipments: 0,
-      lclShipments: 0,
+    return parsed.hostname.replace(/^www\./i, "");
+  } catch {
+    return normalizeString(website);
+  }
+}
+
+function buildEnvConfig(): EnvConfig {
+  const warnings: string[] = [];
+
+  const candidates: Array<{ name: KeySource; value: string | undefined }> = [
+    { name: "IYApiKey", value: Deno.env.get("IYApiKey")?.trim() },
+    { name: "IY_DMA_API_KEY", value: Deno.env.get("IY_DMA_API_KEY")?.trim() },
+    { name: "IY_API_KEY", value: Deno.env.get("IY_API_KEY")?.trim() },
+    { name: "IMPORTYETI_API_KEY", value: Deno.env.get("IMPORTYETI_API_KEY")?.trim() },
+  ];
+
+  let apiKey = "";
+  let apiKeySource: KeySource | null = null;
+
+  for (const candidate of candidates) {
+    if (candidate.value) {
+      apiKey = candidate.value;
+      apiKeySource = candidate.name;
+      break;
+    }
+  }
+
+  let dmaBaseUrl =
+    Deno.env.get("IY_DMA_BASE_URL")?.trim() ||
+    "https://data.importyeti.com/v1.0";
+
+  const originalBase = dmaBaseUrl;
+  dmaBaseUrl = dmaBaseUrl
+    .replace(/\/company\/searches\/?$/, "")
+    .replace(/\/searches\/?$/, "");
+
+  if (originalBase !== dmaBaseUrl) {
+    warnings.push(
+      `[Env] Corrected IY_DMA_BASE_URL from "${originalBase}" to "${dmaBaseUrl}"`,
+    );
+  }
+
+  const searchUrl =
+    Deno.env.get("IY_DMA_SEARCH_URL")?.trim() ||
+    `${dmaBaseUrl}/company/search`;
+
+  return {
+    apiKey,
+    apiKeySource,
+    searchUrl,
+    dmaBaseUrl,
+    warnings,
+    isValid: Boolean(apiKey),
+  };
+}
+
+async function fetchImportYetiJson(url: string, apiKey: string) {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      IYApiKey: apiKey,
+      "X-API-Key": apiKey,
+      Accept: "application/json",
+    },
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`ImportYeti API error ${response.status}: ${text}`);
+  }
+
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function safeMaybeSingleSnapshot(
+  supabase: any,
+  companySlug: string,
+): Promise<{ data: SnapshotRecord | null; errorMessage: string | null }> {
+  try {
+    const result = await supabase
+      .from(SNAPSHOT_TABLE)
+      .select("*")
+      .eq("company_id", companySlug)
+      .maybeSingle();
+
+    const data = result?.data ?? null;
+    const errorMessage = result?.error?.message ?? null;
+
+    return { data, errorMessage };
+  } catch (error: any) {
+    return {
+      data: null,
+      errorMessage: error?.message || "Snapshot lookup failed",
+    };
+  }
+}
+
+async function safeUpsertSnapshot(
+  supabase: any,
+  payload: Record<string, unknown>,
+): Promise<string | null> {
+  try {
+    const result = await supabase.from(SNAPSHOT_TABLE).upsert(payload);
+    return result?.error?.message ?? null;
+  } catch (error: any) {
+    return error?.message || "Snapshot upsert failed";
+  }
+}
+
+async function safeUpsertIndex(
+  supabase: any,
+  payload: Record<string, unknown>,
+): Promise<string | null> {
+  try {
+    const result = await supabase.from(INDEX_TABLE).upsert(payload);
+    return result?.error?.message ?? null;
+  } catch (error: any) {
+    return error?.message || "Index upsert failed";
+  }
+}
+
+async function getCachedSnapshot(supabase: any, companySlug: string) {
+  const result = await safeMaybeSingleSnapshot(supabase, companySlug);
+
+  if (result.errorMessage) {
+    console.error("❌ Snapshot fetch error:", result.errorMessage);
+  }
+
+  if (!result.data) return null;
+
+  const ageDays =
+    (Date.now() - new Date(result.data.updated_at).getTime()) /
+    (1000 * 60 * 60 * 24);
+
+  return {
+    data: result.data,
+    ageDays,
+  };
+}
+
+async function fetchCompanyBolsUpstream(
+  companySlug: string,
+  env: EnvConfig,
+  limit = 250,
+  offset = 0,
+) {
+  const cleanSlug = normalizeCompanyKey(companySlug);
+
+  const url = new URL(`${env.dmaBaseUrl}/company/${cleanSlug}/bols`);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+
+  const finalUrl = url.toString();
+  console.log("  BOLS URL:", finalUrl);
+
+  const payload = await fetchImportYetiJson(finalUrl, env.apiKey);
+  const rows = Array.isArray(payload?.rows)
+    ? payload.rows
+    : Array.isArray(payload?.results)
+      ? payload.results
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+  return {
+    raw: payload,
+    rows,
+  };
+}
+
+async function fetchCompanyByIdUpstream(
+  companySlug: string,
+  env: EnvConfig,
+) {
+  const cleanSlug = normalizeCompanyKey(companySlug);
+  const url = `${env.dmaBaseUrl}/company/${encodeURIComponent(cleanSlug)}`;
+
+  console.log("  COMPANY URL:", url);
+
+  const payload = await fetchImportYetiJson(url, env.apiKey);
+  const data = payload?.data ?? payload ?? {};
+
+  return {
+    raw: payload,
+    data,
+  };
+}
+
+function getLast12MonthKeys(): Set<string> {
+  const now = new Date();
+  const keys = new Set<string>();
+
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    keys.add(formatMonthKey(d));
+  }
+
+  return keys;
+}
+
+function parseTimeSeriesToMonthlyVolumes(timeSeriesRaw: any) {
+  const monthlyMap = new Map<
+    string,
+    { fcl: number; lcl: number; shipments: number; teu: number; weight: number }
+  >();
+
+  if (!timeSeriesRaw || typeof timeSeriesRaw !== "object") {
+    return monthlyMap;
+  }
+
+  if (Array.isArray(timeSeriesRaw)) {
+    for (const row of timeSeriesRaw) {
+      const rawMonth =
+        row?.month ??
+        row?.date ??
+        row?.period ??
+        row?.label;
+
+      const d = parseImportYetiDate(rawMonth);
+      if (!d) continue;
+
+      const monthKey = formatMonthKey(d);
+
+      const shipments =
+        normalizeNumber(row?.shipments) ??
+        normalizeNumber(row?.total_shipments) ??
+        normalizeNumber(row?.count) ??
+        0;
+
+      const teu =
+        normalizeNumber(row?.teu) ??
+        normalizeNumber(row?.total_teu) ??
+        0;
+
+      const weight =
+        normalizeNumber(row?.weight) ??
+        normalizeNumber(row?.total_weight) ??
+        0;
+
+      const fcl =
+        normalizeNumber(row?.fcl_count) ??
+        normalizeNumber(row?.fclShipments) ??
+        shipments;
+
+      const lcl =
+        normalizeNumber(row?.lcl_count) ??
+        normalizeNumber(row?.lclShipments) ??
+        0;
+
+      monthlyMap.set(monthKey, {
+        fcl,
+        lcl,
+        shipments,
+        teu,
+        weight,
+      });
+    }
+
+    return monthlyMap;
+  }
+
+  for (const [rawKey, rawValue] of Object.entries(timeSeriesRaw)) {
+    const d = parseImportYetiDate(rawKey);
+    if (!d) continue;
+
+    const monthKey = formatMonthKey(d);
+    const shipments = normalizeNumber((rawValue as any)?.shipments) ?? 0;
+    const teu = normalizeNumber((rawValue as any)?.teu) ?? 0;
+    const weight = normalizeNumber((rawValue as any)?.weight) ?? 0;
+
+    monthlyMap.set(monthKey, {
+      fcl: shipments,
+      lcl: 0,
+      shipments,
+      teu,
+      weight,
     });
   }
 
-  return points;
+  return monthlyMap;
 }
 
-function parseCompanySnapshot(raw: any, companyKey: string): any {
-  const data = raw?.data || raw || {};
-  const recentBols = Array.isArray(data.recent_bols) ? data.recent_bols : [];
+function applyRecentBolsFclLclSplits(
+  monthlyMap: Map<
+    string,
+    { fcl: number; lcl: number; shipments: number; teu: number; weight: number }
+  >,
+  recentBols: any[],
+) {
+  if (!Array.isArray(recentBols) || recentBols.length === 0) return;
 
-  const last12Series = buildLast12MonthsSeries();
-  const monthMap = new Map(last12Series.map((point) => [point.month, point]));
+  const splitByMonth = new Map<string, { fcl: number; lcl: number }>();
 
-  const now = new Date();
-  const oneYearAgo = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1),
-  );
+  for (const bol of recentBols) {
+    const d = parseImportYetiDate(
+      bol?.date_formatted ?? bol?.date ?? bol?.shipped_on ?? bol?.arrival_date,
+    );
+    if (!d) continue;
 
-  let fclCount = 0;
-  let lclCount = 0;
-  let totalTeu12m = 0;
-  let shipmentsLast12m = 0;
-  let lastShipmentDate: string | null = null;
-  let lastShipmentTs = -Infinity;
+    const monthKey = formatMonthKey(d);
+    const current = splitByMonth.get(monthKey) || { fcl: 0, lcl: 0 };
 
+    if (bol?.lcl === true) current.lcl += 1;
+    else current.fcl += 1;
+
+    splitByMonth.set(monthKey, current);
+  }
+
+  for (const [monthKey, split] of splitByMonth.entries()) {
+    const existing = monthlyMap.get(monthKey);
+    if (!existing) {
+      monthlyMap.set(monthKey, {
+        fcl: split.fcl,
+        lcl: split.lcl,
+        shipments: split.fcl + split.lcl,
+        teu: 0,
+        weight: 0,
+      });
+      continue;
+    }
+
+    const totalSplit = split.fcl + split.lcl;
+    if (totalSplit <= 0) continue;
+
+    const sourceShipments = existing.shipments > 0 ? existing.shipments : totalSplit;
+    const ratio = sourceShipments / totalSplit;
+
+    existing.fcl = Math.round(split.fcl * ratio);
+    existing.lcl = Math.max(0, sourceShipments - existing.fcl);
+    monthlyMap.set(monthKey, existing);
+  }
+}
+
+function buildTopRoutesFromRecentBols(recentBols: any[]): TopRoute[] {
   const routeStats = new Map<
     string,
     { shipments: number; teu: number; fcl: number; lcl: number }
   >();
-  const supplierSet = new Set<string>();
 
-  for (const bol of recentBols) {
-    const bolDate = parseImportYetiDate(
-      bol?.date_formatted ?? bol?.arrival_date ?? bol?.date,
-    );
-    if (!bolDate) continue;
-
-    const bolTs = bolDate.getTime();
-    const monthKey = formatMonthKey(bolDate);
-    const isLast12m = bolDate >= oneYearAgo;
-
-    if (!isLast12m) continue;
-
-    shipmentsLast12m += 1;
-
-    if (bolTs > lastShipmentTs) {
-      lastShipmentTs = bolTs;
-      lastShipmentDate = bolDate.toISOString().slice(0, 10);
-    }
-
-    const teu = estimateBolTeu(bol);
-    totalTeu12m += teu;
-
-    const isLcl = bol?.lcl === true;
-    if (isLcl) lclCount += 1;
-    else fclCount += 1;
-
-    const monthPoint = monthMap.get(monthKey);
-    if (monthPoint) {
-      if (isLcl) monthPoint.lclShipments += 1;
-      else monthPoint.fclShipments += 1;
-    }
-
+  for (const bol of Array.isArray(recentBols) ? recentBols : []) {
     const route = buildRouteLabel(bol);
-    if (route) {
-      const current = routeStats.get(route) || {
-        shipments: 0,
-        teu: 0,
-        fcl: 0,
-        lcl: 0,
-      };
-      current.shipments += 1;
-      current.teu += teu;
-      if (isLcl) current.lcl += 1;
-      else current.fcl += 1;
-      routeStats.set(route, current);
-    }
+    if (!route) continue;
 
-    const supplier =
-      normalizeString(bol?.supplier_name) ??
-      normalizeString(bol?.shipper_name) ??
-      normalizeString(bol?.supplier_address_loc);
+    const current = routeStats.get(route) || {
+      shipments: 0,
+      teu: 0,
+      fcl: 0,
+      lcl: 0,
+    };
 
-    if (supplier) {
-      supplierSet.add(supplier);
-    }
+    current.shipments += 1;
+    current.teu += estimateBolTeu(bol);
+    if (bol?.lcl === true) current.lcl += 1;
+    else current.fcl += 1;
+
+    routeStats.set(route, current);
   }
 
-  const topRoutes: TopRoute[] = Array.from(routeStats.entries())
+  return Array.from(routeStats.entries())
     .sort((a, b) => b[1].shipments - a[1].shipments)
     .slice(0, 10)
     .map(([route, stats]) => ({
@@ -587,59 +580,184 @@ function parseCompanySnapshot(raw: any, companyKey: string): any {
       fclShipments: stats.fcl || null,
       lclShipments: stats.lcl || null,
     }));
+}
 
-  const estSpend =
-    normalizeNumber(data?.total_shipping_cost) ??
-    normalizeNumber(data?.estimated_spend_12m) ??
-    0;
+function pickTopSuppliers(raw: any): string[] {
+  const rows = Array.isArray(raw?.suppliers_table) ? raw.suppliers_table : [];
+  const values = rows
+    .map((row: any) =>
+      normalizeString(row?.supplier) ??
+      normalizeString(row?.supplier_name) ??
+      normalizeString(row?.shipper) ??
+      normalizeString(row?.name),
+    )
+    .filter((value: string | null): value is string => Boolean(value));
 
-  const title =
-    normalizeString(data?.title) ??
-    normalizeString(data?.name) ??
-    companyKey;
+  return Array.from(new Set(values)).slice(0, 10);
+}
 
-  const website = normalizeString(data?.website);
-  const address =
-    normalizeString(data?.address_plain) ??
-    normalizeString(data?.address) ??
-    normalizeString(data?.city);
+function pickPhone(raw: any): string | null {
+  let fallbackPhone: string | null = null;
 
-  const countryCode =
-    normalizeString(data?.country_code) ??
-    normalizeString(data?.countryCode) ??
-    normalizeString(data?.country);
+  if (
+    Array.isArray(raw?.other_addresses_contact_info) &&
+    raw.other_addresses_contact_info.length > 0
+  ) {
+    fallbackPhone = normalizeString(
+      raw.other_addresses_contact_info[0]?.contact_info_data?.phone_numbers?.[0],
+    );
+  }
+
+  return (
+    normalizeString(raw?.phone_number) ??
+    normalizeString(raw?.company_main_phone_number) ??
+    normalizeString(raw?.phone) ??
+    normalizeString(raw?.phone_number_main) ??
+    fallbackPhone ??
+    null
+  );
+}
+
+function buildSnapshotFromCompanyData(
+  companySlug: string,
+  raw: any,
+) {
+  const last12Keys = getLast12MonthKeys();
+
+  const monthlyMap = parseTimeSeriesToMonthlyVolumes(raw?.time_series);
+  applyRecentBolsFclLclSplits(monthlyMap, raw?.recent_bols);
+
+  const orderedMonths = Array.from(monthlyMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  let shipmentsLast12m = 0;
+  let totalTeu12m = 0;
+  let totalWeight12m = 0;
+  let fclCount12m = 0;
+  let lclCount12m = 0;
+
+  for (const [month, value] of orderedMonths) {
+    if (!last12Keys.has(month)) continue;
+
+    shipmentsLast12m += value.shipments || 0;
+    totalTeu12m += value.teu || 0;
+    totalWeight12m += value.weight || 0;
+    fclCount12m += value.fcl || 0;
+    lclCount12m += value.lcl || 0;
+  }
+
+  if (fclCount12m === 0 && lclCount12m === 0) {
+    const loadRows = Array.isArray(raw?.containers_load) ? raw.containers_load : [];
+    const fclRow = loadRows.find((row: any) => String(row?.load_type).toUpperCase() === "FCL");
+    const lclRow = loadRows.find((row: any) => String(row?.load_type).toUpperCase() === "LCL");
+
+    const fclPctValue = normalizeNumber(fclRow?.shipments_perc);
+    const lclPctValue = normalizeNumber(lclRow?.shipments_perc);
+
+    const pctFcl = fclPctValue != null ? fclPctValue / 100 : null;
+    const pctLcl = lclPctValue != null ? lclPctValue / 100 : null;
+
+    if (shipmentsLast12m > 0 && pctFcl != null && pctLcl != null) {
+      fclCount12m = Math.round(shipmentsLast12m * pctFcl);
+      lclCount12m = Math.max(0, shipmentsLast12m - fclCount12m);
+    }
+  }
+
+  const topRoutes = buildTopRoutesFromRecentBols(raw?.recent_bols);
+  const topSuppliers = pickTopSuppliers(raw);
+
+  const lastShipmentDate =
+    Array.isArray(raw?.recent_bols) && raw.recent_bols.length > 0
+      ? (() => {
+          const dates = raw.recent_bols
+            .map((bol: any) =>
+              parseImportYetiDate(
+                bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? bol?.shipped_on,
+              ),
+            )
+            .filter((d: Date | null): d is Date => Boolean(d))
+            .sort((a: Date, b: Date) => b.getTime() - a.getTime());
+
+          return dates[0] ? dates[0].toISOString().slice(0, 10) : null;
+        })()
+      : (() => {
+          const end = parseImportYetiDate(raw?.date_range?.end_date);
+          return end ? end.toISOString().slice(0, 10) : null;
+        })();
+
+  const monthlyVolumes = Object.fromEntries(
+    orderedMonths.map(([month, value]) => [
+      month,
+      {
+        fcl: value.fcl,
+        lcl: value.lcl,
+        shipments: value.shipments,
+        teu: value.teu,
+        weight: value.weight,
+      },
+    ]),
+  );
 
   return {
-    company_id: companyKey,
-    key: `company/${companyKey}`,
-    company_name: title,
-    title,
-    name: title,
-    website,
-    address,
-    country_code: countryCode,
-    total_shipments: shipmentsLast12m,
+    company_id: companySlug,
+    key: `company/${companySlug}`,
+    company_name:
+      normalizeString(raw?.title) ??
+      normalizeString(raw?.name) ??
+      companySlug,
+    title:
+      normalizeString(raw?.title) ??
+      normalizeString(raw?.name) ??
+      companySlug,
+    name:
+      normalizeString(raw?.title) ??
+      normalizeString(raw?.name) ??
+      companySlug,
+    website: normalizeString(raw?.website),
+    phone_number: pickPhone(raw),
+    address:
+      normalizeString(raw?.address) ??
+      normalizeString(raw?.address_plain) ??
+      null,
+    country: normalizeString(raw?.country),
+    country_code:
+      normalizeString(raw?.country_code) ??
+      null,
+    total_shipments:
+      normalizeNumber(raw?.total_shipments) ??
+      shipmentsLast12m,
     shipments_last_12m: shipmentsLast12m,
-    total_teu: Math.round(totalTeu12m * 10) / 10,
-    est_spend: estSpend,
-    fcl_count: fclCount,
-    lcl_count: lclCount,
+    total_teu: Math.round(totalTeu12m * 100) / 100,
+    total_weight_kg_12m: Math.round(totalWeight12m * 100) / 100,
+    est_spend:
+      Math.round((normalizeNumber(raw?.total_shipping_cost) ?? 0) * 100) / 100,
+    fcl_count: fclCount12m,
+    lcl_count: lclCount12m,
     last_shipment_date: lastShipmentDate,
-    monthly_volumes: Object.fromEntries(
-      last12Series.map((point) => [
-        point.month,
-        { fcl: point.fclShipments, lcl: point.lclShipments },
-      ]),
-    ),
+    monthly_volumes: monthlyVolumes,
     top_routes: topRoutes,
-    top_suppliers: Array.from(supplierSet).slice(0, 10),
+    top_suppliers: topSuppliers,
+    notify_parties: Array.isArray(raw?.notify_party_table)
+      ? raw.notify_party_table
+      : [],
+    recent_bols: Array.isArray(raw?.recent_bols) ? raw.recent_bols : [],
+    containers: Array.isArray(raw?.containers) ? raw.containers : [],
+    containers_load: Array.isArray(raw?.containers_load) ? raw.containers_load : [],
+    avg_teu_per_shipment: raw?.avg_teu_per_shipment ?? null,
+    avg_teu_per_month: raw?.avg_teu_per_month ?? null,
     route_kpis: {
       shipmentsLast12m,
-      teuLast12m: Math.round(totalTeu12m * 10) / 10,
-      estSpendUsd12m: estSpend,
+      teuLast12m: Math.round(totalTeu12m * 100) / 100,
+      estSpendUsd12m:
+        Math.round((normalizeNumber(raw?.total_shipping_cost) ?? 0) * 100) / 100,
       topRouteLast12m: topRoutes[0]?.route ?? null,
-      mostRecentRoute: topRoutes[0]?.route ?? null,
-      sampleSize: shipmentsLast12m,
+      mostRecentRoute:
+        buildRouteLabel(
+          Array.isArray(raw?.recent_bols) ? raw.recent_bols[0] : null,
+        ) ??
+        topRoutes[0]?.route ??
+        null,
+      sampleSize: Array.isArray(raw?.recent_bols) ? raw.recent_bols.length : 0,
       topRoutesLast12m: topRoutes,
     },
   };
@@ -648,7 +766,7 @@ function parseCompanySnapshot(raw: any, companyKey: string): any {
 function buildCompanyProfileFromSnapshot(
   snapshot: any,
   rawPayload: any,
-  companyKey: string,
+  companySlug: string,
 ) {
   const raw = rawPayload?.data || rawPayload || {};
   const monthlyVolumes = snapshot?.monthly_volumes || {};
@@ -658,6 +776,9 @@ function buildCompanyProfileFromSnapshot(
       month,
       fclShipments: normalizeNumber(value?.fcl) ?? 0,
       lclShipments: normalizeNumber(value?.lcl) ?? 0,
+      shipments: normalizeNumber(value?.shipments) ?? 0,
+      teu: normalizeNumber(value?.teu) ?? 0,
+      weight: normalizeNumber(value?.weight) ?? 0,
     }))
     .sort((a, b) => a.month.localeCompare(b.month));
 
@@ -690,8 +811,8 @@ function buildCompanyProfileFromSnapshot(
     topRoutesLast12m: Array.isArray(snapshot?.route_kpis?.topRoutesLast12m)
       ? snapshot.route_kpis.topRoutesLast12m
       : Array.isArray(snapshot?.top_routes)
-      ? snapshot.top_routes
-      : [],
+        ? snapshot.top_routes
+        : [],
   };
 
   const containers = {
@@ -699,54 +820,36 @@ function buildCompanyProfileFromSnapshot(
     lclShipments12m: normalizeNumber(snapshot?.lcl_count) ?? 0,
   };
 
-  const website = normalizeString(raw?.website) ?? normalizeString(snapshot?.website);
-  const rawDomain =
-    website &&
-    (() => {
-      try {
-        const parsed = new URL(
-          website.startsWith("http") ? website : `https://${website}`,
-        );
-        return parsed.hostname.replace(/^www\./i, "");
-      } catch {
-        return null;
-      }
-    })();
-
-  const title =
-    normalizeString(raw?.title) ??
-    normalizeString(raw?.name) ??
-    normalizeString(snapshot?.title) ??
-    normalizeString(snapshot?.company_name) ??
-    companyKey;
-
-  const normalizedCompanyKey = `company/${companyKey}`;
+  const title = inferProfileTitle(snapshot, raw, companySlug);
+  const website = inferProfileWebsite(snapshot, raw);
+  const domain = inferProfileDomain(snapshot, raw);
 
   return {
-    key: normalizedCompanyKey,
-    companyId: normalizedCompanyKey,
+    key: `company/${companySlug}`,
+    companyId: `company/${companySlug}`,
     name: title,
     title,
-    domain: rawDomain,
+    domain,
     website,
     phoneNumber:
-      normalizeString(raw?.phone) ??
-      normalizeString(raw?.phone_number) ??
-      null,
+      normalizeString(snapshot?.phone_number) ??
+      pickPhone(raw),
     phone:
-      normalizeString(raw?.phone) ??
-      normalizeString(raw?.phone_number) ??
-      null,
+      normalizeString(snapshot?.phone_number) ??
+      pickPhone(raw),
     address:
-      normalizeString(raw?.address_plain) ??
-      normalizeString(raw?.address) ??
       normalizeString(snapshot?.address) ??
+      normalizeString(raw?.address) ??
+      normalizeString(raw?.address_plain) ??
       null,
     countryCode:
-      normalizeString(raw?.country_code) ??
-      normalizeString(raw?.countryCode) ??
-      normalizeString(raw?.country) ??
       normalizeString(snapshot?.country_code) ??
+      normalizeString(raw?.country_code) ??
+      normalizeString(raw?.country) ??
+      null,
+    country:
+      normalizeString(snapshot?.country) ??
+      normalizeString(raw?.country) ??
       null,
     lastShipmentDate:
       normalizeString(snapshot?.last_shipment_date) ??
@@ -765,16 +868,12 @@ function buildCompanyProfileFromSnapshot(
       ? snapshot.top_suppliers
       : [],
     time_series: monthlyVolumes,
-    containers_load: [
-      {
-        load_type: "FCL",
-        shipments: containers.fclShipments12m,
-      },
-      {
-        load_type: "LCL",
-        shipments: containers.lclShipments12m,
-      },
-    ],
+    containers_load: Array.isArray(snapshot?.containers_load)
+      ? snapshot.containers_load
+      : [],
+    containers_detail: Array.isArray(snapshot?.containers)
+      ? snapshot.containers
+      : [],
     top_routes: Array.isArray(snapshot?.top_routes) ? snapshot.top_routes : [],
     most_recent_route: routeKpis.mostRecentRoute
       ? { route: routeKpis.mostRecentRoute }
@@ -782,5 +881,354 @@ function buildCompanyProfileFromSnapshot(
     suppliers_sample: Array.isArray(snapshot?.top_suppliers)
       ? snapshot.top_suppliers
       : [],
+    notify_party_table: Array.isArray(snapshot?.notify_parties)
+      ? snapshot.notify_parties
+      : [],
+    recent_bols: Array.isArray(snapshot?.recent_bols)
+      ? snapshot.recent_bols
+      : [],
+    avg_teu_per_shipment: snapshot?.avg_teu_per_shipment ?? null,
+    avg_teu_per_month: snapshot?.avg_teu_per_month ?? null,
+    totalShippingCost:
+      normalizeNumber(raw?.total_shipping_cost) ??
+      normalizeNumber(snapshot?.est_spend) ??
+      0,
+    rawOverview: {
+      totalShipmentsAllTime:
+        normalizeNumber(raw?.total_shipments) ??
+        normalizeNumber(snapshot?.total_shipments) ??
+        0,
+      carriersPerCountry: raw?.carriers_per_country ?? {},
+      dateRange: raw?.date_range ?? null,
+      alsoKnownNames: Array.isArray(raw?.also_known_names) ? raw.also_known_names : [],
+      hsCodes: raw?.hs_codes ?? [],
+    },
   };
 }
+
+async function handleCompanyBolsAction(supabase: any, companyId: string) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📋 COMPANY BOLS REQUEST:", companyId);
+
+  const env = buildEnvConfig();
+  if (!env.isValid) {
+    return jsonResponse({ ok: false, error: "ImportYeti API key not configured" }, 500);
+  }
+
+  const normalizedCompanyKey = normalizeCompanyKey(companyId);
+  console.log("  Normalized slug:", normalizedCompanyKey);
+
+  try {
+    const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
+
+    if (
+      cached?.data?.raw_payload?.data?.recent_bols &&
+      Array.isArray(cached.data.raw_payload.data.recent_bols)
+    ) {
+      console.log(
+        "✅ recent_bols from cached raw payload:",
+        cached.data.raw_payload.data.recent_bols.length,
+      );
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      return jsonResponse({
+        ok: true,
+        rows: cached.data.raw_payload.data.recent_bols,
+        total: cached.data.raw_payload.data.recent_bols.length,
+        cached_at: cached.data.updated_at,
+      });
+    }
+
+    if (
+      Array.isArray(cached?.data?.raw_payload?.recent_bols)
+    ) {
+      console.log(
+        "✅ recent_bols from cached payload:",
+        cached.data.raw_payload.recent_bols.length,
+      );
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      return jsonResponse({
+        ok: true,
+        rows: cached.data.raw_payload.recent_bols,
+        total: cached.data.raw_payload.recent_bols.length,
+        cached_at: cached.data.updated_at,
+      });
+    }
+
+    const upstream = await fetchCompanyBolsUpstream(normalizedCompanyKey, env);
+    console.log("✅ BOL rows fetched:", upstream.rows.length);
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return jsonResponse({
+      ok: true,
+      rows: upstream.rows,
+      total: upstream.rows.length,
+    });
+  } catch (error: any) {
+    console.error("❌ companyBols failed:", error);
+    return jsonResponse(
+      {
+        ok: false,
+        error: error?.message || "companyBols failed",
+      },
+      500,
+    );
+  }
+}
+
+async function handleSearchAction(
+  q: string,
+  page: number = 1,
+  pageSize: number = 25,
+) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("🔍 SEARCH REQUEST:", { q, page, pageSize });
+
+  const env = buildEnvConfig();
+  if (!env.isValid) {
+    return jsonResponse(
+      { ok: false, error: "ImportYeti API key not configured" },
+      500,
+    );
+  }
+
+  if (!q || typeof q !== "string" || q.trim().length === 0) {
+    return jsonResponse(
+      { ok: false, error: "Query (q) is required and must be non-empty" },
+      400,
+    );
+  }
+
+  try {
+    const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
+    const validatedPageSize = Math.max(
+      1,
+      Math.min(100, Number.isFinite(pageSize) ? Number(pageSize) : 25),
+    );
+    const offset = (validatedPage - 1) * validatedPageSize;
+
+    const url = new URL(env.searchUrl);
+    url.searchParams.set("name", q.trim());
+    url.searchParams.set("page_size", String(validatedPageSize));
+    url.searchParams.set("offset", String(offset));
+
+    const iyUrl = url.toString();
+
+    console.log("  METHOD: GET");
+    console.log("  URL:", iyUrl);
+    console.log("  Auth:", env.apiKeySource || "IY API key");
+
+    const rawPayload = await fetchImportYetiJson(iyUrl, env.apiKey);
+
+    const results = Array.isArray(rawPayload?.results)
+      ? rawPayload.results
+      : Array.isArray(rawPayload?.data)
+        ? rawPayload.data
+        : Array.isArray(rawPayload)
+          ? rawPayload
+          : [];
+
+    const total =
+      rawPayload?.total ?? rawPayload?.pagination?.total ?? results.length;
+
+    console.log("📊 Search result:", {
+      results_count: results.length,
+      total,
+      page: validatedPage,
+      pageSize: validatedPageSize,
+    });
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return jsonResponse({
+      ok: true,
+      results,
+      page: validatedPage,
+      pageSize: validatedPageSize,
+      total,
+    });
+  } catch (error: any) {
+    console.error("❌ Search handler error:", error);
+    return jsonResponse(
+      { ok: false, error: error?.message || "Search failed" },
+      500,
+    );
+  }
+}
+
+async function handleCompanyProfileAction(supabase: any, companyId: string) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📦 COMPANY PROFILE REQUEST:", companyId);
+
+  const env = buildEnvConfig();
+  if (!env.isValid) {
+    return jsonResponse(
+      { ok: false, error: "ImportYeti API key not configured" },
+      500,
+    );
+  }
+
+  const normalizedCompanyKey = normalizeCompanyKey(companyId);
+  console.log("  Normalized slug:", normalizedCompanyKey);
+
+  const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
+  if (cached?.data && cached.ageDays < SNAPSHOT_TTL_DAYS) {
+    console.log("✅ Using cached snapshot");
+
+    const cachedProfile = buildCompanyProfileFromSnapshot(
+      cached.data.parsed_summary,
+      cached.data.raw_payload,
+      normalizedCompanyKey,
+    );
+
+    return jsonResponse({
+      ok: true,
+      source: "cache",
+      snapshot: cached.data.parsed_summary,
+      companyProfile: cachedProfile,
+      raw: cached.data.raw_payload,
+      cached_at: cached.data.updated_at,
+    });
+  }
+
+  try {
+    const upstream = await fetchCompanyByIdUpstream(normalizedCompanyKey, env);
+    const rawCompanyData = upstream.data ?? {};
+
+    const snapshot = buildSnapshotFromCompanyData(
+      normalizedCompanyKey,
+      rawCompanyData,
+    );
+
+    const companyProfile = buildCompanyProfileFromSnapshot(
+      snapshot,
+      upstream.raw,
+      normalizedCompanyKey,
+    );
+
+    console.log("📊 Parsed profile:", {
+      shipmentsLast12m: companyProfile.routeKpis?.shipmentsLast12m,
+      teuLast12m: companyProfile.routeKpis?.teuLast12m,
+      estSpendUsd12m: companyProfile.routeKpis?.estSpendUsd12m,
+      timeSeriesPoints: companyProfile.timeSeries?.length,
+      topRoutes: companyProfile.routeKpis?.topRoutesLast12m?.length,
+      recentBols: companyProfile.recent_bols?.length ?? 0,
+    });
+
+    const now = new Date().toISOString();
+
+    const snapshotError = await safeUpsertSnapshot(supabase, {
+      company_id: normalizedCompanyKey,
+      raw_payload: upstream.raw,
+      parsed_summary: snapshot,
+      updated_at: now,
+    });
+
+    if (snapshotError) {
+      console.error("❌ Snapshot save error:", snapshotError);
+    } else {
+      console.log("✅ Snapshot saved");
+    }
+
+    const indexError = await safeUpsertIndex(supabase, {
+      company_id: normalizedCompanyKey,
+      company_name: companyProfile.title || normalizedCompanyKey,
+      country: companyProfile.countryCode || null,
+      city: companyProfile.address || null,
+      last_shipment_date: companyProfile.lastShipmentDate || null,
+      total_shipments: companyProfile.totalShipments || 0,
+      total_teu: companyProfile.routeKpis?.teuLast12m || 0,
+      updated_at: now,
+    });
+
+    if (indexError) {
+      console.error("❌ Index update error:", indexError);
+    } else {
+      console.log("✅ Search index updated");
+    }
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return jsonResponse({
+      ok: true,
+      source: "fresh",
+      snapshot,
+      companyProfile,
+      raw: upstream.raw,
+      fetched_at: now,
+    });
+  } catch (error: any) {
+    console.error("❌ Company profile failed:", error);
+    return jsonResponse(
+      {
+        ok: false,
+        error: error?.message || "Company profile failed",
+      },
+      500,
+    );
+  }
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !supabaseKey) {
+      return jsonResponse(
+        { ok: false, error: "Supabase environment not configured" },
+        500,
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
+
+    const { action, company_id, companyKey, q, page, pageSize } = body ?? {};
+
+    if (action === "search") {
+      return await handleSearchAction(q, page, pageSize);
+    }
+
+    const requestedCompanyId = company_id || companyKey;
+
+    if (!requestedCompanyId) {
+      return jsonResponse(
+        { ok: false, error: "company_id is required" },
+        400,
+      );
+    }
+
+    if (action === "companyBols") {
+      return await handleCompanyBolsAction(supabase, requestedCompanyId);
+    }
+
+    if (
+      action === "company" ||
+      action === "companyProfile" ||
+      action === "companySnapshot"
+    ) {
+      return await handleCompanyProfileAction(supabase, requestedCompanyId);
+    }
+
+    return jsonResponse(
+      { ok: false, error: `Unknown action: ${action}` },
+      400,
+    );
+  } catch (error: any) {
+    console.error("❌ Fatal error:", error);
+    return jsonResponse(
+      { ok: false, error: error?.message || "Internal server error" },
+      500,
+    );
+  }
+});
