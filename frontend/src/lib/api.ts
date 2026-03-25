@@ -1347,60 +1347,103 @@ function normalizeContainers(raw: any): IyCompanyContainers | null {
 }
 
 function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
-  // Generate last 12 months from current date
-  const generateLast12Months = (): { month: string; ts: number }[] => {
-    const months: { month: string; ts: number }[] = [];
-    const now = new Date();
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthLabel = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      months.push({ month: monthLabel, ts: date.getTime() });
-    }
-    return months;
-  };
-
-  const last12Months = generateLast12Months();
   const dataMap = new Map<string, { fclShipments: number; lclShipments: number }>();
 
-  // Parse existing data if available
-  if (raw?.timeSeries && Array.isArray(raw.timeSeries)) {
+  const normalizeMonthLabel = (value: unknown): string | null => {
+    if (typeof value !== "string" || !value.trim()) return null;
+    const trimmed = value.trim();
+
+    // Already YYYY-MM
+    if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
+
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+    }
+
+    return trimmed;
+  };
+
+  const upsertPoint = (monthKey: string, fcl: number, lcl: number) => {
+    if (!monthKey) return;
+    dataMap.set(monthKey, {
+      fclShipments: Number.isFinite(fcl) ? fcl : 0,
+      lclShipments: Number.isFinite(lcl) ? lcl : 0,
+    });
+  };
+
+  if (Array.isArray(raw?.timeSeries)) {
     raw.timeSeries.forEach((entry: any) => {
-      const monthKey = String(entry?.month ?? "");
-      if (monthKey) {
-        dataMap.set(monthKey, {
-          fclShipments: coerceNumber(entry?.fclShipments) ?? 0,
-          lclShipments: coerceNumber(entry?.lclShipments) ?? 0,
-        });
-      }
+      const monthKey = normalizeMonthLabel(entry?.month);
+      if (!monthKey) return;
+      upsertPoint(
+        monthKey,
+        coerceNumber(entry?.fclShipments) ??
+          coerceNumber(entry?.fcl_shipments) ??
+          coerceNumber(entry?.shipments_fcl) ??
+          coerceNumber(entry?.shipments) ??
+          0,
+        coerceNumber(entry?.lclShipments) ??
+          coerceNumber(entry?.lcl_shipments) ??
+          coerceNumber(entry?.shipments_lcl) ??
+          0,
+      );
+    });
+  }
+
+  if (Array.isArray(raw?.time_series)) {
+    raw.time_series.forEach((entry: any) => {
+      const monthKey = normalizeMonthLabel(
+        entry?.month ?? entry?.date ?? entry?.period ?? entry?.label,
+      );
+      if (!monthKey) return;
+      upsertPoint(
+        monthKey,
+        coerceNumber(entry?.fclShipments) ??
+          coerceNumber(entry?.fcl_shipments) ??
+          coerceNumber(entry?.shipments_fcl) ??
+          coerceNumber(entry?.fcl_count) ??
+          coerceNumber(entry?.fcl) ??
+          coerceNumber(entry?.shipments) ??
+          0,
+        coerceNumber(entry?.lclShipments) ??
+          coerceNumber(entry?.lcl_shipments) ??
+          coerceNumber(entry?.shipments_lcl) ??
+          coerceNumber(entry?.lcl_count) ??
+          coerceNumber(entry?.lcl) ??
+          0,
+      );
     });
   } else if (raw?.time_series && typeof raw.time_series === "object") {
     Object.entries(raw.time_series).forEach(([key, value]) => {
       if (!value || typeof value !== "object") return;
-      const fcl =
-        coerceNumber((value as any).fcl_shipments) ??
-        coerceNumber((value as any).shipments_fcl) ??
-        coerceNumber((value as any).fcl) ??
-        0;
-      const lcl =
-        coerceNumber((value as any).lcl_shipments) ??
-        coerceNumber((value as any).shipments_lcl) ??
-        coerceNumber((value as any).lcl) ??
-        0;
-      const parsed = new Date(key);
-      const monthLabel = Number.isNaN(parsed.getTime())
-        ? key
-        : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+      const monthKey = normalizeMonthLabel(key);
+      if (!monthKey) return;
 
-      dataMap.set(monthLabel, { fclShipments: fcl, lclShipments: lcl });
+      upsertPoint(
+        monthKey,
+        coerceNumber((value as any).fcl_shipments) ??
+          coerceNumber((value as any).shipments_fcl) ??
+          coerceNumber((value as any).fcl_count) ??
+          coerceNumber((value as any).fcl) ??
+          coerceNumber((value as any).shipments) ??
+          0,
+        coerceNumber((value as any).lcl_shipments) ??
+          coerceNumber((value as any).shipments_lcl) ??
+          coerceNumber((value as any).lcl_count) ??
+          coerceNumber((value as any).lcl) ??
+          0,
+      );
     });
   }
 
-  // Fill in all 12 months with data or zeros
-  return last12Months.map(({ month }) => ({
-    month,
-    fclShipments: dataMap.get(month)?.fclShipments ?? 0,
-    lclShipments: dataMap.get(month)?.lclShipments ?? 0,
-  }));
+  return Array.from(dataMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, value]) => ({
+      month,
+      fclShipments: value.fclShipments,
+      lclShipments: value.lclShipments,
+    }));
 }
 
 function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
@@ -1461,13 +1504,25 @@ function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
 function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   if (raw?.routeKpis && typeof raw.routeKpis === "object") {
     return {
-      shipmentsLast12m: coerceNumber(raw.routeKpis.shipmentsLast12m) ?? null,
-      teuLast12m: coerceNumber(raw.routeKpis.teuLast12m) ?? null,
+      shipmentsLast12m: coerceNumber(
+        raw.routeKpis.shipmentsLast12m ??
+          raw.routeKpis.shipments_last_12m ??
+          raw.shipments_last_12m ??
+          raw.shipments_12m,
+      ) ?? null,
+      teuLast12m: coerceNumber(
+        raw.routeKpis.teuLast12m ??
+          raw.routeKpis.teu_last_12m ??
+          raw.teu_12m ??
+          raw.teu12m,
+      ) ?? null,
       estSpendUsd12m:
         coerceNumber(
           raw.routeKpis.estSpendUsd12m ??
             raw.routeKpis.est_spend_usd ??
-            raw.routeKpis.estSpend,
+            raw.routeKpis.estSpend ??
+            raw.est_spend_usd ??
+            raw.estimated_spend_12m,
         ) ?? null,
       topRouteLast12m: raw.routeKpis.topRouteLast12m ?? null,
       mostRecentRoute: raw.routeKpis.mostRecentRoute ?? null,
@@ -1483,16 +1538,22 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
     !topRoutes.length &&
     !raw?.total_shipments &&
     !raw?.shipments_12m &&
+    !raw?.shipments_last_12m &&
     !raw?.teu_12m
   ) {
     return null;
   }
   return {
-    shipmentsLast12m: coerceNumber(raw.total_shipments ?? raw.shipments_12m) ?? null,
-    teuLast12m: coerceNumber(raw.teu_12m ?? raw.teu12m) ?? null,
+    shipmentsLast12m: coerceNumber(
+      raw.shipments_12m ?? raw.shipments_last_12m ?? raw.total_shipments
+    ) ?? null,
+    teuLast12m: coerceNumber(raw.teu_12m ?? raw.teu12m ?? raw.total_teu) ?? null,
     estSpendUsd12m:
       coerceNumber(
-        raw.estSpendUsd12m ?? raw.est_spend_usd ?? raw.estimated_spend_12m,
+        raw.estSpendUsd12m ??
+          raw.est_spend_usd ??
+          raw.estimated_spend_12m ??
+          raw.est_spend,
       ) ?? null,
     topRouteLast12m: topRoutes[0]?.route ?? null,
     mostRecentRoute:
@@ -1611,31 +1672,89 @@ export function normalizeIyCompanyProfile(
   const snapshot = rawSnapshot?.snapshot ?? rawSnapshot;
   const companyId = ensureCompanyKey(
     snapshot?.company_id ??
-    snapshot?.companyId ??
-    snapshot?.key ??
-    companyKey ??
-    "unknown"
+      snapshot?.companyId ??
+      snapshot?.key ??
+      companyKey ??
+      "unknown"
   );
 
-  // Merge all data sources for normalization
+  const totalShipmentsAllTime =
+    snapshot?.containers_count ??
+    snapshot?.total_shipments ??
+    snapshot?.totalShipments ??
+    0;
+
+  const shipmentsLast12m =
+    snapshot?.shipments_last_12m ??
+    snapshot?.shipments_12m ??
+    snapshot?.shipments12m ??
+    0;
+
+  const totalTeuAllTime =
+    snapshot?.total_teu ??
+    snapshot?.teu_total ??
+    snapshot?.teuAllTime ??
+    0;
+
+  const teuLast12m =
+    snapshot?.teu_12m ??
+    snapshot?.teuLast12m ??
+    totalTeuAllTime;
+
+  const estSpendUsd12m =
+    snapshot?.est_spend ??
+    snapshot?.est_spend_usd ??
+    snapshot?.estimated_spend_12m ??
+    0;
+
   const mergedData = {
     ...snapshot,
-    // Prioritize monthly_volumes over time_series if it exists
     time_series: snapshot?.monthly_volumes ?? snapshot?.time_series,
-    // Convert FCL/LCL counts to containers format if available
-    containers_load: (snapshot?.fcl_count !== undefined || snapshot?.lcl_count !== undefined)
-      ? [
-          { load_type: "FCL", shipments: snapshot.fcl_count ?? 0 },
-          { load_type: "LCL", shipments: snapshot.lcl_count ?? 0 },
-        ]
-      : snapshot?.containers_load,
+    containers_load:
+      snapshot?.containers_load ??
+      ((snapshot?.fcl_count !== undefined || snapshot?.lcl_count !== undefined)
+        ? [
+            { load_type: "FCL", shipments: snapshot.fcl_count ?? 0 },
+            { load_type: "LCL", shipments: snapshot.lcl_count ?? 0 },
+          ]
+        : undefined),
     company_id: companyId,
     key: companyId,
-    total_shipments: snapshot?.shipments_last_12m ?? snapshot?.total_shipments ?? 0,
-    shipments_12m: snapshot?.shipments_last_12m ?? snapshot?.shipments_12m ?? 0,
-    teu_12m: snapshot?.total_teu ?? snapshot?.teu_12m ?? 0,
-    est_spend_usd: snapshot?.est_spend ?? snapshot?.est_spend_usd ?? 0,
+
+    // Preserve ALL-TIME totals for summary/header cards
+    total_shipments: totalShipmentsAllTime,
+    containers_count: totalShipmentsAllTime,
+    total_teu: totalTeuAllTime,
+
+    // Keep 12m KPI values separate
+    shipments_12m: shipmentsLast12m,
+    shipments_last_12m: shipmentsLast12m,
+    teu_12m: teuLast12m,
+    est_spend_usd: estSpendUsd12m,
     last_shipment_date: snapshot?.last_shipment_date,
+
+    routeKpis: snapshot?.routeKpis ?? {
+      shipmentsLast12m,
+      teuLast12m,
+      estSpendUsd12m,
+      topRouteLast12m:
+        snapshot?.route_kpis?.topRouteLast12m ??
+        snapshot?.route_kpis?.top_route_last_12m ??
+        snapshot?.top_routes?.[0]?.route ??
+        null,
+      mostRecentRoute:
+        snapshot?.route_kpis?.mostRecentRoute ??
+        snapshot?.most_recent_route?.route ??
+        null,
+      sampleSize:
+        snapshot?.route_kpis?.sampleSize ??
+        snapshot?.recent_bols?.length ??
+        null,
+      topRoutesLast12m:
+        snapshot?.route_kpis?.topRoutesLast12m ??
+        snapshot?.top_routes ??
+        [],
+    },
   };
 
   return normalizeCompanyProfile(mergedData, companyId);
