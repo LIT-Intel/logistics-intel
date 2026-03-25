@@ -1,4 +1,4 @@
-{
+import { getGatewayBase } from "@/lib/env";
   "requestCost": 1,
   "creditsRemaining": 260.2,
   "data": {
