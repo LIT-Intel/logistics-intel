@@ -1222,6 +1222,7 @@ export async function fetchCompanySnapshot(
       "importyeti-proxy",
       {
         body: {
+          action: "company",
           company_id: companySlug,
         },
       }
