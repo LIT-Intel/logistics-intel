@@ -1454,6 +1454,122 @@ function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
     }));
 }
 
+function routeValueToText(value: any): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.toLowerCase() === "unknown") return null;
+    return trimmed;
+  }
+
+  if (!value || typeof value !== "object") return null;
+
+  const nestedDirect =
+    routeValueToText(value?.label) ??
+    routeValueToText(value?.name) ??
+    routeValueToText(value?.value) ??
+    routeValueToText(value?.display) ??
+    routeValueToText(value?.location) ??
+    routeValueToText(value?.city_name) ??
+    routeValueToText(value?.port_name) ??
+    routeValueToText(value?.port) ??
+    routeValueToText(value?.city) ??
+    routeValueToText(value?.state) ??
+    routeValueToText(value?.province) ??
+    routeValueToText(value?.country) ??
+    routeValueToText(value?.country_name) ??
+    routeValueToText(value?.countryCode) ??
+    routeValueToText(value?.country_code);
+
+  if (nestedDirect) return nestedDirect;
+
+  const parts = [
+    routeValueToText(value?.city ?? value?.origin_city ?? value?.destination_city),
+    routeValueToText(value?.state ?? value?.origin_state ?? value?.destination_state),
+    routeValueToText(value?.country ?? value?.country_name ?? value?.origin_country ?? value?.destination_country),
+  ].filter((part, index, arr): part is string => Boolean(part) && arr.indexOf(part) === index);
+
+  return parts.length ? parts.join(", ") : null;
+}
+
+function buildRouteSide(entry: any, side: "origin" | "destination"): string | null {
+  const alt = side === "origin" ? "dest" : "origin";
+
+  const direct =
+    routeValueToText(entry?.[side]) ??
+    routeValueToText(entry?.[`${side}_label`]) ??
+    routeValueToText(entry?.[`${side}Label`]) ??
+    routeValueToText(entry?.[`${side}_name`]) ??
+    routeValueToText(entry?.[`${side}Name`]) ??
+    routeValueToText(entry?.[`${side}_location`]) ??
+    routeValueToText(entry?.[`${side}Location`]) ??
+    routeValueToText(entry?.[`${side}_address`]) ??
+    routeValueToText(entry?.[`${side}Address`]) ??
+    routeValueToText(entry?.[`${side}_port`]) ??
+    routeValueToText(entry?.[`${side}Port`]) ??
+    routeValueToText(entry?.[`${side}_port_name`]) ??
+    routeValueToText(entry?.[`${side}PortName`]) ??
+    routeValueToText(entry?.[`${side}_city`]) ??
+    routeValueToText(entry?.[`${side}City`]) ??
+    routeValueToText(entry?.[`${side}_state`]) ??
+    routeValueToText(entry?.[`${side}State`]) ??
+    routeValueToText(entry?.[`${side}_province`]) ??
+    routeValueToText(entry?.[`${side}Province`]) ??
+    routeValueToText(entry?.[`${side}_country`]) ??
+    routeValueToText(entry?.[`${side}Country`]) ??
+    routeValueToText(entry?.[`${side}_country_name`]) ??
+    routeValueToText(entry?.[`${side}CountryName`]) ??
+    routeValueToText(entry?.[`${side}_country_code`]) ??
+    routeValueToText(entry?.[`${side}CountryCode`]);
+
+  if (direct) return direct;
+
+  const city =
+    routeValueToText(entry?.[`${side}_city`]) ??
+    routeValueToText(entry?.[`${side}City`]);
+  const state =
+    routeValueToText(entry?.[`${side}_state`]) ??
+    routeValueToText(entry?.[`${side}State`]) ??
+    routeValueToText(entry?.[`${side}_province`]) ??
+    routeValueToText(entry?.[`${side}Province`]);
+  const country =
+    routeValueToText(entry?.[`${side}_country`]) ??
+    routeValueToText(entry?.[`${side}Country`]) ??
+    routeValueToText(entry?.[`${side}_country_name`]) ??
+    routeValueToText(entry?.[`${side}CountryName`]) ??
+    routeValueToText(entry?.[`${side}_country_code`]) ??
+    routeValueToText(entry?.[`${side}CountryCode`]);
+
+  const parts = [city, state, country].filter(
+    (part, index, arr): part is string => Boolean(part) && arr.indexOf(part) === index,
+  );
+
+  if (parts.length) return parts.join(", ");
+
+  return (
+    routeValueToText(entry?.[`${alt}_to_${side}`]) ??
+    routeValueToText(entry?.[`${side}_from_${alt}`]) ??
+    null
+  );
+}
+
+function buildRouteLabel(entry: any): string | null {
+  const explicitRoute =
+    routeValueToText(entry?.route) ??
+    routeValueToText(entry?.lane) ??
+    routeValueToText(entry?.routeLabel) ??
+    routeValueToText(entry?.route_label);
+
+  if (explicitRoute && explicitRoute.includes("â")) return explicitRoute;
+
+  const origin = buildRouteSide(entry, "origin");
+  const destination = buildRouteSide(entry, "destination");
+
+  if (origin && destination) return `${origin} â ${destination}`;
+  if (explicitRoute) return explicitRoute;
+  return null;
+}
+
 function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
   const source =
     raw?.routeKpis?.topRoutesLast12m ??
@@ -1464,19 +1580,7 @@ function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
   if (!Array.isArray(source)) return [];
   return source
     .map((entry: any) => {
-      const route =
-        entry?.route ??
-        entry?.lane ??
-        [entry?.origin, entry?.destination]
-          .filter((value: unknown): value is string => typeof value === "string")
-          .join(" â ") ??
-        [
-          entry?.origin_port ?? entry?.origin_country ?? entry?.origin_country_code,
-          entry?.dest_port ?? entry?.destination_country ?? entry?.dest_country_code,
-        ]
-          .filter((value: unknown): value is string => typeof value === "string")
-          .join(" â ");
-      if (!route && !entry?.shipments) return null;
+      const route = buildRouteLabel(entry);
       const shipments =
         coerceNumber(
           entry?.shipments ??
@@ -1485,8 +1589,9 @@ function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
             entry?.shipments12m ??
             entry?.count,
         ) ?? null;
+      if (!route && shipments == null) return null;
       return {
-        route: route || "Route",
+        route: route || "Unknown â Unknown",
         shipments,
         teu: coerceNumber(entry?.teu ?? entry?.teu_12m) ?? null,
         fclShipments:
