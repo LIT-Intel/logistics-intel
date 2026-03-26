@@ -1,3329 +1,1338 @@
 import { getGatewayBase } from "@/lib/env";
-  "requestCost": 1,
-  "creditsRemaining": 260.2,
-  "data": {
-    "title": "Eae Usa",
-    "also_known_names": [
-      "Eae Usa Inc"
-    ],
-    "address": "2000 Mountain Industrial Blvd, Tucker, Ga 30084, Us",
-    "address_plain": "Eae Usa 2000 Mountain Industrial Blvd Tucker Ga 30084 Usa",
-    "other_addresses_contact_info": [
-      {
-        "address": "56 Perimeter Center East Suite 430",
-        "most_recent_shipment_to": "19/04/2023",
-        "most_recent_shipment_bol": "BOPT2101541005",
-        "contact_info_data": {
-          "emails": [],
-          "phone_numbers": [
-            "017706964803"
-          ]
-        }
-      }
-    ],
-    "website": "eaegroup.com",
-    "other_websites": null,
-    "phone_number": "017706964803",
-    "total_shipments": 445,
-    "country": "United States",
-    "country_code": "US",
-    "carriers_per_country": {
-      "Turkey": [
-        "Bdp Transport",
-        "Turkon Container Transportation & Shipping",
-        "Dsv Ocean Transport",
-        "Hapag-Lloyd A G",
-        "Barsan International Inc"
-      ]
-    },
-    "container_types": {
-      "2210": 1,
-      "4510": 109,
-      "Not Specified": 1209,
-      ",,,,": 33,
-      "45G0": 787,
-      "45G1": 27,
-      "22G0": 6,
-      "22G1": 1,
-      "44G0": 22,
-      "42G0": 1,
-      "40R0": 1
-    },
-    "containers": [
-      {
-        "type": "Not Specified",
-        "length": null,
-        "group": "Not Specified",
-        "shipments": 241,
-        "shipments_12m": 123,
-        "shipments_12_24m": 72,
-        "yoy": 70.83,
-        "weight": 20095497,
-        "teu": 10,
-        "count": 1209
-      },
-      {
-        "type": "45G0",
-        "length": "40ft",
-        "group": "General Purpose Container (no ventilation)",
-        "shipments": 149,
-        "shipments_12m": 86,
-        "shipments_12_24m": 41,
-        "yoy": 109.76,
-        "weight": 12539177,
-        "teu": 1380,
-        "count": 787
-      },
-      {
-        "type": "4510",
-        "length": "40ft",
-        "group": "General Purpose Container (with ventilation)",
-        "shipments": 35,
-        "shipments_12m": 8,
-        "shipments_12_24m": 12,
-        "yoy": -33.33,
-        "weight": 1636236,
-        "teu": 182,
-        "count": 109
-      },
-      {
-        "type": ",,,,",
-        "length": null,
-        "group": null,
-        "shipments": 33,
-        "shipments_12m": 12,
-        "shipments_12_24m": 16,
-        "yoy": -25,
-        "weight": 2824817,
-        "teu": 0,
-        "count": 33
-      },
-      {
-        "type": "44G0",
-        "length": "40ft",
-        "group": "General Purpose Container (no ventilation)",
-        "shipments": 7,
-        "shipments_12m": 7,
-        "shipments_12_24m": 0,
-        "yoy": null,
-        "weight": 284169,
-        "teu": 36,
-        "count": 22
-      },
-      {
-        "type": "22G0",
-        "length": "20ft",
-        "group": "General Purpose Container (no ventilation)",
-        "shipments": 6,
-        "shipments_12m": 3,
-        "shipments_12_24m": 0,
-        "yoy": null,
-        "weight": 84302,
-        "teu": 12,
-        "count": 6
-      },
-      {
-        "type": "45G1",
-        "length": "40ft",
-        "group": "General Purpose Container (no ventilation)",
-        "shipments": 5,
-        "shipments_12m": 2,
-        "shipments_12_24m": 0,
-        "yoy": null,
-        "weight": 509140,
-        "teu": 54,
-        "count": 27
-      },
-      {
-        "type": "2210",
-        "length": "20ft",
-        "group": "General Purpose Container (with ventilation)",
-        "shipments": 1,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "yoy": 0,
-        "weight": 4625,
-        "teu": 1,
-        "count": 1
-      },
-      {
-        "type": "22G1",
-        "length": "20ft",
-        "group": "General Purpose Container (no ventilation)",
-        "shipments": 1,
-        "shipments_12m": 1,
-        "shipments_12_24m": 0,
-        "yoy": null,
-        "weight": 630,
-        "teu": 1,
-        "count": 1
-      },
-      {
-        "type": "42G0",
-        "length": "40ft",
-        "group": "General Purpose Container (no ventilation)",
-        "shipments": 1,
-        "shipments_12m": 1,
-        "shipments_12_24m": 0,
-        "yoy": null,
-        "weight": 17965,
-        "teu": 2,
-        "count": 1
-      },
-      {
-        "type": "40R0",
-        "length": "40ft",
-        "group": "Thermal Container",
-        "shipments": 1,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "yoy": 0,
-        "weight": 1232,
-        "teu": 2,
-        "count": 1
-      }
-    ],
-    "containers_load": [
-      {
-        "load_type": "LCL",
-        "shipments": 3,
-        "shipments_perc": 0.67
-      },
-      {
-        "load_type": "FCL",
-        "shipments": 442,
-        "shipments_perc": 99.33
-      }
-    ],
-    "date_range": {
-      "start_date": "12/10/2020",
-      "end_date": "06/03/2026"
-    },
-    "time_series": {
-      "01/10/2020": {
-        "shipments": 1,
-        "weight": 1211,
-        "teu": 1,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/02/2021": {
-        "shipments": 1,
-        "weight": 13141,
-        "teu": 2,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/05/2021": {
-        "shipments": 3,
-        "weight": 65717,
-        "teu": 10,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/06/2021": {
-        "shipments": 3,
-        "weight": 180790,
-        "teu": 20,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/07/2021": {
-        "shipments": 2,
-        "weight": 74311,
-        "teu": 8,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/10/2021": {
-        "shipments": 2,
-        "weight": 167396,
-        "teu": 18,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/12/2021": {
-        "shipments": 1,
-        "weight": 86163,
-        "teu": 8,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/01/2022": {
-        "shipments": 1,
-        "weight": 9947,
-        "teu": 2,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/03/2022": {
-        "shipments": 2,
-        "weight": 67146,
-        "teu": 6,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/04/2022": {
-        "shipments": 2,
-        "weight": 29773,
-        "teu": 0,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/05/2022": {
-        "shipments": 3,
-        "weight": 51376,
-        "teu": 4,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/07/2022": {
-        "shipments": 1,
-        "weight": 1415,
-        "teu": 0,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/11/2022": {
-        "shipments": 1,
-        "weight": 23981,
-        "teu": 3,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/12/2022": {
-        "shipments": 1,
-        "weight": 5762,
-        "teu": 0,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/01/2023": {
-        "shipments": 2,
-        "weight": 43532,
-        "teu": 2,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/02/2023": {
-        "shipments": 3,
-        "weight": 75640,
-        "teu": 8,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/03/2023": {
-        "shipments": 7,
-        "weight": 245136,
-        "teu": 0,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/04/2023": {
-        "shipments": 3,
-        "weight": 180512,
-        "teu": 4,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/05/2023": {
-        "shipments": 3,
-        "weight": 181015,
-        "teu": 0,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/06/2023": {
-        "shipments": 3,
-        "weight": 91992,
-        "teu": 8,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/07/2023": {
-        "shipments": 7,
-        "weight": 368586,
-        "teu": 29,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/08/2023": {
-        "shipments": 5,
-        "weight": 365809,
-        "teu": 10,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/09/2023": {
-        "shipments": 3,
-        "weight": 158854,
-        "teu": 10,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/10/2023": {
-        "shipments": 3,
-        "weight": 195914,
-        "teu": 14,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/11/2023": {
-        "shipments": 11,
-        "weight": 448960,
-        "teu": 44,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/12/2023": {
-        "shipments": 4,
-        "weight": 392485,
-        "teu": 20,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/01/2024": {
-        "shipments": 7,
-        "weight": 548847,
-        "teu": 12,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/02/2024": {
-        "shipments": 2,
-        "weight": 261178,
-        "teu": 0,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/03/2024": {
-        "shipments": 5,
-        "weight": 650614,
-        "teu": 8,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/04/2024": {
-        "shipments": 7,
-        "weight": 395780,
-        "teu": 28,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/05/2024": {
-        "shipments": 7,
-        "weight": 398209,
-        "teu": 19,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/06/2024": {
-        "shipments": 7,
-        "weight": 473600,
-        "teu": 12,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/07/2024": {
-        "shipments": 8,
-        "weight": 669451,
-        "teu": 26,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/08/2024": {
-        "shipments": 8,
-        "weight": 751480,
-        "teu": 14,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/09/2024": {
-        "shipments": 9,
-        "weight": 876238,
-        "teu": 44,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/10/2024": {
-        "shipments": 14,
-        "weight": 1117044,
-        "teu": 0,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/11/2024": {
-        "shipments": 12,
-        "weight": 946902,
-        "teu": 34,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/12/2024": {
-        "shipments": 10,
-        "weight": 887913,
-        "teu": 27,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/01/2025": {
-        "shipments": 21,
-        "weight": 1733880,
-        "teu": 94,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/02/2025": {
-        "shipments": 11,
-        "weight": 1240879,
-        "teu": 32,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/03/2025": {
-        "shipments": 18,
-        "weight": 1839270,
-        "teu": 162,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/04/2025": {
-        "shipments": 22,
-        "weight": 2114619,
-        "teu": 122,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/05/2025": {
-        "shipments": 16,
-        "weight": 1476371,
-        "teu": 8,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/06/2025": {
-        "shipments": 13,
-        "weight": 1430539,
-        "teu": 95,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/07/2025": {
-        "shipments": 19,
-        "weight": 2172459,
-        "teu": 54,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/08/2025": {
-        "shipments": 20,
-        "weight": 1900781,
-        "teu": 70,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/09/2025": {
-        "shipments": 34,
-        "weight": 3252135,
-        "teu": 189,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/10/2025": {
-        "shipments": 29,
-        "weight": 1908382,
-        "teu": 139,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/11/2025": {
-        "shipments": 17,
-        "weight": 1814235,
-        "teu": 45,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/12/2025": {
-        "shipments": 13,
-        "weight": 732173,
-        "teu": 51,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/01/2026": {
-        "shipments": 16,
-        "weight": 667604,
-        "teu": 32,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/02/2026": {
-        "shipments": 20,
-        "weight": 1019396,
-        "teu": 92,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      },
-      "01/03/2026": {
-        "shipments": 2,
-        "weight": 214577,
-        "teu": 22,
-        "china_shipments": 0,
-        "china_weight": 0,
-        "china_teu": 0
-      }
-    },
-    "hs_codes": [
-      {
-        "hs_code": "85",
-        "shipments": 423,
-        "shipments_12m": 230,
-        "weight": 34123812,
-        "teu": 1577,
-        "description": "Electric motors/Appliances",
-        "children": [
-          {
-            "hs_code": "8536",
-            "shipments": 413,
-            "shipments_12m": 220,
-            "weight": 33530141,
-            "teu": 1559,
-            "description": "Electrical apparatus for switching or protecting electrical circuits, or for making connections to or in electrical circuits (for example, switches, relays, fuses, surge suppressors, plugs, sockets, lamp-holders and other connectors, junction boxes), for a voltage not exceeding 1,000 V; connectors for optical fibers, optical fiber bundles or cables",
-            "children": [
-              {
-                "hs_code": "8536.90",
-                "shipments": 413,
-                "shipments_12m": 220,
-                "weight": 33530141,
-                "teu": 1559,
-                "description": "Other apparatus"
-              }
-            ]
-          },
-          {
-            "hs_code": "8537",
-            "shipments": 10,
-            "shipments_12m": 10,
-            "weight": 593671,
-            "teu": 18,
-            "description": "Boards, panels, consoles, desks, cabinets and other bases, equipped with two or more apparatus of heading 8535 or 8536, for electric control or the distribution of electricity, including those incorporating instruments or apparatus of chapter 90, and numerical control apparatus, other than switching apparatus of heading 8517",
-            "children": [
-              {
-                "hs_code": "8537.10",
-                "shipments": 10,
-                "shipments_12m": 10,
-                "weight": 593671,
-                "teu": 18,
-                "description": "For a voltage not exceeding 1,000 V"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "hs_code": "73",
-        "shipments": 3,
-        "shipments_12m": 0,
-        "weight": 153915,
-        "teu": 6,
-        "description": "Iron/Steel products",
-        "children": [
-          {
-            "hs_code": "7318",
-            "shipments": 3,
-            "shipments_12m": 0,
-            "weight": 153915,
-            "teu": 6,
-            "description": "Screws, bolts, nuts, coach screws, screw hooks, rivets, cotters, cotter pins, washers (including spring washers) and similar articles, of iron or steel",
-            "children": [
-              {
-                "hs_code": "7318.29",
-                "shipments": 3,
-                "shipments_12m": 0,
-                "weight": 153915,
-                "teu": 6,
-                "description": "Other"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "hs_code": "39",
-        "shipments": 3,
-        "shipments_12m": 0,
-        "weight": 77571,
-        "teu": 6,
-        "description": "Plastics",
-        "children": [
-          {
-            "hs_code": "3910",
-            "shipments": 3,
-            "shipments_12m": 0,
-            "weight": 77571,
-            "teu": 6,
-            "description": "Silicones in primary forms",
-            "children": [
-              {
-                "hs_code": "3910.00",
-                "shipments": 3,
-                "shipments_12m": 0,
-                "weight": 77571,
-                "teu": 6,
-                "description": "Silicones in primary forms"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "hs_code": "90",
-        "shipments": 16,
-        "shipments_12m": 0,
-        "weight": 665822,
-        "teu": 74,
-        "description": "Cameras/Precision instruments",
-        "children": [
-          {
-            "hs_code": "9032",
-            "shipments": 7,
-            "shipments_12m": 0,
-            "weight": 167614,
-            "teu": 22,
-            "description": "Automatic regulating or controlling instruments and apparatus; parts and accessories thereof",
-            "children": [
-              {
-                "hs_code": "9032.90",
-                "shipments": 7,
-                "shipments_12m": 0,
-                "weight": 167614,
-                "teu": 22,
-                "description": "Parts and accessories"
-              }
-            ]
-          },
-          {
-            "hs_code": "9018",
-            "shipments": 9,
-            "shipments_12m": 0,
-            "weight": 498208,
-            "teu": 52,
-            "description": "Instruments and appliances used in medical, surgical, dental or veterinary sciences, including scintigraphic apparatus, other electro-medical apparatus and sight-testing instruments; parts and accessories thereof",
-            "children": [
-              {
-                "hs_code": "9018.19",
-                "shipments": 9,
-                "shipments_12m": 0,
-                "weight": 498208,
-                "teu": 52,
-                "description": "Other"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "bill_type_shipments": [
-      {
-        "bill_type": "regular",
-        "shipments": 1
-      },
-      {
-        "bill_type": "in_bond_regular",
-        "shipments": 0
-      },
-      {
-        "bill_type": "house",
-        "shipments": 444
-      },
-      {
-        "bill_type": "master",
-        "shipments": 0
-      },
-      {
-        "bill_type": "in_bond_master",
-        "shipments": 0
-      }
-    ],
-    "suppliers_table": [
-      {
-        "supplier_name": "Eae Elektrik Asansor End Ins San Ve",
-        "supplier_address": "Ve Tic As Akcaburgaz Mah 3114 Sok Esenyurt",
-        "supplier_address_country": "Turkey",
-        "vendor_address_country_code": "TR",
-        "key": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "total_shipments_company": 404,
-        "shipments_percents_company": 90.79,
-        "total_shipments_supplier": 413,
-        "shipments_percents_supplier": 97.82,
-        "shipments_12m": 193,
-        "shipments_12_24m": 122,
-        "top_companies": [
-          {
-            "company_name": "Eae Usa",
-            "shipments_12m": 193,
-            "total_shipments": 404
-          },
-          {
-            "company_name": "Eae Usa 2000 Mountain",
-            "shipments_12m": 2,
-            "total_shipments": 2
-          },
-          {
-            "company_name": "Tecnologia Superior De",
-            "shipments_12m": 1,
-            "total_shipments": 1
-          },
-          {
-            "company_name": "Cpi Critical Power Innovations",
-            "shipments_12m": 1,
-            "total_shipments": 1
-          },
-          {
-            "company_name": "Tecnologia Superior S A De C V",
-            "shipments_12m": 0,
-            "total_shipments": 3
-          }
-        ],
-        "total_weight": 31574880,
-        "total_teus": 1331,
-        "country": "Turkey",
-        "country_code": "TR",
-        "supplier_time_series": {
-          "12/10/2020": {
-            "shipments": 1,
-            "weight": 1211,
-            "teu": 1
-          },
-          "01/01/2021": {
-            "shipments": 1,
-            "weight": 13141,
-            "teu": 2
-          },
-          "01/04/2021": {
-            "shipments": 6,
-            "weight": 246507,
-            "teu": 30
-          },
-          "01/07/2021": {
-            "shipments": 2,
-            "weight": 74311,
-            "teu": 8
-          },
-          "01/10/2021": {
-            "shipments": 3,
-            "weight": 253559,
-            "teu": 26
-          },
-          "01/01/2022": {
-            "shipments": 3,
-            "weight": 77093,
-            "teu": 8
-          },
-          "01/04/2022": {
-            "shipments": 5,
-            "weight": 81149,
-            "teu": 4
-          },
-          "01/07/2022": {
-            "shipments": 1,
-            "weight": 1415,
-            "teu": 0
-          },
-          "01/10/2022": {
-            "shipments": 2,
-            "weight": 29743,
-            "teu": 3
-          },
-          "01/01/2023": {
-            "shipments": 12,
-            "weight": 364308,
-            "teu": 10
-          },
-          "01/04/2023": {
-            "shipments": 8,
-            "weight": 418526,
-            "teu": 12
-          },
-          "01/07/2023": {
-            "shipments": 15,
-            "weight": 893249,
-            "teu": 49
-          },
-          "01/10/2023": {
-            "shipments": 18,
-            "weight": 1037359,
-            "teu": 78
-          },
-          "01/01/2024": {
-            "shipments": 14,
-            "weight": 1460639,
-            "teu": 20
-          },
-          "01/04/2024": {
-            "shipments": 21,
-            "weight": 1267589,
-            "teu": 59
-          },
-          "01/07/2024": {
-            "shipments": 25,
-            "weight": 2297169,
-            "teu": 84
-          },
-          "01/10/2024": {
-            "shipments": 33,
-            "weight": 2598050,
-            "teu": 61
-          },
-          "01/01/2025": {
-            "shipments": 50,
-            "weight": 4814029,
-            "teu": 288
-          },
-          "01/04/2025": {
-            "shipments": 51,
-            "weight": 5021529,
-            "teu": 225
-          },
-          "01/07/2025": {
-            "shipments": 61,
-            "weight": 5752602,
-            "teu": 143
-          },
-          "01/10/2025": {
-            "shipments": 36,
-            "weight": 3184702,
-            "teu": 96
-          },
-          "06/03/2026": {
-            "shipments": 36,
-            "weight": 1687000,
-            "teu": 125
-          }
-        },
-        "hs_code_chapters": [
-          {
-            "chapter": "85",
-            "name": "Electric motors/Appliances",
-            "shipments": 382,
-            "shipments_perc": 94.55,
-            "weight": 30677572,
-            "weight_perc": 97.16,
-            "teu": 1245,
-            "teu_perc": 93.54
-          },
-          {
-            "chapter": "90",
-            "name": "Cameras/Precision instruments",
-            "shipments": 16,
-            "shipments_perc": 3.96,
-            "weight": 665822,
-            "weight_perc": 2.11,
-            "teu": 74,
-            "teu_perc": 5.56
-          },
-          {
-            "chapter": "73",
-            "name": "Iron/Steel products",
-            "shipments": 3,
-            "shipments_perc": 0.74,
-            "weight": 153915,
-            "weight_perc": 0.49,
-            "teu": 6,
-            "teu_perc": 0.45
-          },
-          {
-            "chapter": "39",
-            "name": "Plastics",
-            "shipments": 3,
-            "shipments_perc": 0.74,
-            "weight": 77571,
-            "weight_perc": 0.25,
-            "teu": 6,
-            "teu_perc": 0.45
-          }
-        ],
-        "most_recent_shipment": "26/02/2026",
-        "first_shipment": "12/10/2020",
-        "is_new_supplier": false,
-        "business_length": "5y 4m 14d",
-        "product_descriptions": [
-          "Busbar Systems Accessoriesbusbar Systems Accessoriesbusbar Systems Accessoriesbusbar Systems Accessoriesbusbar Systems Accessories",
-          "Busbar System Accessories",
-          "Busbar Systems Accessories Busbar Systems Accessories Busbar Systems Accessories",
-          "Busbar Systems Accessories",
-          "Busbar Systems Accessoriesbusbar Systems Accessories"
-        ],
-        "indiaindex_link": false,
-        "indiaindex_data": null,
-        "internal": false,
-        "uflpa_url": null
-      },
-      {
-        "supplier_name": "Eae Elektrik Asanosor End Ins San",
-        "supplier_address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "supplier_address_country": "Turkey",
-        "vendor_address_country_code": "TR",
-        "key": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "total_shipments_company": 34,
-        "shipments_percents_company": 7.64,
-        "total_shipments_supplier": 34,
-        "shipments_percents_supplier": 100,
-        "shipments_12m": 34,
-        "shipments_12_24m": 0,
-        "top_companies": [
-          {
-            "company_name": "Eae Usa",
-            "shipments_12m": 34,
-            "total_shipments": 34
-          }
-        ],
-        "total_weight": 2826962,
-        "total_teus": 318,
-        "country": "Turkey",
-        "country_code": "TR",
-        "supplier_time_series": {
-          "01/07/2025": {
-            "shipments": 11,
-            "weight": 1556123,
-            "teu": 168
-          },
-          "01/10/2025": {
-            "shipments": 22,
-            "weight": 1155902,
-            "teu": 140
-          },
-          "06/03/2026": {
-            "shipments": 1,
-            "weight": 114937,
-            "teu": 10
-          }
-        },
-        "hs_code_chapters": [
-          {
-            "chapter": "85",
-            "name": "Electric motors/Appliances",
-            "shipments": 34,
-            "shipments_perc": 100,
-            "weight": 2826962,
-            "weight_perc": 100,
-            "teu": 318,
-            "teu_perc": 100
-          }
-        ],
-        "most_recent_shipment": "06/03/2026",
-        "first_shipment": "06/03/2026",
-        "is_new_supplier": true,
-        "business_length": "0y 0m 0d",
-        "product_descriptions": [
-          "Busbar Systems Accessorieshs Cod",
-          "Busbar Systems Accessories",
-          "Busbar Systems Accessorieshs Busbarhs",
-          "Busbar Systems Accessorieshs",
-          ""
-        ],
-        "indiaindex_link": false,
-        "indiaindex_data": null,
-        "internal": false,
-        "uflpa_url": null
-      },
-      {
-        "supplier_name": "Eae Usa",
-        "supplier_address": "2000 Mountain Industrial Bl No:10 Esenyurt",
-        "supplier_address_country": "Turkey",
-        "vendor_address_country_code": "TR",
-        "key": "/supplier/eae-usa",
-        "total_shipments_company": 3,
-        "shipments_percents_company": 0.67,
-        "total_shipments_supplier": 3,
-        "shipments_percents_supplier": 100,
-        "shipments_12m": 0,
-        "shipments_12_24m": 3,
-        "top_companies": [
-          {
-            "company_name": "Eae Usa",
-            "shipments_12m": 0,
-            "total_shipments": 3
-          }
-        ],
-        "total_weight": 353809,
-        "total_teus": 0,
-        "country": "Turkey",
-        "country_code": "TR",
-        "supplier_time_series": {
-          "01/10/2024": {
-            "shipments": 3,
-            "weight": 353809,
-            "teu": 0
-          }
-        },
-        "hs_code_chapters": [
-          {
-            "chapter": "85",
-            "name": "Electric motors/Appliances",
-            "shipments": 3,
-            "shipments_perc": 100,
-            "weight": 353809,
-            "weight_perc": 100,
-            "teu": 0,
-            "teu_perc": 0
-          }
-        ],
-        "most_recent_shipment": "09/10/2024",
-        "first_shipment": "09/10/2024",
-        "is_new_supplier": false,
-        "business_length": "0y 0m 0d",
-        "product_descriptions": [
-          "Busbar Systems Accessories"
-        ],
-        "indiaindex_link": false,
-        "indiaindex_data": null,
-        "internal": true,
-        "uflpa_url": null
-      },
-      {
-        "supplier_name": "Eae Elektrik Asansor End",
-        "supplier_address": "Insaat Sanayi Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "supplier_address_country": "Turkey",
-        "vendor_address_country_code": "TR",
-        "key": "/supplier/eae-elektrik-asansor-end",
-        "total_shipments_company": 2,
-        "shipments_percents_company": 0.45,
-        "total_shipments_supplier": 3,
-        "shipments_percents_supplier": 66.67,
-        "shipments_12m": 2,
-        "shipments_12_24m": 0,
-        "top_companies": [
-          {
-            "company_name": "Eae Usa",
-            "shipments_12m": 2,
-            "total_shipments": 2
-          },
-          {
-            "company_name": "Ppe",
-            "shipments_12m": 0,
-            "total_shipments": 1
-          }
-        ],
-        "total_weight": 213826,
-        "total_teus": 12,
-        "country": "Turkey",
-        "country_code": "TR",
-        "supplier_time_series": {
-          "01/10/2025": {
-            "shipments": 1,
-            "weight": 114186,
-            "teu": 0
-          },
-          "06/03/2026": {
-            "shipments": 1,
-            "weight": 99640,
-            "teu": 12
-          }
-        },
-        "hs_code_chapters": [
-          {
-            "chapter": "85",
-            "name": "Electric motors/Appliances",
-            "shipments": 2,
-            "shipments_perc": 100,
-            "weight": 213826,
-            "weight_perc": 100,
-            "teu": 12,
-            "teu_perc": 100
-          }
-        ],
-        "most_recent_shipment": "06/03/2026",
-        "first_shipment": "06/03/2026",
-        "is_new_supplier": true,
-        "business_length": "0y 0m 0d",
-        "product_descriptions": [
-          "Busbar Systems Accessories"
-        ],
-        "indiaindex_link": false,
-        "indiaindex_data": null,
-        "internal": false,
-        "uflpa_url": null
-      },
-      {
-        "supplier_name": "Tanwood Orman Urunleri San Tic",
-        "supplier_address": "Kucukyali Merkez Mah Turgut Ozal Blv No:31 Maltepe 34840",
-        "supplier_address_country": "Turkey",
-        "vendor_address_country_code": "TR",
-        "key": "/supplier/tanwood-orman-urunleri-san-tic",
-        "total_shipments_company": 1,
-        "shipments_percents_company": 0.22,
-        "total_shipments_supplier": 48,
-        "shipments_percents_supplier": 2.08,
-        "shipments_12m": 1,
-        "shipments_12_24m": 0,
-        "top_companies": [
-          {
-            "company_name": "Mango Group",
-            "shipments_12m": 1,
-            "total_shipments": 1
-          },
-          {
-            "company_name": "Eae Usa",
-            "shipments_12m": 1,
-            "total_shipments": 1
-          },
-          {
-            "company_name": "Wick Construction",
-            "shipments_12m": 1,
-            "total_shipments": 1
-          },
-          {
-            "company_name": "Gwood Products",
-            "shipments_12m": 0,
-            "total_shipments": 33
-          },
-          {
-            "company_name": "Us Lumber Brokers",
-            "shipments_12m": 0,
-            "total_shipments": 3
-          }
-        ],
-        "total_weight": 16650,
-        "total_teus": 2,
-        "country": "Turkey",
-        "country_code": "TR",
-        "supplier_time_series": {
-          "01/07/2025": {
-            "shipments": 1,
-            "weight": 16650,
-            "teu": 2
-          }
-        },
-        "hs_code_chapters": [
-          {
-            "chapter": "85",
-            "name": "Electric motors/Appliances",
-            "shipments": 1,
-            "shipments_perc": 100,
-            "weight": 16650,
-            "weight_perc": 100,
-            "teu": 2,
-            "teu_perc": 100
-          }
-        ],
-        "most_recent_shipment": "10/08/2025",
-        "first_shipment": "10/08/2025",
-        "is_new_supplier": false,
-        "business_length": "0y 0m 0d",
-        "product_descriptions": [
-          "Tmt Ayous Cladding Tmt Ash Decking Smooth"
-        ],
-        "indiaindex_link": false,
-        "indiaindex_data": null,
-        "internal": false,
-        "uflpa_url": null
-      },
-      {
-        "supplier_name": "Eae Elektrik Asansor End Insaat",
-        "supplier_address": "Sanayi Ve Ticaret A S Akcaburgaz Mh 3114 Sk No:10",
-        "supplier_address_country": "Turkey",
-        "vendor_address_country_code": "TR",
-        "key": "/supplier/eae-elektrik-asansor-end-insaat",
-        "total_shipments_company": 1,
-        "shipments_percents_company": 0.22,
-        "total_shipments_supplier": 10,
-        "shipments_percents_supplier": 10,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "top_companies": [
-          {
-            "company_name": "Technologia Superior S A De C V",
-            "shipments_12m": 0,
-            "total_shipments": 3
-          },
-          {
-            "company_name": "Tecnologia Superior S A De C V",
-            "shipments_12m": 0,
-            "total_shipments": 2
-          },
-          {
-            "company_name": "Tamoin Mexico De",
-            "shipments_12m": 0,
-            "total_shipments": 2
-          },
-          {
-            "company_name": "Oci Clean Ammonia",
-            "shipments_12m": 0,
-            "total_shipments": 1
-          },
-          {
-            "company_name": "Tecnolog A Superior S A De C V",
-            "shipments_12m": 0,
-            "total_shipments": 1
-          }
-        ],
-        "total_weight": 34993,
-        "total_teus": 0,
-        "country": "Turkey",
-        "country_code": "TR",
-        "supplier_time_series": {
-          "01/04/2023": {
-            "shipments": 1,
-            "weight": 34993,
-            "teu": 0
-          }
-        },
-        "hs_code_chapters": [
-          {
-            "chapter": "85",
-            "name": "Electric motors/Appliances",
-            "shipments": 1,
-            "shipments_perc": 100,
-            "weight": 34993,
-            "weight_perc": 100,
-            "teu": 0,
-            "teu_perc": 0
-          }
-        ],
-        "most_recent_shipment": "19/04/2023",
-        "first_shipment": "19/04/2023",
-        "is_new_supplier": false,
-        "business_length": "0y 0m 0d",
-        "product_descriptions": [
-          "Busbar Systems Accessories"
-        ],
-        "indiaindex_link": false,
-        "indiaindex_data": null,
-        "internal": false,
-        "uflpa_url": null
-      }
-    ],
-    "notify_party_shipments": 345,
-    "notify_party_shipments_perc": 77.53,
-    "internal_notify_party_shipments": 325,
-    "internal_notify_party_shipments_perc": 94.2,
-    "notify_party_table": [
-      {
-        "notify_party": "Eae Usa",
-        "address": "2000 Mountain Industrial Blvd, Tucker, Ga 30084, Us",
-        "shipments": 325,
-        "shipments_12m": 183,
-        "shipments_12_24m": 81,
-        "yoy": 125.93,
-        "internal": true
-      },
-      {
-        "notify_party": "Barsan Global Logistics",
-        "address": "432 Bergen Blvd Unit #D 2 Floor",
-        "shipments": 10,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "yoy": 0,
-        "internal": false
-      },
-      {
-        "notify_party": "Bombard",
-        "address": "671 Bellbrook Ave Xenia Oh Attn:Josh Hatter +X XXX-XXX-XXXX",
-        "shipments": 4,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "yoy": 0,
-        "internal": false
-      },
-      {
-        "notify_party": "Tas Energy",
-        "address": "4208 Fidelity St, Houston, Tx 77029, Us",
-        "shipments": 2,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "yoy": 0,
-        "internal": false
-      },
-      {
-        "notify_party": "Hiit",
-        "address": "Manassas, Va 20109, Us",
-        "shipments": 1,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "yoy": 0,
-        "internal": false
-      },
-      {
-        "notify_party": "Ship Borderless",
-        "address": "276 Greenpoint Ave Bldg 8 - 2Nd Fl",
-        "shipments": 1,
-        "shipments_12m": 0,
-        "shipments_12_24m": 0,
-        "yoy": 0,
-        "internal": false
-      },
-      {
-        "notify_party": "Labl Holding Group",
-        "address": "Lumber 534 Finney Ct Gardena Ca",
-        "shipments": 1,
-        "shipments_12m": 1,
-        "shipments_12_24m": 0,
-        "yoy": null,
-        "internal": false
-      },
-      {
-        "notify_party": "Steam Logistics",
-        "address": "Chattanooga, Tn 37402, Us",
-        "shipments": 1,
-        "shipments_12m": 1,
-        "shipments_12_24m": 0,
-        "yoy": null,
-        "internal": false
-      }
-    ],
-    "recent_bols": [
-      {
-        "date_formatted": "06/03/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "HLCUIZ1260137773",
-        "Bill_of_Lading": "HLCUIZ1QA37773AA",
-        "Quantity": "235",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "99640",
-        "TEU": "12.0",
-        "Shipper_Name": "Eae Elektrik Asansor End",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Steam Logistics Llc",
-        "Shipper_Address": "Insaat San Ve Ticaret A S Akcaburgaz Mh 3114 Sk No 10 Esenyurt-Istanbul/Turkey",
-        "Consignee_Address": "Tucker, Ga 30084, Us",
-        "Notify_Party_Address": "Chattanooga, Tn 37402, Us",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_location": "Tucker",
-        "company_address_loc": "Tucker, United States of America",
-        "house_bill_of_lading": "HLCUIZ1QA37773AA",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 8
-      },
-      {
-        "date_formatted": "06/03/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "ZIMUIST26804938",
-        "Bill_of_Lading": "DSVFIZM0166450",
-        "Quantity": "127",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessorieshs",
-        "HS_Code": "853690",
-        "Weight_in_KG": "114937",
-        "TEU": "10.5",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZM0166450",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 7
-      },
-      {
-        "date_formatted": "26/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10232595",
-        "Bill_of_Lading": "BOPT2101807925",
-        "Quantity": "10",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "10616",
-        "TEU": "1.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101807925",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10233064",
-        "Bill_of_Lading": "BOPT2101809083",
-        "Quantity": "342",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "150469",
-        "TEU": "18.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101809083",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 12
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10233708",
-        "Bill_of_Lading": "BOPT2101809489",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "20309",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101809489",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10233164",
-        "Bill_of_Lading": "BOPT2101809071",
-        "Quantity": "6",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "1693",
-        "TEU": "1.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101809071",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10232151",
-        "Bill_of_Lading": "BOPT2101807448",
-        "Quantity": "168",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "57628",
-        "TEU": "10.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101807448",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 7
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10232865",
-        "Bill_of_Lading": "BOPT2101808224",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "19225",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101808224",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10232593",
-        "Bill_of_Lading": "BOPT2101807914",
-        "Quantity": "111",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "99536",
-        "TEU": "10.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101807914",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 5
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10232060",
-        "Bill_of_Lading": "BOPT2101807330",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "24000",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101807330",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10230843",
-        "Bill_of_Lading": "BOPT2101805931",
-        "Quantity": "216",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "76172",
-        "TEU": "13.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101805931",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 9
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10231522",
-        "Bill_of_Lading": "BOPT2101806693",
-        "Quantity": "178",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "116296",
-        "TEU": "12.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101806693",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 6
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10230837",
-        "Bill_of_Lading": "BOPT2101805935",
-        "Quantity": "78",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "12875",
-        "TEU": "4.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101805935",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 3
-      },
-      {
-        "date_formatted": "24/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10230274",
-        "Bill_of_Lading": "BOPT2101805248",
-        "Quantity": "119",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "81640",
-        "TEU": "7.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101805248",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 5
-      },
-      {
-        "date_formatted": "21/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10230411",
-        "Bill_of_Lading": "BOPT2101805403",
-        "Quantity": "33",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "12875",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101805403",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "11/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "HLCUIZ1251274042",
-        "Bill_of_Lading": "BOPT2101806182",
-        "Quantity": "10",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "10616",
-        "TEU": "1.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101806182",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "11/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "HLCUIZ1251266392",
-        "Bill_of_Lading": "BOPT2101806204",
-        "Quantity": "16",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "7112",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101806204",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "06/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10230003",
-        "Bill_of_Lading": "BOPT2101804801",
-        "Quantity": "72",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "24128",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101804801",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 3
-      },
-      {
-        "date_formatted": "06/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10230090",
-        "Bill_of_Lading": "BOPT2101804970",
-        "Quantity": "72",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "36720",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101804970",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 3
-      },
-      {
-        "date_formatted": "06/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10229187",
-        "Bill_of_Lading": "BOPT2101803528",
-        "Quantity": "120",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "39164",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101803528",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 5
-      },
-      {
-        "date_formatted": "06/02/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10229483",
-        "Bill_of_Lading": "BOPT2101804108",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "24280",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101804108",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "30/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "OOLU4054965221",
-        "Bill_of_Lading": "BOPT2101803852",
-        "Quantity": "1",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "185",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101803852",
-        "lcl": true,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "20/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10228423",
-        "Bill_of_Lading": "BOPT2101802537",
-        "Quantity": "240",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "162893",
-        "TEU": "18.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101802537",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 9
-      },
-      {
-        "date_formatted": "15/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10227966",
-        "Bill_of_Lading": "BOPT2101801814",
-        "Quantity": "120",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "41726",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101801814",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 5
-      },
-      {
-        "date_formatted": "15/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10227432",
-        "Bill_of_Lading": "BOPT2101800997",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "23467",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101800997",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "15/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10226811",
-        "Bill_of_Lading": "BOPT2101800181",
-        "Quantity": "129",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "113702",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101800181",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 6
-      },
-      {
-        "date_formatted": "11/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10226749",
-        "Bill_of_Lading": "BOPT2101800074",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "15262",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101800074",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "11/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10225646",
-        "Bill_of_Lading": "BOPT2101798504",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "15282",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101798504",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "11/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10226022",
-        "Bill_of_Lading": "BOPT2101799399",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "20430",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101799399",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "11/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10225511",
-        "Bill_of_Lading": "BOPT2101798430",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "19280",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101798430",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "05/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10226460",
-        "Bill_of_Lading": "BOPT2101799738",
-        "Quantity": "19",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "13167",
-        "TEU": "2.5",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101799738",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "04/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10225015",
-        "Bill_of_Lading": "BOPT2101797810",
-        "Quantity": "12",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "11700",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101797810",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "04/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10225034",
-        "Bill_of_Lading": "BOPT2101797846",
-        "Quantity": "72",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "28685",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101797846",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 3
-      },
-      {
-        "date_formatted": "04/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10225007",
-        "Bill_of_Lading": "BOPT2101797729",
-        "Quantity": "5",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "1409",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101797729",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "04/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10225008",
-        "Bill_of_Lading": "BOPT2101797732",
-        "Quantity": "4",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "1399",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101797732",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "04/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10224272",
-        "Bill_of_Lading": "BOPT2101796691",
-        "Quantity": "294",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "179180",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101796691",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 12
-      },
-      {
-        "date_formatted": "04/01/2026",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10223782",
-        "Bill_of_Lading": "BOPT2101796240",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "19837",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101796240",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "19/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10222830",
-        "Bill_of_Lading": "BOPT2101794878",
-        "Quantity": "48",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "18456",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101794878",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "19/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "AXVJIST021384051",
-        "Bill_of_Lading": "DSVFIZ90008594",
-        "Quantity": "159",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessorieshs",
-        "HS_Code": "853690",
-        "Weight_in_KG": "70151",
-        "TEU": "7.5",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008594",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 5
-      },
-      {
-        "date_formatted": "19/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "AXVJIST025102621",
-        "Bill_of_Lading": "DSVFIZ90008595",
-        "Quantity": "25",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessorieshs",
-        "HS_Code": "853690",
-        "Weight_in_KG": "8612",
-        "TEU": "1.5",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008595",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 1
-      },
-      {
-        "date_formatted": "16/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "HLCUIZ1251120600",
-        "Bill_of_Lading": "DSVFIZ90008565",
-        "Quantity": "72",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessorieshs Busbarhs",
-        "HS_Code": "853690",
-        "Weight_in_KG": "22320",
-        "TEU": "4.5",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008565",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 3
-      },
-      {
-        "date_formatted": "16/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "HLCUIZ1251119525",
-        "Bill_of_Lading": "DSVFIZ90008564",
-        "Quantity": "48",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessorieshs",
-        "HS_Code": "853710",
-        "Weight_in_KG": "14880",
-        "TEU": "3.0",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008564",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 2
-      },
-      {
-        "date_formatted": "13/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "HLCUIZ1251078471",
-        "Bill_of_Lading": "DSVFIZ90008489",
-        "Quantity": "96",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessorieshs",
-        "HS_Code": "853690",
-        "Weight_in_KG": "31815",
-        "TEU": "6.0",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008489",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 4
-      },
-      {
-        "date_formatted": "11/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "AXVJIST011995150",
-        "Bill_of_Lading": "DSVFIZ90008535",
-        "Quantity": "66",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessorieshs",
-        "HS_Code": "853690",
-        "Weight_in_KG": "52815",
-        "TEU": "6.0",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008535",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 3
-      },
-      {
-        "date_formatted": "11/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "AXVJIST064534798",
-        "Bill_of_Lading": "DSVFIZ90008492",
-        "Quantity": "72",
-        "Quantity_Unit": "PAL",
-        "Product_Description": "",
-        "HS_Code": "853710",
-        "Weight_in_KG": "23305",
-        "TEU": "4.5",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008492",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 3
-      },
-      {
-        "date_formatted": "04/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10220028",
-        "Bill_of_Lading": "BOPT2101791122",
-        "Quantity": "222",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "102425",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Insaat San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Ve Ticaret A S Bursa Serbest Bolge Subesiata Sb",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Bursa",
-        "supplier_address_loc": "Bursa, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/province/750268-bursa",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101791122",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 8
-      },
-      {
-        "date_formatted": "04/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10219731",
-        "Bill_of_Lading": "BOPT2101791172",
-        "Quantity": "147",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "116607",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101791172",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 6
-      },
-      {
-        "date_formatted": "04/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10219379",
-        "Bill_of_Lading": "BOPT2101790847",
-        "Quantity": "137",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853690",
-        "Weight_in_KG": "94749",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101790847",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 5
-      },
-      {
-        "date_formatted": "04/12/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "AXVJIST070120413",
-        "Bill_of_Lading": "DSVFIZ90008495",
-        "Quantity": "233",
-        "Quantity_Unit": "PKG",
-        "Product_Description": "Busbar Systems Accessorieshs Cod",
-        "HS_Code": "853690",
-        "Weight_in_KG": "175628",
-        "TEU": "18.0",
-        "Shipper_Name": "Eae Elektrik Asanosor End Ins San",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Akcaburgaz Mah 3114 Sokak No:10",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asanosor End Ins San",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asanosor-end-ins-san",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_loc": "Turkey",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "DSVFIZ90008495",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 9
-      },
-      {
-        "date_formatted": "25/11/2025",
-        "Bill_Type_Code": "H",
-        "Master_Bill_of_Lading": "TRKU10219013",
-        "Bill_of_Lading": "BOPT2101789454",
-        "Quantity": "152",
-        "Quantity_Unit": "PCS",
-        "Product_Description": "Busbar Systems Accessories",
-        "HS_Code": "853710",
-        "Weight_in_KG": "62912",
-        "TEU": "0.0",
-        "Shipper_Name": "Eae Elektrik Asansor End Ins San Ve",
-        "Consignee_Name": "Eae Usa Inc",
-        "Notify_Party_Name": "Eae Usa Inc",
-        "Shipper_Address": "Tic As Akcaburgaz Mah 3114 Sok No:10 Esenyurt",
-        "Consignee_Address": "2000 Mountain Industrial Blvd",
-        "Notify_Party_Address": "2000 Mountain Industrial Blvd",
-        "Country": "Turkey",
-        "country_code": "TR",
-        "consignee_basename": "Eae Usa",
-        "shipper_basename": "Eae Elektrik Asansor End Ins San Ve",
-        "shipping_route": null,
-        "shipping_cost": null,
-        "company_url": "/company/eae-usa",
-        "supplier_url": "/supplier/eae-elektrik-asansor-end-ins-san-ve",
-        "supplier_address_country": "Turkey",
-        "supplier_address_country_code": "TR",
-        "supplier_address_location": "Esenyurt",
-        "supplier_address_loc": "Esenyurt, Turkey",
-        "supplier_address_location_url": "/location/supplier/turkey/district/8521533-esenyurt",
-        "company_address_country": "United States of America",
-        "company_address_country_code": "US",
-        "company_address_loc": "United States of America",
-        "house_bill_of_lading": "BOPT2101789454",
-        "lcl": false,
-        "indiaindex_data": null,
-        "containers_count": 6
-      }
-    ],
-    "total_shipping_cost": "178461.25",
-    "avg_teu_per_shipment": {
-      "12m": 4.28,
-      "24m": 4,
-      "36m": 3.84,
-      "12_24m": 3.49,
-      "24_36m": 2.75
-    },
-    "avg_teu_per_month": {
-      "12m": 82.1,
-      "24m": 59.22,
-      "36m": 43.69,
-      "12_24m": 36.33,
-      "24_36m": 12.62
+import {
+  CompanyLite,
+  ShipmentLite,
+  CommandCenterRecord,
+} from "@/types/importyeti";
+import {
+  ImportYetiRawPayload,
+  CompanySnapshotResponse,
+} from "@/types/importyeti-raw";
+import { normalizeIYCompany, normalizeIYShipment } from "@/lib/normalize";
+import { supabase } from "@/lib/supabase";
+
+// Supabase Edge Functions configuration
+const SUPABASE_URL = typeof import.meta !== "undefined"
+  ? (import.meta as any).env?.VITE_SUPABASE_URL
+  : "";
+
+/**
+ * Get authentication headers for Supabase Edge Functions
+ * CRITICAL: Always use this for Edge Function calls
+ */
+async function getAuthHeaders() {
+  const { data: { session }, error } = await supabase.auth.getSession();
+
+  if (error || !session?.access_token) {
+    throw new Error("No active Supabase session");
+  }
+
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${session.access_token}`,
+  };
+}
+import {
+  isDevMode,
+  devGetSavedCompanies,
+  devSaveCompany,
+  devGetCompanyDetail,
+  devSearchCompanies,
+  devGetCompanyProfile,
+  devGetCompanyBols,
+  devSearchShippers,
+  devEnrichContacts,
+  devGetContacts,
+  devGetCampaigns,
+  devCreateCampaign,
+  devAddCompanyToCampaign,
+  devGetRfpContext,
+  devGenerateRfp,
+  devGetFilterOptions,
+} from "@/lib/apiDev";
+
+function resolveApiBase() {
+  const read = (value: unknown) =>
+    typeof value === "string" && value.trim().length ? value.trim() : null;
+
+  let candidate: string | null = null;
+
+  try {
+    // Prefer Vite/Next public envs at build/runtime
+    if (typeof import.meta !== "undefined") {
+      const metaEnv = (import.meta as any)?.env;
+      candidate = read(metaEnv?.VITE_API_BASE) ?? read(metaEnv?.NEXT_PUBLIC_API_BASE);
     }
-  },
-  "executionTime": "18ms"
+  } catch {
+    // ignore import.meta access issues
+  }
+
+  if (!candidate && typeof process !== "undefined" && process.env) {
+    candidate = read(process.env.NEXT_PUBLIC_API_BASE) ?? read((process.env as any).VITE_API_BASE);
+  }
+
+  if (!candidate && typeof window !== "undefined" && (window as any).__API_BASE__) {
+    candidate = read((window as any).__API_BASE__);
+  }
+
+  // CRITICAL: In browser context, always use proxy path to avoid CORS
+  // If the candidate is a full URL (not starting with /), use proxy instead
+  if (typeof window !== "undefined") {
+    if (!candidate || !candidate.startsWith("/")) {
+      return "/api/lit";
+    }
+  }
+
+  return candidate || "/api/lit";
+}
+
+// Always call via Vercel proxy from the browser to avoid CORS
+export const API_BASE = resolveApiBase();
+
+const SEARCH_GATEWAY_BASE = API_BASE;
+const IY_API_BASE = API_BASE;
+
+export function coerceNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "").trim();
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+// Frontend API key for calling the API Gateway
+const LIT_GATEWAY_KEY =
+  (typeof import.meta !== "undefined" &&
+    ((import.meta as any).env?.VITE_LIT_GATEWAY_KEY ||
+      (import.meta as any).env?.NEXT_PUBLIC_LIT_GATEWAY_KEY)) ||
+  (typeof window !== "undefined" &&
+    (window as any).__LIT_GATEWAY_KEY__) ||
+  "";
+
+if (typeof window !== "undefined" && !LIT_GATEWAY_KEY) {
+  const FLAG = "__LIT_GATEWAY_KEY_MISSING_LOGGED__";
+  if (!(window as any)[FLAG]) {
+    (window as any)[FLAG] = true;
+    console.warn(
+      "[LIT] Gateway key is not configured. Set VITE_LIT_GATEWAY_KEY or NEXT_PUBLIC_LIT_GATEWAY_KEY so /crm/saveCompany calls are authenticated.",
+    );
+  }
+}
+
+function withGatewayKey(url: string): string {
+  if (!LIT_GATEWAY_KEY) return url;
+  if (url.includes("key=")) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}key=${encodeURIComponent(LIT_GATEWAY_KEY)}`;
+}
+
+export type FilterOptions = {
+  origins: string[];
+  destinations: string[];
+  modes: string[];
+  hs: string[];
+};
+
+export type CompanyHit = {
+  company_id: string;
+  company_name: string;
+  shipments_12m: number | null;
+  last_activity?: string | null;
+  top_routes?: string[] | null;
+  top_carriers?: string[] | null;
+  domain?: string | null;
+  country_code?: string | null;
+  address?: string | null;
+  most_recent_shipment?: string | null;
+  aliases_count?: number | null;
+  addresses_count?: number | null;
+  top_suppliers?: string[] | null;
+  top_customers?: string[] | null;
+};
+
+export interface IyShipperHit {
+  key: string;
+  companyId: string;
+  name: string;
+  title: string;
+  companyKey?: string | null;
+  normalizedName?: string | null;
+  domain?: string | null;
+  website?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  totalShipments?: number | null;
+  shipmentsLast12m?: number | null;
+  teusLast12m?: number | null;
+  estSpendLast12m?: number | null;
+  mostRecentShipment?: string | null;
+  primaryRouteSummary?: string | null;
+  primaryRoute?: string | null;
+  lastShipmentDate?: string | null;
+  topSuppliers?: string[] | null;
+}
+
+export type IySearchMeta = {
+  q: string;
+  page: number;
+  pageSize: number;
+  creditsRemaining?: number;
+  requestCost?: number;
+};
+
+export interface IySearchResponse {
+  ok: boolean;
+  results: IyShipperHit[];
+  total: number;
+  meta?: IySearchMeta;
+}
+
+export type IyRouteTopRoute = {
+  route: string;
+  shipments: number | null;
+  teu?: number | null;
+  fclShipments?: number | null;
+  lclShipments?: number | null;
+};
+
+export interface IyRouteKpis {
+  shipmentsLast12m: number | null;
+  teuLast12m: number | null;
+  estSpendUsd12m: number | null;
+  topRouteLast12m: string | null;
+  mostRecentRoute: string | null;
+  sampleSize: number | null;
+  topRoutesLast12m: IyRouteTopRoute[];
+}
+
+export interface IyTimeSeriesPoint {
+  month: string;
+  fclShipments: number | null;
+  lclShipments: number | null;
+}
+
+export type IyCompanyContainers = {
+  fclShipments12m: number | null;
+  lclShipments12m: number | null;
+};
+
+export interface IyCompanyProfile {
+  key: string;
+  companyId: string;
+  name: string;
+  title: string;
+  domain: string | null;
+  website: string | null;
+  phoneNumber: string | null;
+  phone: string | null;
+  address: string | null;
+  countryCode: string | null;
+  lastShipmentDate: string | null;
+  estSpendUsd12m: number | null;
+  totalShipments: number | null;
+  routeKpis: IyRouteKpis | null;
+  timeSeries: IyTimeSeriesPoint[];
+  containers: IyCompanyContainers | null;
+  topSuppliers?: string[] | null;
+  // Legacy/raw passthrough fields for compatibility with older UI
+  time_series?: Record<string, any>;
+  containers_load?: Array<Record<string, any>>;
+  top_routes?: Array<Record<string, any>>;
+  most_recent_route?: Record<string, any> | null;
+  suppliers_sample?: string[];
+}
+
+export function getFclShipments12m(
+  profile?: IyCompanyProfile | null,
+): number | null {
+  if (!profile) return null;
+  const direct =
+    (profile as any).fclShipments12m ?? (profile as any).fcl_shipments_12m;
+  const fromContainers = profile.containers
+    ? (profile.containers.fclShipments12m ??
+        (profile.containers as any).fcl_shipments_12m ??
+        (profile.containers as any).fcl ??
+        null)
+    : null;
+  const candidate = direct ?? fromContainers;
+  return coerceNumber(candidate);
+}
+
+export function getLclShipments12m(
+  profile?: IyCompanyProfile | null,
+): number | null {
+  if (!profile) return null;
+  const direct =
+    (profile as any).lclShipments12m ?? (profile as any).lcl_shipments_12m;
+  const fromContainers = profile.containers
+    ? (profile.containers.lclShipments12m ??
+        (profile.containers as any).lcl_shipments_12m ??
+        (profile.containers as any).lcl ??
+        null)
+    : null;
+  const candidate = direct ?? fromContainers;
+  return coerceNumber(candidate);
+}
+
+export interface IyBolDetail {
+  bol_number: string;
+  company_name: string;
+  company_country_code?: string | null;
+  company_main_phone_number?: string | null;
+  company_website?: string | null;
+  arrival_date?: string | null;
+  entry_port?: string | null;
+  exit_port?: string | null;
+  origin_port?: string | null;
+  destination_port?: string | null;
+  total_teu?: number | null;
+  container_teu?: number | null;
+  container_count?: number | null;
+  company_teu_3m?: number | null;
+  company_teu_6m?: number | null;
+  company_teu_12m?: number | null;
+  company_contact_info?: {
+    emails?: string[];
+    phone_numbers?: string[];
+  };
+  notify_party_contact_info?: {
+    emails?: string[];
+    phone_numbers?: string[];
+  };
+  shipping_rate?: {
+    route?: string | null;
+    origin_port?: string | null;
+    destination_port?: string | null;
+  };
+}
+
+export interface IyCompanyContact {
+  phone?: string;
+  email?: string;
+  website?: string;
+  domain?: string;
+}
+
+export type IyShipmentTypeBreakdown = {
+  fcl_shipments?: number;
+  lcl_shipments?: number;
+};
+
+export type IyMonthlyShipment = {
+  month: string;
+  shipments: number;
+  teu?: number;
+  fcl_shipments?: number;
+  lcl_shipments?: number;
+};
+
+export type IyTopLane = {
+  origin_port?: string;
+  origin_country_code?: string;
+  dest_port?: string;
+  dest_country_code?: string;
+  shipments_12m?: number;
+  teu_12m?: number;
+};
+
+export type IyCompanyStats = {
+  ok: boolean;
+  companySlug?: string;
+  range?: string;
+  shipmentTypeBreakdown?: IyShipmentTypeBreakdown;
+  monthlyShipments?: IyMonthlyShipment[];
+  topLanes?: IyTopLane[];
+  routes?: Array<{
+    origin_country_code?: string;
+    dest_country_code?: string;
+    shipments_12m?: number;
+    teu_12m?: number;
+  }>;
+};
+
+export function extractCompanySlug(key: string): string {
+  if (!key) return "";
+  return key.replace(/^company\//i, "");
+}
+
+function inferDomainFromSlug(
+  companyKeyOrSlug: string | null | undefined,
+): string | null {
+  if (!companyKeyOrSlug) return null;
+  const raw = companyKeyOrSlug.toString().trim().toLowerCase();
+  if (!raw) return null;
+  const withoutPrefix = raw.replace(/^company\//, "");
+  const core = withoutPrefix.split(/[^a-z0-9]+/)[0];
+  if (!core) return null;
+  return `${core}.com`;
+}
+
+export type SearchResponse<T> = {
+  ok: boolean;
+  total: number;
+  rows: T[];
+  results?: T[];
+};
+
+export type CompanySearchInput = Partial<{
+  q: string;
+  origin: string[];
+  dest: string[];
+  hs: string[];
+  mode: string[];
+  limit: number;
+  offset: number;
+}>;
+
+const BASE = "";
+
+export async function getCampaigns(base = API_BASE) {
+  if (isDevMode()) {
+    return devGetCampaigns();
+  }
+
+  const root = (base || "").replace(/\/$/, "");
+  try {
+    const r = await fetch(`${root}/public/campaigns`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    if (!r.ok) throw new Error(`bad status ${r.status}`);
+    return await r.json();
+  } catch (error) {
+    console.warn("[api] getCampaigns falling back to mock", error);
+    return [];
+  }
+}
+
+export type SearchPayload = {
+  q: string | null;
+  origin?: string[];
+  dest?: string[];
+  hs?: string[];
+  limit?: number;
+  offset?: number;
+};
+
+function normalizeQ(q: unknown) {
+  return (q ?? "").toString().trim();
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const pathname = (() => {
+      try {
+        return new URL(url).pathname;
+      } catch {
+        return url;
+      }
+    })();
+    throw new Error(`${pathname} ${res.status}: ${text || res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function searchCompaniesProxy(payload: SearchPayload) {
+  const body = {
+    q: payload.q ?? null,
+    origin: Array.isArray(payload.origin) ? payload.origin : [],
+    dest: Array.isArray(payload.dest) ? payload.dest : [],
+    hs: Array.isArray(payload.hs) ? payload.hs : [],
+    limit: Number(payload.limit ?? 12),
+    offset: Number(payload.offset ?? 0),
+  } as const;
+  const r = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      q: body.q,
+      origin: null,
+      dest: null,
+      hs: null,
+      limit: body.limit,
+      offset: body.offset,
+    }),
+  });
+  if (!r.ok) throw new Error(`searchCompanies ${r.status}`);
+  return r.json();
+}
+
+export async function getCompanyShipmentsProxy(params: {
+  company_id?: string;
+  company_name?: string;
+  origin?: string[];
+  dest?: string[];
+  hs?: string[];
+  limit?: number;
+  offset?: number;
+}) {
+  const qp = new URLSearchParams();
+  if (params.company_id) qp.set("company_id", params.company_id);
+  if (params.company_name) qp.set("company_name", params.company_name);
+  if (params.origin?.length) qp.set("origin", params.origin.join(","));
+  if (params.dest?.length) qp.set("dest", params.dest.join(","));
+  if (params.hs?.length) qp.set("hs", params.hs.join(","));
+  qp.set("limit", String(params.limit ?? 20));
+  qp.set("offset", String(params.offset ?? 0));
+  const r = await fetch(
+    `${API_BASE}/public/getCompanyShipments?${qp.toString()}`,
+  );
+  if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
+  return r.json();
+}
+
+export async function getFilterOptions(
+  signal?: AbortSignal,
+): Promise<FilterOptions> {
+  if (isDevMode()) {
+    return devGetFilterOptions();
+  }
+
+  return getFilterOptionsOnce(async (innerSignal) => {
+    const res = await fetch(`${API_BASE}/public/getFilterOptions`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: innerSignal ?? signal,
+    });
+    if (!res.ok) {
+      throw new Error(`filters ${res.status}`);
+    }
+    const data = await res.json().catch(() => ({}));
+    const normalize = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string")
+        : [];
+    const normalizedModes = normalize(data?.modes).map((mode) =>
+      mode.toLowerCase(),
+    );
+    return {
+      origins: normalize(data?.origins),
+      destinations: normalize(data?.destinations),
+      modes: normalizedModes,
+      hs: normalize(data?.hs),
+    };
+  }, signal);
+}
+
+// Back-compat names expected by some pages
+export const searchCompaniesProxyCompat = searchCompaniesProxy;
+export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
+
+// Gateway base (env override â default)
+const GW = "/api/lit";
+
+async function j<T>(p: Promise<Response>): Promise<T> {
+  const r = await p;
+  if (!r.ok) {
+    const text = await r.text().catch(() => String(r.status));
+    throw new Error(text || String(r.status));
+  }
+  return r.json() as Promise<T>;
+}
+
+// Widgets compatibility endpoints
+export async function calcTariff(input: {
+  hsCode?: string;
+  origin?: string;
+  destination?: string;
+  valueUsd?: number;
+}) {
+  const res = await fetch(`${GW}/widgets/tariff/calc`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(input || {}),
+  });
+  if (!res.ok) throw new Error(`calcTariff ${res.status}`);
+  return res.json();
+}
+
+export async function generateQuote(input: {
+  companyId?: string | number;
+  lanes: Array<{ origin: string; destination: string; mode: string }>;
+  notes?: string;
+}) {
+  const res = await fetch(`${GW}/widgets/quote/generate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(input || {}),
+  });
+  if (!res.ok) throw new Error(`generateQuote ${res.status}`);
+  return res.json();
+}
+
+// Typed helpers for unified search and shipments
+export type CompanySearchItem = {
+  company_id: string | null;
+  company_name: string;
+  shipments: number;
+  lastShipmentDate: string | null;
+  modes?: string[];
+  hsTop?: Array<{ v: string; c: number }>;
+  originsTop?: Array<{ v: string; c: number }>;
+  destsTop?: Array<{ v: string; c: number }>;
+  carriersTop?: Array<{ v: string; c: number }>;
+};
+
+export type ShipmentRow = {
+  shipped_on: string;
+  mode: "ocean" | "air";
+  origin: string;
+  destination: string;
+  carrier: string | null;
+  value_usd: string | number | null;
+  weight_kg: string | number | null;
+};
+
+// Company item + KPI extractor tolerant to snake/camel
+export type CompanyItem = {
+  company_id: string | null;
+  company_name: string;
+  shipments_12m?: number;
+  shipments12m?: number;
+  shipments?: number;
+  last_activity?: string | null;
+  lastActivity?: string | null;
+  lastShipmentDate?: string | null;
+  origins_top?: string[];
+  originsTop?: string[];
+  dests_top?: string[];
+  destsTop?: string[];
+  carriers_top?: string[];
+  carriersTop?: string[];
+};
+
+export function kpiFrom(item: CompanyItem) {
+  const shipments12m = Number(
+    item.shipments12m ?? item.shipments_12m ?? item.shipments ?? 0,
+  );
+  const rawLast: any =
+    (item as any).lastActivity ??
+    (item as any).last_activity ??
+    (item as any).lastShipmentDate;
+  const lastActivity =
+    rawLast && typeof rawLast === "object" && "value" in rawLast
+      ? (rawLast.value ?? null)
+      : (rawLast ?? null);
+  const originsTop = item.originsTop ?? item.origins_top ?? [];
+  const destsTop = item.destsTop ?? item.dests_top ?? [];
+  const carriersTop = item.carriersTop ?? item.carriers_top ?? [];
+  return { shipments12m, lastActivity, originsTop, destsTop, carriersTop };
+}
+
+// Legacy-compatible wrapper that accepts arrays or CSV
+export async function postSearchCompanies(payload: any) {
+  const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      q: payload?.q ?? null,
+      origin: payload?.origin ?? null,
+      dest: payload?.dest ?? null,
+      hs: payload?.hs ?? null,
+      limit: payload?.limit ?? 20,
+      offset: payload?.offset ?? 0,
+    }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`postSearchCompanies failed: ${res.status} ${t}`);
+  }
+  return res.json(); // { items, total }
+}
+
+function normalizeCompanyHit(entry: any): CompanyHit {
+  const ensureArray = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value
+          .map((item: unknown) => {
+            if (typeof item === "string") return item;
+
+            if (item && typeof item === "object") {
+              if ("route" in item && typeof (item as any).route === "string") {
+                return (item as any).route as string;
+              }
+
+              if ("value" in item && typeof (item as any).value === "string") {
+                return (item as any).value as string;
+              }
+
+              if (
+                "carrier" in item &&
+                typeof (item as any).carrier === "string"
+              ) {
+                return (item as any).carrier as string;
+              }
+            }
+
+            return null;
+          })
+          .filter(
+            (item): item is string =>
+              typeof item === "string" && item.length > 0,
+          )
+      : [];
+
+  const companyId = (entry as any)?.company_id ?? (entry as any)?.id ?? "";
+  const companyName =
+    (entry as any)?.company_name ??
+    (entry as any)?.name ??
+    (entry as any)?.company ??
+    "";
+  const domain =
+    (entry as any)?.domain ??
+    (entry as any)?.website ??
+    deriveDomainCandidate((entry as any)?.website) ??
+    null;
+
+  const countryCode =
+    (entry as any)?.country_code ??
+    (entry as any)?.countryCode ??
+    (entry as any)?.origin_country_code ??
+    null;
+
+  const address =
+    (entry as any)?.address ??
+    (entry as any)?.full_address ??
+    (entry as any)?.location ??
+    null;
+
+  const shipments12m =
+    (entry as any)?.shipments_12m ??
+    (entry as any)?.shipmentsLast12Months ??
+    (entry as any)?.shipments ??
+    null;
+
+  const mostRecentShipment =
+    (entry as any)?.most_recent_shipment ??
+    (entry as any)?.lastShipmentDate ??
+    null;
+
+  const aliasesCount =
+    typeof (entry as any)?.aliases_count === "number"
+      ? (entry as any).aliases_count
+      : null;
+
+  const addressesCount =
+    typeof (entry as any)?.addresses_count === "number"
+      ? (entry as any).addresses_count
+      : null;
+
+  const topSuppliers = ensureArray(
+    (entry as any)?.top_suppliers ?? (entry as any)?.suppliers,
+  );
+  const topCustomers = ensureArray(
+    (entry as any)?.top_customers ?? (entry as any)?.customers,
+  );
+
+  return {
+    company_id: companyId,
+    company_name: companyName,
+    domain,
+    country_code: countryCode,
+    address,
+    shipments_12m: shipments12m,
+    most_recent_shipment: mostRecentShipment,
+    aliases_count: aliasesCount,
+    addresses_count: addressesCount,
+    top_suppliers: topSuppliers.length ? topSuppliers : null,
+    top_customers: topCustomers.length ? topCustomers : null,
+  };
+}
+
+export async function searchCompanies(
+  input: CompanySearchInput = {},
+  signal?: AbortSignal,
+): Promise<SearchResponse<CompanyHit>> {
+  const limitCandidate = Number(input.limit);
+  const offsetCandidate = Number(input.offset);
+  const limit = Math.max(
+    1,
+    Math.min(100, Number.isFinite(limitCandidate) ? limitCandidate : 25),
+  );
+  const offset = Math.max(
+    0,
+    Number.isFinite(offsetCandidate) ? offsetCandidate : 0,
+  );
+
+  const payload = {
+    q: typeof input.q === "string" ? input.q.trim() : "",
+    origin: Array.isArray(input.origin) ? input.origin : [],
+    dest: Array.isArray(input.dest) ? input.dest : [],
+    hs: Array.isArray(input.hs) ? input.hs : [],
+    mode: Array.isArray(input.mode) ? input.mode : [],
+    limit,
+    offset,
+  };
+
+  const response = await fetch(`${API_BASE}/public/searchCompanies`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`search ${response.status}`);
+  }
+
+  const data = await response.json().catch(() => ({}));
+  const rawRows = Array.isArray((data as any)?.rows)
+    ? (data as any).rows
+    : Array.isArray((data as any)?.results)
+      ? (data as any).results
+      : [];
+
+  const rows = rawRows.map(normalizeCompanyHit);
+  const total =
+    typeof (data as any)?.total === "number"
+      ? (data as any).total
+      : rows.length;
+
+  return {
+    ok: Boolean((data as any)?.ok ?? true),
+    rows,
+    results: rows,
+    total,
+  };
+}
+
+async function postIyJson<T>(path: string, body: any): Promise<T> {
+  const resp = await fetch(`${IY_API_BASE}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw { status: resp.status, ...json };
+  }
+  return json as T;
+}
+
+export type IySearchRow = {
+  company_id: string | null;
+  name: string | null;
+  role: string | null;
+  country: string | null;
+  address: string | null;
+  website: string | null;
+  phone: string | null;
+  total_shipments: number | null;
+  most_recent_shipment: string | null;
+  aliases_count: number | null;
+  addresses_count: number | null;
+  top_suppliers?: string[] | null;
+  top_customers?: string[] | null;
+};
+
+const IY_COMPANY_KEY_PREFIX = "company/";
+
+export function normalizeCompanyIdToSlug(input: string): string {
+  if (!input) return "";
+  const trimmed = input.trim();
+  const stripped = trimmed.startsWith(IY_COMPANY_KEY_PREFIX)
+    ? trimmed.slice(IY_COMPANY_KEY_PREFIX.length)
+    : trimmed;
+  const lowercased = stripped.toLowerCase();
+  const replaced = lowercased.replace(/[\s_.]+/g, "-");
+  const cleaned = replaced.replace(/[^a-z0-9-]/g, "");
+  const collapsed = cleaned.replace(/-{2,}/g, "-");
+  const trimmed_edges = collapsed.replace(/^-+|-+$/g, "");
+  return trimmed_edges || "unknown";
+}
+
+export function ensureCompanyKey(value: string) {
+  const slug = normalizeCompanyIdToSlug(value);
+  return slug.startsWith(IY_COMPANY_KEY_PREFIX)
+    ? slug
+    : `${IY_COMPANY_KEY_PREFIX}${slug}`;
+}
+
+function deriveDomainCandidate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(trimmed)) {
+    return trimmed
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .toLowerCase();
+  }
+
+  try {
+    const url = new URL(
+      trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    );
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeIyShipperHit(entry: any): IyShipperHit {
+  const normalizeString = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  };
+  const normalizeNumber = (value: unknown): number | null => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const fallbackName =
+    normalizeString(entry?.name) ??
+    normalizeString(entry?.title) ??
+    normalizeString(entry?.company_name) ??
+    "ImportYeti shipper";
+
+  const fallbackKey = ensureCompanyKey(
+    (fallbackName || "shipper")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "shipper",
+  );
+
+  const idCandidates = [
+    entry?.companyId,
+    entry?.company_id,
+    entry?.key,
+    entry?.id,
+    entry?.slug,
+  ];
+  let companyId = fallbackKey;
+  for (const candidate of idCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      companyId = ensureCompanyKey(candidate);
+      break;
+    }
+  }
+
+  const normalizedName =
+    normalizeString(entry?.normalizedName) ??
+    normalizeString(entry?.normalized_name) ??
+    null;
+
+  const website =
+    normalizeString(entry?.website) ??
+    normalizeString(entry?.company_website) ??
+    null;
+  const domain =
+    normalizeString(entry?.domain) ??
+    deriveDomainCandidate(website ?? undefined) ??
+    deriveDomainCandidate(entry?.company_website) ??
+    null;
+  const phone =
+    normalizeString(entry?.phone) ??
+    normalizeString(entry?.phoneNumber) ??
+    normalizeString(entry?.company_main_phone_number) ??
+    null;
+
+  const addressParts = [
+    normalizeString(entry?.address),
+    normalizeString(entry?.address_line_1),
+    normalizeString(entry?.address_line_2),
+  ].filter((part): part is string => Boolean(part));
+  const address = addressParts.length ? addressParts.join(", ") : null;
+
+  const city = normalizeString(entry?.city);
+  const state =
+    normalizeString(entry?.state) ?? normalizeString(entry?.province) ?? null;
+  const postalCode =
+    normalizeString(entry?.postalCode) ??
+    normalizeString(entry?.postal_code) ??
+    null;
+  const country =
+    normalizeString(entry?.country) ??
+    normalizeString(entry?.country_name) ??
+    null;
+  const countryCode =
+    normalizeString(entry?.countryCode) ??
+    normalizeString(entry?.country_code) ??
+    null;
+
+  const shipmentsLast12m =
+    normalizeNumber(entry?.shipmentsLast12m) ??
+    normalizeNumber(entry?.shipments_12m) ??
+    normalizeNumber(entry?.shipments12m) ??
+    normalizeNumber(entry?.shipments) ??
+    null;
+  const totalShipments =
+    normalizeNumber(entry?.totalShipments) ??
+    normalizeNumber(entry?.shipments_total) ??
+    shipmentsLast12m;
+  const teusLast12m =
+    normalizeNumber(entry?.teusLast12m) ??
+    normalizeNumber(entry?.teuLast12m) ??
+    normalizeNumber(entry?.total_teus) ??
+    normalizeNumber(entry?.teu_12m) ??
+    null;
+  const estSpendLast12m =
+    normalizeNumber(entry?.estSpendLast12m) ??
+    normalizeNumber(entry?.estimated_spend_12m) ??
+    null;
+
+  const primaryRouteSummary =
+    normalizeString(entry?.primaryRouteSummary) ??
+    normalizeString(entry?.top_route_12m) ??
+    normalizeString(entry?.topRouteLast12m) ??
+    null;
+  const lastShipmentDate =
+    normalizeString(entry?.lastShipmentDate) ??
+    normalizeString(entry?.mostRecentShipment) ??
+    normalizeString(entry?.last_activity) ??
+    null;
+  const mostRecentShipment =
+    normalizeString(entry?.mostRecentShipment) ??
+    normalizeString(entry?.lastShipmentDate) ??
+    normalizeString(entry?.last_activity) ??
+    null;
+  const primaryRoute =
+    normalizeString(entry?.primaryRoute) ??
+    normalizeString(entry?.primary_route) ??
+    primaryRouteSummary;
+
+  const companyKey = companyId || fallbackKey;
+
+  return {
+    key: companyId,
+    companyId,
+    name: fallbackName ?? "ImportYeti shipper",
+    title:
+      normalizeString(entry?.title) ??
+      normalizeString(entry?.name) ??
+      fallbackName ??
+      "ImportYeti shipper",
+    normalizedName,
+    domain,
+    website,
+    phone,
+    address,
+    city,
+    state,
+    postalCode,
+    country,
+    countryCode,
+    totalShipments,
+    shipmentsLast12m,
+    teusLast12m,
+    estSpendLast12m,
+    primaryRouteSummary,
+    primaryRoute: primaryRoute ?? null,
+    lastShipmentDate,
+    mostRecentShipment,
+    topSuppliers:
+      Array.isArray(entry?.topSuppliers) || Array.isArray(entry?.top_suppliers)
+        ? (entry?.topSuppliers ?? entry?.top_suppliers)?.filter(
+            (item: unknown): item is string =>
+              typeof item === "string" && item.trim().length,
+          ) ?? null
+        : null,
+    companyKey,
+  };
+}
+
+function resolveIySearchArray(raw: any): any[] {
+  // Edge function returns { ok: true, rows: [...] }
+  if (Array.isArray(raw?.rows)) return raw.rows;
+  // ImportYeti API returns { data: [...] }
+  if (Array.isArray(raw?.data)) return raw.data;
+  // Fallback to other common shapes
+  if (Array.isArray(raw?.results)) return raw.results;
+  if (Array.isArray(raw?.items)) return raw.items;
+  // Direct array
+  if (Array.isArray(raw)) return raw;
+  return [];
+}
+
+function buildIySearchMeta(
+  rawMeta: any,
+  fallback: { q: string; page: number; pageSize: number },
+): IySearchMeta {
+  const toNumber = (value: unknown, defaultValue: number) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : defaultValue;
+  };
+  return {
+    q: typeof rawMeta?.q === "string" ? rawMeta.q : fallback.q,
+    page: toNumber(rawMeta?.page, fallback.page),
+    pageSize: toNumber(rawMeta?.pageSize, fallback.pageSize),
+    creditsRemaining:
+      typeof rawMeta?.creditsRemaining === "number"
+        ? rawMeta.creditsRemaining
+        : undefined,
+    requestCost:
+      typeof rawMeta?.requestCost === "number"
+        ? rawMeta.requestCost
+        : undefined,
+  };
+}
+
+function coerceIySearchResponse(
+  raw: any,
+  fallback: { q: string; page: number; pageSize: number },
+): IySearchResponse {
+  // Handle edge function response shape: { ok: true, rows: [...], page, pageSize, total }
+  const items = resolveIySearchArray(raw);
+  const rows = items.map(normalizeIyShipperHit);
+
+  // Resolve total from various possible locations
+  const totalCandidate =
+    raw?.total ?? raw?.meta?.total ?? raw?.data?.total ?? rows.length;
+  const total = Number.isFinite(Number(totalCandidate))
+    ? Number(totalCandidate)
+    : rows.length;
+
+  // Build metadata
+  const meta = buildIySearchMeta(raw?.meta ?? {}, fallback);
+
+  return {
+    ok: Boolean(raw?.ok ?? true),
+    results: rows,
+    total,
+    meta,
+  };
+}
+
+export async function iySearch(q: string, limit = 10, offset = 0) {
+  const pageSize = Math.max(1, Number.isFinite(limit) ? Number(limit) : 10);
+  const computedOffset = Math.max(
+    0,
+    Number.isFinite(offset) ? Number(offset) : 0,
+  );
+  const page = Math.floor(computedOffset / pageSize) + 1;
+  const payload = await searchShippers({ q, page, pageSize });
+  return {
+    ok: payload.ok,
+    rows: payload.results,
+    meta: payload.meta,
+    total: payload.total,
+  };
+}
+
+async function postIySearchShippers(
+  body: { q: string; page: number; pageSize: number },
+  signal?: AbortSignal,
+) {
+  return fetchJson<any>(`/api/importyeti/searchShippers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+export async function iyCompanyBols(
+  params: { company_id: string; limit?: number; offset?: number; start_date?: string; end_date?: string },
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; data: any; rows: any[]; total: number }> {
+  const companySlug = normalizeCompanyIdToSlug(params.company_id);
+  if (!companySlug) {
+    throw new Error("iyCompanyBols requires company_id");
+  }
+
+  const limit =
+    typeof params.limit === "number" && Number.isFinite(params.limit)
+      ? params.limit
+      : 100;
+  const offset =
+    typeof params.offset === "number" && Number.isFinite(params.offset)
+      ? params.offset
+      : 0;
+
+  const body: any = {
+    action: "companyBols",
+    company_id: companySlug,
+    limit,
+    offset,
+  };
+
+  if (params.start_date) {
+    body.start_date = params.start_date;
+  }
+  if (params.end_date) {
+    body.end_date = params.end_date;
+  }
+
+  const { data: responseData, error } = await supabase.functions.invoke(
+    "importyeti-proxy",
+    {
+      body,
+    }
+  );
+
+  if (error) {
+    console.error("ImportYeti companyBols error:", error);
+    throw new Error(`companyBols failed: ${error.message || "Unknown error"}`);
+  }
+
+  const parsed = responseData;
+  const data = typeof parsed === "object" && parsed !== null ? parsed : {};
+  const rows = Array.isArray((data as any)?.rows)
+    ? (data as any).rows
+    : Array.isArray(parsed)
+      ? (parsed as any[])
+      : [];
+  const total =
+    typeof (data as any)?.total === "number"
+      ? (data as any).total
+      : rows.length;
+
+  return { ok: Boolean((data as any)?.ok ?? true), data, rows, total };
+}
+
+export interface CompanySnapshot {
+  company_id: string;
+  company_name: string;
+  country?: string;
+  city?: string;
+  website?: string;
+  total_shipments: number;
+  total_teu: number;
+  est_spend: number;
+  fcl_count: number;
+  lcl_count: number;
+  last_shipment_date: string | null;
+  trend: 'up' | 'flat' | 'down';
+  top_ports: Array<{ port: string; count: number }>;
+  monthly_volumes: Record<string, { fcl: number; lcl: number }>;
+  shipments_last_12m: number;
+}
+
+export async function fetchCompanySnapshot(
+  companyKey: string,
+  signal?: AbortSignal
+): Promise<CompanySnapshotResponse | null> {
+  const companySlug = normalizeCompanyIdToSlug(companyKey);
+  if (!companySlug) {
+    console.error("[fetchCompanySnapshot] Invalid company key:", companyKey);
+    return null;
+  }
+
+  console.log("[fetchCompanySnapshot] Fetching snapshot for:", companySlug);
+
+  try {
+    const { data: responseData, error } = await supabase.functions.invoke(
+      "importyeti-proxy",
+      {
+        body: {
+          action: "company",
+          company_id: companySlug,
+        },
+      }
+    );
+
+    if (error) {
+      console.error("[fetchCompanySnapshot] Error:", error);
+      throw new Error(`Snapshot fetch failed: ${error.message || "Unknown error"}`);
+    }
+
+    console.log("[fetchCompanySnapshot] Response:", {
+      ok: responseData?.ok,
+      source: responseData?.source,
+      hasSnapshot: !!responseData?.snapshot,
+      hasRaw: !!responseData?.raw
+    });
+
+    if (!responseData || !responseData.ok || !responseData.snapshot) {
+      console.warn("[fetchCompanySnapshot] No snapshot data");
+      return null;
+    }
+
+    console.log("ââââââââââ RAW PAYLOAD INSPECTION ââââââââââ");
+    console.log("[RAW PAYLOAD] Full structure:", responseData.raw);
+    console.log("[RAW PAYLOAD] Top-level keys:", Object.keys(responseData.raw || {}));
+
+    if (responseData.raw?.data) {
+      console.log("[RAW PAYLOAD] Data keys:", Object.keys(responseData.raw.data));
+      console.log("[RAW PAYLOAD] Total shipments:", responseData.raw.data.total_shipments);
+      console.log("[RAW PAYLOAD] Recent BOLs count:", responseData.raw.data.recent_bols?.length);
+      console.log("[RAW PAYLOAD] Sample BOL:", responseData.raw.data.recent_bols?.[0]);
+      console.log("[RAW PAYLOAD] AVG TEU per month:", responseData.raw.data.avg_teu_per_month);
+      console.log("[RAW PAYLOAD] Total shipping cost:", responseData.raw.data.total_shipping_cost);
+      console.log("[RAW PAYLOAD] Company info:", {
+        name: responseData.raw.data.name,
+        title: responseData.raw.data.title,
+        website: responseData.raw.data.website,
+        phone: responseData.raw.data.phone,
+        country: responseData.raw.data.country,
+        address: responseData.raw.data.address_plain
+      });
+    } else {
+      console.log("[RAW PAYLOAD] Direct keys (no nested data):", Object.keys(responseData.raw || {}));
+    }
+    console.log("ââââââââââââââââââââââââââââââââââââââââââ");
+
+    return {
+      ok: responseData.ok,
+      source: responseData.source,
+      snapshot: responseData.snapshot,
+      raw: responseData.raw
+    };
+  } catch (error) {
+    console.error("[fetchCompanySnapshot] Fatal error:", error);
+    return null;
+  }
+}
+
+export async function iyCompanyStats(
+  params: { company: string; range?: string },
+  signal?: AbortSignal,
+): Promise<IyCompanyStats | null> {
+  const company = (params.company ?? "").trim();
+  if (!company) return null;
+  const search = new URLSearchParams({ company });
+  if (params.range) search.set("range", params.range);
+  try {
+    return await fetchJson<IyCompanyStats>(
+      `/api/importyeti/companyStats?${search.toString()}`,
+      {
+        method: "POST",
+        headers: { accept: "application/json" },
+        signal,
+      },
+    );
+  } catch (error) {
+    console.warn("iyCompanyStats failed", error);
+    return null;
+  }
+}
+
+function normalizeTopSuppliers(raw: any): string[] | null {
+  const candidates = raw?.suppliers_sample ?? raw?.top_suppliers;
+  if (!Array.isArray(candidates)) return null;
+  const values = candidates
+    .map((entry: any) => {
+      if (typeof entry === "string") return entry.trim();
+      if (entry && typeof entry === "object") {
+        const name =
+          entry.name ??
+          entry.supplier_name ??
+          entry.company ??
+          entry.title ??
+          "";
+        return typeof name === "string" ? name.trim() : "";
+      }
+      return "";
+    })
+    .filter((value: string) => Boolean(value));
+  return values.length ? values : null;
+}
+
 function normalizeContainers(raw: any): IyCompanyContainers | null {
   const loads = Array.isArray(raw?.containers_load)
     ? raw.containers_load
@@ -3340,14 +1349,8 @@ function normalizeContainers(raw: any): IyCompanyContainers | null {
       typeof entry?.load_type === "string" && entry.load_type.toUpperCase() === "LCL",
   );
   return {
-    fclShipments12m:
-      coerceNumber(fcl?.shipments) ??
-      coerceNumber(fcl?.count) ??
-      null,
-    lclShipments12m:
-      coerceNumber(lcl?.shipments) ??
-      coerceNumber(lcl?.count) ??
-      null,
+    fclShipments12m: coerceNumber(fcl?.shipments),
+    lclShipments12m: coerceNumber(lcl?.shipments),
   };
 }
 
@@ -3358,6 +1361,7 @@ function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
     if (typeof value !== "string" || !value.trim()) return null;
     const trimmed = value.trim();
 
+    // Already YYYY-MM
     if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
 
     const parsed = new Date(trimmed);
@@ -3450,127 +1454,62 @@ function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
     }));
 }
 
-function cleanRouteValue(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length ? trimmed : null;
-}
-
-function buildRouteLabelFromEntry(entry: any): string {
-  const direct =
-    cleanRouteValue(entry?.route) ??
-    cleanRouteValue(entry?.lane) ??
-    cleanRouteValue(entry?.label);
-
-  if (direct) return direct;
-
-  const origin =
-    cleanRouteValue(entry?.port_of_loading) ??
-    cleanRouteValue(entry?.origin_port) ??
-    cleanRouteValue(entry?.origin_port_name) ??
-    cleanRouteValue(entry?.place_of_receipt) ??
-    cleanRouteValue(entry?.supplier_address_loc) ??
-    cleanRouteValue(entry?.shipper_address_loc) ??
-    cleanRouteValue(entry?.origin) ??
-    cleanRouteValue(entry?.origin_country) ??
-    cleanRouteValue(entry?.origin_country_code);
-
-  const destination =
-    cleanRouteValue(entry?.port_of_unloading) ??
-    cleanRouteValue(entry?.destination_port) ??
-    cleanRouteValue(entry?.dest_port) ??
-    cleanRouteValue(entry?.entry_port) ??
-    cleanRouteValue(entry?.destination_port_name) ??
-    cleanRouteValue(entry?.company_address_loc) ??
-    cleanRouteValue(entry?.consignee_address_loc) ??
-    cleanRouteValue(entry?.destination) ??
-    cleanRouteValue(entry?.destination_country) ??
-    cleanRouteValue(entry?.dest_country_code);
-
-  if (origin && destination) return `${origin} → ${destination}`;
-  if (origin) return origin;
-  if (destination) return destination;
-
-  return "Unknown → Unknown";
-}
-
 function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
   const source =
     raw?.routeKpis?.topRoutesLast12m ??
     raw?.top_routes ??
     raw?.topRoutes ??
     raw?.top_lanes ??
-    raw?.recent_bols ??
     [];
   if (!Array.isArray(source)) return [];
-
-  const routeMap = new Map<string, IyRouteTopRoute>();
-
-  for (const entry of source) {
-    const route = buildRouteLabelFromEntry(entry);
-    const shipments =
-      coerceNumber(
-        entry?.shipments ??
-          entry?.total_shipments ??
-          entry?.shipments_12m ??
-          entry?.shipments12m ??
-          entry?.count,
-      ) ?? 1;
-
-    const existing = routeMap.get(route);
-    if (existing) {
-      existing.shipments = (existing.shipments ?? 0) + shipments;
-      existing.teu =
-        (existing.teu ?? 0) +
-        (coerceNumber(entry?.teu ?? entry?.teu_12m ?? entry?.total_teu) ?? 0);
-      existing.fclShipments =
-        (existing.fclShipments ?? 0) +
-        (coerceNumber(
-          entry?.fclShipments ??
-            entry?.fcl_shipments ??
-            entry?.shipments_fcl ??
-            entry?.fcl,
-        ) ?? 0);
-      existing.lclShipments =
-        (existing.lclShipments ?? 0) +
-        (coerceNumber(
-          entry?.lclShipments ??
-            entry?.lcl_shipments ??
-            entry?.shipments_lcl ??
-            entry?.lcl,
-        ) ?? 0);
-      continue;
-    }
-
-    routeMap.set(route, {
-      route,
-      shipments,
-      teu: coerceNumber(entry?.teu ?? entry?.teu_12m ?? entry?.total_teu) ?? null,
-      fclShipments:
+  return source
+    .map((entry: any) => {
+      const route =
+        entry?.route ??
+        entry?.lane ??
+        [entry?.origin, entry?.destination]
+          .filter((value: unknown): value is string => typeof value === "string")
+          .join(" â ") ??
+        [
+          entry?.origin_port ?? entry?.origin_country ?? entry?.origin_country_code,
+          entry?.dest_port ?? entry?.destination_country ?? entry?.dest_country_code,
+        ]
+          .filter((value: unknown): value is string => typeof value === "string")
+          .join(" â ");
+      if (!route && !entry?.shipments) return null;
+      const shipments =
         coerceNumber(
-          entry?.fclShipments ??
-            entry?.fcl_shipments ??
-            entry?.shipments_fcl ??
-            entry?.fcl,
-        ) ?? null,
-      lclShipments:
-        coerceNumber(
-          entry?.lclShipments ??
-            entry?.lcl_shipments ??
-            entry?.shipments_lcl ??
-            entry?.lcl,
-        ) ?? null,
-    });
-  }
-
-  return Array.from(routeMap.values()).sort(
-    (a, b) => (b.shipments ?? 0) - (a.shipments ?? 0),
-  );
+          entry?.shipments ??
+            entry?.total_shipments ??
+            entry?.shipments_12m ??
+            entry?.shipments12m ??
+            entry?.count,
+        ) ?? null;
+      return {
+        route: route || "Route",
+        shipments,
+        teu: coerceNumber(entry?.teu ?? entry?.teu_12m) ?? null,
+        fclShipments:
+          coerceNumber(
+            entry?.fclShipments ??
+              entry?.fcl_shipments ??
+              entry?.shipments_fcl ??
+              entry?.fcl,
+          ) ?? null,
+        lclShipments:
+          coerceNumber(
+            entry?.lclShipments ??
+              entry?.lcl_shipments ??
+              entry?.shipments_lcl ??
+              entry?.lcl,
+          ) ?? null,
+      };
+    })
+    .filter((value): value is IyRouteTopRoute => Boolean(value))
+    .sort((a, b) => (b.shipments ?? 0) - (a.shipments ?? 0));
 }
 
 function normalizeRouteKpis(raw: any): IyRouteKpis | null {
-  const topRoutes = normalizeTopRoutes(raw);
-
   if (raw?.routeKpis && typeof raw.routeKpis === "object") {
     return {
       shipmentsLast12m: coerceNumber(
@@ -3593,24 +1532,16 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
             raw.est_spend_usd ??
             raw.estimated_spend_12m,
         ) ?? null,
-      topRouteLast12m:
-        raw.routeKpis.topRouteLast12m ??
-        topRoutes[0]?.route ??
-        null,
-      mostRecentRoute:
-        raw.routeKpis.mostRecentRoute ??
-        raw?.most_recent_route?.route ??
-        raw?.most_recent_route?.label ??
-        topRoutes[0]?.route ??
-        null,
-      sampleSize:
-        coerceNumber(raw.routeKpis.sampleSize) ??
-        topRoutes.length ??
-        null,
-      topRoutesLast12m: topRoutes,
+      topRouteLast12m: raw.routeKpis.topRouteLast12m ?? null,
+      mostRecentRoute: raw.routeKpis.mostRecentRoute ?? null,
+      sampleSize: coerceNumber(raw.routeKpis.sampleSize) ?? null,
+      topRoutesLast12m: Array.isArray(raw.routeKpis.topRoutesLast12m)
+        ? (raw.routeKpis.topRoutesLast12m as IyRouteTopRoute[])
+        : [],
     };
   }
 
+  const topRoutes = normalizeTopRoutes(raw);
   if (
     !topRoutes.length &&
     !raw?.total_shipments &&
@@ -3681,14 +1612,6 @@ function normalizeCompanyProfile(
     profileData.company_phone ??
     null;
 
-  const totalShipmentsAllTime =
-    coerceNumber(
-      profileData.totalShipmentsAllTime ??
-      profileData.containers_count ??
-      profileData.total_shipments_all_time ??
-      profileData.total_shipments,
-    ) ?? null;
-
   return {
     key: profileKey,
     companyId,
@@ -3729,37 +1652,27 @@ function normalizeCompanyProfile(
       coerceNumber(
         profileData.est_spend_usd ??
           profileData.estimated_spend_12m ??
-          profileData.spend_12m ??
-          profileData.est_spend,
+          profileData.spend_12m,
       ) ?? null,
     totalShipments:
-      coerceNumber(
-        profileData.shipments_last_12m ??
-        profileData.shipments_12m ??
-        profileData.total_shipments_12m
-      ) ??
-      routeKpis?.shipmentsLast12m ??
-      null,
+      coerceNumber(profileData.total_shipments ?? profileData.shipments_12m) ?? null,
     routeKpis,
     timeSeries,
     containers,
     topSuppliers,
-    totalShipmentsAllTime,
-    avgTeuPerShipment:
-      coerceNumber(profileData.avg_teu_per_shipment) ??
-      null,
-    avgTeuPerMonth:
-      coerceNumber(profileData.avg_teu_per_month) ??
-      null,
     time_series: profileData.time_series,
     containers_load: profileData.containers_load,
     top_routes: profileData.top_routes,
     most_recent_route: profileData.most_recent_route,
     suppliers_sample: profileData.suppliers_sample,
-    rawSnapshot: profileData,
   };
 }
 
+/**
+ * Phase 2.1: Public export for normalizing ImportYeti snapshot data into IyCompanyProfile.
+ * Accepts raw snapshot data and ensures all KPI fields are properly populated.
+ * Returns normalized profile with routeKpis, timeSeries, containers, and all other fields.
+ */
 export function normalizeIyCompanyProfile(
   rawSnapshot: any,
   companyKey?: string,
@@ -3816,10 +1729,12 @@ export function normalizeIyCompanyProfile(
     company_id: companyId,
     key: companyId,
 
+    // Preserve ALL-TIME totals for summary/header cards
     total_shipments: totalShipmentsAllTime,
     containers_count: totalShipmentsAllTime,
     total_teu: totalTeuAllTime,
 
+    // Keep 12m KPI values separate
     shipments_12m: shipmentsLast12m,
     shipments_last_12m: shipmentsLast12m,
     teu_12m: teuLast12m,
@@ -3853,4 +1768,1408 @@ export function normalizeIyCompanyProfile(
   return normalizeCompanyProfile(mergedData, companyId);
 }
 
+export async function getIyCompanyProfile({
+  companyKey,
+  query,
+  userGoal,
+}: {
+  companyKey: string;
+  query?: string;
+  userGoal?: string;
+}): Promise<{ companyProfile: IyCompanyProfile; enrichment: any | null }> {
+  const normalizedSlug = normalizeCompanyIdToSlug(companyKey);
+  if (!normalizedSlug) {
+    throw new Error("getIyCompanyProfile: company key is required");
+  }
+
+  if (isDevMode()) {
+    return devGetCompanyProfile(normalizedSlug);
+  }
+
+  let data: any = null;
+  let error: any = null;
+
+  const primaryCall = await supabase.functions.invoke(
+    "importyeti-proxy",
+    {
+      body: {
+        action: "companyProfile",
+        company_id: normalizedSlug,
+      },
+    }
+  );
+
+  data = primaryCall.data;
+  error = primaryCall.error;
+
+  if (error || !data?.companyProfile) {
+    const fallbackCall = await supabase.functions.invoke(
+      "importyeti-proxy",
+      {
+        body: {
+          action: "company",
+          company_id: normalizedSlug,
+        },
+      }
+    );
+
+    data = fallbackCall.data;
+    error = fallbackCall.error;
+  }
+
+  if (error) {
+    console.error("ImportYeti companyProfile error:", error);
+    throw new Error(`getIyCompanyProfile failed: ${error.message || "Unknown error"}`);
+  }
+
+  if (!data || !data.companyProfile) {
+    throw new Error("getIyCompanyProfile returned no profile");
+  }
+
+  const companyProfile = normalizeCompanyProfile(data.companyProfile, normalizedSlug);
+
+  return {
+    companyProfile,
+    enrichment: data?.enrichment ?? null,
+  };
+}
+
+export async function searchShippers(
+  params: { q: string; page?: number; pageSize?: number },
+  signal?: AbortSignal,
+): Promise<IySearchResponse> {
+  const q = typeof params.q === "string" ? params.q.trim() : "";
+  const page = Math.max(
+    1,
+    Number.isFinite(Number(params.page)) ? Number(params.page) : 1,
+  );
+  const pageSize = Math.max(
+    1,
+    Math.min(
+      100,
+      Number.isFinite(Number(params.pageSize)) ? Number(params.pageSize) : 25,
+    ),
+  );
+
+  if (!q) {
+    return {
+      ok: true,
+      results: [],
+      total: 0,
+      meta: { q, page, pageSize },
+    };
+  }
+
+  if (isDevMode()) {
+    return devSearchShippers({ q, page, pageSize });
+  }
+
+  const { data, error } = await supabase.functions.invoke(
+    "importyeti-proxy",
+    {
+      body: {
+        action: "search",
+        q,
+        page,
+        pageSize
+      },
+    }
+  );
+
+  if (error) {
+    console.error("ImportYeti search error:", error);
+    throw new Error(`Search failed: ${error.message || "Unknown error"}`);
+  }
+
+  return coerceIySearchResponse(data, { q, page, pageSize });
+}
+
+export const searchIyShippers = searchShippers;
+
+function mapIyRowsToShipments(rows: any[]): ShipmentLite[] {
+  return rows.map((row) => {
+    const normalized = normalizeIYShipment(row);
+    return {
+      ...normalized,
+      origin_port: row?.origin_port ?? row?.origin ?? row?.Origin_Port ?? null,
+      destination_port:
+        row?.destination_port ??
+        row?.destination ??
+        row?.Destination_Port ??
+        null,
+      origin_country_code:
+        row?.origin_country_code ??
+        row?.origin_country ??
+        row?.Origin_Country_Code ??
+        null,
+      dest_country_code:
+        row?.dest_country_code ??
+        row?.dest_country ??
+        row?.Destination_Country_Code ??
+        null,
+      mode: row?.mode ?? row?.transport_mode ?? row?.Mode ?? null,
+    };
+  });
+}
+
+export function deriveContactFromBol(bol: IyBolDetail): IyCompanyContact {
+  const phone =
+    bol.company_main_phone_number ??
+    bol.company_contact_info?.phone_numbers?.[0] ??
+    bol.notify_party_contact_info?.phone_numbers?.[0];
+  const email =
+    bol.company_contact_info?.emails?.[0] ??
+    bol.notify_party_contact_info?.emails?.[0];
+
+  let website = bol.company_website ?? undefined;
+  if (website) {
+    website = website.trim();
+    if (!website) {
+      website = undefined;
+    }
+  }
+  if (!website && email && email.includes("@")) {
+    const [, domainPart] = email.split("@");
+    if (domainPart) {
+      website = `https://${domainPart.toLowerCase()}`;
+    }
+  }
+
+  let domain: string | undefined;
+  const domainSource = website ?? email;
+  if (domainSource) {
+    try {
+      if (domainSource.includes("@")) {
+        const [, host] = domainSource.split("@");
+        if (host) {
+          domain = host.toLowerCase();
+        }
+      } else {
+        const url = /^https?:\/\//i.test(domainSource)
+          ? domainSource
+          : `https://${domainSource}`;
+        const next = new URL(url).hostname.replace(/^www\./i, "");
+        domain = next || undefined;
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  return {
+    phone: phone ?? undefined,
+    email: email ?? undefined,
+    website,
+    domain,
+  };
+}
+
+export type IyCompanyBolsResult = {
+  shipments: ShipmentLite[];
+  total: number;
+  ok: boolean;
+  error?: unknown;
+};
+
+export async function iyFetchCompanyBols(
+  params: { companyKey: string; limit: number; offset: number },
+  signal?: AbortSignal,
+): Promise<IyCompanyBolsResult> {
+  try {
+    const payload = await iyCompanyBols(
+      {
+        company_id: params.companyKey,
+        limit: params.limit,
+        offset: params.offset,
+      },
+      signal,
+    );
+    const shipments = Array.isArray(payload?.rows)
+      ? mapIyRowsToShipments(payload.rows)
+      : [];
+    const total =
+      typeof payload?.total === "number" ? payload.total : shipments.length;
+    const ok = Boolean((payload as any)?.ok ?? true);
+    return { shipments, total, ok };
+  } catch (error) {
+    console.error("iyFetchCompanyBols", error);
+    return { shipments: [], total: 0, ok: false, error };
+  }
+}
+
+export async function getIyBolDetail(
+  bolNumber: string,
+  signal?: AbortSignal,
+): Promise<IyBolDetail | null> {
+  if (!bolNumber) return null;
+  const search = encodeURIComponent(bolNumber);
+  const res = await fetchJson<{ ok: boolean; bol?: IyBolDetail }>(
+    `${API_BASE}/public/iy/bol?number=${search}`,
+    {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal,
+    },
+  );
+
+  if (!res || !res.bol) {
+    return null;
+  }
+
+  return res.bol;
+}
+
+export async function getIyBolDetails(
+  bolNumbers: string[],
+  options?: { limit?: number; concurrency?: number; signal?: AbortSignal },
+): Promise<IyBolDetail[]> {
+  if (!Array.isArray(bolNumbers) || bolNumbers.length === 0) {
+    return [];
+  }
+  const limit = Math.max(
+    1,
+    Math.min(options?.limit ?? bolNumbers.length, bolNumbers.length),
+  );
+  const concurrency = Math.max(1, options?.concurrency ?? 5);
+  const numbers = bolNumbers
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0,
+    )
+    .slice(0, limit);
+  const results: IyBolDetail[] = [];
+
+  for (let i = 0; i < numbers.length; i += concurrency) {
+    if (options?.signal?.aborted) break;
+    const batch = numbers.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(
+      batch.map((bolNum) => getIyBolDetail(bolNum, options?.signal)),
+    );
+    for (const outcome of settled) {
+      if (options?.signal?.aborted) break;
+      if (outcome.status === "fulfilled" && outcome.value) {
+        results.push(outcome.value);
+      }
+    }
+  }
+
+  return results;
+}
+
+function buildRouteFromShipment(row: ShipmentLite): string | null {
+  const origin =
+    row.origin_port || row.origin_country_code || row.shipper_name || null;
+  const destination =
+    row.destination_port || row.dest_country_code || row.consignee_name || null;
+  if (origin && destination) return `${origin} â ${destination}`;
+  if (origin) return origin;
+  if (destination) return destination;
+  return null;
+}
+
+export function computeIyRouteKpisFromShipments(
+  rows: ShipmentLite[],
+): IyRouteKpis {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      topRouteLast12m: null,
+      mostRecentRoute: null,
+      sampleSize: 0,
+      shipmentsLast12m: 0,
+      teuLast12m: 0,
+      estSpendUsd12m: null,
+      topRoutesLast12m: [],
+    };
+  }
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setMonth(cutoff.getMonth() - 12);
+  const cutoffTime = cutoff.getTime();
+
+  const routeStats = new Map<string, { count: number; teu: number }>();
+  let mostRecentRoute: string | null = null;
+  let mostRecentTime = 0;
+  let shipmentsLast12m = 0;
+  let teuLast12m = 0;
+
+  for (const row of rows) {
+    const route = buildRouteFromShipment(row);
+    const ts = row.date ? new Date(row.date).getTime() : NaN;
+    if (!Number.isNaN(ts) && ts > mostRecentTime && route) {
+      mostRecentTime = ts;
+      mostRecentRoute = route;
+    }
+    if (!Number.isNaN(ts) && ts >= cutoffTime) {
+      shipmentsLast12m += 1;
+      const teuContribution = Number.isFinite(Number(row.teu))
+        ? Number(row.teu)
+        : 0;
+      teuLast12m += teuContribution;
+      if (route) {
+        const current = routeStats.get(route) ?? { count: 0, teu: 0 };
+        current.count += 1;
+        current.teu += teuContribution;
+        routeStats.set(route, current);
+      }
+    }
+  }
+
+  const topRoutes = Array.from(routeStats.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([route, stats]) => ({
+      route,
+      shipments: stats.count,
+      teu: stats.teu || null,
+    }));
+
+  return {
+    topRouteLast12m: topRoutes[0]?.route ?? null,
+    mostRecentRoute,
+    sampleSize: rows.length,
+    shipmentsLast12m,
+    teuLast12m,
+    estSpendUsd12m: null,
+    topRoutesLast12m: topRoutes,
+  };
+}
+
+export async function getIyRouteKpisForCompany(
+  params: { companyKey: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<IyRouteKpis | null> {
+  const companyKey = ensureCompanyKey(params.companyKey);
+  if (!companyKey) {
+    return null;
+  }
+  const limitCandidate = Number(params.limit);
+  const offsetCandidate = Number(params.offset);
+  const limit = Math.max(
+    25,
+    Math.min(500, Number.isFinite(limitCandidate) ? limitCandidate : 200),
+  );
+  const offset = Math.max(
+    0,
+    Number.isFinite(offsetCandidate) ? offsetCandidate : 0,
+  );
+  try {
+    const result = await iyFetchCompanyBols(
+      { companyKey, limit, offset },
+      signal,
+    );
+    if (!result.ok || result.shipments.length === 0) {
+      console.warn("getIyRouteKpisForCompany: no shipments available", {
+        companyKey,
+        ok: result.ok,
+        total: result.total,
+      });
+      return null;
+    }
+    const kpis = computeIyRouteKpisFromShipments(result.shipments);
+    const firstBol = result.shipments[0];
+    if (firstBol?.bol) {
+      try {
+        await getIyBolDetail(firstBol.bol, signal);
+      } catch (lookupError) {
+        console.warn(
+          "getIyRouteKpisForCompany contact lookup failed",
+          lookupError,
+        );
+      }
+    }
+    return kpis;
+  } catch (error) {
+    console.error("getIyRouteKpisForCompany", error);
+    return null;
+  }
+}
+
+export const getIyRouteKpis = getIyRouteKpisForCompany;
+
+export async function listSavedCompanies(
+  stage = "prospect",
+): Promise<CommandCenterRecord[]> {
+  if (isDevMode()) {
+    const result = await devGetSavedCompanies(stage);
+    return result.rows.map((row: any) => ({
+      company: {
+        company_id: row.company_id,
+        name: row.company_name,
+        source: row.source,
+        address: row.company_data?.address || null,
+        country_code: row.company_data?.countryCode || row.company_data?.country_code || null,
+        kpis: {
+          shipments_12m: row.company_data?.shipmentsLast12m || row.company_data?.totalShipments || 0,
+          last_activity: row.company_data?.lastShipmentDate || row.company_data?.mostRecentShipment || null,
+        },
+        extras: {
+          top_suppliers: row.company_data?.topSuppliers || [],
+        },
+      },
+      created_at: row.created_at,
+    }));
+  }
+
+  const res = await fetch(
+    withGatewayKey(
+      `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=${encodeURIComponent(stage)}`,
+    ),
+    {
+      method: "GET",
+      headers: { accept: "application/json" },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`listSavedCompanies failed: ${res.status}`);
+  }
+  const data = await res.json().catch(() => []);
+  if (Array.isArray(data)) {
+    return data as CommandCenterRecord[];
+  }
+  if (Array.isArray((data as any)?.rows)) {
+    return (data as any).rows as CommandCenterRecord[];
+  }
+  if (Array.isArray((data as any)?.data?.rows)) {
+    return (data as any).data.rows as CommandCenterRecord[];
+  }
+  return [];
+}
+
+export function buildSearchParams(raw: Record<string, any>) {
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string" && value.trim() === "") continue;
+    cleaned[key] = value;
+  }
+  return cleaned;
+}
+
+export async function getCompanyShipments(
+  company_id: string,
+  opts?: { limit?: number; offset?: number },
+) {
+  const limitCandidate = Number(opts?.limit);
+  const offsetCandidate = Number(opts?.offset);
+  const limit = Math.max(
+    1,
+    Math.min(100, Number.isFinite(limitCandidate) ? limitCandidate : 25),
+  );
+  const offset = Math.max(
+    0,
+    Number.isFinite(offsetCandidate) ? offsetCandidate : 0,
+  );
+
+  const params = new URLSearchParams({
+    company_id,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  const response = await fetch(
+    `${API_BASE}/public/getCompanyShipments?${params.toString()}`,
+  );
+  if (!response.ok) {
+    throw new Error(`shipments ${response.status}`);
+  }
+  return response.json();
+}
+
+// New helpers per patch: getCompanyDetails, getCompanyShipments (unified signature)
+export async function getCompanyDetails(params: {
+  company_id?: string;
+  fallback_name?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params.company_id) q.set("company_id", params.company_id);
+  const url = `/api/lit/public/getCompanyDetails?${q.toString()}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`getCompanyDetails ${r.status}`);
+  return r.json();
+}
+
+export async function getCompanyShipmentsUnified(params: {
+  company_id?: string;
+  company_name?: string;
+  origin?: string;
+  dest?: string;
+  hs?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params.company_id) q.set("company_id", params.company_id);
+  if (params.company_name) q.set("company_name", params.company_name);
+  if (params.origin) q.set("origin", params.origin);
+  if (params.dest) q.set("dest", params.dest);
+  if (params.hs) q.set("hs", params.hs);
+  q.set("limit", String(params.limit ?? 50));
+  q.set("offset", String(params.offset ?? 0));
+  const url = `/api/lit/public/getCompanyShipments?${q.toString()}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
+  const data = await r.json();
+  return {
+    rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [],
+    total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0),
+  };
+}
+
+// Fast KPI endpoint (proxy-first, fallback to Gateway)
+export async function getCompanyKpis(
+  params: { company_id?: string; company_name?: string },
+  signal?: AbortSignal,
+) {
+  const qp = new URLSearchParams();
+  if (params.company_id) qp.set("company_id", params.company_id);
+  if (!params.company_id && params.company_name)
+    qp.set("company_name", params.company_name);
+  const url = `/api/lit/public/getCompanyKpis?${qp.toString()}`;
+  try {
+    const r = await fetch(url, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal,
+    });
+    const ct = r.headers.get("content-type") || "";
+    if (!r.ok || !ct.includes("application/json"))
+      throw new Error(String(r.status));
+    return await r.json();
+  } catch {
+    // Fallback to Gateway
+    const base = getGatewayBase();
+    const u = `${base}/public/getCompanyKpis?${qp.toString()}`;
+    const g = await fetch(u, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal,
+    });
+    if (!g.ok) return null;
+    return await g.json().catch(() => null);
+  }
+}
+
+// Saved companies list (for future UI)
+export async function getSavedCompanies(signal?: AbortSignal) {
+  try {
+    const { data: user } = await supabase.auth.getUser();
+    if (!user?.user) {
+      return { rows: [] };
+    }
+
+    const { data, error } = await supabase
+      .from('lit_saved_companies')
+      .select(`
+        *,
+        lit_companies (
+          id,
+          source_company_key,
+          name,
+          domain,
+          website,
+          address_line1,
+          city,
+          state,
+          country_code,
+          shipments_12m,
+          teu_12m,
+          fcl_shipments_12m,
+          lcl_shipments_12m,
+          most_recent_shipment_date,
+          top_route_12m,
+          recent_route
+        )
+      `)
+      .eq('user_id', user.user.id)
+      .order('last_viewed_at', { ascending: false });
+
+    if (error) {
+      console.error('getSavedCompanies error:', error);
+      return { rows: [] };
+    }
+
+    const rows = (data || []).map((item: any) => ({
+      company: {
+        company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
+        name: item.lit_companies?.name || 'Unknown Company',
+        domain: item.lit_companies?.domain,
+        address: item.lit_companies?.address_line1 || `${item.lit_companies?.city || ''}, ${item.lit_companies?.state || ''}`.trim(),
+        country_code: item.lit_companies?.country_code,
+        kpis: {
+          shipments_12m: item.lit_companies?.shipments_12m || 0,
+          last_activity: item.lit_companies?.most_recent_shipment_date,
+        },
+      },
+      shipments: [],
+      saved_at: item.created_at,
+      stage: item.stage,
+    }));
+
+    return { rows };
+  } catch (error) {
+    console.error('getSavedCompanies error:', error);
+    return { rows: [] };
+  }
+}
+
+// --- Filters singleton cache with 10m TTL ---
+let _filtersCache: { data: any; expires: number } | null = null;
+let _filtersInflight: Promise<any> | null = null;
+
+function readFiltersLocal(): { data: any; expires: number } | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem("lit.filters");
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj?.data || !obj?.expires) return null;
+    if (Date.now() > obj.expires) return null;
+    return obj;
+  } catch {
+    return null;
+  }
+}
+
+function writeFiltersLocal(data: any) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "lit.filters",
+      JSON.stringify({ data, expires: Date.now() + 10 * 60 * 1000 }),
+    );
+  } catch {}
+}
+
+export async function getFilterOptionsOnce(
+  fetcher: (signal?: AbortSignal) => Promise<any>,
+  signal?: AbortSignal,
+) {
+  if (_filtersCache && Date.now() < _filtersCache.expires)
+    return _filtersCache.data;
+  const local = readFiltersLocal();
+  if (local) {
+    _filtersCache = local;
+    return local.data;
+  }
+  if (_filtersInflight) return _filtersInflight;
+  _filtersInflight = (async () => {
+    const data = await fetcher(signal);
+    _filtersCache = { data, expires: Date.now() + 10 * 60 * 1000 };
+    writeFiltersLocal(data);
+    _filtersInflight = null;
+    return data;
+  })();
+  return _filtersInflight;
+}
+
+type SaveCompanyToCrmInput =
+  | { company: Record<string, any> }
+  | Record<string, any>;
+
+export async function saveCompanyToCrm(
+  input: SaveCompanyToCrmInput,
+): Promise<any> {
+  const company =
+    (input as { company?: Record<string, any> }).company ?? input ?? {};
+  const rawId =
+    (company as any)?.companyKey ||
+    (company as any)?.key ||
+    (company as any)?.company_id ||
+    (company as any)?.companyId ||
+    (company as any)?.id ||
+    (company as any)?.name ||
+    (company as any)?.company_name ||
+    (company as any)?.title ||
+    "";
+  const companyId = ensureCompanyKey(rawId);
+  if (!companyId) {
+    console.warn("[LIT] saveCompanyToCrm called with invalid company payload:", {
+      company,
+      rawId,
+    });
+    throw new Error("saveCompanyToCrm requires a valid company id");
+  }
+
+  if (isDevMode()) {
+    return devSaveCompany({
+      company_id: companyId,
+      company,
+      stage: "prospect",
+      provider: "importyeti",
+    });
+  }
+
+  const res = await fetch(
+    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        company_id: companyId,
+        stage: "prospect",
+        provider: "importyeti",
+        payload: company,
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    let errorBody: any = null;
+    try {
+      errorBody = await res.json();
+    } catch {
+      // swallow parse error
+    }
+    if (typeof window !== "undefined") {
+      console.warn("[LIT] saveCompanyToCrm failed", {
+        status: res.status,
+        statusText: res.statusText,
+        errorBody,
+      });
+    }
+    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function saveIyCompanyToCrm(opts: {
+  shipper: IyShipperHit;
+  profile: IyCompanyProfile | null;
+  stage?: string;
+  provider?: string;
+  source?: string;
+}) {
+  const rawId =
+    opts.shipper.key ??
+    opts.shipper.companyId ??
+    (opts.shipper as any)?.company_key ??
+    (opts.shipper as any)?.source_company_key ??
+    "";
+  const companyKey = ensureCompanyKey(rawId);
+  if (!companyKey) {
+    throw new Error("saveIyCompanyToCrm requires a valid company key");
+  }
+
+  if (isDevMode()) {
+    return devSaveCompany({
+      company_id: companyKey,
+      company: opts.shipper,
+      stage: opts.stage ?? "prospect",
+      provider: opts.provider ?? "importyeti",
+    });
+  }
+
+  // Phase 1.3: Validate session before attempting save
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.access_token) {
+    console.error("saveIyCompanyToCrm: Failed to get auth session", sessionError);
+    throw new Error("Please sign in again to save companies");
+  }
+
+  // Phase 1.2: Extract KPI fields from profile for database storage
+  const fclShipments = getFclShipments12m(opts.profile);
+  const lclShipments = getLclShipments12m(opts.profile);
+  const estSpend = opts.profile?.routeKpis?.estSpendUsd12m ?? opts.profile?.estSpendUsd12m ?? null;
+  const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
+  const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
+
+  const companyData = {
+    source: opts.source ?? "importyeti",
+    source_company_key: companyKey,
+    name: opts.shipper.title || opts.shipper.name || "Unknown",
+    domain: opts.shipper.domain,
+    website: opts.shipper.website,
+    phone: opts.shipper.phone,
+    country_code: opts.shipper.countryCode,
+    address_line1: opts.shipper.address,
+    city: opts.shipper.city,
+    state: opts.shipper.state,
+    shipments_12m: opts.shipper.totalShipments || 0,
+    teu_12m: opts.shipper.teusLast12m ?? null,
+    most_recent_shipment_date: opts.shipper.lastShipmentDate,
+    primary_mode: opts.shipper.primaryRoute ?? null,
+    // Phase 1.2: Add KPI fields
+    fcl_shipments_12m: fclShipments,
+    lcl_shipments_12m: lclShipments,
+    est_spend_12m: estSpend,
+    top_route_12m: topRoute,
+    recent_route: recentRoute,
+    raw_profile: opts.profile,
+    raw_last_search: opts.shipper,
+  };
+
+  // Phase 1.1: Add Authorization header with access token
+  const { data, error } = await supabase.functions.invoke("save-company", {
+    body: {
+      source_company_key: companyKey,
+      company_data: companyData,
+      stage: opts.stage ?? "prospect",
+    },
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+
+  if (error) {
+    console.error("saveIyCompanyToCrm failed:", error);
+    throw new Error(`saveIyCompanyToCrm failed: ${error.message || "Unknown error"}`);
+  }
+
+  return data || {};
+}
+
+export async function saveCompanyToCommandCenter(opts: {
+  shipper: IyShipperHit;
+  profile: IyCompanyProfile | null;
+  stage?: string;
+  source?: string;
+}) {
+  return saveIyCompanyToCrm(opts);
+}
+
+export function buildCompanyShipmentsUrl(
+  row: { company_id?: string; company_name: string },
+  limit = 50,
+  offset = 0,
+) {
+  const params = new URLSearchParams();
+  if (row.company_id && row.company_id.trim()) {
+    params.set("company_id", row.company_id.trim());
+  } else {
+    params.set("company_name", row.company_name);
+  }
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  return `/api/lit/public/getCompanyShipments?${params.toString()}`;
+}
+
+export function getCompanyKey(row: {
+  company_id?: string;
+  company_name: string;
+}) {
+  return row.company_id?.trim() || `name:${row.company_name.toLowerCase()}`;
+}
+
+export async function createCompany(body: {
+  name: string;
+  domain?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  postal?: string;
+  country?: string;
+}) {
+  const res = await fetch(`${GW}/crm/company.create`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`company.create ${res.status}:${t.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+export async function getCompany(company_id: string) {
+  const url = `${GW}/crm/company.get?company_id=${encodeURIComponent(company_id)}`;
+  const res = await fetch(url, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`company.get ${res.status}`);
+  return res.json();
+}
+
+export async function enrichCompany(payload: { company_id: string }) {
+  const res = await fetch(`${GW}/crm/enrichCompany`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`enrichCompany failed: ${res.status} ${t}`);
+  }
+  return res.json();
+}
+
+export async function recallCompany(payload: {
+  company_id: string;
+  questions?: string[];
+}) {
+  // Prefer POST; if 405, fallback to GET with query params
+  const res = await fetch(`${GW}/ai/recall`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 405) {
+    const qs = new URLSearchParams({ company_id: payload.company_id });
+    const g = await fetch(`${GW}/ai/recall?${qs.toString()}`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    if (!g.ok) {
+      const t = await g.text().catch(() => "");
+      throw new Error(`recallCompany failed: ${g.status} ${t}`);
+    }
+    return g.json();
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`recallCompany failed: ${res.status} ${t}`);
+  }
+  return res.json();
+}
+
+export async function enrichContacts(company_id: string) {
+  const res = await fetch(`${GW}/crm/contacts.enrich`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ company_id }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`contacts.enrich ${res.status} ${t}`);
+  }
+  return res.json();
+}
+
+export async function listContacts(company_id: string, dept?: string) {
+  const u = new URL(`${GW}/crm/contacts.list`);
+  u.searchParams.set("company_id", company_id);
+  if (dept) u.searchParams.set("dept", dept);
+  const res = await fetch(u.toString(), {
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`contacts.list ${res.status}`);
+  return res.json();
+}
+
+export async function getEmailThreads(company_id: string) {
+  const url = `${GW}/crm/email.threads?company_id=${encodeURIComponent(company_id)}`;
+  const res = await fetch(url, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`email.threads ${res.status}`);
+  return await res.json();
+}
+
+export async function getCalendarEvents(company_id: string) {
+  const url = `${GW}/crm/calendar.events?company_id=${encodeURIComponent(company_id)}`;
+  const res = await fetch(url, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`calendar.events ${res.status}`);
+  return res.json();
+}
+
+export async function createTask(p: {
+  company_id: string;
+  title: string;
+  due_date?: string;
+  notes?: string;
+}) {
+  const res = await fetch(`${GW}/crm/task.create`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(p),
+  });
+  if (!res.ok) throw new Error(`task.create ${res.status}`);
+  return res.json();
+}
+
+export async function createAlert(p: {
+  company_id: string;
+  type: string;
+  message: string;
+}) {
+  const res = await fetch(`${GW}/crm/alert.create`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(p),
+  });
+  if (!res.ok) throw new Error(`alert.create ${res.status}`);
+  return await res.json();
+}
+
+export async function saveCampaign(body: Record<string, any>) {
+  const res = await fetch(`${GW}/crm/campaigns`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`saveCampaign failed: ${res.status} ${t.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+export async function getCrmCompanyDetail(company_id: string, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/companies/${encodeURIComponent(company_id)}`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getCrmCompanyDetail ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getCrmCampaigns(signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getCrmCampaigns ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createCrmCampaign(body: {
+  name: string;
+  sequence: any;
+  settings: any;
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`createCrmCampaign ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getCrmCampaignDetail(campaign_id: number, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns/${campaign_id}`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getCrmCampaignDetail ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function addCompanyToCampaign(params: {
+  campaign_id: number;
+  company_id: string;
+  contact_ids?: string[];
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/campaigns/${params.campaign_id}/addCompany`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      company_id: params.company_id,
+      contact_ids: params.contact_ids || [],
+    }),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`addCompanyToCampaign ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function enrichCrmCompanyContacts(company_id: string, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/crm/companies/${encodeURIComponent(company_id)}/enrichContacts`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`enrichCrmCompanyContacts ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getRfpCompanyContext(company_id: string, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/rfp/company/${encodeURIComponent(company_id)}/context`);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`getRfpCompanyContext ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function generateRfp(body: {
+  company_id: string;
+  lanes: any[];
+  owner?: string;
+  template?: string;
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/rfp/generate`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`generateRfp ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createRfpWorkspace(body: {
+  company_id: string;
+  name: string;
+  lanes: any[];
+}, signal?: AbortSignal) {
+  const url = withGatewayKey(`${API_BASE}/rfp/workspace`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`createRfpWorkspace ${res.status}`);
+  }
+  return res.json();
+}
+
+export const api = {
+  searchCompanies,
+  getFilterOptions,
+  getCompanyShipments,
+  enrichCompany,
+  recallCompany,
+  saveCampaign,
+  saveCompanyToCrm,
+  createCompany,
+  getEmailThreads,
+  getCalendarEvents,
+  createAlert,
+  kpiFrom,
+  getCrmCompanyDetail,
+  getCrmCampaigns,
+  createCrmCampaign,
+  getCrmCampaignDetail,
+  addCompanyToCampaign,
+  enrichCrmCompanyContacts,
+  getRfpCompanyContext,
+  generateRfp,
+  createRfpWorkspace,
+
+  // Generic HTTP methods for hooks/components
+  async get(path: string) {
+    const url = withGatewayKey(`${API_BASE}${path}`);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'accept': 'application/json' }
+    });
+    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+    return res.json();
+  },
+
+  async post(path: string, body?: any) {
+    const url = withGatewayKey(`${API_BASE}${path}`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'accept': 'application/json'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
+    return res.json();
+  }
+};
+
+export async function fetchCompanyLanes(params: {
+  company: string;
+  month?: string;
+  origin?: string;
+  dest?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const base =
+    (typeof process !== "undefined" &&
+      (process as any)?.env?.NEXT_PUBLIC_SEARCH_UNIFIED_URL) ||
+    (typeof window !== "undefined" && (window as any).__SEARCH_UNIFIED__) ||
+    "";
+  const serviceBase = String(base || "").replace(/\/$/, "");
+  const res = await fetch(`${serviceBase}/public/companyLanes`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`companyLanes ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCompanyShipments(params: {
+  company: string;
+  name_norm?: string;
+  mode?: "air" | "ocean";
+  origin?: string;
+  dest?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const base =
+    (typeof process !== "undefined" &&
+      (process as any)?.env?.NEXT_PUBLIC_SEARCH_UNIFIED_URL) ||
+    (typeof window !== "undefined" && (window as any).__SEARCH_UNIFIED__) ||
+    "";
+  const serviceBase = String(base || "").replace(/\/$/, "");
+  const res = await fetch(`${serviceBase}/public/companyShipments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`companyShipments ${res.status}`);
+  return res.json();
+}
+
+export async function getCompanyProfileLushia(q: {
+  company_id?: string;
+  domain?: string;
+  company_name?: string;
+}) {
+  const params = new URLSearchParams();
+  if (q.company_id) params.set("company_id", q.company_id);
+  if (q.domain) params.set("domain", q.domain);
+  if (q.company_name) params.set("company_name", q.company_name);
+  const res = await fetch(
+    `/api/lit/public/lushia/company?${params.toString()}`,
+    { method: "GET" },
+  );
+  return res.ok
+    ? res.json()
+    : ({ error: await res.text(), status: res.status } as any);
+}
+
+export async function enrichCompanyLushia(body: {
+  company_id?: string;
+  domain?: string;
+  company_name?: string;
+}) {
+  const res = await fetch(`/api/lit/public/lushia/enrichCompany`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  return res.ok
+    ? res.json()
+    : ({ error: await res.text(), status: res.status } as any);
+}
+
+export async function listContactsLushia(
+  who: { company_id?: string; domain?: string; company_name?: string },
+  opts?: { dept?: string; limit?: number; offset?: number },
+) {
+  const params = new URLSearchParams();
+  if (who.company_id) params.set("company_id", who.company_id);
+  if (who.domain) params.set("domain", who.domain);
+  if (who.company_name) params.set("company_name", who.company_name);
+  if (opts?.dept) params.set("dept", opts.dept);
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  if (opts?.offset != null) params.set("offset", String(opts.offset));
+  const res = await fetch(
+    `/api/lit/public/lushia/contacts?${params.toString()}`,
+    { method: "GET" },
+  );
+  return res.ok
+    ? res.json()
+    : ({ error: await res.text(), status: res.status } as any);
+}
+
+/**
+ * Get company BOLs (shipments) from ImportYeti via Edge Function
+ * Used in: Command Center â Shipments Tab
+ */
+export async function getCompanyBols(sourceCompanyKey: string, options?: {
+  start_date?: string;
+  end_date?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  if (isDevMode()) {
+    return devGetCompanyBols({ company_id: sourceCompanyKey, ...options });
+  }
+
+  const headers = await getAuthHeaders();
+
+  const res = await fetch(
+    `${SUPABASE_URL}/functions/v1/importyeti-proxy`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "companyBols",
+        company_id: sourceCompanyKey,
+        start_date: options?.start_date,
+        end_date: options?.end_date,
+        limit: options?.limit || 25,
+        offset: options?.offset || 0,
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`getCompanyBols failed: ${res.status} ${text}`);
+  }
+
+  return await res.json();
+}
+
+/**
+ * Generate AI-powered company brief using Gemini
+ * Used in: Command Center â Pre-Call Briefing
+ */
+export async function generateCompanyBrief(companyId: string) {
+  const { data, error } = await supabase.functions.invoke("gemini-brief", {
+    body: { company_id: companyId },
+  });
+
+  if (error) {
+    console.error("generateCompanyBrief error:", error);
+    throw new Error(`generateBrief failed: ${error.message || "Unknown error"}`);
+  }
+
+  return data;
+}
+
+/**
+ * Search for contacts using Lusha enrichment
+ * Used in: Command Center â Contacts Tab
+ */
+export async function searchContacts(filters: {
+  company?: string;
+  title?: string;
+  department?: string;
+  city?: string;
+  state?: string;
+}) {
+  const { data, error } = await supabase.functions.invoke("lusha-contact-search", {
+    body: filters,
+  });
+
+  if (error) {
+    console.error("searchContacts error:", error);
+    throw new Error(`searchContacts failed: ${error.message || "Unknown error"}`);
+  }
+
+  return data;
 }
