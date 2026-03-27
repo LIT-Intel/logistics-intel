@@ -286,6 +286,9 @@ export default function SearchPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
+const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
   useEffect(() => {
     const loadSavedCompanies = async () => {
@@ -761,7 +764,22 @@ export default function SearchPage() {
                   </>
                 )}
               </p>
-              <div className="hidden md:flex items-center gap-2">
+              <div className="hidden md:flex items-center gap-4">
+                {/* Year filter */}
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-slate-500">Year:</span>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="border border-slate-200 rounded px-2 py-1 text-xs bg-white focus:outline-none"
+                  >
+                    {years.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* View mode toggle */}
+                <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">View:</span>
                 <div className="flex rounded-lg border border-slate-200 bg-white p-1">
                   <button
@@ -1149,6 +1167,7 @@ export default function SearchPage() {
         {/* Modal placement: Use ShipperDetailModal rather than inline modal code. */}
         {selectedCompany && (
           <ShipperDetailModal
+            year={selectedYear}
             isOpen={true}
             shipper={selectedCompany as any}
             loadingProfile={loadingSnapshot}
