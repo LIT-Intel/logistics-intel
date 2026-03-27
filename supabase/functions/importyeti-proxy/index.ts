@@ -716,19 +716,17 @@ function buildSnapshotFromCompanyData(
     }
   }
 
+  // Build top routes using recent BOLs when available.  If no recent
   // Build top routes using recent BOLs when available.
   // If recent BOL routes are missing or resolve only to Unknown → Unknown,
-  // fall back to aggregated top-route data from ImportYeti.
+  // fall back to aggregated top-route data provided by ImportYeti.
   const isUsableRouteLabel = (value: unknown): value is string =>
-    typeof value === "string" &&
-    value.trim().length > 0 &&
-    value.trim() !== "Unknown → Unknown";
+    typeof value === "string" && value.trim().length > 0 && value.trim() !== "Unknown → Unknown";
 
   let topRoutes: TopRoute[] = buildTopRoutesFromRecentBols(raw?.recent_bols);
 
   const needsFallback =
-    topRoutes.length === 0 ||
-    topRoutes.every((entry) => !isUsableRouteLabel(entry?.route));
+    topRoutes.length === 0 || topRoutes.every((entry) => !isUsableRouteLabel(entry?.route));
 
   if (needsFallback) {
     const aggregated: any[] = Array.isArray(raw?.route_kpis?.topRoutesLast12m)
@@ -738,17 +736,16 @@ function buildSnapshotFromCompanyData(
         : Array.isArray(raw?.topRoutes)
           ? raw.topRoutes
           : [];
-
     const fallback: TopRoute[] = [];
-
     for (const entry of aggregated) {
-      let route = normalizeString(entry?.route);
-
-    if (!isUsableRouteLabel(route)) {
-  route = buildRouteLabel(entry);
-}
-
-    if (!isUsableRouteLabel(route)) continue;
+      // Attempt to use the ImportYeti-provided route string. If it is missing or unusable,
+      // rebuild it using our buildRouteLabel helper. Skip any entries that still
+      // fail to produce a usable route after normalization.
+      let route: string | null = normalizeString(entry?.route);
+      if (!isUsableRouteLabel(route)) {
+        route = buildRouteLabel(entry);
+      }
+      if (!isUsableRouteLabel(route)) continue;
 
       const shipments =
         normalizeNumber(entry?.shipments) ??
@@ -776,7 +773,6 @@ function buildSnapshotFromCompanyData(
 
       fallback.push({ route, shipments, teu, fclShipments, lclShipments });
     }
-
     if (fallback.length > 0) {
       topRoutes = fallback;
     }
@@ -786,6 +782,7 @@ function buildSnapshotFromCompanyData(
     .filter((entry) => isUsableRouteLabel(entry?.route))
     .sort((a, b) => b.shipments - a.shipments)
     .slice(0, 10);
+
   const topSuppliers = pickTopSuppliers(raw);
 
   const lastShipmentDate =
