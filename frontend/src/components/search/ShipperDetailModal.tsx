@@ -293,93 +293,119 @@ export default function ShipperDetailModal({
      best available route labels rather than Unknown values.
   */
 
-  // extract primary (non‑Unknown) lanes from resolvedRouteKpis
-  const primaryTopRoutes: { route: string; shipments?: number | null }[] =
-    Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
-      ? (resolvedRouteKpis.topRoutesLast12m as any[]).filter(
-          (entry: any) =>
-            entry &&
-            typeof entry.route === "string" &&
-            entry.route !== "Unknown → Unknown",
-        )
-      : [];
 
-  // build aggregated lanes from profile.top_routes or profile.topRoutes
-  let aggregatedTopRoutes: { route: string; shipments?: number | null }[] = [];
-  const rawAgg: any[] = (profile as any)?.top_routes ?? (profile as any)?.topRoutes ?? [];
-  if (Array.isArray(rawAgg)) {
-    aggregatedTopRoutes = rawAgg
-      .map((entry: any) => {
-        if (!entry) return null;
-        // attempt to use provided route string when available
-        let route: string | null =
-          entry.route ?? entry.route_name ?? entry.route_string ?? null;
-        // if no route, construct from origin/destination fields
-        if (!route) {
-          const origin =
-            entry.origin ||
-            entry.origin_port ||
-            entry.origin_city ||
-            entry.origin_state ||
-            entry.origin_country ||
-            entry.supplier_address_loc ||
-            entry.supplier_address_location ||
-            entry.supplier_address_country ||
-            null;
-          const dest =
-            entry.destination ||
-            entry.dest_port ||
-            entry.destination_city ||
-            entry.destination_state ||
-            entry.destination_country ||
-            entry.company_address_loc ||
-            entry.company_address_location ||
-            entry.company_address_country ||
-            null;
-          if (origin || dest) {
-            const originLabel = origin ?? "Unknown";
-            const destLabel = dest ?? "Unknown";
-            route = `${originLabel} → ${destLabel}`;
-          }
-        }
-        if (!route || route === "Unknown → Unknown") return null;
-        const shipments =
-          coerceNumber((entry as any)?.shipments) ??
-          coerceNumber((entry as any)?.count) ??
-          coerceNumber((entry as any)?.shipments_12m) ??
+// extract and sort primary lanes from resolvedRouteKpis.topRoutesLast12m,
+// filtering out any routes that contain "unknown" in a case-insensitive manner.
+let primaryTopRoutes: { route: string; shipments?: number | null }[] = [];
+if (Array.isArray(resolvedRouteKpis?.topRoutesLast12m)) {
+  primaryTopRoutes = (resolvedRouteKpis.topRoutesLast12m as any[])
+    .filter((entry: any) => {
+      if (!entry || typeof entry.route !== "string") return false;
+      // treat any route containing the word "unknown" (any separator) as invalid
+      return entry.route.toLowerCase().indexOf("unknown") === -1;
+    })
+    .sort(
+      (a: any, b: any) =>
+        (coerceNumber(b?.shipments) ?? 0) - (coerceNumber(a?.shipments) ?? 0),
+    )
+    .slice(0, 5);
+}
+
+// build aggregated lanes from profile.top_routes or profile.topRoutes
+let aggregatedTopRoutes: { route: string; shipments?: number | null }[] = [];
+const rawAgg: any[] =
+  (profile as any)?.top_routes ?? (profile as any)?.topRoutes ?? [];
+if (Array.isArray(rawAgg)) {
+  aggregatedTopRoutes = rawAgg
+    .map((entry: any) => {
+      if (!entry) return null;
+      // attempt to use provided route string when available
+      let route: string | null =
+        entry.route ?? entry.route_name ?? entry.route_string ?? null;
+      // if no route, construct from origin/destination fields
+      if (!route) {
+        const origin =
+          entry.origin ||
+          entry.origin_port ||
+          entry.origin_city ||
+          entry.origin_state ||
+          entry.origin_country ||
+          entry.supplier_address_loc ||
+          entry.supplier_address_location ||
+          entry.supplier_address_country ||
           null;
-        return { route, shipments };
-      })
-      .filter((v): v is { route: string; shipments?: number | null } => Boolean(v));
-    // sort aggregated lanes by shipments descending
-    aggregatedTopRoutes.sort(
-      (a, b) => (b.shipments ?? 0) - (a.shipments ?? 0),
+        const dest =
+          entry.destination ||
+          entry.dest_port ||
+          entry.destination_city ||
+          entry.destination_state ||
+          entry.destination_country ||
+          entry.company_address_loc ||
+          entry.company_address_location ||
+          entry.company_address_country ||
+          null;
+        if (origin || dest) {
+          const originLabel = origin ?? "Unknown";
+          const destLabel = dest ?? "Unknown";
+          route = `${originLabel} → ${destLabel}`;
+        }
+      }
+      if (!route) return null;
+      // discard any constructed route that contains "unknown"
+      if (route.toLowerCase().indexOf("unknown") != -1) return null;
+      const shipments =
+        coerceNumber((entry as any)?.shipments) ??
+        coerceNumber((entry as any)?.count) ??
+        coerceNumber((entry as any)?.shipments_12m) ??
+        null;
+      return { route, shipments };
+    })
+    .filter(
+      (v): v is { route: string; shipments?: number | null } => Boolean(v),
     );
-    aggregatedTopRoutes = aggregatedTopRoutes.slice(0, 5);
-  }
+  // sort aggregated lanes by shipments descending and cap to 5
+  aggregatedTopRoutes.sort(
+    (a, b) => (b.shipments ?? 0) - (a.shipments ?? 0),
+  );
+  aggregatedTopRoutes = aggregatedTopRoutes.slice(0, 5);
+}
 
-  // choose which list of lanes to display
-  const displayTopRoutes =
-    primaryTopRoutes.length > 0 ? primaryTopRoutes.slice(0, 5) : aggregatedTopRoutes;
+// choose which list of lanes to display: prefer primary if available,
+// otherwise fall back to aggregated list
+const displayTopRoutes =
+  primaryTopRoutes.length > 0 ? primaryTopRoutes : aggregatedTopRoutes;
 
-  // derive top and most recent routes from display lanes or fallback fields
-  const displayTopRouteLast12m: string | null =
-    (displayTopRoutes[0]?.route as string | undefined) ??
-    (resolvedRouteKpis?.topRouteLast12m as string | undefined) ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const displayMostRecentRoute: string | null =
-    (resolvedRouteKpis?.mostRecentRoute as string | undefined) ??
-    (displayTopRoutes[0]?.route as string | undefined) ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
+// derive top and most recent routes from available KPI fields or display lanes.
+// prefer normalized KPI values when they are defined and not "unknown".
+const resolvedTopRouteKpi =
+  typeof resolvedRouteKpis?.topRouteLast12m === "string" &&
+  resolvedRouteKpis.topRouteLast12m.toLowerCase().indexOf("unknown") === -1
+    ? resolvedRouteKpis.topRouteLast12m
+    : null;
+const resolvedMostRecentRouteKpi =
+  typeof resolvedRouteKpis?.mostRecentRoute === "string" &&
+  resolvedRouteKpis.mostRecentRoute.toLowerCase().indexOf("unknown") === -1
+    ? resolvedRouteKpis.mostRecentRoute
+    : null;
 
-  // assign display variables to be used in render
-  const topRouteLast12m = displayTopRouteLast12m;
-  const mostRecentRoute = displayMostRecentRoute;
-  const topRoutes = displayTopRoutes;
+const displayTopRouteLast12m: string | null =
+  resolvedTopRouteKpi ??
+  (displayTopRoutes[0]?.route as string | undefined) ??
+  shipper.primaryRouteSummary ??
+  shipper.primaryRoute ??
+  null;
+const displayMostRecentRoute: string | null =
+  resolvedMostRecentRouteKpi ??
+  (displayTopRoutes[0]?.route as string | undefined) ??
+  shipper.primaryRouteSummary ??
+  shipper.primaryRoute ??
+  null;
+
+// assign display variables to be used in render
+const topRouteLast12m = displayTopRouteLast12m;
+const mostRecentRoute = displayMostRecentRoute;
+const topRoutes = displayTopRoutes;
+  // Prepare chart data for the monthly FCL/LCL shipments chart
   const chartData = React.useMemo(
     () =>
       Array.isArray(profile?.timeSeries)
