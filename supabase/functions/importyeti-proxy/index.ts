@@ -716,14 +716,21 @@ function buildSnapshotFromCompanyData(
     }
   }
 
-  // Build top routes using recent BOLs when available.  If no recent
-  // shipments exist or they cannot be parsed into routes, fall back to
-  // aggregated top-route data provided by ImportYeti (`top_routes`,
-  // `topRoutes` or `route_kpis.topRoutesLast12m`).  This helps avoid
-  // returning Unknown → Unknown when the snapshot only contains summary
-  // statistics instead of individual BOL records.
+  // Build top routes using recent BOLs when available.
+  // If recent BOL routes are missing or resolve only to Unknown → Unknown,
+  // fall back to aggregated top-route data from ImportYeti.
+  const isUsableRouteLabel = (value: unknown): value is string =>
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.trim() !== "Unknown → Unknown";
+
   let topRoutes: TopRoute[] = buildTopRoutesFromRecentBols(raw?.recent_bols);
-  if (topRoutes.length === 0) {
+
+  const needsFallback =
+    topRoutes.length === 0 ||
+    topRoutes.every((entry) => !isUsableRouteLabel(entry?.route));
+
+  if (needsFallback) {
     const aggregated: any[] = Array.isArray(raw?.route_kpis?.topRoutesLast12m)
       ? raw.route_kpis.topRoutesLast12m
       : Array.isArray(raw?.top_routes)
@@ -731,27 +738,54 @@ function buildSnapshotFromCompanyData(
         : Array.isArray(raw?.topRoutes)
           ? raw.topRoutes
           : [];
+
     const fallback: TopRoute[] = [];
+
     for (const entry of aggregated) {
-      const route = normalizeString(entry?.route) ?? buildRouteLabel(entry);
-      if (!route) continue;
-      const shipments = normalizeNumber(entry?.shipments) ?? normalizeNumber(entry?.count) ?? 0;
+      let route = normalizeString(entry?.route);
+
+    if (!isUsableRouteLabel(route)) {
+  route = buildRouteLabel(entry);
+}
+
+    if (!isUsableRouteLabel(route)) continue;
+
+      const shipments =
+        normalizeNumber(entry?.shipments) ??
+        normalizeNumber(entry?.count) ??
+        normalizeNumber(entry?.shipments_12m) ??
+        0;
+
       const teu =
         normalizeNumber(entry?.teu) ??
         normalizeNumber(entry?.total_teu) ??
+        normalizeNumber(entry?.teu_12m) ??
         null;
+
       const fclShipments =
         normalizeNumber(entry?.fclShipments) ??
         normalizeNumber(entry?.fcl_count) ??
+        normalizeNumber(entry?.fcl_shipments) ??
         null;
+
       const lclShipments =
         normalizeNumber(entry?.lclShipments) ??
         normalizeNumber(entry?.lcl_count) ??
+        normalizeNumber(entry?.lcl_shipments) ??
         null;
+
       fallback.push({ route, shipments, teu, fclShipments, lclShipments });
     }
-    topRoutes = fallback.sort((a, b) => b.shipments - a.shipments).slice(0, 10);
+
+    if (fallback.length > 0) {
+      topRoutes = fallback;
+    }
   }
+
+  topRoutes = topRoutes
+    .filter((entry) => isUsableRouteLabel(entry?.route))
+    .sort((a, b) => b.shipments - a.shipments)
+    .slice(0, 10);
   const topSuppliers = pickTopSuppliers(raw);
 
   const lastShipmentDate =
