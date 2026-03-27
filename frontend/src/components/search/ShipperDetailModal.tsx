@@ -21,7 +21,7 @@ import {
   TruckIcon,
   ClockIcon,
   XMarkIcon,
-} from "@heroicons/react/24/outline";
+} from "@heroicons/react/24/solid";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import {
@@ -120,16 +120,19 @@ function normalizeEnrichmentList(value: unknown): string[] {
         }
         return "";
       })
-      .filter((item) => item.length > 0);
+      .filter((item) => item.length > 0)
+      .filter((item) => item.toLowerCase().indexOf('missing in source document') === -1);
   }
   if (typeof value === "string") {
     return value
       // Split the string on one or more newline characters
-      .split(/\n+/)
+      .split(/
++/)
       // Remove leading bullet markers like "* " or "- " from each line
       .map((line) => line.replace(/^[*-]\s*/, "").trim())
       // Filter out any empty lines
-      .filter((line) => line.length > 0);
+      .filter((line) => line.length > 0)
+      .filter((line) => line.toLowerCase().indexOf('missing in source document') === -1);
   }
   return [];
 }
@@ -176,27 +179,31 @@ const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
   );
 };
 
+// Use a more saturated palette for KPI tiles inspired by the bar chart gradient.
+// Each entry defines a border and background color that pair nicely with the
+// overall LIT colour system.
 const ACCENT_MAP: Record<string, string> = {
-  indigo: "border-indigo-100 bg-indigo-50",
-  blue: "border-blue-100 bg-blue-50",
-  emerald: "border-emerald-100 bg-emerald-50",
-  "indigo-strong": "border-indigo-200 bg-indigo-100",
-  green: "border-green-100 bg-green-50",
-  slate: "border-slate-200 bg-slate-50",
+  indigo: 'border-[#DDD6FE] bg-[#F3E8FF]',
+  blue: 'border-[#BFDBFE] bg-[#DBEAFE]',
+  emerald: 'border-[#BBF7D0] bg-[#DCFCE7]',
+  'indigo-strong': 'border-[#C7D2FE] bg-[#E0E7FF]',
+  green: 'border-[#BBF7D0] bg-[#DCFCE7]',
+  slate: 'border-[#E2E8F0] bg-[#F8FAFC]',
+  purple: 'border-[#D8B4FE] bg-[#F5E8FF]',
 };
 
 const ICON_CONTAINER_CLASS =
   "mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/5 text-slate-600";
 
-type KpiTileProps = {
+interface KpiTileProps {
   label: string;
   value: React.ReactNode;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   accent: keyof typeof ACCENT_MAP;
-};
+}
 
 const KpiTile: React.FC<KpiTileProps> = ({ label, value, icon: Icon, accent }) => (
-  <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 ${ACCENT_MAP[accent]}`}>
+  <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 ${ACCENT_MAP[accent]}`}> 
     <div className={ICON_CONTAINER_CLASS}>
       <Icon className="h-3.5 w-3.5" />
     </div>
@@ -207,7 +214,7 @@ const KpiTile: React.FC<KpiTileProps> = ({ label, value, icon: Icon, accent }) =
   </div>
 );
 
-type ShipperDetailModalProps = {
+export type ShipperDetailModalProps = {
   isOpen: boolean;
   shipper: IyShipperHit | null;
   loadingProfile: boolean;
@@ -216,12 +223,10 @@ type ShipperDetailModalProps = {
   enrichment: any | null;
   error: string | null;
   onClose: () => void;
-  onSaveToCommandCenter: (opts: {
-    shipper: IyShipperHit;
-    profile: IyCompanyProfile | null;
-  }) => void;
+  onSaveToCommandCenter: (opts: { shipper: IyShipperHit; profile: IyCompanyProfile | null }) => void;
   saveLoading: boolean;
   isSaved?: boolean;
+  year?: number | null;
 };
 
 export default function ShipperDetailModal({
@@ -236,16 +241,14 @@ export default function ShipperDetailModal({
   onSaveToCommandCenter,
   saveLoading,
   isSaved = false,
+  year = null,
 }: ShipperDetailModalProps) {
   if (!isOpen || !shipper) return null;
 
   const normalizedWebsite = React.useMemo(() => {
     const profileWebsite =
-      profile?.website ||
-      (profile?.domain ? `https://${profile.domain}` : null);
-    const hitWebsite =
-      shipper.website ||
-      (shipper.domain ? `https://${shipper.domain}` : null);
+      profile?.website || (profile?.domain ? `https://${profile.domain}` : null);
+    const hitWebsite = shipper.website || (shipper.domain ? `https://${shipper.domain}` : null);
     return normalizeWebsite(profileWebsite ?? hitWebsite ?? null);
   }, [profile?.website, profile?.domain, shipper.website, shipper.domain]);
 
@@ -295,8 +298,8 @@ export default function ShipperDetailModal({
     shipper.lastShipmentDate ??
     shipper.mostRecentShipment ??
     null;
-  /* Determine the list of top lanes to display along with the primary and most recent route.
 
+  /* Determine the list of top lanes to display along with the primary and most recent route.
      We prioritize lanes provided in resolvedRouteKpis.topRoutesLast12m when they contain
      non‑placeholder route strings. If those lanes are missing or only contain
      "Unknown → Unknown" routes, we fall back to aggregated top routes available on
@@ -364,7 +367,7 @@ export default function ShipperDetailModal({
         }
         if (!route) return null;
         // discard any constructed route that contains "unknown"
-        if (route.toLowerCase().indexOf("unknown") != -1) return null;
+        if (route.toLowerCase().indexOf("unknown") !== -1) return null;
         const shipments =
           coerceNumber((entry as any)?.shipments) ??
           coerceNumber((entry as any)?.count) ??
@@ -417,18 +420,65 @@ export default function ShipperDetailModal({
   const topRouteLast12m = displayTopRouteLast12m;
   const mostRecentRoute = displayMostRecentRoute;
   const topRoutes = displayTopRoutes;
+
+  // Filter time series data for the selected year (if provided) and compute year‑specific KPIs.
+  const filteredTimeSeries = React.useMemo(() => {
+    if (!Array.isArray(profile?.timeSeries)) return [] as any[];
+    if (!year) return profile.timeSeries.slice(-12);
+    return profile.timeSeries.filter((point: any) => {
+      const monthStr = String(point.month);
+      return monthStr.startsWith(String(year));
+    });
+  }, [profile?.timeSeries, year]);
+
+  const shipmentsYear = React.useMemo(() => {
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      const fcl = coerceNumber(point.fclShipments) ?? 0;
+      const lcl = coerceNumber(point.lclShipments) ?? 0;
+      return sum + fcl + lcl;
+    }, 0);
+  }, [filteredTimeSeries]);
+
+  const fclShipmentsYear = React.useMemo(() => {
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      const fcl = coerceNumber(point.fclShipments) ?? 0;
+      return sum + fcl;
+    }, 0);
+  }, [filteredTimeSeries]);
+
+  const lclShipmentsYear = React.useMemo(() => {
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      const lcl = coerceNumber(point.lclShipments) ?? 0;
+      return sum + lcl;
+    }, 0);
+  }, [filteredTimeSeries]);
+
+  const containerMixYear = React.useMemo(() => {
+    const total = fclShipmentsYear + lclShipmentsYear;
+    if (total === 0) return null;
+    const fclPct = Math.round((fclShipmentsYear / total) * 100);
+    const lclPct = 100 - fclPct;
+    return `${fclPct}% FCL / ${lclPct}% LCL`;
+  }, [fclShipmentsYear, lclShipmentsYear]);
+
+  // Compute shipments for top/most recent routes to display counts in KPI cards
+  const topRouteShipments = topRoutes.find((lane) => lane.route === topRouteLast12m)?.shipments ?? null;
+  const mostRecentRouteShipments = topRoutes.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
+
+  // Create dynamic headings for route cards
+  const topRouteHeading = year ? `Top route (${year})` : 'Top route (last 12m)';
+  const mostRecentHeading = year ? `Most recent route (${year})` : 'Most recent route';
+
   // Prepare chart data for the monthly FCL/LCL shipments chart
-  const chartData = React.useMemo(
-    () =>
-      Array.isArray(profile?.timeSeries)
-        ? profile.timeSeries.slice(-12).map((point) => ({
-            monthLabel: monthLabel(point.month),
-            fcl: coerceNumber(point.fclShipments) ?? 0,
-            lcl: coerceNumber(point.lclShipments) ?? 0,
-          }))
-        : [],
-    [profile?.timeSeries],
-  );
+  const chartData = React.useMemo(() =>
+    Array.isArray(filteredTimeSeries)
+      ? (filteredTimeSeries as any[]).slice(-12).map((point: any) => ({
+          monthLabel: monthLabel(point.month),
+          fcl: coerceNumber(point.fclShipments) ?? 0,
+          lcl: coerceNumber(point.lclShipments) ?? 0,
+        }))
+      : []
+  , [filteredTimeSeries]);
 
   const supplierList = React.useMemo(() => {
     const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
@@ -516,10 +566,16 @@ export default function ShipperDetailModal({
 
   const kpiItems: KpiTileProps[] = [
     {
-      label: 'Annual shipments',
-      value: formatNumber(shipments12m),
+      label: year ? `Shipments (${year})` : 'Shipments (12m)',
+      value: formatNumber(year ? shipmentsYear : shipments12m),
       icon: TruckIcon,
       accent: 'indigo',
+    },
+    {
+      label: year ? `FCL shipments (${year})` : 'FCL shipments',
+      value: formatNumber(year ? fclShipmentsYear : fclShipments12m),
+      icon: SquaresPlusIcon,
+      accent: 'purple',
     },
     {
       label: 'TEU volume',
@@ -534,8 +590,8 @@ export default function ShipperDetailModal({
       accent: 'emerald',
     },
     {
-      label: 'Container mix',
-      value: containerMix ?? '—',
+      label: year ? `Container mix (${year})` : 'Container mix',
+      value: year ? (containerMixYear ?? '—') : (containerMix ?? '—'),
       icon: Squares2X2Icon,
       accent: 'indigo-strong',
     },
@@ -576,7 +632,7 @@ export default function ShipperDetailModal({
                   >
                     <GlobeAltIcon className="h-4 w-4" />
                     <span className="truncate max-w-[180px]">
-                      {normalizedWebsite.replace(/^https?:\/\//i, "")}
+                      {normalizedWebsite.replace(/^https?:\/+\/i, "")}
                     </span>
                   </a>
                 )}
@@ -614,7 +670,11 @@ export default function ShipperDetailModal({
                 <BookmarkIcon className="h-4 w-4" />
               )}
               <span>
-                {isSaved ? "Saved to Command Center" : saveLoading ? "Saving…" : "Save to Command Center"}
+                {isSaved
+                  ? "Saved to Command Center"
+                  : saveLoading
+                  ? "Saving…"
+                  : "Save to Command Center"}
               </span>
             </button>
             <button
@@ -637,7 +697,7 @@ export default function ShipperDetailModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {kpiItems.map((item) => (
               <KpiTile key={item.label} {...item} />
             ))}
@@ -646,19 +706,29 @@ export default function ShipperDetailModal({
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Top route (last 12m)
+                {topRouteHeading}
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {topRouteLast12m || "Not available yet"}
               </p>
+              {topRouteShipments != null && topRouteLast12m && (
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {formatNumber(topRouteShipments)} shipments
+                </p>
+              )}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Most recent route
+                {mostRecentHeading}
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
                 {mostRecentRoute || "Not available yet"}
               </p>
+              {mostRecentRouteShipments != null && mostRecentRoute && (
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {formatNumber(mostRecentRouteShipments)} shipments
+                </p>
+              )}
             </div>
           </div>
 
@@ -725,7 +795,7 @@ export default function ShipperDetailModal({
 
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Trade corridor analysis (last 12m)
+                  Trade corridor analysis ({year ? year : 'last 12m'})
                 </p>
                 {topRoutes.length === 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
@@ -804,58 +874,49 @@ export default function ShipperDetailModal({
                           </ul>
                         </div>
                       )}
-                      {enrichmentExtraSections.map((section, sectionIdx) => (
-                        <div className="mt-3" key={`${section.label}-${sectionIdx}`}>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            {section.label}
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {section.items.map((item, idx) => (
-                              <li
-                                key={`${section.label}-${sectionIdx}-${idx}`}
-                                className="flex items-start gap-2"
-                              >
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
+                      {enrichmentExtraSections.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {enrichmentExtraSections.map((section, idx) => (
+                            <div key={`section-${idx}`}>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {section.label}
+                              </p>
+                              <ul className="mt-1 space-y-1 text-xs text-slate-700">
+                                {section.items.map((item, idy) => (
+                                  <li key={`section-${idx}-item-${idy}`} className="flex items-start gap-2">
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                    <span className="leading-snug">{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </>
                   ) : (
                     <p className="mt-2 text-xs text-slate-500">
-                      AI enrichment response available but no structured insights were returned.
+                      AI enrichment is not available for this company yet.
                     </p>
                   )}
                 </div>
               )}
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Key partners
-                </p>
-                {supplierList.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Supplier details will appear here once available from LIT Search data.
+
+              {supplierList.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Key partners
                   </p>
-                ) : (
-                  <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                    {supplierList.map((supplier) => (
-                      <li key={supplier} className="flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                        <span className="truncate">{supplier}</span>
+                  <ul className="mt-2 space-y-1.5">
+                    {supplierList.map((supplier, idx) => (
+                      <li key={`supplier-${idx}`} className="flex items-start gap-2 text-xs text-slate-700">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                        <span className="leading-snug">{supplier}</span>
                       </li>
                     ))}
                   </ul>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-xs text-slate-500">
-                <p className="font-medium text-slate-700">What you’re seeing</p>
-                <p className="mt-1">
-                  Cards and KPIs are based on ImportYeti DMA data. As we add more stats (lanes, vendor mix, service levels), they’ll show up here automatically.
-                </p>
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
