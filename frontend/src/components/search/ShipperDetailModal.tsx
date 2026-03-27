@@ -21,6 +21,7 @@ import {
   TruckIcon,
   ClockIcon,
   XMarkIcon,
+  ChartPieIcon,
 } from "@heroicons/react/24/solid";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -565,17 +566,19 @@ export default function ShipperDetailModal({
   const showEnrichmentBanner = !enrichment && !loadingProfile;
 
   const kpiItems: KpiTileProps[] = [
-    {
-      label: year ? `Shipments (${year})` : 'Shipments (12m)',
-      value: formatNumber(year ? shipmentsYear : shipments12m),
-      icon: TruckIcon,
-      accent: 'indigo',
-    },
+    // Replace the general shipments KPI with FCL shipments
     {
       label: year ? `FCL shipments (${year})` : 'FCL shipments',
       value: formatNumber(year ? fclShipmentsYear : fclShipments12m),
       icon: SquaresPlusIcon,
       accent: 'purple',
+    },
+    // Show LCL shipments on its own card (previously FCL)
+    {
+      label: year ? `LCL shipments (${year})` : 'LCL shipments',
+      value: formatNumber(year ? lclShipmentsYear : lclShipments12m),
+      icon: Squares2X2Icon,
+      accent: 'indigo',
     },
     {
       label: 'TEU volume',
@@ -592,7 +595,7 @@ export default function ShipperDetailModal({
     {
       label: year ? `Container mix (${year})` : 'Container mix',
       value: year ? (containerMixYear ?? '—') : (containerMix ?? '—'),
-      icon: Squares2X2Icon,
+      icon: ChartPieIcon,
       accent: 'indigo-strong',
     },
   ];
@@ -628,299 +631,4 @@ export default function ShipperDetailModal({
                     href={normalizedWebsite}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
-                  >
-                    <GlobeAltIcon className="h-4 w-4" />
-                    <span className="truncate max-w-[180px]">
-                      {normalizedWebsite.replace(/^https?:\/\//i, "")}
-                    </span>
-                  </a>
-                )}
-                {normalizedPhone && (
-                  <a
-                    href={`tel:${normalizedPhone}`}
-                    className="inline-flex items-center gap-1"
-                  >
-                    <PhoneIcon className="h-4 w-4" />
-                    <span>{normalizedPhone}</span>
-                  </a>
-                )}
-              </div>
-              {showEnrichmentBanner && (
-                <p className="text-xs text-amber-600">
-                  AI enrichment not available for this company yet.
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSaveClick}
-              disabled={saveLoading}
-              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                isSaved
-                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  : "bg-indigo-600 text-white hover:bg-indigo-500"
-              } disabled:cursor-not-allowed disabled:opacity-60`}
-            >
-              {isSaved ? (
-                <BookmarkSlashIcon className="h-4 w-4" />
-              ) : (
-                <BookmarkIcon className="h-4 w-4" />
-              )}
-              <span>
-                {isSaved
-                  ? "Saved to Command Center"
-                  : saveLoading
-                  ? "Saving…"
-                  : "Save to Command Center"}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-100"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="max-h-[calc(100vh-8rem)] overflow-y-auto px-6 py-6 md:px-8">
-          {(loadingProfile || error) && (
-            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              {loadingProfile && <div>Loading company profile…</div>}
-              {error && !loadingProfile && (
-                <div className="text-rose-600">{error}</div>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {kpiItems.map((item) => (
-              <KpiTile key={item.label} {...item} />
-            ))}
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {topRouteHeading}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {topRouteLast12m || "Not available yet"}
-              </p>
-              {topRouteShipments != null && topRouteLast12m && (
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {formatNumber(topRouteShipments)} shipments
-                </p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {mostRecentHeading}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {mostRecentRoute || "Not available yet"}
-              </p>
-              {mostRecentRouteShipments != null && mostRecentRoute && (
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {formatNumber(mostRecentRouteShipments)} shipments
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-6 md:grid-cols-3">
-            <div className="space-y-4 md:col-span-2">
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 md:px-6 md:py-5">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      Shipment velocity
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Monthly shipments split between FCL and LCL services.
-                    </p>
-                  </div>
-                  {loadingProfile && (
-                    <p className="text-xs text-slate-400">Loading trend…</p>
-                  )}
-                </div>
-                {chartData.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    No lane-level trend data available yet for this shipper.
-                  </p>
-                ) : (
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <BarChart
-                        data={chartData}
-                        margin={{ top: 8, right: 12, left: 0, bottom: 8 }}
-                        barSize={12}
-                      >
-                        <defs>
-                          <linearGradient id="fclGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#6C4DFF" stopOpacity={1} />
-                            <stop offset="100%" stopColor="#4C8DFF" stopOpacity={0.9} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis
-                          dataKey="monthLabel"
-                          tick={{ fontSize: 10, fill: "#64748b" }}
-                          tickLine={false}
-                        />
-                        <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
-                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(15,23,42,0.04)" }} />
-                        <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" align="right" />
-                        <Bar
-                          dataKey="fcl"
-                          name="FCL"
-                          fill="url(#fclGradient)"
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Bar
-                          dataKey="lcl"
-                          name="LCL"
-                          fill="#22c55e"
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Trade corridor analysis ({year ? year : 'last 12m'})
-                </p>
-                {topRoutes.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Lane-level shipment data is not available for this company yet.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-                    {topRoutes.map((lane, idx) => (
-                      <li key={`${lane.route}-${idx}`} className="flex items-center justify-between gap-2">
-                        <span className="truncate">{lane.route}</span>
-                        <span className="text-[11px] text-slate-500">
-                          {formatNumber(lane.shipments ?? null)} shipments
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {enrichment && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    AI insights
-                  </p>
-                  {hasEnrichmentContent ? (
-                    <>
-                      {enrichmentSummary && (
-                        <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
-                          {enrichmentSummary}
-                        </p>
-                      )}
-                      {enrichmentOpportunities.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Opportunities
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentOpportunities.map((item, idx) => (
-                              <li key={`opp-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentRisks.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Risks
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentRisks.map((item, idx) => (
-                              <li key={`risk-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-rose-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentTalkingPoints.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Recommended talking points
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentTalkingPoints.map((item, idx) => (
-                              <li key={`talk-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentExtraSections.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {enrichmentExtraSections.map((section, idx) => (
-                            <div key={`section-${idx}`}>
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                {section.label}
-                              </p>
-                              <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                                {section.items.map((item, idy) => (
-                                  <li key={`section-${idx}-item-${idy}`} className="flex items-start gap-2">
-                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                    <span className="leading-snug">{item}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">
-                      AI enrichment is not available for this company yet.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {supplierList.length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Key partners
-                  </p>
-                  <ul className="mt-2 space-y-1.5">
-                    {supplierList.map((supplier, idx) => (
-                      <li key={`supplier-${idx}`} className="flex items-start gap-2 text-xs text-slate-700">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                        <span className="leading-snug">{supplier}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+                    className="inline-flex items
