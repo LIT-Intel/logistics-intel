@@ -124,7 +124,8 @@ function normalizeEnrichmentList(value: unknown): string[] {
   }
   if (typeof value === "string") {
     return value
-      .split(/\n+/)
+      .split(/
++/)
       .map((line) => line.replace(/^[*-]\s*/, "").trim())
       .filter((line) => line.length > 0);
   }
@@ -281,20 +282,104 @@ export default function ShipperDetailModal({
     shipper.lastShipmentDate ??
     shipper.mostRecentShipment ??
     null;
-  const topRouteLast12m =
-    resolvedRouteKpis?.topRouteLast12m ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const mostRecentRoute =
-    resolvedRouteKpis?.mostRecentRoute ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const topRoutes = Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
-    ? resolvedRouteKpis.topRoutesLast12m.slice(0, 5)
-    : [];
+  /* Determine the list of top lanes to display along with the primary and most recent route.
 
+     We prioritize lanes provided in resolvedRouteKpis.topRoutesLast12m when they contain
+     non‑placeholder route strings. If those lanes are missing or only contain
+     "Unknown → Unknown" routes, we fall back to aggregated top routes available on
+     the profile (top_routes or topRoutes). When falling back we build lane labels
+     from origin/destination fields such as origin_city, origin_country, supplier_address_loc,
+     company_address_loc, etc. This ensures that the Top lanes list always shows the
+     best available route labels rather than Unknown values.
+  */
+
+  // extract primary (non‑Unknown) lanes from resolvedRouteKpis
+  const primaryTopRoutes: { route: string; shipments?: number | null }[] =
+    Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
+      ? (resolvedRouteKpis.topRoutesLast12m as any[]).filter(
+          (entry: any) =>
+            entry &&
+            typeof entry.route === "string" &&
+            entry.route !== "Unknown → Unknown",
+        )
+      : [];
+
+  // build aggregated lanes from profile.top_routes or profile.topRoutes
+  let aggregatedTopRoutes: { route: string; shipments?: number | null }[] = [];
+  const rawAgg: any[] = (profile as any)?.top_routes ?? (profile as any)?.topRoutes ?? [];
+  if (Array.isArray(rawAgg)) {
+    aggregatedTopRoutes = rawAgg
+      .map((entry: any) => {
+        if (!entry) return null;
+        // attempt to use provided route string when available
+        let route: string | null =
+          entry.route ?? entry.route_name ?? entry.route_string ?? null;
+        // if no route, construct from origin/destination fields
+        if (!route) {
+          const origin =
+            entry.origin ||
+            entry.origin_port ||
+            entry.origin_city ||
+            entry.origin_state ||
+            entry.origin_country ||
+            entry.supplier_address_loc ||
+            entry.supplier_address_location ||
+            entry.supplier_address_country ||
+            null;
+          const dest =
+            entry.destination ||
+            entry.dest_port ||
+            entry.destination_city ||
+            entry.destination_state ||
+            entry.destination_country ||
+            entry.company_address_loc ||
+            entry.company_address_location ||
+            entry.company_address_country ||
+            null;
+          if (origin || dest) {
+            const originLabel = origin ?? "Unknown";
+            const destLabel = dest ?? "Unknown";
+            route = `${originLabel} → ${destLabel}`;
+          }
+        }
+        if (!route || route === "Unknown → Unknown") return null;
+        const shipments =
+          coerceNumber((entry as any)?.shipments) ??
+          coerceNumber((entry as any)?.count) ??
+          coerceNumber((entry as any)?.shipments_12m) ??
+          null;
+        return { route, shipments };
+      })
+      .filter((v): v is { route: string; shipments?: number | null } => Boolean(v));
+    // sort aggregated lanes by shipments descending
+    aggregatedTopRoutes.sort(
+      (a, b) => (b.shipments ?? 0) - (a.shipments ?? 0),
+    );
+    aggregatedTopRoutes = aggregatedTopRoutes.slice(0, 5);
+  }
+
+  // choose which list of lanes to display
+  const displayTopRoutes =
+    primaryTopRoutes.length > 0 ? primaryTopRoutes.slice(0, 5) : aggregatedTopRoutes;
+
+  // derive top and most recent routes from display lanes or fallback fields
+  const displayTopRouteLast12m: string | null =
+    (displayTopRoutes[0]?.route as string | undefined) ??
+    (resolvedRouteKpis?.topRouteLast12m as string | undefined) ??
+    shipper.primaryRouteSummary ??
+    shipper.primaryRoute ??
+    null;
+  const displayMostRecentRoute: string | null =
+    (resolvedRouteKpis?.mostRecentRoute as string | undefined) ??
+    (displayTopRoutes[0]?.route as string | undefined) ??
+    shipper.primaryRouteSummary ??
+    shipper.primaryRoute ??
+    null;
+
+  // assign display variables to be used in render
+  const topRouteLast12m = displayTopRouteLast12m;
+  const mostRecentRoute = displayMostRecentRoute;
+  const topRoutes = displayTopRoutes;
   const chartData = React.useMemo(
     () =>
       Array.isArray(profile?.timeSeries)
@@ -314,8 +399,7 @@ export default function ShipperDetailModal({
       .map((entry: any) =>
         typeof entry === "string"
           ? entry
-          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? "",
-      )
+          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? "",)
       .filter((value: string) => Boolean(value))
       .slice(0, 6);
   }, [profile?.topSuppliers, shipper.topSuppliers]);
