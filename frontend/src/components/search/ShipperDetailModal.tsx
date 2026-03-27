@@ -277,6 +277,17 @@ export default function ShipperDetailModal({
     coerceNumber(shipper.estSpendLast12m);
   const fclShipments12m = getFclShipments12m(profile);
   const lclShipments12m = getLclShipments12m(profile);
+  // Calculate container mix ratio based on FCL and LCL shipment counts.
+  const containerMix = React.useMemo(() => {
+    const fcl = typeof fclShipments12m === 'number' ? fclShipments12m : 0;
+    const lcl = typeof lclShipments12m === 'number' ? lclShipments12m : 0;
+    const total = fcl + lcl;
+    if (total === 0) return null;
+    const fclPct = Math.round((fcl / total) * 100);
+    const lclPct = 100 - fclPct;
+    return `${fclPct}% FCL / ${lclPct}% LCL`;
+  }, [fclShipments12m, lclShipments12m]);
+
   const lastShipmentDate =
     profile?.lastShipmentDate ??
     shipper.lastShipmentDate ??
@@ -503,40 +514,28 @@ const topRoutes = displayTopRoutes;
 
   const kpiItems: KpiTileProps[] = [
     {
-      label: "Shipments (12m)",
+      label: 'Annual shipments',
       value: formatNumber(shipments12m),
       icon: TruckIcon,
-      accent: "indigo",
+      accent: 'indigo',
     },
     {
-      label: "Estimated TEU (12m)",
+      label: 'TEU volume',
       value: formatNumber(teu12m),
       icon: CubeIcon,
-      accent: "blue",
+      accent: 'blue',
     },
     {
-      label: "Est. spend (12m)",
+      label: 'Market spend',
       value: formatCurrency(estSpend12m),
       icon: CurrencyDollarIcon,
-      accent: "emerald",
+      accent: 'emerald',
     },
     {
-      label: "FCL shipments",
-      value: formatNumber(fclShipments12m),
+      label: 'Container mix',
+      value: containerMix ?? '—',
       icon: Squares2X2Icon,
-      accent: "indigo-strong",
-    },
-    {
-      label: "LCL shipments",
-      value: formatNumber(lclShipments12m),
-      icon: SquaresPlusIcon,
-      accent: "green",
-    },
-    {
-      label: "Last shipment",
-      value: formatDateLabel(lastShipmentDate),
-      icon: ClockIcon,
-      accent: "slate",
+      accent: 'indigo-strong',
     },
   ];
 
@@ -667,7 +666,7 @@ const topRoutes = displayTopRoutes;
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">
-                      Activity last 12 months
+                      Shipment velocity
                     </p>
                     <p className="text-xs text-slate-500">
                       Monthly shipments split between FCL and LCL services.
@@ -724,7 +723,7 @@ const topRoutes = displayTopRoutes;
 
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Top lanes (last 12m)
+                  Trade corridor analysis (last 12m)
                 </p>
                 {topRoutes.length === 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
@@ -831,7 +830,7 @@ const topRoutes = displayTopRoutes;
               )}
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Top suppliers (sample)
+                  Key partners
                 </p>
                 {supplierList.length === 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
