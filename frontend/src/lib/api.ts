@@ -1616,6 +1616,24 @@ function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
 
 function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   if (raw?.routeKpis && typeof raw.routeKpis === "object") {
+    const rawTopRoutes = Array.isArray(raw.routeKpis.topRoutesLast12m)
+      ? raw.routeKpis.topRoutesLast12m
+      : [];
+
+    const normalizedTopRoutes = normalizeTopRoutes({
+      routeKpis: { topRoutesLast12m: rawTopRoutes },
+    });
+
+    const topRoute =
+      normalizedTopRoutes[0]?.route ??
+      raw.routeKpis.topRouteLast12m ??
+      null;
+
+    const mostRecentRoute =
+      raw.routeKpis.mostRecentRoute ??
+      topRoute ??
+      null;
+
     return {
       shipmentsLast12m: coerceNumber(
         raw.routeKpis.shipmentsLast12m ??
@@ -1637,12 +1655,10 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
             raw.est_spend_usd ??
             raw.estimated_spend_12m,
         ) ?? null,
-      topRouteLast12m: raw.routeKpis.topRouteLast12m ?? null,
-      mostRecentRoute: raw.routeKpis.mostRecentRoute ?? null,
+      topRouteLast12m: topRoute,
+      mostRecentRoute,
       sampleSize: coerceNumber(raw.routeKpis.sampleSize) ?? null,
-      topRoutesLast12m: Array.isArray(raw.routeKpis.topRoutesLast12m)
-        ? (raw.routeKpis.topRoutesLast12m as IyRouteTopRoute[])
-        : [],
+      topRoutesLast12m: normalizedTopRoutes,
     };
   }
 
@@ -1656,11 +1672,14 @@ function normalizeRouteKpis(raw: any): IyRouteKpis | null {
   ) {
     return null;
   }
+
   return {
     shipmentsLast12m: coerceNumber(
       raw.shipments_12m ?? raw.shipments_last_12m ?? raw.total_shipments
     ) ?? null,
-    teuLast12m: coerceNumber(raw.teu_12m ?? raw.teu12m ?? raw.total_teu) ?? null,
+    teuLast12m: coerceNumber(
+      raw.teu_12m ?? raw.teu12m ?? raw.total_teu
+    ) ?? null,
     estSpendUsd12m:
       coerceNumber(
         raw.estSpendUsd12m ??
