@@ -806,6 +806,7 @@ const currentYear = new Date().getFullYear();
                   </button>
                 </div>
               </div>
+              </div>
             </motion.div>
 
             {viewMode !== 'list' ? (
