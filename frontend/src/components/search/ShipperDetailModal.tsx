@@ -126,12 +126,12 @@ function normalizeEnrichmentList(value: unknown): string[] {
   if (typeof value === "string") {
     return value
       // Split the string on one or more newline characters
-      .split(/
-+/)
+      .split(/\n+/)
       // Remove leading bullet markers like "* " or "- " from each line
       .map((line) => line.replace(/^[*-]\s*/, "").trim())
       // Filter out any empty lines
       .filter((line) => line.length > 0)
+      // Remove any lines that contain the placeholder text
       .filter((line) => line.toLowerCase().indexOf('missing in source document') === -1);
   }
   return [];
@@ -632,7 +632,7 @@ export default function ShipperDetailModal({
                   >
                     <GlobeAltIcon className="h-4 w-4" />
                     <span className="truncate max-w-[180px]">
-                      {normalizedWebsite.replace(/^https?:\/+\/i, "")}
+                      {normalizedWebsite.replace(/^https?:\/\//i, "")}
                     </span>
                   </a>
                 )}
