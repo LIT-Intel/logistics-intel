@@ -153,24 +153,77 @@ function estimateBolSpendUsd(bol: any): number {
   );
 }
 
+/**
+ * Attempt to construct a human–readable shipping route from a BOL record.
+ *
+ * ImportYeti payloads have evolved over time, exposing origin/destination
+ * information under a variety of field names and nested objects.  The
+ * original implementation of `buildRouteLabel` only checked a handful
+ * of fields (e.g. `origin_port`, `supplier_address_loc`, `country_code`),
+ * which led to many routes being returned as `Unknown → Unknown` when
+ * ImportYeti introduced new fields like `origin_city`, `destination_country`,
+ * or nested `origin` / `destination` objects.  This updated
+ * implementation aggressively searches for a usable origin and destination
+ * across a broad set of candidate fields.  It also treats a pre‑formatted
+ * shipping route string (containing an arrow or dash) as authoritative.
+ */
 function buildRouteLabel(bol: any): string | null {
+  // helper that normalizes a value to a string or null
+  const maybeString = (value: any): string | null => normalizeString(value);
+
+  // If ImportYeti already provides a formatted route (e.g. "Shanghai → LA"),
+  // trust it.  We treat both the unicode arrow and ASCII arrows/dashes as
+  // indicators that this string contains a full route.
+  const preformatted = maybeString(bol?.shipping_route);
+  if (preformatted && /→|->|—|-/u.test(preformatted)) {
+    return preformatted;
+  }
+
+  // Determine origin.  These fields are ordered from most specific to
+  // more generic.  We intentionally include city/state/country variants and
+  // nested objects, because ImportYeti's schema is not always consistent.
   const origin =
-    normalizeString(bol?.shipping_route) ??
-    normalizeString(bol?.origin_port) ??
-    normalizeString(bol?.supplier_address_loc) ??
-    normalizeString(bol?.supplier_address_location) ??
-    normalizeString(bol?.Country) ??
-    normalizeString(bol?.country_code) ??
-    normalizeString(bol?.shipper_address_loc);
+    maybeString(bol?.origin_port) ??
+    maybeString(bol?.supplier_address_loc) ??
+    maybeString(bol?.supplier_address_location) ??
+    maybeString(bol?.origin) ??
+    maybeString(bol?.origin_city) ??
+    maybeString(bol?.origin_state) ??
+    maybeString(bol?.origin_country) ??
+    maybeString(bol?.origin_country_code) ??
+    maybeString(bol?.origin_port_name) ??
+    maybeString(bol?.origin_port_location) ??
+    maybeString(bol?.Country) ??
+    maybeString(bol?.country_code) ??
+    maybeString(bol?.shipper_address_loc) ??
+    // nested origin object
+    maybeString(bol?.origin?.label) ??
+    maybeString(bol?.origin?.city) ??
+    maybeString(bol?.origin?.state) ??
+    maybeString(bol?.origin?.country);
 
+  // Determine destination.  Same strategy as origin.
   const dest =
-    normalizeString(bol?.entry_port) ??
-    normalizeString(bol?.destination_port) ??
-    normalizeString(bol?.company_address_loc) ??
-    normalizeString(bol?.company_address_country) ??
-    normalizeString(bol?.Consignee_Address) ??
-    normalizeString(bol?.consignee_address_loc);
+    maybeString(bol?.destination_port) ??
+    maybeString(bol?.company_address_loc) ??
+    maybeString(bol?.company_address_country) ??
+    maybeString(bol?.destination) ??
+    maybeString(bol?.destination_city) ??
+    maybeString(bol?.destination_state) ??
+    maybeString(bol?.destination_country) ??
+    maybeString(bol?.destination_country_code) ??
+    maybeString(bol?.destination_port_name) ??
+    maybeString(bol?.destination_port_location) ??
+    maybeString(bol?.entry_port) ??
+    maybeString(bol?.Consignee_Address) ??
+    maybeString(bol?.consignee_address_loc) ??
+    // nested destination object
+    maybeString(bol?.destination?.label) ??
+    maybeString(bol?.destination?.city) ??
+    maybeString(bol?.destination?.state) ??
+    maybeString(bol?.destination?.country);
 
+  // Compose route string
   if (origin && dest) return `${origin} → ${dest}`;
   if (origin) return origin;
   if (dest) return dest;
@@ -663,7 +716,42 @@ function buildSnapshotFromCompanyData(
     }
   }
 
-  const topRoutes = buildTopRoutesFromRecentBols(raw?.recent_bols);
+  // Build top routes using recent BOLs when available.  If no recent
+  // shipments exist or they cannot be parsed into routes, fall back to
+  // aggregated top-route data provided by ImportYeti (`top_routes`,
+  // `topRoutes` or `route_kpis.topRoutesLast12m`).  This helps avoid
+  // returning Unknown → Unknown when the snapshot only contains summary
+  // statistics instead of individual BOL records.
+  let topRoutes: TopRoute[] = buildTopRoutesFromRecentBols(raw?.recent_bols);
+  if (topRoutes.length === 0) {
+    const aggregated: any[] = Array.isArray(raw?.route_kpis?.topRoutesLast12m)
+      ? raw.route_kpis.topRoutesLast12m
+      : Array.isArray(raw?.top_routes)
+        ? raw.top_routes
+        : Array.isArray(raw?.topRoutes)
+          ? raw.topRoutes
+          : [];
+    const fallback: TopRoute[] = [];
+    for (const entry of aggregated) {
+      const route = normalizeString(entry?.route) ?? buildRouteLabel(entry);
+      if (!route) continue;
+      const shipments = normalizeNumber(entry?.shipments) ?? normalizeNumber(entry?.count) ?? 0;
+      const teu =
+        normalizeNumber(entry?.teu) ??
+        normalizeNumber(entry?.total_teu) ??
+        null;
+      const fclShipments =
+        normalizeNumber(entry?.fclShipments) ??
+        normalizeNumber(entry?.fcl_count) ??
+        null;
+      const lclShipments =
+        normalizeNumber(entry?.lclShipments) ??
+        normalizeNumber(entry?.lcl_count) ??
+        null;
+      fallback.push({ route, shipments, teu, fclShipments, lclShipments });
+    }
+    topRoutes = fallback.sort((a, b) => b.shipments - a.shipments).slice(0, 10);
+  }
   const topSuppliers = pickTopSuppliers(raw);
 
   const lastShipmentDate =
