@@ -280,7 +280,6 @@ export interface IyCompanyProfile {
   most_recent_route?: Record<string, any> | null;
   suppliers_sample?: string[];
 }
-}
 
 export function getFclShipments12m(
   profile?: IyCompanyProfile | null,
@@ -1489,7 +1488,6 @@ function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
     })
     .filter((value): value is IyTimeSeriesPoint => Boolean(value))
     .sort((a, b) => a.month.localeCompare(b.month));
-}
 }
 
 function parseBolDateValue(value: unknown): Date | null {
