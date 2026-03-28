@@ -268,6 +268,9 @@ export interface IyCompanyProfile {
   recentBols: IyRecentBol[];
   containers: IyCompanyContainers | null;
   topSuppliers?: string[] | null;
+  monthly_volumes?: Record<string, any> | null;
+  recent_bols?: Array<Record<string, any>> | null;
+  estSpendUsd?: number | null;
   // Legacy/raw passthrough fields for compatibility with older UI
   time_series?: Record<string, any>;
   monthly_volumes?: Record<string, any>;
