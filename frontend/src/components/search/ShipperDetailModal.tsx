@@ -601,7 +601,7 @@ const KpiTile: React.FC<KpiTileProps> = ({ label, value, icon: Icon, accent }) =
   </div>
 );
 
-export type ShipperDetailModalProps = {
+type ShipperDetailModalProps = {
   isOpen: boolean;
   shipper: IyShipperHit | null;
   loadingProfile: boolean;
