@@ -266,9 +266,9 @@ function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetr
 
   const byMonth = new Map<string, MonthlyMetricPoint>();
 
-  const pushPoint = (monthKey: string, raw: any) => {
+  const setPoint = (monthKey: string, raw: any) => {
     const year = extractYear(monthKey);
-    if (!year) return;
+    if (!year || !raw || typeof raw !== "object") return;
 
     const fcl =
       coerceNumber(raw?.fclShipments) ??
@@ -317,22 +317,12 @@ function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetr
     });
   };
 
-  if (Array.isArray(profile.timeSeries) && profile.timeSeries.length > 0) {
-    for (const point of profile.timeSeries as any[]) {
-      const monthKey = normalizeMonthKey(point?.month ?? point?.period ?? point?.date);
+  const monthlyVolumes = (profile as any)?.monthly_volumes;
+  if (monthlyVolumes && typeof monthlyVolumes === "object" && !Array.isArray(monthlyVolumes)) {
+    for (const [key, value] of Object.entries(monthlyVolumes as Record<string, any>)) {
+      const monthKey = normalizeMonthKey(key);
       if (!monthKey) continue;
-      pushPoint(monthKey, point);
-    }
-  }
-
-  if (byMonth.size === 0) {
-    const monthlyVolumes = (profile as any)?.monthly_volumes;
-    if (monthlyVolumes && typeof monthlyVolumes === "object" && !Array.isArray(monthlyVolumes)) {
-      for (const [key, value] of Object.entries(monthlyVolumes as Record<string, any>)) {
-        const monthKey = normalizeMonthKey(key);
-        if (!monthKey) continue;
-        pushPoint(monthKey, value);
-      }
+      setPoint(monthKey, value);
     }
   }
 
@@ -342,8 +332,16 @@ function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetr
       for (const [key, value] of Object.entries(rawTimeSeries as Record<string, any>)) {
         const monthKey = normalizeMonthKey(key);
         if (!monthKey || !value || typeof value !== "object") continue;
-        pushPoint(monthKey, value);
+        setPoint(monthKey, value);
       }
+    }
+  }
+
+  if (byMonth.size === 0 && Array.isArray(profile.timeSeries) && profile.timeSeries.length > 0) {
+    for (const point of profile.timeSeries as any[]) {
+      const monthKey = normalizeMonthKey(point?.month ?? point?.period ?? point?.date);
+      if (!monthKey) continue;
+      setPoint(monthKey, point);
     }
   }
 
@@ -695,11 +693,15 @@ export default function ShipperDetailModal({
 
   const chartData = React.useMemo(
     () =>
-      filteredMonthlyMetrics.map((point) => ({
-        monthLabel: monthLabel(point.month),
-        fcl: point.fclShipments,
-        lcl: point.lclShipments,
-      })),
+      [...filteredMonthlyMetrics]
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .map((point) => ({
+          month: point.month,
+          monthLabel: monthLabel(point.month),
+          fcl: point.fclShipments,
+          lcl: point.lclShipments,
+          shipments: point.shipments,
+        })),
     [filteredMonthlyMetrics],
   );
 
@@ -840,7 +842,10 @@ export default function ShipperDetailModal({
       accent: "blue",
     },
     {
-      label: selectedYear ? `Market spend (${selectedYear})` : "Market spend",
+      label:
+        selectedYear && hasScopedSpendData
+          ? `Market spend (${selectedYear})`
+          : "Market spend est.",
       value: formatCurrency(activeSpend),
       icon: CurrencyDollarIcon,
       accent: "emerald",
