@@ -108,8 +108,8 @@ function extractYear(value: unknown): number | null {
   const directYear = text.match(/\b(19|20)\d{2}\b/);
   if (directYear) return Number(directYear[0]);
 
-  const parsed = new Date(text);
-  if (!Number.isNaN(parsed.getTime())) return parsed.getFullYear();
+  const parsed = parseUnknownDate(text);
+  if (parsed) return parsed.getFullYear();
 
   return null;
 }
@@ -202,36 +202,63 @@ function pickEnrichmentSummary(value: unknown): string | null {
   return null;
 }
 
-function pickTimeSeriesValue(point: any, keys: string[]): number {
-  for (const key of keys) {
-    const value = coerceNumber(point?.[key]);
-    if (value != null) return value;
-  }
-  return 0;
-}
-
 function normalizeMonthKey(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const trimmed = value.trim();
   const direct = trimmed.match(/^(\d{4})-(\d{2})/);
   if (direct) return `${direct[1]}-${direct[2]}`;
 
-  const parsed = new Date(trimmed);
-  if (!Number.isNaN(parsed.getTime())) {
+  const parsed = parseUnknownDate(trimmed);
+  if (parsed) {
     return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
   }
 
   return null;
 }
 
+function parseUnknownDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const ddmmyyyy = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    const d = Number(ddmmyyyy[1]);
+    const m = Number(ddmmyyyy[2]);
+    const y = Number(ddmmyyyy[3]);
+    const parsed = new Date(y, m - 1, d);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toIsoDate(value: unknown): string | null {
+  const parsed = parseUnknownDate(value);
+  if (!parsed) return null;
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+}
+
 type MonthlyMetricPoint = {
   month: string;
+  year: number;
   shipments: number;
   fclShipments: number;
   lclShipments: number;
   teu: number;
-  estSpendUsd: number;
+  estSpendUsd: number | null;
+};
+
+type RouteEntry = {
+  route: string;
+  shipments: number;
+  teu: number | null;
+  estSpendUsd: number | null;
   lastShipmentDate: string | null;
+  fclShipments: number;
+  lclShipments: number;
 };
 
 function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetricPoint[] {
@@ -239,262 +266,88 @@ function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetr
 
   const byMonth = new Map<string, MonthlyMetricPoint>();
 
-  const upsert = (monthKey: string, patch: Partial<MonthlyMetricPoint>) => {
-    if (!monthKey) return;
-    const current = byMonth.get(monthKey) ?? {
+  const pushPoint = (monthKey: string, raw: any) => {
+    const year = extractYear(monthKey);
+    if (!year) return;
+
+    const fcl =
+      coerceNumber(raw?.fclShipments) ??
+      coerceNumber(raw?.fcl_shipments) ??
+      coerceNumber(raw?.fcl_count) ??
+      coerceNumber(raw?.fcl) ??
+      0;
+
+    const lcl =
+      coerceNumber(raw?.lclShipments) ??
+      coerceNumber(raw?.lcl_shipments) ??
+      coerceNumber(raw?.lcl_count) ??
+      coerceNumber(raw?.lcl) ??
+      0;
+
+    const shipments =
+      coerceNumber(raw?.shipments) ??
+      coerceNumber(raw?.shipmentCount) ??
+      coerceNumber(raw?.totalShipments) ??
+      (fcl + lcl);
+
+    const teu =
+      coerceNumber(raw?.teu) ??
+      coerceNumber(raw?.teus) ??
+      coerceNumber(raw?.total_teu) ??
+      coerceNumber(raw?.teu_count) ??
+      0;
+
+    const estSpend =
+      coerceNumber(raw?.shipping_cost) ??
+      coerceNumber(raw?.estSpendUsd) ??
+      coerceNumber(raw?.estimatedSpendUsd) ??
+      coerceNumber(raw?.marketSpendUsd) ??
+      coerceNumber(raw?.spendUsd) ??
+      coerceNumber(raw?.est_spend_usd) ??
+      coerceNumber(raw?.est_spend);
+
+    byMonth.set(monthKey, {
       month: monthKey,
-      shipments: 0,
-      fclShipments: 0,
-      lclShipments: 0,
-      teu: 0,
-      estSpendUsd: 0,
-      lastShipmentDate: null,
-    };
-
-    const next: MonthlyMetricPoint = {
-      ...current,
-      ...patch,
-      shipments: patch.shipments != null ? patch.shipments : current.shipments,
-      fclShipments:
-        patch.fclShipments != null ? patch.fclShipments : current.fclShipments,
-      lclShipments:
-        patch.lclShipments != null ? patch.lclShipments : current.lclShipments,
-      teu: patch.teu != null ? patch.teu : current.teu,
-      estSpendUsd:
-        patch.estSpendUsd != null ? patch.estSpendUsd : current.estSpendUsd,
-      lastShipmentDate: patch.lastShipmentDate ?? current.lastShipmentDate,
-    };
-
-    byMonth.set(monthKey, next);
+      year,
+      shipments: shipments ?? 0,
+      fclShipments: fcl,
+      lclShipments: lcl,
+      teu,
+      estSpendUsd: estSpend,
+    });
   };
 
-  if (Array.isArray(profile.timeSeries)) {
-    for (const point of profile.timeSeries) {
+  if (Array.isArray(profile.timeSeries) && profile.timeSeries.length > 0) {
+    for (const point of profile.timeSeries as any[]) {
       const monthKey = normalizeMonthKey(point?.month ?? point?.period ?? point?.date);
       if (!monthKey) continue;
-      upsert(monthKey, {
-        fclShipments: pickTimeSeriesValue(point, ["fclShipments", "fcl", "fcl_count"]),
-        lclShipments: pickTimeSeriesValue(point, ["lclShipments", "lcl", "lcl_count"]),
-        teu: pickTimeSeriesValue(point, ["teu", "teus", "teuVolume", "teu_count", "totalTeu"]),
-        estSpendUsd: pickTimeSeriesValue(point, [
-          "estSpendUsd",
-          "estimatedSpendUsd",
-          "marketSpendUsd",
-          "spendUsd",
-          "est_spend_usd",
-          "est_spend",
-        ]),
-        lastShipmentDate:
-          typeof point?.lastShipmentDate === "string"
-            ? point.lastShipmentDate
-            : typeof point?.mostRecentShipment === "string"
-              ? point.mostRecentShipment
-              : null,
-      });
+      pushPoint(monthKey, point);
     }
   }
 
-  const rawTimeSeries = (profile as any)?.time_series;
-  if (Array.isArray(rawTimeSeries)) {
-    for (const point of rawTimeSeries) {
-      const monthKey = normalizeMonthKey(point?.month ?? point?.date ?? point?.period ?? point?.label);
-      if (!monthKey) continue;
-      upsert(monthKey, {
-        fclShipments: pickTimeSeriesValue(point, [
-          "fclShipments",
-          "fcl_shipments",
-          "shipments_fcl",
-          "fcl_count",
-          "fcl",
-        ]),
-        lclShipments: pickTimeSeriesValue(point, [
-          "lclShipments",
-          "lcl_shipments",
-          "shipments_lcl",
-          "lcl_count",
-          "lcl",
-        ]),
-        teu: pickTimeSeriesValue(point, [
-          "teu",
-          "teus",
-          "teu_12m",
-          "teu_count",
-          "total_teu",
-          "avg_teu",
-          "avg_teu_per_month",
-        ]),
-        estSpendUsd: pickTimeSeriesValue(point, [
-          "estSpendUsd",
-          "estimatedSpendUsd",
-          "marketSpendUsd",
-          "spendUsd",
-          "est_spend_usd",
-          "est_spend",
-          "estimated_spend_12m",
-          "shipping_cost",
-          "total_shipping_cost",
-        ]),
-        lastShipmentDate:
-          typeof point?.last_shipment_date === "string"
-            ? point.last_shipment_date
-            : typeof point?.lastShipmentDate === "string"
-              ? point.lastShipmentDate
-              : typeof point?.most_recent_shipment === "string"
-                ? point.most_recent_shipment
-                : null,
-      });
-    }
-  } else if (rawTimeSeries && typeof rawTimeSeries === "object") {
-    for (const [key, value] of Object.entries(rawTimeSeries as Record<string, any>)) {
-      if (!value || typeof value !== "object") continue;
-      const monthKey = normalizeMonthKey(key);
-      if (!monthKey) continue;
-      upsert(monthKey, {
-        fclShipments: pickTimeSeriesValue(value, [
-          "fclShipments",
-          "fcl_shipments",
-          "shipments_fcl",
-          "fcl_count",
-          "fcl",
-        ]),
-        lclShipments: pickTimeSeriesValue(value, [
-          "lclShipments",
-          "lcl_shipments",
-          "shipments_lcl",
-          "lcl_count",
-          "lcl",
-        ]),
-        teu: pickTimeSeriesValue(value, [
-          "teu",
-          "teus",
-          "teu_12m",
-          "teu_count",
-          "total_teu",
-          "avg_teu",
-          "avg_teu_per_month",
-        ]),
-        estSpendUsd: pickTimeSeriesValue(value, [
-          "estSpendUsd",
-          "estimatedSpendUsd",
-          "marketSpendUsd",
-          "spendUsd",
-          "est_spend_usd",
-          "est_spend",
-          "estimated_spend_12m",
-          "shipping_cost",
-          "total_shipping_cost",
-        ]),
-        lastShipmentDate:
-          typeof (value as any)?.last_shipment_date === "string"
-            ? (value as any).last_shipment_date
-            : typeof (value as any)?.lastShipmentDate === "string"
-              ? (value as any).lastShipmentDate
-              : null,
-      });
-    }
-  }
-
-  const monthlyVolumes = (profile as any)?.monthly_volumes;
-  if (monthlyVolumes && typeof monthlyVolumes === "object" && !Array.isArray(monthlyVolumes)) {
-    for (const [key, value] of Object.entries(monthlyVolumes as Record<string, any>)) {
-      if (!value || typeof value !== "object") continue;
-      const monthKey = normalizeMonthKey(key);
-      if (!monthKey) continue;
-      upsert(monthKey, {
-        shipments: pickTimeSeriesValue(value, ["shipments", "shipmentCount", "totalShipments"]),
-        fclShipments: pickTimeSeriesValue(value, ["fclShipments", "fcl_shipments", "fcl_count", "fcl"]),
-        lclShipments: pickTimeSeriesValue(value, ["lclShipments", "lcl_shipments", "lcl_count", "lcl"]),
-        teu: pickTimeSeriesValue(value, ["teu", "teus", "total_teu", "teu_count"]),
-        estSpendUsd: pickTimeSeriesValue(value, ["estSpendUsd", "estimatedSpendUsd", "marketSpendUsd", "spendUsd", "est_spend_usd", "est_spend"]),
-      });
-    }
-  }
-
-  const recentBols = (profile as any)?.recent_bols;
-  if (Array.isArray(recentBols)) {
-    for (const bol of recentBols) {
-      const rawDate =
-        typeof bol?.date_formatted === "string"
-          ? bol.date_formatted
-          : typeof bol?.date === "string"
-            ? bol.date
-            : typeof bol?.arrival_date === "string"
-              ? bol.arrival_date
-              : null;
-      if (!rawDate) continue;
-
-      let monthKey: string | null = null;
-      const ddmmyyyy = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      if (ddmmyyyy) {
-        monthKey = `${ddmmyyyy[3]}-${ddmmyyyy[2]}`;
-      } else {
-        monthKey = normalizeMonthKey(rawDate);
+  if (byMonth.size === 0) {
+    const monthlyVolumes = (profile as any)?.monthly_volumes;
+    if (monthlyVolumes && typeof monthlyVolumes === "object" && !Array.isArray(monthlyVolumes)) {
+      for (const [key, value] of Object.entries(monthlyVolumes as Record<string, any>)) {
+        const monthKey = normalizeMonthKey(key);
+        if (!monthKey) continue;
+        pushPoint(monthKey, value);
       }
-      if (!monthKey) continue;
-
-      const teu = coerceNumber(bol?.TEU) ?? coerceNumber(bol?.teu) ?? 0;
-      const shippingCost = coerceNumber(bol?.shipping_cost) ?? 0;
-      const isLcl = Boolean(bol?.lcl);
-      const isFcl = !isLcl;
-
-      const current = byMonth.get(monthKey) ?? {
-        month: monthKey,
-        shipments: 0,
-        fclShipments: 0,
-        lclShipments: 0,
-        teu: 0,
-        estSpendUsd: 0,
-        lastShipmentDate: null,
-      };
-
-      const parsedDate = ddmmyyyy
-        ? `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`
-        : rawDate;
-
-      byMonth.set(monthKey, {
-        ...current,
-        shipments: Math.max(current.shipments, 0) + 1,
-        fclShipments: current.fclShipments + (isFcl ? 1 : 0),
-        lclShipments: current.lclShipments + (isLcl ? 1 : 0),
-        teu: current.teu + teu,
-        estSpendUsd: current.estSpendUsd + shippingCost,
-        lastShipmentDate: (() => {
-          const currentTs = current.lastShipmentDate ? new Date(current.lastShipmentDate).getTime() : 0;
-          const nextTs = new Date(parsedDate).getTime();
-          if (!Number.isNaN(nextTs) && nextTs > currentTs) return parsedDate;
-          return current.lastShipmentDate;
-        })(),
-      });
     }
   }
 
-  return Array.from(byMonth.values())
-    .map((point) => {
-      const shipmentsFromMode = point.fclShipments + point.lclShipments;
-      return {
-        ...point,
-        shipments: point.shipments > 0 ? point.shipments : shipmentsFromMode,
-      };
-    })
-    .sort((a, b) => a.month.localeCompare(b.month));
-}
-
-function latestDateFromEntries(entries: Array<{ lastShipmentDate?: string | null; month?: string }>): string | null {
-  let best: string | null = null;
-  let bestTs = 0;
-
-  for (const entry of entries) {
-    const candidate = entry.lastShipmentDate ?? entry.month ?? null;
-    if (!candidate) continue;
-    const ts = new Date(candidate).getTime();
-    if (Number.isNaN(ts)) continue;
-    if (!best || ts > bestTs) {
-      best = candidate;
-      bestTs = ts;
+  if (byMonth.size === 0) {
+    const rawTimeSeries = (profile as any)?.time_series;
+    if (rawTimeSeries && typeof rawTimeSeries === "object" && !Array.isArray(rawTimeSeries)) {
+      for (const [key, value] of Object.entries(rawTimeSeries as Record<string, any>)) {
+        const monthKey = normalizeMonthKey(key);
+        if (!monthKey || !value || typeof value !== "object") continue;
+        pushPoint(monthKey, value);
+      }
     }
   }
 
-  return best;
+  return Array.from(byMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
 }
 
 function normalizeRouteLabel(entry: any): string | null {
@@ -507,6 +360,7 @@ function normalizeRouteLabel(entry: any): string | null {
     entry.lane ??
     entry.trade_lane ??
     entry.tradeLane ??
+    entry.shipping_route ??
     null;
 
   if (typeof directRoute === "string") {
@@ -515,34 +369,21 @@ function normalizeRouteLabel(entry: any): string | null {
   }
 
   const origin =
-    entry.origin ??
-    entry.origin_port ??
-    entry.originPort ??
-    entry.origin_city ??
-    entry.originCity ??
-    entry.origin_state ??
-    entry.originState ??
-    entry.origin_country ??
-    entry.originCountry ??
     entry.supplier_address_loc ??
     entry.supplier_address_location ??
     entry.supplier_address_country ??
+    entry.shipper_country ??
+    entry.Country ??
+    entry.origin_country ??
+    entry.origin ??
     null;
 
   const destination =
-    entry.destination ??
-    entry.dest_port ??
-    entry.destination_port ??
-    entry.destinationPort ??
-    entry.destination_city ??
-    entry.destinationCity ??
-    entry.destination_state ??
-    entry.destinationState ??
-    entry.destination_country ??
-    entry.destinationCountry ??
     entry.company_address_loc ??
     entry.company_address_location ??
     entry.company_address_country ??
+    entry.destination_country ??
+    entry.destination ??
     null;
 
   if (!origin && !destination) return null;
@@ -553,6 +394,97 @@ function normalizeRouteLabel(entry: any): string | null {
 
   if (route.toLowerCase().indexOf("unknown") !== -1) return null;
   return route;
+}
+
+function buildSelectedYearRouteEntries(profile: IyCompanyProfile | null, selectedYear: number | null): RouteEntry[] {
+  if (!profile || !selectedYear) return [];
+
+  const recentBols = Array.isArray((profile as any)?.recent_bols) ? ((profile as any)?.recent_bols as any[]) : [];
+  const grouped = new Map<string, RouteEntry>();
+
+  for (const bol of recentBols) {
+    const isoDate = toIsoDate(
+      typeof bol?.date_formatted === "string"
+        ? bol.date_formatted
+        : typeof bol?.date === "string"
+          ? bol.date
+          : typeof bol?.arrival_date === "string"
+            ? bol.arrival_date
+            : null,
+    );
+    if (!isoDate) continue;
+
+    const year = extractYear(isoDate);
+    if (year !== selectedYear) continue;
+
+    const route = normalizeRouteLabel(bol);
+    if (!route) continue;
+
+    const teu = coerceNumber(bol?.TEU) ?? coerceNumber(bol?.teu);
+    const shippingCost = coerceNumber(bol?.shipping_cost);
+    const lcl = Boolean(bol?.lcl);
+
+    const existing = grouped.get(route) ?? {
+      route,
+      shipments: 0,
+      teu: 0,
+      estSpendUsd: 0,
+      lastShipmentDate: null,
+      fclShipments: 0,
+      lclShipments: 0,
+    };
+
+    existing.shipments += 1;
+    existing.teu = (existing.teu ?? 0) + (teu ?? 0);
+    existing.estSpendUsd = (existing.estSpendUsd ?? 0) + (shippingCost ?? 0);
+    existing.fclShipments += lcl ? 0 : 1;
+    existing.lclShipments += lcl ? 1 : 0;
+
+    const currentTs = existing.lastShipmentDate ? new Date(existing.lastShipmentDate).getTime() : 0;
+    const nextTs = new Date(isoDate).getTime();
+    if (!Number.isNaN(nextTs) && nextTs >= currentTs) {
+      existing.lastShipmentDate = isoDate;
+    }
+
+    grouped.set(route, existing);
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    if (b.shipments !== a.shipments) return b.shipments - a.shipments;
+    const aTs = a.lastShipmentDate ? new Date(a.lastShipmentDate).getTime() : 0;
+    const bTs = b.lastShipmentDate ? new Date(b.lastShipmentDate).getTime() : 0;
+    return bTs - aTs;
+  });
+}
+
+function getSelectedYearLastShipmentDate(profile: IyCompanyProfile | null, selectedYear: number | null): string | null {
+  if (!profile || !selectedYear) return null;
+  const recentBols = Array.isArray((profile as any)?.recent_bols) ? ((profile as any)?.recent_bols as any[]) : [];
+
+  let best: string | null = null;
+  let bestTs = 0;
+
+  for (const bol of recentBols) {
+    const isoDate = toIsoDate(
+      typeof bol?.date_formatted === "string"
+        ? bol.date_formatted
+        : typeof bol?.date === "string"
+          ? bol.date
+          : typeof bol?.arrival_date === "string"
+            ? bol.arrival_date
+            : null,
+    );
+    if (!isoDate) continue;
+    if (extractYear(isoDate) !== selectedYear) continue;
+
+    const ts = new Date(isoDate).getTime();
+    if (!Number.isNaN(ts) && ts >= bestTs) {
+      best = isoDate;
+      bestTs = ts;
+    }
+  }
+
+  return best;
 }
 
 const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
@@ -655,7 +587,6 @@ export default function ShipperDetailModal({
     "";
   const domain = profile?.domain ?? shipper.domain ?? shipper.website ?? null;
   const logoUrl = domain ? getCompanyLogoUrl(domain) : undefined;
-
   const resolvedRouteKpis = routeKpis ?? profile?.routeKpis ?? null;
 
   const shipments12m =
@@ -680,7 +611,7 @@ export default function ShipperDetailModal({
   const fclShipments12m = getFclShipments12m(profile);
   const lclShipments12m = getLclShipments12m(profile);
 
-  const containerMix = React.useMemo(() => {
+  const containerMix12m = React.useMemo(() => {
     const fcl = typeof fclShipments12m === "number" ? fclShipments12m : 0;
     const lcl = typeof lclShipments12m === "number" ? lclShipments12m : 0;
     const total = fcl + lcl;
@@ -694,13 +625,7 @@ export default function ShipperDetailModal({
 
   const availableYears = React.useMemo(() => {
     if (monthlyMetrics.length === 0) return [];
-    return Array.from(
-      new Set(
-        monthlyMetrics
-          .map((point) => extractYear(point.month))
-          .filter((value): value is number => value != null),
-      ),
-    ).sort((a, b) => b - a);
+    return Array.from(new Set(monthlyMetrics.map((point) => point.year))).sort((a, b) => b - a);
   }, [monthlyMetrics]);
 
   const [selectedYear, setSelectedYear] = React.useState<number | null>(null);
@@ -711,23 +636,19 @@ export default function ShipperDetailModal({
       return;
     }
     if (availableYears.length > 0) {
-      setSelectedYear((current) => {
-        if (current && availableYears.includes(current)) return current;
-        return availableYears[0];
-      });
+      setSelectedYear((current) => (current && availableYears.includes(current) ? current : availableYears[0]));
       return;
     }
     setSelectedYear(null);
   }, [year, availableYears]);
 
   const filteredMonthlyMetrics = React.useMemo(() => {
-    if (monthlyMetrics.length === 0) return [] as MonthlyMetricPoint[];
-    if (!selectedYear) return monthlyMetrics.slice(-12);
-    return monthlyMetrics.filter((point) => extractYear(point.month) === selectedYear);
+    if (!selectedYear) return [] as MonthlyMetricPoint[];
+    return monthlyMetrics.filter((point) => point.year === selectedYear);
   }, [monthlyMetrics, selectedYear]);
 
   const shipmentsYear = React.useMemo(
-    () => filteredMonthlyMetrics.reduce((sum, point) => sum + (point.shipments > 0 ? point.shipments : point.fclShipments + point.lclShipments), 0),
+    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.shipments, 0),
     [filteredMonthlyMetrics],
   );
 
@@ -746,10 +667,13 @@ export default function ShipperDetailModal({
     [filteredMonthlyMetrics],
   );
 
-  const estSpendYear = React.useMemo(
-    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.estSpendUsd, 0),
-    [filteredMonthlyMetrics],
-  );
+  const estSpendYear = React.useMemo(() => {
+    const values = filteredMonthlyMetrics
+      .map((point) => point.estSpendUsd)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0);
+  }, [filteredMonthlyMetrics]);
 
   const containerMixYear = React.useMemo(() => {
     const total = fclShipmentsYear + lclShipmentsYear;
@@ -759,194 +683,49 @@ export default function ShipperDetailModal({
     return `${fclPct}% FCL / ${lclPct}% LCL`;
   }, [fclShipmentsYear, lclShipmentsYear]);
 
-  const scopedLastShipmentDate = React.useMemo(
-    () => latestDateFromEntries(filteredMonthlyMetrics),
-    [filteredMonthlyMetrics],
+  const selectedYearRouteEntries = React.useMemo(
+    () => buildSelectedYearRouteEntries(profile, selectedYear),
+    [profile, selectedYear],
   );
-  const recentBolRouteEntries = React.useMemo(() => {
-    const recentBols = Array.isArray((profile as any)?.recent_bols) ? ((profile as any)?.recent_bols as any[]) : [];
-    return recentBols
-      .map((bol) => {
-        const rawDate =
-          typeof bol?.date_formatted === "string"
-            ? bol.date_formatted
-            : typeof bol?.date === "string"
-              ? bol.date
-              : typeof bol?.arrival_date === "string"
-                ? bol.arrival_date
-                : null;
-        let normalizedDate: string | null = null;
-        if (rawDate) {
-          const ddmmyyyy = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-          normalizedDate = ddmmyyyy ? `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}` : rawDate;
-        }
 
-        return {
-          route:
-            bol?.shipping_route ??
-            normalizeRouteLabel({
-              supplier_address_loc: bol?.supplier_address_loc ?? bol?.supplier_address_location,
-              supplier_address_country: bol?.supplier_address_country,
-              company_address_loc: bol?.company_address_loc ?? bol?.company_address_location,
-              company_address_country: bol?.company_address_country,
-            }),
-          shipments: 1,
-          teu: coerceNumber(bol?.TEU) ?? coerceNumber(bol?.teu) ?? null,
-          lclShipments: bol?.lcl ? 1 : 0,
-          fclShipments: bol?.lcl ? 0 : 1,
-          date: normalizedDate,
-          lastShipmentDate: normalizedDate,
-        };
-      })
-      .filter((entry) => entry.route);
-  }, [profile]);
-
-  const rawRouteEntries = React.useMemo(() => {
-    if (selectedYear && recentBolRouteEntries.length > 0) return recentBolRouteEntries;
-
-    const primary = Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
-      ? (resolvedRouteKpis?.topRoutesLast12m as any[])
-      : [];
-    const profileRoutes = Array.isArray((profile as any)?.top_routes)
-      ? ((profile as any)?.top_routes as any[])
-      : Array.isArray((profile as any)?.topRoutes)
-        ? ((profile as any)?.topRoutes as any[])
-        : Array.isArray((profile as any)?.routes)
-          ? ((profile as any)?.routes as any[])
-          : [];
-
-    return [...primary, ...profileRoutes];
-  }, [resolvedRouteKpis?.topRoutesLast12m, profile, recentBolRouteEntries, selectedYear]);
-
-  const yearScopedRouteEntries = React.useMemo(() => {
-    if (!selectedYear) return rawRouteEntries;
-
-    const scoped = rawRouteEntries.filter((entry: any) => {
-      const candidate =
-        entry?.month ??
-        entry?.period ??
-        entry?.date ??
-        entry?.lastShipmentDate ??
-        entry?.shipmentMonth ??
-        entry?.shipment_date ??
-        entry?.year ??
-        null;
-      const candidateYear = extractYear(candidate);
-      return candidateYear === selectedYear;
-    });
-
-    return scoped;
-  }, [rawRouteEntries, selectedYear]);
-
-  const topRoutes = React.useMemo(() => {
-    const byRoute = new Map<
-      string,
-      { route: string; shipments: number; mostRecentDate: string | null }
-    >();
-
-    for (const entry of yearScopedRouteEntries) {
-      const route = normalizeRouteLabel(entry);
-      if (!route) continue;
-
-      const shipments =
-        coerceNumber(entry?.shipments) ??
-        coerceNumber(entry?.count) ??
-        coerceNumber(entry?.shipments_12m) ??
-        coerceNumber(entry?.shipmentsLast12m) ??
-        0;
-
-      const routeDate =
-        typeof entry?.lastShipmentDate === "string"
-          ? entry.lastShipmentDate
-          : typeof entry?.date === "string"
-            ? entry.date
-            : typeof entry?.shipment_date === "string"
-              ? entry.shipment_date
-              : typeof entry?.month === "string"
-                ? entry.month
-                : null;
-
-      const existing = byRoute.get(route);
-      if (!existing) {
-        byRoute.set(route, {
-          route,
-          shipments,
-          mostRecentDate: routeDate,
-        });
-        continue;
-      }
-
-      existing.shipments += shipments;
-
-      if (routeDate) {
-        const existingDateValue = existing.mostRecentDate ? new Date(existing.mostRecentDate).getTime() : 0;
-        const candidateDateValue = new Date(routeDate).getTime();
-        if (!Number.isNaN(candidateDateValue) && candidateDateValue > existingDateValue) {
-          existing.mostRecentDate = routeDate;
-        }
-      }
-    }
-
-    return Array.from(byRoute.values())
-      .sort((a, b) => b.shipments - a.shipments)
-      .slice(0, 5);
-  }, [yearScopedRouteEntries]);
-
-  const topRouteLast12m =
-    topRoutes[0]?.route ??
-    (!selectedYear && typeof resolvedRouteKpis?.topRouteLast12m === "string" ? resolvedRouteKpis.topRouteLast12m : null) ??
-    (!selectedYear ? (shipper.primaryRouteSummary ?? shipper.primaryRoute ?? null) : null);
-
-  const mostRecentRoute = React.useMemo(() => {
-    if (topRoutes.length > 0) {
-      const sortedByDate = [...topRoutes].sort((a, b) => {
-        const aTs = a.mostRecentDate ? new Date(a.mostRecentDate).getTime() : 0;
-        const bTs = b.mostRecentDate ? new Date(b.mostRecentDate).getTime() : 0;
-        return bTs - aTs;
-      });
-      if (sortedByDate[0]?.route) return sortedByDate[0].route;
-    }
-
-    if (
-      !selectedYear &&
-      typeof resolvedRouteKpis?.mostRecentRoute === "string" &&
-      resolvedRouteKpis.mostRecentRoute.toLowerCase().indexOf("unknown") === -1
-    ) {
-      return resolvedRouteKpis.mostRecentRoute;
-    }
-
-    return !selectedYear ? (shipper.primaryRouteSummary ?? shipper.primaryRoute ?? null) : null;
-  }, [topRoutes, resolvedRouteKpis?.mostRecentRoute, shipper.primaryRouteSummary, shipper.primaryRoute, selectedYear]);
-
-  const topRouteShipments =
-    topRoutes.find((lane) => lane.route === topRouteLast12m)?.shipments ?? null;
-  const mostRecentRouteShipments =
-    topRoutes.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
-
-  const hasScopedTeuData = filteredMonthlyMetrics.some((point) => point.teu > 0);
-  const hasScopedSpendData = filteredMonthlyMetrics.some((point) => point.estSpendUsd > 0);
-
-  const activeShipments = selectedYear ? shipmentsYear : shipments12m;
-  const activeTeu = selectedYear ? (hasScopedTeuData ? teuYear : null) : teu12m;
-  const activeSpend = selectedYear ? (hasScopedSpendData ? estSpendYear : null) : estSpend12m;
-  const activeContainerMix = selectedYear ? containerMixYear : containerMix;
-  const lastShipmentDate = scopedLastShipmentDate ?? (profile as any)?.last_shipment_date ?? profile?.lastShipmentDate ?? shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null;
-
-  const activeYearLabel = selectedYear ? String(selectedYear) : "last 12m";
-  const topRouteHeading = selectedYear ? `Top route (${selectedYear})` : "Top route (last 12m)";
-  const mostRecentHeading = selectedYear
-    ? `Most recent route (${selectedYear})`
-    : "Most recent route";
+  const selectedYearLastShipmentDate = React.useMemo(
+    () => getSelectedYearLastShipmentDate(profile, selectedYear),
+    [profile, selectedYear],
+  );
 
   const chartData = React.useMemo(
     () =>
-      filteredMonthlyMetrics.slice(-12).map((point) => ({
+      filteredMonthlyMetrics.map((point) => ({
         monthLabel: monthLabel(point.month),
         fcl: point.fclShipments,
         lcl: point.lclShipments,
       })),
     [filteredMonthlyMetrics],
   );
+
+  const topRouteLast12m = selectedYearRouteEntries[0]?.route ?? null;
+
+  const mostRecentRoute = React.useMemo(() => {
+    if (selectedYearRouteEntries.length === 0) return null;
+    const sortedByDate = [...selectedYearRouteEntries].sort((a, b) => {
+      const aTs = a.lastShipmentDate ? new Date(a.lastShipmentDate).getTime() : 0;
+      const bTs = b.lastShipmentDate ? new Date(b.lastShipmentDate).getTime() : 0;
+      return bTs - aTs;
+    });
+    return sortedByDate[0]?.route ?? null;
+  }, [selectedYearRouteEntries]);
+
+  const topRouteShipments =
+    selectedYearRouteEntries.find((lane) => lane.route === topRouteLast12m)?.shipments ?? null;
+  const mostRecentRouteShipments =
+    selectedYearRouteEntries.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
+
+  const activeShipments = selectedYear ? shipmentsYear : shipments12m;
+  const activeTeu = selectedYear ? (filteredMonthlyMetrics.length > 0 ? teuYear : null) : teu12m;
+  const activeSpend = selectedYear ? estSpendYear : estSpend12m;
+  const activeContainerMix = selectedYear ? containerMixYear : containerMix12m;
+  const activeYearLabel = selectedYear ? String(selectedYear) : "last 12m";
+  const lastShipmentDate = selectedYear ? selectedYearLastShipmentDate : (profile as any)?.last_shipment_date ?? profile?.lastShipmentDate ?? shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null;
 
   const supplierList = React.useMemo(() => {
     const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
@@ -1078,6 +857,11 @@ export default function ShipperDetailModal({
     if (!shipper || saveLoading) return;
     onSaveToCommandCenter({ shipper, profile: profile ?? null });
   };
+
+  const topRouteHeading = selectedYear ? `Top route (${selectedYear})` : "Top route (last 12m)";
+  const mostRecentHeading = selectedYear
+    ? `Most recent route (${selectedYear})`
+    : "Most recent route";
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-3 py-4 sm:px-4 sm:py-6">
@@ -1295,13 +1079,13 @@ export default function ShipperDetailModal({
                   </p>
                 </div>
 
-                {topRoutes.length === 0 ? (
+                {selectedYearRouteEntries.length === 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
-                    Lane-level shipment data is not available for this company yet.
+                    Lane-level shipment data is not available for this selected year.
                   </p>
                 ) : (
                   <ul className="mt-3 space-y-2 text-xs text-slate-700">
-                    {topRoutes.map((lane, idx) => (
+                    {selectedYearRouteEntries.slice(0, 5).map((lane, idx) => (
                       <li
                         key={`${lane.route}-${idx}`}
                         className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2"
@@ -1432,7 +1216,21 @@ export default function ShipperDetailModal({
                 </div>
               )}
 
-              {lastShipmentDate && (
+              {selectedYear && (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Shipment activity
+                  </p>
+                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                    <ClockIcon className="h-4 w-4 text-slate-400" />
+                    <span>
+                      Last shipment: {selectedYearLastShipmentDate ? formatDateLabel(selectedYearLastShipmentDate) : "—"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {!selectedYear && lastShipmentDate && (
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Shipment activity
