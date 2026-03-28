@@ -392,6 +392,8 @@ function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetr
               : null,
       });
     }
+  }
+
   const monthlyVolumes = (profile as any)?.monthly_volumes;
   if (monthlyVolumes && typeof monthlyVolumes === "object" && !Array.isArray(monthlyVolumes)) {
     for (const [key, value] of Object.entries(monthlyVolumes as Record<string, any>)) {
