@@ -210,6 +210,208 @@ function pickTimeSeriesValue(point: any, keys: string[]): number {
   return 0;
 }
 
+function normalizeMonthKey(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const trimmed = value.trim();
+  const direct = trimmed.match(/^(\d{4})-(\d{2})/);
+  if (direct) return `${direct[1]}-${direct[2]}`;
+
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+type MonthlyMetricPoint = {
+  month: string;
+  fclShipments: number;
+  lclShipments: number;
+  teu: number;
+  estSpendUsd: number;
+  lastShipmentDate: string | null;
+};
+
+function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetricPoint[] {
+  if (!profile) return [];
+
+  const byMonth = new Map<string, MonthlyMetricPoint>();
+
+  const upsert = (monthKey: string, patch: Partial<MonthlyMetricPoint>) => {
+    if (!monthKey) return;
+    const current = byMonth.get(monthKey) ?? {
+      month: monthKey,
+      fclShipments: 0,
+      lclShipments: 0,
+      teu: 0,
+      estSpendUsd: 0,
+      lastShipmentDate: null,
+    };
+
+    const next: MonthlyMetricPoint = {
+      ...current,
+      ...patch,
+      fclShipments:
+        patch.fclShipments != null ? patch.fclShipments : current.fclShipments,
+      lclShipments:
+        patch.lclShipments != null ? patch.lclShipments : current.lclShipments,
+      teu: patch.teu != null ? patch.teu : current.teu,
+      estSpendUsd:
+        patch.estSpendUsd != null ? patch.estSpendUsd : current.estSpendUsd,
+      lastShipmentDate: patch.lastShipmentDate ?? current.lastShipmentDate,
+    };
+
+    byMonth.set(monthKey, next);
+  };
+
+  if (Array.isArray(profile.timeSeries)) {
+    for (const point of profile.timeSeries) {
+      const monthKey = normalizeMonthKey(point?.month ?? point?.period ?? point?.date);
+      if (!monthKey) continue;
+      upsert(monthKey, {
+        fclShipments: pickTimeSeriesValue(point, ["fclShipments", "fcl", "fcl_count"]),
+        lclShipments: pickTimeSeriesValue(point, ["lclShipments", "lcl", "lcl_count"]),
+        teu: pickTimeSeriesValue(point, ["teu", "teus", "teuVolume", "teu_count", "totalTeu"]),
+        estSpendUsd: pickTimeSeriesValue(point, [
+          "estSpendUsd",
+          "estimatedSpendUsd",
+          "marketSpendUsd",
+          "spendUsd",
+          "est_spend_usd",
+          "est_spend",
+        ]),
+        lastShipmentDate:
+          typeof point?.lastShipmentDate === "string"
+            ? point.lastShipmentDate
+            : typeof point?.mostRecentShipment === "string"
+              ? point.mostRecentShipment
+              : null,
+      });
+    }
+  }
+
+  const rawTimeSeries = (profile as any)?.time_series;
+  if (Array.isArray(rawTimeSeries)) {
+    for (const point of rawTimeSeries) {
+      const monthKey = normalizeMonthKey(point?.month ?? point?.date ?? point?.period ?? point?.label);
+      if (!monthKey) continue;
+      upsert(monthKey, {
+        fclShipments: pickTimeSeriesValue(point, [
+          "fclShipments",
+          "fcl_shipments",
+          "shipments_fcl",
+          "fcl_count",
+          "fcl",
+        ]),
+        lclShipments: pickTimeSeriesValue(point, [
+          "lclShipments",
+          "lcl_shipments",
+          "shipments_lcl",
+          "lcl_count",
+          "lcl",
+        ]),
+        teu: pickTimeSeriesValue(point, [
+          "teu",
+          "teus",
+          "teu_12m",
+          "teu_count",
+          "total_teu",
+          "avg_teu",
+          "avg_teu_per_month",
+        ]),
+        estSpendUsd: pickTimeSeriesValue(point, [
+          "estSpendUsd",
+          "estimatedSpendUsd",
+          "marketSpendUsd",
+          "spendUsd",
+          "est_spend_usd",
+          "est_spend",
+          "estimated_spend_12m",
+          "shipping_cost",
+          "total_shipping_cost",
+        ]),
+        lastShipmentDate:
+          typeof point?.last_shipment_date === "string"
+            ? point.last_shipment_date
+            : typeof point?.lastShipmentDate === "string"
+              ? point.lastShipmentDate
+              : typeof point?.most_recent_shipment === "string"
+                ? point.most_recent_shipment
+                : null,
+      });
+    }
+  } else if (rawTimeSeries && typeof rawTimeSeries === "object") {
+    for (const [key, value] of Object.entries(rawTimeSeries as Record<string, any>)) {
+      if (!value || typeof value !== "object") continue;
+      const monthKey = normalizeMonthKey(key);
+      if (!monthKey) continue;
+      upsert(monthKey, {
+        fclShipments: pickTimeSeriesValue(value, [
+          "fclShipments",
+          "fcl_shipments",
+          "shipments_fcl",
+          "fcl_count",
+          "fcl",
+        ]),
+        lclShipments: pickTimeSeriesValue(value, [
+          "lclShipments",
+          "lcl_shipments",
+          "shipments_lcl",
+          "lcl_count",
+          "lcl",
+        ]),
+        teu: pickTimeSeriesValue(value, [
+          "teu",
+          "teus",
+          "teu_12m",
+          "teu_count",
+          "total_teu",
+          "avg_teu",
+          "avg_teu_per_month",
+        ]),
+        estSpendUsd: pickTimeSeriesValue(value, [
+          "estSpendUsd",
+          "estimatedSpendUsd",
+          "marketSpendUsd",
+          "spendUsd",
+          "est_spend_usd",
+          "est_spend",
+          "estimated_spend_12m",
+          "shipping_cost",
+          "total_shipping_cost",
+        ]),
+        lastShipmentDate:
+          typeof (value as any)?.last_shipment_date === "string"
+            ? (value as any).last_shipment_date
+            : typeof (value as any)?.lastShipmentDate === "string"
+              ? (value as any).lastShipmentDate
+              : null,
+      });
+    }
+  }
+
+  return Array.from(byMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+function latestDateFromEntries(entries: Array<{ lastShipmentDate?: string | null; month?: string }>): string | null {
+  let best: string | null = null;
+  let bestTs = 0;
+
+  for (const entry of entries) {
+    const candidate = entry.lastShipmentDate ?? entry.month ?? null;
+    if (!candidate) continue;
+    const ts = new Date(candidate).getTime();
+    if (Number.isNaN(ts)) continue;
+    if (!best || ts > bestTs) {
+      best = candidate;
+      bestTs = ts;
+    }
+  }
+
+  return best;
+}
+
 function normalizeRouteLabel(entry: any): string | null {
   if (!entry) return null;
 
@@ -403,18 +605,18 @@ export default function ShipperDetailModal({
     return `${fclPct}% FCL / ${lclPct}% LCL`;
   }, [fclShipments12m, lclShipments12m]);
 
+  const monthlyMetrics = React.useMemo(() => buildMonthlyMetricSeries(profile), [profile]);
+
   const availableYears = React.useMemo(() => {
-    if (!Array.isArray(profile?.timeSeries)) return [];
-    const years = Array.from(
+    if (monthlyMetrics.length === 0) return [];
+    return Array.from(
       new Set(
-        profile.timeSeries
-          .map((point: any) => extractYear(point?.month ?? point?.period ?? point?.date))
+        monthlyMetrics
+          .map((point) => extractYear(point.month))
           .filter((value): value is number => value != null),
       ),
     ).sort((a, b) => b - a);
-
-    return years;
-  }, [profile?.timeSeries]);
+  }, [monthlyMetrics]);
 
   const [selectedYear, setSelectedYear] = React.useState<number | null>(null);
 
@@ -433,67 +635,36 @@ export default function ShipperDetailModal({
     setSelectedYear(null);
   }, [year, availableYears]);
 
-  const filteredTimeSeries = React.useMemo(() => {
-    if (!Array.isArray(profile?.timeSeries)) return [] as any[];
-    if (!selectedYear) return profile.timeSeries.slice(-12);
+  const filteredMonthlyMetrics = React.useMemo(() => {
+    if (monthlyMetrics.length === 0) return [] as MonthlyMetricPoint[];
+    if (!selectedYear) return monthlyMetrics.slice(-12);
+    return monthlyMetrics.filter((point) => extractYear(point.month) === selectedYear);
+  }, [monthlyMetrics, selectedYear]);
 
-    return profile.timeSeries.filter((point: any) => {
-      const pointYear = extractYear(point?.month ?? point?.period ?? point?.date);
-      return pointYear === selectedYear;
-    });
-  }, [profile?.timeSeries, selectedYear]);
+  const shipmentsYear = React.useMemo(
+    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.fclShipments + point.lclShipments, 0),
+    [filteredMonthlyMetrics],
+  );
 
-  const shipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      const fcl = pickTimeSeriesValue(point, ["fclShipments", "fcl", "fcl_count"]);
-      const lcl = pickTimeSeriesValue(point, ["lclShipments", "lcl", "lcl_count"]);
-      return sum + fcl + lcl;
-    }, 0);
-  }, [filteredTimeSeries]);
+  const fclShipmentsYear = React.useMemo(
+    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.fclShipments, 0),
+    [filteredMonthlyMetrics],
+  );
 
-  const fclShipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return sum + pickTimeSeriesValue(point, ["fclShipments", "fcl", "fcl_count"]);
-    }, 0);
-  }, [filteredTimeSeries]);
+  const lclShipmentsYear = React.useMemo(
+    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.lclShipments, 0),
+    [filteredMonthlyMetrics],
+  );
 
-  const lclShipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return sum + pickTimeSeriesValue(point, ["lclShipments", "lcl", "lcl_count"]);
-    }, 0);
-  }, [filteredTimeSeries]);
+  const teuYear = React.useMemo(
+    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.teu, 0),
+    [filteredMonthlyMetrics],
+  );
 
-  const teuYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return (
-        sum +
-        pickTimeSeriesValue(point, [
-          "teu",
-          "teus",
-          "teuVolume",
-          "teu_count",
-          "totalTeu",
-          "teuLast12m",
-        ])
-      );
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const estSpendYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return (
-        sum +
-        pickTimeSeriesValue(point, [
-          "estSpendUsd",
-          "estimatedSpendUsd",
-          "marketSpendUsd",
-          "spendUsd",
-          "est_spend_usd",
-          "est_spend",
-        ])
-      );
-    }, 0);
-  }, [filteredTimeSeries]);
+  const estSpendYear = React.useMemo(
+    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.estSpendUsd, 0),
+    [filteredMonthlyMetrics],
+  );
 
   const containerMixYear = React.useMemo(() => {
     const total = fclShipmentsYear + lclShipmentsYear;
@@ -503,12 +674,10 @@ export default function ShipperDetailModal({
     return `${fclPct}% FCL / ${lclPct}% LCL`;
   }, [fclShipmentsYear, lclShipmentsYear]);
 
-  const lastShipmentDate =
-    profile?.lastShipmentDate ??
-    shipper.lastShipmentDate ??
-    shipper.mostRecentShipment ??
-    null;
-
+  const scopedLastShipmentDate = React.useMemo(
+    () => latestDateFromEntries(filteredMonthlyMetrics),
+    [filteredMonthlyMetrics],
+  );
   const rawRouteEntries = React.useMemo(() => {
     const primary = Array.isArray(resolvedRouteKpis?.topRoutesLast12m)
       ? (resolvedRouteKpis?.topRoutesLast12m as any[])
@@ -541,7 +710,7 @@ export default function ShipperDetailModal({
       return candidateYear === selectedYear;
     });
 
-    return scoped.length > 0 ? scoped : rawRouteEntries;
+    return scoped;
   }, [rawRouteEntries, selectedYear]);
 
   const topRoutes = React.useMemo(() => {
@@ -630,6 +799,12 @@ export default function ShipperDetailModal({
   const mostRecentRouteShipments =
     topRoutes.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
 
+  const activeShipments = selectedYear ? shipmentsYear : shipments12m;
+  const activeTeu = selectedYear ? (teuYear > 0 ? teuYear : null) : teu12m;
+  const activeSpend = selectedYear ? (estSpendYear > 0 ? estSpendYear : null) : estSpend12m;
+  const activeContainerMix = selectedYear ? containerMixYear : containerMix;
+  const lastShipmentDate = scopedLastShipmentDate ?? profile?.lastShipmentDate ?? shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null;
+
   const activeYearLabel = selectedYear ? String(selectedYear) : "last 12m";
   const topRouteHeading = selectedYear ? `Top route (${selectedYear})` : "Top route (last 12m)";
   const mostRecentHeading = selectedYear
@@ -638,14 +813,12 @@ export default function ShipperDetailModal({
 
   const chartData = React.useMemo(
     () =>
-      Array.isArray(filteredTimeSeries)
-        ? (filteredTimeSeries as any[]).slice(-12).map((point: any) => ({
-            monthLabel: monthLabel(point?.month ?? point?.period ?? point?.date ?? ""),
-            fcl: pickTimeSeriesValue(point, ["fclShipments", "fcl", "fcl_count"]),
-            lcl: pickTimeSeriesValue(point, ["lclShipments", "lcl", "lcl_count"]),
-          }))
-        : [],
-    [filteredTimeSeries],
+      filteredMonthlyMetrics.slice(-12).map((point) => ({
+        monthLabel: monthLabel(point.month),
+        fcl: point.fclShipments,
+        lcl: point.lclShipments,
+      })),
+    [filteredMonthlyMetrics],
   );
 
   const supplierList = React.useMemo(() => {
@@ -737,6 +910,12 @@ export default function ShipperDetailModal({
 
   const kpiItems: KpiTileProps[] = [
     {
+      label: selectedYear ? `Total shipments (${selectedYear})` : "Total shipments",
+      value: formatNumber(activeShipments),
+      icon: CalendarDaysIcon,
+      accent: "slate",
+    },
+    {
       label: selectedYear ? `FCL shipments (${selectedYear})` : "FCL shipments",
       value: formatNumber(selectedYear ? fclShipmentsYear : fclShipments12m),
       icon: SquaresPlusIcon,
@@ -750,19 +929,19 @@ export default function ShipperDetailModal({
     },
     {
       label: selectedYear ? `TEU volume (${selectedYear})` : "TEU volume",
-      value: formatNumber(selectedYear ? teuYear : teu12m),
+      value: formatNumber(activeTeu),
       icon: CubeIcon,
       accent: "blue",
     },
     {
       label: selectedYear ? `Market spend (${selectedYear})` : "Market spend",
-      value: formatCurrency(selectedYear ? estSpendYear : estSpend12m),
+      value: formatCurrency(activeSpend),
       icon: CurrencyDollarIcon,
       accent: "emerald",
     },
     {
       label: selectedYear ? `Container mix (${selectedYear})` : "Container mix",
-      value: selectedYear ? containerMixYear ?? "—" : containerMix ?? "—",
+      value: activeContainerMix ?? "—",
       icon: ChartPieIcon,
       accent: "indigo-strong",
     },
@@ -887,7 +1066,7 @@ export default function ShipperDetailModal({
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {kpiItems.map((item) => (
               <KpiTile key={item.label} {...item} />
             ))}
@@ -938,7 +1117,7 @@ export default function ShipperDetailModal({
 
                 {chartData.length === 0 ? (
                   <p className="text-xs text-slate-500">
-                    No shipment trend data available yet for this year.
+                    No shipment trend data is available for the selected year.
                   </p>
                 ) : (
                   <div className="h-56 w-full">
@@ -985,7 +1164,7 @@ export default function ShipperDetailModal({
                     Trade corridor analysis ({activeYearLabel})
                   </p>
                   <p className="text-xs text-slate-400">
-                    {formatNumber(selectedYear ? shipmentsYear : shipments12m)} shipments
+                    {formatNumber(activeShipments)} shipments
                   </p>
                 </div>
 
