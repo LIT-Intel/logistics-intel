@@ -722,6 +722,11 @@ export default function ShipperDetailModal({
   const mostRecentRouteShipments =
     selectedYearRouteEntries.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
 
+  const hasScopedSpendData = React.useMemo(
+    () => filteredMonthlyMetrics.some((point) => typeof point.estSpendUsd === "number" && Number.isFinite(point.estSpendUsd) && point.estSpendUsd > 0),
+    [filteredMonthlyMetrics],
+  );
+
   const activeShipments = selectedYear ? shipmentsYear : shipments12m;
   const activeTeu = selectedYear ? (filteredMonthlyMetrics.length > 0 ? teuYear : null) : teu12m;
   const activeSpend = selectedYear ? estSpendYear : estSpend12m;
