@@ -1,180 +1,93 @@
-import React from "react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  Bar,
-} from "recharts";
-import {
-  BookmarkIcon,
-  BookmarkSlashIcon,
-  CubeIcon,
-  CurrencyDollarIcon,
-  GlobeAltIcon,
-  PhoneIcon,
-  Squares2X2Icon,
-  SquaresPlusIcon,
-  TruckIcon,
-  ClockIcon,
-  XMarkIcon,
-  ChartPieIcon,
-  CalendarDaysIcon,
-} from "@heroicons/react/24/solid";
-import { CompanyAvatar } from "@/components/CompanyAvatar";
-import { getCompanyLogoUrl } from "@/lib/logo";
-import {
-  type IyShipperHit,
-  type IyCompanyProfile,
-  type IyRouteKpis,
-  getFclShipments12m,
-  getLclShipments12m,
-} from "@/lib/api";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
-const numberFormatter = new Intl.NumberFormat("en-US");
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
-const formatNumber = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  return numberFormatter.format(value);
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const formatCurrency = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  return currencyFormatter.format(value);
+const SNAPSHOT_TABLE = "lit_importyeti_company_snapshot";
+const INDEX_TABLE = "lit_company_index";
+const SNAPSHOT_TTL_DAYS = 30;
+
+type KeySource =
+  | "IYApiKey"
+  | "IY_DMA_API_KEY"
+  | "IY_API_KEY"
+  | "IMPORTYETI_API_KEY";
+
+type EnvConfig = {
+  apiKey: string;
+  apiKeySource: KeySource | null;
+  searchUrl: string;
+  dmaBaseUrl: string;
+  warnings: string[];
+  isValid: boolean;
 };
 
-const formatDateLabel = (value: string | null | undefined) => {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
+type SnapshotRecord = {
+  company_id: string;
+  raw_payload: any;
+  parsed_summary: any;
+  updated_at: string;
+};
+
+type MonthlyPoint = {
+  month: string;
+  fclShipments: number;
+  lclShipments: number;
+  shipments?: number;
+  teu?: number;
+  weight?: number;
+  estSpendUsd?: number;
+};
+
+type TopRoute = {
+  route: string;
+  shipments: number;
+  teu: number | null;
+  fclShipments: number | null;
+  lclShipments: number | null;
+};
+
+function jsonResponse(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
   });
-};
+}
 
-const normalizeWebsite = (value?: string | null) => {
-  if (!value) return null;
+function normalizeCompanyKeyToSlug(input: string): string {
+  if (!input) return "";
+  const trimmed = input.trim();
+  const stripped = trimmed.startsWith("company/")
+    ? trimmed.slice("company/".length)
+    : trimmed;
+  const lowercased = stripped.toLowerCase();
+  const replaced = lowercased.replace(/[\s_.]+/g, "-");
+  const cleaned = replaced.replace(/[^a-z0-9-]/g, "");
+  const collapsed = cleaned.replace(/-{2,}/g, "-");
+  const trimmedEdges = collapsed.replace(/^-+|-+$/g, "");
+  return trimmedEdges || "unknown";
+}
+
+function normalizeCompanyKey(key: string): string {
+  if (!key) return "";
+  return normalizeCompanyKeyToSlug(key);
+}
+
+function normalizeString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-};
-
-const monthLabel = (value: string) => {
-  if (!value) return "";
-  const isoMatch = value.match(/^(\d{4})-(\d{2})/);
-  if (isoMatch) {
-    const date = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, 1);
-    return date.toLocaleDateString(undefined, { month: "short" });
-  }
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleDateString(undefined, { month: "short" });
-  }
-  return value;
-};
-
-function extractYearFromMonth(value: unknown): number | null {
-  if (!value) return null;
-  const text = String(value).trim();
-  if (!text) return null;
-  const match = text.match(/^(\d{4})-(\d{2})$/);
-  if (match) return Number(match[1]);
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.getFullYear();
+  return trimmed.length ? trimmed : null;
 }
 
-function normalizeMonthBucket(value: unknown): string | null {
-  if (!value) return null;
-  const text = String(value).trim();
-  if (!text) return null;
-  const direct = text.match(/^(\d{4})-(\d{2})$/);
-  if (direct) return `${direct[1]}-${direct[2]}`;
-  const parsed = new Date(text);
-  if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
-  }
-  return null;
-}
-
-function buildAuthoritativeMonthlySeries(profile: any): any[] {
-  const sources = [
-    (profile as any)?.monthlyShipments,
-    (profile as any)?.monthly_shipments,
-    (profile as any)?.monthly_volumes,
-    (profile as any)?.time_series,
-    profile?.timeSeries,
-  ];
-
-  for (const source of sources) {
-    if (!source) continue;
-
-    if (Array.isArray(source)) {
-      const rows = source
-        .map((point: any) => {
-          const month = normalizeMonthBucket(point?.month ?? point?.period ?? point?.date ?? point?.label);
-          if (!month) return null;
-          const shipments = coerceNumber(point?.shipments) ?? 0;
-          const fcl = coerceNumber(point?.fclShipments ?? point?.fcl_shipments ?? point?.fcl ?? point?.fcl_count) ?? 0;
-          const lcl = coerceNumber(point?.lclShipments ?? point?.lcl_shipments ?? point?.lcl ?? point?.lcl_count) ?? 0;
-          const teu = coerceNumber(point?.teu ?? point?.total_teu ?? point?.teuVolume) ?? 0;
-          const estSpendUsd =
-            coerceNumber(point?.estSpendUsd ?? point?.est_spend_usd ?? point?.shipping_cost ?? point?.est_spend) ?? 0;
-          return {
-            month,
-            shipments: shipments > 0 ? shipments : fcl + lcl,
-            fclShipments: fcl,
-            lclShipments: lcl,
-            teu,
-            estSpendUsd,
-          };
-        })
-        .filter(Boolean)
-        .sort((a: any, b: any) => a.month.localeCompare(b.month));
-      if (rows.length > 0) return rows;
-    }
-
-    if (typeof source === "object") {
-      const rows = Object.entries(source)
-        .map(([key, value]: [string, any]) => {
-          const month = normalizeMonthBucket(key);
-          if (!month || !value || typeof value !== "object") return null;
-          const shipments = coerceNumber(value?.shipments) ?? 0;
-          const fcl = coerceNumber(value?.fclShipments ?? value?.fcl_shipments ?? value?.fcl ?? value?.fcl_count) ?? 0;
-          const lcl = coerceNumber(value?.lclShipments ?? value?.lcl_shipments ?? value?.lcl ?? value?.lcl_count) ?? 0;
-          const teu = coerceNumber(value?.teu ?? value?.total_teu ?? value?.teuVolume) ?? 0;
-          const estSpendUsd =
-            coerceNumber(value?.estSpendUsd ?? value?.est_spend_usd ?? value?.shipping_cost ?? value?.est_spend) ?? 0;
-          return {
-            month,
-            shipments: shipments > 0 ? shipments : fcl + lcl,
-            fclShipments: fcl,
-            lclShipments: lcl,
-            teu,
-            estSpendUsd,
-          };
-        })
-        .filter(Boolean)
-        .sort((a: any, b: any) => a.month.localeCompare(b.month));
-      if (rows.length > 0) return rows;
-    }
-  }
-
-  return [];
-}
-
-
-function coerceNumber(value: unknown): number | null {
+function normalizeNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
     const cleaned = value.replace(/,/g, "").trim();
@@ -185,992 +98,1408 @@ function coerceNumber(value: unknown): number | null {
   return null;
 }
 
-function cleanSupplierName(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const cleaned = value.replace(/\s+/g, " ").trim();
-  if (!cleaned) return null;
-  const lowered = cleaned.toLowerCase();
-  if (
-    lowered === "missing in source document" ||
-    lowered.includes("missing in source document") ||
-    lowered === "missing" ||
-    lowered === "n/a" ||
-    lowered === "na" ||
-    lowered === "null" ||
-    lowered === "none" ||
-    lowered === "unknown" ||
-    lowered === "-" ||
-    lowered === "--"
-  ) {
+function parseImportYetiDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const trimmed = value.trim();
+
+  const slashDate = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashDate) {
+    const [, first, second, year] = slashDate;
+    const a = Number(first);
+    const b = Number(second);
+    const y = Number(year);
+
+    if (a >= 1 && a <= 12 && b >= 1 && b <= 31) {
+      const d = new Date(Date.UTC(y, a - 1, b));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    if (b >= 1 && b <= 12 && a >= 1 && a <= 31) {
+      const d = new Date(Date.UTC(y, b - 1, a));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
     return null;
   }
-  return cleaned;
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function normalizeEnrichmentList(value: unknown): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => {
-        if (typeof entry === "string") return entry.trim();
-        if (entry && typeof entry === "object") {
-          if ("text" in entry && typeof (entry as any).text === "string") {
-            return ((entry as any).text as string).trim();
-          }
-          if ("value" in entry && typeof (entry as any).value === "string") {
-            return ((entry as any).value as string).trim();
-          }
-          if ("description" in entry && typeof (entry as any).description === "string") {
-            return ((entry as any).description as string).trim();
-          }
-          if ("title" in entry && typeof (entry as any).title === "string") {
-            const title = ((entry as any).title as string).trim();
-            const desc =
-              typeof (entry as any).description === "string"
-                ? (entry as any).description.trim()
-                : "";
-            return desc ? `${title} – ${desc}` : title;
-          }
-        }
-        return "";
-      })
-      .filter((item) => item.length > 0)
-      .filter((item) => item.toLowerCase().indexOf('missing in source document') === -1);
-  }
-  if (typeof value === "string") {
-    return value
-      // Split the string on one or more newline characters
-      .split(/\n+/)
-      // Remove leading bullet markers like "* " or "- " from each line
-      .map((line) => line.replace(/^[*-]\s*/, "").trim())
-      // Filter out any empty lines
-      .filter((line) => line.length > 0)
-      // Remove any lines that contain the placeholder text
-      .filter((line) => line.toLowerCase().indexOf('missing in source document') === -1);
-  }
-  return [];
+function formatMonthKey(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
 }
 
-function pickEnrichmentSummary(value: unknown): string | null {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length ? trimmed : null;
-  }
-  if (!value || typeof value !== "object") return null;
+function estimateBolTeu(bol: any): number {
+  return (
+    normalizeNumber(bol?.TEU) ??
+    normalizeNumber(bol?.teu) ??
+    normalizeNumber(bol?.total_teu) ??
+    normalizeNumber(bol?.container_teu) ??
+    normalizeNumber(bol?.containers_count) ??
+    normalizeNumber(bol?.container_count) ??
+    (bol?.lcl === true ? 0 : 0)
+  );
+}
+
+function extractSpendCoveragePct(raw: any): number | null {
   const candidates = [
-    (value as any).summary,
-    (value as any).overview,
-    (value as any).description,
-    (value as any).narrative,
-    (value as any).highlights,
-    (value as any).ai_summary,
-    (value as any)?.ai?.summary,
+    raw?.shipping_cost_coverage_pct,
+    raw?.shipping_cost_coverage,
+    raw?.shipping_rate_coverage_pct,
+    raw?.shipping_rate_coverage,
+    raw?.spend_coverage_pct,
+    raw?.est_spend_coverage_pct,
+    raw?.coverage_pct,
+    raw?.coverage,
   ];
+
   for (const candidate of candidates) {
-    if (typeof candidate === "string") {
-      const trimmed = candidate.trim();
-      if (trimmed) return trimmed;
-    }
+    const value = normalizeNumber(candidate);
+    if (value != null && value > 0) return value;
   }
+
   return null;
 }
 
-const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  const data = payload.reduce(
-    (acc: Record<string, number>, item: any) => ({
-      ...acc,
-      [item.name]: item.value ?? 0,
-    }),
-    {},
-  );
+function pickBolOriginForPricing(bol: any): string | null {
   return (
-    <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-50 shadow-xl">
-      <p className="font-semibold">Month: {label}</p>
-      <p>FCL: {formatNumber(data.FCL ?? 0)}</p>
-      <p>LCL: {formatNumber(data.LCL ?? 0)}</p>
-    </div>
+    normalizeString(bol?.supplier_address_country) ??
+    normalizeString(bol?.supplier_country) ??
+    normalizeString(bol?.origin_country) ??
+    normalizeString(bol?.origin_country_code) ??
+    normalizeString(bol?.origin_port) ??
+    normalizeString(bol?.supplier_address_loc) ??
+    normalizeString(bol?.supplier_address_location) ??
+    normalizeString(bol?.origin) ??
+    null
   );
-};
-
-// Use a more saturated palette for KPI tiles inspired by the bar chart gradient.
-// Each entry defines a border and background color that pair nicely with the
-// overall LIT colour system.
-const ACCENT_MAP: Record<string, string> = {
-  indigo: 'border-[#DDD6FE] bg-[#F3E8FF]',
-  blue: 'border-[#BFDBFE] bg-[#DBEAFE]',
-  emerald: 'border-[#BBF7D0] bg-[#DCFCE7]',
-  'indigo-strong': 'border-[#C7D2FE] bg-[#E0E7FF]',
-  green: 'border-[#BBF7D0] bg-[#DCFCE7]',
-  slate: 'border-[#E2E8F0] bg-[#F8FAFC]',
-  purple: 'border-[#D8B4FE] bg-[#F5E8FF]',
-};
-
-const ICON_CONTAINER_CLASS =
-  "mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/5 text-slate-600";
-
-interface KpiTileProps {
-  label: string;
-  value: React.ReactNode;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  accent: keyof typeof ACCENT_MAP;
 }
 
-const KpiTile: React.FC<KpiTileProps> = ({ label, value, icon: Icon, accent }) => (
-  <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 ${ACCENT_MAP[accent]}`}> 
-    <div className={ICON_CONTAINER_CLASS}>
-      <Icon className="h-3.5 w-3.5" />
-    </div>
-    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-      {label}
-    </p>
-    <p className="text-xl font-semibold text-slate-900 md:text-2xl">{value}</p>
-  </div>
-);
+function pickBolDestinationForPricing(bol: any): string | null {
+  return (
+    normalizeString(bol?.company_address_country) ??
+    normalizeString(bol?.company_country) ??
+    normalizeString(bol?.destination_country) ??
+    normalizeString(bol?.destination_country_code) ??
+    normalizeString(bol?.destination_port) ??
+    normalizeString(bol?.company_address_loc) ??
+    normalizeString(bol?.company_address_location) ??
+    normalizeString(bol?.destination) ??
+    normalizeString(bol?.entry_port) ??
+    null
+  );
+}
 
-export type ShipperDetailModalProps = {
-  isOpen: boolean;
-  shipper: IyShipperHit | null;
-  loadingProfile: boolean;
-  profile: IyCompanyProfile | null;
-  routeKpis?: IyRouteKpis | null;
-  enrichment: any | null;
-  error: string | null;
-  onClose: () => void;
-  onSaveToCommandCenter: (opts: { shipper: IyShipperHit; profile: IyCompanyProfile | null }) => void;
-  saveLoading: boolean;
-  isSaved?: boolean;
-  year?: number | null;
-};
+function estimateLaneRateUsd(origin: string | null, destination: string | null): number {
+  const text = `${origin ?? ""} ${destination ?? ""}`.toLowerCase();
 
-export default function ShipperDetailModal({
-  isOpen,
-  shipper,
-  loadingProfile,
-  profile,
-  routeKpis = null,
-  enrichment,
-  error,
-  onClose,
-  onSaveToCommandCenter,
-  saveLoading,
-  isSaved = false,
-  year = null,
-}: ShipperDetailModalProps) {
-  if (!isOpen || !shipper) return null;
+  const isNorthAmericaDest =
+    /united states|usa|us\b|canada|north america/.test(text);
 
-  const normalizedWebsite = React.useMemo(() => {
-    const profileWebsite =
-      profile?.website || (profile?.domain ? `https://${profile.domain}` : null);
-    const hitWebsite = shipper.website || (shipper.domain ? `https://${shipper.domain}` : null);
-    return normalizeWebsite(profileWebsite ?? hitWebsite ?? null);
-  }, [profile?.website, profile?.domain, shipper.website, shipper.domain]);
-
-  const normalizedPhone =
-    profile?.phoneNumber ??
-    profile?.phone ??
-    shipper.phone ??
-    ((shipper as any)?.contact?.phone ?? null);
-
-  const companyId =
-    profile?.key ??
-    profile?.companyId ??
-    shipper.key ??
-    shipper.companyId ??
-    "";
-  const domain = profile?.domain ?? shipper.domain ?? shipper.website ?? null;
-  const logoUrl = domain ? getCompanyLogoUrl(domain) : undefined;
-
-  const resolvedRouteKpis = routeKpis ?? profile?.routeKpis ?? null;
-  const shipments12m =
-    coerceNumber(resolvedRouteKpis?.shipmentsLast12m) ??
-    coerceNumber(profile?.totalShipments) ??
-    coerceNumber(shipper.totalShipments) ??
-    coerceNumber(shipper.shipmentsLast12m);
-  const teu12m =
-    coerceNumber(resolvedRouteKpis?.teuLast12m) ??
-    coerceNumber(shipper.teusLast12m);
-  const estSpend12m =
-    coerceNumber(resolvedRouteKpis?.estSpendUsd12m) ??
-    coerceNumber(profile?.estSpendUsd12m) ??
-    coerceNumber(shipper.estSpendLast12m);
-  const fclShipments12m = getFclShipments12m(profile);
-  const lclShipments12m = getLclShipments12m(profile);
-  // Calculate container mix ratio based on FCL and LCL shipment counts.
-  const containerMix = React.useMemo(() => {
-    const fcl = typeof fclShipments12m === 'number' ? fclShipments12m : 0;
-    const lcl = typeof lclShipments12m === 'number' ? lclShipments12m : 0;
-    const total = fcl + lcl;
-    if (total === 0) return null;
-    const fclPct = Math.round((fcl / total) * 100);
-    const lclPct = 100 - fclPct;
-    return `${fclPct}% FCL / ${lclPct}% LCL`;
-  }, [fclShipments12m, lclShipments12m]);
-
-  const baselineLastShipmentDate =
-    profile?.lastShipmentDate ??
-    shipper.lastShipmentDate ??
-    shipper.mostRecentShipment ??
-    null;
-
-  /* Determine the list of top lanes to display along with the primary and most recent route.
-     We prioritize lanes provided in resolvedRouteKpis.topRoutesLast12m when they contain
-     non‑placeholder route strings. If those lanes are missing or only contain
-     "Unknown → Unknown" routes, we fall back to aggregated top routes available on
-     the profile (top_routes or topRoutes). When falling back we build lane labels
-     from origin/destination fields such as origin_city, origin_country, supplier_address_loc,
-     company_address_loc, etc. This ensures that the Top lanes list always shows the
-     best available route labels rather than Unknown values.
-   */
-
-  // extract and sort primary lanes from resolvedRouteKpis.topRoutesLast12m,
-  // filtering out any routes that contain "unknown" in a case-insensitive manner.
-  let primaryTopRoutes: { route: string; shipments?: number | null }[] = [];
-  if (Array.isArray(resolvedRouteKpis?.topRoutesLast12m)) {
-    primaryTopRoutes = (resolvedRouteKpis.topRoutesLast12m as any[])
-      .filter((entry: any) => {
-        if (!entry || typeof entry.route !== "string") return false;
-        // treat any route containing the word "unknown" (any separator) as invalid
-        return entry.route.toLowerCase().indexOf("unknown") === -1;
-      })
-      .sort(
-        (a: any, b: any) =>
-          (coerceNumber(b?.shipments) ?? 0) - (coerceNumber(a?.shipments) ?? 0),
-      )
-      .slice(0, 5);
+  if (isNorthAmericaDest) {
+    if (/saudi|uae|dubai|qatar|oman|kuwait|bahrain|jeddah|riyadh|middle east/.test(text)) {
+      return 5500;
+    }
+    if (/india|pakistan|bangladesh|sri lanka|south asia/.test(text)) {
+      return 4800;
+    }
+    if (/china|vietnam|taiwan|thailand|indonesia|malaysia|singapore|korea|japan|philippines|hong kong|asia/.test(text)) {
+      return 5500;
+    }
+    if (/germany|italy|switzerland|poland|spain|france|united kingdom|uk\b|netherlands|belgium|europe/.test(text)) {
+      return 3800;
+    }
+    if (/mexico|el salvador|guatemala|honduras|costa rica|panama|colombia|brazil|latin america/.test(text)) {
+      return 3200;
+    }
   }
 
-  // build aggregated lanes from profile.top_routes or profile.topRoutes
-  let aggregatedTopRoutes: { route: string; shipments?: number | null }[] = [];
-  const rawAgg: any[] =
-    (profile as any)?.top_routes ?? (profile as any)?.topRoutes ?? [];
-  if (Array.isArray(rawAgg)) {
-    aggregatedTopRoutes = rawAgg
-      .map((entry: any) => {
-        if (!entry) return null;
-        // attempt to use provided route string when available
-        let route: string | null =
-          entry.route ?? entry.route_name ?? entry.route_string ?? null;
-        // if no route, construct from origin/destination fields
-        if (!route) {
-          const origin =
-            entry.origin ||
-            entry.origin_port ||
-            entry.origin_city ||
-            entry.origin_state ||
-            entry.origin_country ||
-            entry.supplier_address_loc ||
-            entry.supplier_address_location ||
-            entry.supplier_address_country ||
-            null;
-          const dest =
-            entry.destination ||
-            entry.dest_port ||
-            entry.destination_city ||
-            entry.destination_state ||
-            entry.destination_country ||
-            entry.company_address_loc ||
-            entry.company_address_location ||
-            entry.company_address_country ||
-            null;
-          if (origin || dest) {
-            const originLabel = origin ?? "Unknown";
-            const destLabel = dest ?? "Unknown";
-            route = `${originLabel} → ${destLabel}`;
-          }
-        }
-        if (!route) return null;
-        // discard any constructed route that contains "unknown"
-        if (route.toLowerCase().indexOf("unknown") !== -1) return null;
-        const shipments =
-          coerceNumber((entry as any)?.shipments) ??
-          coerceNumber((entry as any)?.count) ??
-          coerceNumber((entry as any)?.shipments_12m) ??
-          null;
-        return { route, shipments };
-      })
-      .filter(
-        (v): v is { route: string; shipments?: number | null } => Boolean(v),
-      );
-    // sort aggregated lanes by shipments descending and cap to 5
-    aggregatedTopRoutes.sort(
-      (a, b) => (b.shipments ?? 0) - (a.shipments ?? 0),
+  return 5000;
+}
+
+function estimateBolSpendUsd(bol: any): number {
+  const explicit =
+    normalizeNumber(bol?.shipping_cost) ??
+    normalizeNumber(bol?.shipping_rate_usd) ??
+    normalizeNumber(bol?.rate_usd) ??
+    normalizeNumber(bol?.amount_usd);
+
+  if (explicit != null && explicit > 0) {
+    return explicit;
+  }
+
+  const origin = pickBolOriginForPricing(bol);
+  const destination = pickBolDestinationForPricing(bol);
+  const laneRateUsd = estimateLaneRateUsd(origin, destination);
+
+  if (bol?.lcl === true) {
+    const teu = estimateBolTeu(bol);
+    const containerCount =
+      normalizeNumber(bol?.containers_count) ??
+      normalizeNumber(bol?.container_count) ??
+      1;
+    return Math.max(900, teu * 450, containerCount * 450);
+  }
+
+  const containerCount =
+    normalizeNumber(bol?.containers_count) ??
+    normalizeNumber(bol?.container_count) ??
+    1;
+
+  return laneRateUsd * Math.max(1, containerCount);
+}
+
+/**
+ * Attempt to construct a human–readable shipping route from a BOL record.
+ *
+ * ImportYeti payloads have evolved over time, exposing origin/destination
+ * information under a variety of field names and nested objects.  The
+ * original implementation of `buildRouteLabel` only checked a handful
+ * of fields (e.g. `origin_port`, `supplier_address_loc`, `country_code`),
+ * which led to many routes being returned as `Unknown → Unknown` when
+ * ImportYeti introduced new fields like `origin_city`, `destination_country`,
+ * or nested `origin` / `destination` objects.  This updated
+ * implementation aggressively searches for a usable origin and destination
+ * across a broad set of candidate fields.  It also treats a pre‑formatted
+ * shipping route string (containing an arrow or dash) as authoritative.
+ */
+function buildRouteLabel(bol: any): string | null {
+  // helper that normalizes a value to a string or null
+  const maybeString = (value: any): string | null => normalizeString(value);
+
+  // If ImportYeti already provides a formatted route (e.g. "Shanghai → LA"),
+  // trust it.  We treat both the unicode arrow and ASCII arrows/dashes as
+  // indicators that this string contains a full route.
+  const preformatted = maybeString(bol?.shipping_route);
+  if (preformatted && /→|->|—|-/u.test(preformatted)) {
+    return preformatted;
+  }
+
+  // Determine origin.  These fields are ordered from most specific to
+  // more generic.  We intentionally include city/state/country variants and
+  // nested objects, because ImportYeti's schema is not always consistent.
+  const origin =
+    maybeString(bol?.origin_port) ??
+    maybeString(bol?.supplier_address_loc) ??
+    maybeString(bol?.supplier_address_location) ??
+    maybeString(bol?.origin) ??
+    maybeString(bol?.origin_city) ??
+    maybeString(bol?.origin_state) ??
+    maybeString(bol?.origin_country) ??
+    maybeString(bol?.origin_country_code) ??
+    maybeString(bol?.origin_port_name) ??
+    maybeString(bol?.origin_port_location) ??
+    maybeString(bol?.Country) ??
+    maybeString(bol?.country_code) ??
+    maybeString(bol?.shipper_address_loc) ??
+    // nested origin object
+    maybeString(bol?.origin?.label) ??
+    maybeString(bol?.origin?.city) ??
+    maybeString(bol?.origin?.state) ??
+    maybeString(bol?.origin?.country);
+
+  // Determine destination.  Same strategy as origin.
+  const dest =
+    maybeString(bol?.destination_port) ??
+    maybeString(bol?.company_address_loc) ??
+    maybeString(bol?.company_address_country) ??
+    maybeString(bol?.destination) ??
+    maybeString(bol?.destination_city) ??
+    maybeString(bol?.destination_state) ??
+    maybeString(bol?.destination_country) ??
+    maybeString(bol?.destination_country_code) ??
+    maybeString(bol?.destination_port_name) ??
+    maybeString(bol?.destination_port_location) ??
+    maybeString(bol?.entry_port) ??
+    maybeString(bol?.Consignee_Address) ??
+    maybeString(bol?.consignee_address_loc) ??
+    // nested destination object
+    maybeString(bol?.destination?.label) ??
+    maybeString(bol?.destination?.city) ??
+    maybeString(bol?.destination?.state) ??
+    maybeString(bol?.destination?.country);
+
+  // Compose route string
+  if (origin && dest) return `${origin} → ${dest}`;
+  if (origin) return origin;
+  if (dest) return dest;
+  return null;
+}
+
+function inferProfileTitle(snapshot: any, raw: any, companySlug: string): string {
+  return (
+    normalizeString(snapshot?.company_name) ??
+    normalizeString(snapshot?.title) ??
+    normalizeString(raw?.title) ??
+    normalizeString(raw?.name) ??
+    normalizeString(raw?.company_name) ??
+    normalizeString(raw?.company_basename) ??
+    companySlug
+  );
+}
+
+function inferProfileWebsite(snapshot: any, raw: any): string | null {
+  return (
+    normalizeString(snapshot?.website) ??
+    normalizeString(raw?.website) ??
+    normalizeString(raw?.company_website) ??
+    null
+  );
+}
+
+function inferProfileDomain(snapshot: any, raw: any): string | null {
+  const website = inferProfileWebsite(snapshot, raw);
+  if (!website) return null;
+  try {
+    const parsed = new URL(
+      website.startsWith("http") ? website : `https://${website}`,
     );
-    aggregatedTopRoutes = aggregatedTopRoutes.slice(0, 5);
+    return parsed.hostname.replace(/^www\./i, "");
+  } catch {
+    return normalizeString(website);
   }
+}
 
-  // choose which list of lanes to display: prefer primary if available,
-  // otherwise fall back to aggregated list
-  const displayTopRoutes =
-    primaryTopRoutes.length > 0 ? primaryTopRoutes : aggregatedTopRoutes;
+function buildEnvConfig(): EnvConfig {
+  const warnings: string[] = [];
 
-  // derive top and most recent routes from available KPI fields or display lanes.
-  // prefer normalized KPI values when they are defined and not "unknown".
-  const resolvedTopRouteKpi =
-    typeof resolvedRouteKpis?.topRouteLast12m === "string" &&
-    resolvedRouteKpis.topRouteLast12m.toLowerCase().indexOf("unknown") === -1
-      ? resolvedRouteKpis.topRouteLast12m
-      : null;
-  const resolvedMostRecentRouteKpi =
-    typeof resolvedRouteKpis?.mostRecentRoute === "string" &&
-    resolvedRouteKpis.mostRecentRoute.toLowerCase().indexOf("unknown") === -1
-      ? resolvedRouteKpis.mostRecentRoute
-      : null;
-
-  const displayTopRouteLast12m: string | null =
-    resolvedTopRouteKpi ??
-    (displayTopRoutes[0]?.route as string | undefined) ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const displayMostRecentRoute: string | null =
-    resolvedMostRecentRouteKpi ??
-    (displayTopRoutes[0]?.route as string | undefined) ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-
-  // assign display variables to be used in render
-  const topRouteLast12m = displayTopRouteLast12m;
-  const mostRecentRoute = displayMostRecentRoute;
-  const topRoutes = displayTopRoutes;
-
-  const authoritativeMonthlySeries = React.useMemo(
-    () => buildAuthoritativeMonthlySeries(profile),
-    [profile],
-  );
-
-  const availableYears = React.useMemo(() => {
-    const years = Array.from(
-      new Set(
-        authoritativeMonthlySeries
-          .map((point: any) => extractYearFromMonth(point.month))
-          .filter((value: any): value is number => typeof value === "number"),
-      ),
-    ).sort((a, b) => b - a);
-    return years;
-  }, [authoritativeMonthlySeries]);
-
-  const [selectedYear, setSelectedYear] = React.useState<number | null>(year ?? null);
-
-  React.useEffect(() => {
-    if (year && availableYears.includes(year)) {
-      setSelectedYear(year);
-      return;
-    }
-    if (availableYears.length > 0) {
-      setSelectedYear((current) => {
-        if (current && availableYears.includes(current)) return current;
-        return availableYears[0];
-      });
-      return;
-    }
-    setSelectedYear(null);
-  }, [year, availableYears]);
-
-  const filteredTimeSeries = React.useMemo(() => {
-    if (!Array.isArray(authoritativeMonthlySeries)) return [] as any[];
-    if (!selectedYear) return authoritativeMonthlySeries.slice(-12);
-    return authoritativeMonthlySeries.filter((point: any) => {
-      return extractYearFromMonth(point.month) === selectedYear;
-    });
-  }, [authoritativeMonthlySeries, selectedYear]);
-
-  const shipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      const shipments = coerceNumber(point.shipments);
-      if (shipments != null && shipments > 0) return sum + shipments;
-      const fcl = coerceNumber(point.fclShipments) ?? 0;
-      const lcl = coerceNumber(point.lclShipments) ?? 0;
-      return sum + fcl + lcl;
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const fclShipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      const fcl = coerceNumber(point.fclShipments) ?? 0;
-      return sum + fcl;
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const lclShipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      const lcl = coerceNumber(point.lclShipments) ?? 0;
-      return sum + lcl;
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const teuYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return sum + (coerceNumber(point.teu) ?? 0);
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const estSpendYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return sum + (coerceNumber(point.estSpendUsd) ?? 0);
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const containerMixYear = React.useMemo(() => {
-    const total = fclShipmentsYear + lclShipmentsYear;
-    if (total === 0) return null;
-    const fclPct = Math.round((fclShipmentsYear / total) * 100);
-    const lclPct = 100 - fclPct;
-    return `${fclPct}% FCL / ${lclPct}% LCL`;
-  }, [fclShipmentsYear, lclShipmentsYear]);
-
-  // Compute shipments for top/most recent routes to display counts in KPI cards
-  const topRouteShipments = topRoutes.find((lane) => lane.route === topRouteLast12m)?.shipments ?? null;
-  const mostRecentRouteShipments = topRoutes.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
-
-  // Create dynamic headings for route cards
-  const topRouteHeading = selectedYear ? `Top route (${selectedYear})` : 'Top route (last 12m)';
-  const mostRecentHeading = selectedYear ? `Most recent route (${selectedYear})` : 'Most recent route';
-
-  // Prepare chart data for the monthly FCL/LCL shipments chart
-  const chartData = React.useMemo(() =>
-    Array.isArray(filteredTimeSeries)
-      ? (filteredTimeSeries as any[]).slice(-12).map((point: any) => {
-          const shipments = coerceNumber(point.shipments) ?? 0;
-          const fcl = coerceNumber(point.fclShipments) ?? 0;
-          const lcl = coerceNumber(point.lclShipments) ?? 0;
-          const showShipmentAsFcl = fcl === 0 && lcl === 0 && shipments > 0;
-          return {
-            monthLabel: monthLabel(point.month),
-            fcl: showShipmentAsFcl ? shipments : fcl,
-            lcl,
-          };
-        })
-      : []
-  , [filteredTimeSeries]);
-
-  const activeTeu = selectedYear ? teuYear : teu12m;
-  const activeSpend = selectedYear
-    ? (estSpendYear > 0
-        ? estSpendYear
-        : (coerceNumber((profile as any)?.estSpendUsd12m) ??
-           coerceNumber((profile as any)?.estSpendUsd) ??
-           estSpend12m))
-    : estSpend12m;
-
-  const lastShipmentDate =
-    (Array.isArray((profile as any)?.recent_bols) && selectedYear
-      ? (() => {
-          const rows = ((profile as any).recent_bols as any[])
-            .map((bol) => {
-              const rawDate = bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? null;
-              if (!rawDate) return null;
-              let parsed: Date | null = null;
-              const ddmmyyyy = String(rawDate).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-              if (ddmmyyyy) {
-                parsed = new Date(`${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}T00:00:00`);
-              } else {
-                parsed = new Date(String(rawDate));
-              }
-              if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() !== selectedYear) return null;
-              return parsed;
-            })
-            .filter(Boolean) as Date[];
-          rows.sort((a, b) => b.getTime() - a.getTime());
-          return rows[0] ? rows[0].toISOString().slice(0, 10) : null;
-        })()
-      : null) ??
-    (profile as any)?.last_shipment_date ??
-    profile?.lastShipmentDate ??
-    shipper.lastShipmentDate ??
-    shipper.mostRecentShipment ??
-    null;
-
-  const supplierList = React.useMemo(() => {
-    const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
-    if (!Array.isArray(list)) return [];
-    const unique = new Map<string, string>();
-    for (const entry of list) {
-      const rawName =
-        typeof entry === "string"
-          ? entry
-          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? entry?.title ?? "";
-      const cleaned = cleanSupplierName(rawName);
-      if (!cleaned) continue;
-      const key = cleaned.toLowerCase();
-      if (!unique.has(key)) unique.set(key, cleaned);
-    }
-    return Array.from(unique.values()).slice(0, 6);
-  }, [profile?.topSuppliers, shipper.topSuppliers]);
-
-  const enrichmentSummary = React.useMemo(
-    () => pickEnrichmentSummary(enrichment),
-    [enrichment],
-  );
-  const enrichmentOpportunities = React.useMemo(
-    () =>
-      normalizeEnrichmentList(
-        enrichment?.opportunities ??
-          enrichment?.opportunityInsights ??
-          enrichment?.opportunity_insights ??
-          enrichment?.ai?.opportunities ??
-          enrichment?.opportunityBullets,
-      ),
-    [enrichment],
-  );
-  const enrichmentRisks = React.useMemo(
-    () =>
-      normalizeEnrichmentList(
-        enrichment?.risks ??
-          enrichment?.riskInsights ??
-          enrichment?.risk_insights ??
-          enrichment?.watchouts ??
-          enrichment?.ai?.risks,
-      ),
-    [enrichment],
-  );
-  const enrichmentTalkingPoints = React.useMemo(
-    () =>
-      normalizeEnrichmentList(
-        enrichment?.talkingPoints ??
-          enrichment?.recommendedTalkingPoints ??
-          enrichment?.recommended_actions ??
-          enrichment?.actions ??
-          enrichment?.ai?.talkingPoints,
-      ),
-    [enrichment],
-  );
-  const enrichmentExtraSections = React.useMemo(() => {
-    if (!Array.isArray(enrichment?.sections)) return [];
-    return enrichment.sections
-      .map((section: any) => {
-        const label =
-          typeof section?.title === "string"
-            ? section.title
-            : typeof section?.label === "string"
-              ? section.label
-              : null;
-        const items = normalizeEnrichmentList(
-          section?.items ??
-            section?.bullets ??
-            section?.points ??
-            section?.content,
-        );
-        if (!label || items.length === 0) return null;
-        return { label, items };
-      })
-      .filter(
-        (entry): entry is { label: string; items: string[] } => Boolean(entry),
-      );
-  }, [enrichment]);
-
-  const hasEnrichmentContent = Boolean(
-    enrichmentSummary ||
-    enrichmentOpportunities.length ||
-    enrichmentRisks.length ||
-    enrichmentTalkingPoints.length ||
-    enrichmentExtraSections.length,
-  );
-
-  const showEnrichmentBanner = !enrichment && !loadingProfile;
-
-  const kpiItems: KpiTileProps[] = [
-    {
-      label: selectedYear ? `Total shipments (${selectedYear})` : 'Total shipments',
-      value: formatNumber(selectedYear ? shipmentsYear : shipments12m),
-      icon: TruckIcon,
-      accent: 'slate',
-    },
-    {
-      label: selectedYear ? `FCL shipments (${selectedYear})` : 'FCL shipments',
-      value: formatNumber(selectedYear ? fclShipmentsYear : fclShipments12m),
-      icon: SquaresPlusIcon,
-      accent: 'purple',
-    },
-    {
-      label: selectedYear ? `LCL shipments (${selectedYear})` : 'LCL shipments',
-      value: formatNumber(selectedYear ? lclShipmentsYear : lclShipments12m),
-      icon: Squares2X2Icon,
-      accent: 'indigo',
-    },
-    {
-      label: selectedYear ? `TEU volume (${selectedYear})` : 'TEU volume',
-      value: formatNumber(activeTeu),
-      icon: CubeIcon,
-      accent: 'blue',
-    },
-    {
-      label: selectedYear ? `Market spend est. (${selectedYear})` : 'Market spend est.',
-      value: formatCurrency(activeSpend),
-      icon: CurrencyDollarIcon,
-      accent: 'emerald',
-    },
+  const candidates: Array<{ name: KeySource; value: string | undefined }> = [
+    { name: "IYApiKey", value: Deno.env.get("IYApiKey")?.trim() },
+    { name: "IY_DMA_API_KEY", value: Deno.env.get("IY_DMA_API_KEY")?.trim() },
+    { name: "IY_API_KEY", value: Deno.env.get("IY_API_KEY")?.trim() },
+    { name: "IMPORTYETI_API_KEY", value: Deno.env.get("IMPORTYETI_API_KEY")?.trim() },
   ];
 
-  const handleSaveClick = () => {
-    if (!shipper || saveLoading) return;
-    onSaveToCommandCenter({ shipper, profile: profile ?? null });
+  let apiKey = "";
+  let apiKeySource: KeySource | null = null;
+
+  for (const candidate of candidates) {
+    if (candidate.value) {
+      apiKey = candidate.value;
+      apiKeySource = candidate.name;
+      break;
+    }
+  }
+
+  let dmaBaseUrl =
+    Deno.env.get("IY_DMA_BASE_URL")?.trim() ||
+    "https://data.importyeti.com/v1.0";
+
+  const originalBase = dmaBaseUrl;
+  dmaBaseUrl = dmaBaseUrl
+    .replace(/\/company\/searches\/?$/, "")
+    .replace(/\/searches\/?$/, "");
+
+  if (originalBase !== dmaBaseUrl) {
+    warnings.push(
+      `[Env] Corrected IY_DMA_BASE_URL from "${originalBase}" to "${dmaBaseUrl}"`,
+    );
+  }
+
+  const searchUrl =
+    Deno.env.get("IY_DMA_SEARCH_URL")?.trim() ||
+    `${dmaBaseUrl}/company/search`;
+
+  return {
+    apiKey,
+    apiKeySource,
+    searchUrl,
+    dmaBaseUrl,
+    warnings,
+    isValid: Boolean(apiKey),
   };
+}
+
+async function fetchImportYetiJson(url: string, apiKey: string) {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      IYApiKey: apiKey,
+      "X-API-Key": apiKey,
+      Accept: "application/json",
+    },
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`ImportYeti API error ${response.status}: ${text}`);
+  }
+
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function safeMaybeSingleSnapshot(
+  supabase: any,
+  companySlug: string,
+): Promise<{ data: SnapshotRecord | null; errorMessage: string | null }> {
+  try {
+    const result = await supabase
+      .from(SNAPSHOT_TABLE)
+      .select("*")
+      .eq("company_id", companySlug)
+      .maybeSingle();
+
+    const data = result?.data ?? null;
+    const errorMessage = result?.error?.message ?? null;
+
+    return { data, errorMessage };
+  } catch (error: any) {
+    return {
+      data: null,
+      errorMessage: error?.message || "Snapshot lookup failed",
+    };
+  }
+}
+
+async function safeUpsertSnapshot(
+  supabase: any,
+  payload: Record<string, unknown>,
+): Promise<string | null> {
+  try {
+    const result = await supabase.from(SNAPSHOT_TABLE).upsert(payload);
+    return result?.error?.message ?? null;
+  } catch (error: any) {
+    return error?.message || "Snapshot upsert failed";
+  }
+}
+
+async function safeUpsertIndex(
+  supabase: any,
+  payload: Record<string, unknown>,
+): Promise<string | null> {
+  try {
+    const result = await supabase.from(INDEX_TABLE).upsert(payload);
+    return result?.error?.message ?? null;
+  } catch (error: any) {
+    return error?.message || "Index upsert failed";
+  }
+}
+
+async function getCachedSnapshot(supabase: any, companySlug: string) {
+  const result = await safeMaybeSingleSnapshot(supabase, companySlug);
+
+  if (result.errorMessage) {
+    console.error("❌ Snapshot fetch error:", result.errorMessage);
+  }
+
+  if (!result.data) return null;
+
+  const ageDays =
+    (Date.now() - new Date(result.data.updated_at).getTime()) /
+    (1000 * 60 * 60 * 24);
+
+  return {
+    data: result.data,
+    ageDays,
+  };
+}
+
+async function fetchCompanyBolsUpstream(
+  companySlug: string,
+  env: EnvConfig,
+  limit = 250,
+  offset = 0,
+) {
+  const cleanSlug = normalizeCompanyKey(companySlug);
+
+  const url = new URL(`${env.dmaBaseUrl}/company/${cleanSlug}/bols`);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+
+  const finalUrl = url.toString();
+  console.log("  BOLS URL:", finalUrl);
+
+  const payload = await fetchImportYetiJson(finalUrl, env.apiKey);
+  const rows = Array.isArray(payload?.rows)
+    ? payload.rows
+    : Array.isArray(payload?.results)
+      ? payload.results
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+  return {
+    raw: payload,
+    rows,
+  };
+}
+
+async function fetchCompanyByIdUpstream(
+  companySlug: string,
+  env: EnvConfig,
+) {
+  const cleanSlug = normalizeCompanyKey(companySlug);
+  const url = `${env.dmaBaseUrl}/company/${encodeURIComponent(cleanSlug)}`;
+
+  console.log("  COMPANY URL:", url);
+
+  const payload = await fetchImportYetiJson(url, env.apiKey);
+  const data = payload?.data ?? payload ?? {};
+
+  return {
+    raw: payload,
+    data,
+  };
+}
+
+function getLast12MonthKeys(): Set<string> {
+  const now = new Date();
+  const keys = new Set<string>();
+
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    keys.add(formatMonthKey(d));
+  }
+
+  return keys;
+}
+
+function parseTimeSeriesToMonthlyVolumes(timeSeriesRaw: any) {
+  const monthlyMap = new Map<
+    string,
+    { fcl: number; lcl: number; shipments: number; teu: number; weight: number; estSpendUsd: number }
+  >();
+
+  if (!timeSeriesRaw || typeof timeSeriesRaw !== "object") {
+    return monthlyMap;
+  }
+
+  if (Array.isArray(timeSeriesRaw)) {
+    for (const row of timeSeriesRaw) {
+      const rawMonth =
+        row?.month ??
+        row?.date ??
+        row?.period ??
+        row?.label;
+
+      const d = parseImportYetiDate(rawMonth);
+      if (!d) continue;
+
+      const monthKey = formatMonthKey(d);
+
+      const shipments =
+        normalizeNumber(row?.shipments) ??
+        normalizeNumber(row?.total_shipments) ??
+        normalizeNumber(row?.count) ??
+        0;
+
+      const teu =
+        normalizeNumber(row?.teu) ??
+        normalizeNumber(row?.total_teu) ??
+        0;
+
+      const weight =
+        normalizeNumber(row?.weight) ??
+        normalizeNumber(row?.total_weight) ??
+        0;
+
+      const estSpendUsd =
+        normalizeNumber(row?.est_spend_usd) ??
+        normalizeNumber(row?.est_spend) ??
+        normalizeNumber(row?.shipping_cost) ??
+        normalizeNumber(row?.total_shipping_cost) ??
+        0;
+
+      const fcl =
+        normalizeNumber(row?.fcl_count) ??
+        normalizeNumber(row?.fclShipments) ??
+        shipments;
+
+      const lcl =
+        normalizeNumber(row?.lcl_count) ??
+        normalizeNumber(row?.lclShipments) ??
+        0;
+
+      monthlyMap.set(monthKey, {
+        fcl,
+        lcl,
+        shipments,
+        teu,
+        weight,
+        estSpendUsd,
+      });
+    }
+
+    return monthlyMap;
+  }
+
+  for (const [rawKey, rawValue] of Object.entries(timeSeriesRaw)) {
+    const d = parseImportYetiDate(rawKey);
+    if (!d) continue;
+
+    const monthKey = formatMonthKey(d);
+    const shipments = normalizeNumber((rawValue as any)?.shipments) ?? 0;
+    const teu = normalizeNumber((rawValue as any)?.teu) ?? 0;
+    const weight = normalizeNumber((rawValue as any)?.weight) ?? 0;
+
+    monthlyMap.set(monthKey, {
+      fcl: shipments,
+      lcl: 0,
+      shipments,
+      teu,
+      weight,
+      estSpendUsd:
+        normalizeNumber((rawValue as any)?.est_spend_usd) ??
+        normalizeNumber((rawValue as any)?.est_spend) ??
+        normalizeNumber((rawValue as any)?.shipping_cost) ??
+        normalizeNumber((rawValue as any)?.total_shipping_cost) ??
+        0,
+    });
+  }
+
+  return monthlyMap;
+}
+
+function applyRecentBolsFclLclSplits(
+  monthlyMap: Map<
+    string,
+    { fcl: number; lcl: number; shipments: number; teu: number; weight: number; estSpendUsd: number }
+  >,
+  recentBols: any[],
+) {
+  if (!Array.isArray(recentBols) || recentBols.length === 0) return;
+
+  const splitByMonth = new Map<string, { fcl: number; lcl: number; teu: number; estSpendUsd: number }>();
+
+  for (const bol of recentBols) {
+    const d = parseImportYetiDate(
+      bol?.date_formatted ?? bol?.date ?? bol?.shipped_on ?? bol?.arrival_date,
+    );
+    if (!d) continue;
+
+    const monthKey = formatMonthKey(d);
+    const current = splitByMonth.get(monthKey) || { fcl: 0, lcl: 0, teu: 0, estSpendUsd: 0 };
+
+    if (bol?.lcl === true) current.lcl += 1;
+    else current.fcl += 1;
+
+    current.teu += estimateBolTeu(bol);
+    current.estSpendUsd += estimateBolSpendUsd(bol);
+
+    splitByMonth.set(monthKey, current);
+  }
+
+  for (const [monthKey, split] of splitByMonth.entries()) {
+    const existing = monthlyMap.get(monthKey);
+    if (!existing) {
+      monthlyMap.set(monthKey, {
+        fcl: split.fcl,
+        lcl: split.lcl,
+        shipments: split.fcl + split.lcl,
+        teu: split.teu,
+        weight: 0,
+        estSpendUsd: split.estSpendUsd,
+      });
+      continue;
+    }
+
+    const totalSplit = split.fcl + split.lcl;
+    if (totalSplit > 0 && (existing.fcl === 0 && existing.lcl === 0)) {
+      const sourceShipments = existing.shipments > 0 ? existing.shipments : totalSplit;
+      const ratio = sourceShipments / totalSplit;
+      existing.fcl = Math.round(split.fcl * ratio);
+      existing.lcl = Math.max(0, sourceShipments - existing.fcl);
+    }
+
+    if ((existing.teu ?? 0) <= 0 && split.teu > 0) {
+      existing.teu = split.teu;
+    }
+
+    if ((existing.estSpendUsd ?? 0) <= 0 && split.estSpendUsd > 0) {
+      existing.estSpendUsd = split.estSpendUsd;
+    }
+
+    monthlyMap.set(monthKey, existing);
+  }
+}
+
+function buildTopRoutesFromRecentBols(recentBols: any[]): TopRoute[] {
+  const routeStats = new Map<
+    string,
+    { shipments: number; teu: number; fcl: number; lcl: number }
+  >();
+
+  for (const bol of Array.isArray(recentBols) ? recentBols : []) {
+    const route = buildRouteLabel(bol);
+    if (!route) continue;
+
+    const current = routeStats.get(route) || {
+      shipments: 0,
+      teu: 0,
+      fcl: 0,
+      lcl: 0,
+    };
+
+    current.shipments += 1;
+    current.teu += estimateBolTeu(bol);
+    if (bol?.lcl === true) current.lcl += 1;
+    else current.fcl += 1;
+
+    routeStats.set(route, current);
+  }
+
+  return Array.from(routeStats.entries())
+    .sort((a, b) => b[1].shipments - a[1].shipments)
+    .slice(0, 10)
+    .map(([route, stats]) => ({
+      route,
+      shipments: stats.shipments,
+      teu: stats.teu || null,
+      fclShipments: stats.fcl || null,
+      lclShipments: stats.lcl || null,
+    }));
+}
+
+function pickTopSuppliers(raw: any): string[] {
+  const rows = Array.isArray(raw?.suppliers_table) ? raw.suppliers_table : [];
+  const values = rows
+    .map((row: any) =>
+      normalizeString(row?.supplier) ??
+      normalizeString(row?.supplier_name) ??
+      normalizeString(row?.shipper) ??
+      normalizeString(row?.name),
+    )
+    .filter((value: string | null): value is string => Boolean(value));
+
+  return Array.from(new Set(values)).slice(0, 10);
+}
+
+function pickPhone(raw: any): string | null {
+  let fallbackPhone: string | null = null;
+
+  if (
+    Array.isArray(raw?.other_addresses_contact_info) &&
+    raw.other_addresses_contact_info.length > 0
+  ) {
+    fallbackPhone = normalizeString(
+      raw.other_addresses_contact_info[0]?.contact_info_data?.phone_numbers?.[0],
+    );
+  }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-4 py-6">
-      <div className="relative mt-6 mb-6 flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4 md:px-8">
-          <div className="flex items-start gap-4">
-            <CompanyAvatar name={shipper.title} logoUrl={logoUrl} size="lg" />
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-                  {profile?.title || shipper.title || shipper.name || "Company"}
-                </h2>
-                {isSaved && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                    Saved
-                  </span>
-                )}
-              </div>
-              {companyId && (
-                <p className="text-xs text-slate-500">{companyId}</p>
-              )}
-              <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                {normalizedWebsite && (
-                  <a
-                    href={normalizedWebsite}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
-                  >
-                    <GlobeAltIcon className="h-4 w-4" />
-                    <span className="truncate max-w-[180px]">
-                      {normalizedWebsite.replace(/^https?:\/\//i, "")}
-                    </span>
-                  </a>
-                )}
-                {normalizedPhone && (
-                  <a
-                    href={`tel:${normalizedPhone}`}
-                    className="inline-flex items-center gap-1"
-                  >
-                    <PhoneIcon className="h-4 w-4" />
-                    <span>{normalizedPhone}</span>
-                  </a>
-                )}
-              </div>
-              {showEnrichmentBanner && (
-                <p className="text-xs text-amber-600">
-                  AI enrichment not available for this company yet.
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {availableYears.length > 0 && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
-                <CalendarDaysIcon className="h-4 w-4 text-slate-500" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Year
-                </span>
-                <select
-                  value={selectedYear ?? ""}
-                  onChange={(e) => setSelectedYear(e.target.value ? Number(e.target.value) : null)}
-                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
-                >
-                  {availableYears.map((optionYear) => (
-                    <option key={optionYear} value={optionYear}>
-                      {optionYear}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={handleSaveClick}
-              disabled={saveLoading}
-              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                isSaved
-                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  : "bg-indigo-600 text-white hover:bg-indigo-500"
-              } disabled:cursor-not-allowed disabled:opacity-60`}
-            >
-              {isSaved ? (
-                <BookmarkSlashIcon className="h-4 w-4" />
-              ) : (
-                <BookmarkIcon className="h-4 w-4" />
-              )}
-              <span>
-                {isSaved
-                  ? "Saved to Command Center"
-                  : saveLoading
-                  ? "Saving…"
-                  : "Save to Command Center"}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-100"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="max-h-[calc(100vh-8rem)] overflow-y-auto px-6 py-6 md:px-8">
-          {(loadingProfile || error) && (
-            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              {loadingProfile && <div>Loading company profile…</div>}
-              {error && !loadingProfile && (
-                <div className="text-rose-600">{error}</div>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-            {kpiItems.map((item) => (
-              <KpiTile key={item.label} {...item} />
-            ))}
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {topRouteHeading}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {topRouteLast12m || "Not available yet"}
-              </p>
-              {topRouteShipments != null && topRouteLast12m && (
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {formatNumber(topRouteShipments)} shipments
-                </p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {mostRecentHeading}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {mostRecentRoute || "Not available yet"}
-              </p>
-              {mostRecentRouteShipments != null && mostRecentRoute && (
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {formatNumber(mostRecentRouteShipments)} shipments
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-6 md:grid-cols-3">
-            <div className="space-y-4 md:col-span-2">
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 md:px-6 md:py-5">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      Shipment velocity
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Monthly shipments split between FCL and LCL services                    </p>
-                  </div>
-                  {loadingProfile && (
-                    <p className="text-xs text-slate-400">Loading trend…</p>
-                  )}
-                </div>
-                {chartData.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    No lane-level trend data available yet for this shipper.
-                  </p>
-                ) : (
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <BarChart
-                        data={chartData}
-                        margin={{ top: 8, right: 12, left: 0, bottom: 8 }}
-                        barSize={12}
-                      >
-                        <defs>
-                          <linearGradient id="fclGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#6C4DFF" stopOpacity={1} />
-                            <stop offset="100%" stopColor="#4C8DFF" stopOpacity={0.9} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis
-                          dataKey="monthLabel"
-                          tick={{ fontSize: 10, fill: "#64748b" }}
-                          tickLine={false}
-                        />
-                        <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
-                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(15,23,42,0.04)" }} />
-                        <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" align="right" />
-                        <Bar
-                          dataKey="fcl"
-                          name="FCL"
-                          fill="url(#fclGradient)"
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Bar
-                          dataKey="lcl"
-                          name="LCL"
-                          fill="#22c55e"
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Trade corridor analysis ({selectedYear ? selectedYear : 'last 12m'})
-                </p>
-                {topRoutes.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Lane-level shipment data is not available for this company yet.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-                    {topRoutes.map((lane, idx) => (
-                      <li key={`${lane.route}-${idx}`} className="flex items-center justify-between gap-2">
-                        <span className="truncate">{lane.route}</span>
-                        <span className="text-[11px] text-slate-500">
-                          {formatNumber(lane.shipments ?? null)} shipments
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {enrichment && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    AI insights
-                  </p>
-                  {hasEnrichmentContent ? (
-                    <>
-                      {enrichmentSummary && (
-                        <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
-                          {enrichmentSummary}
-                        </p>
-                      )}
-                      {enrichmentOpportunities.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Opportunities
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentOpportunities.map((item, idx) => (
-                              <li key={`opp-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentRisks.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Risks
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentRisks.map((item, idx) => (
-                              <li key={`risk-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-rose-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentTalkingPoints.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Recommended talking points
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentTalkingPoints.map((item, idx) => (
-                              <li key={`talk-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentExtraSections.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {enrichmentExtraSections.map((section, idx) => (
-                            <div key={`section-${idx}`}>
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                {section.label}
-                              </p>
-                              <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                                {section.items.map((item, idy) => (
-                                  <li key={`section-${idx}-item-${idy}`} className="flex items-start gap-2">
-                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                    <span className="leading-snug">{item}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">
-                      AI enrichment is not available for this company yet.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {selectedYear ? `Container mix (${selectedYear})` : 'Container mix'}
-                </p>
-                <div className="mt-3">
-                  <KpiTile
-                    label={selectedYear ? `Container mix (${selectedYear})` : 'Container mix'}
-                    value={selectedYear ? (containerMixYear ?? '—') : (containerMix ?? '—')}
-                    icon={ChartPieIcon}
-                    accent="indigo-strong"
-                  />
-                </div>
-              </div>
-
-              {lastShipmentDate && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Shipment activity
-                  </p>
-                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                    <ClockIcon className="h-4 w-4 text-slate-400" />
-                    <span>Last shipment: {formatDateLabel(lastShipmentDate)}</span>
-                  </div>
-                </div>
-              )}
-
-              {supplierList.length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Key partners
-                  </p>
-                  <ul className="mt-2 space-y-1.5">
-                    {supplierList.map((supplier, idx) => (
-                      <li key={`supplier-${idx}`} className="flex items-start gap-2 text-xs text-slate-700">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                        <span className="leading-snug">{supplier}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    normalizeString(raw?.phone_number) ??
+    normalizeString(raw?.company_main_phone_number) ??
+    normalizeString(raw?.phone) ??
+    normalizeString(raw?.phone_number_main) ??
+    fallbackPhone ??
+    null
   );
 }
+
+function buildSnapshotFromCompanyData(
+  companySlug: string,
+  raw: any,
+) {
+  const last12Keys = getLast12MonthKeys();
+
+  const monthlyMap = parseTimeSeriesToMonthlyVolumes(raw?.time_series);
+  applyRecentBolsFclLclSplits(monthlyMap, raw?.recent_bols);
+
+  const orderedMonths = Array.from(monthlyMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  let shipmentsLast12m = 0;
+  let totalTeu12m = 0;
+  let totalWeight12m = 0;
+  let totalEstimatedSpend12m = 0;
+  let fclCount12m = 0;
+  let lclCount12m = 0;
+
+  for (const [month, value] of orderedMonths) {
+    if (!last12Keys.has(month)) continue;
+
+    shipmentsLast12m += value.shipments || 0;
+    totalTeu12m += value.teu || 0;
+    totalWeight12m += value.weight || 0;
+    totalEstimatedSpend12m += value.estSpendUsd || 0;
+    fclCount12m += value.fcl || 0;
+    lclCount12m += value.lcl || 0;
+  }
+
+  if (fclCount12m === 0 && lclCount12m === 0) {
+    const loadRows = Array.isArray(raw?.containers_load) ? raw.containers_load : [];
+    const fclRow = loadRows.find((row: any) => String(row?.load_type).toUpperCase() === "FCL");
+    const lclRow = loadRows.find((row: any) => String(row?.load_type).toUpperCase() === "LCL");
+
+    const fclPctValue = normalizeNumber(fclRow?.shipments_perc);
+    const lclPctValue = normalizeNumber(lclRow?.shipments_perc);
+
+    const pctFcl = fclPctValue != null ? fclPctValue / 100 : null;
+    const pctLcl = lclPctValue != null ? lclPctValue / 100 : null;
+
+    if (shipmentsLast12m > 0 && pctFcl != null && pctLcl != null) {
+      fclCount12m = Math.round(shipmentsLast12m * pctFcl);
+      lclCount12m = Math.max(0, shipmentsLast12m - fclCount12m);
+    }
+  }
+
+  // Build top routes using recent BOLs when available.  If no recent
+  // Build top routes using recent BOLs when available.
+  // If recent BOL routes are missing or resolve only to Unknown → Unknown,
+  // fall back to aggregated top-route data provided by ImportYeti.
+  const isUsableRouteLabel = (value: unknown): value is string =>
+    typeof value === "string" && value.trim().length > 0 && value.trim() !== "Unknown → Unknown";
+
+  let topRoutes: TopRoute[] = buildTopRoutesFromRecentBols(raw?.recent_bols);
+
+  const needsFallback =
+    topRoutes.length === 0 || topRoutes.every((entry) => !isUsableRouteLabel(entry?.route));
+
+  if (needsFallback) {
+    const aggregated: any[] = Array.isArray(raw?.route_kpis?.topRoutesLast12m)
+      ? raw.route_kpis.topRoutesLast12m
+      : Array.isArray(raw?.top_routes)
+        ? raw.top_routes
+        : Array.isArray(raw?.topRoutes)
+          ? raw.topRoutes
+          : [];
+    const fallback: TopRoute[] = [];
+    for (const entry of aggregated) {
+      // Attempt to use the ImportYeti-provided route string. If it is missing or unusable,
+      // rebuild it using our buildRouteLabel helper. Skip any entries that still
+      // fail to produce a usable route after normalization.
+      let route: string | null = normalizeString(entry?.route);
+      if (!isUsableRouteLabel(route)) {
+        route = buildRouteLabel(entry);
+      }
+      if (!isUsableRouteLabel(route)) continue;
+
+      const shipments =
+        normalizeNumber(entry?.shipments) ??
+        normalizeNumber(entry?.count) ??
+        normalizeNumber(entry?.shipments_12m) ??
+        0;
+
+      const teu =
+        normalizeNumber(entry?.teu) ??
+        normalizeNumber(entry?.total_teu) ??
+        normalizeNumber(entry?.teu_12m) ??
+        null;
+
+      const fclShipments =
+        normalizeNumber(entry?.fclShipments) ??
+        normalizeNumber(entry?.fcl_count) ??
+        normalizeNumber(entry?.fcl_shipments) ??
+        null;
+
+      const lclShipments =
+        normalizeNumber(entry?.lclShipments) ??
+        normalizeNumber(entry?.lcl_count) ??
+        normalizeNumber(entry?.lcl_shipments) ??
+        null;
+
+      fallback.push({ route, shipments, teu, fclShipments, lclShipments });
+    }
+    if (fallback.length > 0) {
+      topRoutes = fallback;
+    }
+  }
+
+  topRoutes = topRoutes
+    .filter((entry) => isUsableRouteLabel(entry?.route))
+    .sort((a, b) => b.shipments - a.shipments)
+    .slice(0, 10);
+
+  const topSuppliers = pickTopSuppliers(raw);
+
+  const spendCoveragePct = extractSpendCoveragePct(raw);
+  const coveredSpendUsd =
+    normalizeNumber(raw?.est_spend) ??
+    normalizeNumber(raw?.est_spend_usd) ??
+    normalizeNumber(raw?.total_shipping_cost) ??
+    0;
+
+  const estimatedSpend12m =
+    coveredSpendUsd > 0
+      ? spendCoveragePct && spendCoveragePct > 0 && spendCoveragePct < 100
+        ? coveredSpendUsd / (spendCoveragePct / 100)
+        : coveredSpendUsd
+      : totalEstimatedSpend12m;
+
+  const lastShipmentDate =
+    Array.isArray(raw?.recent_bols) && raw.recent_bols.length > 0
+      ? (() => {
+          const dates = raw.recent_bols
+            .map((bol: any) =>
+              parseImportYetiDate(
+                bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? bol?.shipped_on,
+              ),
+            )
+            .filter((d: Date | null): d is Date => Boolean(d))
+            .sort((a: Date, b: Date) => b.getTime() - a.getTime());
+
+          return dates[0] ? dates[0].toISOString().slice(0, 10) : null;
+        })()
+      : (() => {
+          const end = parseImportYetiDate(raw?.date_range?.end_date);
+          return end ? end.toISOString().slice(0, 10) : null;
+        })();
+
+  const monthlyVolumes = Object.fromEntries(
+    orderedMonths.map(([month, value]) => [
+      month,
+      {
+        fcl: value.fcl,
+        lcl: value.lcl,
+        shipments: value.shipments,
+        teu: value.teu,
+        weight: value.weight,
+        est_spend_usd: Math.round((value.estSpendUsd || 0) * 100) / 100,
+      },
+    ]),
+  );
+
+  return {
+    company_id: companySlug,
+    key: `company/${companySlug}`,
+    company_name:
+      normalizeString(raw?.title) ??
+      normalizeString(raw?.name) ??
+      companySlug,
+    title:
+      normalizeString(raw?.title) ??
+      normalizeString(raw?.name) ??
+      companySlug,
+    name:
+      normalizeString(raw?.title) ??
+      normalizeString(raw?.name) ??
+      companySlug,
+    website: normalizeString(raw?.website),
+    phone_number: pickPhone(raw),
+    address:
+      normalizeString(raw?.address) ??
+      normalizeString(raw?.address_plain) ??
+      null,
+    country: normalizeString(raw?.country),
+    country_code:
+      normalizeString(raw?.country_code) ??
+      null,
+    total_shipments:
+      normalizeNumber(raw?.total_shipments) ??
+      shipmentsLast12m,
+    shipments_last_12m: shipmentsLast12m,
+    total_teu: Math.round(totalTeu12m * 100) / 100,
+    total_weight_kg_12m: Math.round(totalWeight12m * 100) / 100,
+    est_spend:
+      Math.round(estimatedSpend12m * 100) / 100,
+    est_spend_coverage_pct: spendCoveragePct,
+    fcl_count: fclCount12m,
+    lcl_count: lclCount12m,
+    last_shipment_date: lastShipmentDate,
+    monthly_volumes: monthlyVolumes,
+    top_routes: topRoutes,
+    top_suppliers: topSuppliers,
+    notify_parties: Array.isArray(raw?.notify_party_table)
+      ? raw.notify_party_table
+      : [],
+    recent_bols: Array.isArray(raw?.recent_bols) ? raw.recent_bols : [],
+    containers: Array.isArray(raw?.containers) ? raw.containers : [],
+    containers_load: Array.isArray(raw?.containers_load) ? raw.containers_load : [],
+    avg_teu_per_shipment: raw?.avg_teu_per_shipment ?? null,
+    avg_teu_per_month: raw?.avg_teu_per_month ?? null,
+    route_kpis: {
+      shipmentsLast12m,
+      teuLast12m: Math.round(totalTeu12m * 100) / 100,
+      estSpendUsd12m:
+        Math.round(estimatedSpend12m * 100) / 100,
+      topRouteLast12m: topRoutes[0]?.route ?? null,
+      mostRecentRoute:
+        buildRouteLabel(
+          Array.isArray(raw?.recent_bols) ? raw.recent_bols[0] : null,
+        ) ??
+        topRoutes[0]?.route ??
+        null,
+      sampleSize: Array.isArray(raw?.recent_bols) ? raw.recent_bols.length : 0,
+      topRoutesLast12m: topRoutes,
+    },
+  };
+}
+
+function buildCompanyProfileFromSnapshot(
+  snapshot: any,
+  rawPayload: any,
+  companySlug: string,
+) {
+  const raw = rawPayload?.data || rawPayload || {};
+  const monthlyVolumes = snapshot?.monthly_volumes || {};
+
+  const timeSeries: MonthlyPoint[] = Object.entries(monthlyVolumes)
+    .map(([month, value]: [string, any]) => ({
+      month,
+      fclShipments: normalizeNumber(value?.fcl) ?? 0,
+      lclShipments: normalizeNumber(value?.lcl) ?? 0,
+      shipments: normalizeNumber(value?.shipments) ?? 0,
+      teu: normalizeNumber(value?.teu) ?? 0,
+      weight: normalizeNumber(value?.weight) ?? 0,
+      estSpendUsd: normalizeNumber(value?.est_spend_usd) ?? 0,
+    }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  const routeKpis = {
+    shipmentsLast12m:
+      normalizeNumber(snapshot?.route_kpis?.shipmentsLast12m) ??
+      normalizeNumber(snapshot?.shipments_last_12m) ??
+      normalizeNumber(snapshot?.total_shipments) ??
+      0,
+    teuLast12m:
+      normalizeNumber(snapshot?.route_kpis?.teuLast12m) ??
+      normalizeNumber(snapshot?.total_teu) ??
+      0,
+    estSpendUsd12m:
+      normalizeNumber(snapshot?.route_kpis?.estSpendUsd12m) ??
+      normalizeNumber(snapshot?.est_spend) ??
+      0,
+    topRouteLast12m:
+      normalizeString(snapshot?.route_kpis?.topRouteLast12m) ??
+      normalizeString(snapshot?.top_routes?.[0]?.route) ??
+      null,
+    mostRecentRoute:
+      normalizeString(snapshot?.route_kpis?.mostRecentRoute) ??
+      normalizeString(snapshot?.top_routes?.[0]?.route) ??
+      null,
+    sampleSize:
+      normalizeNumber(snapshot?.route_kpis?.sampleSize) ??
+      normalizeNumber(snapshot?.shipments_last_12m) ??
+      0,
+    topRoutesLast12m: Array.isArray(snapshot?.route_kpis?.topRoutesLast12m)
+      ? snapshot.route_kpis.topRoutesLast12m
+      : Array.isArray(snapshot?.top_routes)
+        ? snapshot.top_routes
+        : [],
+  };
+
+  const containers = {
+    fclShipments12m: normalizeNumber(snapshot?.fcl_count) ?? 0,
+    lclShipments12m: normalizeNumber(snapshot?.lcl_count) ?? 0,
+  };
+
+  const title = inferProfileTitle(snapshot, raw, companySlug);
+  const website = inferProfileWebsite(snapshot, raw);
+  const domain = inferProfileDomain(snapshot, raw);
+
+  return {
+    key: `company/${companySlug}`,
+    companyId: `company/${companySlug}`,
+    name: title,
+    title,
+    domain,
+    website,
+    phoneNumber:
+      normalizeString(snapshot?.phone_number) ??
+      pickPhone(raw),
+    phone:
+      normalizeString(snapshot?.phone_number) ??
+      pickPhone(raw),
+    address:
+      normalizeString(snapshot?.address) ??
+      normalizeString(raw?.address) ??
+      normalizeString(raw?.address_plain) ??
+      null,
+    countryCode:
+      normalizeString(snapshot?.country_code) ??
+      normalizeString(raw?.country_code) ??
+      normalizeString(raw?.country) ??
+      null,
+    country:
+      normalizeString(snapshot?.country) ??
+      normalizeString(raw?.country) ??
+      null,
+    lastShipmentDate:
+      normalizeString(snapshot?.last_shipment_date) ??
+      null,
+    estSpendUsd12m:
+      normalizeNumber(snapshot?.est_spend) ??
+      0,
+    estSpendCoveragePct:
+      normalizeNumber(snapshot?.est_spend_coverage_pct) ??
+      extractSpendCoveragePct(raw) ??
+      null,
+    totalShipments:
+      normalizeNumber(snapshot?.shipments_last_12m) ??
+      normalizeNumber(snapshot?.total_shipments) ??
+      0,
+    routeKpis,
+    timeSeries,
+    containers,
+    topSuppliers: Array.isArray(snapshot?.top_suppliers)
+      ? snapshot.top_suppliers
+      : [],
+    time_series: monthlyVolumes,
+    containers_load: Array.isArray(snapshot?.containers_load)
+      ? snapshot.containers_load
+      : [],
+    containers_detail: Array.isArray(snapshot?.containers)
+      ? snapshot.containers
+      : [],
+    top_routes: Array.isArray(snapshot?.top_routes) ? snapshot.top_routes : [],
+    most_recent_route: routeKpis.mostRecentRoute
+      ? { route: routeKpis.mostRecentRoute }
+      : null,
+    suppliers_sample: Array.isArray(snapshot?.top_suppliers)
+      ? snapshot.top_suppliers
+      : [],
+    notify_party_table: Array.isArray(snapshot?.notify_parties)
+      ? snapshot.notify_parties
+      : [],
+    recent_bols: Array.isArray(snapshot?.recent_bols)
+      ? snapshot.recent_bols
+      : [],
+    avg_teu_per_shipment: snapshot?.avg_teu_per_shipment ?? null,
+    avg_teu_per_month: snapshot?.avg_teu_per_month ?? null,
+    totalShippingCost:
+      normalizeNumber(raw?.total_shipping_cost) ??
+      normalizeNumber(snapshot?.est_spend) ??
+      0,
+    estSpendCoveragePct:
+      normalizeNumber(snapshot?.est_spend_coverage_pct) ??
+      extractSpendCoveragePct(raw) ??
+      null,
+    rawOverview: {
+      totalShipmentsAllTime:
+        normalizeNumber(raw?.total_shipments) ??
+        normalizeNumber(snapshot?.total_shipments) ??
+        0,
+      carriersPerCountry: raw?.carriers_per_country ?? {},
+      dateRange: raw?.date_range ?? null,
+      alsoKnownNames: Array.isArray(raw?.also_known_names) ? raw.also_known_names : [],
+      hsCodes: raw?.hs_codes ?? [],
+    },
+  };
+}
+
+async function handleCompanyBolsAction(supabase: any, companyId: string) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📋 COMPANY BOLS REQUEST:", companyId);
+
+  const env = buildEnvConfig();
+  if (!env.isValid) {
+    return jsonResponse({ ok: false, error: "ImportYeti API key not configured" }, 500);
+  }
+
+  const normalizedCompanyKey = normalizeCompanyKey(companyId);
+  console.log("  Normalized slug:", normalizedCompanyKey);
+
+  try {
+    const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
+
+    if (
+      cached?.data?.raw_payload?.data?.recent_bols &&
+      Array.isArray(cached.data.raw_payload.data.recent_bols)
+    ) {
+      console.log(
+        "✅ recent_bols from cached raw payload:",
+        cached.data.raw_payload.data.recent_bols.length,
+      );
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      return jsonResponse({
+        ok: true,
+        rows: cached.data.raw_payload.data.recent_bols,
+        total: cached.data.raw_payload.data.recent_bols.length,
+        cached_at: cached.data.updated_at,
+      });
+    }
+
+    if (
+      Array.isArray(cached?.data?.raw_payload?.recent_bols)
+    ) {
+      console.log(
+        "✅ recent_bols from cached payload:",
+        cached.data.raw_payload.recent_bols.length,
+      );
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      return jsonResponse({
+        ok: true,
+        rows: cached.data.raw_payload.recent_bols,
+        total: cached.data.raw_payload.recent_bols.length,
+        cached_at: cached.data.updated_at,
+      });
+    }
+
+    const upstream = await fetchCompanyBolsUpstream(normalizedCompanyKey, env);
+    console.log("✅ BOL rows fetched:", upstream.rows.length);
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return jsonResponse({
+      ok: true,
+      rows: upstream.rows,
+      total: upstream.rows.length,
+    });
+  } catch (error: any) {
+    console.error("❌ companyBols failed:", error);
+    return jsonResponse(
+      {
+        ok: false,
+        error: error?.message || "companyBols failed",
+      },
+      500,
+    );
+  }
+}
+
+async function handleSearchAction(
+  q: string,
+  page: number = 1,
+  pageSize: number = 25,
+) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("🔍 SEARCH REQUEST:", { q, page, pageSize });
+
+  const env = buildEnvConfig();
+  if (!env.isValid) {
+    return jsonResponse(
+      { ok: false, error: "ImportYeti API key not configured" },
+      500,
+    );
+  }
+
+  if (!q || typeof q !== "string" || q.trim().length === 0) {
+    return jsonResponse(
+      { ok: false, error: "Query (q) is required and must be non-empty" },
+      400,
+    );
+  }
+
+  try {
+    const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
+    const validatedPageSize = Math.max(
+      1,
+      Math.min(100, Number.isFinite(pageSize) ? Number(pageSize) : 25),
+    );
+    const offset = (validatedPage - 1) * validatedPageSize;
+
+    const url = new URL(env.searchUrl);
+    url.searchParams.set("name", q.trim());
+    url.searchParams.set("page_size", String(validatedPageSize));
+    url.searchParams.set("offset", String(offset));
+
+    const iyUrl = url.toString();
+
+    console.log("  METHOD: GET");
+    console.log("  URL:", iyUrl);
+    console.log("  Auth:", env.apiKeySource || "IY API key");
+
+    const rawPayload = await fetchImportYetiJson(iyUrl, env.apiKey);
+
+    const results = Array.isArray(rawPayload?.results)
+      ? rawPayload.results
+      : Array.isArray(rawPayload?.data)
+        ? rawPayload.data
+        : Array.isArray(rawPayload)
+          ? rawPayload
+          : [];
+
+    const total =
+      rawPayload?.total ?? rawPayload?.pagination?.total ?? results.length;
+
+    console.log("📊 Search result:", {
+      results_count: results.length,
+      total,
+      page: validatedPage,
+      pageSize: validatedPageSize,
+    });
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return jsonResponse({
+      ok: true,
+      results,
+      page: validatedPage,
+      pageSize: validatedPageSize,
+      total,
+    });
+  } catch (error: any) {
+    console.error("❌ Search handler error:", error);
+    return jsonResponse(
+      { ok: false, error: error?.message || "Search failed" },
+      500,
+    );
+  }
+}
+
+async function handleCompanyProfileAction(supabase: any, companyId: string) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📦 COMPANY PROFILE REQUEST:", companyId);
+
+  const env = buildEnvConfig();
+  if (!env.isValid) {
+    return jsonResponse(
+      { ok: false, error: "ImportYeti API key not configured" },
+      500,
+    );
+  }
+
+  const normalizedCompanyKey = normalizeCompanyKey(companyId);
+  console.log("  Normalized slug:", normalizedCompanyKey);
+
+  const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
+  if (cached?.data && cached.ageDays < SNAPSHOT_TTL_DAYS) {
+    console.log("✅ Using cached snapshot");
+
+    const cachedProfile = buildCompanyProfileFromSnapshot(
+      cached.data.parsed_summary,
+      cached.data.raw_payload,
+      normalizedCompanyKey,
+    );
+
+    return jsonResponse({
+      ok: true,
+      source: "cache",
+      snapshot: cached.data.parsed_summary,
+      companyProfile: cachedProfile,
+      raw: cached.data.raw_payload,
+      cached_at: cached.data.updated_at,
+    });
+  }
+
+  try {
+    const upstream = await fetchCompanyByIdUpstream(normalizedCompanyKey, env);
+    const rawCompanyData = upstream.data ?? {};
+
+    const snapshot = buildSnapshotFromCompanyData(
+      normalizedCompanyKey,
+      rawCompanyData,
+    );
+
+    const companyProfile = buildCompanyProfileFromSnapshot(
+      snapshot,
+      upstream.raw,
+      normalizedCompanyKey,
+    );
+
+    console.log("📊 Parsed profile:", {
+      shipmentsLast12m: companyProfile.routeKpis?.shipmentsLast12m,
+      teuLast12m: companyProfile.routeKpis?.teuLast12m,
+      estSpendUsd12m: companyProfile.routeKpis?.estSpendUsd12m,
+      timeSeriesPoints: companyProfile.timeSeries?.length,
+      topRoutes: companyProfile.routeKpis?.topRoutesLast12m?.length,
+      recentBols: companyProfile.recent_bols?.length ?? 0,
+    });
+
+    const now = new Date().toISOString();
+
+    const snapshotError = await safeUpsertSnapshot(supabase, {
+      company_id: normalizedCompanyKey,
+      raw_payload: upstream.raw,
+      parsed_summary: snapshot,
+      updated_at: now,
+    });
+
+    if (snapshotError) {
+      console.error("❌ Snapshot save error:", snapshotError);
+    } else {
+      console.log("✅ Snapshot saved");
+    }
+
+    const indexError = await safeUpsertIndex(supabase, {
+      company_id: normalizedCompanyKey,
+      company_name: companyProfile.title || normalizedCompanyKey,
+      country: companyProfile.countryCode || null,
+      city: companyProfile.address || null,
+      last_shipment_date: companyProfile.lastShipmentDate || null,
+      total_shipments: companyProfile.totalShipments || 0,
+      total_teu: companyProfile.routeKpis?.teuLast12m || 0,
+      updated_at: now,
+    });
+
+    if (indexError) {
+      console.error("❌ Index update error:", indexError);
+    } else {
+      console.log("✅ Search index updated");
+    }
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return jsonResponse({
+      ok: true,
+      source: "fresh",
+      snapshot,
+      companyProfile,
+      raw: upstream.raw,
+      fetched_at: now,
+    });
+  } catch (error: any) {
+    console.error("❌ Company profile failed:", error);
+    return jsonResponse(
+      {
+        ok: false,
+        error: error?.message || "Company profile failed",
+      },
+      500,
+    );
+  }
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !supabaseKey) {
+      return jsonResponse(
+        { ok: false, error: "Supabase environment not configured" },
+        500,
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
+
+    const { action, company_id, companyKey, q, page, pageSize } = body ?? {};
+
+    if (action === "search") {
+      return await handleSearchAction(q, page, pageSize);
+    }
+
+    const requestedCompanyId = company_id || companyKey;
+
+    if (!requestedCompanyId) {
+      return jsonResponse(
+        { ok: false, error: "company_id is required" },
+        400,
+      );
+    }
+
+    if (action === "companyBols") {
+      return await handleCompanyBolsAction(supabase, requestedCompanyId);
+    }
+
+    if (
+      action === "company" ||
+      action === "companyProfile" ||
+      action === "companySnapshot"
+    ) {
+      return await handleCompanyProfileAction(supabase, requestedCompanyId);
+    }
+
+    return jsonResponse(
+      { ok: false, error: `Unknown action: ${action}` },
+      400,
+    );
+  } catch (error: any) {
+    console.error("❌ Fatal error:", error);
+    return jsonResponse(
+      { ok: false, error: error?.message || "Internal server error" },
+      500,
+    );
+  }
+});
