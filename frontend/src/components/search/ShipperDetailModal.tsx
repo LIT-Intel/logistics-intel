@@ -407,7 +407,7 @@ export default function ShipperDetailModal({
     return `${fclPct}% FCL / ${lclPct}% LCL`;
   }, [fclShipments12m, lclShipments12m]);
 
-  const lastShipmentDate =
+  const baselineLastShipmentDate =
     profile?.lastShipmentDate ??
     shipper.lastShipmentDate ??
     shipper.mostRecentShipment ??
