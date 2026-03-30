@@ -107,6 +107,22 @@ function normalizeMonthBucket(value: unknown): string | null {
   return null;
 }
 
+function parseBolDateFlexible(value: unknown): Date | null {
+  if (!value) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const ddmmyyyy = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    const day = Number(ddmmyyyy[1]);
+    const month = Number(ddmmyyyy[2]);
+    const year = Number(ddmmyyyy[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function buildAuthoritativeMonthlySeries(profile: any): any[] {
   const sources = [
     (profile as any)?.monthlyShipments,
@@ -504,36 +520,100 @@ export default function ShipperDetailModal({
   const displayTopRoutes =
     primaryTopRoutes.length > 0 ? primaryTopRoutes : aggregatedTopRoutes;
 
-  // derive top and most recent routes from available KPI fields or display lanes.
-  // prefer normalized KPI values when they are defined and not "unknown".
-  const resolvedTopRouteKpi =
-    typeof resolvedRouteKpis?.topRouteLast12m === "string" &&
-    resolvedRouteKpis.topRouteLast12m.toLowerCase().indexOf("unknown") === -1
+  const yearScopedTopRoutes = React.useMemo(() => {
+    if (!selectedYear || !Array.isArray((profile as any)?.recent_bols)) {
+      return displayTopRoutes;
+    }
+
+    const routeStats = new Map<string, { route: string; shipments: number; mostRecentTs: number }>();
+    for (const bol of ((profile as any).recent_bols as any[])) {
+      const parsedDate = parseBolDateFlexible(
+        bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? null,
+      );
+      if (!parsedDate || parsedDate.getUTCFullYear() !== selectedYear) continue;
+
+      const route =
+        typeof bol?.shipping_route === "string" && bol.shipping_route.trim()
+          ? bol.shipping_route.trim()
+          : (() => {
+              const origin =
+                bol?.supplier_address_loc ??
+                bol?.supplier_address_location ??
+                bol?.supplier_address_country ??
+                bol?.origin_port ??
+                bol?.origin_city ??
+                bol?.origin_country ??
+                null;
+              const dest =
+                bol?.company_address_loc ??
+                bol?.company_address_location ??
+                bol?.company_address_country ??
+                bol?.destination_port ??
+                bol?.destination_city ??
+                bol?.destination_country ??
+                null;
+              return origin || dest ? `${origin ?? "Unknown"} → ${dest ?? "Unknown"}` : null;
+            })();
+
+      if (!route || route.toLowerCase().includes('unknown')) continue;
+
+      const current = routeStats.get(route) ?? { route, shipments: 0, mostRecentTs: 0 };
+      current.shipments += 1;
+      current.mostRecentTs = Math.max(current.mostRecentTs, parsedDate.getTime());
+      routeStats.set(route, current);
+    }
+
+    const rows = Array.from(routeStats.values())
+      .sort((a, b) => b.shipments - a.shipments || b.mostRecentTs - a.mostRecentTs)
+      .slice(0, 5)
+      .map((row) => ({ route: row.route, shipments: row.shipments }));
+
+    return rows.length > 0 ? rows : displayTopRoutes;
+  }, [selectedYear, profile, displayTopRoutes]);
+
+  // derive top and most recent routes from available KPI fields or year-filtered recent_bols.
+  const topRoutes = yearScopedTopRoutes;
+  const topRouteLast12m =
+    topRoutes[0]?.route ??
+    (typeof resolvedRouteKpis?.topRouteLast12m === 'string' && !selectedYear
       ? resolvedRouteKpis.topRouteLast12m
-      : null;
-  const resolvedMostRecentRouteKpi =
-    typeof resolvedRouteKpis?.mostRecentRoute === "string" &&
-    resolvedRouteKpis.mostRecentRoute.toLowerCase().indexOf("unknown") === -1
-      ? resolvedRouteKpis.mostRecentRoute
-      : null;
-
-  const displayTopRouteLast12m: string | null =
-    resolvedTopRouteKpi ??
-    (displayTopRoutes[0]?.route as string | undefined) ??
+      : null) ??
     shipper.primaryRouteSummary ??
     shipper.primaryRoute ??
     null;
-  const displayMostRecentRoute: string | null =
-    resolvedMostRecentRouteKpi ??
-    (displayTopRoutes[0]?.route as string | undefined) ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-
-  // assign display variables to be used in render
-  const topRouteLast12m = displayTopRouteLast12m;
-  const mostRecentRoute = displayMostRecentRoute;
-  const topRoutes = displayTopRoutes;
+  const mostRecentRoute = React.useMemo(() => {
+    if (selectedYear && Array.isArray((profile as any)?.recent_bols)) {
+      const rows = ((profile as any).recent_bols as any[])
+        .map((bol) => {
+          const parsedDate = parseBolDateFlexible(
+            bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? null,
+          );
+          if (!parsedDate || parsedDate.getUTCFullYear() !== selectedYear) return null;
+          const route =
+            typeof bol?.shipping_route === 'string' && bol.shipping_route.trim()
+              ? bol.shipping_route.trim()
+              : (() => {
+                  const origin = bol?.supplier_address_loc ?? bol?.supplier_address_location ?? bol?.supplier_address_country ?? bol?.origin_port ?? bol?.origin_city ?? bol?.origin_country ?? null;
+                  const dest = bol?.company_address_loc ?? bol?.company_address_location ?? bol?.company_address_country ?? bol?.destination_port ?? bol?.destination_city ?? bol?.destination_country ?? null;
+                  return origin || dest ? `${origin ?? 'Unknown'} → ${dest ?? 'Unknown'}` : null;
+                })();
+          if (!route || route.toLowerCase().includes('unknown')) return null;
+          return { route, ts: parsedDate.getTime() };
+        })
+        .filter(Boolean) as Array<{ route: string; ts: number }>;
+      rows.sort((a, b) => b.ts - a.ts);
+      if (rows[0]?.route) return rows[0].route;
+    }
+    return (
+      (typeof resolvedRouteKpis?.mostRecentRoute === 'string' && !selectedYear
+        ? resolvedRouteKpis.mostRecentRoute
+        : null) ??
+      topRoutes[0]?.route ??
+      shipper.primaryRouteSummary ??
+      shipper.primaryRoute ??
+      null
+    );
+  }, [selectedYear, profile, resolvedRouteKpis?.mostRecentRoute, topRoutes, shipper.primaryRouteSummary, shipper.primaryRoute]);
 
   const authoritativeMonthlySeries = React.useMemo(
     () => buildAuthoritativeMonthlySeries(profile),
