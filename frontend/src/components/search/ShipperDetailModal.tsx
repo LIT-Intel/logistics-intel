@@ -407,7 +407,7 @@ export default function ShipperDetailModal({
     return `${fclPct}% FCL / ${lclPct}% LCL`;
   }, [fclShipments12m, lclShipments12m]);
 
-  const lastShipmentDate =
+  const baselineLastShipmentDate =
     profile?.lastShipmentDate ??
     shipper.lastShipmentDate ??
     shipper.mostRecentShipment ??
@@ -654,7 +654,7 @@ export default function ShipperDetailModal({
            estSpend12m))
     : estSpend12m;
 
-  const lastShipmentDate =
+  const computedLastShipmentDate =
     (Array.isArray((profile as any)?.recent_bols) && selectedYear
       ? (() => {
           const rows = ((profile as any).recent_bols as any[])
@@ -1140,14 +1140,14 @@ export default function ShipperDetailModal({
                 </div>
               </div>
 
-              {lastShipmentDate && (
+              {computedLastShipmentDate && (
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Shipment activity
                   </p>
                   <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
                     <ClockIcon className="h-4 w-4 text-slate-400" />
-                    <span>Last shipment: {formatDateLabel(lastShipmentDate)}</span>
+                    <span>Last shipment: {formatDateLabel(computedLastShipmentDate)}</span>
                   </div>
                 </div>
               )}
