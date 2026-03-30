@@ -18,11 +18,10 @@ import {
   PhoneIcon,
   Squares2X2Icon,
   SquaresPlusIcon,
-  ArrowsRightLeftIcon,
+  TruckIcon,
   ClockIcon,
   XMarkIcon,
   ChartPieIcon,
-  CalendarDaysIcon,
 } from "@heroicons/react/24/solid";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -84,6 +83,96 @@ const monthLabel = (value: string) => {
   return value;
 };
 
+function extractYearFromMonth(value: unknown): number | null {
+  if (!value) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const match = text.match(/^(\d{4})-(\d{2})$/);
+  if (match) return Number(match[1]);
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getFullYear();
+}
+
+function normalizeMonthBucket(value: unknown): string | null {
+  if (!value) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const direct = text.match(/^(\d{4})-(\d{2})$/);
+  if (direct) return `${direct[1]}-${direct[2]}`;
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+function buildAuthoritativeMonthlySeries(profile: any): any[] {
+  const sources = [
+    (profile as any)?.monthlyShipments,
+    (profile as any)?.monthly_shipments,
+    (profile as any)?.monthly_volumes,
+    (profile as any)?.time_series,
+    profile?.timeSeries,
+  ];
+
+  for (const source of sources) {
+    if (!source) continue;
+
+    if (Array.isArray(source)) {
+      const rows = source
+        .map((point: any) => {
+          const month = normalizeMonthBucket(point?.month ?? point?.period ?? point?.date ?? point?.label);
+          if (!month) return null;
+          const shipments = coerceNumber(point?.shipments) ?? 0;
+          const fcl = coerceNumber(point?.fclShipments ?? point?.fcl_shipments ?? point?.fcl ?? point?.fcl_count) ?? 0;
+          const lcl = coerceNumber(point?.lclShipments ?? point?.lcl_shipments ?? point?.lcl ?? point?.lcl_count) ?? 0;
+          const teu = coerceNumber(point?.teu ?? point?.total_teu ?? point?.teuVolume) ?? 0;
+          const estSpendUsd =
+            coerceNumber(point?.estSpendUsd ?? point?.est_spend_usd ?? point?.shipping_cost ?? point?.est_spend) ?? 0;
+          return {
+            month,
+            shipments: shipments > 0 ? shipments : fcl + lcl,
+            fclShipments: fcl,
+            lclShipments: lcl,
+            teu,
+            estSpendUsd,
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => a.month.localeCompare(b.month));
+      if (rows.length > 0) return rows;
+    }
+
+    if (typeof source === "object") {
+      const rows = Object.entries(source)
+        .map(([key, value]: [string, any]) => {
+          const month = normalizeMonthBucket(key);
+          if (!month || !value || typeof value !== "object") return null;
+          const shipments = coerceNumber(value?.shipments) ?? 0;
+          const fcl = coerceNumber(value?.fclShipments ?? value?.fcl_shipments ?? value?.fcl ?? value?.fcl_count) ?? 0;
+          const lcl = coerceNumber(value?.lclShipments ?? value?.lcl_shipments ?? value?.lcl ?? value?.lcl_count) ?? 0;
+          const teu = coerceNumber(value?.teu ?? value?.total_teu ?? value?.teuVolume) ?? 0;
+          const estSpendUsd =
+            coerceNumber(value?.estSpendUsd ?? value?.est_spend_usd ?? value?.shipping_cost ?? value?.est_spend) ?? 0;
+          return {
+            month,
+            shipments: shipments > 0 ? shipments : fcl + lcl,
+            fclShipments: fcl,
+            lclShipments: lcl,
+            teu,
+            estSpendUsd,
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => a.month.localeCompare(b.month));
+      if (rows.length > 0) return rows;
+    }
+  }
+
+  return [];
+}
+
+
 function coerceNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -93,49 +182,6 @@ function coerceNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
-}
-
-function extractYear(value: unknown): number | null {
-  if (!value) return null;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const asInt = Math.trunc(value);
-    return asInt >= 1900 && asInt <= 3000 ? asInt : null;
-  }
-
-  const text = String(value).trim();
-  if (!text) return null;
-
-  const directYear = text.match(/\b(19|20)\d{2}\b/);
-  if (directYear) return Number(directYear[0]);
-
-  const parsed = parseUnknownDate(text);
-  if (parsed) return parsed.getFullYear();
-
-  return null;
-}
-
-function cleanSupplierName(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const cleaned = value.replace(/\s+/g, " ").trim();
-  if (!cleaned) return null;
-
-  const lowered = cleaned.toLowerCase();
-  const blocked = new Set([
-    "missing in source document",
-    "missing",
-    "n/a",
-    "na",
-    "null",
-    "none",
-    "unknown",
-    "-",
-    "--",
-  ]);
-
-  if (blocked.has(lowered)) return null;
-  if (lowered.includes("missing in source document")) return null;
-
-  return cleaned;
 }
 
 function normalizeEnrichmentList(value: unknown): string[] {
@@ -166,14 +212,18 @@ function normalizeEnrichmentList(value: unknown): string[] {
         return "";
       })
       .filter((item) => item.length > 0)
-      .filter((item) => item.toLowerCase().indexOf("missing in source document") === -1);
+      .filter((item) => item.toLowerCase().indexOf('missing in source document') === -1);
   }
   if (typeof value === "string") {
     return value
+      // Split the string on one or more newline characters
       .split(/\n+/)
+      // Remove leading bullet markers like "* " or "- " from each line
       .map((line) => line.replace(/^[*-]\s*/, "").trim())
+      // Filter out any empty lines
       .filter((line) => line.length > 0)
-      .filter((line) => line.toLowerCase().indexOf("missing in source document") === -1);
+      // Remove any lines that contain the placeholder text
+      .filter((line) => line.toLowerCase().indexOf('missing in source document') === -1);
   }
   return [];
 }
@@ -202,289 +252,6 @@ function pickEnrichmentSummary(value: unknown): string | null {
   return null;
 }
 
-function normalizeMonthKey(value: unknown): string | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  const trimmed = value.trim();
-  const direct = trimmed.match(/^(\d{4})-(\d{2})/);
-  if (direct) return `${direct[1]}-${direct[2]}`;
-
-  const parsed = parseUnknownDate(trimmed);
-  if (parsed) {
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
-  }
-
-  return null;
-}
-
-function parseUnknownDate(value: unknown): Date | null {
-  if (!value) return null;
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-  const text = String(value).trim();
-  if (!text) return null;
-
-  const ddmmyyyy = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (ddmmyyyy) {
-    const d = Number(ddmmyyyy[1]);
-    const m = Number(ddmmyyyy[2]);
-    const y = Number(ddmmyyyy[3]);
-    const parsed = new Date(y, m - 1, d);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function toIsoDate(value: unknown): string | null {
-  const parsed = parseUnknownDate(value);
-  if (!parsed) return null;
-  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
-}
-
-type MonthlyMetricPoint = {
-  month: string;
-  year: number;
-  shipments: number;
-  fclShipments: number;
-  lclShipments: number;
-  teu: number;
-  estSpendUsd: number | null;
-};
-
-type RouteEntry = {
-  route: string;
-  shipments: number;
-  teu: number | null;
-  estSpendUsd: number | null;
-  lastShipmentDate: string | null;
-  fclShipments: number;
-  lclShipments: number;
-};
-
-function buildMonthlyMetricSeries(profile: IyCompanyProfile | null): MonthlyMetricPoint[] {
-  if (!profile) return [];
-
-  const byMonth = new Map<string, MonthlyMetricPoint>();
-
-  const setPoint = (monthKey: string, raw: any) => {
-    const year = extractYear(monthKey);
-    if (!year || !raw || typeof raw !== "object") return;
-
-    const fcl =
-      coerceNumber(raw?.fclShipments) ??
-      coerceNumber(raw?.fcl_shipments) ??
-      coerceNumber(raw?.fcl_count) ??
-      coerceNumber(raw?.fcl) ??
-      0;
-
-    const lcl =
-      coerceNumber(raw?.lclShipments) ??
-      coerceNumber(raw?.lcl_shipments) ??
-      coerceNumber(raw?.lcl_count) ??
-      coerceNumber(raw?.lcl) ??
-      0;
-
-    const shipments =
-      coerceNumber(raw?.shipments) ??
-      coerceNumber(raw?.shipmentCount) ??
-      coerceNumber(raw?.totalShipments) ??
-      (fcl + lcl);
-
-    const teu =
-      coerceNumber(raw?.teu) ??
-      coerceNumber(raw?.teus) ??
-      coerceNumber(raw?.total_teu) ??
-      coerceNumber(raw?.teu_count) ??
-      0;
-
-    const estSpend =
-      coerceNumber(raw?.shipping_cost) ??
-      coerceNumber(raw?.estSpendUsd) ??
-      coerceNumber(raw?.estimatedSpendUsd) ??
-      coerceNumber(raw?.marketSpendUsd) ??
-      coerceNumber(raw?.spendUsd) ??
-      coerceNumber(raw?.est_spend_usd) ??
-      coerceNumber(raw?.est_spend);
-
-    byMonth.set(monthKey, {
-      month: monthKey,
-      year,
-      shipments: shipments ?? 0,
-      fclShipments: fcl,
-      lclShipments: lcl,
-      teu,
-      estSpendUsd: estSpend,
-    });
-  };
-
-  const monthlyVolumes = (profile as any)?.monthly_volumes;
-  if (monthlyVolumes && typeof monthlyVolumes === "object" && !Array.isArray(monthlyVolumes)) {
-    for (const [key, value] of Object.entries(monthlyVolumes as Record<string, any>)) {
-      const monthKey = normalizeMonthKey(key);
-      if (!monthKey) continue;
-      setPoint(monthKey, value);
-    }
-  }
-
-  if (byMonth.size === 0) {
-    const rawTimeSeries = (profile as any)?.time_series;
-    if (rawTimeSeries && typeof rawTimeSeries === "object" && !Array.isArray(rawTimeSeries)) {
-      for (const [key, value] of Object.entries(rawTimeSeries as Record<string, any>)) {
-        const monthKey = normalizeMonthKey(key);
-        if (!monthKey || !value || typeof value !== "object") continue;
-        setPoint(monthKey, value);
-      }
-    }
-  }
-
-  if (byMonth.size === 0 && Array.isArray(profile.timeSeries) && profile.timeSeries.length > 0) {
-    for (const point of profile.timeSeries as any[]) {
-      const monthKey = normalizeMonthKey(point?.month ?? point?.period ?? point?.date);
-      if (!monthKey) continue;
-      setPoint(monthKey, point);
-    }
-  }
-
-  return Array.from(byMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
-}
-
-function normalizeRouteLabel(entry: any): string | null {
-  if (!entry) return null;
-
-  const directRoute =
-    entry.route ??
-    entry.route_name ??
-    entry.route_string ??
-    entry.lane ??
-    entry.trade_lane ??
-    entry.tradeLane ??
-    entry.shipping_route ??
-    null;
-
-  if (typeof directRoute === "string") {
-    const trimmed = directRoute.trim();
-    if (trimmed && trimmed.toLowerCase().indexOf("unknown") === -1) return trimmed;
-  }
-
-  const origin =
-    entry.supplier_address_loc ??
-    entry.supplier_address_location ??
-    entry.supplier_address_country ??
-    entry.shipper_country ??
-    entry.Country ??
-    entry.origin_country ??
-    entry.origin ??
-    null;
-
-  const destination =
-    entry.company_address_loc ??
-    entry.company_address_location ??
-    entry.company_address_country ??
-    entry.destination_country ??
-    entry.destination ??
-    null;
-
-  if (!origin && !destination) return null;
-
-  const originLabel = String(origin ?? "Unknown").trim();
-  const destinationLabel = String(destination ?? "Unknown").trim();
-  const route = `${originLabel} → ${destinationLabel}`;
-
-  if (route.toLowerCase().indexOf("unknown") !== -1) return null;
-  return route;
-}
-
-function buildSelectedYearRouteEntries(profile: IyCompanyProfile | null, selectedYear: number | null): RouteEntry[] {
-  if (!profile || !selectedYear) return [];
-
-  const recentBols = Array.isArray((profile as any)?.recent_bols) ? ((profile as any)?.recent_bols as any[]) : [];
-  const grouped = new Map<string, RouteEntry>();
-
-  for (const bol of recentBols) {
-    const isoDate = toIsoDate(
-      typeof bol?.date_formatted === "string"
-        ? bol.date_formatted
-        : typeof bol?.date === "string"
-          ? bol.date
-          : typeof bol?.arrival_date === "string"
-            ? bol.arrival_date
-            : null,
-    );
-    if (!isoDate) continue;
-
-    const year = extractYear(isoDate);
-    if (year !== selectedYear) continue;
-
-    const route = normalizeRouteLabel(bol);
-    if (!route) continue;
-
-    const teu = coerceNumber(bol?.TEU) ?? coerceNumber(bol?.teu);
-    const shippingCost = coerceNumber(bol?.shipping_cost);
-    const lcl = Boolean(bol?.lcl);
-
-    const existing = grouped.get(route) ?? {
-      route,
-      shipments: 0,
-      teu: 0,
-      estSpendUsd: 0,
-      lastShipmentDate: null,
-      fclShipments: 0,
-      lclShipments: 0,
-    };
-
-    existing.shipments += 1;
-    existing.teu = (existing.teu ?? 0) + (teu ?? 0);
-    existing.estSpendUsd = (existing.estSpendUsd ?? 0) + (shippingCost ?? 0);
-    existing.fclShipments += lcl ? 0 : 1;
-    existing.lclShipments += lcl ? 1 : 0;
-
-    const currentTs = existing.lastShipmentDate ? new Date(existing.lastShipmentDate).getTime() : 0;
-    const nextTs = new Date(isoDate).getTime();
-    if (!Number.isNaN(nextTs) && nextTs >= currentTs) {
-      existing.lastShipmentDate = isoDate;
-    }
-
-    grouped.set(route, existing);
-  }
-
-  return Array.from(grouped.values()).sort((a, b) => {
-    if (b.shipments !== a.shipments) return b.shipments - a.shipments;
-    const aTs = a.lastShipmentDate ? new Date(a.lastShipmentDate).getTime() : 0;
-    const bTs = b.lastShipmentDate ? new Date(b.lastShipmentDate).getTime() : 0;
-    return bTs - aTs;
-  });
-}
-
-function getSelectedYearLastShipmentDate(profile: IyCompanyProfile | null, selectedYear: number | null): string | null {
-  if (!profile || !selectedYear) return null;
-  const recentBols = Array.isArray((profile as any)?.recent_bols) ? ((profile as any)?.recent_bols as any[]) : [];
-
-  let best: string | null = null;
-  let bestTs = 0;
-
-  for (const bol of recentBols) {
-    const isoDate = toIsoDate(
-      typeof bol?.date_formatted === "string"
-        ? bol.date_formatted
-        : typeof bol?.date === "string"
-          ? bol.date
-          : typeof bol?.arrival_date === "string"
-            ? bol.arrival_date
-            : null,
-    );
-    if (!isoDate) continue;
-    if (extractYear(isoDate) !== selectedYear) continue;
-
-    const ts = new Date(isoDate).getTime();
-    if (!Number.isNaN(ts) && ts >= bestTs) {
-      best = isoDate;
-      bestTs = ts;
-    }
-  }
-
-  return best;
-}
-
 const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   const data = payload.reduce(
@@ -503,18 +270,21 @@ const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
   );
 };
 
+// Use a more saturated palette for KPI tiles inspired by the bar chart gradient.
+// Each entry defines a border and background color that pair nicely with the
+// overall LIT colour system.
 const ACCENT_MAP: Record<string, string> = {
-  indigo: "border-[#DDD6FE] bg-[#F3E8FF]",
-  blue: "border-[#BFDBFE] bg-[#DBEAFE]",
-  emerald: "border-[#BBF7D0] bg-[#DCFCE7]",
-  "indigo-strong": "border-[#C7D2FE] bg-[#E0E7FF]",
-  green: "border-[#BBF7D0] bg-[#DCFCE7]",
-  slate: "border-[#E2E8F0] bg-[#F8FAFC]",
-  purple: "border-[#D8B4FE] bg-[#F5E8FF]",
+  indigo: 'border-[#DDD6FE] bg-[#F3E8FF]',
+  blue: 'border-[#BFDBFE] bg-[#DBEAFE]',
+  emerald: 'border-[#BBF7D0] bg-[#DCFCE7]',
+  'indigo-strong': 'border-[#C7D2FE] bg-[#E0E7FF]',
+  green: 'border-[#BBF7D0] bg-[#DCFCE7]',
+  slate: 'border-[#E2E8F0] bg-[#F8FAFC]',
+  purple: 'border-[#D8B4FE] bg-[#F5E8FF]',
 };
 
 const ICON_CONTAINER_CLASS =
-  "mb-1 inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-900/8 text-slate-700";
+  "mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/5 text-slate-600";
 
 interface KpiTileProps {
   label: string;
@@ -524,16 +294,18 @@ interface KpiTileProps {
 }
 
 const KpiTile: React.FC<KpiTileProps> = ({ label, value, icon: Icon, accent }) => (
-  <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 ${ACCENT_MAP[accent]}`}>
+  <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 ${ACCENT_MAP[accent]}`}> 
     <div className={ICON_CONTAINER_CLASS}>
-      <Icon className="h-4.5 w-4.5" />
+      <Icon className="h-3.5 w-3.5" />
     </div>
-    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      {label}
+    </p>
     <p className="text-xl font-semibold text-slate-900 md:text-2xl">{value}</p>
   </div>
 );
 
-type ShipperDetailModalProps = {
+export type ShipperDetailModalProps = {
   isOpen: boolean;
   shipper: IyShipperHit | null;
   loadingProfile: boolean;
@@ -585,33 +357,26 @@ export default function ShipperDetailModal({
     "";
   const domain = profile?.domain ?? shipper.domain ?? shipper.website ?? null;
   const logoUrl = domain ? getCompanyLogoUrl(domain) : undefined;
-  const resolvedRouteKpis = routeKpis ?? profile?.routeKpis ?? null;
 
+  const resolvedRouteKpis = routeKpis ?? profile?.routeKpis ?? null;
   const shipments12m =
     coerceNumber(resolvedRouteKpis?.shipmentsLast12m) ??
     coerceNumber(profile?.totalShipments) ??
     coerceNumber(shipper.totalShipments) ??
     coerceNumber(shipper.shipmentsLast12m);
-
   const teu12m =
     coerceNumber(resolvedRouteKpis?.teuLast12m) ??
-    coerceNumber((profile as any)?.teuLast12m) ??
-    coerceNumber((profile as any)?.totalTeu) ??
     coerceNumber(shipper.teusLast12m);
-
   const estSpend12m =
-    coerceNumber((resolvedRouteKpis as any)?.estSpendUsd12m) ??
-    coerceNumber((resolvedRouteKpis as any)?.estSpendUsd) ??
+    coerceNumber(resolvedRouteKpis?.estSpendUsd12m) ??
     coerceNumber(profile?.estSpendUsd12m) ??
-    coerceNumber((profile as any)?.estSpendUsd) ??
     coerceNumber(shipper.estSpendLast12m);
-
   const fclShipments12m = getFclShipments12m(profile);
   const lclShipments12m = getLclShipments12m(profile);
-
-  const containerMix12m = React.useMemo(() => {
-    const fcl = typeof fclShipments12m === "number" ? fclShipments12m : 0;
-    const lcl = typeof lclShipments12m === "number" ? lclShipments12m : 0;
+  // Calculate container mix ratio based on FCL and LCL shipment counts.
+  const containerMix = React.useMemo(() => {
+    const fcl = typeof fclShipments12m === 'number' ? fclShipments12m : 0;
+    const lcl = typeof lclShipments12m === 'number' ? lclShipments12m : 0;
     const total = fcl + lcl;
     if (total === 0) return null;
     const fclPct = Math.round((fcl / total) * 100);
@@ -619,59 +384,193 @@ export default function ShipperDetailModal({
     return `${fclPct}% FCL / ${lclPct}% LCL`;
   }, [fclShipments12m, lclShipments12m]);
 
-  const monthlyMetrics = React.useMemo(() => buildMonthlyMetricSeries(profile), [profile]);
+  const lastShipmentDate =
+    profile?.lastShipmentDate ??
+    shipper.lastShipmentDate ??
+    shipper.mostRecentShipment ??
+    null;
+
+  /* Determine the list of top lanes to display along with the primary and most recent route.
+     We prioritize lanes provided in resolvedRouteKpis.topRoutesLast12m when they contain
+     non‑placeholder route strings. If those lanes are missing or only contain
+     "Unknown → Unknown" routes, we fall back to aggregated top routes available on
+     the profile (top_routes or topRoutes). When falling back we build lane labels
+     from origin/destination fields such as origin_city, origin_country, supplier_address_loc,
+     company_address_loc, etc. This ensures that the Top lanes list always shows the
+     best available route labels rather than Unknown values.
+   */
+
+  // extract and sort primary lanes from resolvedRouteKpis.topRoutesLast12m,
+  // filtering out any routes that contain "unknown" in a case-insensitive manner.
+  let primaryTopRoutes: { route: string; shipments?: number | null }[] = [];
+  if (Array.isArray(resolvedRouteKpis?.topRoutesLast12m)) {
+    primaryTopRoutes = (resolvedRouteKpis.topRoutesLast12m as any[])
+      .filter((entry: any) => {
+        if (!entry || typeof entry.route !== "string") return false;
+        // treat any route containing the word "unknown" (any separator) as invalid
+        return entry.route.toLowerCase().indexOf("unknown") === -1;
+      })
+      .sort(
+        (a: any, b: any) =>
+          (coerceNumber(b?.shipments) ?? 0) - (coerceNumber(a?.shipments) ?? 0),
+      )
+      .slice(0, 5);
+  }
+
+  // build aggregated lanes from profile.top_routes or profile.topRoutes
+  let aggregatedTopRoutes: { route: string; shipments?: number | null }[] = [];
+  const rawAgg: any[] =
+    (profile as any)?.top_routes ?? (profile as any)?.topRoutes ?? [];
+  if (Array.isArray(rawAgg)) {
+    aggregatedTopRoutes = rawAgg
+      .map((entry: any) => {
+        if (!entry) return null;
+        // attempt to use provided route string when available
+        let route: string | null =
+          entry.route ?? entry.route_name ?? entry.route_string ?? null;
+        // if no route, construct from origin/destination fields
+        if (!route) {
+          const origin =
+            entry.origin ||
+            entry.origin_port ||
+            entry.origin_city ||
+            entry.origin_state ||
+            entry.origin_country ||
+            entry.supplier_address_loc ||
+            entry.supplier_address_location ||
+            entry.supplier_address_country ||
+            null;
+          const dest =
+            entry.destination ||
+            entry.dest_port ||
+            entry.destination_city ||
+            entry.destination_state ||
+            entry.destination_country ||
+            entry.company_address_loc ||
+            entry.company_address_location ||
+            entry.company_address_country ||
+            null;
+          if (origin || dest) {
+            const originLabel = origin ?? "Unknown";
+            const destLabel = dest ?? "Unknown";
+            route = `${originLabel} → ${destLabel}`;
+          }
+        }
+        if (!route) return null;
+        // discard any constructed route that contains "unknown"
+        if (route.toLowerCase().indexOf("unknown") !== -1) return null;
+        const shipments =
+          coerceNumber((entry as any)?.shipments) ??
+          coerceNumber((entry as any)?.count) ??
+          coerceNumber((entry as any)?.shipments_12m) ??
+          null;
+        return { route, shipments };
+      })
+      .filter(
+        (v): v is { route: string; shipments?: number | null } => Boolean(v),
+      );
+    // sort aggregated lanes by shipments descending and cap to 5
+    aggregatedTopRoutes.sort(
+      (a, b) => (b.shipments ?? 0) - (a.shipments ?? 0),
+    );
+    aggregatedTopRoutes = aggregatedTopRoutes.slice(0, 5);
+  }
+
+  // choose which list of lanes to display: prefer primary if available,
+  // otherwise fall back to aggregated list
+  const displayTopRoutes =
+    primaryTopRoutes.length > 0 ? primaryTopRoutes : aggregatedTopRoutes;
+
+  // derive top and most recent routes from available KPI fields or display lanes.
+  // prefer normalized KPI values when they are defined and not "unknown".
+  const resolvedTopRouteKpi =
+    typeof resolvedRouteKpis?.topRouteLast12m === "string" &&
+    resolvedRouteKpis.topRouteLast12m.toLowerCase().indexOf("unknown") === -1
+      ? resolvedRouteKpis.topRouteLast12m
+      : null;
+  const resolvedMostRecentRouteKpi =
+    typeof resolvedRouteKpis?.mostRecentRoute === "string" &&
+    resolvedRouteKpis.mostRecentRoute.toLowerCase().indexOf("unknown") === -1
+      ? resolvedRouteKpis.mostRecentRoute
+      : null;
+
+  const displayTopRouteLast12m: string | null =
+    resolvedTopRouteKpi ??
+    (displayTopRoutes[0]?.route as string | undefined) ??
+    shipper.primaryRouteSummary ??
+    shipper.primaryRoute ??
+    null;
+  const displayMostRecentRoute: string | null =
+    resolvedMostRecentRouteKpi ??
+    (displayTopRoutes[0]?.route as string | undefined) ??
+    shipper.primaryRouteSummary ??
+    shipper.primaryRoute ??
+    null;
+
+  // assign display variables to be used in render
+  const topRouteLast12m = displayTopRouteLast12m;
+  const mostRecentRoute = displayMostRecentRoute;
+  const topRoutes = displayTopRoutes;
+
+  const authoritativeMonthlySeries = React.useMemo(
+    () => buildAuthoritativeMonthlySeries(profile),
+    [profile],
+  );
 
   const availableYears = React.useMemo(() => {
-    if (monthlyMetrics.length === 0) return [];
-    return Array.from(new Set(monthlyMetrics.map((point) => point.year))).sort((a, b) => b - a);
-  }, [monthlyMetrics]);
+    const years = Array.from(
+      new Set(
+        authoritativeMonthlySeries
+          .map((point: any) => extractYearFromMonth(point.month))
+          .filter((value: any): value is number => typeof value === "number"),
+      ),
+    ).sort((a, b) => b - a);
+    return years;
+  }, [authoritativeMonthlySeries]);
 
-  const [selectedYear, setSelectedYear] = React.useState<number | null>(null);
+  const filteredTimeSeries = React.useMemo(() => {
+    if (!Array.isArray(authoritativeMonthlySeries)) return [] as any[];
+    if (!year) return authoritativeMonthlySeries.slice(-12);
+    return authoritativeMonthlySeries.filter((point: any) => {
+      return extractYearFromMonth(point.month) === year;
+    });
+  }, [authoritativeMonthlySeries, year]);
 
-  React.useEffect(() => {
-    if (year && availableYears.includes(year)) {
-      setSelectedYear(year);
-      return;
-    }
-    if (availableYears.length > 0) {
-      setSelectedYear((current) => (current && availableYears.includes(current) ? current : availableYears[0]));
-      return;
-    }
-    setSelectedYear(null);
-  }, [year, availableYears]);
+  const shipmentsYear = React.useMemo(() => {
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      const shipments = coerceNumber(point.shipments);
+      if (shipments != null && shipments > 0) return sum + shipments;
+      const fcl = coerceNumber(point.fclShipments) ?? 0;
+      const lcl = coerceNumber(point.lclShipments) ?? 0;
+      return sum + fcl + lcl;
+    }, 0);
+  }, [filteredTimeSeries]);
 
-  const filteredMonthlyMetrics = React.useMemo(() => {
-    if (!selectedYear) return [] as MonthlyMetricPoint[];
-    return monthlyMetrics.filter((point) => point.year === selectedYear);
-  }, [monthlyMetrics, selectedYear]);
+  const fclShipmentsYear = React.useMemo(() => {
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      const fcl = coerceNumber(point.fclShipments) ?? 0;
+      return sum + fcl;
+    }, 0);
+  }, [filteredTimeSeries]);
 
-  const shipmentsYear = React.useMemo(
-    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.shipments, 0),
-    [filteredMonthlyMetrics],
-  );
+  const lclShipmentsYear = React.useMemo(() => {
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      const lcl = coerceNumber(point.lclShipments) ?? 0;
+      return sum + lcl;
+    }, 0);
+  }, [filteredTimeSeries]);
 
-  const fclShipmentsYear = React.useMemo(
-    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.fclShipments, 0),
-    [filteredMonthlyMetrics],
-  );
-
-  const lclShipmentsYear = React.useMemo(
-    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.lclShipments, 0),
-    [filteredMonthlyMetrics],
-  );
-
-  const teuYear = React.useMemo(
-    () => filteredMonthlyMetrics.reduce((sum, point) => sum + point.teu, 0),
-    [filteredMonthlyMetrics],
-  );
+  const teuYear = React.useMemo(() => {
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      return sum + (coerceNumber(point.teu) ?? 0);
+    }, 0);
+  }, [filteredTimeSeries]);
 
   const estSpendYear = React.useMemo(() => {
-    const values = filteredMonthlyMetrics
-      .map((point) => point.estSpendUsd)
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-    if (values.length === 0) return null;
-    return values.reduce((sum, value) => sum + value, 0);
-  }, [filteredMonthlyMetrics]);
+    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
+      return sum + (coerceNumber(point.estSpendUsd) ?? 0);
+    }, 0);
+  }, [filteredTimeSeries]);
 
   const containerMixYear = React.useMemo(() => {
     const total = fclShipmentsYear + lclShipmentsYear;
@@ -681,84 +580,57 @@ export default function ShipperDetailModal({
     return `${fclPct}% FCL / ${lclPct}% LCL`;
   }, [fclShipmentsYear, lclShipmentsYear]);
 
-  const selectedYearRouteEntries = React.useMemo(
-    () => buildSelectedYearRouteEntries(profile, selectedYear),
-    [profile, selectedYear],
-  );
+  // Compute shipments for top/most recent routes to display counts in KPI cards
+  const topRouteShipments = topRoutes.find((lane) => lane.route === topRouteLast12m)?.shipments ?? null;
+  const mostRecentRouteShipments = topRoutes.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
 
-  const selectedYearLastShipmentDate = React.useMemo(
-    () => getSelectedYearLastShipmentDate(profile, selectedYear),
-    [profile, selectedYear],
-  );
+  // Create dynamic headings for route cards
+  const topRouteHeading = year ? `Top route (${year})` : 'Top route (last 12m)';
+  const mostRecentHeading = year ? `Most recent route (${year})` : 'Most recent route';
 
-  const chartData = React.useMemo(
-    () =>
-      [...filteredMonthlyMetrics]
-        .sort((a, b) => a.month.localeCompare(b.month))
-        .map((point) => ({
-          month: point.month,
-          monthLabel: monthLabel(point.month),
-          fcl: point.fclShipments,
-          lcl: point.lclShipments,
-          shipments: point.shipments,
-        })),
-    [filteredMonthlyMetrics],
-  );
+  // Prepare chart data for the monthly FCL/LCL shipments chart
+  const chartData = React.useMemo(() =>
+    Array.isArray(filteredTimeSeries)
+      ? (filteredTimeSeries as any[]).slice(-12).map((point: any) => {
+          const shipments = coerceNumber(point.shipments) ?? 0;
+          const fcl = coerceNumber(point.fclShipments) ?? 0;
+          const lcl = coerceNumber(point.lclShipments) ?? 0;
+          const showShipmentAsFcl = fcl === 0 && lcl === 0 && shipments > 0;
+          return {
+            monthLabel: monthLabel(point.month),
+            fcl: showShipmentAsFcl ? shipments : fcl,
+            lcl,
+          };
+        })
+      : []
+  , [filteredTimeSeries]);
 
-  const topRouteLast12m = selectedYearRouteEntries[0]?.route ?? null;
-
-  const mostRecentRoute = React.useMemo(() => {
-    if (selectedYearRouteEntries.length === 0) return null;
-    const sortedByDate = [...selectedYearRouteEntries].sort((a, b) => {
-      const aTs = a.lastShipmentDate ? new Date(a.lastShipmentDate).getTime() : 0;
-      const bTs = b.lastShipmentDate ? new Date(b.lastShipmentDate).getTime() : 0;
-      return bTs - aTs;
-    });
-    return sortedByDate[0]?.route ?? null;
-  }, [selectedYearRouteEntries]);
-
-  const topRouteShipments =
-    selectedYearRouteEntries.find((lane) => lane.route === topRouteLast12m)?.shipments ?? null;
-  const mostRecentRouteShipments =
-    selectedYearRouteEntries.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
-
-  const hasScopedSpendData = React.useMemo(
-    () => filteredMonthlyMetrics.some((point) => typeof point.estSpendUsd === "number" && Number.isFinite(point.estSpendUsd) && point.estSpendUsd > 0),
-    [filteredMonthlyMetrics],
-  );
-
-  const activeShipments = selectedYear ? shipmentsYear : shipments12m;
-  const activeTeu = selectedYear ? (filteredMonthlyMetrics.length > 0 ? teuYear : null) : teu12m;
-  const activeSpend = selectedYear ? estSpendYear : estSpend12m;
-  const activeContainerMix = selectedYear ? containerMixYear : containerMix12m;
-  const activeYearLabel = selectedYear ? String(selectedYear) : "last 12m";
-  const lastShipmentDate = selectedYear ? selectedYearLastShipmentDate : (profile as any)?.last_shipment_date ?? profile?.lastShipmentDate ?? shipper.lastShipmentDate ?? shipper.mostRecentShipment ?? null;
+  const activeTeu = year ? teuYear : teu12m;
+  const activeSpend = year
+    ? (estSpendYear > 0
+        ? estSpendYear
+        : (coerceNumber((profile as any)?.estSpendUsd12m) ??
+           coerceNumber((profile as any)?.estSpendUsd) ??
+           estSpend12m))
+    : estSpend12m;
 
   const supplierList = React.useMemo(() => {
     const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
     if (!Array.isArray(list)) return [];
-
-    const unique = new Map<string, string>();
-
-    for (const entry of list) {
-      const rawName =
+    return list
+      .map((entry: any) =>
         typeof entry === "string"
           ? entry
-          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? entry?.title ?? "";
-
-      const cleaned = cleanSupplierName(rawName);
-      if (!cleaned) continue;
-
-      const key = cleaned.toLowerCase();
-      if (!unique.has(key)) {
-        unique.set(key, cleaned);
-      }
-    }
-
-    return Array.from(unique.values()).slice(0, 6);
+          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? "",
+      )
+      .filter((value: string) => Boolean(value))
+      .slice(0, 6);
   }, [profile?.topSuppliers, shipper.topSuppliers]);
 
-  const enrichmentSummary = React.useMemo(() => pickEnrichmentSummary(enrichment), [enrichment]);
+  const enrichmentSummary = React.useMemo(
+    () => pickEnrichmentSummary(enrichment),
+    [enrichment],
+  );
   const enrichmentOpportunities = React.useMemo(
     () =>
       normalizeEnrichmentList(
@@ -803,63 +675,65 @@ export default function ShipperDetailModal({
               ? section.label
               : null;
         const items = normalizeEnrichmentList(
-          section?.items ?? section?.bullets ?? section?.points ?? section?.content,
+          section?.items ??
+            section?.bullets ??
+            section?.points ??
+            section?.content,
         );
         if (!label || items.length === 0) return null;
         return { label, items };
       })
-      .filter((entry): entry is { label: string; items: string[] } => Boolean(entry));
+      .filter(
+        (entry): entry is { label: string; items: string[] } => Boolean(entry),
+      );
   }, [enrichment]);
 
   const hasEnrichmentContent = Boolean(
     enrichmentSummary ||
-      enrichmentOpportunities.length ||
-      enrichmentRisks.length ||
-      enrichmentTalkingPoints.length ||
-      enrichmentExtraSections.length,
+    enrichmentOpportunities.length ||
+    enrichmentRisks.length ||
+    enrichmentTalkingPoints.length ||
+    enrichmentExtraSections.length,
   );
 
   const showEnrichmentBanner = !enrichment && !loadingProfile;
 
   const kpiItems: KpiTileProps[] = [
     {
-      label: selectedYear ? `Total shipments (${selectedYear})` : "Total shipments",
-      value: formatNumber(activeShipments),
-      icon: CalendarDaysIcon,
-      accent: "slate",
+      label: year ? `Total shipments (${year})` : 'Total shipments',
+      value: formatNumber(year ? shipmentsYear : shipments12m),
+      icon: TruckIcon,
+      accent: 'slate',
     },
     {
-      label: selectedYear ? `FCL shipments (${selectedYear})` : "FCL shipments",
-      value: formatNumber(selectedYear ? fclShipmentsYear : fclShipments12m),
+      label: year ? `FCL shipments (${year})` : 'FCL shipments',
+      value: formatNumber(year ? fclShipmentsYear : fclShipments12m),
       icon: SquaresPlusIcon,
-      accent: "purple",
+      accent: 'purple',
     },
     {
-      label: selectedYear ? `LCL shipments (${selectedYear})` : "LCL shipments",
-      value: formatNumber(selectedYear ? lclShipmentsYear : lclShipments12m),
+      label: year ? `LCL shipments (${year})` : 'LCL shipments',
+      value: formatNumber(year ? lclShipmentsYear : lclShipments12m),
       icon: Squares2X2Icon,
-      accent: "indigo",
+      accent: 'indigo',
     },
     {
-      label: selectedYear ? `TEU volume (${selectedYear})` : "TEU volume",
+      label: year ? `TEU volume (${year})` : 'TEU volume',
       value: formatNumber(activeTeu),
       icon: CubeIcon,
-      accent: "blue",
+      accent: 'blue',
     },
     {
-      label:
-        selectedYear && hasScopedSpendData
-          ? `Market spend (${selectedYear})`
-          : "Market spend est.",
+      label: year ? `Market spend est. (${year})` : 'Market spend est.',
       value: formatCurrency(activeSpend),
       icon: CurrencyDollarIcon,
-      accent: "emerald",
+      accent: 'emerald',
     },
     {
-      label: selectedYear ? `Container mix (${selectedYear})` : "Container mix",
-      value: activeContainerMix ?? "—",
+      label: year ? `Container mix (${year})` : 'Container mix',
+      value: year ? (containerMixYear ?? '—') : (containerMix ?? '—'),
       icon: ChartPieIcon,
-      accent: "indigo-strong",
+      accent: 'indigo-strong',
     },
   ];
 
@@ -868,132 +742,108 @@ export default function ShipperDetailModal({
     onSaveToCommandCenter({ shipper, profile: profile ?? null });
   };
 
-  const topRouteHeading = selectedYear ? `Top route (${selectedYear})` : "Top route (last 12m)";
-  const mostRecentHeading = selectedYear
-    ? `Most recent route (${selectedYear})`
-    : "Most recent route";
-
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-3 py-4 sm:px-4 sm:py-6">
-      <div className="relative mb-6 mt-2 flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:mt-6">
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-4 sm:px-6 md:px-8">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex min-w-0 items-start gap-4">
-              <CompanyAvatar name={shipper.title} logoUrl={logoUrl} size="lg" />
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="truncate text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
-                    {profile?.title || shipper.title || shipper.name || "Company"}
-                  </h2>
-                  {isSaved && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                      Saved
-                    </span>
-                  )}
-                </div>
-                {companyId && <p className="text-xs text-slate-500">{companyId}</p>}
-                <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                  {normalizedWebsite && (
-                    <a
-                      href={normalizedWebsite}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex max-w-[220px] items-center gap-1 text-indigo-600 hover:underline"
-                    >
-                      <GlobeAltIcon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">
-                        {normalizedWebsite.replace(/^https?:\/\//i, "")}
-                      </span>
-                    </a>
-                  )}
-                  {normalizedPhone && (
-                    <a href={`tel:${normalizedPhone}`} className="inline-flex items-center gap-1">
-                      <PhoneIcon className="h-4 w-4" />
-                      <span>{normalizedPhone}</span>
-                    </a>
-                  )}
-                </div>
-                {showEnrichmentBanner && (
-                  <p className="text-xs text-amber-600">
-                    AI enrichment not available for this company yet.
-                  </p>
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-4 py-6">
+      <div className="relative mt-6 mb-6 flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4 md:px-8">
+          <div className="flex items-start gap-4">
+            <CompanyAvatar name={shipper.title} logoUrl={logoUrl} size="lg" />
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+                  {profile?.title || shipper.title || shipper.name || "Company"}
+                </h2>
+                {isSaved && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                    Saved
+                  </span>
                 )}
               </div>
-            </div>
-
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-              {availableYears.length > 0 && (
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
-                  <CalendarDaysIcon className="h-4 w-4 text-slate-500" />
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Year
-                  </span>
-                  <select
-                    value={selectedYear ?? ""}
-                    onChange={(e) =>
-                      setSelectedYear(e.target.value ? Number(e.target.value) : null)
-                    }
-                    className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
-                  >
-                    {availableYears.map((optionYear) => (
-                      <option key={optionYear} value={optionYear}>
-                        {optionYear}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {companyId && (
+                <p className="text-xs text-slate-500">{companyId}</p>
               )}
-
-              <button
-                type="button"
-                onClick={handleSaveClick}
-                disabled={saveLoading}
-                className={`inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                  isSaved
-                    ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    : "bg-indigo-600 text-white hover:bg-indigo-500"
-                } disabled:cursor-not-allowed disabled:opacity-60`}
-              >
-                {isSaved ? (
-                  <BookmarkSlashIcon className="h-4 w-4" />
-                ) : (
-                  <BookmarkIcon className="h-4 w-4" />
+              <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                {normalizedWebsite && (
+                  <a
+                    href={normalizedWebsite}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
+                  >
+                    <GlobeAltIcon className="h-4 w-4" />
+                    <span className="truncate max-w-[180px]">
+                      {normalizedWebsite.replace(/^https?:\/\//i, "")}
+                    </span>
+                  </a>
                 )}
-                <span>
-                  {isSaved
-                    ? "Saved to Command Center"
-                    : saveLoading
-                      ? "Saving…"
-                      : "Save to Command Center"}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex h-10 w-10 items-center justify-center self-end rounded-full border border-slate-200 text-slate-500 hover:bg-slate-100 sm:self-auto"
-              >
-                <XMarkIcon className="h-5 w-5" />
-              </button>
+                {normalizedPhone && (
+                  <a
+                    href={`tel:${normalizedPhone}`}
+                    className="inline-flex items-center gap-1"
+                  >
+                    <PhoneIcon className="h-4 w-4" />
+                    <span>{normalizedPhone}</span>
+                  </a>
+                )}
+              </div>
+              {showEnrichmentBanner && (
+                <p className="text-xs text-amber-600">
+                  AI enrichment not available for this company yet.
+                </p>
+              )}
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              disabled={saveLoading}
+              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                isSaved
+                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  : "bg-indigo-600 text-white hover:bg-indigo-500"
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {isSaved ? (
+                <BookmarkSlashIcon className="h-4 w-4" />
+              ) : (
+                <BookmarkIcon className="h-4 w-4" />
+              )}
+              <span>
+                {isSaved
+                  ? "Saved to Command Center"
+                  : saveLoading
+                  ? "Saving…"
+                  : "Save to Command Center"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-100"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
           </div>
         </div>
 
-        <div className="max-h-[calc(100vh-7rem)] overflow-y-auto px-4 py-5 sm:px-6 md:px-8">
+        <div className="max-h-[calc(100vh-8rem)] overflow-y-auto px-6 py-6 md:px-8">
           {(loadingProfile || error) && (
             <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               {loadingProfile && <div>Loading company profile…</div>}
-              {error && !loadingProfile && <div className="text-rose-600">{error}</div>}
+              {error && !loadingProfile && (
+                <div className="text-rose-600">{error}</div>
+              )}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {kpiItems.map((item) => (
               <KpiTile key={item.label} {...item} />
             ))}
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 {topRouteHeading}
@@ -1007,7 +857,6 @@ export default function ShipperDetailModal({
                 </p>
               )}
             </div>
-
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 {mostRecentHeading}
@@ -1023,22 +872,25 @@ export default function ShipperDetailModal({
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-3">
-            <div className="space-y-4 xl:col-span-2">
+          <div className="mt-6 grid gap-6 md:grid-cols-3">
+            <div className="space-y-4 md:col-span-2">
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 md:px-6 md:py-5">
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="mb-3 flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">Shipment velocity</p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Shipment velocity
+                    </p>
                     <p className="text-xs text-slate-500">
-                      Monthly shipments split between FCL and LCL services for {activeYearLabel}.
+                      Monthly shipments split between FCL and LCL services.
                     </p>
                   </div>
-                  {loadingProfile && <p className="text-xs text-slate-400">Loading trend…</p>}
+                  {loadingProfile && (
+                    <p className="text-xs text-slate-400">Loading trend…</p>
+                  )}
                 </div>
-
                 {chartData.length === 0 ? (
                   <p className="text-xs text-slate-500">
-                    No shipment trend data is available for the selected year.
+                    No lane-level trend data available yet for this shipper.
                   </p>
                 ) : (
                   <div className="h-56 w-full">
@@ -1061,10 +913,7 @@ export default function ShipperDetailModal({
                           tickLine={false}
                         />
                         <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
-                        <Tooltip
-                          content={<ChartTooltip />}
-                          cursor={{ fill: "rgba(15,23,42,0.04)" }}
-                        />
+                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(15,23,42,0.04)" }} />
                         <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" align="right" />
                         <Bar
                           dataKey="fcl"
@@ -1072,7 +921,12 @@ export default function ShipperDetailModal({
                           fill="url(#fclGradient)"
                           radius={[4, 4, 0, 0]}
                         />
-                        <Bar dataKey="lcl" name="LCL" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                        <Bar
+                          dataKey="lcl"
+                          name="LCL"
+                          fill="#22c55e"
+                          radius={[4, 4, 0, 0]}
+                        />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1080,31 +934,19 @@ export default function ShipperDetailModal({
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Trade corridor analysis ({activeYearLabel})
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {formatNumber(activeShipments)} shipments
-                  </p>
-                </div>
-
-                {selectedYearRouteEntries.length === 0 ? (
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Trade corridor analysis ({year ? year : 'last 12m'})
+                </p>
+                {topRoutes.length === 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
-                    Lane-level shipment data is not available for this selected year.
+                    Lane-level shipment data is not available for this company yet.
                   </p>
                 ) : (
-                  <ul className="mt-3 space-y-2 text-xs text-slate-700">
-                    {selectedYearRouteEntries.slice(0, 5).map((lane, idx) => (
-                      <li
-                        key={`${lane.route}-${idx}`}
-                        className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2"
-                      >
-                        <div className="flex min-w-0 items-start gap-2">
-                          <ArrowsRightLeftIcon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                          <span className="truncate leading-snug">{lane.route}</span>
-                        </div>
-                        <span className="shrink-0 text-[11px] text-slate-500">
+                  <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
+                    {topRoutes.map((lane, idx) => (
+                      <li key={`${lane.route}-${idx}`} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{lane.route}</span>
+                        <span className="text-[11px] text-slate-500">
                           {formatNumber(lane.shipments ?? null)} shipments
                         </span>
                       </li>
@@ -1123,11 +965,10 @@ export default function ShipperDetailModal({
                   {hasEnrichmentContent ? (
                     <>
                       {enrichmentSummary && (
-                        <p className="mt-2 whitespace-pre-line text-sm text-slate-800">
+                        <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
                           {enrichmentSummary}
                         </p>
                       )}
-
                       {enrichmentOpportunities.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1143,7 +984,6 @@ export default function ShipperDetailModal({
                           </ul>
                         </div>
                       )}
-
                       {enrichmentRisks.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1159,7 +999,6 @@ export default function ShipperDetailModal({
                           </ul>
                         </div>
                       )}
-
                       {enrichmentTalkingPoints.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1175,7 +1014,6 @@ export default function ShipperDetailModal({
                           </ul>
                         </div>
                       )}
-
                       {enrichmentExtraSections.length > 0 && (
                         <div className="mt-3 space-y-2">
                           {enrichmentExtraSections.map((section, idx) => (
@@ -1185,10 +1023,7 @@ export default function ShipperDetailModal({
                               </p>
                               <ul className="mt-1 space-y-1 text-xs text-slate-700">
                                 {section.items.map((item, idy) => (
-                                  <li
-                                    key={`section-${idx}-item-${idy}`}
-                                    className="flex items-start gap-2"
-                                  >
+                                  <li key={`section-${idx}-item-${idy}`} className="flex items-start gap-2">
                                     <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
                                     <span className="leading-snug">{item}</span>
                                   </li>
@@ -1214,41 +1049,12 @@ export default function ShipperDetailModal({
                   </p>
                   <ul className="mt-2 space-y-1.5">
                     {supplierList.map((supplier, idx) => (
-                      <li
-                        key={`supplier-${idx}`}
-                        className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700"
-                      >
+                      <li key={`supplier-${idx}`} className="flex items-start gap-2 text-xs text-slate-700">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
                         <span className="leading-snug">{supplier}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
-              )}
-
-              {selectedYear && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Shipment activity
-                  </p>
-                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                    <ClockIcon className="h-4 w-4 text-slate-400" />
-                    <span>
-                      Last shipment: {selectedYearLastShipmentDate ? formatDateLabel(selectedYearLastShipmentDate) : "—"}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {!selectedYear && lastShipmentDate && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Shipment activity
-                  </p>
-                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                    <ClockIcon className="h-4 w-4 text-slate-400" />
-                    <span>Last shipment: {formatDateLabel(lastShipmentDate)}</span>
-                  </div>
                 </div>
               )}
             </div>
