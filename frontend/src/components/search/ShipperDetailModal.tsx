@@ -429,6 +429,8 @@ export default function ShipperDetailModal({
     shipper.mostRecentShipment ??
     null;
 
+  const [selectedYear, setSelectedYear] = React.useState<number | null>(year ?? null);
+
   /* Determine the list of top lanes to display along with the primary and most recent route.
      We prioritize lanes provided in resolvedRouteKpis.topRoutesLast12m when they contain
      non‑placeholder route strings. If those lanes are missing or only contain
@@ -630,8 +632,6 @@ export default function ShipperDetailModal({
     ).sort((a, b) => b - a);
     return years;
   }, [authoritativeMonthlySeries]);
-
-  const [selectedYear, setSelectedYear] = React.useState<number | null>(year ?? null);
 
   React.useEffect(() => {
     if (year && availableYears.includes(year)) {
