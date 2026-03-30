@@ -22,6 +22,7 @@ import {
   ClockIcon,
   XMarkIcon,
   ChartPieIcon,
+  CalendarDaysIcon,
 } from "@heroicons/react/24/solid";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -182,6 +183,28 @@ function coerceNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function cleanSupplierName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  const lowered = cleaned.toLowerCase();
+  if (
+    lowered === "missing in source document" ||
+    lowered.includes("missing in source document") ||
+    lowered === "missing" ||
+    lowered === "n/a" ||
+    lowered === "na" ||
+    lowered === "null" ||
+    lowered === "none" ||
+    lowered === "unknown" ||
+    lowered === "-" ||
+    lowered === "--"
+  ) {
+    return null;
+  }
+  return cleaned;
 }
 
 function normalizeEnrichmentList(value: unknown): string[] {
@@ -528,13 +551,30 @@ export default function ShipperDetailModal({
     return years;
   }, [authoritativeMonthlySeries]);
 
+  const [selectedYear, setSelectedYear] = React.useState<number | null>(year ?? null);
+
+  React.useEffect(() => {
+    if (year && availableYears.includes(year)) {
+      setSelectedYear(year);
+      return;
+    }
+    if (availableYears.length > 0) {
+      setSelectedYear((current) => {
+        if (current && availableYears.includes(current)) return current;
+        return availableYears[0];
+      });
+      return;
+    }
+    setSelectedYear(null);
+  }, [year, availableYears]);
+
   const filteredTimeSeries = React.useMemo(() => {
     if (!Array.isArray(authoritativeMonthlySeries)) return [] as any[];
-    if (!year) return authoritativeMonthlySeries.slice(-12);
+    if (!selectedYear) return authoritativeMonthlySeries.slice(-12);
     return authoritativeMonthlySeries.filter((point: any) => {
-      return extractYearFromMonth(point.month) === year;
+      return extractYearFromMonth(point.month) === selectedYear;
     });
-  }, [authoritativeMonthlySeries, year]);
+  }, [authoritativeMonthlySeries, selectedYear]);
 
   const shipmentsYear = React.useMemo(() => {
     return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
@@ -585,8 +625,8 @@ export default function ShipperDetailModal({
   const mostRecentRouteShipments = topRoutes.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
 
   // Create dynamic headings for route cards
-  const topRouteHeading = year ? `Top route (${year})` : 'Top route (last 12m)';
-  const mostRecentHeading = year ? `Most recent route (${year})` : 'Most recent route';
+  const topRouteHeading = selectedYear ? `Top route (${selectedYear})` : 'Top route (last 12m)';
+  const mostRecentHeading = selectedYear ? `Most recent route (${selectedYear})` : 'Most recent route';
 
   // Prepare chart data for the monthly FCL/LCL shipments chart
   const chartData = React.useMemo(() =>
@@ -605,8 +645,8 @@ export default function ShipperDetailModal({
       : []
   , [filteredTimeSeries]);
 
-  const activeTeu = year ? teuYear : teu12m;
-  const activeSpend = year
+  const activeTeu = selectedYear ? teuYear : teu12m;
+  const activeSpend = selectedYear
     ? (estSpendYear > 0
         ? estSpendYear
         : (coerceNumber((profile as any)?.estSpendUsd12m) ??
@@ -614,17 +654,49 @@ export default function ShipperDetailModal({
            estSpend12m))
     : estSpend12m;
 
+  const lastShipmentDate =
+    (Array.isArray((profile as any)?.recent_bols) && selectedYear
+      ? (() => {
+          const rows = ((profile as any).recent_bols as any[])
+            .map((bol) => {
+              const rawDate = bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? null;
+              if (!rawDate) return null;
+              let parsed: Date | null = null;
+              const ddmmyyyy = String(rawDate).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+              if (ddmmyyyy) {
+                parsed = new Date(`${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}T00:00:00`);
+              } else {
+                parsed = new Date(String(rawDate));
+              }
+              if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() !== selectedYear) return null;
+              return parsed;
+            })
+            .filter(Boolean) as Date[];
+          rows.sort((a, b) => b.getTime() - a.getTime());
+          return rows[0] ? rows[0].toISOString().slice(0, 10) : null;
+        })()
+      : null) ??
+    (profile as any)?.last_shipment_date ??
+    profile?.lastShipmentDate ??
+    shipper.lastShipmentDate ??
+    shipper.mostRecentShipment ??
+    null;
+
   const supplierList = React.useMemo(() => {
     const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
     if (!Array.isArray(list)) return [];
-    return list
-      .map((entry: any) =>
+    const unique = new Map<string, string>();
+    for (const entry of list) {
+      const rawName =
         typeof entry === "string"
           ? entry
-          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? "",
-      )
-      .filter((value: string) => Boolean(value))
-      .slice(0, 6);
+          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? entry?.title ?? "";
+      const cleaned = cleanSupplierName(rawName);
+      if (!cleaned) continue;
+      const key = cleaned.toLowerCase();
+      if (!unique.has(key)) unique.set(key, cleaned);
+    }
+    return Array.from(unique.values()).slice(0, 6);
   }, [profile?.topSuppliers, shipper.topSuppliers]);
 
   const enrichmentSummary = React.useMemo(
@@ -700,40 +772,34 @@ export default function ShipperDetailModal({
 
   const kpiItems: KpiTileProps[] = [
     {
-      label: year ? `Total shipments (${year})` : 'Total shipments',
-      value: formatNumber(year ? shipmentsYear : shipments12m),
+      label: selectedYear ? `Total shipments (${selectedYear})` : 'Total shipments',
+      value: formatNumber(selectedYear ? shipmentsYear : shipments12m),
       icon: TruckIcon,
       accent: 'slate',
     },
     {
-      label: year ? `FCL shipments (${year})` : 'FCL shipments',
-      value: formatNumber(year ? fclShipmentsYear : fclShipments12m),
+      label: selectedYear ? `FCL shipments (${selectedYear})` : 'FCL shipments',
+      value: formatNumber(selectedYear ? fclShipmentsYear : fclShipments12m),
       icon: SquaresPlusIcon,
       accent: 'purple',
     },
     {
-      label: year ? `LCL shipments (${year})` : 'LCL shipments',
-      value: formatNumber(year ? lclShipmentsYear : lclShipments12m),
+      label: selectedYear ? `LCL shipments (${selectedYear})` : 'LCL shipments',
+      value: formatNumber(selectedYear ? lclShipmentsYear : lclShipments12m),
       icon: Squares2X2Icon,
       accent: 'indigo',
     },
     {
-      label: year ? `TEU volume (${year})` : 'TEU volume',
+      label: selectedYear ? `TEU volume (${selectedYear})` : 'TEU volume',
       value: formatNumber(activeTeu),
       icon: CubeIcon,
       accent: 'blue',
     },
     {
-      label: year ? `Market spend est. (${year})` : 'Market spend est.',
+      label: selectedYear ? `Market spend est. (${selectedYear})` : 'Market spend est.',
       value: formatCurrency(activeSpend),
       icon: CurrencyDollarIcon,
       accent: 'emerald',
-    },
-    {
-      label: year ? `Container mix (${year})` : 'Container mix',
-      value: year ? (containerMixYear ?? '—') : (containerMix ?? '—'),
-      icon: ChartPieIcon,
-      accent: 'indigo-strong',
     },
   ];
 
@@ -794,6 +860,25 @@ export default function ShipperDetailModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {availableYears.length > 0 && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
+                <CalendarDaysIcon className="h-4 w-4 text-slate-500" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Year
+                </span>
+                <select
+                  value={selectedYear ?? ""}
+                  onChange={(e) => setSelectedYear(e.target.value ? Number(e.target.value) : null)}
+                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
+                >
+                  {availableYears.map((optionYear) => (
+                    <option key={optionYear} value={optionYear}>
+                      {optionYear}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleSaveClick}
@@ -837,7 +922,7 @@ export default function ShipperDetailModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
             {kpiItems.map((item) => (
               <KpiTile key={item.label} {...item} />
             ))}
@@ -881,8 +966,7 @@ export default function ShipperDetailModal({
                       Shipment velocity
                     </p>
                     <p className="text-xs text-slate-500">
-                      Monthly shipments split between FCL and LCL services.
-                    </p>
+                      Monthly shipments split between FCL and LCL services                    </p>
                   </div>
                   {loadingProfile && (
                     <p className="text-xs text-slate-400">Loading trend…</p>
@@ -935,7 +1019,7 @@ export default function ShipperDetailModal({
 
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Trade corridor analysis ({year ? year : 'last 12m'})
+                  Trade corridor analysis ({selectedYear ? selectedYear : 'last 12m'})
                 </p>
                 {topRoutes.length === 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
@@ -1039,6 +1123,32 @@ export default function ShipperDetailModal({
                       AI enrichment is not available for this company yet.
                     </p>
                   )}
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {selectedYear ? `Container mix (${selectedYear})` : 'Container mix'}
+                </p>
+                <div className="mt-3">
+                  <KpiTile
+                    label={selectedYear ? `Container mix (${selectedYear})` : 'Container mix'}
+                    value={selectedYear ? (containerMixYear ?? '—') : (containerMix ?? '—')}
+                    icon={ChartPieIcon}
+                    accent="indigo-strong"
+                  />
+                </div>
+              </div>
+
+              {lastShipmentDate && (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Shipment activity
+                  </p>
+                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                    <ClockIcon className="h-4 w-4 text-slate-400" />
+                    <span>Last shipment: {formatDateLabel(lastShipmentDate)}</span>
+                  </div>
                 </div>
               )}
 
