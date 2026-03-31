@@ -3625,3 +3625,273 @@ export async function searchContacts(filters: {
 
   return data;
 }
+export function getOldestShipmentDate(profile?: IyCompanyProfile | null): string | null {
+  const dates: Date[] = [];
+  if (Array.isArray(profile?.recentBols)) {
+    for (const bol of profile.recentBols) {
+      const dt = getBolDate(bol);
+      if (dt) dates.push(dt);
+    }
+  }
+  if (Array.isArray(profile?.timeSeries)) {
+    for (const point of profile.timeSeries) {
+      if (typeof point?.month === "string" && /^\d{4}-\d{2}$/.test(point.month)) {
+        const dt = new Date(`${point.month}-01T00:00:00.000Z`);
+        if (!Number.isNaN(dt.getTime())) dates.push(dt);
+      }
+    }
+  }
+  if (!dates.length) return profile?.lastShipmentDate ?? null;
+  dates.sort((a, b) => a.getTime() - b.getTime());
+  return dates[0].toISOString();
+}
+
+export function buildCommandCenterDetailModel(
+  profile: IyCompanyProfile | null,
+  routeKpis?: IyRouteKpis | null,
+  selectedYear?: number | null,
+): CommandCenterDetailModel {
+  const availableYears = getCommandCenterAvailableYears(profile);
+  const fallbackYear =
+    (typeof selectedYear === "number" && availableYears.includes(selectedYear) ? selectedYear : undefined) ??
+    availableYears[0] ??
+    null;
+
+  const scopedSeries = Array.isArray(profile?.timeSeries)
+    ? profile!.timeSeries.filter((point) => (fallbackYear ? Number(point?.year) === fallbackYear : true))
+    : [];
+
+  const scopedBols = Array.isArray(profile?.recentBols)
+    ? profile!.recentBols.filter((bol) => {
+        if (!fallbackYear) return true;
+        const dt = getBolDate(bol);
+        return dt ? dt.getFullYear() === fallbackYear : false;
+      })
+    : [];
+
+  const monthMap = new Map<number, CommandCenterActivityPoint>();
+  for (let i = 0; i < 12; i += 1) {
+    monthMap.set(i, {
+      month: monthName(i),
+      monthIndex: i,
+      fcl: 0,
+      lcl: 0,
+      shipments: 0,
+      teu: 0,
+      estSpendUsd: 0,
+    });
+  }
+
+  if (scopedSeries.length) {
+    scopedSeries.forEach((point) => {
+      const monthIndex =
+        typeof point?.month === "string" && /^\d{4}-\d{2}$/.test(point.month)
+          ? Number(point.month.slice(5, 7)) - 1
+          : -1;
+      if (monthIndex < 0 || !monthMap.has(monthIndex)) return;
+      const entry = monthMap.get(monthIndex)!;
+      entry.fcl += coerceNumber(point?.fclShipments) ?? 0;
+      entry.lcl += coerceNumber(point?.lclShipments) ?? 0;
+      entry.shipments += coerceNumber(point?.shipments) ?? 0;
+      entry.teu += coerceNumber(point?.teu) ?? 0;
+      entry.estSpendUsd += coerceNumber(point?.estSpendUsd) ?? 0;
+    });
+  } else {
+    scopedBols.forEach((bol) => {
+      const dt = getBolDate(bol);
+      if (!dt) return;
+      const entry = monthMap.get(dt.getMonth());
+      if (!entry) return;
+      const teu = coerceNumber(bol?.teu) ?? 0;
+      const spend = getEntrySpend(bol);
+      entry.shipments += 1;
+      entry.teu += teu;
+      entry.estSpendUsd += spend;
+      if (bol?.lcl === true) entry.lcl += 1;
+      else entry.fcl += 1;
+    });
+  }
+
+  const activitySeries = [...monthMap.values()];
+  const shipments = activitySeries.reduce((sum, point) => sum + point.shipments, 0);
+  const teu = activitySeries.reduce((sum, point) => sum + point.teu, 0);
+  const marketSpendRaw = activitySeries.reduce((sum, point) => sum + point.estSpendUsd, 0);
+
+  const laneMap = new Map<string, { count: number; teu: number; spend: number }>();
+  const carrierMap = new Map<string, { count: number; teu: number; spend: number }>();
+  const originMap = new Map<string, { count: number; teu: number; spend: number }>();
+  const destinationMap = new Map<string, { count: number; teu: number; spend: number }>();
+  const hsMap = new Map<string, { description: string; count: number }>();
+
+  scopedBols.forEach((bol) => {
+    const teuValue = coerceNumber(bol?.teu) ?? 0;
+    const spend = getEntrySpend(bol);
+    const lane = bol?.route || "Unknown route";
+    const carrier = getEntryCarrier(bol);
+    const origin = bol?.origin || "Unknown";
+    const destination = bol?.destination || "Unknown";
+    const product = getEntryProduct(bol);
+    const hsCode = getEntryHsCode(bol);
+
+    const laneRow = laneMap.get(lane) || { count: 0, teu: 0, spend: 0 };
+    laneRow.count += 1;
+    laneRow.teu += teuValue;
+    laneRow.spend += spend;
+    laneMap.set(lane, laneRow);
+
+    if (carrier) {
+      const row = carrierMap.get(carrier) || { count: 0, teu: 0, spend: 0 };
+      row.count += 1;
+      row.teu += teuValue;
+      row.spend += spend;
+      carrierMap.set(carrier, row);
+    }
+
+    const originRow = originMap.get(origin) || { count: 0, teu: 0, spend: 0 };
+    originRow.count += 1;
+    originRow.teu += teuValue;
+    originRow.spend += spend;
+    originMap.set(origin, originRow);
+
+    const destRow = destinationMap.get(destination) || { count: 0, teu: 0, spend: 0 };
+    destRow.count += 1;
+    destRow.teu += teuValue;
+    destRow.spend += spend;
+    destinationMap.set(destination, destRow);
+
+    if (hsCode || product) {
+      const key = hsCode || product || "Unknown";
+      const row = hsMap.get(key) || { description: product || "—", count: 0 };
+      row.count += 1;
+      if (!row.description && product) row.description = product;
+      hsMap.set(key, row);
+    }
+  });
+
+  const toAggregateRows = (map: Map<string, { count: number; teu: number; spend: number }>) =>
+    [...map.entries()]
+      .map(([label, stats]) => ({
+        label,
+        count: stats.count,
+        teu: stats.teu || null,
+        spend: stats.spend || null,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+  const tradeLanes = toAggregateRows(laneMap);
+  const carriers = toAggregateRows(carrierMap);
+  const locations = {
+    origins: toAggregateRows(originMap).slice(0, 12),
+    destinations: toAggregateRows(destinationMap).slice(0, 12),
+  };
+
+  const hsCodes = [...hsMap.entries()]
+    .map(([hsCode, row]) => ({
+      hsCode,
+      description: row.description || "—",
+      count: row.count,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 16);
+
+  const products = hsCodes.map((row) => ({
+    product: row.description,
+    hsCode: row.hsCode,
+    count: row.count,
+  }));
+
+  const shipmentLedger = scopedBols
+    .sort((a, b) => {
+      const at = getBolDate(a)?.getTime() ?? 0;
+      const bt = getBolDate(b)?.getTime() ?? 0;
+      return bt - at;
+    })
+    .slice(0, 50)
+    .map((bol) => ({
+      date: bol?.date ?? null,
+      bolNumber: bol?.bolNumber ?? null,
+      teu: bol?.teu ?? null,
+      carrier: getEntryCarrier(bol),
+      route: bol?.route ?? null,
+      product: getEntryProduct(bol),
+      hsCode: getEntryHsCode(bol),
+    }));
+
+  const monthlyPivot = activitySeries.map((point) => ({
+    month: point.month,
+    shipments: point.shipments,
+    teu: point.teu || null,
+    estSpendUsd: point.estSpendUsd || null,
+  }));
+
+  const latestShipmentDate =
+    scopedBols
+      .map((bol) => getBolDate(bol))
+      .filter((value): value is Date => Boolean(value))
+      .sort((a, b) => b.getTime() - a.getTime())[0]
+      ?.toISOString() ??
+    profile?.lastShipmentDate ??
+    null;
+
+  const oldestShipmentDate = getOldestShipmentDate(profile);
+  const fclShipments =
+    activitySeries.reduce((sum, point) => sum + point.fcl, 0) ||
+    getFclShipments12m(profile) ||
+    0;
+  const lclShipments =
+    activitySeries.reduce((sum, point) => sum + point.lcl, 0) ||
+    getLclShipments12m(profile) ||
+    0;
+
+  const ratioBase = (fclShipments || 0) + (lclShipments || 0);
+  const fclRatioPct = ratioBase > 0 ? (fclShipments / ratioBase) * 100 : null;
+  const avgTeuPerShipment = shipments > 0 ? teu / shipments : null;
+  const avgTeuPerMonth = shipments > 0 ? shipments / 12 : null;
+
+  let statusLabel = "Active shipper";
+  if ((shipments || 0) > 1000) statusLabel = "High volume shipper";
+  else if (latestShipmentDate) {
+    const daysSince =
+      (Date.now() - new Date(latestShipmentDate).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince > 180) statusLabel = "Inactive";
+  }
+  const strongestMonth = Math.max(...activitySeries.map((point) => point.shipments), 0);
+  if (shipments > 0 && strongestMonth / shipments > 0.35 && shipments < 1000) {
+    statusLabel = "Seasonal";
+  }
+
+  const marketSpendUsd =
+    marketSpendRaw ||
+    coerceNumber(profile?.estSpendUsd12m) ||
+    coerceNumber(routeKpis?.estSpendUsd12m) ||
+    null;
+
+  return {
+    availableYears,
+    selectedYear: fallbackYear,
+    oldestShipmentDate,
+    latestShipmentDate,
+    marketSpendUsd,
+    shipments: shipments || coerceNumber(routeKpis?.shipmentsLast12m) || coerceNumber(profile?.totalShipments) || null,
+    teu: teu || coerceNumber(routeKpis?.teuLast12m) || null,
+    fclShipments: fclShipments || null,
+    lclShipments: lclShipments || null,
+    fclRatioPct,
+    avgTeuPerShipment,
+    avgTeuPerMonth,
+    statusLabel,
+    activitySeries,
+    tradeLanes: tradeLanes.length ? tradeLanes : (routeKpis?.topRoutesLast12m || []).map((route) => ({
+      label: route.route,
+      count: coerceNumber(route.shipments) || 0,
+      teu: coerceNumber(route.teu),
+      spend: null,
+    })),
+    carriers,
+    locations,
+    hsCodes,
+    products,
+    shipmentLedger,
+    monthlyPivot,
+  };
+}
