@@ -6,6 +6,7 @@ import {
   getSavedCompanyDetail,
   getFclShipments12m,
   getLclShipments12m,
+  buildYearScopedProfile,
   type IyCompanyProfile,
   type IyRouteKpis,
 } from "@/lib/api";
@@ -40,6 +41,8 @@ export default function CommandCenter() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [generatingBrief, setGeneratingBrief] = useState(false);
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -161,8 +164,50 @@ export default function CommandCenter() {
     } as CommandCenterRecord;
   }, [selectedRecord, profile]);
 
+  const yearScopedProfile = useMemo(() => buildYearScopedProfile(profile, selectedYear), [profile, selectedYear]);
+
+  const yearHydratedSelectedRecord = useMemo(() => {
+    if (!hydratedSelectedRecord) return null;
+    if (!yearScopedProfile) return hydratedSelectedRecord;
+
+    const fallbackKpis = (hydratedSelectedRecord as any)?.company?.kpis ?? {};
+    return {
+      ...hydratedSelectedRecord,
+      company: {
+        ...hydratedSelectedRecord.company,
+        kpis: {
+          ...fallbackKpis,
+          shipments_12m:
+            yearScopedProfile.routeKpis?.shipmentsLast12m ??
+            fallbackKpis?.shipments_12m ??
+            0,
+          teu_12m:
+            yearScopedProfile.routeKpis?.teuLast12m ??
+            fallbackKpis?.teu_12m ??
+            null,
+          est_spend_12m:
+            yearScopedProfile.routeKpis?.estSpendUsd12m ??
+            fallbackKpis?.est_spend_12m ??
+            null,
+          fcl_shipments_12m:
+            getFclShipments12m(yearScopedProfile) ??
+            fallbackKpis?.fcl_shipments_12m ??
+            null,
+          lcl_shipments_12m:
+            getLclShipments12m(yearScopedProfile) ??
+            fallbackKpis?.lcl_shipments_12m ??
+            null,
+          last_activity:
+            yearScopedProfile.lastShipmentDate ??
+            fallbackKpis?.last_activity ??
+            null,
+        },
+      },
+    } as CommandCenterRecord;
+  }, [hydratedSelectedRecord, yearScopedProfile]);
+
   const handleGenerateBrief = async () => {
-    if (!hydratedSelectedRecord || !user) {
+    if (!yearHydratedSelectedRecord || !user) {
       toast({
         title: "No company selected",
         description: "Please select a company to generate a brief",
@@ -187,8 +232,8 @@ export default function CommandCenter() {
             Authorization: `Bearer ${session.session.access_token}`,
           },
           body: JSON.stringify({
-            company_id: hydratedSelectedRecord.company?.company_id,
-            company_name: hydratedSelectedRecord.company?.name,
+            company_id: yearHydratedSelectedRecord.company?.company_id,
+            company_name: yearHydratedSelectedRecord.company?.name,
           }),
         }
       );
@@ -218,7 +263,7 @@ export default function CommandCenter() {
   };
 
   const handleExportPDF = () => {
-    if (!hydratedSelectedRecord) {
+    if (!yearHydratedSelectedRecord) {
       toast({
         title: "No company selected",
         description: "Please select a company to export",
@@ -269,13 +314,37 @@ export default function CommandCenter() {
             loading={savedLoading}
             error={savedError}
           />
-          <CompanyDetailPanel
-            record={hydratedSelectedRecord}
-            profile={profile}
-            routeKpis={routeKpis}
-            loading={detailLoading}
-            error={detailError}
-          />
+          <div className="space-y-3">
+            <div className="flex items-center justify-end">
+              <label className="mr-2 text-sm text-slate-500">Year</label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+              >
+                {Array.from(
+                  new Set(
+                    (profile?.timeSeries ?? [])
+                      .map((point) => Number(point?.year))
+                      .filter((year) => Number.isFinite(year) && year > 2000),
+                  ),
+                )
+                  .sort((a, b) => b - a)
+                  .map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <CompanyDetailPanel
+              record={yearHydratedSelectedRecord}
+              profile={yearScopedProfile ?? profile}
+              routeKpis={(yearScopedProfile?.routeKpis ?? routeKpis) as IyRouteKpis | null}
+              loading={detailLoading}
+              error={detailError}
+            />
+          </div>
         </div>
       </div>
 
