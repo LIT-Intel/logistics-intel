@@ -50,8 +50,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
-import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabase";
+import { useToast } from "@/components/ui/use-toast";
 import {
   searchShippers,
   fetchCompanySnapshot,
@@ -572,11 +572,22 @@ const currentYear = new Date().getFullYear();
       });
       return;
     }
+
+    const companyKey = company.importyeti_key || company.id;
+    if (!companyKey) {
+      toast({
+        title: 'Save failed',
+        description: 'This company is missing a valid company key.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const shipper = {
-        key: company.importyeti_key || company.id,
-        companyId: company.importyeti_key || company.id,
+        key: companyKey,
+        companyId: companyKey,
         title: company.name,
         name: company.name,
         domain: company.website || undefined,
@@ -586,48 +597,62 @@ const currentYear = new Date().getFullYear();
         city: company.city || undefined,
         state: company.state || undefined,
         countryCode: company.country_code || undefined,
-        totalShipments: normalizedProfile?.routeKpis?.shipmentsLast12m ?? company.shipments_12m ?? company.shipments ?? 0,
-        teusLast12m: normalizedProfile?.routeKpis?.teuLast12m ?? company.teu_estimate ?? null,
-        lastShipmentDate: normalizedProfile?.lastShipmentDate ?? company.last_shipment ?? undefined,
-        primaryRoute: normalizedProfile?.routeKpis?.mostRecentRoute ?? undefined,
+        totalShipments:
+          normalizedProfile?.routeKpis?.shipmentsLast12m ??
+          company.shipments_12m ??
+          company.shipments ??
+          0,
+        teusLast12m:
+          normalizedProfile?.routeKpis?.teuLast12m ??
+          company.teu_estimate ??
+          null,
+        mostRecentShipment:
+          normalizedProfile?.lastShipmentDate ??
+          company.last_shipment ??
+          null,
+        lastShipmentDate:
+          normalizedProfile?.lastShipmentDate ??
+          company.last_shipment ??
+          null,
+        primaryRoute:
+          normalizedProfile?.routeKpis?.topRouteLast12m ??
+          null,
         topSuppliers: company.top_suppliers ?? [],
       };
-      console.log('[saveToCommandCenter] Sending shipper:', {
-        company_name: shipper.name,
+
+      console.log('[saveToCommandCenter] Sending normalized save payload:', {
+        company_name: shipper.title,
         company_key: shipper.key,
       });
+
       const responseData = await saveCompanyToCommandCenter({
         shipper,
         profile: normalizedProfile,
         stage: 'prospect',
         source: 'importyeti',
       });
-      console.log('[saveToCommandCenter] Save successful:', {
-        success: responseData?.success,
-        companyId: responseData?.company?.id,
-        savedId: responseData?.saved?.id,
-      });
+
+      console.log('[saveToCommandCenter] Save successful:', responseData);
+
       toast({
         title: 'Company saved',
         description: `${company.name} has been saved to your Command Center`,
       });
-      if (shipper.key) {
-        setSavedCompanyIds((prev) => {
-          const updated = Array.from(new Set([...prev, shipper.key as string]));
-          console.log('[saveToCommandCenter] Updated savedCompanyIds:', updated);
-          return updated;
-        });
-      }
+
+      setSavedCompanyIds((prev) => (
+        prev.includes(companyKey) ? prev : [...prev, companyKey]
+      ));
+
       setSelectedCompany(null);
     } catch (error: any) {
       console.error('[saveToCommandCenter] Fatal error:', {
-        message: error.message,
-        stack: error.stack,
+        message: error?.message,
+        stack: error?.stack,
         company: company.name,
       });
       toast({
         title: 'Save failed',
-        description: error.message || 'Could not save company. Please try again.',
+        description: error?.message || 'Could not save company. Please try again.',
         variant: 'destructive',
       });
     } finally {
