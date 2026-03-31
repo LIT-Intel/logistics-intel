@@ -75,14 +75,6 @@ function resolveApiBase() {
     candidate = read((window as any).__API_BASE__);
   }
 
-  // CRITICAL: In browser context, always use proxy path to avoid CORS
-  // If the candidate is a full URL (not starting with /), use proxy instead
-  if (typeof window !== "undefined") {
-    if (!candidate || !candidate.startsWith("/")) {
-      return "/api/lit";
-    }
-  }
-
   return candidate || "/api/lit";
 }
 
@@ -2489,10 +2481,19 @@ export async function listSavedCompanies(
         name: row.company_name,
         source: row.source,
         address: row.company_data?.address || null,
-        country_code: row.company_data?.countryCode || row.company_data?.country_code || null,
+        country_code:
+          row.company_data?.countryCode ||
+          row.company_data?.country_code ||
+          null,
         kpis: {
-          shipments_12m: row.company_data?.shipmentsLast12m || row.company_data?.totalShipments || 0,
-          last_activity: row.company_data?.lastShipmentDate || row.company_data?.mostRecentShipment || null,
+          shipments_12m:
+            row.company_data?.shipmentsLast12m ||
+            row.company_data?.totalShipments ||
+            0,
+          last_activity:
+            row.company_data?.lastShipmentDate ||
+            row.company_data?.mostRecentShipment ||
+            null,
         },
         extras: {
           top_suppliers: row.company_data?.topSuppliers || [],
@@ -2502,29 +2503,38 @@ export async function listSavedCompanies(
     }));
   }
 
-  const res = await fetch(
-    withGatewayKey(
-      `${SEARCH_GATEWAY_BASE}/crm/savedCompanies?stage=${encodeURIComponent(stage)}`,
-    ),
-    {
-      method: "GET",
-      headers: { accept: "application/json" },
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`listSavedCompanies failed: ${res.status}`);
+  try {
+    const authHeaders = await getAuthHeaders();
+    const { data, error } = await supabase.functions.invoke("save-company", {
+      body: {
+        action: "list",
+        stage,
+      },
+      headers: {
+        Authorization: authHeaders.Authorization,
+      },
+    });
+
+    if (error) {
+      console.warn("[LIT] listSavedCompanies edge fallback failed", error);
+    } else {
+      const payload = data ?? [];
+      if (Array.isArray(payload)) {
+        return payload as CommandCenterRecord[];
+      }
+      if (Array.isArray((payload as any)?.rows)) {
+        return (payload as any).rows as CommandCenterRecord[];
+      }
+      if (Array.isArray((payload as any)?.data?.rows)) {
+        return (payload as any).data.rows as CommandCenterRecord[];
+      }
+    }
+  } catch (edgeError) {
+    console.warn("[LIT] listSavedCompanies edge path unavailable", edgeError);
   }
-  const data = await res.json().catch(() => []);
-  if (Array.isArray(data)) {
-    return data as CommandCenterRecord[];
-  }
-  if (Array.isArray((data as any)?.rows)) {
-    return (data as any).rows as CommandCenterRecord[];
-  }
-  if (Array.isArray((data as any)?.data?.rows)) {
-    return (data as any).data.rows as CommandCenterRecord[];
-  }
-  return [];
+
+  const fallback = await getSavedCompanies();
+  return Array.isArray(fallback?.rows) ? fallback.rows : [];
 }
 
 export function buildSearchParams(raw: Record<string, any>) {
