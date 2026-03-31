@@ -2864,39 +2864,35 @@ export async function saveIyCompanyToCrm(opts: {
 
   const fclShipments = getFclShipments12m(opts.profile);
   const lclShipments = getLclShipments12m(opts.profile);
-  const estSpend =
-    opts.profile?.routeKpis?.estSpendUsd12m ??
-    opts.profile?.estSpendUsd12m ??
-    null;
+  const estSpend = opts.profile?.routeKpis?.estSpendUsd12m ?? opts.profile?.estSpendUsd12m ?? null;
   const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
   const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
 
-  const companyPayload = {
-    companyKey: companyKey,
+  const companyData = {
+    companyKey,
     key: companyKey,
-    company_id: companyKey,
     source_company_key: companyKey,
     source: opts.source ?? "importyeti",
     provider: opts.provider ?? "importyeti",
     title: opts.shipper.title || opts.shipper.name || "Unknown",
-    name: opts.shipper.title || opts.shipper.name || "Unknown",
-    domain: opts.shipper.domain ?? opts.profile?.domain ?? null,
-    website: opts.shipper.website ?? opts.profile?.website ?? null,
+    name: opts.shipper.name || opts.shipper.title || "Unknown",
+    domain: opts.shipper.domain ?? null,
+    website: opts.shipper.website ?? null,
     phone: opts.shipper.phone ?? null,
+    countryCode: opts.shipper.countryCode ?? null,
+    country_code: opts.shipper.countryCode ?? null,
     address: opts.shipper.address ?? null,
-    address_line1: opts.shipper.address ?? null,
     city: opts.shipper.city ?? null,
     state: opts.shipper.state ?? null,
-    country_code: opts.shipper.countryCode ?? null,
     totalShipments: opts.shipper.totalShipments || 0,
     shipments_12m: opts.shipper.totalShipments || 0,
     teusLast12m: opts.shipper.teusLast12m ?? null,
     teu_12m: opts.shipper.teusLast12m ?? null,
+    mostRecentShipment: opts.shipper.mostRecentShipment ?? null,
     lastShipmentDate: opts.shipper.lastShipmentDate ?? null,
-    most_recent_shipment_date: opts.shipper.lastShipmentDate ?? null,
+    most_recent_shipment_date: opts.shipper.lastShipmentDate ?? opts.shipper.mostRecentShipment ?? null,
     primaryRoute: opts.shipper.primaryRoute ?? null,
     primary_mode: opts.shipper.primaryRoute ?? null,
-    topSuppliers: opts.shipper.topSuppliers ?? [],
     fcl_shipments_12m: fclShipments,
     lcl_shipments_12m: lclShipments,
     est_spend_12m: estSpend,
@@ -2904,11 +2900,10 @@ export async function saveIyCompanyToCrm(opts: {
     recent_route: recentRoute,
     raw_profile: opts.profile,
     raw_last_search: opts.shipper,
+    stage: opts.stage ?? "prospect",
   };
 
-  return saveCompanyToCrm({
-    company: companyPayload,
-  });
+  return saveCompanyToCrm(companyData);
 }
 
 export async function saveCompanyToCommandCenter(opts: {
