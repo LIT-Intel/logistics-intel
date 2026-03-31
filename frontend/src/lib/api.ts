@@ -2862,36 +2862,41 @@ export async function saveIyCompanyToCrm(opts: {
     });
   }
 
-  // Phase 1.3: Validate session before attempting save
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !session?.access_token) {
-    console.error("saveIyCompanyToCrm: Failed to get auth session", sessionError);
-    throw new Error("Please sign in again to save companies");
-  }
-
-  // Phase 1.2: Extract KPI fields from profile for database storage
   const fclShipments = getFclShipments12m(opts.profile);
   const lclShipments = getLclShipments12m(opts.profile);
-  const estSpend = opts.profile?.routeKpis?.estSpendUsd12m ?? opts.profile?.estSpendUsd12m ?? null;
+  const estSpend =
+    opts.profile?.routeKpis?.estSpendUsd12m ??
+    opts.profile?.estSpendUsd12m ??
+    null;
   const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
   const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
 
-  const companyData = {
-    source: opts.source ?? "importyeti",
+  const companyPayload = {
+    companyKey: companyKey,
+    key: companyKey,
+    company_id: companyKey,
     source_company_key: companyKey,
+    source: opts.source ?? "importyeti",
+    provider: opts.provider ?? "importyeti",
+    title: opts.shipper.title || opts.shipper.name || "Unknown",
     name: opts.shipper.title || opts.shipper.name || "Unknown",
-    domain: opts.shipper.domain,
-    website: opts.shipper.website,
-    phone: opts.shipper.phone,
-    country_code: opts.shipper.countryCode,
-    address_line1: opts.shipper.address,
-    city: opts.shipper.city,
-    state: opts.shipper.state,
+    domain: opts.shipper.domain ?? opts.profile?.domain ?? null,
+    website: opts.shipper.website ?? opts.profile?.website ?? null,
+    phone: opts.shipper.phone ?? null,
+    address: opts.shipper.address ?? null,
+    address_line1: opts.shipper.address ?? null,
+    city: opts.shipper.city ?? null,
+    state: opts.shipper.state ?? null,
+    country_code: opts.shipper.countryCode ?? null,
+    totalShipments: opts.shipper.totalShipments || 0,
     shipments_12m: opts.shipper.totalShipments || 0,
+    teusLast12m: opts.shipper.teusLast12m ?? null,
     teu_12m: opts.shipper.teusLast12m ?? null,
-    most_recent_shipment_date: opts.shipper.lastShipmentDate,
+    lastShipmentDate: opts.shipper.lastShipmentDate ?? null,
+    most_recent_shipment_date: opts.shipper.lastShipmentDate ?? null,
+    primaryRoute: opts.shipper.primaryRoute ?? null,
     primary_mode: opts.shipper.primaryRoute ?? null,
-    // Phase 1.2: Add KPI fields
+    topSuppliers: opts.shipper.topSuppliers ?? [],
     fcl_shipments_12m: fclShipments,
     lcl_shipments_12m: lclShipments,
     est_spend_12m: estSpend,
@@ -2901,24 +2906,9 @@ export async function saveIyCompanyToCrm(opts: {
     raw_last_search: opts.shipper,
   };
 
-  // Phase 1.1: Add Authorization header with access token
-  const { data, error } = await supabase.functions.invoke("save-company", {
-    body: {
-      source_company_key: companyKey,
-      company_data: companyData,
-      stage: opts.stage ?? "prospect",
-    },
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
+  return saveCompanyToCrm({
+    company: companyPayload,
   });
-
-  if (error) {
-    console.error("saveIyCompanyToCrm failed:", error);
-    throw new Error(`saveIyCompanyToCrm failed: ${error.message || "Unknown error"}`);
-  }
-
-  return data || {};
 }
 
 export async function saveCompanyToCommandCenter(opts: {
