@@ -2900,7 +2900,9 @@ async function saveCompanyDirectToSupabase(opts: {
     user_id: user.id,
     company_id: upsertedCompany.id,
     stage: opts.stage ?? "prospect",
+    status: "active",
     last_viewed_at: new Date().toISOString(),
+    last_activity_at: new Date().toISOString(),
   };
 
   let savedRow: any = null;
@@ -2909,7 +2911,9 @@ async function saveCompanyDirectToSupabase(opts: {
       .from("lit_saved_companies")
       .update({
         stage: savePayload.stage,
+        status: savePayload.status,
         last_viewed_at: savePayload.last_viewed_at,
+        last_activity_at: savePayload.last_activity_at,
       })
       .eq("id", existingSave.id)
       .select("id, company_id, stage")
