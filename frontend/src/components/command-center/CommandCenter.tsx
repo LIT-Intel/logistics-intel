@@ -27,6 +27,52 @@ function recordKey(record: CommandCenterRecord) {
   );
 }
 
+function normalizeSavedCompanyRow(item: any): CommandCenterRecord {
+  const company = item?.company || item?.lit_companies || item || {};
+
+  return {
+    ...item,
+    company: {
+      ...company,
+      company_id:
+        company.company_id ||
+        company.source_company_key ||
+        company.id ||
+        item?.company_id ||
+        "",
+      name:
+        company.name ||
+        company.title ||
+        company.company_name ||
+        item?.company_name ||
+        "Unknown Company",
+      address: company.address || item?.address || "",
+      country_code:
+        company.country_code ||
+        company.countryCode ||
+        item?.country_code ||
+        item?.countryCode ||
+        "",
+      domain: company.domain || item?.domain || null,
+      website: company.website || item?.website || null,
+      total_shipments:
+        company.total_shipments ||
+        company.totalShipments ||
+        item?.total_shipments ||
+        item?.totalShipments ||
+        0,
+      last_shipment_date:
+        company.last_shipment_date ||
+        company.mostRecentShipment ||
+        company.lastShipment ||
+        item?.last_shipment_date ||
+        item?.mostRecentShipment ||
+        item?.lastShipment ||
+        null,
+    },
+  } as CommandCenterRecord;
+}
+
 export default function CommandCenter() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -40,65 +86,63 @@ export default function CommandCenter() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [generatingBrief, setGeneratingBrief] = useState(false);
 
-  useEffect(() => {
+  const loadSavedCompanies = async () => {
     setSavedLoading(true);
     setSavedError(null);
-    listSavedCompanies("prospect")
-      .then((response) => {
-        const rawRows = Array.isArray((response as any)?.rows)
-          ? (response as any).rows
-          : Array.isArray((response as any)?.data)
-            ? (response as any).data
-            : Array.isArray(response)
-              ? response
-              : [];
+    try {
+      const response: any = await listSavedCompanies("prospect");
 
-        const rows = rawRows.map((row: any) => {
-          const company = row?.company ?? row;
-          return {
-            ...row,
-            company: {
-              ...company,
-              company_id:
-                company?.company_id ??
-                company?.source_company_key ??
-                company?.id ??
-                "",
-              name:
-                company?.name ??
-                company?.title ??
-                company?.company_name ??
-                "",
-              website: company?.website ?? null,
-              domain: company?.domain ?? null,
-              address: company?.address ?? null,
-              country_code:
-                company?.country_code ?? company?.countryCode ?? null,
-              total_shipments:
-                company?.total_shipments ?? company?.totalShipments ?? null,
-              last_shipment_date:
-                company?.last_shipment_date ??
-                company?.mostRecentShipment ??
-                company?.lastShipment ??
-                null,
-            },
-          } as CommandCenterRecord;
-        });
+      const rows = Array.isArray(response?.rows)
+        ? response.rows
+        : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response)
+            ? response
+            : [];
 
-        setSavedCompanies(rows);
-        setSelectedKey((prev) => {
-          if (prev && rows.some((row: CommandCenterRecord) => recordKey(row) === prev)) {
-            return prev;
-          }
-          return rows.length ? recordKey(rows[0] as CommandCenterRecord) : null;
-        });
-      })
-      .catch((error: any) => {
-        setSavedError(error?.message ?? "Failed to load saved companies");
-        setSavedCompanies([]);
-        setSelectedKey(null);
-      })
-      .finally(() => setSavedLoading(false));
+      const normalizedRows = rows.map(normalizeSavedCompanyRow);
+
+      setSavedCompanies(normalizedRows);
+      setSelectedKey((prev) => {
+        if (
+          prev &&
+          normalizedRows.some((row: CommandCenterRecord) => recordKey(row) === prev)
+        ) {
+          return prev;
+        }
+        return normalizedRows.length
+          ? recordKey(normalizedRows[0] as CommandCenterRecord)
+          : null;
+      });
+    } catch (error: any) {
+      setSavedError(error?.message ?? "Failed to load saved companies");
+      setSavedCompanies([]);
+      setSelectedKey(null);
+    } finally {
+      setSavedLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSavedCompanies();
+
+    const onFocus = () => {
+      loadSavedCompanies();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadSavedCompanies();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   const selectedRecord = useMemo(() => {
@@ -217,7 +261,8 @@ export default function CommandCenter() {
   const handleAddCompany = () => {
     toast({
       title: "Feature coming soon",
-      description: "Manual company addition will be available in the next update. For now, save companies from the Search page.",
+      description:
+        "Manual company addition will be available in the next update. For now, save companies from the Search page.",
     });
   };
 
@@ -225,7 +270,7 @@ export default function CommandCenter() {
     <>
       <div className="space-y-6">
         <CommandCenterHeader
-          userName={user?.email || user?.displayName || 'User'}
+          userName={user?.email || user?.displayName || "User"}
           companiesCount={savedCompanies.length}
           onGenerateBrief={handleGenerateBrief}
           onExportPDF={handleExportPDF}
@@ -240,11 +285,14 @@ export default function CommandCenter() {
               setSelectedKey(key);
               const record = savedCompanies.find((r) => recordKey(r) === key);
               if (record) {
-                localStorage.setItem("lit:selectedCompany", JSON.stringify({
-                  company_id: record.company?.company_id,
-                  source_company_key: record.company?.company_id,
-                  name: record.company?.name,
-                }));
+                localStorage.setItem(
+                  "lit:selectedCompany",
+                  JSON.stringify({
+                    company_id: record.company?.company_id,
+                    source_company_key: record.company?.company_id,
+                    name: record.company?.name,
+                  })
+                );
               }
             }}
             loading={savedLoading}
