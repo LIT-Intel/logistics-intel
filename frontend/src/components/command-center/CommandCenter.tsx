@@ -3,8 +3,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   listSavedCompanies,
-  getIyCompanyProfile,
-  getIyRouteKpisForCompany,
+  getSavedCompanyDetail,
+  getFclShipments12m,
+  getLclShipments12m,
   type IyCompanyProfile,
   type IyRouteKpis,
 } from "@/lib/api";
@@ -83,18 +84,17 @@ export default function CommandCenter() {
     setDetailLoading(true);
     setDetailError(null);
 
-    Promise.all([
-      getIyCompanyProfile({ companyKey }),
-      getIyRouteKpisForCompany({ companyKey }),
-    ])
-      .then(([profileResult, routeData]) => {
+    getSavedCompanyDetail(companyKey)
+      .then(({ profile: nextProfile, routeKpis: nextRouteKpis }) => {
         if (cancelled) return;
-        setProfile(profileResult.companyProfile);
-        setRouteKpis(routeData);
+        setProfile(nextProfile);
+        setRouteKpis(nextRouteKpis);
       })
       .catch((error: any) => {
         if (cancelled) return;
         setDetailError(error?.message ?? "Failed to load company profile");
+        setProfile(null);
+        setRouteKpis(null);
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -105,8 +105,64 @@ export default function CommandCenter() {
     };
   }, [selectedRecord?.company?.company_id]);
 
+  const hydratedSelectedRecord = useMemo(() => {
+    if (!selectedRecord) return null;
+    if (!profile) return selectedRecord;
+
+    const fallbackKpis = (selectedRecord as any)?.company?.kpis ?? {};
+    const mergedCompany = {
+      ...selectedRecord.company,
+      name: profile.title || profile.name || selectedRecord.company?.name,
+      domain: profile.domain ?? selectedRecord.company?.domain ?? null,
+      website: profile.website ?? (selectedRecord.company as any)?.website ?? null,
+      address: profile.address ?? selectedRecord.company?.address ?? null,
+      country_code: profile.countryCode ?? selectedRecord.company?.country_code ?? null,
+      kpis: {
+        ...fallbackKpis,
+        shipments_12m:
+          profile.routeKpis?.shipmentsLast12m ??
+          fallbackKpis?.shipments_12m ??
+          0,
+        teu_12m:
+          profile.routeKpis?.teuLast12m ??
+          fallbackKpis?.teu_12m ??
+          null,
+        est_spend_12m:
+          profile.routeKpis?.estSpendUsd12m ??
+          profile.estSpendUsd12m ??
+          fallbackKpis?.est_spend_12m ??
+          null,
+        fcl_shipments_12m:
+          getFclShipments12m(profile) ??
+          fallbackKpis?.fcl_shipments_12m ??
+          null,
+        lcl_shipments_12m:
+          getLclShipments12m(profile) ??
+          fallbackKpis?.lcl_shipments_12m ??
+          null,
+        last_activity:
+          profile.lastShipmentDate ??
+          fallbackKpis?.last_activity ??
+          null,
+        top_route_12m:
+          profile.routeKpis?.topRouteLast12m ??
+          fallbackKpis?.top_route_12m ??
+          null,
+        recent_route:
+          profile.routeKpis?.mostRecentRoute ??
+          fallbackKpis?.recent_route ??
+          null,
+      },
+    };
+
+    return {
+      ...selectedRecord,
+      company: mergedCompany,
+    } as CommandCenterRecord;
+  }, [selectedRecord, profile]);
+
   const handleGenerateBrief = async () => {
-    if (!selectedRecord || !user) {
+    if (!hydratedSelectedRecord || !user) {
       toast({
         title: "No company selected",
         description: "Please select a company to generate a brief",
@@ -131,8 +187,8 @@ export default function CommandCenter() {
             Authorization: `Bearer ${session.session.access_token}`,
           },
           body: JSON.stringify({
-            company_id: selectedRecord.company?.company_id,
-            company_name: selectedRecord.company?.name,
+            company_id: hydratedSelectedRecord.company?.company_id,
+            company_name: hydratedSelectedRecord.company?.name,
           }),
         }
       );
@@ -162,7 +218,7 @@ export default function CommandCenter() {
   };
 
   const handleExportPDF = () => {
-    if (!selectedRecord) {
+    if (!hydratedSelectedRecord) {
       toast({
         title: "No company selected",
         description: "Please select a company to export",
@@ -214,7 +270,7 @@ export default function CommandCenter() {
             error={savedError}
           />
           <CompanyDetailPanel
-            record={selectedRecord}
+            record={hydratedSelectedRecord}
             profile={profile}
             routeKpis={routeKpis}
             loading={detailLoading}
