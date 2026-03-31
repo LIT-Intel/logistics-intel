@@ -2491,6 +2491,80 @@ export async function getSavedCompanyDetail(
 }
 
 
+function deriveYearRouteHints(points: IyTimeSeriesPoint[]): {
+  topRouteLast12m: string | null;
+  mostRecentRoute: string | null;
+} {
+  return {
+    topRouteLast12m: null,
+    mostRecentRoute: null,
+  };
+}
+
+export function buildYearScopedProfile(
+  profile: IyCompanyProfile | null,
+  year: number,
+): IyCompanyProfile | null {
+  if (!profile) return null;
+  const scopedSeries = Array.isArray(profile.timeSeries)
+    ? profile.timeSeries.filter((point) => Number(point?.year) === Number(year))
+    : [];
+
+  if (!scopedSeries.length) {
+    return {
+      ...profile,
+      routeKpis: {
+        shipmentsLast12m: 0,
+        teuLast12m: 0,
+        estSpendUsd12m: 0,
+        topRouteLast12m: profile.routeKpis?.topRouteLast12m ?? null,
+        mostRecentRoute: profile.routeKpis?.mostRecentRoute ?? null,
+        sampleSize: 0,
+        topRoutesLast12m: [],
+      },
+      containers: {
+        fclShipments12m: 0,
+        lclShipments12m: 0,
+      },
+      estSpendUsd12m: 0,
+      totalShipments: 0,
+      timeSeries: [],
+    };
+  }
+
+  const shipments = scopedSeries.reduce((sum, point) => sum + (Number(point?.shipments) || 0), 0);
+  const teu = scopedSeries.reduce((sum, point) => sum + (Number(point?.teu) || 0), 0);
+  const estSpend = scopedSeries.reduce((sum, point) => sum + (Number(point?.estSpendUsd) || 0), 0);
+  const fcl = scopedSeries.reduce((sum, point) => sum + (Number(point?.fclShipments) || 0), 0);
+  const lcl = scopedSeries.reduce((sum, point) => sum + (Number(point?.lclShipments) || 0), 0);
+  const mostRecentPoint = [...scopedSeries]
+    .filter((point) => point?.lastShipmentDate)
+    .sort((a, b) => String(b.lastShipmentDate).localeCompare(String(a.lastShipmentDate)))[0] ?? null;
+  const routeHints = deriveYearRouteHints(scopedSeries);
+
+  return {
+    ...profile,
+    estSpendUsd12m: estSpend,
+    totalShipments: shipments,
+    lastShipmentDate: mostRecentPoint?.lastShipmentDate ?? profile.lastShipmentDate ?? null,
+    routeKpis: {
+      shipmentsLast12m: shipments,
+      teuLast12m: teu,
+      estSpendUsd12m: estSpend,
+      topRouteLast12m: routeHints.topRouteLast12m ?? profile.routeKpis?.topRouteLast12m ?? null,
+      mostRecentRoute: routeHints.mostRecentRoute ?? profile.routeKpis?.mostRecentRoute ?? null,
+      sampleSize: shipments,
+      topRoutesLast12m: profile.routeKpis?.topRoutesLast12m ?? [],
+    },
+    containers: {
+      fclShipments12m: fcl,
+      lclShipments12m: lcl,
+    },
+    timeSeries: scopedSeries,
+  };
+}
+
+
 export async function listSavedCompanies(
   stage = "prospect",
 ): Promise<CommandCenterRecord[]> {
