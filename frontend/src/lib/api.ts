@@ -2503,36 +2503,6 @@ export async function listSavedCompanies(
     }));
   }
 
-  try {
-    const authHeaders = await getAuthHeaders();
-    const { data, error } = await supabase.functions.invoke("save-company", {
-      body: {
-        action: "list",
-        stage,
-      },
-      headers: {
-        Authorization: authHeaders.Authorization,
-      },
-    });
-
-    if (error) {
-      console.warn("[LIT] listSavedCompanies edge fallback failed", error);
-    } else {
-      const payload = data ?? [];
-      if (Array.isArray(payload)) {
-        return payload as CommandCenterRecord[];
-      }
-      if (Array.isArray((payload as any)?.rows)) {
-        return (payload as any).rows as CommandCenterRecord[];
-      }
-      if (Array.isArray((payload as any)?.data?.rows)) {
-        return (payload as any).data.rows as CommandCenterRecord[];
-      }
-    }
-  } catch (edgeError) {
-    console.warn("[LIT] listSavedCompanies edge path unavailable", edgeError);
-  }
-
   const fallback = await getSavedCompanies();
   return Array.isArray(fallback?.rows) ? fallback.rows : [];
 }
@@ -2835,6 +2805,142 @@ export async function saveCompanyToCrm(
   return res.json();
 }
 
+
+async function saveCompanyDirectToSupabase(opts: {
+  shipper: IyShipperHit;
+  profile: IyCompanyProfile | null;
+  stage?: string;
+  provider?: string;
+  source?: string;
+}) {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  const user = authData?.user;
+
+  if (authError || !user?.id) {
+    throw new Error("Authentication required to save company");
+  }
+
+  const rawId =
+    opts.shipper.key ??
+    opts.shipper.companyId ??
+    (opts.shipper as any)?.company_key ??
+    (opts.shipper as any)?.source_company_key ??
+    "";
+
+  const companyKey = ensureCompanyKey(rawId);
+  if (!companyKey) {
+    throw new Error("saveCompanyDirectToSupabase requires a valid company key");
+  }
+
+  const fclShipments = getFclShipments12m(opts.profile);
+  const lclShipments = getLclShipments12m(opts.profile);
+  const estSpend =
+    opts.profile?.routeKpis?.estSpendUsd12m ??
+    opts.profile?.estSpendUsd12m ??
+    null;
+  const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
+  const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
+
+  const companyRow = {
+    source: opts.source ?? "importyeti",
+    source_company_key: companyKey,
+    name: opts.shipper.title || opts.shipper.name || "Unknown",
+    domain: opts.profile?.domain ?? opts.shipper.domain ?? null,
+    website: opts.profile?.website ?? opts.shipper.website ?? null,
+    address_line1: opts.profile?.address ?? opts.shipper.address ?? null,
+    city: opts.shipper.city ?? null,
+    state: opts.shipper.state ?? null,
+    country_code: opts.profile?.countryCode ?? opts.shipper.countryCode ?? null,
+    shipments_12m:
+      opts.profile?.routeKpis?.shipmentsLast12m ??
+      opts.shipper.shipmentsLast12m ??
+      opts.shipper.totalShipments ??
+      0,
+    teu_12m:
+      opts.profile?.routeKpis?.teuLast12m ??
+      opts.shipper.teusLast12m ??
+      null,
+    fcl_shipments_12m: fclShipments,
+    lcl_shipments_12m: lclShipments,
+    most_recent_shipment_date:
+      opts.profile?.lastShipmentDate ??
+      opts.shipper.lastShipmentDate ??
+      opts.shipper.mostRecentShipment ??
+      null,
+    top_route_12m: topRoute,
+    recent_route: recentRoute,
+  };
+
+  const { data: upsertedCompany, error: companyError } = await supabase
+    .from("lit_companies")
+    .upsert(companyRow, {
+      onConflict: "source_company_key",
+    })
+    .select("id, source_company_key, name")
+    .single();
+
+  if (companyError || !upsertedCompany?.id) {
+    console.error("saveCompanyDirectToSupabase company upsert error:", companyError);
+    throw new Error(companyError?.message || "Failed to upsert lit_companies");
+  }
+
+  const { data: existingSave, error: existingError } = await supabase
+    .from("lit_saved_companies")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("company_id", upsertedCompany.id)
+    .maybeSingle();
+
+  if (existingError) {
+    console.error("saveCompanyDirectToSupabase existing save lookup error:", existingError);
+    throw new Error(existingError.message || "Failed to inspect saved company state");
+  }
+
+  const savePayload = {
+    user_id: user.id,
+    company_id: upsertedCompany.id,
+    stage: opts.stage ?? "prospect",
+    last_viewed_at: new Date().toISOString(),
+  };
+
+  let savedRow: any = null;
+  if (existingSave?.id) {
+    const { data, error } = await supabase
+      .from("lit_saved_companies")
+      .update({
+        stage: savePayload.stage,
+        last_viewed_at: savePayload.last_viewed_at,
+      })
+      .eq("id", existingSave.id)
+      .select("id, company_id, stage")
+      .single();
+
+    if (error) {
+      console.error("saveCompanyDirectToSupabase saved update error:", error);
+      throw new Error(error.message || "Failed to update saved company");
+    }
+    savedRow = data;
+  } else {
+    const { data, error } = await supabase
+      .from("lit_saved_companies")
+      .insert(savePayload)
+      .select("id, company_id, stage")
+      .single();
+
+    if (error) {
+      console.error("saveCompanyDirectToSupabase saved insert error:", error);
+      throw new Error(error.message || "Failed to insert saved company");
+    }
+    savedRow = data;
+  }
+
+  return {
+    success: true,
+    company: upsertedCompany,
+    saved: savedRow,
+  };
+}
+
 export async function saveIyCompanyToCrm(opts: {
   shipper: IyShipperHit;
   profile: IyCompanyProfile | null;
@@ -2862,48 +2968,7 @@ export async function saveIyCompanyToCrm(opts: {
     });
   }
 
-  const fclShipments = getFclShipments12m(opts.profile);
-  const lclShipments = getLclShipments12m(opts.profile);
-  const estSpend = opts.profile?.routeKpis?.estSpendUsd12m ?? opts.profile?.estSpendUsd12m ?? null;
-  const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
-  const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
-
-  const companyData = {
-    companyKey,
-    key: companyKey,
-    source_company_key: companyKey,
-    source: opts.source ?? "importyeti",
-    provider: opts.provider ?? "importyeti",
-    title: opts.shipper.title || opts.shipper.name || "Unknown",
-    name: opts.shipper.name || opts.shipper.title || "Unknown",
-    domain: opts.shipper.domain ?? null,
-    website: opts.shipper.website ?? null,
-    phone: opts.shipper.phone ?? null,
-    countryCode: opts.shipper.countryCode ?? null,
-    country_code: opts.shipper.countryCode ?? null,
-    address: opts.shipper.address ?? null,
-    city: opts.shipper.city ?? null,
-    state: opts.shipper.state ?? null,
-    totalShipments: opts.shipper.totalShipments || 0,
-    shipments_12m: opts.shipper.totalShipments || 0,
-    teusLast12m: opts.shipper.teusLast12m ?? null,
-    teu_12m: opts.shipper.teusLast12m ?? null,
-    mostRecentShipment: opts.shipper.mostRecentShipment ?? null,
-    lastShipmentDate: opts.shipper.lastShipmentDate ?? null,
-    most_recent_shipment_date: opts.shipper.lastShipmentDate ?? opts.shipper.mostRecentShipment ?? null,
-    primaryRoute: opts.shipper.primaryRoute ?? null,
-    primary_mode: opts.shipper.primaryRoute ?? null,
-    fcl_shipments_12m: fclShipments,
-    lcl_shipments_12m: lclShipments,
-    est_spend_12m: estSpend,
-    top_route_12m: topRoute,
-    recent_route: recentRoute,
-    raw_profile: opts.profile,
-    raw_last_search: opts.shipper,
-    stage: opts.stage ?? "prospect",
-  };
-
-  return saveCompanyToCrm(companyData);
+  return saveCompanyDirectToSupabase(opts);
 }
 
 export async function saveCompanyToCommandCenter(opts: {
