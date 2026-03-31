@@ -51,6 +51,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { motion } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabase";
 import {
   searchShippers,
   fetchCompanySnapshot,
