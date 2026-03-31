@@ -50,12 +50,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
-import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import {
   searchShippers,
   fetchCompanySnapshot,
   normalizeIyCompanyProfile,
+  saveCompanyToCommandCenter,
   type CompanySnapshot,
   type IyCompanyProfile,
 } from "@/lib/api";
@@ -611,16 +611,7 @@ const currentYear = new Date().getFullYear();
         company_name: payload.company_data.name,
         company_key: payload.company_data.source_company_key,
       });
-      const { data: responseData, error } = await supabase.functions.invoke('save-company', {
-        body: payload,
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-      if (error) {
-        console.error('[saveToCommandCenter] Save failed:', error);
-        throw new Error(error.message || 'Failed to save company');
-      }
+      const responseData = await saveCompanyToCommandCenter(payload);
       console.log('[saveToCommandCenter] Save successful:', {
         success: responseData?.success,
         companyId: responseData?.company?.id,
