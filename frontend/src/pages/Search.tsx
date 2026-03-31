@@ -572,101 +572,68 @@ const currentYear = new Date().getFullYear();
       });
       return;
     }
-
-    const companyKey = company.importyeti_key || company.id;
-    if (!companyKey) {
-      console.error('[saveToCommandCenter] Missing company key', company);
-      toast({
-        title: 'Save failed',
-        description: 'This company is missing a valid company key.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setSaving(true);
     try {
-      const shipperPayload = {
-        key: companyKey,
-        companyId: companyKey,
+      const shipper = {
+        key: company.importyeti_key || company.id,
+        companyId: company.importyeti_key || company.id,
         title: company.name,
         name: company.name,
         domain: company.website || undefined,
         website: company.website || undefined,
+        phone: (normalizedProfile as any)?.phoneNumber || (normalizedProfile as any)?.phone || undefined,
         address: company.address || undefined,
         city: company.city || undefined,
         state: company.state || undefined,
         countryCode: company.country_code || undefined,
-        totalShipments:
-          normalizedProfile?.routeKpis?.shipmentsLast12m ??
-          company.shipments_12m ??
-          company.shipments ??
-          0,
-        teusLast12m:
-          normalizedProfile?.routeKpis?.teuLast12m ??
-          company.teu_estimate ??
-          null,
-        lastShipmentDate:
-          normalizedProfile?.lastShipmentDate ??
-          company.last_shipment ??
-          null,
-        primaryRoute:
-          normalizedProfile?.routeKpis?.topRouteLast12m ??
-          normalizedProfile?.routeKpis?.mostRecentRoute ??
-          null,
-        phone: undefined,
+        totalShipments: normalizedProfile?.routeKpis?.shipmentsLast12m ?? company.shipments_12m ?? company.shipments ?? 0,
+        teusLast12m: normalizedProfile?.routeKpis?.teuLast12m ?? company.teu_estimate ?? null,
+        lastShipmentDate: normalizedProfile?.lastShipmentDate ?? company.last_shipment ?? undefined,
+        primaryRoute: normalizedProfile?.routeKpis?.mostRecentRoute ?? undefined,
+        topSuppliers: company.top_suppliers ?? [],
       };
-
-      console.log('[saveToCommandCenter] Sending normalized shipper payload:', {
-        company_name: shipperPayload.name,
-        company_key: shipperPayload.key,
-        shipments: shipperPayload.totalShipments,
-        teu: shipperPayload.teusLast12m,
+      console.log('[saveToCommandCenter] Sending shipper:', {
+        company_name: shipper.name,
+        company_key: shipper.key,
       });
-
       const responseData = await saveCompanyToCommandCenter({
-        shipper: shipperPayload as any,
+        shipper,
         profile: normalizedProfile,
         stage: 'prospect',
         source: 'importyeti',
       });
-
       console.log('[saveToCommandCenter] Save successful:', {
         success: responseData?.success,
         companyId: responseData?.company?.id,
         savedId: responseData?.saved?.id,
       });
-
       toast({
         title: 'Company saved',
         description: `${company.name} has been saved to your Command Center`,
       });
-
-      setSavedCompanyIds((prev) => {
-        if (!companyKey) return prev;
-        if (prev.includes(companyKey)) return prev;
-        const updated = [...prev, companyKey];
-        console.log('[saveToCommandCenter] Updated savedCompanyIds:', updated);
-        return updated;
-      });
-
+      if (shipper.key) {
+        setSavedCompanyIds((prev) => {
+          const updated = Array.from(new Set([...prev, shipper.key as string]));
+          console.log('[saveToCommandCenter] Updated savedCompanyIds:', updated);
+          return updated;
+        });
+      }
       setSelectedCompany(null);
     } catch (error: any) {
       console.error('[saveToCommandCenter] Fatal error:', {
-        message: error?.message,
-        stack: error?.stack,
+        message: error.message,
+        stack: error.stack,
         company: company.name,
       });
       toast({
         title: 'Save failed',
-        description: error?.message || 'Could not save company. Please try again.',
+        description: error.message || 'Could not save company. Please try again.',
         variant: 'destructive',
       });
     } finally {
       setSaving(false);
     }
   };
-
 
   const getModeIcon = (mode: string) => {
     if (mode === 'Ocean') return <Ship className="h-4 w-4" />;
