@@ -12,7 +12,11 @@ import {
   Truck,
   Sparkles,
 } from "lucide-react";
-import { buildCommandCenterDetailModel, buildYearScopedProfile, getCommandCenterAvailableYears } from "@/lib/api";
+import {
+  buildCommandCenterDetailModel,
+  buildYearScopedProfile,
+  getCommandCenterAvailableYears,
+} from "@/lib/api";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -29,6 +33,8 @@ type CompanyDetailPanelProps = {
   loading: boolean;
   error: string | null;
   selectedYear?: number | null;
+  onGenerateBrief?: () => void;
+  onExportPDF?: () => void;
 };
 
 type ActivityPoint = {
@@ -38,7 +44,6 @@ type ActivityPoint = {
 };
 
 type TableRow = Record<string, React.ReactNode>;
-
 
 type TimeSeriesLike = {
   month?: string | null;
@@ -137,12 +142,11 @@ const isMeaningfulText = (value?: string | null) => {
       cleaned !== "undefined" &&
       cleaned !== "n/a" &&
       cleaned !== "na" &&
-      cleaned !== "unknown"
+      cleaned !== "unknown",
   );
 };
 
-const cleanDisplayText = (value?: string | null) =>
-  isMeaningfulText(value) ? normalizeText(value) : "";
+const cleanDisplayText = (value?: string | null) => (isMeaningfulText(value) ? normalizeText(value) : "");
 
 const buildRouteLabel = (value?: string | null) => {
   const cleaned = cleanDisplayText(value);
@@ -484,11 +488,7 @@ const aggregateCarrierRows = (shipments: NormalizedShipment[]) => {
   });
 
   return [...map.entries()]
-    .map(([carrier, stats]) => ({
-      carrier,
-      shipments: stats.shipments,
-      teu: stats.teu,
-    }))
+    .map(([carrier, stats]) => ({ carrier, shipments: stats.shipments, teu: stats.teu }))
     .sort((a, b) => b.shipments - a.shipments || b.teu - a.teu)
     .slice(0, 10);
 };
@@ -653,9 +653,7 @@ const MetricList = ({
   items: Array<{ label: string; value: React.ReactNode; meta?: React.ReactNode }>;
 }) => (
   <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-    <div className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-      {title}
-    </div>
+    <div className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">{title}</div>
     <div className="space-y-3">
       {items.length ? (
         items.map((item) => (
@@ -690,9 +688,7 @@ const DataTable = ({
 }) => (
   <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
     <div className="mb-4 flex items-center justify-between gap-3">
-      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-        {title}
-      </div>
+      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">{title}</div>
       <div className="text-xs text-slate-400">{rows.length} rows</div>
     </div>
     <div className="overflow-x-auto">
@@ -719,10 +715,7 @@ const DataTable = ({
             ))
           ) : (
             <tr>
-              <td
-                colSpan={columns.length}
-                className="px-3 py-8 text-center text-sm text-slate-500"
-              >
+              <td colSpan={columns.length} className="px-3 py-8 text-center text-sm text-slate-500">
                 No data available yet.
               </td>
             </tr>
@@ -749,10 +742,7 @@ const AiRail = ({
       title: "Growth alert",
       body:
         shipments && teu
-          ? `Volume profile shows ${formatNumber(shipments)} shipments and ${formatNumber(
-              teu,
-              1,
-            )} TEUs in scope. Good candidate for mode optimization and seasonal rate capture.`
+          ? `Volume profile shows ${formatNumber(shipments)} shipments and ${formatNumber(teu, 1)} TEUs in scope. Good candidate for mode optimization and seasonal rate capture.`
           : "Waiting for richer shipment history to surface growth signals.",
     },
     {
@@ -774,18 +764,13 @@ const AiRail = ({
     <aside className="space-y-4 w-full lg:sticky lg:top-4">
       <div className="rounded-[28px] border border-slate-800 bg-slate-950 p-5 text-white shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-300">
-            AI Intelligence
-          </div>
+          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-300">AI Intelligence</div>
           <Sparkles className="h-4 w-4 text-indigo-300" />
         </div>
 
         <div className="space-y-4">
           {aiCards.map((card) => (
-            <div
-              key={card.title}
-              className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4"
-            >
+            <div key={card.title} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300">
                 {card.title}
               </div>
@@ -794,20 +779,7 @@ const AiRail = ({
           ))}
         </div>
       </div>
-
-      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
-          Quick actions
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <button className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-            Consult
-          </button>
-          <button className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-            Save
-          </button>
-        </div>
-      </div>
+      {/* Quick actions removed intentionally */}
     </aside>
   );
 };
@@ -819,16 +791,7 @@ const buildDetailModel = (
   rawRouteKpis: any,
 ): DetailModel => {
   const parseSeriesMonthIndex = (point: any) => {
-    const rawValue = String(
-      pickFirst(
-        point?.month,
-        point?.monthLabel,
-        point?.period,
-        point?.date,
-        point?.label,
-        "",
-      ),
-    );
+    const rawValue = String(pickFirst(point?.month, point?.monthLabel, point?.period, point?.date, point?.label, ""));
     if (/^\d{4}-\d{2}$/.test(rawValue)) return Number(rawValue.slice(5, 7)) - 1;
     if (/^\d{4}-\d{2}-\d{2}/.test(rawValue)) return Number(rawValue.slice(5, 7)) - 1;
     const parsed = new Date(rawValue);
@@ -838,9 +801,7 @@ const buildDetailModel = (
   const parseSeriesYear = (point: any) => {
     const explicitYear = toNumber(point?.year);
     if (explicitYear) return explicitYear;
-    const rawValue = String(
-      pickFirst(point?.month, point?.monthLabel, point?.period, point?.date, point?.label, ""),
-    );
+    const rawValue = String(pickFirst(point?.month, point?.monthLabel, point?.period, point?.date, point?.label, ""));
     const match = rawValue.match(/\b(20\d{2})\b/);
     if (match) return Number(match[1]);
     const parsed = new Date(rawValue);
@@ -850,41 +811,20 @@ const buildDetailModel = (
   const normalizeSeriesPoint = (point: any) => ({
     year: parseSeriesYear(point),
     monthIndex: parseSeriesMonthIndex(point),
-    shipments: toNumber(
-      pickFirst(point?.shipments, point?.totalShipments, point?.shipmentCount, point?.count),
-    ),
-    fclShipments: toNumber(
-      pickFirst(
-        point?.fclShipments,
-        point?.shipmentsFcl,
-        point?.fcl,
-        point?.fclCount,
-      ),
-    ),
-    lclShipments: toNumber(
-      pickFirst(
-        point?.lclShipments,
-        point?.shipmentsLcl,
-        point?.lcl,
-        point?.lclCount,
-      ),
-    ),
+    shipments: toNumber(pickFirst(point?.shipments, point?.totalShipments, point?.shipmentCount, point?.count)),
+    fclShipments: toNumber(pickFirst(point?.fclShipments, point?.shipmentsFcl, point?.fcl, point?.fclCount)),
+    lclShipments: toNumber(pickFirst(point?.lclShipments, point?.shipmentsLcl, point?.lcl, point?.lclCount)),
     teu: toNumber(pickFirst(point?.teu, point?.totalTeu, point?.teus)),
-    estSpendUsd: toNumber(
-      pickFirst(point?.estSpendUsd, point?.est_spend_usd, point?.spendUsd, point?.spend),
-    ),
+    estSpendUsd: toNumber(pickFirst(point?.estSpendUsd, point?.est_spend_usd, point?.spendUsd, point?.spend)),
   });
 
   const profileSeries = safeArray(rawProfile?.timeSeries)
     .map(normalizeSeriesPoint)
     .filter((point) => (selectedYear ? point.year === selectedYear : true));
-
   const routeSeries = safeArray(rawRouteKpis?.monthlySeries)
     .map(normalizeSeriesPoint)
     .filter((point) => (selectedYear ? point.year === selectedYear : true));
-
   const activeSeries = profileSeries.length >= routeSeries.length ? profileSeries : routeSeries;
-
   const filteredShipments = selectedYear
     ? normalizedShipments.filter((shipment) => shipment.year === selectedYear)
     : normalizedShipments;
@@ -894,7 +834,6 @@ const buildDetailModel = (
     fcl: 0,
     lcl: 0,
   }));
-
   if (activeSeries.length) {
     activeSeries.forEach((point) => {
       if (point.monthIndex == null || point.monthIndex < 0 || point.monthIndex > 11) return;
@@ -953,12 +892,13 @@ const buildDetailModel = (
       rawProfile?.est_spend,
     ),
   );
-
   const fallbackFcl = toNumber(
     pickFirst(
       rawProfile?.containers?.fclShipments12m,
       rawProfile?.containers?.fcl,
-      safeArray(rawProfile?.containersLoad).find((item: any) => String(item?.load_type || '').toUpperCase() === 'FCL')?.shipments,
+      safeArray(rawProfile?.containersLoad).find(
+        (item: any) => String(item?.load_type || "").toUpperCase() === "FCL",
+      )?.shipments,
       rawProfile?.fcl_shipments_12m,
     ),
   );
@@ -966,7 +906,9 @@ const buildDetailModel = (
     pickFirst(
       rawProfile?.containers?.lclShipments12m,
       rawProfile?.containers?.lcl,
-      safeArray(rawProfile?.containersLoad).find((item: any) => String(item?.load_type || '').toUpperCase() === 'LCL')?.shipments,
+      safeArray(rawProfile?.containersLoad).find(
+        (item: any) => String(item?.load_type || "").toUpperCase() === "LCL",
+      )?.shipments,
       rawProfile?.lcl_shipments_12m,
     ),
   );
@@ -1038,10 +980,20 @@ const buildDetailModel = (
   let origins = groupTop(filteredShipments.map((shipment) => shipment.origin), 8);
   let destinations = groupTop(filteredShipments.map((shipment) => shipment.destination), 8);
   if (!origins.length && topRoutes.length) {
-    origins = groupTop(topRoutes.map((route) => route.lane.split('→')[0]?.trim() || '').filter(Boolean) as string[], 8);
+    origins = groupTop(
+      topRoutes
+        .map((route) => route.lane.split('→')[0]?.trim() || '')
+        .filter(Boolean) as string[],
+      8,
+    );
   }
   if (!destinations.length && topRoutes.length) {
-    destinations = groupTop(topRoutes.map((route) => route.lane.split('→')[1]?.trim() || '').filter(Boolean) as string[], 8);
+    destinations = groupTop(
+      topRoutes
+        .map((route) => route.lane.split('→')[1]?.trim() || '')
+        .filter(Boolean) as string[],
+      8,
+    );
   }
 
   const hsMap = new Map<string, { description: string; count: number }>();
@@ -1053,14 +1005,11 @@ const buildDetailModel = (
     if (!current.description || current.description === '—') current.description = shipment.product;
     hsMap.set(key, current);
   });
-
   const hsRows = [...hsMap.entries()]
     .map(([hsCode, stats]) => ({ hsCode, description: stats.description || '—', count: stats.count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
-
   const productRows = hsRows.map((row) => ({ product: row.description, hsCode: row.hsCode, volumeShare: `${row.count}` }));
-
   const shipmentTableRows = [...filteredShipments]
     .sort((a, b) => {
       const da = a.date ? new Date(a.date).getTime() : 0;
@@ -1077,7 +1026,6 @@ const buildDetailModel = (
       Product: shipment.product || '—',
       'HS Code': shipment.hsCode || '—',
     }));
-
   const pivotRows = Array.from({ length: 12 }, (_, monthIndex) => {
     const point = monthlyBuckets[monthIndex];
     const seriesTeuForMonth = activeSeries
@@ -1092,7 +1040,6 @@ const buildDetailModel = (
       TEU: formatNumber(seriesTeuForMonth > 0 ? seriesTeuForMonth : shipmentTeuForMonth, 1),
     };
   });
-
   const topRouteLabel = topRoutes[0]?.lane || buildRouteLabel(rawRouteKpis?.topRouteLast12m) || '—';
   const recentRouteLabel =
     [...filteredShipments].sort((a, b) => {
@@ -1100,7 +1047,6 @@ const buildDetailModel = (
       const db = b.date ? new Date(b.date).getTime() : 0;
       return db - da;
     })[0]?.route || buildRouteLabel(rawRouteKpis?.mostRecentRoute) || '—';
-
   return {
     years: [],
     selectedYear,
@@ -1135,63 +1081,30 @@ export default function CompanyDetailPanel({
   loading,
   error,
   selectedYear,
+  onGenerateBrief,
+  onExportPDF,
 }: CompanyDetailPanelProps) {
   const key = getRecordKey(record);
   const rawProfile = profile as any;
   const rawRouteKpis = routeKpis as any;
-
   const recentBols = useMemo(() => {
-    const items =
-      rawProfile?.recentBols ||
-      rawProfile?.recent_bols ||
-      rawProfile?.bols ||
-      rawProfile?.shipments ||
-      [];
+    const items = rawProfile?.recentBols || rawProfile?.recent_bols || rawProfile?.bols || rawProfile?.shipments || [];
     return Array.isArray(items) ? items : [];
   }, [rawProfile]);
-
-  const normalizedShipments = useMemo(
-    () => recentBols.map((shipment, index) => normalizeShipment(shipment, index)),
-    [recentBols],
-  );
-
+  const normalizedShipments = useMemo(() => recentBols.map((shipment, index) => normalizeShipment(shipment, index)), [recentBols]);
   const availableYears = useMemo(() => {
     const apiYears = getCommandCenterAvailableYears(profile);
     return apiYears.length ? apiYears : getAvailableYears(normalizedShipments, profile, routeKpis);
   }, [normalizedShipments, profile, routeKpis]);
-
   const effectiveSelectedYear = selectedYear ?? availableYears[0] ?? null;
-
   const detail = useMemo(() => {
     const activeYear = effectiveSelectedYear || new Date().getFullYear();
     const scopedProfile = buildYearScopedProfile(profile, activeYear) || profile;
     const scopedRouteKpis = (scopedProfile as any)?.routeKpis ?? routeKpis;
-    const baseModel = buildCommandCenterDetailModel(
-      scopedProfile,
-      scopedRouteKpis,
-      activeYear,
-    ) as any;
-    const fallbackModel = buildDetailModel(
-      normalizedShipments,
-      activeYear,
-      scopedProfile as any,
-      (scopedProfile as any)?.routeKpis ?? rawRouteKpis,
-    );
-
-    const resolvedShipments = Math.max(
-      Number(baseModel?.shipments ?? 0),
-      Number(scopedProfile?.totalShipments ?? 0),
-      Number(scopedRouteKpis?.shipmentsLast12m ?? 0),
-      Number(fallbackModel.shipments ?? 0),
-    );
-
-    const resolvedTeu = Math.max(
-      Number(baseModel?.teu ?? 0),
-      Number(scopedRouteKpis?.teuLast12m ?? 0),
-      Number((scopedProfile as any)?.teuLast12m ?? 0),
-      Number(fallbackModel.teu ?? 0),
-    );
-
+    const baseModel = buildCommandCenterDetailModel(scopedProfile, scopedRouteKpis, activeYear) as any;
+    const fallbackModel = buildDetailModel(normalizedShipments, activeYear, scopedProfile as any, (scopedProfile as any)?.routeKpis ?? rawRouteKpis);
+    const resolvedShipments = Math.max(Number(baseModel?.shipments ?? 0), Number(scopedProfile?.totalShipments ?? 0), Number(scopedRouteKpis?.shipmentsLast12m ?? 0), Number(fallbackModel.shipments ?? 0));
+    const resolvedTeu = Math.max(Number(baseModel?.teu ?? 0), Number(scopedRouteKpis?.teuLast12m ?? 0), Number((scopedProfile as any)?.teuLast12m ?? 0), Number(fallbackModel.teu ?? 0));
     const resolvedSpendCandidates = [
       Number(baseModel?.marketSpendUsd ?? 0),
       Number(scopedRouteKpis?.estSpendUsd12m ?? 0),
@@ -1200,62 +1113,38 @@ export default function CompanyDetailPanel({
       Number(fallbackModel.spend ?? 0),
     ].filter((value) => Number.isFinite(value) && value > 0);
     const resolvedSpend = resolvedSpendCandidates.length ? Math.max(...resolvedSpendCandidates) : null;
-
-    const resolvedFcl = Math.max(
-      Number(baseModel?.fclShipments ?? 0),
-      Number((scopedProfile as any)?.containers?.fclShipments12m ?? 0),
-      Number(fallbackModel.fclShipments ?? 0),
-    );
-
-    const resolvedLcl = Math.max(
-      Number(baseModel?.lclShipments ?? 0),
-      Number((scopedProfile as any)?.containers?.lclShipments12m ?? 0),
-      Number(fallbackModel.lclShipments ?? 0),
-    );
-
+    const resolvedFcl = Math.max(Number(baseModel?.fclShipments ?? 0), Number((scopedProfile as any)?.containers?.fclShipments12m ?? 0), Number(fallbackModel.fclShipments ?? 0));
+    const resolvedLcl = Math.max(Number(baseModel?.lclShipments ?? 0), Number((scopedProfile as any)?.containers?.lclShipments12m ?? 0), Number(fallbackModel.lclShipments ?? 0));
     const latestDate = baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? scopedProfile?.lastShipmentDate ?? null;
     const latestParsed = latestDate ? new Date(latestDate) : null;
-    const latestMonthCap =
-      latestParsed && !Number.isNaN(latestParsed.getTime()) && latestParsed.getFullYear() === activeYear
-        ? latestParsed.getMonth()
-        : null;
-
-    const monthlySeriesBase =
-      Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
-        ? baseModel.activitySeries.map((point: any) => ({
-            period: point.month || point.period,
-            fcl: Number(point.fcl || 0),
-            lcl: Number(point.lcl || 0),
-          }))
-        : fallbackModel.monthlySeries;
-
-    const monthlySeries = monthlySeriesBase.map((point: any, index: number) => ({
-      period: point.period,
-      fcl: latestMonthCap != null && index > latestMonthCap ? 0 : Number(point.fcl || 0),
-      lcl: latestMonthCap != null && index > latestMonthCap ? 0 : Number(point.lcl || 0),
-    }));
-
-    const topRoutes =
-      Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
-        ? baseModel.tradeLanes.map((lane: any) => ({
-            lane: lane.label,
-            shipments: Number(lane.count || 0),
-            teu: Number(lane.teu || 0),
-            spend: lane.spend ?? null,
-          }))
-        : fallbackModel.topRoutes;
-
-    const carriers =
-      Array.isArray(baseModel?.carriers) && baseModel.carriers.length
-        ? baseModel.carriers
-            .map((carrier: any) => ({
-              carrier: carrier.label || carrier.carrier,
-              shipments: Number(carrier.count || carrier.shipments || 0),
-              teu: Number(carrier.teu || 0),
-            }))
-            .filter((row: any) => isMeaningfulText(row.carrier))
-        : fallbackModel.carriers;
-
+    const latestMonthCap = latestParsed && !Number.isNaN(latestParsed.getTime()) && latestParsed.getFullYear() === activeYear ? latestParsed.getMonth() : null;
+    const monthlySeriesBase = Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
+      ? baseModel.activitySeries.map((point: any) => ({
+          period: point.month || point.period,
+          fcl: Number(point.fcl || 0),
+          lcl: Number(point.lcl || 0),
+        }))
+      : fallbackModel.monthlySeries;
+    const monthlySeries = monthlySeriesBase
+      .map((point: any) => ({
+        period: point.period,
+        fcl: Number(point.fcl || 0),
+        lcl: Number(point.lcl || 0),
+      }))
+      .slice(0, latestMonthCap != null ? latestMonthCap + 1 : monthlySeriesBase.length);
+    const topRoutes = Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
+      ? baseModel.tradeLanes.map((lane: any) => ({
+          lane: lane.label,
+          shipments: Number(lane.count || 0),
+          teu: Number(lane.teu || 0),
+          spend: lane.spend ?? null,
+        }))
+      : fallbackModel.topRoutes;
+    const carriers = Array.isArray(baseModel?.carriers) && baseModel.carriers.length
+      ? baseModel.carriers
+          .map((carrier: any) => ({ carrier: carrier.label || carrier.carrier, shipments: Number(carrier.count || carrier.shipments || 0), teu: Number(carrier.teu || 0) }))
+          .filter((row: any) => isMeaningfulText(row.carrier))
+      : fallbackModel.carriers;
     return {
       ...fallbackModel,
       years: availableYears,
@@ -1266,61 +1155,50 @@ export default function CompanyDetailPanel({
       fclShipments: Math.min(resolvedFcl, resolvedShipments || resolvedFcl),
       lclShipments: resolvedLcl,
       avgTeuPerShipment: resolvedShipments > 0 ? resolvedTeu / resolvedShipments : (baseModel?.avgTeuPerShipment ?? fallbackModel.avgTeuPerShipment ?? null),
-      avgShipmentsPerMonth: resolvedShipments > 0 ? resolvedShipments / 12 : null,
+      avgShipmentsPerMonth: resolvedShipments > 0 ? resolvedShipments / (monthlySeries.length || 1) : null,
       oldestShipmentDate: baseModel?.oldestShipmentDate ?? fallbackModel.oldestShipmentDate ?? null,
       latestShipmentDate: latestDate,
       monthlySeries,
       topRoutes,
       carriers,
-      origins:
-        Array.isArray(baseModel?.locations?.origins) && baseModel.locations.origins.length
-          ? baseModel.locations.origins.map((item: any) => ({ label: item.label, count: Number(item.count || 0) }))
-          : fallbackModel.origins,
-      destinations:
-        Array.isArray(baseModel?.locations?.destinations) && baseModel.locations.destinations.length
-          ? baseModel.locations.destinations.map((item: any) => ({ label: item.label, count: Number(item.count || 0) }))
-          : fallbackModel.destinations,
+      origins: Array.isArray(baseModel?.locations?.origins) && baseModel.locations.origins.length
+        ? baseModel.locations.origins.map((item: any) => ({ label: item.label, count: Number(item.count || 0) }))
+        : fallbackModel.origins,
+      destinations: Array.isArray(baseModel?.locations?.destinations) && baseModel.locations.destinations.length
+        ? baseModel.locations.destinations.map((item: any) => ({ label: item.label, count: Number(item.count || 0) }))
+        : fallbackModel.destinations,
     };
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
-
   const statusLabel = getStatusLabel(detail.shipments, detail.teu);
-
   const strategicInsights = [
-    detail.topRouteLabel && detail.topRouteLabel !== "—"
+    detail.topRouteLabel && detail.topRouteLabel !== '—'
       ? {
-          title: "Trade lane signal",
-          body: `Primary lane for ${effectiveSelectedYear ?? "the selected year"} is ${detail.topRouteLabel}. Position DSV around lane resilience, capacity optionality, and routing control.`,
+          title: 'Trade lane signal',
+          body: `Primary lane for ${effectiveSelectedYear ?? 'the selected year'} is ${detail.topRouteLabel}. Position DSV around lane resilience, capacity optionality, and routing control.`,
         }
       : null,
     detail.latestShipmentDate
       ? {
-          title: "Recency risk",
-          tone: "warning" as const,
-          body: `Latest visible movement is ${formatDate(
-            detail.latestShipmentDate,
-          )}. Use this to frame urgency, renewal timing, and outbound sequencing.`,
+          title: 'Recency risk',
+          tone: 'warning' as const,
+          body: `Latest visible movement is ${formatDate(detail.latestShipmentDate)}. Use this to frame urgency, renewal timing, and outbound sequencing.`,
         }
       : null,
     detail.shipments
       ? {
-          title: "Volume profile",
-          tone: "highlight" as const,
-          body: `Selected-year activity shows ${formatNumber(detail.shipments)} shipments and ${formatNumber(
-            detail.teu,
-            1,
-          )} TEUs. This account supports a real logistics intelligence conversation, not a generic sales pitch.`,
+          title: 'Volume profile',
+          tone: 'highlight' as const,
+          body: `Selected-year activity shows ${formatNumber(detail.shipments)} shipments and ${formatNumber(detail.teu, 1)} TEUs. This account supports a real logistics intelligence conversation, not a generic sales pitch.`,
         }
       : null,
   ].filter(Boolean) as Array<{
     title: string;
     body: string;
-    tone?: "default" | "warning" | "highlight";
+    tone?: 'default' | 'warning' | 'highlight';
   }>;
-
   if (!key) {
     return <CommandCenterEmptyState />;
   }
-
   return (
     <section className="w-full rounded-[28px] border border-slate-200 bg-slate-50 p-2 shadow-sm md:p-3 lg:p-4">
       {loading ? (
@@ -1333,38 +1211,29 @@ export default function CompanyDetailPanel({
           {error}
         </div>
       ) : null}
-
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 items-start gap-4">
             <CompanyAvatar
-              name={profile?.title || record?.company?.name || "Company"}
-              logoUrl={
-                getCompanyLogoUrl(profile?.domain || (record as any)?.company?.domain) ?? undefined
-              }
+              name={profile?.title || record?.company?.name || 'Company'}
+              logoUrl={getCompanyLogoUrl(profile?.domain || (record as any)?.company?.domain) ?? undefined}
               size="lg"
             />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="truncate text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
-                  {profile?.title || record?.company?.name || "Company"}
+                  {profile?.title || record?.company?.name || 'Company'}
                 </h2>
                 <span className="rounded-full bg-indigo-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
                   {statusLabel}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <InfoChip
-                  icon={MapPin}
-                  label={profile?.address || record?.company?.address || "Address unavailable"}
-                />
+                <InfoChip icon={MapPin} label={profile?.address || record?.company?.address || 'Address unavailable'} />
                 {(profile?.website || (record as any)?.company?.website) && (
                   <InfoChip
                     icon={Globe}
-                    label={(profile?.website || (record as any)?.company?.website || "").replace(
-                      /^https?:\/\//,
-                      "",
-                    )}
+                    label={(profile?.website || (record as any)?.company?.website || '').replace(/^https?:\/\//, '')}
                   />
                 )}
                 {(profile?.phoneNumber || (record as any)?.company?.phone) && (
@@ -1377,17 +1246,21 @@ export default function CompanyDetailPanel({
               </div>
             </div>
           </div>
-
           <div className="flex flex-wrap justify-end gap-2 self-start">
-            <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+            <button
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              onClick={() => onExportPDF && onExportPDF()}
+            >
               Export PDF
             </button>
-            <button className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-900">
+            <button
+              className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-900"
+              onClick={() => onGenerateBrief && onGenerateBrief()}
+            >
               Generate brief
             </button>
           </div>
         </div>
-
         <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4 min-w-0">
             <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
@@ -1395,14 +1268,14 @@ export default function CompanyDetailPanel({
                 label="Market spend"
                 value={formatCurrency(detail.spend)}
                 icon={DollarSign}
-                subLabel={`${effectiveSelectedYear ?? "Selected year"} estimate`}
+                subLabel={`${effectiveSelectedYear ?? 'Selected year'} estimate`}
                 accent="indigo"
               />
               <KpiCard
                 label="Shipments"
                 value={formatNumber(detail.shipments)}
                 icon={Package}
-                subLabel={`${effectiveSelectedYear ?? "Selected year"} visible activity`}
+                subLabel={`${effectiveSelectedYear ?? 'Selected year'} visible activity`}
                 accent="violet"
               />
               <KpiCard
@@ -1434,7 +1307,6 @@ export default function CompanyDetailPanel({
                 accent="rose"
               />
             </div>
-
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               <SmallMetric
                 label="Avg TEU / shipment"
@@ -1452,7 +1324,6 @@ export default function CompanyDetailPanel({
                 icon={CalendarClock}
               />
             </div>
-
             <Tabs defaultValue="overview" className="space-y-5">
               <TabsList className="flex h-auto w-full gap-2 overflow-x-auto rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm whitespace-nowrap">
                 <TabsTrigger value="overview" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
@@ -1480,27 +1351,24 @@ export default function CompanyDetailPanel({
                   Contact Intel
                 </TabsTrigger>
               </TabsList>
-
               <TabsContent value="overview" className="space-y-4">
                 <div className="space-y-4 min-w-0">
-                    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                      <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                        Peak seasonality index
-                      </div>
-                      <p className="mb-4 text-xs text-slate-500">
-                        Monthly shipment profile for Jan-Dec of {effectiveSelectedYear ?? "the selected year"}.
-                      </p>
-                      <div className="min-h-[340px]"><CompanyActivityChart data={detail.monthlySeries} /></div>
-                      <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                        <span className="font-semibold text-indigo-600">Observation:</span>{" "}
-                        Selected-year trends now reconcile with the same dataset powering shipments, lanes, products, and pivot views.
-                      </div>
+                  <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Peak seasonality index</div>
+                    <p className="mb-4 text-xs text-slate-500">
+                      Monthly shipment profile for Jan–Dec of {effectiveSelectedYear ?? 'the selected year'}.
+                    </p>
+                    <div className="min-h-[340px]">
+                      <CompanyActivityChart data={detail.monthlySeries} />
                     </div>
-
-                    <CommandCenterInsights insights={strategicInsights} />
+                    <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      <span className="font-semibold text-indigo-600">Observation:</span>{' '}
+                      Selected-year trends now reconcile with the same dataset powering shipments, lanes, products, and pivot views.
+                    </div>
+                  </div>
+                  <CommandCenterInsights insights={strategicInsights} />
                 </div>
               </TabsContent>
-
               <TabsContent value="lanes" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
                   <MetricList
@@ -1513,7 +1381,6 @@ export default function CompanyDetailPanel({
                   />
                 </div>
               </TabsContent>
-
               <TabsContent value="carriers" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
                   <MetricList
@@ -1526,7 +1393,6 @@ export default function CompanyDetailPanel({
                   />
                 </div>
               </TabsContent>
-
               <TabsContent value="locations" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
                   <div className="grid gap-4 md:grid-cols-2">
@@ -1535,7 +1401,7 @@ export default function CompanyDetailPanel({
                       items={detail.origins.map((item) => ({
                         label: item.label,
                         value: formatNumber(item.count),
-                        meta: "Origin",
+                        meta: 'Origin',
                       }))}
                     />
                     <MetricList
@@ -1543,13 +1409,12 @@ export default function CompanyDetailPanel({
                       items={detail.destinations.map((item) => ({
                         label: item.label,
                         value: formatNumber(item.count),
-                        meta: "Destination",
+                        meta: 'Destination',
                       }))}
                     />
                   </div>
                 </div>
               </TabsContent>
-
               <TabsContent value="products" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
                   <div className="grid gap-4 lg:grid-cols-2">
@@ -1572,35 +1437,30 @@ export default function CompanyDetailPanel({
                   </div>
                 </div>
               </TabsContent>
-
               <TabsContent value="history" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
                   <DataTable
                     title="Verified shipment ledger"
-                    columns={["Date", "BOL ID", "TEU", "Carrier", "Route", "Product", "HS Code"]}
+                    columns={['Date', 'BOL ID', 'TEU', 'Carrier', 'Route', 'Product', 'HS Code']}
                     rows={detail.shipmentTableRows}
                   />
                 </div>
               </TabsContent>
-
               <TabsContent value="pivot" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
                   <DataTable
                     title="Monthly pivot"
-                    columns={["Month", "Shipments", "TEU"]}
+                    columns={['Month', 'Shipments', 'TEU']}
                     rows={detail.pivotRows}
                   />
                 </div>
               </TabsContent>
-
               <TabsContent value="contacts" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
                   <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                          Contact intelligence
-                        </div>
+                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Contact intelligence</div>
                         <p className="mt-1 text-xs text-slate-500">
                           Contact enrichment block ready for AI and third-party enrichment.
                         </p>
@@ -1609,62 +1469,45 @@ export default function CompanyDetailPanel({
                         Sync to CRM
                       </button>
                     </div>
-
                     <div className="grid gap-4 md:grid-cols-2">
                       {(
-                        (rawProfile?.notifyParties ||
-                          rawProfile?.notify_parties ||
-                          rawProfile?.topSuppliers ||
-                          rawProfile?.top_suppliers ||
-                          []) as any[]
+                        (rawProfile?.notifyParties || rawProfile?.notify_parties || rawProfile?.topSuppliers || rawProfile?.top_suppliers || []) as any[]
                       )
                         .slice(0, 6)
                         .map((contact: any, index: number) => {
-                          const name = normalizeText(
-                            contact.name || contact.notify_party || contact.company || contact,
-                          );
+                          const name = normalizeText(contact.name || contact.notify_party || contact.company || contact);
                           const email = normalizeText(contact.email || contact.email_address);
                           const phone = normalizeText(contact.phone || contact.phone_number);
-                          const role = normalizeText(contact.role || "Decision maker");
+                          const role = normalizeText(contact.role || 'Decision maker');
                           return (
-                            <div
-                              key={`${name}-${index}`}
-                              className="rounded-3xl border border-slate-200 bg-slate-50 p-4"
-                            >
+                            <div key={`${name}-${index}`} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                               <div className="mb-3 flex items-start justify-between gap-3">
                                 <div className="rounded-2xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
                                   {name
-                                    .split(" ")
+                                    .split(' ')
                                     .slice(0, 2)
                                     .map((part: string) => part[0])
-                                    .join("")
-                                    .toUpperCase() || "CT"}
+                                    .join('')
+                                    .toUpperCase() || 'CT'}
                                 </div>
                                 <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
                                   Verified
                                 </span>
                               </div>
-                              <div className="text-lg font-semibold text-slate-950">{name || "Unknown contact"}</div>
+                              <div className="text-lg font-semibold text-slate-950">{name || 'Unknown contact'}</div>
                               <div className="mt-1 text-sm font-medium text-indigo-600">{role}</div>
                               <div className="mt-4 space-y-2 text-sm text-slate-600">
                                 <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                  {email || "Email unavailable"}
+                                  {email || 'Email unavailable'}
                                 </div>
                                 <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                  {phone || "Phone unavailable"}
+                                  {phone || 'Phone unavailable'}
                                 </div>
                               </div>
                             </div>
                           );
                         })}
-
-                      {!(
-                        (rawProfile?.notifyParties ||
-                          rawProfile?.notify_parties ||
-                          rawProfile?.topSuppliers ||
-                          rawProfile?.top_suppliers ||
-                          []) as any[]
-                      ).length ? (
+                      {!((rawProfile?.notifyParties || rawProfile?.notify_parties || rawProfile?.topSuppliers || rawProfile?.top_suppliers || []) as any[]).length ? (
                         <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500 md:col-span-2">
                           AI enrichment can populate verified logistics contacts here later.
                         </div>
@@ -1675,7 +1518,6 @@ export default function CompanyDetailPanel({
               </TabsContent>
             </Tabs>
           </div>
-
           <div className="hidden 2xl:block">
             <AiRail
               insights={strategicInsights}
@@ -1685,7 +1527,6 @@ export default function CompanyDetailPanel({
             />
           </div>
         </div>
-
         <div className="space-y-4 2xl:hidden">
           <AiRail
             insights={strategicInsights}
