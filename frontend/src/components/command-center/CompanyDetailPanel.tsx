@@ -28,6 +28,7 @@ type CompanyDetailPanelProps = {
   routeKpis: IyRouteKpis | null;
   loading: boolean;
   error: string | null;
+  selectedYear?: number | null;
 };
 
 type ActivityPoint = {
@@ -1133,6 +1134,7 @@ export default function CompanyDetailPanel({
   routeKpis,
   loading,
   error,
+  selectedYear,
 }: CompanyDetailPanelProps) {
   const key = getRecordKey(record);
   const rawProfile = profile as any;
@@ -1158,7 +1160,7 @@ export default function CompanyDetailPanel({
     return apiYears.length ? apiYears : getAvailableYears(normalizedShipments, profile, routeKpis);
   }, [normalizedShipments, profile, routeKpis]);
 
-  const effectiveSelectedYear = availableYears[0] ?? null;
+  const effectiveSelectedYear = selectedYear ?? availableYears[0] ?? null;
 
   const detail = useMemo(() => {
     const activeYear = effectiveSelectedYear || new Date().getFullYear();
@@ -1386,9 +1388,9 @@ export default function CompanyDetailPanel({
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4 min-w-0">
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
               <KpiCard
                 label="Market spend"
                 value={formatCurrency(detail.spend)}
@@ -1488,7 +1490,7 @@ export default function CompanyDetailPanel({
                       <p className="mb-4 text-xs text-slate-500">
                         Monthly shipment profile for Jan-Dec of {effectiveSelectedYear ?? "the selected year"}.
                       </p>
-                      <div className="min-h-[320px]"><CompanyActivityChart data={detail.monthlySeries} /></div>
+                      <div className="min-h-[340px]"><CompanyActivityChart data={detail.monthlySeries} /></div>
                       <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                         <span className="font-semibold text-indigo-600">Observation:</span>{" "}
                         Selected-year trends now reconcile with the same dataset powering shipments, lanes, products, and pivot views.
@@ -1674,7 +1676,7 @@ export default function CompanyDetailPanel({
             </Tabs>
           </div>
 
-          <div className="space-y-4 lg:hidden">
+          <div className="hidden 2xl:block">
             <AiRail
               insights={strategicInsights}
               shipments={detail.shipments}
@@ -1682,6 +1684,15 @@ export default function CompanyDetailPanel({
               topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
             />
           </div>
+        </div>
+
+        <div className="space-y-4 2xl:hidden">
+          <AiRail
+            insights={strategicInsights}
+            shipments={detail.shipments}
+            teu={detail.teu}
+            topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
+          />
         </div>
       </div>
     </section>
