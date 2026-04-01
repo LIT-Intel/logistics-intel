@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import {
   Settings as SettingsIcon,
   User,
@@ -10,12 +11,10 @@ import {
   Zap,
   ExternalLink,
   Activity,
-  TrendingUp,
   Trash2,
   ChevronRight,
   Save,
   RefreshCw,
-  CheckCircle2,
   AlertCircle,
 } from "lucide-react";
 
