@@ -47,6 +47,34 @@ export default function CommandCenter() {
 
   // state for collapsible saved panel and search
   const [showSavedPanel, setShowSavedPanel] = useState<boolean>(true);
+
+  // Track whether viewport is mobile (< 640px) to adjust layout and panel behavior
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Set initial state and update on resize
+    const mql = window.matchMedia("(max-width: 640px)");
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => {
+      // e.matches is true when viewport matches the max-width condition
+      setIsMobile((e as MediaQueryList).matches ?? (e as MediaQueryListEvent).matches);
+    };
+    // Initialize
+    handler(mql);
+    // Attach listener
+    mql.addEventListener("change", handler);
+    return () => {
+      mql.removeEventListener("change", handler);
+    };
+  }, []);
+
+  // Compute grid template columns based on saved-panel visibility and viewport size
+  const gridTemplateColumns = useMemo(() => {
+    if (showSavedPanel) {
+      // On mobile, collapse to a single column (stack panels)
+      return isMobile ? "minmax(0, 1fr)" : "320px minmax(0, 1fr)";
+    }
+    return "minmax(0, 1fr)";
+  }, [showSavedPanel, isMobile]);
   const [searchTerm, setSearchTerm] = useState<string>("");
 
   useEffect(() => {
@@ -295,7 +323,8 @@ export default function CommandCenter() {
         {/* Layout grid with dynamic columns based on saved panel visibility */}
         <div
           className="grid gap-6"
-          style={{ gridTemplateColumns: showSavedPanel ? "320px minmax(0, 1fr)" : "minmax(0, 1fr)" }}
+          // Use computed gridTemplateColumns for responsive layout
+          style={{ gridTemplateColumns: gridTemplateColumns }}
         >
           {showSavedPanel && (
             <div className="space-y-3">
