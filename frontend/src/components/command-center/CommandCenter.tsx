@@ -13,7 +13,7 @@ import {
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { generateCompanyBrief } from "@/lib/openaiApi";
+// Remove direct OpenAI import; we now call the Supabase Edge function instead
 import { useToast } from "@/components/ui/use-toast";
 import CommandCenterHeader from "@/components/command-center/CommandCenterHeader";
 import SavedCompaniesPanel from "@/components/command-center/SavedCompaniesPanel";
@@ -205,8 +205,7 @@ export default function CommandCenter() {
 
     setGeneratingBrief(true);
     try {
-      // Build a concise summary of the company to pass into OpenAI. Use
-      // available metrics from the scoped profile when present.
+      // Collect metrics for the edge function body
       const name = yearHydratedSelectedRecord.company?.name ?? "";
       const shipments =
         yearScopedProfile?.routeKpis?.shipmentsLast12m ?? profile?.routeKpis?.shipmentsLast12m ?? 0;
@@ -218,18 +217,33 @@ export default function CommandCenter() {
         yearScopedProfile?.routeKpis?.topRouteLast12m ?? profile?.routeKpis?.topRouteLast12m ?? "unknown";
       const recentRoute =
         yearScopedProfile?.routeKpis?.mostRecentRoute ?? profile?.routeKpis?.mostRecentRoute ?? "unknown";
-      const summary = `Company Name: ${name}. Shipments last 12 months: ${shipments}. TEUs last 12 months: ${teu}. Estimated spend: ${estSpend}. Top route: ${topRoute}. Most recent route: ${recentRoute}.`;
-      const brief = await generateCompanyBrief(summary);
-      if (brief) {
+
+      const { data, error } = await supabase.functions.invoke("generate-brief", {
+        body: {
+          companyName: name,
+          shipments,
+          teu,
+          estSpendUsd: estSpend,
+          topRoute,
+          recentRoute,
+        },
+      });
+      if (error) {
+        toast({
+          title: "Brief generation failed",
+          description: error.message || "Could not generate brief",
+          variant: "destructive",
+        });
+      } else if (data?.brief) {
         toast({
           title: "Brief generated",
           description: "AI brief generated successfully. Check the console for details.",
         });
-        console.log("AI brief:\n", brief);
+        console.log("AI brief:\n", data.brief);
       } else {
         toast({
           title: "Brief generated",
-          description: "No content returned from OpenAI.",
+          description: "No content returned from AI function.",
         });
       }
     } catch (error: any) {
