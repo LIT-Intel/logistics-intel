@@ -1,4 +1,3 @@
-import React, { useState } from "react";
 import {
   Settings as SettingsIcon,
   User,
@@ -17,6 +16,7 @@ import {
   Save,
   RefreshCw,
   CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 /*
