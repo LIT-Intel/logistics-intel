@@ -1408,7 +1408,9 @@ export default function CompanyDetailPanel({
             </div>
             <Tabs defaultValue="overview" className="space-y-5">
             {/* Tab bar: allow wrapping instead of overflowing horizontally */}
-            <TabsList className="flex flex-wrap w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm">
+            <TabsList
+              className="flex flex-wrap w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm overflow-x-hidden"
+            >
                 {/* Each tab trigger highlights with the same gradient as the logo when active */}
                 <TabsTrigger
                   value="overview"
