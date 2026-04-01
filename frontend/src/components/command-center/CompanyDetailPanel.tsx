@@ -1326,28 +1326,53 @@ export default function CompanyDetailPanel({
             </div>
             <Tabs defaultValue="overview" className="space-y-5">
               <TabsList className="flex h-auto w-full gap-2 overflow-x-auto rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm whitespace-nowrap">
-                <TabsTrigger value="overview" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                {/* Each tab trigger highlights with the same gradient as the logo when active */}
+                <TabsTrigger
+                  value="overview"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
                   Overview
                 </TabsTrigger>
-                <TabsTrigger value="lanes" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger
+                  value="lanes"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
                   Trade Lanes
                 </TabsTrigger>
-                <TabsTrigger value="carriers" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger
+                  value="carriers"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
                   Carriers
                 </TabsTrigger>
-                <TabsTrigger value="locations" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger
+                  value="locations"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
                   Locations
                 </TabsTrigger>
-                <TabsTrigger value="products" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger
+                  value="products"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
                   Products
                 </TabsTrigger>
-                <TabsTrigger value="history" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger
+                  value="history"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
                   Shipment History
                 </TabsTrigger>
-                <TabsTrigger value="pivot" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Pivot Table
+                <TabsTrigger
+                  value="credit"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
+                  Credit Rating
                 </TabsTrigger>
-                <TabsTrigger value="contacts" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger
+                  value="contacts"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
                   Contact Intel
                 </TabsTrigger>
               </TabsList>
@@ -1446,13 +1471,23 @@ export default function CompanyDetailPanel({
                   />
                 </div>
               </TabsContent>
-              <TabsContent value="pivot" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <DataTable
-                    title="Monthly pivot"
-                    columns={['Month', 'Shipments', 'TEU']}
-                    rows={detail.pivotRows}
-                  />
+              <TabsContent value="credit" className="space-y-4">
+                {/* Placeholder for future financial integration. A watermark is shown until APIs are connected. */}
+                <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm flex items-center justify-center min-h-[200px]">
+                  <div className="relative w-full text-center">
+                    {/* Watermark text behind content */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none select-none">
+                      <span className="text-6xl font-extrabold uppercase tracking-widest">Credit Rating</span>
+                    </div>
+                    {/* Foreground explanatory text */}
+                    <div className="relative p-4">
+                      <p className="text-sm text-slate-500">
+                        Financial data and credit ratings for publicly traded companies will appear here once the
+                        FinancialModelingPrep and related APIs are integrated.
+                      </p>
+                      <p className="mt-2 text-xs italic text-slate-400">Integration pending – placeholder only.</p>
+                    </div>
+                  </div>
                 </div>
               </TabsContent>
               <TabsContent value="contacts" className="space-y-4">
