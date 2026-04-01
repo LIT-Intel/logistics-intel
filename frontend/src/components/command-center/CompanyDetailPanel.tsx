@@ -1114,7 +1114,16 @@ export default function CompanyDetailPanel({
       Number((scopedProfile as any)?.marketSpend ?? 0),
       Number(fallbackModel.spend ?? 0),
     ].filter((value) => Number.isFinite(value) && value > 0);
-    const resolvedSpend = resolvedSpendCandidates.length ? Math.max(...resolvedSpendCandidates) : null;
+    // Recalculate market spend based on shipment count and a fixed average container price.  
+    // The business requirement is that market spend equals the shipment count multiplied by
+    // an average container cost of USD 4,500. This overrides any estimates returned by
+    // ImportYeti or the API. If there are no shipments, fall back to the largest estimate.
+    let resolvedSpend: number | null;
+    if (resolvedShipments && resolvedShipments > 0) {
+      resolvedSpend = resolvedShipments * 4500;
+    } else {
+      resolvedSpend = resolvedSpendCandidates.length ? Math.max(...resolvedSpendCandidates) : null;
+    }
     const resolvedFcl = Math.max(Number(baseModel?.fclShipments ?? 0), Number((scopedProfile as any)?.containers?.fclShipments12m ?? 0), Number(fallbackModel.fclShipments ?? 0));
     const resolvedLcl = Math.max(Number(baseModel?.lclShipments ?? 0), Number((scopedProfile as any)?.containers?.lclShipments12m ?? 0), Number(fallbackModel.lclShipments ?? 0));
     const latestDate = baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? scopedProfile?.lastShipmentDate ?? null;
