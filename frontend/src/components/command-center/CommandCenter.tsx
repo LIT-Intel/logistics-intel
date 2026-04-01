@@ -13,6 +13,7 @@ import {
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { generateCompanyBrief } from "@/lib/openaiApi";
 import { useToast } from "@/components/ui/use-toast";
 import CommandCenterHeader from "@/components/command-center/CommandCenterHeader";
 import SavedCompaniesPanel from "@/components/command-center/SavedCompaniesPanel";
@@ -193,7 +194,7 @@ export default function CommandCenter() {
   }, [hydratedSelectedRecord, yearScopedProfile]);
 
   const handleGenerateBrief = async () => {
-    if (!yearHydratedSelectedRecord || !user) {
+    if (!yearHydratedSelectedRecord) {
       toast({
         title: "No company selected",
         description: "Please select a company to generate a brief",
@@ -204,43 +205,38 @@ export default function CommandCenter() {
 
     setGeneratingBrief(true);
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.access_token) {
-        throw new Error("Not authenticated");
+      // Build a concise summary of the company to pass into OpenAI. Use
+      // available metrics from the scoped profile when present.
+      const name = yearHydratedSelectedRecord.company?.name ?? "";
+      const shipments =
+        yearScopedProfile?.routeKpis?.shipmentsLast12m ?? profile?.routeKpis?.shipmentsLast12m ?? 0;
+      const teu =
+        yearScopedProfile?.routeKpis?.teuLast12m ?? profile?.routeKpis?.teuLast12m ?? 0;
+      const estSpend =
+        yearScopedProfile?.routeKpis?.estSpendUsd12m ?? profile?.routeKpis?.estSpendUsd12m ?? profile?.estSpendUsd12m ?? 0;
+      const topRoute =
+        yearScopedProfile?.routeKpis?.topRouteLast12m ?? profile?.routeKpis?.topRouteLast12m ?? "unknown";
+      const recentRoute =
+        yearScopedProfile?.routeKpis?.mostRecentRoute ?? profile?.routeKpis?.mostRecentRoute ?? "unknown";
+      const summary = `Company Name: ${name}. Shipments last 12 months: ${shipments}. TEUs last 12 months: ${teu}. Estimated spend: ${estSpend}. Top route: ${topRoute}. Most recent route: ${recentRoute}.`;
+      const brief = await generateCompanyBrief(summary);
+      if (brief) {
+        toast({
+          title: "Brief generated",
+          description: "AI brief generated successfully. Check the console for details.",
+        });
+        console.log("AI brief:\n", brief);
+      } else {
+        toast({
+          title: "Brief generated",
+          description: "No content returned from OpenAI.",
+        });
       }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-brief`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.session.access_token}`,
-          },
-          body: JSON.stringify({
-            company_id: yearHydratedSelectedRecord.company?.company_id,
-            company_name: yearHydratedSelectedRecord.company?.name,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to generate brief");
-      }
-
-      const result = await response.json();
-
-      toast({
-        title: "Brief generated",
-        description: "Pre-call briefing has been generated successfully",
-      });
-
-      console.log("Brief generated:", result);
     } catch (error: any) {
       console.error("Brief generation error:", error);
       toast({
         title: "Brief generation failed",
-        description: error.message || "Could not generate brief",
+        description: error?.message || "Could not generate brief",
         variant: "destructive",
       });
     } finally {
