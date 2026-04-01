@@ -1,13 +1,12 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Command, Briefcase, FileText, Plus } from 'lucide-react';
+import { Command, Briefcase, FileText } from 'lucide-react';
 
 interface CommandCenterHeaderProps {
   userName?: string;
   companiesCount?: number;
   onGenerateBrief?: () => void;
   onExportPDF?: () => void;
-  onAddCompany?: () => void;
 }
 
 export default function CommandCenterHeader({
@@ -15,7 +14,6 @@ export default function CommandCenterHeader({
   companiesCount = 0,
   onGenerateBrief,
   onExportPDF,
-  onAddCompany,
 }: CommandCenterHeaderProps) {
   const firstName = userName?.split(' ')[0] || userName || 'there';
 
@@ -45,24 +43,11 @@ export default function CommandCenterHeader({
           <p className="text-slate-600">
             {companiesCount > 0
               ? `Manage ${companiesCount} saved ${companiesCount === 1 ? 'company' : 'companies'}, track shipments, and prep for calls`
-              : 'Save companies from search to get started'
-            }
+              : 'Save companies from search to get started'}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          {onAddCompany && (
-            <motion.button
-              onClick={onAddCompany}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all group"
-            >
-              <Plus className="w-4 h-4 text-slate-600 group-hover:text-blue-600 transition-colors" />
-              <span className="text-sm font-medium text-slate-700">Add Company</span>
-            </motion.button>
-          )}
-
           {onExportPDF && (
             <motion.button
               onClick={onExportPDF}
