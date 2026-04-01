@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   Boxes,
   CalendarClock,
@@ -12,7 +12,7 @@ import {
   Truck,
   Sparkles,
 } from "lucide-react";
-import { buildCommandCenterDetailModel, buildYearScopedProfile } from "@/lib/api";
+import { buildCommandCenterDetailModel, buildYearScopedProfile, getCommandCenterAvailableYears } from "@/lib/api";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -613,7 +613,7 @@ const KpiCard = ({
   const accentClass = accentMap[accent];
 
   return (
-    <div className="min-h-[116px] rounded-3xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:shadow-md">
+    <div className="min-h-[112px] rounded-3xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
         <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${accentClass}`}>
           <Icon className="h-3.5 w-3.5" />
@@ -770,7 +770,7 @@ const AiRail = ({
   ];
 
   return (
-    <aside className="space-y-4">
+    <aside className="space-y-4 w-full lg:sticky lg:top-4">
       <div className="rounded-[28px] border border-slate-800 bg-slate-950 p-5 text-white shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <div className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-300">
@@ -1153,72 +1153,123 @@ export default function CompanyDetailPanel({
     [recentBols],
   );
 
-  const availableYears = useMemo(
-    () => getAvailableYears(normalizedShipments, profile, routeKpis),
-    [normalizedShipments, profile, routeKpis],
-  );
+  const availableYears = useMemo(() => {
+    const apiYears = getCommandCenterAvailableYears(profile);
+    return apiYears.length ? apiYears : getAvailableYears(normalizedShipments, profile, routeKpis);
+  }, [normalizedShipments, profile, routeKpis]);
 
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
-
-  const effectiveSelectedYear =
-    selectedYear != null && availableYears.includes(selectedYear)
-      ? selectedYear
-      : availableYears[0] ?? null;
+  const effectiveSelectedYear = availableYears[0] ?? null;
 
   const detail = useMemo(() => {
-    const scopedProfile = buildYearScopedProfile(profile, effectiveSelectedYear || new Date().getFullYear()) || profile;
+    const activeYear = effectiveSelectedYear || new Date().getFullYear();
+    const scopedProfile = buildYearScopedProfile(profile, activeYear) || profile;
+    const scopedRouteKpis = (scopedProfile as any)?.routeKpis ?? routeKpis;
     const baseModel = buildCommandCenterDetailModel(
       scopedProfile,
-      (scopedProfile as any)?.routeKpis ?? routeKpis,
-      effectiveSelectedYear,
+      scopedRouteKpis,
+      activeYear,
     ) as any;
     const fallbackModel = buildDetailModel(
       normalizedShipments,
-      effectiveSelectedYear,
+      activeYear,
       scopedProfile as any,
       (scopedProfile as any)?.routeKpis ?? rawRouteKpis,
     );
 
+    const resolvedShipments = Math.max(
+      Number(baseModel?.shipments ?? 0),
+      Number(scopedProfile?.totalShipments ?? 0),
+      Number(scopedRouteKpis?.shipmentsLast12m ?? 0),
+      Number(fallbackModel.shipments ?? 0),
+    );
+
+    const resolvedTeu = Math.max(
+      Number(baseModel?.teu ?? 0),
+      Number(scopedRouteKpis?.teuLast12m ?? 0),
+      Number((scopedProfile as any)?.teuLast12m ?? 0),
+      Number(fallbackModel.teu ?? 0),
+    );
+
+    const resolvedSpendCandidates = [
+      Number(baseModel?.marketSpendUsd ?? 0),
+      Number(scopedRouteKpis?.estSpendUsd12m ?? 0),
+      Number((scopedProfile as any)?.estSpendUsd12m ?? 0),
+      Number((scopedProfile as any)?.marketSpend ?? 0),
+      Number(fallbackModel.spend ?? 0),
+    ].filter((value) => Number.isFinite(value) && value > 0);
+    const resolvedSpend = resolvedSpendCandidates.length ? Math.max(...resolvedSpendCandidates) : null;
+
+    const resolvedFcl = Math.max(
+      Number(baseModel?.fclShipments ?? 0),
+      Number((scopedProfile as any)?.containers?.fclShipments12m ?? 0),
+      Number(fallbackModel.fclShipments ?? 0),
+    );
+
+    const resolvedLcl = Math.max(
+      Number(baseModel?.lclShipments ?? 0),
+      Number((scopedProfile as any)?.containers?.lclShipments12m ?? 0),
+      Number(fallbackModel.lclShipments ?? 0),
+    );
+
+    const latestDate = baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? scopedProfile?.lastShipmentDate ?? null;
+    const latestParsed = latestDate ? new Date(latestDate) : null;
+    const latestMonthCap =
+      latestParsed && !Number.isNaN(latestParsed.getTime()) && latestParsed.getFullYear() === activeYear
+        ? latestParsed.getMonth()
+        : null;
+
+    const monthlySeriesBase =
+      Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
+        ? baseModel.activitySeries.map((point: any) => ({
+            period: point.month || point.period,
+            fcl: Number(point.fcl || 0),
+            lcl: Number(point.lcl || 0),
+          }))
+        : fallbackModel.monthlySeries;
+
+    const monthlySeries = monthlySeriesBase.map((point: any, index: number) => ({
+      period: point.period,
+      fcl: latestMonthCap != null && index > latestMonthCap ? 0 : Number(point.fcl || 0),
+      lcl: latestMonthCap != null && index > latestMonthCap ? 0 : Number(point.lcl || 0),
+    }));
+
+    const topRoutes =
+      Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
+        ? baseModel.tradeLanes.map((lane: any) => ({
+            lane: lane.label,
+            shipments: Number(lane.count || 0),
+            teu: Number(lane.teu || 0),
+            spend: lane.spend ?? null,
+          }))
+        : fallbackModel.topRoutes;
+
+    const carriers =
+      Array.isArray(baseModel?.carriers) && baseModel.carriers.length
+        ? baseModel.carriers
+            .map((carrier: any) => ({
+              carrier: carrier.label || carrier.carrier,
+              shipments: Number(carrier.count || carrier.shipments || 0),
+              teu: Number(carrier.teu || 0),
+            }))
+            .filter((row: any) => isMeaningfulText(row.carrier))
+        : fallbackModel.carriers;
+
     return {
       ...fallbackModel,
       years: availableYears,
-      selectedYear: effectiveSelectedYear,
-      shipments: Number(baseModel?.shipments ?? fallbackModel.shipments ?? 0),
-      teu: Number(baseModel?.teu ?? fallbackModel.teu ?? 0),
-      spend: baseModel?.marketSpendUsd ?? fallbackModel.spend ?? null,
-      fclShipments: Number(baseModel?.fclShipments ?? fallbackModel.fclShipments ?? 0),
-      lclShipments: Number(baseModel?.lclShipments ?? fallbackModel.lclShipments ?? 0),
-      avgTeuPerShipment: baseModel?.avgTeuPerShipment ?? fallbackModel.avgTeuPerShipment ?? null,
-      avgShipmentsPerMonth: baseModel?.avgTeuPerMonth ?? fallbackModel.avgShipmentsPerMonth ?? null,
+      selectedYear: activeYear,
+      shipments: resolvedShipments,
+      teu: resolvedTeu,
+      spend: resolvedSpend,
+      fclShipments: Math.min(resolvedFcl, resolvedShipments || resolvedFcl),
+      lclShipments: resolvedLcl,
+      avgTeuPerShipment: resolvedShipments > 0 ? resolvedTeu / resolvedShipments : (baseModel?.avgTeuPerShipment ?? fallbackModel.avgTeuPerShipment ?? null),
+      avgShipmentsPerMonth: resolvedShipments > 0 ? resolvedShipments / 12 : null,
       oldestShipmentDate: baseModel?.oldestShipmentDate ?? fallbackModel.oldestShipmentDate ?? null,
-      latestShipmentDate: baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? null,
-      monthlySeries:
-        Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
-          ? baseModel.activitySeries.map((point: any) => ({
-              period: point.month || point.period,
-              fcl: Number(point.fcl || 0),
-              lcl: Number(point.lcl || 0),
-            }))
-          : fallbackModel.monthlySeries,
-      topRoutes:
-        Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
-          ? baseModel.tradeLanes.map((lane: any) => ({
-              lane: lane.label,
-              shipments: Number(lane.count || 0),
-              teu: Number(lane.teu || 0),
-              spend: lane.spend ?? null,
-            }))
-          : fallbackModel.topRoutes,
-      carriers:
-        Array.isArray(baseModel?.carriers) && baseModel.carriers.length
-          ? baseModel.carriers
-              .map((carrier: any) => ({
-                carrier: carrier.label || carrier.carrier,
-                shipments: Number(carrier.count || carrier.shipments || 0),
-                teu: Number(carrier.teu || 0),
-              }))
-              .filter((row: any) => isMeaningfulText(row.carrier))
-          : fallbackModel.carriers,
+      latestShipmentDate: latestDate,
+      monthlySeries,
+      topRoutes,
+      carriers,
       origins:
         Array.isArray(baseModel?.locations?.origins) && baseModel.locations.origins.length
           ? baseModel.locations.origins.map((item: any) => ({ label: item.label, count: Number(item.count || 0) }))
@@ -1269,7 +1320,7 @@ export default function CompanyDetailPanel({
   }
 
   return (
-    <section className="w-full rounded-[32px] border border-slate-200 bg-slate-50 p-4 shadow-sm md:p-6">
+    <section className="w-full rounded-[28px] border border-slate-200 bg-slate-50 p-2 shadow-sm md:p-3 lg:p-4">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -1335,9 +1386,9 @@ export default function CompanyDetailPanel({
           </div>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4 min-w-0">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
               <KpiCard
                 label="Market spend"
                 value={formatCurrency(detail.spend)}
@@ -1382,7 +1433,7 @@ export default function CompanyDetailPanel({
               />
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-3 sm:grid-cols-2">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               <SmallMetric
                 label="Avg TEU / shipment"
                 value={formatNumber(detail.avgTeuPerShipment, 2)}
@@ -1400,55 +1451,36 @@ export default function CompanyDetailPanel({
               />
             </div>
 
-            {availableYears.length ? (
-              <div className="flex flex-wrap items-center justify-end gap-2 rounded-[22px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                <span className="mr-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-400">Year</span>
-                {availableYears.map((year) => {
-                  const active = year === effectiveSelectedYear;
-                  return (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => setSelectedYear(year)}
-                      className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${active ? 'bg-slate-950 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
-                    >
-                      {year}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-
             <Tabs defaultValue="overview" className="space-y-5">
-              <TabsList className="grid h-auto w-full grid-cols-2 gap-2 rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-4 xl:grid-cols-8">
-                <TabsTrigger value="overview" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+              <TabsList className="flex h-auto w-full gap-2 overflow-x-auto rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm whitespace-nowrap">
+                <TabsTrigger value="overview" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Overview
                 </TabsTrigger>
-                <TabsTrigger value="lanes" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger value="lanes" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Trade Lanes
                 </TabsTrigger>
-                <TabsTrigger value="carriers" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger value="carriers" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Carriers
                 </TabsTrigger>
-                <TabsTrigger value="locations" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger value="locations" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Locations
                 </TabsTrigger>
-                <TabsTrigger value="products" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger value="products" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Products
                 </TabsTrigger>
-                <TabsTrigger value="history" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger value="history" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Shipment History
                 </TabsTrigger>
-                <TabsTrigger value="pivot" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger value="pivot" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Pivot Table
                 </TabsTrigger>
-                <TabsTrigger value="contacts" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                <TabsTrigger value="contacts" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
                   Contact Intel
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <div className="space-y-4 min-w-0">
                     <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -1477,7 +1509,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="lanes" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <MetricList
                     title="Trade lanes"
                     items={detail.topRoutes.map((route) => ({
@@ -1497,7 +1529,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="carriers" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <MetricList
                     title="Carriers"
                     items={detail.carriers.map((carrier) => ({
@@ -1517,7 +1549,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="locations" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <div className="grid gap-4 md:grid-cols-2">
                     <MetricList
                       title="Origins"
@@ -1547,7 +1579,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="products" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <div className="grid gap-4 lg:grid-cols-2">
                     <MetricList
                       title="Product mix (HS codes)"
@@ -1577,7 +1609,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="history" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <DataTable
                     title="Verified shipment ledger"
                     columns={["Date", "BOL ID", "TEU", "Carrier", "Route", "Product", "HS Code"]}
@@ -1594,7 +1626,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="pivot" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <DataTable
                     title="Monthly pivot"
                     columns={["Month", "Shipments", "TEU"]}
@@ -1611,7 +1643,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="contacts" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
                   <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
