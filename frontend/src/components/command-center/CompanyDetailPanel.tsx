@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Boxes,
   CalendarClock,
@@ -126,8 +126,24 @@ const normalizeText = (value?: string | null) =>
     .replace(/Ã/g, "")
     .trim();
 
+const isMeaningfulText = (value?: string | null) => {
+  const cleaned = normalizeText(value).toLowerCase();
+  return Boolean(
+    cleaned &&
+      cleaned !== "—" &&
+      cleaned !== "null" &&
+      cleaned !== "undefined" &&
+      cleaned !== "n/a" &&
+      cleaned !== "na" &&
+      cleaned !== "unknown"
+  );
+};
+
+const cleanDisplayText = (value?: string | null) =>
+  isMeaningfulText(value) ? normalizeText(value) : "";
+
 const buildRouteLabel = (value?: string | null) => {
-  const cleaned = normalizeText(value);
+  const cleaned = cleanDisplayText(value);
   return cleaned || "—";
 };
 
@@ -184,7 +200,9 @@ const getShipmentValue = (shipment: any, ...paths: string[][]) => {
 
 const normalizeLocation = (...values: any[]) => {
   const value = pickFirst(...values);
-  return normalizeText(typeof value === "string" ? value : value?.name || value?.label || "");
+  const text =
+    typeof value === "string" ? value : value?.name || value?.label || value?.port || value?.city || "";
+  return cleanDisplayText(text);
 };
 
 const normalizeDateValue = (value: any): string | null => {
@@ -259,7 +277,15 @@ const extractSpend = (shipment: any) => {
 };
 
 const extractLoadType = (shipment: any): "FCL" | "LCL" | "UNKNOWN" => {
-  const raw = normalizeText(
+  const lclFlag = pickFirst(
+    getShipmentValue(shipment, ["lcl"], ["is_lcl"], ["lcl_flag"]),
+    shipment?.lcl,
+    shipment?.raw?.lcl,
+  );
+  if (lclFlag === true || String(lclFlag).toLowerCase() === "true") return "LCL";
+  if (lclFlag === false || String(lclFlag).toLowerCase() === "false") return "FCL";
+
+  const raw = cleanDisplayText(
     String(
       pickFirst(
         getShipmentValue(
@@ -277,11 +303,15 @@ const extractLoadType = (shipment: any): "FCL" | "LCL" | "UNKNOWN" => {
   );
   if (raw.includes("FCL") || raw.includes("FULL")) return "FCL";
   if (raw.includes("LCL") || raw.includes("LESS")) return "LCL";
+
+  const teu = extractTeu(shipment);
+  if (teu >= 1) return "FCL";
+  if (teu > 0 && teu < 1) return "LCL";
   return "UNKNOWN";
 };
 
 const extractCarrier = (shipment: any) =>
-  normalizeText(
+  cleanDisplayText(
     String(
       pickFirst(
         getShipmentValue(
@@ -354,7 +384,7 @@ const deriveRouteFromShipment = (shipment?: any) => {
 };
 
 const extractProduct = (shipment: any) =>
-  normalizeText(
+  cleanDisplayText(
     String(
       pickFirst(
         getShipmentValue(
@@ -372,7 +402,7 @@ const extractProduct = (shipment: any) =>
   );
 
 const extractHsCode = (shipment: any) =>
-  normalizeText(
+  cleanDisplayText(
     String(
       pickFirst(
         getShipmentValue(
@@ -563,21 +593,37 @@ const KpiCard = ({
   value,
   icon: Icon,
   subLabel,
+  accent = "indigo",
 }: {
   label: string;
   value: React.ReactNode;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   subLabel?: string;
-}) => (
-  <div className="rounded-3xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-indigo-200 hover:shadow-md">
-    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-      <Icon className="h-3.5 w-3.5 text-indigo-500" />
-      <span>{label}</span>
+  accent?: "indigo" | "violet" | "cyan" | "emerald" | "amber" | "rose";
+}) => {
+  const accentMap = {
+    indigo: "border-indigo-200 bg-indigo-50/40 text-indigo-600",
+    violet: "border-violet-200 bg-violet-50/40 text-violet-600",
+    cyan: "border-cyan-200 bg-cyan-50/40 text-cyan-600",
+    emerald: "border-emerald-200 bg-emerald-50/40 text-emerald-600",
+    amber: "border-amber-200 bg-amber-50/40 text-amber-600",
+    rose: "border-rose-200 bg-rose-50/40 text-rose-600",
+  } as const;
+  const accentClass = accentMap[accent];
+
+  return (
+    <div className="min-h-[132px] rounded-3xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:shadow-md">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${accentClass}`}>
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <span>{label}</span>
+      </div>
+      <div className="mt-3 text-[1.9rem] font-semibold tracking-tight text-slate-950">{value}</div>
+      {subLabel ? <div className="mt-1.5 text-xs text-slate-500">{subLabel}</div> : null}
     </div>
-    <div className="mt-2.5 text-[1.75rem] font-semibold tracking-tight text-slate-950">{value}</div>
-    {subLabel ? <div className="mt-1 text-xs text-slate-500">{subLabel}</div> : null}
-  </div>
-);
+  );
+};
 
 const SmallMetric = ({
   label,
@@ -588,7 +634,7 @@ const SmallMetric = ({
   value: React.ReactNode;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }) => (
-  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+  <div className="min-h-[88px] rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
     <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
       <Icon className="h-3.5 w-3.5 text-indigo-500" />
       <span>{label}</span>
@@ -797,36 +843,27 @@ const buildDetailModel = (
     lcl: 0,
   }));
 
-  if (scopedTimeSeries.length) {
+  if (filteredShipments.length) {
+    filteredShipments.forEach((shipment) => {
+      if (shipment.monthIndex == null || shipment.monthIndex < 0 || shipment.monthIndex > 11) return;
+      if (shipment.loadType === "LCL") {
+        monthlyBuckets[shipment.monthIndex].lcl += 1;
+      } else {
+        monthlyBuckets[shipment.monthIndex].fcl += 1;
+      }
+    });
+  } else if (scopedTimeSeries.length) {
     scopedTimeSeries.forEach((point) => {
       const monthValue = String(point?.month || "");
-      let monthIndex = /^\d{4}-\d{2}$/.test(monthValue)
+      const monthIndex = /^\d{4}-\d{2}$/.test(monthValue)
         ? Number(monthValue.slice(5, 7)) - 1
         : new Date(monthValue).getMonth();
       if (!Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) return;
       monthlyBuckets[monthIndex].fcl += toNumber(point?.fclShipments);
       monthlyBuckets[monthIndex].lcl += toNumber(point?.lclShipments);
-      const rowTotal = monthlyBuckets[monthIndex].fcl + monthlyBuckets[monthIndex].lcl;
       const shipmentsValue = toNumber(point?.shipments);
-      if (rowTotal === 0 && shipmentsValue > 0) {
+      if (monthlyBuckets[monthIndex].fcl + monthlyBuckets[monthIndex].lcl === 0 && shipmentsValue > 0) {
         monthlyBuckets[monthIndex].fcl += shipmentsValue;
-      }
-    });
-  } else {
-    filteredShipments.forEach((shipment) => {
-      if (shipment.monthIndex == null || shipment.monthIndex < 0 || shipment.monthIndex > 11) return;
-      if (shipment.loadType === "FCL") {
-        monthlyBuckets[shipment.monthIndex].fcl += 1;
-        return;
-      }
-      if (shipment.loadType === "LCL") {
-        monthlyBuckets[shipment.monthIndex].lcl += 1;
-        return;
-      }
-      if (shipment.teu > 1) {
-        monthlyBuckets[shipment.monthIndex].fcl += 1;
-      } else {
-        monthlyBuckets[shipment.monthIndex].lcl += 1;
       }
     });
   }
@@ -858,10 +895,13 @@ const buildDetailModel = (
   const fclShipmentsFromSeries = scopedTimeSeries.reduce((sum, point) => sum + toNumber(point?.fclShipments), 0);
   const lclShipmentsFromSeries = scopedTimeSeries.reduce((sum, point) => sum + toNumber(point?.lclShipments), 0);
 
-  const fclShipments =
-    filteredShipments.filter((shipment) => shipment.loadType === "FCL").length || fclShipmentsFromSeries;
-  const lclShipments =
-    filteredShipments.filter((shipment) => shipment.loadType === "LCL").length || lclShipmentsFromSeries;
+  const inferredFclCount = filteredShipments.filter(
+    (shipment) => shipment.loadType === "FCL" || shipment.loadType === "UNKNOWN",
+  ).length;
+  const inferredLclCount = filteredShipments.filter((shipment) => shipment.loadType === "LCL").length;
+
+  const fclShipments = shipmentCount > 0 ? inferredFclCount : fclShipmentsFromSeries;
+  const lclShipments = shipmentCount > 0 ? inferredLclCount : lclShipmentsFromSeries;
 
   const sortedByDate = [...filteredShipments].sort((a, b) => {
     const da = a.date ? new Date(a.date).getTime() : 0;
@@ -885,7 +925,7 @@ const buildDetailModel = (
     const carrierCounts = new Map<string, { shipments: number; teu: number }>();
     filteredShipments.forEach((shipment) => {
       const rawCarrier =
-        normalizeText(
+        cleanDisplayText(
           String(
             pickFirst(
               shipment.raw?.carrier,
@@ -1056,20 +1096,7 @@ export default function CompanyDetailPanel({
     [normalizedShipments, profile, routeKpis],
   );
 
-  const [selectedYear, setSelectedYear] = useState<number | null>(availableYears[0] ?? null);
-
-  useEffect(() => {
-    if (!availableYears.length) {
-      if (selectedYear !== null) setSelectedYear(null);
-      return;
-    }
-    if (selectedYear == null || !availableYears.includes(selectedYear)) {
-      setSelectedYear(availableYears[0]);
-    }
-  }, [availableYears, selectedYear]);
-
-  const effectiveSelectedYear =
-    selectedYear && availableYears.includes(selectedYear) ? selectedYear : availableYears[0] ?? null;
+  const effectiveSelectedYear = availableYears[0] ?? null;
 
   const detail = useMemo(() => {
     const model = buildDetailModel(normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis);
@@ -1182,78 +1209,62 @@ export default function CompanyDetailPanel({
               </button>
             </div>
 
-            {availableYears.length ? (
-              <div className="flex items-center gap-2">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Year
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {availableYears.map((year) => (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => setSelectedYear(year)}
-                      className={
-                        year === effectiveSelectedYear
-                          ? "rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
-                          : "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                      }
-                    >
-                      {year}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+
           </div>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
           <div className="space-y-4 min-w-0">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
               <KpiCard
                 label="Market spend"
                 value={formatCurrency(detail.spend)}
                 icon={DollarSign}
                 subLabel={`${effectiveSelectedYear ?? "Selected year"} estimate`}
+                accent="indigo"
               />
               <KpiCard
                 label="Shipments"
                 value={formatNumber(detail.shipments)}
                 icon={Package}
                 subLabel={`${effectiveSelectedYear ?? "Selected year"} visible activity`}
+                accent="violet"
               />
               <KpiCard
                 label="Total TEUs"
                 value={formatNumber(detail.teu, 1)}
                 icon={Ship}
                 subLabel="Selected-year volume"
+                accent="cyan"
               />
               <KpiCard
                 label="FCL shipments"
                 value={formatNumber(detail.fclShipments)}
                 icon={Boxes}
                 subLabel="Selected year"
+                accent="emerald"
               />
               <KpiCard
                 label="LCL shipments"
                 value={formatNumber(detail.lclShipments)}
                 icon={Truck}
                 subLabel="Selected year"
+                accent="amber"
               />
               <KpiCard
-                label="Avg TEU / shipment"
-                value={formatNumber(detail.avgTeuPerShipment, 2)}
-                icon={TrendingUp}
-                subLabel="Selected year"
-              />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <SmallMetric
                 label="Avg shipments / month"
                 value={formatNumber(detail.avgShipmentsPerMonth, 1)}
                 icon={CalendarClock}
+                subLabel="Jan-Dec basis"
+                accent="rose"
+              />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <SmallMetric
+                label="Avg TEU / shipment"
+                value={formatNumber(detail.avgTeuPerShipment, 2)}
+                icon={TrendingUp}
               />
               <SmallMetric
                 label="Oldest shipment"
@@ -1296,7 +1307,7 @@ export default function CompanyDetailPanel({
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <div className="space-y-4 min-w-0">
                     <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -1325,7 +1336,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="lanes" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <MetricList
                     title="Trade lanes"
                     items={detail.topRoutes.map((route) => ({
@@ -1345,7 +1356,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="carriers" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <MetricList
                     title="Carriers"
                     items={detail.carriers.map((carrier) => ({
@@ -1365,7 +1376,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="locations" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <div className="grid gap-4 md:grid-cols-2">
                     <MetricList
                       title="Origins"
@@ -1395,7 +1406,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="products" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <div className="grid gap-4 lg:grid-cols-2">
                     <MetricList
                       title="Product mix (HS codes)"
@@ -1425,7 +1436,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="history" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <DataTable
                     title="Verified shipment ledger"
                     columns={["Date", "BOL ID", "TEU", "Carrier", "Route", "Product", "HS Code"]}
@@ -1442,7 +1453,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="pivot" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <DataTable
                     title="Monthly pivot"
                     columns={["Month", "Shipments", "TEU"]}
@@ -1459,7 +1470,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="contacts" className="space-y-4">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
                   <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
