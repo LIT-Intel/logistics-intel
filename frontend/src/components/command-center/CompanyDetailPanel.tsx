@@ -917,7 +917,17 @@ const buildDetailModel = (
 
   const shipments = seriesShipments > 0 ? seriesShipments : shipmentCount > 0 ? shipmentCount : fallbackShipments;
   const teu = seriesTeu > 0 ? seriesTeu : shipmentTeu > 0 ? shipmentTeu : fallbackTeu;
-  const spend = seriesSpend > 0 ? seriesSpend : fallbackSpend > 0 ? fallbackSpend : directSpend > 0 ? directSpend : null;
+  // Market spend is now computed as shipment count times an average container price (~$4,500).
+  // If shipments is available, multiply by 4500; otherwise fall back to existing estimates.
+  const spend = shipments > 0
+    ? shipments * 4500
+    : seriesSpend > 0
+    ? seriesSpend
+    : fallbackSpend > 0
+    ? fallbackSpend
+    : directSpend > 0
+    ? directSpend
+    : null;
   const fclShipments = seriesFcl > 0 ? seriesFcl : fallbackFcl > 0 ? fallbackFcl : inferredFclCount;
   const lclShipments = seriesLcl > 0 ? seriesLcl : fallbackLcl > 0 ? fallbackLcl : inferredLclCount;
 
@@ -1409,60 +1419,55 @@ export default function CompanyDetailPanel({
             <Tabs defaultValue="overview" className="space-y-5">
             {/* Tab bar: allow wrapping instead of overflowing horizontally */}
             <TabsList
-              className="flex flex-wrap w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm overflow-x-hidden"
+              // Override default height/overflow from the tabs primitive and allow wrapping.
+              className="flex flex-wrap items-stretch w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-3 shadow-sm h-auto min-h-[44px] overflow-visible"
             >
                 {/* Each tab trigger highlights with the same gradient as the logo when active */}
                 <TabsTrigger
                   value="overview"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Overview
                 </TabsTrigger>
                 <TabsTrigger
                   value="lanes"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Trade Lanes
                 </TabsTrigger>
                 <TabsTrigger
-                  value="carriers"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Carriers
-                </TabsTrigger>
-                <TabsTrigger
                   value="locations"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Locations
                 </TabsTrigger>
                 <TabsTrigger
                   value="products"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Products
                 </TabsTrigger>
                 <TabsTrigger
                   value="history"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Shipment History
                 </TabsTrigger>
                 <TabsTrigger
                   value="credit"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Credit Rating
                 </TabsTrigger>
                 <TabsTrigger
                   value="similar"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Similar Companies
                 </TabsTrigger>
                 <TabsTrigger
                   value="contacts"
-                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Contact Intel
                 </TabsTrigger>
@@ -1529,18 +1534,6 @@ export default function CompanyDetailPanel({
                       label: String(route.lane),
                       value: formatNumber(route.shipments),
                       meta: `TEU ${formatNumber(route.teu, 1)} • Spend ${formatCurrency(route.spend)}`,
-                    }))}
-                  />
-                </div>
-              </TabsContent>
-              <TabsContent value="carriers" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <MetricList
-                    title="Carriers"
-                    items={detail.carriers.map((carrier) => ({
-                      label: carrier.carrier,
-                      value: formatNumber(carrier.shipments),
-                      meta: `TEU ${formatNumber(carrier.teu, 1)}`,
                     }))}
                   />
                 </div>
