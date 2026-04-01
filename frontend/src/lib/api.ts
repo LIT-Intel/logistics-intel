@@ -90,6 +90,11 @@ export function getCommandCenterAvailableYears(
   return Array.from(years).sort((a, b) => b - a);
 }
 
+function monthName(monthIndex: number): string {
+  return new Date(2000, monthIndex, 1).toLocaleString("en-US", { month: "short" });
+}
+
+
 
 function resolveApiBase() {
   const read = (value: unknown) =>
