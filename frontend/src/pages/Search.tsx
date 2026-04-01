@@ -274,7 +274,8 @@ const MOCK_COMPANIES: MockCompany[] = [
 ];
 
 export default function SearchPage() {
-  const { user, authReady } = useAuth();
+  const { user, authReady, access } = useAuth();
+  console.log("ACCESS:", access);
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<MockCompany[]>([]);
