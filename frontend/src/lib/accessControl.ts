@@ -1,126 +1,201 @@
-import { getPlanEntitlements, type FeatureKey } from "./entitlements";
-import { getPlanLimits } from "./planLimits";
+export type UserRole = 'super_admin' | 'admin' | 'user';
+export type UserPlan = 'free_trial' | 'standard' | 'pro' | 'enterprise';
 
-export type GlobalRole = "super_admin" | "internal_admin" | "customer_user";
-export type OrgRole =
-  | "org_admin"
-  | "manager"
-  | "standard_user"
-  | "sales_user"
-  | "trial_user"
-  | "beta_user";
+export type FeatureKey =
+  | 'search'
+  | 'command_center'
+  | 'settings'
+  | 'billing'
+  | 'enrichment'
+  | 'campaigns'
+  | 'rfp_studio'
+  | 'team_users';
 
-export type UsageSnapshot = Partial<{
-  searches: number;
-  saves: number;
-  enrichments: number;
-  aiBriefs: number;
-}>;
+export type AccessMatrix = Record<UserPlan, Record<FeatureKey, boolean>>;
 
-export type AccessUser = {
-  id?: string;
-  email?: string | null;
-  globalRole?: GlobalRole | string | null;
-  orgRole?: OrgRole | string | null;
-  plan?: string | null;
-  featureOverrides?: Record<string, boolean>;
+export type PlanLimits = {
+  enrichmentPerMonth: number | null;
+  savedCompanies: number | null;
+  searchesPerMonth: number | null;
+  teamUsers: number | null;
 };
 
-export function isSuperAdmin(user?: AccessUser | null) {
-  return user?.globalRole === "super_admin";
+export type UsageState = {
+  enrichmentUsedThisMonth?: number;
+  savedCompaniesUsed?: number;
+  searchesUsedThisMonth?: number;
+  teamUsersUsed?: number;
+};
+
+export type AccessContext = {
+  role: UserRole;
+  plan: UserPlan;
+  usage?: UsageState;
+};
+
+export const ACCESS_MATRIX: AccessMatrix = {
+  free_trial: {
+    search: true,
+    command_center: true,
+    settings: true,
+    billing: true,
+    enrichment: false,
+    campaigns: false,
+    rfp_studio: false,
+    team_users: false,
+  },
+  standard: {
+    search: true,
+    command_center: true,
+    settings: true,
+    billing: true,
+    enrichment: true,
+    campaigns: false,
+    rfp_studio: false,
+    team_users: false,
+  },
+  pro: {
+    search: true,
+    command_center: true,
+    settings: true,
+    billing: true,
+    enrichment: true,
+    campaigns: true,
+    rfp_studio: true,
+    team_users: false,
+  },
+  enterprise: {
+    search: true,
+    command_center: true,
+    settings: true,
+    billing: true,
+    enrichment: true,
+    campaigns: true,
+    rfp_studio: true,
+    team_users: true,
+  },
+};
+
+export const PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
+  free_trial: {
+    enrichmentPerMonth: 0,
+    savedCompanies: 25,
+    searchesPerMonth: 250,
+    teamUsers: 1,
+  },
+  standard: {
+    enrichmentPerMonth: 50,
+    savedCompanies: 500,
+    searchesPerMonth: 5000,
+    teamUsers: 1,
+  },
+  pro: {
+    enrichmentPerMonth: 500,
+    savedCompanies: 5000,
+    searchesPerMonth: 25000,
+    teamUsers: 5,
+  },
+  enterprise: {
+    enrichmentPerMonth: null,
+    savedCompanies: null,
+    searchesPerMonth: null,
+    teamUsers: null,
+  },
+};
+
+export function normalizeRole(role?: string | null): UserRole {
+  if (role === 'super_admin' || role === 'admin' || role === 'user') return role;
+  return 'user';
 }
 
-export function isInternalAdmin(user?: AccessUser | null) {
-  return user?.globalRole === "internal_admin" || isSuperAdmin(user);
-}
-
-export function canAccessFeature(
-  user: AccessUser | null | undefined,
-  feature: FeatureKey
-): boolean {
-  if (!user) return false;
-  if (isSuperAdmin(user)) return true;
-
-  const overrides = user.featureOverrides || {};
-  if (typeof overrides[feature] === "boolean") {
-    return overrides[feature];
+export function normalizePlan(plan?: string | null): UserPlan {
+  if (plan === 'free_trial' || plan === 'standard' || plan === 'pro' || plan === 'enterprise') {
+    return plan;
   }
-
-  const planEntitlements = getPlanEntitlements(user.plan);
-  return !!planEntitlements[feature];
+  return 'free_trial';
 }
 
-export function canAccessPage(user: AccessUser | null | undefined, pageKey: string): boolean {
-  const pageToFeature: Record<string, FeatureKey> = {
-    dashboard: "dashboard_access",
-    search: "search_access",
-    command_center: "command_center_access",
-    settings: "settings_access",
-    billing: "billing_access",
-    profile: "profile_access",
-    campaigns: "campaign_access",
-    rfp: "rfp_studio_access",
-    widgets: "widgets_access",
-    affiliate: "affiliate_access",
-    admin: "admin_access",
-    prospecting: "lead_prospecting_access",
-    cms: "cms_access",
-    diagnostic: "debug_agent_access",
-  };
-
-  const feature = pageToFeature[pageKey];
-  if (!feature) return false;
-  return canAccessFeature(user, feature);
+export function hasRole(role: UserRole, allowedRoles: UserRole[]): boolean {
+  return allowedRoles.includes(role);
 }
 
-export function getRemainingUsage(
-  user: AccessUser | null | undefined,
-  usage: UsageSnapshot = {}
-) {
-  const limits = getPlanLimits(user?.plan);
+export function canAccessFeature(plan: UserPlan, feature: FeatureKey): boolean {
+  return ACCESS_MATRIX[plan][feature];
+}
+
+export function getPlanLimits(plan: UserPlan): PlanLimits {
+  return PLAN_LIMITS[plan];
+}
+
+export function isWithinLimit(used: number | undefined, limit: number | null): boolean {
+  if (limit === null) return true;
+  return (used ?? 0) < limit;
+}
+
+export function getAccessState(context: AccessContext) {
+  const role = normalizeRole(context.role);
+  const plan = normalizePlan(context.plan);
+  const usage = context.usage ?? {};
+  const limits = getPlanLimits(plan);
 
   return {
-    searches: Math.max(limits.searches - (usage.searches || 0), 0),
-    saves: Math.max(limits.saves - (usage.saves || 0), 0),
-    enrichments: Math.max(limits.enrichments - (usage.enrichments || 0), 0),
-    aiBriefs:
-      limits.aiBriefs === null
-        ? null
-        : Math.max((limits.aiBriefs || 0) - (usage.aiBriefs || 0), 0),
+    role,
+    plan,
+    features: {
+      search: canAccessFeature(plan, 'search'),
+      commandCenter: canAccessFeature(plan, 'command_center'),
+      settings: canAccessFeature(plan, 'settings'),
+      billing: canAccessFeature(plan, 'billing'),
+      enrichment: canAccessFeature(plan, 'enrichment'),
+      campaigns: canAccessFeature(plan, 'campaigns'),
+      rfpStudio: canAccessFeature(plan, 'rfp_studio'),
+      teamUsers: canAccessFeature(plan, 'team_users'),
+    },
+    limits,
+    usage,
+    allowance: {
+      enrichment:
+        canAccessFeature(plan, 'enrichment') &&
+        isWithinLimit(usage.enrichmentUsedThisMonth, limits.enrichmentPerMonth),
+
+      savedCompanies: isWithinLimit(usage.savedCompaniesUsed, limits.savedCompanies),
+
+      searches: isWithinLimit(usage.searchesUsedThisMonth, limits.searchesPerMonth),
+
+      teamUsers:
+        canAccessFeature(plan, 'team_users') &&
+        isWithinLimit(usage.teamUsersUsed, limits.teamUsers),
+    },
+    isAdmin: role === 'admin' || role === 'super_admin',
+    isSuperAdmin: role === 'super_admin',
   };
 }
 
-export function isOverLimit(
-  user: AccessUser | null | undefined,
-  usage: UsageSnapshot,
-  metric: "searches" | "saves" | "enrichments" | "aiBriefs"
-) {
-  const remaining = getRemainingUsage(user, usage);
-  const value = remaining[metric];
-  if (value === null) return false;
-  return value <= 0;
-}
+export function assertFeatureAccess(context: AccessContext, feature: FeatureKey) {
+  const plan = normalizePlan(context.plan);
 
-export function getUpgradeMessage(
-  user: AccessUser | null | undefined,
-  metric: "searches" | "saves" | "enrichments" | "aiBriefs"
-) {
-  const plan = user?.plan || "free_trial";
-
-  if (plan === "free_trial") {
-    if (metric === "searches") {
-      return "You’ve used all 10 trial searches. Upgrade to continue.";
-    }
-    if (metric === "saves") {
-      return "You’ve reached the 5 saved company trial limit. Upgrade to continue.";
-    }
-    if (metric === "enrichments") {
-      return "You’ve reached the 5 contact enrichment trial limit. Upgrade to continue.";
-    }
-    if (metric === "aiBriefs") {
-      return "AI Brief is available on paid plans.";
-    }
+  if (!canAccessFeature(plan, feature)) {
+    return {
+      allowed: false,
+      reason: `Feature "${feature}" is not available on the ${plan} plan.`,
+    };
   }
 
-  return "You’ve reached your plan limit. Upgrade your subscription to continue.";
+  const state = getAccessState(context);
+
+  if (feature === 'enrichment' && !state.allowance.enrichment) {
+    return {
+      allowed: false,
+      reason: `Monthly enrichment limit reached for the ${plan} plan.`,
+    };
+  }
+
+  if (feature === 'team_users' && !state.allowance.teamUsers) {
+    return {
+      allowed: false,
+      reason: `Team user limit reached for the ${plan} plan.`,
+    };
+  }
+
+  return { allowed: true, reason: null };
 }
