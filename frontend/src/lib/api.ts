@@ -95,6 +95,73 @@ function monthName(monthIndex: number): string {
 }
 
 
+function getBolDate(bol?: IyRecentBol | null): Date | null {
+  const rawDate =
+    bol?.date ||
+    bol?.dateObj ||
+    (bol?.raw as any)?.bill_of_lading_date ||
+    (bol?.raw as any)?.bill_of_lading_date_formatted ||
+    (bol?.raw as any)?.arrival_date ||
+    null;
+
+  if (!rawDate) return null;
+  const parsed = rawDate instanceof Date ? rawDate : new Date(rawDate);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getEntrySpend(bol?: IyRecentBol | null): number {
+  const raw = bol?.raw as any;
+  return (
+    coerceNumber(bol?.shippingCost) ??
+    coerceNumber(raw?.shippingCost) ??
+    coerceNumber(raw?.shipping_cost) ??
+    coerceNumber(raw?.estimated_shipping_cost) ??
+    coerceNumber(raw?.estSpendUsd) ??
+    0
+  );
+}
+
+function getEntryCarrier(bol?: IyRecentBol | null): string | null {
+  const raw = bol?.raw as any;
+  const value =
+    raw?.carrier ||
+    raw?.carrier_name ||
+    raw?.shipping_line ||
+    raw?.vessel_operator ||
+    raw?.steamship_line ||
+    null;
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim();
+  if (!cleaned || ["null", "undefined", "unknown", "n/a", "na"].includes(cleaned.toLowerCase())) {
+    return null;
+  }
+  return cleaned;
+}
+
+function getEntryProduct(bol?: IyRecentBol | null): string | null {
+  const raw = bol?.raw as any;
+  const value =
+    raw?.product_description ||
+    raw?.Product_Description ||
+    raw?.product_name ||
+    raw?.description ||
+    raw?.commodity ||
+    null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getEntryHsCode(bol?: IyRecentBol | null): string | null {
+  const raw = bol?.raw as any;
+  const value =
+    raw?.hs_code ||
+    raw?.hsCode ||
+    raw?.HS_Code ||
+    raw?.product_hs_code ||
+    null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+
 
 function resolveApiBase() {
   const read = (value: unknown) =>
