@@ -12,7 +12,7 @@ import {
   Truck,
   Sparkles,
 } from "lucide-react";
-import { buildCommandCenterDetailModel, buildYearScopedProfile, getCommandCenterAvailableYears } from "@/lib/api";
+import { buildCommandCenterDetailModel, getCommandCenterAvailableYears } from "@/lib/api";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -37,17 +37,6 @@ type ActivityPoint = {
 };
 
 type TableRow = Record<string, React.ReactNode>;
-
-
-type TimeSeriesLike = {
-  month?: string | null;
-  year?: number | null;
-  shipments?: number | null;
-  fclShipments?: number | null;
-  lclShipments?: number | null;
-  teu?: number | null;
-  estSpendUsd?: number | null;
-};
 
 type NormalizedShipment = {
   source: any;
@@ -273,8 +262,7 @@ const extractSpend = (shipment: any) => {
     ),
   );
   if (explicitSpend > 0) return explicitSpend;
-  const teu = extractTeu(shipment);
-  return teu > 0 ? teu * 1100 : null;
+  return null;
 };
 
 const extractLoadType = (shipment: any): "FCL" | "LCL" | "UNKNOWN" => {
@@ -514,31 +502,6 @@ const aggregateRouteRows = (shipments: NormalizedShipment[]) => {
     .slice(0, 10);
 };
 
-const aggregatePivotRows = (shipments: NormalizedShipment[]) => {
-  const months = new Map<string, { shipments: number; teu: number }>();
-  shipments.forEach((shipment) => {
-    const month = monthKey(shipment.date);
-    const current = months.get(month) || { shipments: 0, teu: 0 };
-    current.shipments += 1;
-    current.teu += shipment.teu;
-    months.set(month, current);
-  });
-
-  return [...months.entries()]
-    .map(([month, stats]) => ({
-      month,
-      shipments: stats.shipments,
-      teu: stats.teu,
-    }))
-    .sort((a, b) => {
-      const da = new Date(`01 ${a.month}`);
-      const db = new Date(`01 ${b.month}`);
-      if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return 0;
-      return da.getTime() - db.getTime();
-    })
-    .slice(-12);
-};
-
 const getAvailableYears = (
   shipments: NormalizedShipment[],
   profile?: IyCompanyProfile | null,
@@ -568,6 +531,47 @@ const getAvailableYears = (
   });
 
   return [...years].sort((a, b) => b - a);
+};
+
+const inferActiveYearFromScopedData = (
+  profile: IyCompanyProfile | null,
+  routeKpis: IyRouteKpis | null,
+  normalizedShipments: NormalizedShipment[],
+  fallbackYears: number[],
+) => {
+  const shipmentYears = [...new Set(normalizedShipments.map((s) => s.year).filter(Boolean))] as number[];
+  if (shipmentYears.length === 1) return shipmentYears[0];
+
+  const profileSeries = safeArray((profile as any)?.timeSeries);
+  const profileYears = [...new Set(profileSeries.map((p: any) => {
+    const explicit = Number(p?.year);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const rawValue = String(pickFirst(p?.month, p?.monthLabel, p?.date, p?.period, ""));
+    const match = rawValue.match(/\b(20\d{2})\b/);
+    if (match) return Number(match[1]);
+    const parsed = new Date(rawValue);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.getFullYear();
+  }).filter(Boolean))] as number[];
+  if (profileYears.length === 1) return profileYears[0];
+
+  const routeSeries = safeArray((routeKpis as any)?.monthlySeries);
+  const routeYears = [...new Set(routeSeries.map((p: any) => {
+    const explicit = Number(p?.year);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const rawValue = String(pickFirst(p?.month, p?.monthLabel, p?.date, p?.period, ""));
+    const match = rawValue.match(/\b(20\d{2})\b/);
+    if (match) return Number(match[1]);
+    const parsed = new Date(rawValue);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.getFullYear();
+  }).filter(Boolean))] as number[];
+  if (routeYears.length === 1) return routeYears[0];
+
+  const latestShipment = [...normalizedShipments]
+    .filter((s) => s.date)
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
+  if (latestShipment?.year) return latestShipment.year;
+
+  return fallbackYears[0] ?? null;
 };
 
 const getStatusLabel = (shipments: number, teu: number) => {
@@ -613,14 +617,14 @@ const KpiCard = ({
   const accentClass = accentMap[accent];
 
   return (
-    <div className="min-h-[112px] rounded-3xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
+    <div className="min-h-[116px] rounded-3xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
         <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${accentClass}`}>
           <Icon className="h-3.5 w-3.5" />
         </span>
         <span>{label}</span>
       </div>
-      <div className="mt-3 text-[1.5rem] font-semibold tracking-tight text-slate-950 md:text-[1.75rem]">{value}</div>
+      <div className="mt-3 text-[1.4rem] font-semibold tracking-tight text-slate-950 md:text-[1.65rem]">{value}</div>
       {subLabel ? <div className="mt-1.5 text-xs text-slate-500">{subLabel}</div> : null}
     </div>
   );
@@ -972,9 +976,9 @@ const buildDetailModel = (
 
   const shipments = seriesShipments > 0 ? seriesShipments : shipmentCount > 0 ? shipmentCount : fallbackShipments;
   const teu = seriesTeu > 0 ? seriesTeu : shipmentTeu > 0 ? shipmentTeu : fallbackTeu;
-  const spend = seriesSpend > 0 ? seriesSpend : fallbackSpend > 0 ? fallbackSpend : directSpend > 0 ? directSpend : null;
-  const fclShipments = seriesFcl > 0 ? seriesFcl : fallbackFcl > 0 ? fallbackFcl : inferredFclCount;
-  const lclShipments = seriesLcl > 0 ? seriesLcl : fallbackLcl > 0 ? fallbackLcl : inferredLclCount;
+  const spend = seriesSpend > 0 ? seriesSpend : directSpend > 0 ? directSpend : fallbackSpend > 0 ? fallbackSpend : null;
+  const fclShipments = seriesFcl > 0 ? seriesFcl : inferredFclCount > 0 ? inferredFclCount : fallbackFcl;
+  const lclShipments = seriesLcl > 0 ? seriesLcl : inferredLclCount > 0 ? inferredLclCount : fallbackLcl;
 
   const sortedByDate = [...filteredShipments].sort((a, b) => {
     const da = a.date ? new Date(a.date).getTime() : 0;
@@ -1158,60 +1162,84 @@ export default function CompanyDetailPanel({
     return apiYears.length ? apiYears : getAvailableYears(normalizedShipments, profile, routeKpis);
   }, [normalizedShipments, profile, routeKpis]);
 
-  const effectiveSelectedYear = availableYears[0] ?? null;
+  const effectiveSelectedYear = useMemo(
+    () => inferActiveYearFromScopedData(profile, routeKpis, normalizedShipments, availableYears),
+    [profile, routeKpis, normalizedShipments, availableYears],
+  );
 
   const detail = useMemo(() => {
     const activeYear = effectiveSelectedYear || new Date().getFullYear();
-    const scopedProfile = buildYearScopedProfile(profile, activeYear) || profile;
-    const scopedRouteKpis = (scopedProfile as any)?.routeKpis ?? routeKpis;
     const baseModel = buildCommandCenterDetailModel(
-      scopedProfile,
-      scopedRouteKpis,
+      profile,
+      routeKpis,
       activeYear,
     ) as any;
     const fallbackModel = buildDetailModel(
       normalizedShipments,
       activeYear,
-      scopedProfile as any,
-      (scopedProfile as any)?.routeKpis ?? rawRouteKpis,
+      rawProfile,
+      rawRouteKpis,
     );
 
-    const resolvedShipments = Math.max(
-      Number(baseModel?.shipments ?? 0),
-      Number(scopedProfile?.totalShipments ?? 0),
-      Number(scopedRouteKpis?.shipmentsLast12m ?? 0),
-      Number(fallbackModel.shipments ?? 0),
+    const resolvePositive = (...values: any[]) => {
+      for (const value of values) {
+        const num = Number(value);
+        if (Number.isFinite(num) && num > 0) return num;
+      }
+      return 0;
+    };
+
+    const resolvedShipments = resolvePositive(
+      baseModel?.shipments,
+      fallbackModel.shipments,
+      (profile as any)?.totalShipments,
+      rawRouteKpis?.shipmentsLast12m,
+      rawProfile?.shipmentsLast12m,
     );
 
-    const resolvedTeu = Math.max(
-      Number(baseModel?.teu ?? 0),
-      Number(scopedRouteKpis?.teuLast12m ?? 0),
-      Number((scopedProfile as any)?.teuLast12m ?? 0),
-      Number(fallbackModel.teu ?? 0),
+    const resolvedTeu = resolvePositive(
+      baseModel?.teu,
+      fallbackModel.teu,
+      rawRouteKpis?.teuLast12m,
+      rawProfile?.teuLast12m,
     );
 
-    const resolvedSpendCandidates = [
-      Number(baseModel?.marketSpendUsd ?? 0),
-      Number(scopedRouteKpis?.estSpendUsd12m ?? 0),
-      Number((scopedProfile as any)?.estSpendUsd12m ?? 0),
-      Number((scopedProfile as any)?.marketSpend ?? 0),
-      Number(fallbackModel.spend ?? 0),
-    ].filter((value) => Number.isFinite(value) && value > 0);
-    const resolvedSpend = resolvedSpendCandidates.length ? Math.max(...resolvedSpendCandidates) : null;
+    const resolvedSpend = resolvePositive(
+      baseModel?.marketSpendUsd,
+      fallbackModel.spend,
+      rawRouteKpis?.estSpendUsd12m,
+      rawRouteKpis?.estSpendUsd,
+      rawProfile?.estSpendUsd12m,
+      rawProfile?.marketSpend,
+      rawProfile?.est_spend,
+    ) || null;
 
-    const resolvedFcl = Math.max(
-      Number(baseModel?.fclShipments ?? 0),
-      Number((scopedProfile as any)?.containers?.fclShipments12m ?? 0),
-      Number(fallbackModel.fclShipments ?? 0),
+    const resolvedFcl = resolvePositive(
+      baseModel?.fclShipments,
+      fallbackModel.fclShipments,
+      rawProfile?.containers?.fclShipments12m,
+      rawProfile?.containers?.fcl,
     );
 
-    const resolvedLcl = Math.max(
-      Number(baseModel?.lclShipments ?? 0),
-      Number((scopedProfile as any)?.containers?.lclShipments12m ?? 0),
-      Number(fallbackModel.lclShipments ?? 0),
+    const resolvedLcl = resolvePositive(
+      baseModel?.lclShipments,
+      fallbackModel.lclShipments,
+      rawProfile?.containers?.lclShipments12m,
+      rawProfile?.containers?.lcl,
     );
 
-    const latestDate = baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? scopedProfile?.lastShipmentDate ?? null;
+    const latestDate =
+      baseModel?.latestShipmentDate ??
+      fallbackModel.latestShipmentDate ??
+      profile?.lastShipmentDate ??
+      rawProfile?.last_shipment_date ??
+      null;
+    const oldestDate =
+      baseModel?.oldestShipmentDate ??
+      fallbackModel.oldestShipmentDate ??
+      rawProfile?.firstShipmentDate ??
+      null;
+
     const latestParsed = latestDate ? new Date(latestDate) : null;
     const latestMonthCap =
       latestParsed && !Number.isNaN(latestParsed.getTime()) && latestParsed.getFullYear() === activeYear
@@ -1261,11 +1289,11 @@ export default function CompanyDetailPanel({
       shipments: resolvedShipments,
       teu: resolvedTeu,
       spend: resolvedSpend,
-      fclShipments: Math.min(resolvedFcl, resolvedShipments || resolvedFcl),
-      lclShipments: resolvedLcl,
+      fclShipments: Math.min(resolvedFcl || fallbackModel.fclShipments, resolvedShipments || resolvedFcl),
+      lclShipments: Math.min(resolvedLcl || fallbackModel.lclShipments, resolvedShipments || resolvedLcl),
       avgTeuPerShipment: resolvedShipments > 0 ? resolvedTeu / resolvedShipments : (baseModel?.avgTeuPerShipment ?? fallbackModel.avgTeuPerShipment ?? null),
       avgShipmentsPerMonth: resolvedShipments > 0 ? resolvedShipments / 12 : null,
-      oldestShipmentDate: baseModel?.oldestShipmentDate ?? fallbackModel.oldestShipmentDate ?? null,
+      oldestShipmentDate: oldestDate,
       latestShipmentDate: latestDate,
       monthlySeries,
       topRoutes,
@@ -1320,7 +1348,7 @@ export default function CompanyDetailPanel({
   }
 
   return (
-    <section className="w-full rounded-[28px] border border-slate-200 bg-slate-50 p-2 shadow-sm md:p-3 lg:p-4">
+    <section className="w-full rounded-[28px] border border-slate-200 bg-slate-50 p-[10px] shadow-sm">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -1332,7 +1360,7 @@ export default function CompanyDetailPanel({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 items-start gap-4">
             <CompanyAvatar
@@ -1386,7 +1414,7 @@ export default function CompanyDetailPanel({
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
           <div className="space-y-4 min-w-0">
             <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
               <KpiCard
@@ -1451,36 +1479,38 @@ export default function CompanyDetailPanel({
               />
             </div>
 
-            <Tabs defaultValue="overview" className="space-y-5">
-              <TabsList className="flex h-auto w-full gap-2 overflow-x-auto rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm whitespace-nowrap">
-                <TabsTrigger value="overview" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Overview
-                </TabsTrigger>
-                <TabsTrigger value="lanes" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Trade Lanes
-                </TabsTrigger>
-                <TabsTrigger value="carriers" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Carriers
-                </TabsTrigger>
-                <TabsTrigger value="locations" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Locations
-                </TabsTrigger>
-                <TabsTrigger value="products" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Products
-                </TabsTrigger>
-                <TabsTrigger value="history" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Shipment History
-                </TabsTrigger>
-                <TabsTrigger value="pivot" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Pivot Table
-                </TabsTrigger>
-                <TabsTrigger value="contacts" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
-                  Contact Intel
-                </TabsTrigger>
-              </TabsList>
+            <Tabs defaultValue="overview" className="space-y-4">
+              <div className="overflow-x-auto">
+                <TabsList className="flex h-auto min-w-max gap-2 rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm whitespace-nowrap">
+                  <TabsTrigger value="overview" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Overview
+                  </TabsTrigger>
+                  <TabsTrigger value="lanes" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Trade Lanes
+                  </TabsTrigger>
+                  <TabsTrigger value="carriers" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Carriers
+                  </TabsTrigger>
+                  <TabsTrigger value="locations" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Locations
+                  </TabsTrigger>
+                  <TabsTrigger value="products" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Products
+                  </TabsTrigger>
+                  <TabsTrigger value="history" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Shipment History
+                  </TabsTrigger>
+                  <TabsTrigger value="pivot" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Pivot Table
+                  </TabsTrigger>
+                  <TabsTrigger value="contacts" className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
+                    Contact Intel
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
               <TabsContent value="overview" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <div className="space-y-4 min-w-0">
                     <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -1499,240 +1529,179 @@ export default function CompanyDetailPanel({
                     <CommandCenterInsights insights={strategicInsights} />
                   </div>
 
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-                  />
+                  <div className="hidden xl:block">
+                    <AiRail
+                      insights={strategicInsights}
+                      shipments={detail.shipments}
+                      teu={detail.teu}
+                      topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
+                    />
+                  </div>
                 </div>
               </TabsContent>
 
               <TabsContent value="lanes" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
-                  <MetricList
-                    title="Trade lanes"
-                    items={detail.topRoutes.map((route) => ({
-                      label: String(route.lane),
-                      value: formatNumber(route.shipments),
-                      meta: `TEU ${formatNumber(route.teu, 1)} • Spend ${formatCurrency(route.spend)}`,
-                    }))}
-                  />
-
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-                  />
-                </div>
+                <MetricList
+                  title="Trade lanes"
+                  items={detail.topRoutes.map((route) => ({
+                    label: String(route.lane),
+                    value: formatNumber(route.shipments),
+                    meta: `TEU ${formatNumber(route.teu, 1)} • Spend ${formatCurrency(route.spend)}`,
+                  }))}
+                />
               </TabsContent>
 
               <TabsContent value="carriers" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
-                  <MetricList
-                    title="Carriers"
-                    items={detail.carriers.map((carrier) => ({
-                      label: carrier.carrier,
-                      value: formatNumber(carrier.shipments),
-                      meta: `TEU ${formatNumber(carrier.teu, 1)}`,
-                    }))}
-                  />
-
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-                  />
-                </div>
+                <MetricList
+                  title="Carriers"
+                  items={detail.carriers.map((carrier) => ({
+                    label: carrier.carrier,
+                    value: formatNumber(carrier.shipments),
+                    meta: `TEU ${formatNumber(carrier.teu, 1)}`,
+                  }))}
+                />
               </TabsContent>
 
               <TabsContent value="locations" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <MetricList
-                      title="Origins"
-                      items={detail.origins.map((item) => ({
-                        label: item.label,
-                        value: formatNumber(item.count),
-                        meta: "Origin",
-                      }))}
-                    />
-                    <MetricList
-                      title="Destinations"
-                      items={detail.destinations.map((item) => ({
-                        label: item.label,
-                        value: formatNumber(item.count),
-                        meta: "Destination",
-                      }))}
-                    />
-                  </div>
-
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <MetricList
+                    title="Origins"
+                    items={detail.origins.map((item) => ({
+                      label: item.label,
+                      value: formatNumber(item.count),
+                      meta: "Origin",
+                    }))}
+                  />
+                  <MetricList
+                    title="Destinations"
+                    items={detail.destinations.map((item) => ({
+                      label: item.label,
+                      value: formatNumber(item.count),
+                      meta: "Destination",
+                    }))}
                   />
                 </div>
               </TabsContent>
 
               <TabsContent value="products" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <MetricList
-                      title="Product mix (HS codes)"
-                      items={detail.hsRows.map((row) => ({
-                        label: row.hsCode,
-                        value: formatNumber(row.count),
-                        meta: row.description,
-                      }))}
-                    />
-                    <MetricList
-                      title="Top products"
-                      items={detail.productRows.map((row) => ({
-                        label: String(row.product),
-                        value: row.volumeShare,
-                        meta: `HS ${row.hsCode}`,
-                      }))}
-                    />
-                  </div>
-
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <MetricList
+                    title="Product mix (HS codes)"
+                    items={detail.hsRows.map((row) => ({
+                      label: row.hsCode,
+                      value: formatNumber(row.count),
+                      meta: row.description,
+                    }))}
+                  />
+                  <MetricList
+                    title="Top products"
+                    items={detail.productRows.map((row) => ({
+                      label: String(row.product),
+                      value: row.volumeShare,
+                      meta: `HS ${row.hsCode}`,
+                    }))}
                   />
                 </div>
               </TabsContent>
 
               <TabsContent value="history" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
-                  <DataTable
-                    title="Verified shipment ledger"
-                    columns={["Date", "BOL ID", "TEU", "Carrier", "Route", "Product", "HS Code"]}
-                    rows={detail.shipmentTableRows}
-                  />
-
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-                  />
-                </div>
+                <DataTable
+                  title="Verified shipment ledger"
+                  columns={["Date", "BOL ID", "TEU", "Carrier", "Route", "Product", "HS Code"]}
+                  rows={detail.shipmentTableRows}
+                />
               </TabsContent>
 
               <TabsContent value="pivot" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
-                  <DataTable
-                    title="Monthly pivot"
-                    columns={["Month", "Shipments", "TEU"]}
-                    rows={detail.pivotRows}
-                  />
-
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-                  />
-                </div>
+                <DataTable
+                  title="Monthly pivot"
+                  columns={["Month", "Shipments", "TEU"]}
+                  rows={detail.pivotRows}
+                />
               </TabsContent>
 
               <TabsContent value="contacts" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px]">
-                  <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                          Contact intelligence
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Contact enrichment block ready for AI and third-party enrichment.
-                        </p>
+                <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                        Contact intelligence
                       </div>
-                      <button className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700">
-                        Sync to CRM
-                      </button>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Contact enrichment block ready for AI and third-party enrichment.
+                      </p>
                     </div>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {(
-                        (rawProfile?.notifyParties ||
-                          rawProfile?.notify_parties ||
-                          rawProfile?.topSuppliers ||
-                          rawProfile?.top_suppliers ||
-                          []) as any[]
-                      )
-                        .slice(0, 6)
-                        .map((contact: any, index: number) => {
-                          const name = normalizeText(
-                            contact.name || contact.notify_party || contact.company || contact,
-                          );
-                          const email = normalizeText(contact.email || contact.email_address);
-                          const phone = normalizeText(contact.phone || contact.phone_number);
-                          const role = normalizeText(contact.role || "Decision maker");
-                          return (
-                            <div
-                              key={`${name}-${index}`}
-                              className="rounded-3xl border border-slate-200 bg-slate-50 p-4"
-                            >
-                              <div className="mb-3 flex items-start justify-between gap-3">
-                                <div className="rounded-2xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
-                                  {name
-                                    .split(" ")
-                                    .slice(0, 2)
-                                    .map((part: string) => part[0])
-                                    .join("")
-                                    .toUpperCase() || "CT"}
-                                </div>
-                                <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                                  Verified
-                                </span>
-                              </div>
-                              <div className="text-lg font-semibold text-slate-950">{name || "Unknown contact"}</div>
-                              <div className="mt-1 text-sm font-medium text-indigo-600">{role}</div>
-                              <div className="mt-4 space-y-2 text-sm text-slate-600">
-                                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                  {email || "Email unavailable"}
-                                </div>
-                                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                  {phone || "Phone unavailable"}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                      {!(
-                        (rawProfile?.notifyParties ||
-                          rawProfile?.notify_parties ||
-                          rawProfile?.topSuppliers ||
-                          rawProfile?.top_suppliers ||
-                          []) as any[]
-                      ).length ? (
-                        <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500 md:col-span-2">
-                          AI enrichment can populate verified logistics contacts here later.
-                        </div>
-                      ) : null}
-                    </div>
+                    <button className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700">
+                      Sync to CRM
+                    </button>
                   </div>
 
-                  <AiRail
-                    insights={strategicInsights}
-                    shipments={detail.shipments}
-                    teu={detail.teu}
-                    topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-                  />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {(
+                      (rawProfile?.notifyParties ||
+                        rawProfile?.notify_parties ||
+                        rawProfile?.topSuppliers ||
+                        rawProfile?.top_suppliers ||
+                        []) as any[]
+                    )
+                      .slice(0, 6)
+                      .map((contact: any, index: number) => {
+                        const name = normalizeText(
+                          contact.name || contact.notify_party || contact.company || contact,
+                        );
+                        const email = normalizeText(contact.email || contact.email_address);
+                        const phone = normalizeText(contact.phone || contact.phone_number);
+                        const role = normalizeText(contact.role || "Decision maker");
+                        return (
+                          <div
+                            key={`${name}-${index}`}
+                            className="rounded-3xl border border-slate-200 bg-slate-50 p-4"
+                          >
+                            <div className="mb-3 flex items-start justify-between gap-3">
+                              <div className="rounded-2xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
+                                {name
+                                  .split(" ")
+                                  .slice(0, 2)
+                                  .map((part: string) => part[0])
+                                  .join("")
+                                  .toUpperCase() || "CT"}
+                              </div>
+                              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                Verified
+                              </span>
+                            </div>
+                            <div className="text-lg font-semibold text-slate-950">{name || "Unknown contact"}</div>
+                            <div className="mt-1 text-sm font-medium text-indigo-600">{role}</div>
+                            <div className="mt-4 space-y-2 text-sm text-slate-600">
+                              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                {email || "Email unavailable"}
+                              </div>
+                              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                {phone || "Phone unavailable"}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {!(
+                      (rawProfile?.notifyParties ||
+                        rawProfile?.notify_parties ||
+                        rawProfile?.topSuppliers ||
+                        rawProfile?.top_suppliers ||
+                        []) as any[]
+                    ).length ? (
+                      <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500 md:col-span-2">
+                        AI enrichment can populate verified logistics contacts here later.
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </TabsContent>
             </Tabs>
           </div>
 
-          <div className="space-y-4 xl:hidden">
+          <div className="hidden xl:block">
             <AiRail
               insights={strategicInsights}
               shipments={detail.shipments}
