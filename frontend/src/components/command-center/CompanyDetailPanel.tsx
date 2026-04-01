@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Boxes,
   CalendarClock,
@@ -24,6 +24,7 @@ import { getCompanyLogoUrl } from "@/lib/logo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
 import CommandCenterInsights from "./CommandCenterInsights";
+import { searchCompanyContacts, getCompanyLookalikes } from "@/lib/lushaApi";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 
 type CompanyDetailPanelProps = {
@@ -1169,6 +1170,47 @@ export default function CompanyDetailPanel({
         : fallbackModel.destinations,
     };
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
+
+  // Lusha integration: fetch contacts and similar companies when the record changes
+  const [lushaContacts, setLushaContacts] = useState<any[]>([]);
+  const [lushaSimilarCompanies, setLushaSimilarCompanies] = useState<any[]>([]);
+  const [selectedContact, setSelectedContact] = useState<any | null>(null);
+
+  useEffect(() => {
+    // Determine a company name to query Lusha. Fallbacks: record.company.name or profile companyName
+    const companyName = (record as any)?.company?.name || (record as any)?.company?.company_name || (rawProfile as any)?.companyName || (rawProfile as any)?.company_name;
+    if (!companyName) return;
+    // Fetch contacts
+    searchCompanyContacts(String(companyName))
+      .then((data: any) => {
+        if (Array.isArray(data)) {
+          setLushaContacts(data);
+        } else if (data?.contacts) {
+          setLushaContacts(data.contacts);
+        } else {
+          setLushaContacts([]);
+        }
+      })
+      .catch(() => {
+        setLushaContacts([]);
+      });
+    // Fetch similar companies
+    getCompanyLookalikes(String(companyName))
+      .then((data: any) => {
+        if (Array.isArray(data)) {
+          setLushaSimilarCompanies(data);
+        } else if (data?.companies) {
+          setLushaSimilarCompanies(data.companies);
+        } else if (data?.lookalikes) {
+          setLushaSimilarCompanies(data.lookalikes);
+        } else {
+          setLushaSimilarCompanies([]);
+        }
+      })
+      .catch(() => {
+        setLushaSimilarCompanies([]);
+      });
+  }, [record, rawProfile]);
   const statusLabel = getStatusLabel(detail.shipments, detail.teu);
   const strategicInsights = [
     detail.topRouteLabel && detail.topRouteLabel !== '—'
@@ -1370,6 +1412,12 @@ export default function CompanyDetailPanel({
                   Credit Rating
                 </TabsTrigger>
                 <TabsTrigger
+                  value="similar"
+                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                >
+                  Similar Companies
+                </TabsTrigger>
+                <TabsTrigger
                   value="contacts"
                   className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
@@ -1392,6 +1440,42 @@ export default function CompanyDetailPanel({
                     </div>
                   </div>
                   <CommandCenterInsights insights={strategicInsights} />
+                </div>
+              </TabsContent>
+              <TabsContent value="similar" className="space-y-4">
+                <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4">
+                    <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Similar Companies</div>
+                    <p className="mt-1 text-xs text-slate-500">Companies that operate in comparable industries or routes.</p>
+                  </div>
+                  {lushaSimilarCompanies.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                      No similar companies found. Integration results will appear here once available.
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-slate-200">
+                      {lushaSimilarCompanies.map((comp: any, index: number) => (
+                        <li key={index} className="py-3 flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-950">{String(comp.name || comp.companyName || comp.company_name || 'Unknown Company')}</div>
+                            {comp.industry && (
+                              <div className="text-xs text-slate-500 mt-0.5">{String(comp.industry)}</div>
+                            )}
+                          </div>
+                          {comp.website && (
+                            <a
+                              href={String(comp.website).startsWith('http') ? String(comp.website) : `https://${String(comp.website)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-semibold text-indigo-600 hover:underline"
+                            >
+                              Visit
+                            </a>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </TabsContent>
               <TabsContent value="lanes" className="space-y-4">
@@ -1491,64 +1575,101 @@ export default function CompanyDetailPanel({
                 </div>
               </TabsContent>
               <TabsContent value="contacts" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Contact intelligence</div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Contact enrichment block ready for AI and third-party enrichment.
-                        </p>
-                      </div>
-                      <button className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700">
-                        Sync to CRM
-                      </button>
+                <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Contact intelligence</div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Enriched contacts sourced from Lusha. Select a contact to view details.
+                      </p>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {(
-                        (rawProfile?.notifyParties || rawProfile?.notify_parties || rawProfile?.topSuppliers || rawProfile?.top_suppliers || []) as any[]
-                      )
-                        .slice(0, 6)
-                        .map((contact: any, index: number) => {
-                          const name = normalizeText(contact.name || contact.notify_party || contact.company || contact);
-                          const email = normalizeText(contact.email || contact.email_address);
-                          const phone = normalizeText(contact.phone || contact.phone_number);
-                          const role = normalizeText(contact.role || 'Decision maker');
+                    <button className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700">
+                      Sync to CRM
+                    </button>
+                  </div>
+                  {/* Contacts list and detail view */}
+                  {lushaContacts.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                      No contacts found. Contact enrichment results will appear here once available.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
+                      {/* Contact list */}
+                      <div className="space-y-2">
+                        {lushaContacts.map((contact: any, index: number) => {
+                          const firstName = contact.firstName || contact.first_name || contact.given_name || '';
+                          const lastName = contact.lastName || contact.last_name || contact.family_name || '';
+                          const fullName = `${firstName} ${lastName}`.trim() || contact.name || contact.fullName || 'Unknown';
+                          const title = contact.title || contact.role || contact.position || '';
+                          const initials = (fullName
+                            .split(' ')
+                            .slice(0, 2)
+                            .map((part: string) => part[0])
+                            .join('')
+                            .toUpperCase()) || 'CT';
+                          const isActive = selectedContact === contact;
                           return (
-                            <div key={`${name}-${index}`} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                              <div className="mb-3 flex items-start justify-between gap-3">
-                                <div className="rounded-2xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
-                                  {name
-                                    .split(' ')
-                                    .slice(0, 2)
-                                    .map((part: string) => part[0])
-                                    .join('')
-                                    .toUpperCase() || 'CT'}
-                                </div>
-                                <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                                  Verified
-                                </span>
+                            <button
+                              key={`${fullName}-${index}`}
+                              onClick={() => setSelectedContact(contact)}
+                              className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2 text-left ${isActive ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                            >
+                              <div className="rounded-2xl bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                                {initials || 'CT'}
                               </div>
-                              <div className="text-lg font-semibold text-slate-950">{name || 'Unknown contact'}</div>
-                              <div className="mt-1 text-sm font-medium text-indigo-600">{role}</div>
-                              <div className="mt-4 space-y-2 text-sm text-slate-600">
-                                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                  {email || 'Email unavailable'}
-                                </div>
-                                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                                  {phone || 'Phone unavailable'}
-                                </div>
+                              <div className="flex-1">
+                                <div className="text-sm font-semibold text-slate-950 truncate">{fullName}</div>
+                                {title && <div className="text-xs text-slate-500 truncate">{title}</div>}
                               </div>
-                            </div>
+                            </button>
                           );
                         })}
-                      {!((rawProfile?.notifyParties || rawProfile?.notify_parties || rawProfile?.topSuppliers || rawProfile?.top_suppliers || []) as any[]).length ? (
-                        <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500 md:col-span-2">
-                          AI enrichment can populate verified logistics contacts here later.
-                        </div>
-                      ) : null}
+                      </div>
+                      {/* Contact detail */}
+                      <div>
+                        {selectedContact ? (
+                          (() => {
+                            const firstName = selectedContact.firstName || selectedContact.first_name || selectedContact.given_name || '';
+                            const lastName = selectedContact.lastName || selectedContact.last_name || selectedContact.family_name || '';
+                            const fullName = `${firstName} ${lastName}`.trim() || selectedContact.name || selectedContact.fullName || 'Unknown';
+                            const title = selectedContact.title || selectedContact.role || selectedContact.position || '';
+                            const email = selectedContact.email || selectedContact.email_address || '';
+                            const phone = selectedContact.phone || selectedContact.phone_number || '';
+                            const initials = (fullName
+                              .split(' ')
+                              .slice(0, 2)
+                              .map((part: string) => part[0])
+                              .join('')
+                              .toUpperCase()) || 'CT';
+                            return (
+                              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                                <div className="mb-3 flex items-start justify-between gap-3">
+                                  <div className="rounded-2xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">{initials}</div>
+                                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                    Verified
+                                  </span>
+                                </div>
+                                <div className="text-lg font-semibold text-slate-950">{fullName}</div>
+                                {title && <div className="mt-1 text-sm font-medium text-indigo-600">{title}</div>}
+                                <div className="mt-4 space-y-2 text-sm text-slate-600">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                    {email || 'Email unavailable'}
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                                    {phone || 'Phone unavailable'}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                            Select a contact to view details.
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
