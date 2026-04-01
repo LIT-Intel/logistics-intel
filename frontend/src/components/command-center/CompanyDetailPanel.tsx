@@ -24,7 +24,8 @@ import { getCompanyLogoUrl } from "@/lib/logo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
 import CommandCenterInsights from "./CommandCenterInsights";
-import { searchCompanyContacts, getCompanyLookalikes } from "@/lib/lushaApi";
+// Supabase client to invoke edge functions for contact enrichment and lookalikes
+import { supabase } from "@/lib/supabase";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 
 type CompanyDetailPanelProps = {
@@ -1175,42 +1176,72 @@ export default function CompanyDetailPanel({
   const [lushaContacts, setLushaContacts] = useState<any[]>([]);
   const [lushaSimilarCompanies, setLushaSimilarCompanies] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
+  // Filters for contact search (department, city, state, country, seniority)
+  const [contactFilters, setContactFilters] = useState({
+    department: "",
+    city: "",
+    state: "",
+    country: "",
+    seniority: "",
+  });
+  const [contactsLoading, setContactsLoading] = useState(false);
 
   useEffect(() => {
-    // Determine a company name to query Lusha. Fallbacks: record.company.name or profile companyName
-    const companyName = (record as any)?.company?.name || (record as any)?.company?.company_name || (rawProfile as any)?.companyName || (rawProfile as any)?.company_name;
-    if (!companyName) return;
-    // Fetch contacts
-    searchCompanyContacts(String(companyName))
-      .then((data: any) => {
-        if (Array.isArray(data)) {
-          setLushaContacts(data);
-        } else if (data?.contacts) {
-          setLushaContacts(data.contacts);
-        } else {
+    // Determine a company name and domain for enrichment
+    const companyName =
+      (record as any)?.company?.name ||
+      (record as any)?.company?.company_name ||
+      (rawProfile as any)?.companyName ||
+      (rawProfile as any)?.company_name;
+    const companyDomain =
+      (record as any)?.company?.domain ||
+      (rawProfile as any)?.domain ||
+      (rawProfile as any)?.companyDomain;
+    if (!companyName && !companyDomain) {
+      setLushaContacts([]);
+      setLushaSimilarCompanies([]);
+      return;
+    }
+    setContactsLoading(true);
+    supabase.functions
+      .invoke("enrich-contacts", {
+        body: {
+          companyName: companyName || null,
+          companyDomain: companyDomain || null,
+          filters: {
+            department: contactFilters.department || undefined,
+            city: contactFilters.city || undefined,
+            state: contactFilters.state || undefined,
+            country: contactFilters.country || undefined,
+            seniority: contactFilters.seniority || undefined,
+          },
+        },
+      })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Lusha enrichment error", error);
           setLushaContacts([]);
-        }
-      })
-      .catch(() => {
-        setLushaContacts([]);
-      });
-    // Fetch similar companies
-    getCompanyLookalikes(String(companyName))
-      .then((data: any) => {
-        if (Array.isArray(data)) {
-          setLushaSimilarCompanies(data);
-        } else if (data?.companies) {
-          setLushaSimilarCompanies(data.companies);
-        } else if (data?.lookalikes) {
-          setLushaSimilarCompanies(data.lookalikes);
-        } else {
           setLushaSimilarCompanies([]);
+        } else {
+          setLushaContacts(
+            Array.isArray((data as any)?.contacts) ? (data as any).contacts : [],
+          );
+          setLushaSimilarCompanies(
+            Array.isArray((data as any)?.similarCompanies)
+              ? (data as any).similarCompanies
+              : [],
+          );
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("Lusha enrichment fetch error", err);
+        setLushaContacts([]);
         setLushaSimilarCompanies([]);
+      })
+      .finally(() => {
+        setContactsLoading(false);
       });
-  }, [record, rawProfile]);
+  }, [record, rawProfile, contactFilters]);
   const statusLabel = getStatusLabel(detail.shipments, detail.teu);
   const strategicInsights = [
     detail.topRouteLabel && detail.topRouteLabel !== '—'
@@ -1367,59 +1398,60 @@ export default function CompanyDetailPanel({
               />
             </div>
             <Tabs defaultValue="overview" className="space-y-5">
-              <TabsList className="flex h-auto w-full gap-2 overflow-x-auto rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm whitespace-nowrap">
+            {/* Tab bar: allow wrapping instead of overflowing horizontally */}
+            <TabsList className="flex flex-wrap w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm">
                 {/* Each tab trigger highlights with the same gradient as the logo when active */}
                 <TabsTrigger
                   value="overview"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Overview
                 </TabsTrigger>
                 <TabsTrigger
                   value="lanes"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Trade Lanes
                 </TabsTrigger>
                 <TabsTrigger
                   value="carriers"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Carriers
                 </TabsTrigger>
                 <TabsTrigger
                   value="locations"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Locations
                 </TabsTrigger>
                 <TabsTrigger
                   value="products"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Products
                 </TabsTrigger>
                 <TabsTrigger
                   value="history"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Shipment History
                 </TabsTrigger>
                 <TabsTrigger
                   value="credit"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Credit Rating
                 </TabsTrigger>
                 <TabsTrigger
                   value="similar"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Similar Companies
                 </TabsTrigger>
                 <TabsTrigger
                   value="contacts"
-                  className="shrink-0 rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+                  className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
                 >
                   Contact Intel
                 </TabsTrigger>
@@ -1583,14 +1615,63 @@ export default function CompanyDetailPanel({
                         Enriched contacts sourced from Lusha. Select a contact to view details.
                       </p>
                     </div>
-                    <button className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700">
-                      Sync to CRM
-                    </button>
+                    {/* Contact filters: allow users to refine search by department, city, state, country, and seniority */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Department"
+                        value={contactFilters.department}
+                        onChange={(e) =>
+                          setContactFilters((prev) => ({ ...prev, department: e.target.value }))
+                        }
+                        className="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm focus:border-indigo-300 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        placeholder="City"
+                        value={contactFilters.city}
+                        onChange={(e) =>
+                          setContactFilters((prev) => ({ ...prev, city: e.target.value }))
+                        }
+                        className="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm focus:border-indigo-300 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        placeholder="State"
+                        value={contactFilters.state}
+                        onChange={(e) =>
+                          setContactFilters((prev) => ({ ...prev, state: e.target.value }))
+                        }
+                        className="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm focus:border-indigo-300 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Country"
+                        value={contactFilters.country}
+                        onChange={(e) =>
+                          setContactFilters((prev) => ({ ...prev, country: e.target.value }))
+                        }
+                        className="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm focus:border-indigo-300 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Seniority"
+                        value={contactFilters.seniority}
+                        onChange={(e) =>
+                          setContactFilters((prev) => ({ ...prev, seniority: e.target.value }))
+                        }
+                        className="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs shadow-sm focus:border-indigo-300 focus:outline-none"
+                      />
+                    </div>
                   </div>
                   {/* Contacts list and detail view */}
-                  {lushaContacts.length === 0 ? (
+                  {contactsLoading ? (
                     <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                      No contacts found. Contact enrichment results will appear here once available.
+                      Loading contacts…
+                    </div>
+                  ) : lushaContacts.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                      No contacts found. Adjust your filters or try another company.
                     </div>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
