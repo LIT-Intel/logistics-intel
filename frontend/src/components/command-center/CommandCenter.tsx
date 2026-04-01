@@ -49,29 +49,29 @@ export default function CommandCenter() {
   const [searchTerm, setSearchTerm] = useState<string>("");
 
   useEffect(() => {
-  const controller = new AbortController();
-  setSavedLoading(true);
-  setSavedError(null);
-  Promise.resolve()
-    .then(() => listSavedCompanies("prospect"))
-    .then((rows) => ({ rows }))
-    .then((response) => {
-      const rows = Array.isArray(response?.rows) ? response.rows : [];
-      setSavedCompanies(rows as CommandCenterRecord[]);
-      setSelectedKey((prev) => {
-        if (prev && rows.some((row: CommandCenterRecord) => recordKey(row) === prev)) {
-          return prev;
-        }
-        return rows.length ? recordKey(rows[0] as CommandCenterRecord) : null;
-      });
-    })
-    .catch((error: any) => {
-      setSavedError(error?.message ?? "Failed to load saved companies");
-      setSavedCompanies([]);
-      setSelectedKey(null);
-    })
-    .finally(() => setSavedLoading(false));
-  return () => controller.abort();
+    const controller = new AbortController();
+    setSavedLoading(true);
+    setSavedError(null);
+    Promise.resolve()
+      .then(() => listSavedCompanies("prospect"))
+      .then((rows) => ({ rows }))
+      .then((response) => {
+        const rows = Array.isArray(response?.rows) ? response.rows : [];
+        setSavedCompanies(rows as CommandCenterRecord[]);
+        setSelectedKey((prev) => {
+          if (prev && rows.some((row: CommandCenterRecord) => recordKey(row) === prev)) {
+            return prev;
+          }
+          return rows.length ? recordKey(rows[0] as CommandCenterRecord) : null;
+        });
+      })
+      .catch((error: any) => {
+        setSavedError(error?.message ?? "Failed to load saved companies");
+        setSavedCompanies([]);
+        setSelectedKey(null);
+      })
+      .finally(() => setSavedLoading(false));
+    return () => controller.abort();
   }, []);
 
   const filteredCompanies = useMemo(() => {
@@ -221,7 +221,7 @@ export default function CommandCenter() {
             company_id: yearHydratedSelectedRecord.company?.company_id,
             company_name: yearHydratedSelectedRecord.company?.name,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -258,18 +258,19 @@ export default function CommandCenter() {
       return;
     }
 
-    toast({
-      title: "Export coming soon",
-      description: "PDF export functionality will be available in the next update",
-    });
+    // Trigger browser print dialog to allow PDF export
+    try {
+      window.print();
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: "PDF export encountered an error",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleAddCompany = () => {
-    toast({
-      title: "Feature coming soon",
-      description: "Manual company addition will be available in the next update. For now, save companies from the Search page.",
-    });
-  };
+  // The Add Company feature has been removed since companies are saved from the search page
 
   return (
     <>
@@ -279,7 +280,6 @@ export default function CommandCenter() {
           companiesCount={savedCompanies.length}
           onGenerateBrief={handleGenerateBrief}
           onExportPDF={handleExportPDF}
-          onAddCompany={handleAddCompany}
         />
 
         {/* Layout grid with dynamic columns based on saved panel visibility */}
@@ -318,7 +318,7 @@ export default function CommandCenter() {
                         company_id: record.company?.company_id,
                         source_company_key: record.company?.company_id,
                         name: record.company?.name,
-                      })
+                      }),
                     );
                   }
                 }}
@@ -352,8 +352,8 @@ export default function CommandCenter() {
                   new Set(
                     (profile?.timeSeries ?? [])
                       .map((point) => Number(point?.year))
-                      .filter((year) => Number.isFinite(year) && year > 2000)
-                  )
+                      .filter((year) => Number.isFinite(year) && year > 2000),
+                  ),
                 )
                   .sort((a, b) => b - a)
                   .map((year) => (
@@ -369,6 +369,8 @@ export default function CommandCenter() {
               routeKpis={(yearScopedProfile?.routeKpis ?? routeKpis) as IyRouteKpis | null}
               loading={detailLoading}
               error={detailError}
+              onGenerateBrief={handleGenerateBrief}
+              onExportPDF={handleExportPDF}
             />
           </div>
         </div>
