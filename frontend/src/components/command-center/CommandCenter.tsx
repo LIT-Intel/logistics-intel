@@ -17,8 +17,7 @@ import { useToast } from "@/components/ui/use-toast";
 import CommandCenterHeader from "@/components/command-center/CommandCenterHeader";
 import SavedCompaniesPanel from "@/components/command-center/SavedCompaniesPanel";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
-import QuickActionsButton from "@/components/dashboard/QuickActionsButton";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 function recordKey(record: CommandCenterRecord) {
   return (
@@ -32,6 +31,7 @@ function recordKey(record: CommandCenterRecord) {
 export default function CommandCenter() {
   const { user } = useAuth();
   const { toast } = useToast();
+
   const [savedCompanies, setSavedCompanies] = useState<CommandCenterRecord[]>([]);
   const [savedLoading, setSavedLoading] = useState(true);
   const [savedError, setSavedError] = useState<string | null>(null);
@@ -44,35 +44,50 @@ export default function CommandCenter() {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
+  // state for collapsible saved panel and search
+  const [showSavedPanel, setShowSavedPanel] = useState<boolean>(true);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
   useEffect(() => {
-    const controller = new AbortController();
-    setSavedLoading(true);
-    setSavedError(null);
-    Promise.resolve().then(() => listSavedCompanies("prospect")).then((rows) => ({ rows }))
-      .then((response) => {
-        const rows = Array.isArray(response?.rows) ? response.rows : [];
-        setSavedCompanies(rows as CommandCenterRecord[]);
-        setSelectedKey((prev) => {
-          if (prev && rows.some((row: CommandCenterRecord) => recordKey(row) === prev)) {
-            return prev;
-          }
-          return rows.length ? recordKey(rows[0] as CommandCenterRecord) : null;
-        });
-      })
-      .catch((error: any) => {
-        setSavedError(error?.message ?? "Failed to load saved companies");
-        setSavedCompanies([]);
-        setSelectedKey(null);
-      })
-      .finally(() => setSavedLoading(false));
-    return () => controller.abort();
+  const controller = new AbortController();
+  setSavedLoading(true);
+  setSavedError(null);
+  Promise.resolve()
+    .then(() => listSavedCompanies("prospect"))
+    .then((rows) => ({ rows }))
+    .then((response) => {
+      const rows = Array.isArray(response?.rows) ? response.rows : [];
+      setSavedCompanies(rows as CommandCenterRecord[]);
+      setSelectedKey((prev) => {
+        if (prev && rows.some((row: CommandCenterRecord) => recordKey(row) === prev)) {
+          return prev;
+        }
+        return rows.length ? recordKey(rows[0] as CommandCenterRecord) : null;
+      });
+    })
+    .catch((error: any) => {
+      setSavedError(error?.message ?? "Failed to load saved companies");
+      setSavedCompanies([]);
+      setSelectedKey(null);
+    })
+    .finally(() => setSavedLoading(false));
+  return () => controller.abort();
   }, []);
+
+  const filteredCompanies = useMemo(() => {
+    if (!searchTerm.trim()) return savedCompanies;
+    const lower = searchTerm.trim().toLowerCase();
+    return savedCompanies.filter((record) => {
+      const name = record.company?.name || "";
+      const domain = (record.company as any)?.domain || "";
+      const combined = `${name} ${domain}`.toLowerCase();
+      return combined.includes(lower);
+    });
+  }, [savedCompanies, searchTerm]);
 
   const selectedRecord = useMemo(() => {
     if (!selectedKey) return null;
-    return (
-      savedCompanies.find((record) => recordKey(record) === selectedKey) ?? null
-    );
+    return savedCompanies.find((record) => recordKey(record) === selectedKey) ?? null;
   }, [savedCompanies, selectedKey]);
 
   useEffect(() => {
@@ -123,38 +138,21 @@ export default function CommandCenter() {
       kpis: {
         ...fallbackKpis,
         shipments_12m:
-          profile.routeKpis?.shipmentsLast12m ??
-          fallbackKpis?.shipments_12m ??
-          0,
+          profile.routeKpis?.shipmentsLast12m ?? fallbackKpis?.shipments_12m ?? 0,
         teu_12m:
-          profile.routeKpis?.teuLast12m ??
-          fallbackKpis?.teu_12m ??
-          null,
+          profile.routeKpis?.teuLast12m ?? fallbackKpis?.teu_12m ?? null,
         est_spend_12m:
-          profile.routeKpis?.estSpendUsd12m ??
-          profile.estSpendUsd12m ??
-          fallbackKpis?.est_spend_12m ??
-          null,
+          profile.routeKpis?.estSpendUsd12m ?? profile.estSpendUsd12m ?? fallbackKpis?.est_spend_12m ?? null,
         fcl_shipments_12m:
-          getFclShipments12m(profile) ??
-          fallbackKpis?.fcl_shipments_12m ??
-          null,
+          getFclShipments12m(profile) ?? fallbackKpis?.fcl_shipments_12m ?? null,
         lcl_shipments_12m:
-          getLclShipments12m(profile) ??
-          fallbackKpis?.lcl_shipments_12m ??
-          null,
+          getLclShipments12m(profile) ?? fallbackKpis?.lcl_shipments_12m ?? null,
         last_activity:
-          profile.lastShipmentDate ??
-          fallbackKpis?.last_activity ??
-          null,
+          profile.lastShipmentDate ?? fallbackKpis?.last_activity ?? null,
         top_route_12m:
-          profile.routeKpis?.topRouteLast12m ??
-          fallbackKpis?.top_route_12m ??
-          null,
+          profile.routeKpis?.topRouteLast12m ?? fallbackKpis?.top_route_12m ?? null,
         recent_route:
-          profile.routeKpis?.mostRecentRoute ??
-          fallbackKpis?.recent_route ??
-          null,
+          profile.routeKpis?.mostRecentRoute ?? fallbackKpis?.recent_route ?? null,
       },
     };
 
@@ -178,29 +176,17 @@ export default function CommandCenter() {
         kpis: {
           ...fallbackKpis,
           shipments_12m:
-            yearScopedProfile.routeKpis?.shipmentsLast12m ??
-            fallbackKpis?.shipments_12m ??
-            0,
+            yearScopedProfile.routeKpis?.shipmentsLast12m ?? fallbackKpis?.shipments_12m ?? 0,
           teu_12m:
-            yearScopedProfile.routeKpis?.teuLast12m ??
-            fallbackKpis?.teu_12m ??
-            null,
+            yearScopedProfile.routeKpis?.teuLast12m ?? fallbackKpis?.teu_12m ?? null,
           est_spend_12m:
-            yearScopedProfile.routeKpis?.estSpendUsd12m ??
-            fallbackKpis?.est_spend_12m ??
-            null,
+            yearScopedProfile.routeKpis?.estSpendUsd12m ?? fallbackKpis?.est_spend_12m ?? null,
           fcl_shipments_12m:
-            getFclShipments12m(yearScopedProfile) ??
-            fallbackKpis?.fcl_shipments_12m ??
-            null,
+            getFclShipments12m(yearScopedProfile) ?? fallbackKpis?.fcl_shipments_12m ?? null,
           lcl_shipments_12m:
-            getLclShipments12m(yearScopedProfile) ??
-            fallbackKpis?.lcl_shipments_12m ??
-            null,
+            getLclShipments12m(yearScopedProfile) ?? fallbackKpis?.lcl_shipments_12m ?? null,
           last_activity:
-            yearScopedProfile.lastShipmentDate ??
-            fallbackKpis?.last_activity ??
-            null,
+            yearScopedProfile.lastShipmentDate ?? fallbackKpis?.last_activity ?? null,
         },
       },
     } as CommandCenterRecord;
@@ -289,32 +275,72 @@ export default function CommandCenter() {
     <>
       <div className="space-y-6">
         <CommandCenterHeader
-          userName={user?.email || user?.displayName || 'User'}
+          userName={user?.email || user?.displayName || "User"}
           companiesCount={savedCompanies.length}
           onGenerateBrief={handleGenerateBrief}
           onExportPDF={handleExportPDF}
           onAddCompany={handleAddCompany}
         />
 
-        <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <SavedCompaniesPanel
-            companies={savedCompanies}
-            selectedKey={selectedKey}
-            onSelect={(key) => {
-              setSelectedKey(key);
-              const record = savedCompanies.find((r) => recordKey(r) === key);
-              if (record) {
-                localStorage.setItem("lit:selectedCompany", JSON.stringify({
-                  company_id: record.company?.company_id,
-                  source_company_key: record.company?.company_id,
-                  name: record.company?.name,
-                }));
-              }
-            }}
-            loading={savedLoading}
-            error={savedError}
-          />
+        {/* Layout grid with dynamic columns based on saved panel visibility */}
+        <div
+          className="grid gap-6"
+          style={{ gridTemplateColumns: showSavedPanel ? "320px minmax(0, 1fr)" : "minmax(0, 1fr)" }}
+        >
+          {showSavedPanel && (
+            <div className="space-y-3">
+              {/* Collapse and search controls */}
+              <div className="flex items-center justify-between">
+                <input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search saved companies"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
+                {/* Hide button */}
+                <button
+                  onClick={() => setShowSavedPanel(false)}
+                  className="ml-2 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                >
+                  Hide
+                </button>
+              </div>
+              <SavedCompaniesPanel
+                companies={filteredCompanies}
+                selectedKey={selectedKey}
+                onSelect={(key) => {
+                  setSelectedKey(key);
+                  const record = savedCompanies.find((r) => recordKey(r) === key);
+                  if (record) {
+                    localStorage.setItem(
+                      "lit:selectedCompany",
+                      JSON.stringify({
+                        company_id: record.company?.company_id,
+                        source_company_key: record.company?.company_id,
+                        name: record.company?.name,
+                      })
+                    );
+                  }
+                }}
+                loading={savedLoading}
+                error={savedError}
+              />
+            </div>
+          )}
           <div className="space-y-3">
+            {/* Show button when panel is collapsed */}
+            {!showSavedPanel && (
+              <div className="flex items-center justify-start">
+                <button
+                  onClick={() => setShowSavedPanel(true)}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                >
+                  Show companies
+                </button>
+              </div>
+            )}
+
+            {/* Year selector and company detail */}
             <div className="flex items-center justify-end">
               <label className="mr-2 text-sm text-slate-500">Year</label>
               <select
@@ -326,8 +352,8 @@ export default function CommandCenter() {
                   new Set(
                     (profile?.timeSeries ?? [])
                       .map((point) => Number(point?.year))
-                      .filter((year) => Number.isFinite(year) && year > 2000),
-                  ),
+                      .filter((year) => Number.isFinite(year) && year > 2000)
+                  )
                 )
                   .sort((a, b) => b - a)
                   .map((year) => (
@@ -347,8 +373,6 @@ export default function CommandCenter() {
           </div>
         </div>
       </div>
-
-      <QuickActionsButton />
     </>
   );
 }
