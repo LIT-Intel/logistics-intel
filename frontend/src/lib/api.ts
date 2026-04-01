@@ -33,6 +33,46 @@ async function getAuthHeaders() {
   };
 }
 import {
+
+export function getCommandCenterAvailableYears(
+  profile: IyCompanyProfile | null | undefined,
+): number[] {
+  if (!profile) return [];
+
+  const years = new Set<number>();
+
+  if (Array.isArray(profile.timeSeries)) {
+    for (const point of profile.timeSeries) {
+      const year = Number(point?.year);
+      if (Number.isFinite(year) && year > 0) {
+        years.add(year);
+      }
+    }
+  }
+
+  if (Array.isArray(profile.recentBols)) {
+    for (const bol of profile.recentBols) {
+      const rawDate =
+        bol?.bill_of_lading_date ||
+        bol?.bill_of_lading_date_formatted ||
+        bol?.date ||
+        bol?.arrival_date ||
+        bol?.raw?.bill_of_lading_date ||
+        bol?.raw?.arrival_date ||
+        null;
+
+      if (!rawDate) continue;
+
+      const parsed = new Date(rawDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        years.add(parsed.getFullYear());
+      }
+    }
+  }
+
+  return Array.from(years).sort((a, b) => b - a);
+}
+
   isDevMode,
   devGetSavedCompanies,
   devSaveCompany,
