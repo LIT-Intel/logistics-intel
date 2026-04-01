@@ -12,6 +12,7 @@ import {
   Truck,
   Sparkles,
 } from "lucide-react";
+import { buildCommandCenterDetailModel, buildYearScopedProfile } from "@/lib/api";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -1165,10 +1166,69 @@ export default function CompanyDetailPanel({
       : availableYears[0] ?? null;
 
   const detail = useMemo(() => {
-    const model = buildDetailModel(normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis);
-    model.years = availableYears;
-    return model;
-  }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears]);
+    const scopedProfile = buildYearScopedProfile(profile, effectiveSelectedYear || new Date().getFullYear()) || profile;
+    const baseModel = buildCommandCenterDetailModel(
+      scopedProfile,
+      (scopedProfile as any)?.routeKpis ?? routeKpis,
+      effectiveSelectedYear,
+    ) as any;
+    const fallbackModel = buildDetailModel(
+      normalizedShipments,
+      effectiveSelectedYear,
+      scopedProfile as any,
+      (scopedProfile as any)?.routeKpis ?? rawRouteKpis,
+    );
+
+    return {
+      ...fallbackModel,
+      years: availableYears,
+      selectedYear: effectiveSelectedYear,
+      shipments: Number(baseModel?.shipments ?? fallbackModel.shipments ?? 0),
+      teu: Number(baseModel?.teu ?? fallbackModel.teu ?? 0),
+      spend: baseModel?.marketSpendUsd ?? fallbackModel.spend ?? null,
+      fclShipments: Number(baseModel?.fclShipments ?? fallbackModel.fclShipments ?? 0),
+      lclShipments: Number(baseModel?.lclShipments ?? fallbackModel.lclShipments ?? 0),
+      avgTeuPerShipment: baseModel?.avgTeuPerShipment ?? fallbackModel.avgTeuPerShipment ?? null,
+      avgShipmentsPerMonth: baseModel?.avgTeuPerMonth ?? fallbackModel.avgShipmentsPerMonth ?? null,
+      oldestShipmentDate: baseModel?.oldestShipmentDate ?? fallbackModel.oldestShipmentDate ?? null,
+      latestShipmentDate: baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? null,
+      monthlySeries:
+        Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
+          ? baseModel.activitySeries.map((point: any) => ({
+              period: point.month || point.period,
+              fcl: Number(point.fcl || 0),
+              lcl: Number(point.lcl || 0),
+            }))
+          : fallbackModel.monthlySeries,
+      topRoutes:
+        Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
+          ? baseModel.tradeLanes.map((lane: any) => ({
+              lane: lane.label,
+              shipments: Number(lane.count || 0),
+              teu: Number(lane.teu || 0),
+              spend: lane.spend ?? null,
+            }))
+          : fallbackModel.topRoutes,
+      carriers:
+        Array.isArray(baseModel?.carriers) && baseModel.carriers.length
+          ? baseModel.carriers
+              .map((carrier: any) => ({
+                carrier: carrier.label || carrier.carrier,
+                shipments: Number(carrier.count || carrier.shipments || 0),
+                teu: Number(carrier.teu || 0),
+              }))
+              .filter((row: any) => isMeaningfulText(row.carrier))
+          : fallbackModel.carriers,
+      origins:
+        Array.isArray(baseModel?.locations?.origins) && baseModel.locations.origins.length
+          ? baseModel.locations.origins.map((item: any) => ({ label: item.label, count: Number(item.count || 0) }))
+          : fallbackModel.origins,
+      destinations:
+        Array.isArray(baseModel?.locations?.destinations) && baseModel.locations.destinations.length
+          ? baseModel.locations.destinations.map((item: any) => ({ label: item.label, count: Number(item.count || 0) }))
+          : fallbackModel.destinations,
+    };
+  }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
 
   const statusLabel = getStatusLabel(detail.shipments, detail.teu);
 
@@ -1209,7 +1269,7 @@ export default function CompanyDetailPanel({
   }
 
   return (
-    <section className="mx-auto w-full max-w-[1380px] rounded-[32px] border border-slate-200 bg-slate-50 p-4 shadow-sm md:p-6">
+    <section className="w-full rounded-[32px] border border-slate-200 bg-slate-50 p-4 shadow-sm md:p-6">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -1265,41 +1325,19 @@ export default function CompanyDetailPanel({
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-3 self-start">
-            <div className="flex flex-wrap justify-end gap-2">
-              <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                Export PDF
-              </button>
-              <button className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-900">
-                Generate brief
-              </button>
-            </div>
-            {availableYears.length ? (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-400">Year</span>
-                <div className="flex flex-wrap justify-end gap-2">
-                  {availableYears.map((year) => {
-                    const active = year === effectiveSelectedYear;
-                    return (
-                      <button
-                        key={year}
-                        type="button"
-                        onClick={() => setSelectedYear(year)}
-                        className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${active ? 'bg-slate-950 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
-                      >
-                        {year}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
+          <div className="flex flex-wrap justify-end gap-2 self-start">
+            <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+              Export PDF
+            </button>
+            <button className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-900">
+              Generate brief
+            </button>
           </div>
         </div>
 
-        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
           <div className="space-y-4 min-w-0">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <KpiCard
                 label="Market spend"
                 value={formatCurrency(detail.spend)}
@@ -1362,6 +1400,25 @@ export default function CompanyDetailPanel({
               />
             </div>
 
+            {availableYears.length ? (
+              <div className="flex flex-wrap items-center justify-end gap-2 rounded-[22px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <span className="mr-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-400">Year</span>
+                {availableYears.map((year) => {
+                  const active = year === effectiveSelectedYear;
+                  return (
+                    <button
+                      key={year}
+                      type="button"
+                      onClick={() => setSelectedYear(year)}
+                      className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${active ? 'bg-slate-950 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      {year}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
             <Tabs defaultValue="overview" className="space-y-5">
               <TabsList className="grid h-auto w-full grid-cols-2 gap-2 rounded-[26px] border border-slate-200 bg-white p-2 shadow-sm md:grid-cols-4 xl:grid-cols-8">
                 <TabsTrigger value="overview" className="rounded-2xl px-3 py-3 text-xs font-semibold md:text-sm">
@@ -1391,7 +1448,7 @@ export default function CompanyDetailPanel({
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <div className="space-y-4 min-w-0">
                     <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -1420,7 +1477,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="lanes" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <MetricList
                     title="Trade lanes"
                     items={detail.topRoutes.map((route) => ({
@@ -1440,7 +1497,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="carriers" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <MetricList
                     title="Carriers"
                     items={detail.carriers.map((carrier) => ({
@@ -1460,7 +1517,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="locations" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <div className="grid gap-4 md:grid-cols-2">
                     <MetricList
                       title="Origins"
@@ -1490,7 +1547,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="products" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <div className="grid gap-4 lg:grid-cols-2">
                     <MetricList
                       title="Product mix (HS codes)"
@@ -1520,7 +1577,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="history" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <DataTable
                     title="Verified shipment ledger"
                     columns={["Date", "BOL ID", "TEU", "Carrier", "Route", "Product", "HS Code"]}
@@ -1537,7 +1594,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="pivot" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <DataTable
                     title="Monthly pivot"
                     columns={["Month", "Shipments", "TEU"]}
@@ -1554,7 +1611,7 @@ export default function CompanyDetailPanel({
               </TabsContent>
 
               <TabsContent value="contacts" className="space-y-4">
-                <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                   <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <div>
