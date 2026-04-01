@@ -1,111 +1,240 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { supabase } from '@/lib/supabase';
+import {
+  getAccessState,
+  normalizePlan,
+  normalizeRole,
+} from '@/lib/accessControl';
 
-const AuthContext = createContext(null);
+const AuthContext = createContext(undefined);
+
+async function fetchProfile(userId) {
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select(
+      `
+        id,
+        email,
+        role,
+        plan,
+        search_limit,
+        saved_limit,
+        enrichment_limit
+      `
+    )
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+function buildUsageFromProfile(profile) {
+  if (!profile) return {};
+
+  return {
+    searchesUsedThisMonth: 0,
+    savedCompaniesUsed: 0,
+    enrichmentUsedThisMonth: 0,
+    teamUsersUsed: 0,
+    profileLimits: {
+      search_limit: profile.search_limit ?? null,
+      saved_limit: profile.saved_limit ?? null,
+      enrichment_limit: profile.enrichment_limit ?? null,
+    },
+  };
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [access, setAccess] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [role, setRole] = useState('user');
+  const [plan, setPlan] = useState('free_trial');
+  const [authReady, setAuthReady] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [authError, setAuthError] = useState(null);
 
-  // 🔹 Fetch access control data from DB
-  const loadAccess = async (authUser) => {
-    if (!authUser) {
-      setAccess(null);
-      return;
+  const refreshProfile = useCallback(async (explicitUserId) => {
+    const targetUserId = explicitUserId ?? user?.id;
+
+    if (!targetUserId) {
+      setProfile(null);
+      setRole('user');
+      setPlan('free_trial');
+      return null;
     }
+
+    setLoadingProfile(true);
+    setAuthError(null);
 
     try {
-      // 1. Profile (global role)
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", authUser.id)
-        .single();
+      const profileData = await fetchProfile(targetUserId);
 
-      // 2. Org membership
-      const { data: membership } = await supabase
-        .from("organization_memberships")
-        .select("*")
-        .eq("user_id", authUser.id)
-        .eq("is_active", true)
-        .maybeSingle();
+      setProfile(profileData);
+      setRole(normalizeRole(profileData?.role));
+      setPlan(normalizePlan(profileData?.plan));
 
-      let planCode = "free_trial";
-      let organizationId = null;
-      let orgRole = null;
-
-      if (membership) {
-        organizationId = membership.organization_id;
-        orgRole = membership.org_role;
-
-        // 3. Subscription
-        const { data: subscription } = await supabase
-          .from("subscriptions")
-          .select("*, plans(code)")
-          .eq("organization_id", organizationId)
-          .in("status", ["active", "trial"])
-          .maybeSingle();
-
-        if (subscription?.plans?.code) {
-          planCode = subscription.plans.code;
-        }
-      }
-
-      setAccess({
-        userId: authUser.id,
-        email: authUser.email,
-        globalRole: profile?.global_role || "customer_user",
-        orgRole,
-        plan: planCode,
-        organizationId,
-      });
-    } catch (err) {
-      console.error("Access load error:", err);
+      return profileData;
+    } catch (error) {
+      console.error('[AuthProvider] Failed to load profile:', error);
+      setAuthError(error);
+      setProfile(null);
+      setRole('user');
+      setPlan('free_trial');
+      return null;
+    } finally {
+      setLoadingProfile(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
-    // Initial session
-    supabase.auth.getSession().then(({ data }) => {
-      const sessionUser = data?.session?.user || null;
-      setUser(sessionUser);
+    let isMounted = true;
 
-      if (sessionUser) {
-        loadAccess(sessionUser);
-      }
+    const bootstrapAuth = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
 
-      setLoading(false);
-    });
-
-    // Auth listener
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const sessionUser = session?.user || null;
-        setUser(sessionUser);
-
-        if (sessionUser) {
-          await loadAccess(sessionUser);
-        } else {
-          setAccess(null);
+        if (error) {
+          throw error;
         }
 
-        setLoading(false);
+        const currentSession = data?.session ?? null;
+        const currentUser = currentSession?.user ?? null;
+
+        if (!isMounted) return;
+
+        setSession(currentSession);
+        setUser(currentUser);
+
+        if (currentUser?.id) {
+          await refreshProfile(currentUser.id);
+        } else {
+          setProfile(null);
+          setRole('user');
+          setPlan('free_trial');
+        }
+      } catch (error) {
+        console.error('[AuthProvider] Failed to initialize auth:', error);
+        if (!isMounted) return;
+        setAuthError(error);
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setRole('user');
+        setPlan('free_trial');
+      } finally {
+        if (isMounted) {
+          setAuthReady(true);
+        }
       }
-    );
+    };
+
+    bootstrapAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      const nextUser = nextSession?.user ?? null;
+
+      setSession(nextSession);
+      setUser(nextUser);
+
+      if (nextUser?.id) {
+        await refreshProfile(nextUser.id);
+      } else {
+        setProfile(null);
+        setRole('user');
+        setPlan('free_trial');
+      }
+
+      setAuthReady(true);
+    });
 
     return () => {
-      listener.subscription.unsubscribe();
+      isMounted = false;
+      subscription.unsubscribe();
     };
+  }, [refreshProfile]);
+
+  const signOut = useCallback(async () => {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      console.error('[AuthProvider] Sign out failed:', error);
+      throw error;
+    }
+
+    setSession(null);
+    setUser(null);
+    setProfile(null);
+    setRole('user');
+    setPlan('free_trial');
   }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, access, loading }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const usage = useMemo(() => buildUsageFromProfile(profile), [profile]);
+
+  const access = useMemo(() => {
+    return getAccessState({
+      role,
+      plan,
+      usage,
+    });
+  }, [role, plan, usage]);
+
+  const value = useMemo(() => {
+    return {
+      user,
+      session,
+      profile,
+      role,
+      plan,
+      access,
+      authReady,
+      loadingProfile,
+      authError,
+      refreshProfile,
+      setProfile,
+      signOut,
+      isAuthenticated: Boolean(user),
+    };
+  }, [
+    user,
+    session,
+    profile,
+    role,
+    plan,
+    access,
+    authReady,
+    loadingProfile,
+    authError,
+    refreshProfile,
+    signOut,
+  ]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+
+  return context;
 }
+
+export default AuthProvider;
