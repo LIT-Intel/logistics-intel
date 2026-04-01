@@ -33,6 +33,23 @@ async function getAuthHeaders() {
   };
 }
 import {
+  isDevMode,
+  devGetSavedCompanies,
+  devSaveCompany,
+  devGetCompanyDetail,
+  devSearchCompanies,
+  devGetCompanyProfile,
+  devGetCompanyBols,
+  devSearchShippers,
+  devEnrichContacts,
+  devGetContacts,
+  devGetCampaigns,
+  devCreateCampaign,
+  devAddCompanyToCampaign,
+  devGetRfpContext,
+  devGenerateRfp,
+  devGetFilterOptions,
+} from "@/lib/apiDev";
 
 export function getCommandCenterAvailableYears(
   profile: IyCompanyProfile | null | undefined,
@@ -53,10 +70,10 @@ export function getCommandCenterAvailableYears(
   if (Array.isArray(profile.recentBols)) {
     for (const bol of profile.recentBols) {
       const rawDate =
-        bol?.bill_of_lading_date ||
-        bol?.bill_of_lading_date_formatted ||
+        (bol as any)?.bill_of_lading_date ||
+        (bol as any)?.bill_of_lading_date_formatted ||
         bol?.date ||
-        bol?.arrival_date ||
+        (bol as any)?.arrival_date ||
         bol?.raw?.bill_of_lading_date ||
         bol?.raw?.arrival_date ||
         null;
@@ -73,23 +90,6 @@ export function getCommandCenterAvailableYears(
   return Array.from(years).sort((a, b) => b - a);
 }
 
-  isDevMode,
-  devGetSavedCompanies,
-  devSaveCompany,
-  devGetCompanyDetail,
-  devSearchCompanies,
-  devGetCompanyProfile,
-  devGetCompanyBols,
-  devSearchShippers,
-  devEnrichContacts,
-  devGetContacts,
-  devGetCampaigns,
-  devCreateCampaign,
-  devAddCompanyToCampaign,
-  devGetRfpContext,
-  devGenerateRfp,
-  devGetFilterOptions,
-} from "@/lib/apiDev";
 
 function resolveApiBase() {
   const read = (value: unknown) =>
