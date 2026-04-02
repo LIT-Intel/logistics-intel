@@ -26,11 +26,19 @@ type ProfileRow = {
   title?: string | null;
   timezone?: string | null;
   preferences?: Record<string, any> | null;
+  company_name?: string | null;
+  organization_name?: string | null;
 };
 
 type OrgRow = {
   id: string;
   name?: string | null;
+};
+
+type MembershipRow = {
+  org_id?: string | null;
+  role?: string | null;
+  orgs?: OrgRow | null;
 };
 
 type TabId =
@@ -64,13 +72,14 @@ function getLocalNameKey(userId?: string) {
 }
 
 export default function SettingsPage() {
-  const { user, role, plan, access, refreshProfile } = useAuth();
+  const { user, role, plan, access, refreshProfile, fullName: authFullName } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabId>("account");
   const [isSaving, setIsSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [org, setOrg] = useState<OrgRow | null>(null);
+  const [membershipRole, setMembershipRole] = useState<string | null>(null);
 
   const [fullName, setFullName] = useState("");
   const [workEmail, setWorkEmail] = useState("");
@@ -95,6 +104,7 @@ export default function SettingsPage() {
     if (!targetUserId) {
       setProfile(null);
       setOrg(null);
+      setMembershipRole(null);
       setFullName("");
       setWorkEmail("");
       setOrganizationName("");
@@ -112,7 +122,7 @@ export default function SettingsPage() {
 
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("id, full_name, role, title, timezone, preferences")
+        .select("id, full_name, role, title, timezone, preferences, company_name, organization_name")
         .eq("id", targetUserId)
         .maybeSingle();
 
@@ -127,9 +137,17 @@ export default function SettingsPage() {
 
       if (membershipError) throw membershipError;
 
-      const orgData = (membershipData as any)?.orgs ?? null;
+      const membership = (membershipData as MembershipRow | null) ?? null;
+      const orgData = membership?.orgs ?? null;
+      const resolvedOrgName =
+        orgData?.name ||
+        profileData?.organization_name ||
+        profileData?.company_name ||
+        "";
+
       const resolvedName =
         profileData?.full_name ||
+        authFullName ||
         localName ||
         user?.user_metadata?.full_name ||
         user?.user_metadata?.name ||
@@ -137,14 +155,16 @@ export default function SettingsPage() {
 
       setProfile(profileData ?? null);
       setOrg(orgData);
+      setMembershipRole(membership?.role || null);
       setFullName(resolvedName);
       setWorkEmail(user?.email || "");
-      setOrganizationName(orgData?.name || "");
+      setOrganizationName(resolvedOrgName);
       setSaveState({ kind: "idle", message: "" });
     } catch (error) {
       console.error("[Settings] Failed to load settings data:", error);
 
       const fallbackName =
+        authFullName ||
         (typeof window !== "undefined"
           ? window.localStorage.getItem(getLocalNameKey(targetUserId))
           : "") ||
@@ -154,6 +174,7 @@ export default function SettingsPage() {
 
       setProfile(null);
       setOrg(null);
+      setMembershipRole(null);
       setFullName(fallbackName);
       setWorkEmail(user?.email || "");
       setOrganizationName("");
@@ -169,7 +190,7 @@ export default function SettingsPage() {
   useEffect(() => {
     void loadSettingsData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, authFullName]);
 
   const initials = useMemo(
     () => getInitials(fullName || profile?.full_name, workEmail || user?.email),
@@ -177,16 +198,19 @@ export default function SettingsPage() {
   );
 
   const profileHeadline = useMemo(() => {
-    const profileRole = profile?.title || prettyLabel(profile?.role, "");
-    const authRole = prettyLabel(role, "");
+    const primaryTitle = profile?.title?.trim() || "";
+    const membershipTitle = prettyLabel(membershipRole, "");
+    const authRoleTitle = prettyLabel(role, "");
 
-    if (profileRole && organizationName) return `${profileRole} at ${organizationName}`;
-    if (authRole && organizationName) return `${authRole} at ${organizationName}`;
+    if (primaryTitle && organizationName) return `${primaryTitle} at ${organizationName}`;
+    if (membershipTitle && organizationName) return `${membershipTitle} at ${organizationName}`;
+    if (authRoleTitle && organizationName) return `${authRoleTitle} at ${organizationName}`;
     if (organizationName) return organizationName;
-    if (profileRole) return profileRole;
-    if (authRole) return authRole;
+    if (primaryTitle) return primaryTitle;
+    if (membershipTitle) return membershipTitle;
+    if (authRoleTitle) return authRoleTitle;
     return "Manage your Logistics Intel account";
-  }, [organizationName, profile?.role, profile?.title, role]);
+  }, [organizationName, profile?.title, membershipRole, role]);
 
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
 
@@ -220,6 +244,7 @@ export default function SettingsPage() {
   const handleDiscard = () => {
     const fallbackName =
       profile?.full_name ||
+      authFullName ||
       (typeof window !== "undefined"
         ? window.localStorage.getItem(getLocalNameKey(user?.id))
         : "") ||
@@ -229,7 +254,9 @@ export default function SettingsPage() {
 
     setFullName(fallbackName);
     setWorkEmail(user?.email || "");
-    setOrganizationName(org?.name || "");
+    setOrganizationName(
+      org?.name || profile?.organization_name || profile?.company_name || ""
+    );
     setSaveState({ kind: "idle", message: "" });
   };
 
@@ -260,7 +287,7 @@ export default function SettingsPage() {
           },
           { onConflict: "id" },
         )
-        .select("id, full_name, role, title, timezone, preferences")
+        .select("id, full_name, role, title, timezone, preferences, company_name, organization_name")
         .single();
 
       if (profileError) throw profileError;
