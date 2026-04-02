@@ -19,6 +19,9 @@ import {
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 
+// This is an updated Settings page that wires Profile and Organization details to Supabase
+// and adds functionality for updating the user's password in the Security tab.
+
 type ProfileRow = {
   id: string;
   full_name?: string | null;
@@ -77,11 +80,11 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>("account");
   const [isSaving, setIsSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
-
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [org, setOrg] = useState<OrgRow | null>(null);
   const [membershipRole, setMembershipRole] = useState<string | null>(null);
 
+  // Profile editing state
   const [fullName, setFullName] = useState("");
   const [workEmail, setWorkEmail] = useState("");
   const [organizationName, setOrganizationName] = useState("");
@@ -90,6 +93,7 @@ export default function SettingsPage() {
     message: string;
   }>({ kind: "idle", message: "" });
 
+  // Security tab state for password update
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -108,10 +112,14 @@ export default function SettingsPage() {
     { id: "access", label: "Access & Plans", icon: Activity },
   ];
 
-  const loadSettingsData = async (targetUserId?: string) => {
-    const resolvedUserId = targetUserId ?? user?.id;
+  /**
+   * Load the current user's profile, membership and organization information.
+   * Data comes from Supabase tables: profiles and org_memberships (joined to orgs).
+   */
+  const loadSettingsData = async (userId?: string) => {
+    const targetUserId = userId ?? user?.id;
 
-    if (!resolvedUserId) {
+    if (!targetUserId) {
       setProfile(null);
       setOrg(null);
       setMembershipRole(null);
@@ -127,21 +135,23 @@ export default function SettingsPage() {
     try {
       const localName =
         typeof window !== "undefined"
-          ? window.localStorage.getItem(getLocalNameKey(resolvedUserId)) || ""
+          ? window.localStorage.getItem(getLocalNameKey(targetUserId)) || ""
           : "";
 
       const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, full_name, role, title, timezone, preferences, company_name, organization_name")
-        .eq("id", resolvedUserId)
+        .from<ProfileRow>("profiles")
+        .select(
+          "id, full_name, role, title, timezone, preferences, company_name, organization_name"
+        )
+        .eq("id", targetUserId)
         .maybeSingle();
 
       if (profileError) throw profileError;
 
       const { data: membershipData, error: membershipError } = await supabase
-        .from("org_memberships")
+        .from<MembershipRow>("org_memberships")
         .select("org_id, role, orgs(id, name)")
-        .eq("user_id", resolvedUserId)
+        .eq("user_id", targetUserId)
         .limit(1)
         .maybeSingle();
 
@@ -149,22 +159,21 @@ export default function SettingsPage() {
 
       const membership = (membershipData as MembershipRow | null) ?? null;
       const orgData = membership?.orgs ?? null;
-
       const resolvedOrgName =
         orgData?.name ||
-        (profileData as any)?.organization_name ||
-        (profileData as any)?.company_name ||
+        profileData?.organization_name ||
+        profileData?.company_name ||
         "";
 
       const resolvedName =
-        (profileData as any)?.full_name ||
+        profileData?.full_name ||
         authFullName ||
         localName ||
         user?.user_metadata?.full_name ||
         user?.user_metadata?.name ||
         "";
 
-      setProfile((profileData as ProfileRow) ?? null);
+      setProfile(profileData ?? null);
       setOrg(orgData);
       setMembershipRole(membership?.role || null);
       setFullName(resolvedName);
@@ -177,7 +186,7 @@ export default function SettingsPage() {
       const fallbackName =
         authFullName ||
         (typeof window !== "undefined"
-          ? window.localStorage.getItem(getLocalNameKey(resolvedUserId))
+          ? window.localStorage.getItem(getLocalNameKey(targetUserId))
           : "") ||
         user?.user_metadata?.full_name ||
         user?.user_metadata?.name ||
@@ -186,7 +195,7 @@ export default function SettingsPage() {
       setProfile(null);
       setOrg(null);
       setMembershipRole(null);
-      setFullName(fallbackName || "");
+      setFullName(fallbackName);
       setWorkEmail(user?.email || "");
       setOrganizationName("");
       setSaveState({
@@ -203,6 +212,9 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, authFullName]);
 
+  /**
+   * Derived values used by the UI: initials, profile headline, and plan label.
+   */
   const initials = useMemo(
     () => getInitials(fullName || profile?.full_name, workEmail || user?.email),
     [fullName, profile?.full_name, workEmail, user?.email]
@@ -225,6 +237,7 @@ export default function SettingsPage() {
 
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
 
+  // Limit display for billing tab
   const searchesUsed = access?.usage?.searchesUsedThisMonth ?? 0;
   const enrichmentUsed = access?.usage?.enrichmentUsedThisMonth ?? 0;
   const teamUsersUsed = access?.usage?.teamUsersUsed ?? 0;
@@ -252,6 +265,9 @@ export default function SettingsPage() {
 
   const isAdmin = Boolean(access?.isAdmin);
 
+  /**
+   * Reset the profile editing fields to their last loaded state.
+   */
   const handleDiscard = () => {
     const fallbackName =
       profile?.full_name ||
@@ -263,12 +279,17 @@ export default function SettingsPage() {
       user?.user_metadata?.name ||
       "";
 
-    setFullName(fallbackName || "");
+    setFullName(fallbackName);
     setWorkEmail(user?.email || "");
-    setOrganizationName(org?.name || profile?.organization_name || profile?.company_name || "");
+    setOrganizationName(
+      org?.name || profile?.organization_name || profile?.company_name || ""
+    );
     setSaveState({ kind: "idle", message: "" });
   };
 
+  /**
+   * Persist the profile changes back to Supabase.
+   */
   const handleSave = async () => {
     if (!user?.id) return;
 
@@ -296,13 +317,15 @@ export default function SettingsPage() {
           },
           { onConflict: "id" }
         )
-        .select("id, full_name, role, title, timezone, preferences, company_name, organization_name")
+        .select(
+          "id, full_name, role, title, timezone, preferences, company_name, organization_name"
+        )
         .single();
 
       if (profileError) throw profileError;
 
-      setProfile((savedProfile as ProfileRow) ?? null);
-      setFullName((savedProfile as any)?.full_name || normalizedName || "");
+      setProfile(savedProfile ?? null);
+      setFullName(savedProfile?.full_name || normalizedName || "");
 
       const { error: authError } = await supabase.auth.updateUser({
         data: {
@@ -316,14 +339,8 @@ export default function SettingsPage() {
       }
 
       if (typeof refreshProfile === "function") {
-        try {
-          await refreshProfile(user.id);
-        } catch (refreshError) {
-          console.warn("[Settings] refreshProfile warning:", refreshError);
-        }
+        await refreshProfile(user.id);
       }
-
-      await loadSettingsData(user.id);
 
       setSaveState({
         kind: "success",
@@ -340,12 +357,14 @@ export default function SettingsPage() {
     }
   };
 
+  /**
+   * Handle password update in the Security & Auth tab.
+   */
   const handlePasswordUpdate = async () => {
     if (!newPasswordInput.trim()) {
       setPasswordState({ kind: "error", message: "New password is required." });
       return;
     }
-
     if (newPasswordInput !== confirmPassword) {
       setPasswordState({ kind: "error", message: "Passwords do not match." });
       return;
@@ -355,22 +374,17 @@ export default function SettingsPage() {
     setPasswordState({ kind: "idle", message: "" });
 
     try {
+      // Supabase requires only the new password to update the user's password
       const { error } = await supabase.auth.updateUser({ password: newPasswordInput });
       if (error) throw error;
 
-      setPasswordState({
-        kind: "success",
-        message: "Password updated successfully.",
-      });
+      setPasswordState({ kind: "success", message: "Password updated successfully." });
       setCurrentPassword("");
       setNewPasswordInput("");
       setConfirmPassword("");
     } catch (error: any) {
       console.error("[Settings] Password update failed:", error);
-      setPasswordState({
-        kind: "error",
-        message: error?.message || "Failed to update password.",
-      });
+      setPasswordState({ kind: "error", message: error?.message || "Failed to update password." });
     } finally {
       setPasswordLoading(false);
     }
@@ -504,21 +518,24 @@ export default function SettingsPage() {
                         className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
                       />
                     </div>
-
                     <button
                       onClick={handlePasswordUpdate}
                       disabled={passwordLoading}
                       className="bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-60 flex items-center gap-2"
                     >
-                      {passwordLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Update Credentials"}
+                      {passwordLoading ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          Update Credentials
+                        </>
+                      )}
                     </button>
-
                     {passwordState.kind === "success" && (
                       <div className="text-emerald-600 text-xs font-semibold">
                         {passwordState.message}
                       </div>
                     )}
-
                     {passwordState.kind === "error" && (
                       <div className="text-red-600 text-xs font-semibold">
                         {passwordState.message}
@@ -601,8 +618,12 @@ export default function SettingsPage() {
                         />
                       </div>
                     </div>
-                    <div className="text-sm font-black text-slate-900">{source.title}</div>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">{source.desc}</p>
+                    <div className="text-sm font-black text-slate-900">
+                      {source.title}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">
+                      {source.desc}
+                    </p>
                     <div className="mt-4 flex items-center gap-2">
                       <span
                         className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
@@ -637,7 +658,9 @@ export default function SettingsPage() {
                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">
                       Current Subscription
                     </span>
-                    <h2 className="text-3xl font-black tracking-tighter">{displayPlan}</h2>
+                    <h2 className="text-3xl font-black tracking-tighter">
+                      {displayPlan}
+                    </h2>
                     <p className="text-slate-400 text-sm font-medium">
                       Plan-based access and usage visibility
                     </p>
@@ -664,7 +687,9 @@ export default function SettingsPage() {
                       <div className="text-[10px] font-black uppercase text-slate-500">
                         {stat.label}
                       </div>
-                      <div className="text-lg font-black text-white">{stat.val}</div>
+                      <div className="text-lg font-black text-white">
+                        {stat.val}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -695,7 +720,9 @@ export default function SettingsPage() {
                           <CreditCard className="h-4 w-4 text-slate-400" />
                         </div>
                         <div>
-                          <div className="text-sm font-black text-slate-800">{row.date}</div>
+                          <div className="text-sm font-black text-slate-800">
+                            {row.date}
+                          </div>
                           <div className="text-[10px] text-slate-400 font-bold uppercase">
                             {row.inv}
                           </div>
@@ -703,7 +730,9 @@ export default function SettingsPage() {
                       </div>
 
                       <div className="flex items-center gap-8">
-                        <div className="text-sm font-black text-slate-800">{row.amt}</div>
+                        <div className="text-sm font-black text-slate-800">
+                          {row.amt}
+                        </div>
                         <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">
                           {row.status}
                         </span>
@@ -753,8 +782,8 @@ export default function SettingsPage() {
             <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
               <h3 className="text-lg font-black text-slate-900">Access & Plans</h3>
               <p className="text-sm text-slate-600 max-w-xl">
-                Configure beta access, seat assignments and free plan limits. Upgrade
-                plans to unlock higher limits and advanced features.
+                Configure beta access, seat assignments and free plan limits. Upgrade plans to
+                unlock higher limits and advanced features.
               </p>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
@@ -772,7 +801,9 @@ export default function SettingsPage() {
                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                       Current Plan
                     </div>
-                    <div className="mt-1 text-sm font-black text-slate-900">{displayPlan}</div>
+                    <div className="mt-1 text-sm font-black text-slate-900">
+                      {displayPlan}
+                    </div>
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -813,7 +844,9 @@ export default function SettingsPage() {
                         JD
                       </div>
                       <div>
-                        <div className="text-sm font-bold text-slate-800">janedoe@beta.com</div>
+                        <div className="text-sm font-bold text-slate-800">
+                          janedoe@beta.com
+                        </div>
                         <div className="text-xs text-slate-500">Pending activation</div>
                       </div>
                     </div>
