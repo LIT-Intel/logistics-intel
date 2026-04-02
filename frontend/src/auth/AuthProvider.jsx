@@ -58,11 +58,16 @@ export function AuthProvider({ children }) {
         } catch {
           savedName = null;
         }
-        // Build an enriched user object with role, plan and display name
+        // Build an enriched user object with role, plan, display name, and basic billing fields
         const enrichedUser = {
           ...u,
           role: adminEmails.has(u.email) ? 'admin' : (u.user_metadata?.role || 'user'),
+          // Default plan is 'free' when not provided; enterprise for admin accounts
           plan: adminEmails.has(u.email) ? 'enterprise' : (u.user_metadata?.plan || 'free'),
+          // Stripe customer and subscription fields bubbled up to top‑level for easy access
+          stripe_customer_id: u.user_metadata?.stripe_customer_id || null,
+          subscription_status: u.user_metadata?.subscription_status || null,
+          // Normalized display name fallback chain
           displayName:
             u.user_metadata?.full_name ||
             u.user_metadata?.display_name ||
