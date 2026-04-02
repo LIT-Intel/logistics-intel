@@ -1,15 +1,23 @@
 /**
- * Frontend API -> Direct HTTP Calls (via API Gateway)
- * This mirrors the old Base44/Firebase map so imports keep working.
+ * Frontend API -> Direct HTTP Calls (via Supabase Edge Functions)
+ *
+ * This file wraps our Supabase edge functions so that the frontend can
+ * invoke them through the same httpCall helper used elsewhere in the app.
+ * The legacy API Gateway endpoints have been replaced with Supabase
+ * function names (billing‑checkout, billing‑portal, billing‑webhook).
  */
+
 import { httpCall } from './httpClient';
 
 // ---------- Stripe & billing ----------
+// Note: these functions call Supabase edge functions under the hood. The
+// paths reflect the /functions/* routing configured by the Supabase Edge
+// runtime. See supabase/functions for the implementation.
 export const generateRfpPdf            = httpCall('/functions/generateRfpPdf',      { ok: false });
-export const stripeWebhookHandler      = httpCall('/functions/stripeWebhookHandler', { ok: false });
-export const createStripeCheckout      = httpCall('/functions/createStripeCheckout', { ok: false });
-export const createStripePortalSession = httpCall('/functions/createStripePortalSession', { ok: false });
-export const sendEmail                 = httpCall('/functions/sendEmail',            { ok: false, message: 'Email not yet wired' });
+export const stripeWebhookHandler      = httpCall('/functions/billing-webhook',     { ok: false });
+export const createStripeCheckout      = httpCall('/functions/billing-checkout',    { ok: false });
+export const createStripePortalSession = httpCall('/functions/billing-portal',      { ok: false });
+export const sendEmail                 = httpCall('/functions/sendEmail',           { ok: false, message: 'Email not yet wired' });
 
 // ---------- Enrichment & outreach ----------
 export const enrichCompanyWithApollo   = httpCall('/functions/enrichCompanyWithApollo',   { ok: false, contacts: [] });
@@ -22,7 +30,7 @@ export const getOutreachHistory        = httpCall('/functions/getOutreachHistory
 
 // ---------- Health / ping ----------
 export const litPing                   = httpCall('/functions/litPing',            { ok: true, ts: Date.now(), uid: null });
-export const litPingIndex              = httpCall('/functions/litPing_index',      { ok: true, ts: Date.now(), uid: null }); // back-compat
+export const litPingIndex              = httpCall('/functions/litPing_index',      { ok: true, ts: Date.now(), uid: null }); // back‑compat
 
 // ---------- Company data ----------
 export const getCompanyDetails         = httpCall('/functions/getCompanyDetails',   { ok: true, data: null });
