@@ -9,19 +9,29 @@ import LitPageHeader from '@/components/ui/LitPageHeader';
 import LitPanel from '@/components/ui/LitPanel';
 import LitWatermark from '@/components/ui/LitWatermark';
 
+// -------------------------------------------------------------
+// This Billing page reads billing state from the current user
+// and displays usage and plan information. The plan definitions
+// here are canonicalised to align with our central plan system.
+// If new plans are added to the backend, extend the limits map below.
+// -------------------------------------------------------------
+
 interface UserData {
   id: string;
   email: string;
   plan: string;
   role: string;
-  subscription_status?: string;
-  stripe_customer_id?: string;
+  subscription_status?: string | null;
+  stripe_customer_id?: string | null;
   monthly_companies_viewed?: number;
   monthly_emails_sent?: number;
   monthly_rfps_generated?: number;
   user_metadata?: {
     full_name?: string;
     display_name?: string;
+    plan?: string;
+    stripe_customer_id?: string;
+    subscription_status?: string;
   };
 }
 
@@ -32,19 +42,50 @@ interface PlanLimits {
   max_rfps: number;
 }
 
+/**
+ * Convert any incoming plan string to a canonical plan code. This
+ * helper handles legacy plan names such as `free` or `pro` and
+ * maps them to our current plan identifiers. If a plan is not
+ * recognised it returns the lower‑case string unchanged.
+ */
+function getCanonicalPlan(plan: string = 'free'): string {
+  const p = (plan || 'free').toLowerCase();
+  if (p === 'free') return 'free_trial';
+  if (p === 'free_trial') return 'free_trial';
+  if (p === 'pro') return 'standard';
+  if (p === 'standard') return 'standard';
+  if (p === 'starter') return 'standard';
+  if (p === 'growth_plus') return 'growth';
+  if (p === 'growth') return 'growth';
+  if (p.startsWith('enterprise')) return 'enterprise';
+  return p;
+}
+
+/**
+ * Lookup per‑plan usage limits for display. These values should
+ * correspond roughly to the quotas defined in the backend. When
+ * adjusting plan tiers in Supabase or Stripe, update this map.
+ */
 function getPlanLimits(plan: string = 'free'): PlanLimits {
+  const canonical = getCanonicalPlan(plan);
   const limits: Record<string, PlanLimits> = {
-    free: {
-      name: 'Free',
+    free_trial: {
+      name: 'Free Trial',
       max_companies: 10,
       max_emails: 50,
       max_rfps: 5,
     },
-    pro: {
-      name: 'Pro',
+    standard: {
+      name: 'Standard',
       max_companies: 100,
       max_emails: 500,
       max_rfps: 50,
+    },
+    growth: {
+      name: 'Growth',
+      max_companies: 500,
+      max_emails: 2500,
+      max_rfps: 200,
     },
     enterprise: {
       name: 'Enterprise',
@@ -53,8 +94,7 @@ function getPlanLimits(plan: string = 'free'): PlanLimits {
       max_rfps: Infinity,
     },
   };
-
-  return limits[plan.toLowerCase()] || limits.free;
+  return limits[canonical] || limits.free_trial;
 }
 
 export default function Billing() {
@@ -68,8 +108,17 @@ export default function Billing() {
     }
   }, [loading, user, navigate]);
 
+  // Handler for redirecting the user to Stripe customer portal. If no
+  // subscription exists, the user is routed to the pricing page.
   const handleManageSubscription = async () => {
-    if (!user || !user.user_metadata?.stripe_customer_id) {
+    if (!user) {
+      alert('You must be logged in to manage your subscription.');
+      navigate('/login');
+      return;
+    }
+    const stripeCustomerId =
+      (user as any).stripe_customer_id || (user as any).user_metadata?.stripe_customer_id;
+    if (!stripeCustomerId) {
       alert('No subscription found. Please upgrade to a paid plan first.');
       navigate('/pricing');
       return;
@@ -78,8 +127,8 @@ export default function Billing() {
     setIsRedirecting(true);
     try {
       const result = await createStripePortalSession();
-      if (result && result.url) {
-        window.location.href = result.url;
+      if (result && (result as any).url) {
+        window.location.href = (result as any).url;
       } else {
         throw new Error('Could not create portal session.');
       }
@@ -104,10 +153,14 @@ export default function Billing() {
     );
   }
 
-  const userData: UserData = user as UserData;
-  const planLimits = getPlanLimits(userData.plan || 'free');
-  const hasActiveSubscription =
-    userData.user_metadata?.stripe_customer_id && userData.subscription_status === 'active';
+  const userData: UserData = user as unknown as UserData;
+  // Determine canonical plan and limits
+  const canonicalPlan = getCanonicalPlan(userData.plan || userData.user_metadata?.plan || 'free');
+  const planLimits = getPlanLimits(canonicalPlan);
+  // Determine subscription fields from top‑level or user_metadata
+  const stripeCustomerId = userData.stripe_customer_id || userData.user_metadata?.stripe_customer_id;
+  const subscriptionStatus = userData.subscription_status || userData.user_metadata?.subscription_status;
+  const hasActiveSubscription = !!stripeCustomerId && subscriptionStatus === 'active';
 
   return (
     <div className="relative p-4 md:p-6 lg:p-8 min-h-screen">
@@ -124,30 +177,30 @@ export default function Billing() {
               <div>
                 <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
                   {planLimits.name} Plan
-                  {userData.subscription_status && (
+                  {subscriptionStatus && (
                     <Badge
                       className={
-                        userData.subscription_status === 'active'
+                        subscriptionStatus === 'active'
                           ? 'bg-green-100 text-green-800'
                           : 'bg-yellow-100 text-yellow-800'
                       }
                     >
-                      {userData.subscription_status}
+                      {subscriptionStatus}
                     </Badge>
                   )}
                 </h3>
                 <p className="text-gray-600 mt-1">
-                  {userData.plan === 'free'
-                    ? 'You are currently on the free plan.'
+                  {canonicalPlan === 'free_trial'
+                    ? 'You are currently on the free trial plan.'
                     : hasActiveSubscription
                     ? 'Thank you for being a subscriber!'
                     : 'Upgrade to unlock premium features.'}
                 </p>
               </div>
 
-              {userData.plan === 'free' || !hasActiveSubscription ? (
+              {canonicalPlan === 'free_trial' || !hasActiveSubscription ? (
                 <Button onClick={() => navigate('/pricing')}>
-                  {userData.plan === 'free' ? 'Upgrade Plan' : 'Subscribe Now'}
+                  {canonicalPlan === 'free_trial' ? 'Upgrade Plan' : 'Subscribe Now'}
                 </Button>
               ) : (
                 <Button onClick={handleManageSubscription} disabled={isRedirecting}>
@@ -175,9 +228,7 @@ export default function Billing() {
                   max={planLimits.max_rfps}
                 />
               </div>
-              <p className="text-xs text-gray-500 text-center pt-2">
-                Your usage resets monthly.
-              </p>
+              <p className="text-xs text-gray-500 text-center pt-2">Your usage resets monthly.</p>
             </div>
 
             {hasActiveSubscription && (
@@ -187,15 +238,15 @@ export default function Billing() {
                   <div>
                     <span className="text-gray-600">Status:</span>
                     <span className="ml-2 font-medium text-gray-900 capitalize">
-                      {userData.subscription_status}
+                      {subscriptionStatus}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-gray-600">Stripe Customer:</span>
-                    <span className="ml-2 font-medium text-gray-900">
-                      {userData.user_metadata?.stripe_customer_id ? '✓ Connected' : '✗ Not Connected'}
-                    </span>
-                  </div>
+                    <div>
+                      <span className="text-gray-600">Stripe Customer:</span>
+                      <span className="ml-2 font-medium text-gray-900">
+                        {stripeCustomerId ? '✓ Connected' : '✗ Not Connected'}
+                      </span>
+                    </div>
                 </div>
               </div>
             )}
@@ -228,8 +279,9 @@ interface UsageMetricProps {
   max: number;
 }
 
+// Simple meter for usage display
 const UsageMetric: React.FC<UsageMetricProps> = ({ label, current, max }) => {
-  const percentage = max > 0 ? Math.min((current / max) * 100, 100) : 0;
+  const percentage = max > 0 && max !== Infinity ? Math.min((current / max) * 100, 100) : 0;
   const isUnlimited = max === Infinity;
 
   return (
@@ -245,7 +297,7 @@ const UsageMetric: React.FC<UsageMetricProps> = ({ label, current, max }) => {
           <div
             className="bg-blue-600 h-2 rounded-full"
             style={{ width: `${percentage}%` }}
-          ></div>
+          />
         </div>
       )}
     </div>
