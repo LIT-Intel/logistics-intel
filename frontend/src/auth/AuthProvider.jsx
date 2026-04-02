@@ -9,75 +9,78 @@ import {
 } from "./supabaseAuthClient";
 import { supabase } from "@/lib/supabase";
 
-// Extend the default context to include a fullName helper
-const AuthCtx = createContext({ user: null, loading: true, authReady: false, fullName: null });
+const AuthCtx = createContext({
+  user: null,
+  loading: true,
+  authReady: false,
+  fullName: null,
+});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
 
-  // Persist the last known displayName so it survives page reloads
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
+
     if (user?.displayName) {
       try {
-        localStorage.setItem('litName', user.displayName);
+        localStorage.setItem("litName", user.displayName);
       } catch {
-        // Ignore storage exceptions
+        // ignore storage failures
       }
     }
   }, [user?.displayName]);
 
   useEffect(() => {
-    // On mount, determine if a session exists to set the authReady flag
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
         setAuthReady(true);
       }
     });
 
-    // Listen for auth state changes from Supabase
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setAuthReady(!!session);
-      }
-    );
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthReady(!!session);
+    });
 
-    // Local subscription to our auth client so we can enrich user object
     const unsub = listenToAuth((u) => {
       if (u) {
-        // Temporary admin email check until roles are persisted server‑side
         const adminEmails = new Set([
-          'vraymond@sparkfusiondigital.com',
-          'support@logisticintel.com',
+          "vraymond@sparkfusiondigital.com",
+          "support@logisticintel.com",
         ]);
 
-        // Attempt to retrieve a previously saved name from local storage
-        let savedName: string | null = null;
+        let savedName = null;
         try {
-          savedName = typeof window !== 'undefined' ? localStorage.getItem('litName') : null;
+          savedName =
+            typeof window !== "undefined" ? localStorage.getItem("litName") : null;
         } catch {
           savedName = null;
         }
 
-        // Build an enriched user object with role, plan and display name
         const enrichedUser = {
           ...u,
-          role: adminEmails.has(u.email) ? 'admin' : (u.user_metadata?.role || 'user'),
-          plan: adminEmails.has(u.email) ? 'enterprise' : (u.user_metadata?.plan || 'free'),
-          // Prefer full_name, then display_name, then previously stored name, then derive from email
+          role: adminEmails.has(u.email)
+            ? "admin"
+            : (u.user_metadata?.role || "user"),
+          plan: adminEmails.has(u.email)
+            ? "enterprise"
+            : (u.user_metadata?.plan || "free"),
           displayName:
             u.user_metadata?.full_name ||
             u.user_metadata?.display_name ||
+            u.user_metadata?.name ||
             savedName ||
-            (u.email?.split('@')[0] ?? ''),
+            u.email?.split("@")[0] ||
+            "User",
         };
 
         setUser(enrichedUser);
       } else {
         setUser(null);
       }
+
       setLoading(false);
     });
 
@@ -87,21 +90,17 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const value = useMemo(
-    () => ({
-      user,
-      loading,
-      authReady,
-      signInWithGoogle,
-      signInWithMicrosoft,
-      signInWithEmailPassword,
-      registerWithEmailPassword,
-      logout,
-      // Expose a fullName alias so consumers can access a consistent display name
-      fullName: user?.displayName || null,
-    }),
-    [user, loading, authReady]
-  );
+  const value = useMemo(() => ({
+    user,
+    loading,
+    authReady,
+    signInWithGoogle,
+    signInWithMicrosoft,
+    signInWithEmailPassword,
+    registerWithEmailPassword,
+    logout,
+    fullName: user?.displayName || null,
+  }), [user, loading, authReady]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
