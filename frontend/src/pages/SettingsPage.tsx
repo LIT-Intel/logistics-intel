@@ -19,6 +19,9 @@ import {
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 
+// This is an updated Settings page that wires Profile and Organization details to Supabase
+// and adds functionality for updating the user's password in the Security tab.
+
 type ProfileRow = {
   id: string;
   full_name?: string | null;
@@ -81,6 +84,7 @@ export default function SettingsPage() {
   const [org, setOrg] = useState<OrgRow | null>(null);
   const [membershipRole, setMembershipRole] = useState<string | null>(null);
 
+  // Profile editing state
   const [fullName, setFullName] = useState("");
   const [workEmail, setWorkEmail] = useState("");
   const [organizationName, setOrganizationName] = useState("");
@@ -88,6 +92,16 @@ export default function SettingsPage() {
     kind: "idle" | "success" | "error";
     message: string;
   }>({ kind: "idle", message: "" });
+
+  // Security tab state for password update
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordState, setPasswordState] = useState<{
+    kind: "idle" | "success" | "error";
+    message: string;
+  }>({ kind: "idle", message: "" });
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
     { id: "account", label: "Account Profile", icon: User },
@@ -98,6 +112,10 @@ export default function SettingsPage() {
     { id: "access", label: "Access & Plans", icon: Activity },
   ];
 
+  /**
+   * Load the current user's profile, membership and organization information.
+   * Data comes from Supabase tables: profiles and org_memberships (joined to orgs).
+   */
   const loadSettingsData = async (userId?: string) => {
     const targetUserId = userId ?? user?.id;
 
@@ -121,15 +139,17 @@ export default function SettingsPage() {
           : "";
 
       const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, full_name, role, title, timezone, preferences, company_name, organization_name")
+        .from<ProfileRow>("profiles")
+        .select(
+          "id, full_name, role, title, timezone, preferences, company_name, organization_name"
+        )
         .eq("id", targetUserId)
         .maybeSingle();
 
       if (profileError) throw profileError;
 
       const { data: membershipData, error: membershipError } = await supabase
-        .from("org_memberships")
+        .from<MembershipRow>("org_memberships")
         .select("org_id, role, orgs(id, name)")
         .eq("user_id", targetUserId)
         .limit(1)
@@ -192,9 +212,12 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, authFullName]);
 
+  /**
+   * Derived values used by the UI: initials, profile headline, and plan label.
+   */
   const initials = useMemo(
     () => getInitials(fullName || profile?.full_name, workEmail || user?.email),
-    [fullName, profile?.full_name, workEmail, user?.email],
+    [fullName, profile?.full_name, workEmail, user?.email]
   );
 
   const profileHeadline = useMemo(() => {
@@ -214,6 +237,7 @@ export default function SettingsPage() {
 
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
 
+  // Limit display for billing tab
   const searchesUsed = access?.usage?.searchesUsedThisMonth ?? 0;
   const enrichmentUsed = access?.usage?.enrichmentUsedThisMonth ?? 0;
   const teamUsersUsed = access?.usage?.teamUsersUsed ?? 0;
@@ -241,6 +265,9 @@ export default function SettingsPage() {
 
   const isAdmin = Boolean(access?.isAdmin);
 
+  /**
+   * Reset the profile editing fields to their last loaded state.
+   */
   const handleDiscard = () => {
     const fallbackName =
       profile?.full_name ||
@@ -260,6 +287,9 @@ export default function SettingsPage() {
     setSaveState({ kind: "idle", message: "" });
   };
 
+  /**
+   * Persist the profile changes back to Supabase.
+   */
   const handleSave = async () => {
     if (!user?.id) return;
 
@@ -285,9 +315,11 @@ export default function SettingsPage() {
             id: user.id,
             full_name: normalizedName || null,
           },
-          { onConflict: "id" },
+          { onConflict: "id" }
         )
-        .select("id, full_name, role, title, timezone, preferences, company_name, organization_name")
+        .select(
+          "id, full_name, role, title, timezone, preferences, company_name, organization_name"
+        )
         .single();
 
       if (profileError) throw profileError;
@@ -322,6 +354,39 @@ export default function SettingsPage() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  /**
+   * Handle password update in the Security & Auth tab.
+   */
+  const handlePasswordUpdate = async () => {
+    if (!newPasswordInput.trim()) {
+      setPasswordState({ kind: "error", message: "New password is required." });
+      return;
+    }
+    if (newPasswordInput !== confirmPassword) {
+      setPasswordState({ kind: "error", message: "Passwords do not match." });
+      return;
+    }
+
+    setPasswordLoading(true);
+    setPasswordState({ kind: "idle", message: "" });
+
+    try {
+      // Supabase requires only the new password to update the user's password
+      const { error } = await supabase.auth.updateUser({ password: newPasswordInput });
+      if (error) throw error;
+
+      setPasswordState({ kind: "success", message: "Password updated successfully." });
+      setCurrentPassword("");
+      setNewPasswordInput("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      console.error("[Settings] Password update failed:", error);
+      setPasswordState({ kind: "error", message: error?.message || "Failed to update password." });
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -433,23 +498,49 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <input
                         type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
                         placeholder="Current Password"
                         className="md:col-span-2 w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
                       />
                       <input
                         type="password"
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
                         placeholder="New Password"
                         className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
                       />
                       <input
                         type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="Confirm New"
                         className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
                       />
                     </div>
-                    <button className="bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
-                      Update Credentials
+                    <button
+                      onClick={handlePasswordUpdate}
+                      disabled={passwordLoading}
+                      className="bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-60 flex items-center gap-2"
+                    >
+                      {passwordLoading ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          Update Credentials
+                        </>
+                      )}
                     </button>
+                    {passwordState.kind === "success" && (
+                      <div className="text-emerald-600 text-xs font-semibold">
+                        {passwordState.message}
+                      </div>
+                    )}
+                    {passwordState.kind === "error" && (
+                      <div className="text-red-600 text-xs font-semibold">
+                        {passwordState.message}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -657,19 +748,30 @@ export default function SettingsPage() {
             <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
               <div className="space-y-2">
                 <label className="inline-flex items-center gap-2">
-                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600" defaultChecked />
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                    defaultChecked
+                  />
                   <span className="text-sm font-medium">Email updates</span>
                 </label>
               </div>
               <div className="space-y-2">
                 <label className="inline-flex items-center gap-2">
-                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600" />
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                  />
                   <span className="text-sm font-medium">Push notifications</span>
                 </label>
               </div>
               <div className="space-y-2">
                 <label className="inline-flex items-center gap-2">
-                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600" defaultChecked />
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                    defaultChecked
+                  />
                   <span className="text-sm font-medium">Weekly reports</span>
                 </label>
               </div>
@@ -680,8 +782,8 @@ export default function SettingsPage() {
             <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
               <h3 className="text-lg font-black text-slate-900">Access & Plans</h3>
               <p className="text-sm text-slate-600 max-w-xl">
-                Configure beta access, seat assignments and free plan limits. Upgrade
-                plans to unlock higher limits and advanced features.
+                Configure beta access, seat assignments and free plan limits. Upgrade plans to
+                unlock higher limits and advanced features.
               </p>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
@@ -742,7 +844,9 @@ export default function SettingsPage() {
                         JD
                       </div>
                       <div>
-                        <div className="text-sm font-bold text-slate-800">janedoe@beta.com</div>
+                        <div className="text-sm font-bold text-slate-800">
+                          janedoe@beta.com
+                        </div>
                         <div className="text-xs text-slate-500">Pending activation</div>
                       </div>
                     </div>
@@ -801,9 +905,7 @@ export default function SettingsPage() {
               <Activity className="h-6 w-6" />
             </div>
             <div>
-              <div className="text-sm font-black text-slate-900">
-                Debug Agent
-              </div>
+              <div className="text-sm font-black text-slate-900">Debug Agent</div>
               <p className="text-xs text-slate-500 font-medium">
                 Verify data pipeline health and logs.
               </p>
@@ -816,9 +918,7 @@ export default function SettingsPage() {
               <Trash2 className="h-6 w-6" />
             </div>
             <div>
-              <div className="text-sm font-black text-red-600">
-                Delete Account
-              </div>
+              <div className="text-sm font-black text-red-600">Delete Account</div>
               <p className="text-xs text-slate-500 font-medium">
                 Permanently wipe enterprise data.
               </p>
