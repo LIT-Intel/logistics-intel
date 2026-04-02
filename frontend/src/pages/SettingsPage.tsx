@@ -147,8 +147,7 @@ export default function SettingsPage() {
     loadSettingsData();
 
     return () => {
-      isMounted = false
-      # NOTE: This line will be fixed below in final output generation.
+      isMounted = false;
     };
   }, [user]);
 
