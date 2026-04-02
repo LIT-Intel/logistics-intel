@@ -19,18 +19,6 @@ import {
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 
-/*
- * SettingsPage
- *
- * Full enterprise settings page without duplicate app shell.
- * Fixes included:
- * - removes fake sidebar/header
- * - replaces horizontal scrolling tab bar with wrapped pill tabs
- * - loads real profile/org data
- * - persists full name to profiles.full_name and auth metadata
- * - reloads saved data after save so the value survives navigation
- */
-
 type ProfileRow = {
   id: string;
   full_name?: string | null;
@@ -69,6 +57,10 @@ function prettyLabel(value?: string | null, fallback = "User") {
   return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getLocalNameKey(userId?: string) {
+  return userId ? `li_settings_full_name_${userId}` : "";
 }
 
 export default function SettingsPage() {
@@ -113,6 +105,11 @@ export default function SettingsPage() {
     setLoadingData(true);
 
     try {
+      const localName =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(getLocalNameKey(targetUserId)) || ""
+          : "";
+
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("id, full_name, role, title, timezone, preferences")
@@ -133,6 +130,7 @@ export default function SettingsPage() {
       const orgData = (membershipData as any)?.orgs ?? null;
       const resolvedName =
         profileData?.full_name ||
+        localName ||
         user?.user_metadata?.full_name ||
         user?.user_metadata?.name ||
         "";
@@ -145,14 +143,23 @@ export default function SettingsPage() {
       setSaveState({ kind: "idle", message: "" });
     } catch (error) {
       console.error("[Settings] Failed to load settings data:", error);
+
+      const fallbackName =
+        (typeof window !== "undefined"
+          ? window.localStorage.getItem(getLocalNameKey(targetUserId))
+          : "") ||
+        user?.user_metadata?.full_name ||
+        user?.user_metadata?.name ||
+        "";
+
       setProfile(null);
       setOrg(null);
-      setFullName(user?.user_metadata?.full_name || user?.user_metadata?.name || "");
+      setFullName(fallbackName);
       setWorkEmail(user?.email || "");
       setOrganizationName("");
       setSaveState({
         kind: "error",
-        message: "Could not load your settings. Some values may be incomplete.",
+        message: "Could not fully load your settings. Using fallback profile data.",
       });
     } finally {
       setLoadingData(false);
@@ -161,6 +168,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void loadSettingsData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   const initials = useMemo(
@@ -210,12 +218,16 @@ export default function SettingsPage() {
   const isAdmin = Boolean(access?.isAdmin);
 
   const handleDiscard = () => {
-    setFullName(
+    const fallbackName =
       profile?.full_name ||
-        user?.user_metadata?.full_name ||
-        user?.user_metadata?.name ||
-        "",
-    );
+      (typeof window !== "undefined"
+        ? window.localStorage.getItem(getLocalNameKey(user?.id))
+        : "") ||
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      "";
+
+    setFullName(fallbackName);
     setWorkEmail(user?.email || "");
     setOrganizationName(org?.name || "");
     setSaveState({ kind: "idle", message: "" });
@@ -229,17 +241,32 @@ export default function SettingsPage() {
 
     try {
       const normalizedName = fullName.trim();
+      const localKey = getLocalNameKey(user.id);
 
-      const profilePayload = {
-        id: user.id,
-        full_name: normalizedName || null,
-      };
+      if (typeof window !== "undefined") {
+        if (normalizedName) {
+          window.localStorage.setItem(localKey, normalizedName);
+        } else {
+          window.localStorage.removeItem(localKey);
+        }
+      }
 
-      const { error: profileError } = await supabase
+      const { data: savedProfile, error: profileError } = await supabase
         .from("profiles")
-        .upsert(profilePayload, { onConflict: "id" });
+        .upsert(
+          {
+            id: user.id,
+            full_name: normalizedName || null,
+          },
+          { onConflict: "id" },
+        )
+        .select("id, full_name, role, title, timezone, preferences")
+        .single();
 
       if (profileError) throw profileError;
+
+      setProfile(savedProfile ?? null);
+      setFullName(savedProfile?.full_name || normalizedName || "");
 
       const { error: authError } = await supabase.auth.updateUser({
         data: {
@@ -255,8 +282,6 @@ export default function SettingsPage() {
       if (typeof refreshProfile === "function") {
         await refreshProfile(user.id);
       }
-
-      await loadSettingsData(user.id);
 
       setSaveState({
         kind: "success",
