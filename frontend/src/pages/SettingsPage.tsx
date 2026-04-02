@@ -7,22 +7,20 @@ import {
   Bell,
   Lock,
   Mail,
-  Zap,
-  ExternalLink,
   Activity,
   Trash2,
   ChevronRight,
   Save,
   RefreshCw,
   AlertCircle,
+  Crown,
+  Calendar,
+  TrendingUp,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
-// Import the BillingSettings component for the billing tab
-import BillingSettings from "@/components/settings/BillingSettings";
-
-// This is an updated Settings page that wires Profile and Organization details to Supabase
-// and adds functionality for updating the user's password in the Security tab.
+import { createStripeCheckout, createStripePortalSession } from "@/api/functions";
 
 type ProfileRow = {
   id: string;
@@ -30,8 +28,6 @@ type ProfileRow = {
   role?: string | null;
   title?: string | null;
   timezone?: string | null;
-  // The preferences column is optional and may not exist in all deployments. Do not select it unless present.
-  // preferences?: Record<string, any> | null;
   company_name?: string | null;
   organization_name?: string | null;
 };
@@ -55,6 +51,11 @@ type TabId =
   | "notifications"
   | "access";
 
+type SaveState = {
+  kind: "idle" | "success" | "error";
+  message: string;
+};
+
 function getInitials(name?: string | null, email?: string | null) {
   const source = (name || email || "U").trim();
   const parts = source.split(/\s+/).filter(Boolean);
@@ -77,34 +78,136 @@ function getLocalNameKey(userId?: string) {
   return userId ? `li_settings_full_name_${userId}` : "";
 }
 
+function getCanonicalPlan(plan = "free_trial") {
+  const p = String(plan || "free_trial").toLowerCase().trim();
+  if (p === "free" || p === "free_trial") return "free_trial";
+  if (p === "pro" || p === "standard" || p === "starter") return "standard";
+  if (p === "growth" || p === "growth_plus") return "growth";
+  if (p.startsWith("enterprise")) return "enterprise";
+  return p;
+}
+
+function getPlanMap() {
+  return {
+    free_trial: {
+      code: "free_trial",
+      name: "Free Trial",
+      price: "$0",
+      max_companies: 10,
+      max_emails: 50,
+      max_rfps: 5,
+      enrichment_enabled: false,
+      campaigns_enabled: false,
+    },
+    standard: {
+      code: "standard",
+      name: "Standard",
+      price: "$49",
+      max_companies: 100,
+      max_emails: 500,
+      max_rfps: 50,
+      enrichment_enabled: true,
+      campaigns_enabled: false,
+    },
+    growth: {
+      code: "growth",
+      name: "Growth",
+      price: "$299",
+      max_companies: 500,
+      max_emails: 2500,
+      max_rfps: 200,
+      enrichment_enabled: true,
+      campaigns_enabled: true,
+    },
+    enterprise: {
+      code: "enterprise",
+      name: "Enterprise",
+      price: "Custom",
+      max_companies: Infinity,
+      max_emails: Infinity,
+      max_rfps: Infinity,
+      enrichment_enabled: true,
+      campaigns_enabled: true,
+    },
+  };
+}
+
+function getPlanLimits(plan = "free_trial") {
+  const canonical = getCanonicalPlan(plan);
+  const planMap = getPlanMap();
+  return planMap[canonical as keyof typeof planMap] || planMap.free_trial;
+}
+
+function UsageBar({
+  label,
+  current,
+  max,
+}: {
+  label: string;
+  current: number;
+  max: number;
+}) {
+  const safeCurrent = Number(current || 0);
+  const isUnlimited = max === Infinity;
+  const percentage =
+    !isUnlimited && Number(max) > 0
+      ? Math.min((safeCurrent / Number(max)) * 100, 100)
+      : 0;
+
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-2">
+        <span>{label}</span>
+        <span className="font-medium">
+          {safeCurrent} / {isUnlimited ? "∞" : Number(max).toLocaleString()}
+        </span>
+      </div>
+      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+        {!isUnlimited && (
+          <div
+            className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+            style={{ width: `${percentage}%` }}
+          />
+        )}
+      </div>
+      {!isUnlimited && percentage >= 90 && (
+        <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
+          <AlertCircle className="w-4 h-4" />
+          <span>Approaching usage limit</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, role, plan, access, refreshProfile, fullName: authFullName } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabId>("account");
   const [isSaving, setIsSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [org, setOrg] = useState<OrgRow | null>(null);
   const [membershipRole, setMembershipRole] = useState<string | null>(null);
 
-  // Profile editing state
   const [fullName, setFullName] = useState("");
   const [workEmail, setWorkEmail] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
-  const [saveState, setSaveState] = useState<{
-    kind: "idle" | "success" | "error";
-    message: string;
-  }>({ kind: "idle", message: "" });
+  const [timezone, setTimezone] = useState("");
+  const [profileRole, setProfileRole] = useState("");
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "idle", message: "" });
 
-  // Security tab state for password update
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordState, setPasswordState] = useState<{
-    kind: "idle" | "success" | "error";
-    message: string;
-  }>({ kind: "idle", message: "" });
+  const [passwordState, setPasswordState] = useState<SaveState>({
+    kind: "idle",
+    message: "",
+  });
   const [passwordLoading, setPasswordLoading] = useState(false);
+  const [billingActionLoading, setBillingActionLoading] = useState(false);
 
   const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
     { id: "account", label: "Account Profile", icon: User },
@@ -115,10 +218,6 @@ export default function SettingsPage() {
     { id: "access", label: "Access & Plans", icon: Activity },
   ];
 
-  /**
-   * Load the current user's profile, membership and organization information.
-   * Data comes from Supabase tables: profiles and org_memberships (joined to orgs).
-   */
   const loadSettingsData = async (userId?: string) => {
     const targetUserId = userId ?? user?.id;
 
@@ -128,7 +227,10 @@ export default function SettingsPage() {
       setMembershipRole(null);
       setFullName("");
       setWorkEmail("");
+      setCompanyName("");
       setOrganizationName("");
+      setTimezone("");
+      setProfileRole("");
       setLoadingData(false);
       return;
     }
@@ -142,17 +244,15 @@ export default function SettingsPage() {
           : "";
 
       const { data: profileData, error: profileError } = await supabase
-        .from<ProfileRow>("profiles")
-        .select(
-          "id, full_name, role, title, timezone, company_name, organization_name"
-        )
+        .from("profiles")
+        .select("id, full_name, role, title, timezone, company_name, organization_name")
         .eq("id", targetUserId)
         .maybeSingle();
 
       if (profileError) throw profileError;
 
       const { data: membershipData, error: membershipError } = await supabase
-        .from<MembershipRow>("org_memberships")
+        .from("org_memberships")
         .select("org_id, role, orgs(id, name)")
         .eq("user_id", targetUserId)
         .limit(1)
@@ -160,28 +260,39 @@ export default function SettingsPage() {
 
       if (membershipError) throw membershipError;
 
+      const typedProfile = (profileData as ProfileRow | null) ?? null;
       const membership = (membershipData as MembershipRow | null) ?? null;
       const orgData = membership?.orgs ?? null;
+
       const resolvedOrgName =
         orgData?.name ||
-        profileData?.organization_name ||
-        profileData?.company_name ||
+        typedProfile?.organization_name ||
+        typedProfile?.company_name ||
         "";
 
       const resolvedName =
-        profileData?.full_name ||
+        typedProfile?.full_name ||
         authFullName ||
         localName ||
         user?.user_metadata?.full_name ||
         user?.user_metadata?.name ||
         "";
 
-      setProfile(profileData ?? null);
+      const resolvedRole = typedProfile?.role || membership?.role || role || "user";
+      const resolvedTimezone =
+        typedProfile?.timezone ||
+        Intl.DateTimeFormat().resolvedOptions().timeZone ||
+        "";
+
+      setProfile(typedProfile);
       setOrg(orgData);
       setMembershipRole(membership?.role || null);
       setFullName(resolvedName);
       setWorkEmail(user?.email || "");
+      setCompanyName(typedProfile?.company_name || "");
       setOrganizationName(resolvedOrgName);
+      setTimezone(resolvedTimezone);
+      setProfileRole(resolvedRole);
       setSaveState({ kind: "idle", message: "" });
     } catch (error) {
       console.error("[Settings] Failed to load settings data:", error);
@@ -200,7 +311,10 @@ export default function SettingsPage() {
       setMembershipRole(null);
       setFullName(fallbackName);
       setWorkEmail(user?.email || "");
+      setCompanyName("");
       setOrganizationName("");
+      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
+      setProfileRole(role || "user");
       setSaveState({
         kind: "error",
         message: "Could not fully load your settings. Using fallback profile data.",
@@ -212,12 +326,8 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void loadSettingsData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, authFullName]);
 
-  /**
-   * Derived values used by the UI: initials, profile headline, and plan label.
-   */
   const initials = useMemo(
     () => getInitials(fullName || profile?.full_name, workEmail || user?.email),
     [fullName, profile?.full_name, workEmail, user?.email]
@@ -226,7 +336,7 @@ export default function SettingsPage() {
   const profileHeadline = useMemo(() => {
     const primaryTitle = profile?.title?.trim() || "";
     const membershipTitle = prettyLabel(membershipRole, "");
-    const authRoleTitle = prettyLabel(role, "");
+    const authRoleTitle = prettyLabel(profileRole || role, "");
 
     if (primaryTitle && organizationName) return `${primaryTitle} at ${organizationName}`;
     if (membershipTitle && organizationName) return `${membershipTitle} at ${organizationName}`;
@@ -236,50 +346,22 @@ export default function SettingsPage() {
     if (membershipTitle) return membershipTitle;
     if (authRoleTitle) return authRoleTitle;
     return "Manage your Logistics Intel account";
-  }, [organizationName, profile?.title, membershipRole, role]);
+  }, [organizationName, profile?.title, membershipRole, profileRole, role]);
 
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
-
-  // Limit display for billing tab
-  const searchesUsed = access?.usage?.searchesUsedThisMonth ?? 0;
-  const enrichmentUsed = access?.usage?.enrichmentUsedThisMonth ?? 0;
-  const teamUsersUsed = access?.usage?.teamUsersUsed ?? 0;
-  const savedCompaniesUsed = access?.usage?.savedCompaniesUsed ?? 0;
-
-  const searchLimit =
-    access?.limits?.searchesPerMonth == null
-      ? "Unlimited"
-      : `${searchesUsed} / ${access.limits.searchesPerMonth}`;
-
-  const enrichmentLimit =
-    access?.limits?.enrichmentPerMonth == null
-      ? "Unlimited"
-      : `${enrichmentUsed} / ${access.limits.enrichmentPerMonth}`;
-
-  const teamUsersLimit =
-    access?.limits?.teamUsers == null
-      ? "Unlimited"
-      : `${teamUsersUsed} / ${access.limits.teamUsers}`;
-
-  const savedCompaniesLimit =
-    access?.limits?.savedCompanies == null
-      ? "Unlimited"
-      : `${savedCompaniesUsed} / ${access.limits.savedCompanies}`;
-
   const isAdmin = Boolean(access?.isAdmin);
 
-  // Construct a user-like object for the Billing tab. This merges the existing
-  // user fields with canonical plan and subscription fields, plus usage
-  // counters from the access state. BillingSettings expects these fields.
   const billingUser = useMemo(() => {
     const customerId =
       (user as any)?.stripe_customer_id ||
-      (user as any)?.user_metadata?.stripe_customer_id ||
+      user?.user_metadata?.stripe_customer_id ||
       null;
+
     const subStatus =
       (user as any)?.subscription_status ||
-      (user as any)?.user_metadata?.subscription_status ||
+      user?.user_metadata?.subscription_status ||
       null;
+
     return {
       ...(user || {}),
       plan,
@@ -291,9 +373,28 @@ export default function SettingsPage() {
     };
   }, [user, plan, access]);
 
-  /**
-   * Reset the profile editing fields to their last loaded state.
-   */
+  const canonicalPlan = getCanonicalPlan(
+    String((billingUser as any)?.plan || (billingUser as any)?.user_metadata?.plan || "free_trial")
+  );
+  const planConfig = getPlanLimits(canonicalPlan);
+  const upgradePlans = Object.values(getPlanMap()).filter(
+    (p) => p.code !== canonicalPlan && p.code !== "free_trial"
+  );
+
+  const stripeCustomerId =
+    (billingUser as any)?.stripe_customer_id ||
+    (billingUser as any)?.user_metadata?.stripe_customer_id ||
+    null;
+
+  const subscriptionStatus =
+    (billingUser as any)?.subscription_status ||
+    (billingUser as any)?.user_metadata?.subscription_status ||
+    null;
+
+  const hasActiveSubscription =
+    !!stripeCustomerId &&
+    ["active", "trialing"].includes(String(subscriptionStatus || "").toLowerCase());
+
   const handleDiscard = () => {
     const fallbackName =
       profile?.full_name ||
@@ -307,15 +408,17 @@ export default function SettingsPage() {
 
     setFullName(fallbackName);
     setWorkEmail(user?.email || "");
+    setCompanyName(profile?.company_name || "");
     setOrganizationName(
       org?.name || profile?.organization_name || profile?.company_name || ""
     );
+    setTimezone(
+      profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || ""
+    );
+    setProfileRole(profile?.role || membershipRole || role || "user");
     setSaveState({ kind: "idle", message: "" });
   };
 
-  /**
-   * Persist the profile changes back to Supabase.
-   */
   const handleSave = async () => {
     if (!user?.id) return;
 
@@ -324,6 +427,9 @@ export default function SettingsPage() {
 
     try {
       const normalizedName = fullName.trim();
+      const normalizedCompany = companyName.trim();
+      const normalizedTimezone = timezone.trim();
+      const normalizedRole = (profileRole || "user").trim();
       const localKey = getLocalNameKey(user.id);
 
       if (typeof window !== "undefined") {
@@ -340,18 +446,24 @@ export default function SettingsPage() {
           {
             id: user.id,
             full_name: normalizedName || null,
+            company_name: normalizedCompany || null,
+            timezone: normalizedTimezone || null,
+            role: normalizedRole || null,
           },
           { onConflict: "id" }
         )
-        .select(
-          "id, full_name, role, title, timezone, company_name, organization_name"
-        )
+        .select("id, full_name, role, title, timezone, company_name, organization_name")
         .single();
 
       if (profileError) throw profileError;
 
-      setProfile(savedProfile ?? null);
-      setFullName(savedProfile?.full_name || normalizedName || "");
+      const typedSavedProfile = (savedProfile as ProfileRow | null) ?? null;
+
+      setProfile(typedSavedProfile);
+      setFullName(typedSavedProfile?.full_name || normalizedName || "");
+      setCompanyName(typedSavedProfile?.company_name || normalizedCompany || "");
+      setTimezone(typedSavedProfile?.timezone || normalizedTimezone || "");
+      setProfileRole(typedSavedProfile?.role || normalizedRole);
 
       const { error: authError } = await supabase.auth.updateUser({
         data: {
@@ -368,29 +480,30 @@ export default function SettingsPage() {
         await refreshProfile(user.id);
       }
 
+      await loadSettingsData(user.id);
+
       setSaveState({
         kind: "success",
         message: "Settings saved successfully.",
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error("[Settings] Failed to save profile:", error);
       setSaveState({
         kind: "error",
-        message: error?.message || "Could not save your settings.",
+        message:
+          error instanceof Error ? error.message : "Could not save your settings.",
       });
     } finally {
       setIsSaving(false);
     }
   };
 
-  /**
-   * Handle password update in the Security & Auth tab.
-   */
   const handlePasswordUpdate = async () => {
     if (!newPasswordInput.trim()) {
       setPasswordState({ kind: "error", message: "New password is required." });
       return;
     }
+
     if (newPasswordInput !== confirmPassword) {
       setPasswordState({ kind: "error", message: "Passwords do not match." });
       return;
@@ -400,7 +513,6 @@ export default function SettingsPage() {
     setPasswordState({ kind: "idle", message: "" });
 
     try {
-      // Supabase requires only the new password to update the user's password
       const { error } = await supabase.auth.updateUser({ password: newPasswordInput });
       if (error) throw error;
 
@@ -408,11 +520,61 @@ export default function SettingsPage() {
       setCurrentPassword("");
       setNewPasswordInput("");
       setConfirmPassword("");
-    } catch (error: any) {
+    } catch (error) {
       console.error("[Settings] Password update failed:", error);
-      setPasswordState({ kind: "error", message: error?.message || "Failed to update password." });
+      setPasswordState({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Failed to update password.",
+      });
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  const handleUpgrade = async (planCode: string) => {
+    setBillingActionLoading(true);
+    try {
+      const result = await createStripeCheckout({
+        plan_code: planCode,
+        interval: "month",
+      });
+
+      if ((result as any)?.url) {
+        window.location.href = (result as any).url;
+        return;
+      }
+
+      throw new Error("Unable to start checkout.");
+    } catch (error) {
+      console.error("[Billing] Checkout error:", error);
+      alert("Failed to start checkout. Please try again.");
+    } finally {
+      setBillingActionLoading(false);
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    if (!stripeCustomerId) {
+      alert("No Stripe customer found for this account yet.");
+      return;
+    }
+
+    setBillingActionLoading(true);
+    try {
+      const result = await createStripePortalSession();
+
+      if ((result as any)?.url) {
+        window.location.href = (result as any).url;
+        return;
+      }
+
+      throw new Error("Unable to create Stripe portal session.");
+    } catch (error) {
+      console.error("[Billing] Portal error:", error);
+      alert("Failed to open billing portal. Please try again.");
+    } finally {
+      setBillingActionLoading(false);
     }
   };
 
@@ -498,7 +660,42 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
+                      Company Name
+                    </label>
+                    <input
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      placeholder="Enter your company name"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
+                      Timezone
+                    </label>
+                    <input
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      placeholder="America/New_York"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
+                      Role
+                    </label>
+                    <input
+                      value={prettyLabel(profileRole, "User")}
+                      disabled
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                       Organization
                     </label>
@@ -552,9 +749,7 @@ export default function SettingsPage() {
                       {passwordLoading ? (
                         <RefreshCw className="h-4 w-4 animate-spin" />
                       ) : (
-                        <>
-                          Update Credentials
-                        </>
+                        <>Update Credentials</>
                       )}
                     </button>
                     {passwordState.kind === "success" && (
@@ -572,7 +767,7 @@ export default function SettingsPage() {
 
                 <div className="space-y-4">
                   <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-indigo-600" /> Multi‑Factor Authentication
+                    <Shield className="h-5 w-5 text-indigo-600" /> Multi-Factor Authentication
                   </h3>
                   <div className="flex items-center justify-between p-6 border border-slate-100 bg-emerald-50/30 rounded-2xl">
                     <div className="flex gap-4">
@@ -603,13 +798,13 @@ export default function SettingsPage() {
                 {[
                   {
                     title: "ImportYeti API",
-                    desc: "Real‑time import/export company mapping",
+                    desc: "Real-time import/export company mapping",
                     active: true,
                     icon: "⚓",
                   },
                   {
                     title: "Gemini Enrichment",
-                    desc: "AI‑powered company analysis & risk forecasting",
+                    desc: "AI-powered company analysis & risk forecasting",
                     active: false,
                     icon: "✨",
                   },
@@ -621,7 +816,7 @@ export default function SettingsPage() {
                   },
                   {
                     title: "Fleet Radar",
-                    desc: "Real‑time vessel tracking and port congestion",
+                    desc: "Real-time vessel tracking and port congestion",
                     active: true,
                     icon: "🚢",
                   },
@@ -673,9 +868,230 @@ export default function SettingsPage() {
           )}
 
           {activeTab === "billing" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
-              {/* Use the shared BillingSettings component for canonical plan display and billing actions */}
-              <BillingSettings user={billingUser} />
+            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+              <div className="space-y-6">
+                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
+                  <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
+                    <div className="flex items-center gap-2">
+                      <Crown className="w-5 h-5 text-blue-600" />
+                      <span className="text-lg font-black">Current Plan</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-3 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-800">
+                        {planConfig.name}
+                      </span>
+                      {subscriptionStatus && (
+                        <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-800 capitalize">
+                          {subscriptionStatus}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                      <h4 className="font-semibold mb-3">Plan Features</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Companies per month</span>
+                          <span className="font-medium">
+                            {planConfig.max_companies === Infinity
+                              ? "Unlimited"
+                              : Number(planConfig.max_companies).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Emails per month</span>
+                          <span className="font-medium">
+                            {planConfig.max_emails === Infinity
+                              ? "Unlimited"
+                              : Number(planConfig.max_emails).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>RFPs per month</span>
+                          <span className="font-medium">
+                            {planConfig.max_rfps === Infinity
+                              ? "Unlimited"
+                              : Number(planConfig.max_rfps).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Data enrichment</span>
+                          <span className="font-medium">
+                            {planConfig.enrichment_enabled ? "Enabled" : "Disabled"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Campaign automation</span>
+                          <span className="font-medium">
+                            {planConfig.campaigns_enabled ? "Enabled" : "Disabled"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-semibold mb-3">Billing Information</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Plan price</span>
+                          <span className="font-medium">{planConfig.price}/month</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Subscription state</span>
+                          <span className="font-medium capitalize">
+                            {subscriptionStatus || "Not subscribed"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Stripe customer</span>
+                          <span className="font-medium">
+                            {stripeCustomerId ? "Connected" : "Not connected"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Next billing date</span>
+                          <span className="font-medium">
+                            {hasActiveSubscription ? "Expected via Stripe" : "N/A"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 mt-6">
+                    {hasActiveSubscription ? (
+                      <button
+                        onClick={handleManageSubscription}
+                        disabled={billingActionLoading}
+                        className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-60"
+                      >
+                        {billingActionLoading ? "Opening..." : "Manage Subscription"}
+                      </button>
+                    ) : (
+                      upgradePlans.map((upgrade) => (
+                        <button
+                          key={upgrade.code}
+                          onClick={() => handleUpgrade(upgrade.code)}
+                          disabled={billingActionLoading}
+                          className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-60"
+                        >
+                          {billingActionLoading
+                            ? "Processing..."
+                            : `Upgrade to ${upgrade.name}`}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
+                  <div className="flex items-center gap-2 mb-5">
+                    <TrendingUp className="w-5 h-5 text-blue-600" />
+                    <span className="text-lg font-black">Usage This Month</span>
+                  </div>
+
+                  <div className="space-y-5">
+                    <UsageBar
+                      label="Companies Viewed"
+                      current={Number((billingUser as any)?.monthly_companies_viewed || 0)}
+                      max={planConfig.max_companies}
+                    />
+                    <UsageBar
+                      label="Emails Sent"
+                      current={Number((billingUser as any)?.monthly_emails_sent || 0)}
+                      max={planConfig.max_emails}
+                    />
+                    <UsageBar
+                      label="RFPs Generated"
+                      current={Number((billingUser as any)?.monthly_rfps_generated || 0)}
+                      max={planConfig.max_rfps}
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
+                  <div className="flex items-center gap-2 mb-5">
+                    <Calendar className="w-5 h-5 text-blue-600" />
+                    <span className="text-lg font-black">Billing History</span>
+                  </div>
+
+                  {hasActiveSubscription ? (
+                    <div className="space-y-3">
+                      {[0, 1].map((offset) => {
+                        const date = new Date();
+                        date.setMonth(date.getMonth() - offset);
+
+                        return (
+                          <div
+                            key={offset}
+                            className="flex items-center justify-between p-3 border rounded-lg"
+                          >
+                            <div>
+                              <div className="font-medium">
+                                {date.toLocaleString("en-US", {
+                                  month: "long",
+                                  year: "numeric",
+                                })}
+                              </div>
+                              <div className="text-sm text-gray-600">{planConfig.name} Plan</div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <span className="px-3 py-1 rounded-full text-xs font-black bg-green-100 text-green-800">
+                                Paid
+                              </span>
+                              <span className="font-medium">{planConfig.price}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-500">
+                      No billing history yet for this account.
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
+                  <div className="flex items-center gap-2 mb-5">
+                    <CreditCard className="w-5 h-5 text-blue-600" />
+                    <span className="text-lg font-black">Payment Method</span>
+                  </div>
+
+                  {hasActiveSubscription ? (
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-6 bg-gradient-to-r from-blue-600 to-purple-600 rounded flex items-center justify-center">
+                          <CreditCard className="w-4 h-4 text-white" />
+                        </div>
+                        <div>
+                          <div className="font-medium">Managed in Stripe</div>
+                          <div className="text-sm text-gray-600">
+                            Update card details from the billing portal
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleManageSubscription}
+                        disabled={billingActionLoading}
+                        className="border border-slate-300 px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-60"
+                      >
+                        {billingActionLoading ? "Opening..." : "Update"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                      <CheckCircle2 className="w-4 h-4 text-slate-400" />
+                      Add a payment method during checkout when you upgrade.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -728,7 +1144,7 @@ export default function SettingsPage() {
                       Current Role
                     </div>
                     <div className="mt-1 text-sm font-black text-slate-900">
-                      {prettyLabel(role, "User")}
+                      {prettyLabel(profileRole || role, "User")}
                     </div>
                   </div>
 
