@@ -27,14 +27,13 @@ import { supabase } from "@/lib/supabase";
  * - removes fake sidebar/header
  * - replaces horizontal scrolling tab bar with wrapped pill tabs
  * - loads real profile/org data
- * - persists full name to both profiles and auth metadata
+ * - persists full name to profiles.full_name and auth metadata
  * - reloads saved data after save so the value survives navigation
  */
 
 type ProfileRow = {
   id: string;
   full_name?: string | null;
-  name?: string | null;
   role?: string | null;
   title?: string | null;
   timezone?: string | null;
@@ -116,7 +115,7 @@ export default function SettingsPage() {
     try {
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("*")
+        .select("id, full_name, role, title, timezone, preferences")
         .eq("id", targetUserId)
         .maybeSingle();
 
@@ -124,7 +123,7 @@ export default function SettingsPage() {
 
       const { data: membershipData, error: membershipError } = await supabase
         .from("org_memberships")
-        .select("org_id, role, orgs(*)")
+        .select("org_id, role, orgs(id, name)")
         .eq("user_id", targetUserId)
         .limit(1)
         .maybeSingle();
@@ -134,7 +133,6 @@ export default function SettingsPage() {
       const orgData = (membershipData as any)?.orgs ?? null;
       const resolvedName =
         profileData?.full_name ||
-        profileData?.name ||
         user?.user_metadata?.full_name ||
         user?.user_metadata?.name ||
         "";
@@ -163,12 +161,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void loadSettingsData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   const initials = useMemo(
-    () => getInitials(fullName || profile?.full_name || profile?.name, workEmail || user?.email),
-    [fullName, profile?.full_name, profile?.name, workEmail, user?.email],
+    () => getInitials(fullName || profile?.full_name, workEmail || user?.email),
+    [fullName, profile?.full_name, workEmail, user?.email],
   );
 
   const profileHeadline = useMemo(() => {
@@ -215,7 +212,6 @@ export default function SettingsPage() {
   const handleDiscard = () => {
     setFullName(
       profile?.full_name ||
-        profile?.name ||
         user?.user_metadata?.full_name ||
         user?.user_metadata?.name ||
         "",
@@ -237,7 +233,6 @@ export default function SettingsPage() {
       const profilePayload = {
         id: user.id,
         full_name: normalizedName || null,
-        name: normalizedName || null,
       };
 
       const { error: profileError } = await supabase
