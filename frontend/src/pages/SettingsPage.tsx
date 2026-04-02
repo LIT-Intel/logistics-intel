@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Settings as SettingsIcon,
   User,
   Shield,
   Database,
@@ -21,11 +20,15 @@ import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 
 /*
- * Modern settings page for Logistics Intel.
+ * SettingsPage
  *
- * This version removes the duplicate in-page sidebar/header so the app's real
- * shell layout can own navigation. It also replaces static mock profile/org
- * values with live auth-backed data from Supabase.
+ * Full enterprise settings page without duplicate app shell.
+ * Fixes included:
+ * - removes fake sidebar/header
+ * - replaces horizontal scrolling tab bar with wrapped pill tabs
+ * - loads real profile/org data
+ * - persists full name to both profiles and auth metadata
+ * - reloads saved data after save so the value survives navigation
  */
 
 type ProfileRow = {
@@ -43,29 +46,50 @@ type OrgRow = {
   name?: string | null;
 };
 
+type TabId =
+  | "account"
+  | "security"
+  | "integrations"
+  | "billing"
+  | "notifications"
+  | "access";
+
 function getInitials(name?: string | null, email?: string | null) {
   const source = (name || email || "U").trim();
   const parts = source.split(/\s+/).filter(Boolean);
+
   if (parts.length >= 2) {
     return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
   }
+
   return source.slice(0, 2).toUpperCase();
 }
 
+function prettyLabel(value?: string | null, fallback = "User") {
+  if (!value) return fallback;
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<string>("account");
+  const { user, role, plan, access, refreshProfile } = useAuth();
+
+  const [activeTab, setActiveTab] = useState<TabId>("account");
   const [isSaving, setIsSaving] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [org, setOrg] = useState<OrgRow | null>(null);
-  const [loadingData, setLoadingData] = useState(true);
-
-  const { user, role, plan, access } = useAuth();
 
   const [fullName, setFullName] = useState("");
   const [workEmail, setWorkEmail] = useState("");
   const [organizationName, setOrganizationName] = useState("");
+  const [saveState, setSaveState] = useState<{
+    kind: "idle" | "success" | "error";
+    message: string;
+  }>({ kind: "idle", message: "" });
 
-  const tabs = [
+  const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
     { id: "account", label: "Account Profile", icon: User },
     { id: "security", label: "Security & Auth", icon: Shield },
     { id: "integrations", label: "Data Sources", icon: Database },
@@ -74,82 +98,73 @@ export default function SettingsPage() {
     { id: "access", label: "Access & Plans", icon: Activity },
   ];
 
+  const loadSettingsData = async (userId?: string) => {
+    const targetUserId = userId ?? user?.id;
+
+    if (!targetUserId) {
+      setProfile(null);
+      setOrg(null);
+      setFullName("");
+      setWorkEmail("");
+      setOrganizationName("");
+      setLoadingData(false);
+      return;
+    }
+
+    setLoadingData(true);
+
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", targetUserId)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+
+      const { data: membershipData, error: membershipError } = await supabase
+        .from("org_memberships")
+        .select("org_id, role, orgs(*)")
+        .eq("user_id", targetUserId)
+        .limit(1)
+        .maybeSingle();
+
+      if (membershipError) throw membershipError;
+
+      const orgData = (membershipData as any)?.orgs ?? null;
+      const resolvedName =
+        profileData?.full_name ||
+        profileData?.name ||
+        user?.user_metadata?.full_name ||
+        user?.user_metadata?.name ||
+        "";
+
+      setProfile(profileData ?? null);
+      setOrg(orgData);
+      setFullName(resolvedName);
+      setWorkEmail(user?.email || "");
+      setOrganizationName(orgData?.name || "");
+      setSaveState({ kind: "idle", message: "" });
+    } catch (error) {
+      console.error("[Settings] Failed to load settings data:", error);
+      setProfile(null);
+      setOrg(null);
+      setFullName(user?.user_metadata?.full_name || user?.user_metadata?.name || "");
+      setWorkEmail(user?.email || "");
+      setOrganizationName("");
+      setSaveState({
+        kind: "error",
+        message: "Could not load your settings. Some values may be incomplete.",
+      });
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
   useEffect(() => {
-    let isMounted = true;
-
-    const loadSettingsData = async () => {
-      if (!user?.id) {
-        if (!isMounted) return;
-        setProfile(null);
-        setOrg(null);
-        setFullName("");
-        setWorkEmail("");
-        setOrganizationName("");
-        setLoadingData(false);
-        return;
-      }
-
-      setLoadingData(true);
-
-      try {
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        if (profileError && profileError.code !== "PGRST116") {
-          throw profileError;
-        }
-
-        const { data: membershipData, error: membershipError } = await supabase
-          .from("org_memberships")
-          .select("org_id, role, orgs(*)")
-          .eq("user_id", user.id)
-          .limit(1)
-          .maybeSingle();
-
-        if (membershipError && membershipError.code !== "PGRST116") {
-          throw membershipError;
-        }
-
-        const orgData = (membershipData as any)?.orgs ?? null;
-
-        if (!isMounted) return;
-
-        setProfile(profileData ?? null);
-        setOrg(orgData);
-
-        setFullName(
-          profileData?.full_name ||
-            profileData?.name ||
-            user.user_metadata?.full_name ||
-            user.user_metadata?.name ||
-            "",
-        );
-        setWorkEmail(user.email || "");
-        setOrganizationName(orgData?.name || "");
-      } catch (error) {
-        console.error("[Settings] Failed to load settings data:", error);
-        if (!isMounted) return;
-        setProfile(null);
-        setOrg(null);
-        setFullName(user.user_metadata?.full_name || user.user_metadata?.name || "");
-        setWorkEmail(user.email || "");
-        setOrganizationName("");
-      } finally {
-        if (isMounted) {
-          setLoadingData(false);
-        }
-      }
-    };
-
-    loadSettingsData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [user]);
+    void loadSettingsData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const initials = useMemo(
     () => getInitials(fullName || profile?.full_name || profile?.name, workEmail || user?.email),
@@ -157,90 +172,116 @@ export default function SettingsPage() {
   );
 
   const profileHeadline = useMemo(() => {
-    const titleValue =
-      profile?.title ||
-      (role ? `${String(role).replace(/_/g, " ")}` : null);
+    const profileRole = profile?.title || prettyLabel(profile?.role, "");
+    const authRole = prettyLabel(role, "");
 
-    if (titleValue && organizationName) {
-      return `${titleValue} at ${organizationName}`;
-    }
-
-    if (organizationName) {
-      return organizationName;
-    }
-
-    if (titleValue) {
-      return titleValue;
-    }
-
+    if (profileRole && organizationName) return `${profileRole} at ${organizationName}`;
+    if (authRole && organizationName) return `${authRole} at ${organizationName}`;
+    if (organizationName) return organizationName;
+    if (profileRole) return profileRole;
+    if (authRole) return authRole;
     return "Manage your Logistics Intel account";
-  }, [profile?.title, role, organizationName]);
+  }, [organizationName, profile?.role, profile?.title, role]);
 
-  const displayPlan = useMemo(() => {
-    if (!plan) return "Free Trial";
-    return String(plan)
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  }, [plan]);
+  const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
 
-  const teamUsersLimit =
-    access?.limits?.teamUsers === null || access?.limits?.teamUsers === undefined
-      ? "Unlimited"
-      : `${access.usage?.teamUsersUsed ?? 0} / ${access.limits.teamUsers}`;
+  const searchesUsed = access?.usage?.searchesUsedThisMonth ?? 0;
+  const enrichmentUsed = access?.usage?.enrichmentUsedThisMonth ?? 0;
+  const teamUsersUsed = access?.usage?.teamUsersUsed ?? 0;
+  const savedCompaniesUsed = access?.usage?.savedCompaniesUsed ?? 0;
 
   const searchLimit =
-    access?.limits?.searchesPerMonth === null || access?.limits?.searchesPerMonth === undefined
+    access?.limits?.searchesPerMonth == null
       ? "Unlimited"
-      : `${access.usage?.searchesUsedThisMonth ?? 0} / ${access.limits.searchesPerMonth}`;
+      : `${searchesUsed} / ${access.limits.searchesPerMonth}`;
 
   const enrichmentLimit =
-    access?.limits?.enrichmentPerMonth === null || access?.limits?.enrichmentPerMonth === undefined
+    access?.limits?.enrichmentPerMonth == null
       ? "Unlimited"
-      : `${access.usage?.enrichmentUsedThisMonth ?? 0} / ${access.limits.enrichmentPerMonth}`;
+      : `${enrichmentUsed} / ${access.limits.enrichmentPerMonth}`;
 
-  const saveLimit =
-    access?.limits?.savedCompanies === null || access?.limits?.savedCompanies === undefined
+  const teamUsersLimit =
+    access?.limits?.teamUsers == null
       ? "Unlimited"
-      : `${access.usage?.savedCompaniesUsed ?? 0} / ${access.limits.savedCompanies}`;
+      : `${teamUsersUsed} / ${access.limits.teamUsers}`;
+
+  const savedCompaniesLimit =
+    access?.limits?.savedCompanies == null
+      ? "Unlimited"
+      : `${savedCompaniesUsed} / ${access.limits.savedCompanies}`;
 
   const isAdmin = Boolean(access?.isAdmin);
+
+  const handleDiscard = () => {
+    setFullName(
+      profile?.full_name ||
+        profile?.name ||
+        user?.user_metadata?.full_name ||
+        user?.user_metadata?.name ||
+        "",
+    );
+    setWorkEmail(user?.email || "");
+    setOrganizationName(org?.name || "");
+    setSaveState({ kind: "idle", message: "" });
+  };
 
   const handleSave = async () => {
     if (!user?.id) return;
 
     setIsSaving(true);
+    setSaveState({ kind: "idle", message: "" });
 
     try {
-      const payload: Record<string, any> = {
-        full_name: fullName || null,
+      const normalizedName = fullName.trim();
+
+      const profilePayload = {
+        id: user.id,
+        full_name: normalizedName || null,
+        name: normalizedName || null,
       };
 
-      if (profile?.timezone) {
-        payload.timezone = profile.timezone;
-      }
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert(profilePayload, { onConflict: "id" });
 
-      const { error } = await supabase.from("profiles").upsert({
-        id: user.id,
-        ...payload,
+      if (profileError) throw profileError;
+
+      const { error: authError } = await supabase.auth.updateUser({
+        data: {
+          full_name: normalizedName || null,
+          name: normalizedName || null,
+        },
       });
 
-      if (error) throw error;
+      if (authError) {
+        console.warn("[Settings] Auth metadata update warning:", authError);
+      }
 
-      setProfile((prev) => ({
-        ...(prev || { id: user.id }),
-        full_name: fullName || null,
-      }));
-    } catch (error) {
+      if (typeof refreshProfile === "function") {
+        await refreshProfile(user.id);
+      }
+
+      await loadSettingsData(user.id);
+
+      setSaveState({
+        kind: "success",
+        message: "Settings saved successfully.",
+      });
+    } catch (error: any) {
       console.error("[Settings] Failed to save profile:", error);
+      setSaveState({
+        kind: "error",
+        message: error?.message || "Could not save your settings.",
+      });
     } finally {
-      setTimeout(() => setIsSaving(false), 700);
+      setIsSaving(false);
     }
   };
 
   return (
     <div className="w-full min-h-full bg-[#F8FAFC] text-slate-900 font-sans">
       <div className="max-w-6xl mx-auto w-full p-8 lg:p-12">
-        <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="mb-8 flex flex-col gap-6">
           <div>
             <div className="flex items-center gap-2 text-sm font-bold text-slate-400 mb-2">
               <span>App</span>
@@ -255,18 +296,20 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <div className="flex bg-slate-200/50 p-1 rounded-xl border border-slate-200 overflow-x-auto">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black transition-all whitespace-nowrap ${
+                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black transition-all border ${
                   activeTab === tab.id
-                    ? "bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200"
-                    : "text-slate-500 hover:text-slate-700"
+                    ? "bg-white text-indigo-600 shadow-sm border-indigo-200 ring-1 ring-indigo-100"
+                    : "bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-700 hover:bg-white"
                 }`}
               >
-                <tab.icon className="h-3.5 w-3.5" /> {tab.label}
+                <tab.icon className="h-3.5 w-3.5" />
+                <span>{tab.label}</span>
               </button>
             ))}
           </div>
@@ -275,7 +318,7 @@ export default function SettingsPage() {
         <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden flex flex-col min-h-[600px]">
           {activeTab === "account" && (
             <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="max-w-2xl space-y-8">
+              <div className="max-w-3xl space-y-8">
                 <div className="flex items-center gap-6 pb-8 border-b border-slate-100">
                   <div className="h-24 w-24 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white text-3xl font-black shadow-xl shadow-indigo-100 ring-4 ring-white">
                     {initials}
@@ -293,7 +336,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                       Full Name
@@ -301,6 +344,7 @@ export default function SettingsPage() {
                     <input
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Enter your full name"
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
                     />
                   </div>
@@ -312,18 +356,18 @@ export default function SettingsPage() {
                     <input
                       value={workEmail}
                       disabled
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 focus:bg-white outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 outline-none"
                     />
                   </div>
 
-                  <div className="space-y-2 col-span-2">
+                  <div className="space-y-2 md:col-span-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                       Organization
                     </label>
                     <input
                       value={organizationName || "No Organization"}
                       disabled
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 focus:bg-white outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 outline-none"
                     />
                   </div>
                 </div>
@@ -339,11 +383,11 @@ export default function SettingsPage() {
                     <Lock className="h-5 w-5 text-indigo-600" /> Password Management
                   </h3>
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <input
                         type="password"
                         placeholder="Current Password"
-                        className="col-span-2 w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
+                        className="md:col-span-2 w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
                       />
                       <input
                         type="password"
@@ -470,6 +514,7 @@ export default function SettingsPage() {
                 <div className="absolute top-0 right-0 p-8 opacity-10">
                   <Zap className="h-32 w-32" />
                 </div>
+
                 <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                   <div className="space-y-2">
                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">
@@ -482,6 +527,7 @@ export default function SettingsPage() {
                       Plan-based access and usage visibility
                     </p>
                   </div>
+
                   <div className="flex gap-3">
                     <button className="bg-white text-slate-900 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-100 transition-all">
                       Manage Billing
@@ -491,12 +537,13 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
+
                 <div className="mt-8 pt-8 border-t border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4">
                   {[
                     { label: "Searches / Month", val: searchLimit },
                     { label: "AI Intel Credits", val: enrichmentLimit },
                     { label: "Team Members", val: teamUsersLimit },
-                    { label: "Saved Companies", val: saveLimit },
+                    { label: "Saved Companies", val: savedCompaniesLimit },
                   ].map((stat, i) => (
                     <div key={i}>
                       <div className="text-[10px] font-black uppercase text-slate-500">
@@ -519,6 +566,7 @@ export default function SettingsPage() {
                     <ExternalLink className="h-3 w-3" /> View Portal
                   </button>
                 </div>
+
                 <div className="border border-slate-100 rounded-2xl divide-y divide-slate-100 overflow-hidden">
                   {[
                     { date: "Oct 1, 2025", amt: "$12,400.00", status: "Paid", inv: "INV-8921" },
@@ -542,6 +590,7 @@ export default function SettingsPage() {
                           </div>
                         </div>
                       </div>
+
                       <div className="flex items-center gap-8">
                         <div className="text-sm font-black text-slate-800">
                           {row.amt}
@@ -584,9 +633,8 @@ export default function SettingsPage() {
             <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
               <h3 className="text-lg font-black text-slate-900">Access & Plans</h3>
               <p className="text-sm text-slate-600 max-w-xl">
-                Configure beta access, seat assignments and free plan limits. Free
-                tier users are limited by plan gating rules. Upgrade plans to unlock
-                higher limits and advanced features.
+                Configure beta access, seat assignments and free plan limits. Upgrade
+                plans to unlock higher limits and advanced features.
               </p>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
@@ -596,7 +644,7 @@ export default function SettingsPage() {
                       Current Role
                     </div>
                     <div className="mt-1 text-sm font-black text-slate-900">
-                      {role ? String(role).replace(/_/g, " ") : "User"}
+                      {prettyLabel(role, "User")}
                     </div>
                   </div>
 
@@ -660,27 +708,32 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <div className="mt-auto border-t border-slate-100 p-6 bg-slate-50/50 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-400">
-              <AlertCircle className="h-4 w-4" />
-              <span className="text-xs font-medium italic">
-                Unsaved changes will be lost.
-              </span>
+          <div className="mt-auto border-t border-slate-100 p-6 bg-slate-50/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-2 text-slate-400">
+              <AlertCircle className="h-4 w-4 mt-0.5" />
+              <div className="text-xs font-medium italic">
+                {saveState.kind === "success" && (
+                  <span className="text-emerald-600 not-italic">{saveState.message}</span>
+                )}
+                {saveState.kind === "error" && (
+                  <span className="text-red-600 not-italic">{saveState.message}</span>
+                )}
+                {saveState.kind === "idle" && "Unsaved changes will be lost."}
+              </div>
             </div>
+
             <div className="flex gap-4">
               <button
                 className="text-xs font-black uppercase text-slate-400 tracking-widest hover:text-slate-600"
-                onClick={() => {
-                  setFullName(profile?.full_name || profile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || "");
-                  setWorkEmail(user?.email || "");
-                  setOrganizationName(org?.name || "");
-                }}
+                onClick={handleDiscard}
+                type="button"
               >
                 Discard
               </button>
               <button
                 onClick={handleSave}
                 disabled={isSaving || !user}
+                type="button"
                 className="bg-indigo-600 text-white px-8 py-3 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2 min-w-[160px] justify-center disabled:opacity-60"
               >
                 {isSaving ? (
