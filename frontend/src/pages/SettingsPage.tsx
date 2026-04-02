@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
+// Import the BillingSettings component for the billing tab
+import BillingSettings from "@/components/settings/BillingSettings";
 
 // This is an updated Settings page that wires Profile and Organization details to Supabase
 // and adds functionality for updating the user's password in the Security tab.
@@ -28,7 +30,8 @@ type ProfileRow = {
   role?: string | null;
   title?: string | null;
   timezone?: string | null;
-  preferences?: Record<string, any> | null;
+  // The preferences column is optional and may not exist in all deployments. Do not select it unless present.
+  // preferences?: Record<string, any> | null;
   company_name?: string | null;
   organization_name?: string | null;
 };
@@ -141,7 +144,7 @@ export default function SettingsPage() {
       const { data: profileData, error: profileError } = await supabase
         .from<ProfileRow>("profiles")
         .select(
-          "id, full_name, role, title, timezone, preferences, company_name, organization_name"
+          "id, full_name, role, title, timezone, company_name, organization_name"
         )
         .eq("id", targetUserId)
         .maybeSingle();
@@ -265,6 +268,29 @@ export default function SettingsPage() {
 
   const isAdmin = Boolean(access?.isAdmin);
 
+  // Construct a user-like object for the Billing tab. This merges the existing
+  // user fields with canonical plan and subscription fields, plus usage
+  // counters from the access state. BillingSettings expects these fields.
+  const billingUser = useMemo(() => {
+    const customerId =
+      (user as any)?.stripe_customer_id ||
+      (user as any)?.user_metadata?.stripe_customer_id ||
+      null;
+    const subStatus =
+      (user as any)?.subscription_status ||
+      (user as any)?.user_metadata?.subscription_status ||
+      null;
+    return {
+      ...(user || {}),
+      plan,
+      stripe_customer_id: customerId,
+      subscription_status: subStatus,
+      monthly_companies_viewed: access?.usage?.savedCompaniesUsed ?? 0,
+      monthly_emails_sent: access?.usage?.enrichmentUsedThisMonth ?? 0,
+      monthly_rfps_generated: 0,
+    };
+  }, [user, plan, access]);
+
   /**
    * Reset the profile editing fields to their last loaded state.
    */
@@ -318,7 +344,7 @@ export default function SettingsPage() {
           { onConflict: "id" }
         )
         .select(
-          "id, full_name, role, title, timezone, preferences, company_name, organization_name"
+          "id, full_name, role, title, timezone, company_name, organization_name"
         )
         .single();
 
@@ -647,100 +673,9 @@ export default function SettingsPage() {
           )}
 
           {activeTab === "billing" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-              <div className="bg-slate-900 rounded-3xl p-8 text-white relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 opacity-10">
-                  <Zap className="h-32 w-32" />
-                </div>
-
-                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">
-                      Current Subscription
-                    </span>
-                    <h2 className="text-3xl font-black tracking-tighter">
-                      {displayPlan}
-                    </h2>
-                    <p className="text-slate-400 text-sm font-medium">
-                      Plan-based access and usage visibility
-                    </p>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button className="bg-white text-slate-900 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-100 transition-all">
-                      Manage Billing
-                    </button>
-                    <button className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20">
-                      Upgrade Plan
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-8 pt-8 border-t border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {[
-                    { label: "Searches / Month", val: searchLimit },
-                    { label: "AI Intel Credits", val: enrichmentLimit },
-                    { label: "Team Members", val: teamUsersLimit },
-                    { label: "Saved Companies", val: savedCompaniesLimit },
-                  ].map((stat, i) => (
-                    <div key={i}>
-                      <div className="text-[10px] font-black uppercase text-slate-500">
-                        {stat.label}
-                      </div>
-                      <div className="text-lg font-black text-white">
-                        {stat.val}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex justify-between items-center px-2">
-                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">
-                    Invoicing History
-                  </h3>
-                  <button className="text-xs font-bold text-indigo-600 flex items-center gap-1">
-                    <ExternalLink className="h-3 w-3" /> View Portal
-                  </button>
-                </div>
-
-                <div className="border border-slate-100 rounded-2xl divide-y divide-slate-100 overflow-hidden">
-                  {[
-                    { date: "Oct 1, 2025", amt: "$12,400.00", status: "Paid", inv: "INV-8921" },
-                    { date: "Sep 1, 2025", amt: "$12,400.00", status: "Paid", inv: "INV-8742" },
-                    { date: "Aug 1, 2025", amt: "$12,400.00", status: "Paid", inv: "INV-8501" },
-                  ].map((row, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="h-8 w-8 bg-slate-100 rounded flex items-center justify-center">
-                          <CreditCard className="h-4 w-4 text-slate-400" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-black text-slate-800">
-                            {row.date}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-bold uppercase">
-                            {row.inv}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-8">
-                        <div className="text-sm font-black text-slate-800">
-                          {row.amt}
-                        </div>
-                        <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">
-                          {row.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
+              {/* Use the shared BillingSettings component for canonical plan display and billing actions */}
+              <BillingSettings user={billingUser} />
             </div>
           )}
 
