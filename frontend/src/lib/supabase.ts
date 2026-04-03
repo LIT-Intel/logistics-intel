@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-let supabaseClient: any = null;
-let supabaseError: Error | null = null;
+let supabaseClient = null;
+let supabaseError = null;
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -16,32 +16,73 @@ try {
   }
 } catch (error) {
   console.warn('[LIT] Supabase client could not be initialized. Using fallback storage.', error);
-  supabaseError = error as Error;
+  supabaseError = error instanceof Error ? error : new Error('Supabase initialization failed');
 }
 
-function createMockSupabaseResponse() {
-  return { data: [], error: null };
+function createMockSupabaseResponse(data = []) {
+  return Promise.resolve({ data, error: null });
+}
+
+function createMockSingleResponse(data = null) {
+  return Promise.resolve({ data, error: null });
+}
+
+function createMockTableChain() {
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    neq: () => chain,
+    in: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    range: () => chain,
+    maybeSingle: () => createMockSingleResponse(null),
+    single: () => createMockSingleResponse(null),
+    insert: () => chain,
+    upsert: () => chain,
+    update: () => chain,
+    delete: () => chain,
+    then: (resolve) => resolve({ data: [], error: null }),
+  };
+
+  return chain;
 }
 
 function createMockSupabaseClient() {
-  const mockChain = {
-    select: () => mockChain,
-    eq: () => mockChain,
-    order: () => mockChain,
-    maybeSingle: () => createMockSupabaseResponse(),
-    single: () => ({ data: null, error: new Error('Supabase not available') }),
-    insert: () => mockChain,
-    upsert: () => mockChain,
-    delete: () => ({ error: new Error('Supabase not available') }),
-    ...createMockSupabaseResponse(),
-  };
-
   return {
-    from: () => mockChain
+    from: () => createMockTableChain(),
+    auth: {
+      getUser: async () => ({ data: { user: null }, error: null }),
+      getSession: async () => ({ data: { session: null }, error: null }),
+      onAuthStateChange: () => ({
+        data: {
+          subscription: {
+            unsubscribe: () => {},
+          },
+        },
+      }),
+      signInWithPassword: async () => ({ data: null, error: new Error('Supabase not available') }),
+      signOut: async () => ({ error: null }),
+    },
+    functions: {
+      invoke: async () => ({
+        data: { ok: false, mock: true, message: 'Supabase functions unavailable in fallback mode' },
+        error: new Error('Supabase functions unavailable'),
+      }),
+    },
+    rpc: async () => ({ data: null, error: new Error('Supabase not available') }),
   };
 }
 
 export const supabase = supabaseClient || createMockSupabaseClient();
+
+export function isSupabaseAvailable() {
+  return !supabaseError && !!supabaseClient;
+}
+
+export function getSupabaseError() {
+  return supabaseError;
+}
 
 export type SavedCompanyRecord = {
   id: string;
@@ -87,11 +128,24 @@ export type CampaignCompanyRecord = {
   added_at: string;
 };
 
+function getLocalSavedCompanies() {
+  try {
+    return JSON.parse(localStorage.getItem('lit_saved_companies') || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function setLocalSavedCompanies(rows) {
+  localStorage.setItem('lit_saved_companies', JSON.stringify(rows));
+}
+
 export async function getSavedCompaniesFromSupabase(stage = 'prospect') {
   try {
     if (supabaseError) {
-      console.warn('[Supabase] Client not available, returning empty results');
-      return { rows: [], total: 0 };
+      console.warn('[Supabase] Client not available, returning local fallback results');
+      const stored = getLocalSavedCompanies().filter((row) => row.stage === stage);
+      return { rows: stored, total: stored.length };
     }
 
     const { data, error } = await supabase
@@ -121,13 +175,19 @@ export async function saveCompanyToSupabase(payload: {
   source?: string;
 }) {
   try {
+    const companyName =
+      payload.company_name ||
+      payload.company_data?.name ||
+      payload.company_data?.title ||
+      'Unknown Company';
+
     if (supabaseError) {
       console.warn('[Supabase] Client not available, cannot save company. Using localStorage fallback.');
       const saved = {
         id: `local-${Date.now()}`,
         company_id: payload.company_id,
         company_key: payload.company_key || payload.company_id,
-        company_name: payload.company_name || payload.company_data?.name || 'Unknown Company',
+        company_name: companyName,
         company_data: payload.company_data || {},
         stage: payload.stage || 'prospect',
         source: payload.source || 'importyeti',
@@ -136,38 +196,40 @@ export async function saveCompanyToSupabase(payload: {
         user_id: 'local-user',
       };
 
-      const stored = JSON.parse(localStorage.getItem('lit_saved_companies') || '[]');
-      const existing = stored.findIndex((c: any) => c.company_id === payload.company_id);
+      const stored = getLocalSavedCompanies();
+      const existing = stored.findIndex((c) => c.company_id === payload.company_id);
       if (existing >= 0) {
         stored[existing] = saved;
       } else {
         stored.push(saved);
       }
-      localStorage.setItem('lit_saved_companies', JSON.stringify(stored));
+      setLocalSavedCompanies(stored);
 
       return saved;
     }
 
-    const companyName = payload.company_name || payload.company_data?.name || payload.company_data?.title || 'Unknown Company';
-
     const { data, error } = await supabase
       .from('lit_saved_companies')
-      .upsert({
-        company_id: payload.company_id,
-        company_key: payload.company_key || payload.company_id,
-        company_name: companyName,
-        company_data: payload.company_data || {},
-        stage: payload.stage || 'prospect',
-        source: payload.source || 'importyeti',
-        updated_at: new Date().toISOString(),
-      }, {
-        onConflict: 'company_id'
-      })
+      .upsert(
+        {
+          company_id: payload.company_id,
+          company_key: payload.company_key || payload.company_id,
+          company_name: companyName,
+          company_data: payload.company_data || {},
+          stage: payload.stage || 'prospect',
+          source: payload.source || 'importyeti',
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'company_id',
+        }
+      )
       .select()
       .single();
 
     if (error) {
       console.warn('[Supabase] Error saving company, using localStorage fallback:', error);
+
       const saved = {
         id: `local-${Date.now()}`,
         company_id: payload.company_id,
@@ -181,14 +243,14 @@ export async function saveCompanyToSupabase(payload: {
         user_id: 'local-user',
       };
 
-      const stored = JSON.parse(localStorage.getItem('lit_saved_companies') || '[]');
-      const existing = stored.findIndex((c: any) => c.company_id === payload.company_id);
+      const stored = getLocalSavedCompanies();
+      const existing = stored.findIndex((c) => c.company_id === payload.company_id);
       if (existing >= 0) {
         stored[existing] = saved;
       } else {
         stored.push(saved);
       }
-      localStorage.setItem('lit_saved_companies', JSON.stringify(stored));
+      setLocalSavedCompanies(stored);
 
       return saved;
     }
@@ -203,8 +265,8 @@ export async function saveCompanyToSupabase(payload: {
 export async function getCompanyFromSupabase(company_id: string) {
   try {
     if (supabaseError) {
-      const stored = JSON.parse(localStorage.getItem('lit_saved_companies') || '[]');
-      return stored.find((c: any) => c.company_id === company_id) || null;
+      const stored = getLocalSavedCompanies();
+      return stored.find((c) => c.company_id === company_id) || null;
     }
 
     const { data, error } = await supabase
@@ -228,9 +290,9 @@ export async function getCompanyFromSupabase(company_id: string) {
 export async function deleteCompanyFromSupabase(company_id: string) {
   try {
     if (supabaseError) {
-      const stored = JSON.parse(localStorage.getItem('lit_saved_companies') || '[]');
-      const filtered = stored.filter((c: any) => c.company_id !== company_id);
-      localStorage.setItem('lit_saved_companies', JSON.stringify(filtered));
+      const stored = getLocalSavedCompanies();
+      const filtered = stored.filter((c) => c.company_id !== company_id);
+      setLocalSavedCompanies(filtered);
       return { success: true };
     }
 
