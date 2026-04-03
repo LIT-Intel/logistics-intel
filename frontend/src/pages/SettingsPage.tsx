@@ -194,7 +194,9 @@ const ToggleSwitch = ({
 );
 
 export default function SettingsPage() {
-  const { user, role, plan, access } = useAuth();
+  const { user } = useAuth();
+  const plan = user?.plan || "free_trial";
+  const role = user?.role || "user";
 
   const [activeTab, setActiveTab] = useState<TabId>("account");
   const [isSaving, setIsSaving] = useState(false);
@@ -270,7 +272,7 @@ export default function SettingsPage() {
     setLoadingData(true);
     try {
       const { data: profileData } = await supabase
-        .from("profiles")
+        .from("user_profiles")
         .select("id, full_name, company_name, organization_name")
         .eq("id", targetUserId)
         .maybeSingle();
@@ -354,6 +356,60 @@ export default function SettingsPage() {
     }
   };
 
+  const loadBillingData = async (userId?: string) => {
+    const targetUserId = userId ?? user?.id;
+    if (!targetUserId) {
+      return;
+    }
+
+    try {
+      // Load subscription data
+      const { data: subscriptionData } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+
+      // Load token usage data
+      const { data: tokenData } = await supabase
+        .from("token_ledger")
+        .select("feature, tokens, created_at")
+        .eq("user_id", targetUserId)
+        .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+      // Calculate usage by feature
+      const usage = {
+        companies_viewed: 0,
+        emails_sent: 0,
+        rfps_generated: 0,
+      };
+
+      if (tokenData) {
+        tokenData.forEach((entry: any) => {
+          if (entry.feature === "company_modal") usage.companies_viewed += entry.tokens;
+          if (entry.feature === "search") usage.emails_sent += entry.tokens;
+          if (entry.feature === "rfp") usage.rfps_generated += entry.tokens;
+        });
+      }
+
+      // Calculate next billing date
+      const nextBillingDate = subscriptionData?.current_period_end
+        ? new Date(subscriptionData.current_period_end)
+        : null;
+
+      setBillingData({
+        current_plan: subscriptionData?.plan_code || null,
+        next_billing_date: nextBillingDate,
+        stripe_status: subscriptionData?.status || null,
+        stripe_customer_id: subscriptionData?.stripe_customer_id || null,
+        usage,
+        billing_history: [], // TODO: fetch from Stripe API if needed
+      });
+    } catch (error) {
+      console.error("[Settings] Failed to load billing data:", error);
+    }
+  };
+
   const handleSendInvite = async () => {
     if (!user?.id || !inviteEmail.trim()) return;
 
@@ -402,6 +458,7 @@ export default function SettingsPage() {
   useEffect(() => {
     void loadSettingsData();
     void loadOrgMembers();
+    void loadBillingData();
   }, [user?.id]);
 
   const initials = useMemo(
@@ -410,7 +467,7 @@ export default function SettingsPage() {
   );
 
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
-  const isAdmin = Boolean(access?.isAdmin);
+  const isAdmin = Boolean(role === "admin" || role === "owner");
 
   const canonicalPlan = getCanonicalPlan(String(plan || "free_trial"));
   const planConfig = getPlanLimits(canonicalPlan);
@@ -436,7 +493,7 @@ export default function SettingsPage() {
       const normalizedCompany = companyName.trim();
 
       const { error: profileError } = await supabase
-        .from("profiles")
+        .from("user_profiles")
         .upsert(
           {
             id: user.id,
@@ -823,13 +880,24 @@ export default function SettingsPage() {
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                 <div className="text-sm text-gray-600 mb-2">Next billing date</div>
-                <div className="text-2xl font-bold text-slate-900">May 2</div>
+                <div className="text-2xl font-bold text-slate-900">
+                  {billingData.next_billing_date
+                    ? new Date(billingData.next_billing_date).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "—"}
+                </div>
                 <div className="text-sm text-gray-600 mt-2">Auto-renews · Stripe</div>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                 <div className="text-sm text-gray-600 mb-2">Stripe status</div>
-                <div className="text-2xl font-bold text-green-700">Active</div>
-                <div className="text-sm text-green-600 mt-2">Customer connected</div>
+                <div className={`text-2xl font-bold ${billingData.stripe_status === "active" ? "text-green-700" : "text-yellow-700"}`}>
+                  {billingData.stripe_status ? prettyLabel(billingData.stripe_status) : "—"}
+                </div>
+                <div className={`text-sm ${billingData.stripe_status === "active" ? "text-green-600" : "text-yellow-600"} mt-2`}>
+                  {billingData.stripe_customer_id ? "Customer connected" : "Not connected"}
+                </div>
               </div>
             </div>
 
@@ -907,12 +975,14 @@ export default function SettingsPage() {
                 <TrendingUp className="w-5 h-5 text-blue-600" />
                 Usage this month
               </h3>
-              <div className="text-right text-sm text-gray-600 mb-4">Resets May 1</div>
+              <div className="text-right text-sm text-gray-600 mb-4">
+                Resets {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </div>
 
               <div className="space-y-6">
-                <UsageBar label="Companies viewed" current={312} max={planConfig.max_companies} />
-                <UsageBar label="Emails sent" current={1840} max={planConfig.max_emails} />
-                <UsageBar label="RFPs generated" current={47} max={planConfig.max_rfps} />
+                <UsageBar label="Companies viewed" current={billingData.usage.companies_viewed} max={planConfig.max_companies} />
+                <UsageBar label="Emails sent" current={billingData.usage.emails_sent} max={planConfig.max_emails} />
+                <UsageBar label="RFPs generated" current={billingData.usage.rfps_generated} max={planConfig.max_rfps} />
               </div>
             </div>
 
