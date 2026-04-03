@@ -496,11 +496,10 @@ export default function SettingsPage() {
         .from("user_profiles")
         .upsert(
           {
-            id: user.id,
+            user_id: user.id,
             full_name: normalizedName || null,
-            company_name: normalizedCompany || null,
           },
-          { onConflict: "id" }
+          { onConflict: "user_id" }
         );
 
       if (profileError) throw profileError;
@@ -646,8 +645,8 @@ export default function SettingsPage() {
                     : "border-transparent text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <tab.icon className="w-4 h-4" />
-                <span className="hidden xs:inline">{tab.label}</span>
+                <tab.icon className="w-4 h-4 flex-shrink-0" />
+                <span className="sm:inline">{tab.label}</span>
               </button>
             ))}
           </div>
@@ -1020,26 +1019,34 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-2 sm:space-y-3">
-                {[
-                  { month: "March 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
-                  { month: "February 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
-                  { month: "January 2025", plan: "Standard Plan", amount: "$49", status: "Paid" },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 xs:gap-3 p-3 xs:p-4 border border-gray-200 rounded-lg">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-sm xs:text-base text-slate-900">{item.month}</div>
-                      <div className="text-xs xs:text-sm text-gray-600">{item.plan}</div>
-                      <div className="text-xs text-gray-500 mt-1">Auto-charged · Visa ····4242</div>
+                {billingData.billing_history && billingData.billing_history.length > 0 ? (
+                  billingData.billing_history.map((item: any, idx: number) => (
+                    <div key={idx} className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 xs:gap-3 p-3 xs:p-4 border border-gray-200 rounded-lg">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-sm xs:text-base text-slate-900">{item.month}</div>
+                        <div className="text-xs xs:text-sm text-gray-600">{item.plan}</div>
+                        <div className="text-xs text-gray-500 mt-1">{item.payment_method || "Payment method unavailable"}</div>
+                      </div>
+                      <div className="flex items-center gap-2 xs:gap-3 flex-wrap xs:flex-nowrap">
+                        <span className={`px-2 xs:px-2.5 py-1 rounded text-xs font-semibold border whitespace-nowrap ${
+                          item.status === "Paid"
+                            ? "bg-green-50 text-green-700 border-green-200"
+                            : "bg-yellow-50 text-yellow-700 border-yellow-200"
+                        }`}>
+                          {item.status}
+                        </span>
+                        <span className="font-semibold text-sm xs:text-base text-slate-900 whitespace-nowrap">{item.amount}</span>
+                        {item.invoice_url && (
+                          <a href={item.invoice_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 text-xs xs:text-sm font-medium">PDF</a>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 xs:gap-3 flex-wrap xs:flex-nowrap">
-                      <span className="px-2 xs:px-2.5 py-1 bg-green-50 text-green-700 rounded text-xs font-semibold border border-green-200 whitespace-nowrap">
-                        {item.status}
-                      </span>
-                      <span className="font-semibold text-sm xs:text-base text-slate-900 whitespace-nowrap">{item.amount}</span>
-                      <button className="text-blue-600 hover:text-blue-700 text-xs xs:text-sm font-medium">PDF</button>
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-sm text-gray-500">
+                    {billingData.stripe_customer_id ? "No billing history yet" : "Connect to Stripe to view billing history"}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
