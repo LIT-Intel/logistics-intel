@@ -24,16 +24,26 @@ type Plan = {
   code: string;
   name: string;
   description: string | null;
+  // Display / marketing pricing (editable)
   price_monthly: number | null;
   price_yearly: number | null;
-  stripe_product_id: string | null;
-  stripe_price_id_monthly: string | null;
-  stripe_price_id_yearly: string | null;
+  // Operational limits (editable)
   max_companies: number | null;
   max_emails: number | null;
   max_rfps: number | null;
   enrichment_enabled: boolean;
   campaigns_enabled: boolean;
+  // Internal operational limits (read-only — controlled in DB / code)
+  search_limit: number | null;
+  save_limit: number | null;
+  enrichment_limit: number | null;
+  ai_brief_limit: number | null;
+  seat_limit: number | null;
+  billing_interval: string | null;
+  // Stripe (read-only — must be set in Stripe dashboard then copied here)
+  stripe_product_id: string | null;
+  stripe_price_id_monthly: string | null;
+  stripe_price_id_yearly: string | null;
   is_active: boolean;
   display_order: number;
 };
@@ -369,6 +379,33 @@ export default function AdminPricingEditor() {
                     Campaigns enabled
                   </label>
                 </div>
+              </div>
+
+              {/* Internal operational limits — read-only (enforced in backend) */}
+              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-gray-100">
+                <div className="col-span-3">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+                    Internal usage limits (read-only — enforced by backend)
+                  </p>
+                </div>
+                {[
+                  ["Search limit", plan.search_limit],
+                  ["Save limit", plan.save_limit],
+                  ["Enrichment limit", plan.enrichment_limit],
+                  ["AI brief limit", plan.ai_brief_limit],
+                  ["Seat limit", plan.seat_limit],
+                  ["Billing interval", plan.billing_interval],
+                ].map(([label, val]) => (
+                  <div key={String(label)}>
+                    <label className="text-xs text-slate-400 block mb-1">{label}</label>
+                    <input
+                      readOnly
+                      value={val ?? ""}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-slate-400 cursor-not-allowed"
+                      placeholder="—"
+                    />
+                  </div>
+                ))}
               </div>
 
               {/* Read-only Stripe IDs — informational only */}
