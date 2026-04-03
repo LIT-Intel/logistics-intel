@@ -22,6 +22,7 @@ import {
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { createStripeCheckout, createStripePortalSession } from "@/api/functions";
+import AdminPricingEditor from "@/components/AdminPricingEditor";
 
 type ProfileRow = {
   id: string;
@@ -251,6 +252,11 @@ export default function SettingsPage() {
     billing_history: [],
   });
 
+  // Plans loaded from DB — the single source of truth for billing tab and upgrade cards.
+  const [dbPlans, setDbPlans] = useState<any[]>([]);
+  // Active subscription row for the current user.
+  const [subscription, setSubscription] = useState<any>(null);
+
   const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
     { id: "account", label: "Account", icon: User },
     { id: "security", label: "Security", icon: Shield },
@@ -324,9 +330,12 @@ export default function SettingsPage() {
         .maybeSingle();
 
       if (membershipData?.org_id) {
+        // NOTE: org_members has no FK to public.users, so we cannot use
+        // a Supabase join for email. We select only the columns that exist
+        // on the table itself. Email display falls back to user_id.
         const { data: members } = await supabase
           .from("org_members")
-          .select("id, user_id, role, created_at, users(id, email)")
+          .select("id, user_id, role, created_at")
           .eq("org_id", membershipData.org_id)
           .order("created_at", { ascending: false });
 
@@ -399,9 +408,54 @@ export default function SettingsPage() {
     }
   };
 
+  // Load active plans from DB so Billing tab reflects what Admin saved.
+  const loadBillingPlans = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from("plans")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (error) {
+        console.warn("[Settings] Failed to load plans from DB:", error.message);
+        return;
+      }
+      setDbPlans(data || []);
+    } catch (err) {
+      console.warn("[Settings] Exception loading plans:", err);
+    }
+  };
+
+  // Load the user's current subscription row.
+  const loadSubscription = async (userId?: string) => {
+    const targetUserId = userId ?? user?.id;
+    if (!targetUserId) return;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", targetUserId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.warn("[Settings] Failed to load subscription:", error.message);
+        return;
+      }
+      setSubscription(data || null);
+    } catch (err) {
+      console.warn("[Settings] Exception loading subscription:", err);
+    }
+  };
+
   useEffect(() => {
     void loadSettingsData();
     void loadOrgMembers();
+    void loadBillingPlans();
+    void loadSubscription();
   }, [user?.id]);
 
   const initials = useMemo(
@@ -412,10 +466,34 @@ export default function SettingsPage() {
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
   const isAdmin = Boolean(access?.isAdmin);
 
-  const canonicalPlan = getCanonicalPlan(String(plan || "free_trial"));
-  const planConfig = getPlanLimits(canonicalPlan);
-  const upgradePlans = Object.values(getPlanMap()).filter(
-    (p) => p.code !== canonicalPlan && p.code !== "free_trial"
+  // Determine the effective plan code — prefer live subscription > auth context > default
+  const effectivePlanCode = subscription?.plan_code
+    ? getCanonicalPlan(subscription.plan_code)
+    : getCanonicalPlan(String(plan || "free_trial"));
+
+  const canonicalPlan = effectivePlanCode;
+
+  // planConfig: prefer DB plan row; fall back to hardcoded map for offline/dev
+  const dbCurrentPlan = dbPlans.find((p: any) => getCanonicalPlan(p.code) === canonicalPlan);
+  const planConfig = dbCurrentPlan
+    ? {
+        code: dbCurrentPlan.code,
+        name: dbCurrentPlan.name,
+        price: dbCurrentPlan.price_monthly != null ? `$${dbCurrentPlan.price_monthly}` : "Custom",
+        max_companies: dbCurrentPlan.max_companies ?? Infinity,
+        max_emails: dbCurrentPlan.max_emails ?? Infinity,
+        max_rfps: dbCurrentPlan.max_rfps ?? Infinity,
+        enrichment_enabled: dbCurrentPlan.enrichment_enabled,
+        campaigns_enabled: dbCurrentPlan.campaigns_enabled,
+      }
+    : getPlanLimits(canonicalPlan);
+
+  // upgradePlans: from DB when available; else hardcoded
+  const upgradePlans = (dbPlans.length > 0 ? dbPlans : Object.values(getPlanMap())).filter(
+    (p: any) => {
+      const code = getCanonicalPlan(p.code);
+      return code !== canonicalPlan && code !== "free_trial";
+    }
   );
 
   const handleDiscard = () => {
@@ -819,17 +897,52 @@ export default function SettingsPage() {
               <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                 <div className="text-sm text-gray-600 mb-2">Current plan</div>
                 <div className="text-2xl font-bold text-slate-900">{planConfig.name}</div>
-                <div className="text-lg font-semibold text-blue-600 mt-2">{planConfig.price}/month</div>
+                <div className="text-lg font-semibold text-blue-600 mt-2">
+                  {planConfig.price !== "Custom" ? `${planConfig.price}/month` : "Custom pricing"}
+                </div>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                 <div className="text-sm text-gray-600 mb-2">Next billing date</div>
-                <div className="text-2xl font-bold text-slate-900">May 2</div>
-                <div className="text-sm text-gray-600 mt-2">Auto-renews · Stripe</div>
+                {subscription?.current_period_end ? (
+                  <>
+                    <div className="text-2xl font-bold text-slate-900">
+                      {new Date(subscription.current_period_end).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </div>
+                    <div className="text-sm text-gray-600 mt-2">Auto-renews · Stripe</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-slate-400">—</div>
+                    <div className="text-sm text-gray-500 mt-2">No active subscription</div>
+                  </>
+                )}
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                 <div className="text-sm text-gray-600 mb-2">Stripe status</div>
-                <div className="text-2xl font-bold text-green-700">Active</div>
-                <div className="text-sm text-green-600 mt-2">Customer connected</div>
+                {subscription?.stripe_customer_id ? (
+                  <>
+                    <div className={`text-2xl font-bold ${
+                      subscription.status === "active" || subscription.status === "trialing"
+                        ? "text-green-700"
+                        : "text-amber-600"
+                    }`}>
+                      {String(subscription.status || "incomplete")
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </div>
+                    <div className="text-sm text-gray-500 mt-2">
+                      Customer: {subscription.stripe_customer_id.slice(0, 12)}…
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-slate-400">Not connected</div>
+                    <div className="text-sm text-gray-500 mt-2">Upgrade to connect Stripe</div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -840,10 +953,16 @@ export default function SettingsPage() {
                 Plan comparison
               </h3>
 
+              {/* Plan cards: sourced from DB plans when available, hardcoded fallback */}
               <div className="grid grid-cols-4 gap-4">
-                {["Free trial", "Standard", "Growth", "Enterprise"].map((planName, idx) => {
-                  const p = Object.values(getPlanMap())[idx];
-                  const isCurrent = p.code === canonicalPlan;
+                {(dbPlans.length > 0 ? dbPlans : Object.values(getPlanMap())).map((p: any) => {
+                  const pCode = getCanonicalPlan(p.code);
+                  const isCurrent = pCode === canonicalPlan;
+                  const priceDisplay = p.price_monthly != null
+                    ? `$${p.price_monthly}`
+                    : (p.price ?? "Custom");
+                  const maxCo = p.max_companies ?? Infinity;
+                  const maxEm = p.max_emails ?? Infinity;
                   return (
                     <div
                       key={p.code}
@@ -862,16 +981,16 @@ export default function SettingsPage() {
                       )}
                       <div className="text-sm font-semibold text-slate-900 mb-2">{p.name}</div>
                       <div className={`text-2xl font-bold mb-4 ${isCurrent ? "text-blue-600" : "text-slate-900"}`}>
-                        {p.price}
-                        <span className="text-sm text-gray-600">/mo</span>
+                        {priceDisplay}
+                        {p.price_monthly != null && <span className="text-sm text-gray-600">/mo</span>}
                       </div>
 
                       <div className="space-y-2 mb-6 text-sm">
-                        <div className={p.max_companies === Infinity ? "text-gray-900" : "text-gray-600"}>
-                          {p.max_companies === Infinity ? "✓" : "✗"} {p.max_companies === Infinity ? "Unlimited" : p.max_companies} companies
+                        <div className={maxCo === Infinity ? "text-gray-900" : "text-gray-600"}>
+                          {maxCo === Infinity ? "✓" : "✗"} {maxCo === Infinity ? "Unlimited" : maxCo} companies
                         </div>
-                        <div className={p.max_emails === Infinity ? "text-gray-900" : "text-gray-600"}>
-                          {p.max_emails === Infinity ? "✓" : "✗"} {p.max_emails === Infinity ? "Unlimited" : p.max_emails} emails
+                        <div className={maxEm === Infinity ? "text-gray-900" : "text-gray-600"}>
+                          {maxEm === Infinity ? "✓" : "✗"} {maxEm === Infinity ? "Unlimited" : maxEm} emails
                         </div>
                         <div className={p.enrichment_enabled ? "text-gray-900" : "text-gray-600"}>
                           {p.enrichment_enabled ? "✓" : "✗"} Enrichment
@@ -881,18 +1000,13 @@ export default function SettingsPage() {
                         </div>
                       </div>
 
-                      {!isCurrent && p.code !== "free_trial" && (
+                      {!isCurrent && pCode !== "free_trial" && (
                         <button
                           onClick={() => handleUpgrade(p.code)}
                           disabled={billingActionLoading}
                           className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-slate-900 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
                         >
                           {billingActionLoading ? "Processing..." : "Upgrade"}
-                        </button>
-                      )}
-                      {!isCurrent && canonicalPlan !== "free_trial" && (
-                        <button className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-slate-900 rounded-lg text-sm font-semibold transition-colors">
-                          Downgrade
                         </button>
                       )}
                     </div>
@@ -932,29 +1046,37 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              <div className="space-y-3">
-                {[
-                  { month: "March 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
-                  { month: "February 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
-                  { month: "January 2025", plan: "Standard Plan", amount: "$49", status: "Paid" },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                    <div>
-                      <div className="font-semibold text-slate-900">{item.month}</div>
-                      <div className="text-sm text-gray-600">{item.plan}</div>
-                      <div className="text-xs text-gray-500 mt-1">Auto-charged · Visa ····4242</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="px-2.5 py-1 bg-green-50 text-green-700 rounded text-xs font-semibold border border-green-200">
-                        {item.status}
-                      </span>
-                      <span className="font-semibold text-slate-900">{item.amount}</span>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">PDF</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {subscription?.stripe_customer_id ? (
+                <div className="text-sm text-gray-500 py-4 text-center">
+                  Full billing history is available in the{" "}
+                  <button
+                    className="text-blue-600 hover:underline"
+                    onClick={handleManageSubscription}
+                  >
+                    Stripe billing portal
+                  </button>
+                  .
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 py-4 text-center">
+                  No billing history — no active Stripe subscription found.
+                </div>
+              )}
             </div>
+
+            {/* Admin Pricing Editor — only visible to admin users */}
+            {isAdmin && (
+              <div className="bg-white rounded-xl border border-amber-200 p-8 shadow-sm">
+                <div className="flex items-center gap-2 mb-6">
+                  <Crown className="w-5 h-5 text-amber-500" />
+                  <h3 className="text-xl font-bold text-slate-900">Admin: Plan Configuration</h3>
+                  <span className="ml-2 px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-700 rounded-full border border-amber-200">
+                    Admin only
+                  </span>
+                </div>
+                <AdminPricingEditor />
+              </div>
+            )}
           </div>
         )}
 
@@ -1175,13 +1297,13 @@ export default function SettingsPage() {
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600">
-                          {String(member.email || member.users?.email || "?")
+                          {String(member.email || member.user_id || "?")
                             .slice(0, 1)
                             .toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-semibold text-slate-900">
-                            {member.email || member.users?.email || "Unknown"}
+                          <div className="font-semibold text-slate-900 text-xs font-mono">
+                            {member.email || member.user_id || "Unknown"}
                           </div>
                           <div className="text-xs text-gray-500 capitalize">
                             {member.role || "member"}

@@ -1,47 +1,45 @@
-import { createClient } from '@supabase/supabase-js';
+/**
+ * lib/supabase.ts — SINGLE SOURCE RE-EXPORT
+ *
+ * The real Supabase client lives in @/auth/supabaseAuthClient.ts.
+ * This file re-exports it so existing imports keep working without
+ * creating a second GoTrueClient instance (which caused "Multiple
+ * GoTrueClient instances detected" and session drift).
+ */
+import {
+  supabase as _sharedClient,
+  isSupabaseAvailable,
+  getSupabaseError,
+} from '@/auth/supabaseAuthClient';
 
-let supabaseClient: any = null;
-let supabaseError: Error | null = null;
+export { isSupabaseAvailable, getSupabaseError };
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-try {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('[LIT] Supabase credentials not found. Development mode will use fallback storage.');
-    supabaseError = new Error('Supabase credentials not configured');
-  } else {
-    supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-    console.info('[LIT] Supabase client initialized successfully');
-  }
-} catch (error) {
-  console.warn('[LIT] Supabase client could not be initialized. Using fallback storage.', error);
-  supabaseError = error as Error;
-}
+// Helper used by legacy code that checked supabaseError directly.
+const supabaseError = getSupabaseError();
 
 function createMockSupabaseResponse() {
   return { data: [], error: null };
 }
 
-function createMockSupabaseClient() {
-  const mockChain = {
+function createMockSupabaseClient(): any {
+  const mockChain: any = {
     select: () => mockChain,
     eq: () => mockChain,
     order: () => mockChain,
-    maybeSingle: () => createMockSupabaseResponse(),
-    single: () => ({ data: null, error: new Error('Supabase not available') }),
+    limit: () => mockChain,
+    maybeSingle: () => Promise.resolve(createMockSupabaseResponse()),
+    single: () => Promise.resolve({ data: null, error: new Error('Supabase not available') }),
     insert: () => mockChain,
     upsert: () => mockChain,
-    delete: () => ({ error: new Error('Supabase not available') }),
+    update: () => mockChain,
+    delete: () => Promise.resolve({ error: new Error('Supabase not available') }),
+    then: undefined,
     ...createMockSupabaseResponse(),
   };
-
-  return {
-    from: () => mockChain
-  };
+  return { from: () => mockChain, auth: { getSession: () => Promise.resolve({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) }, functions: { invoke: async () => ({ data: null, error: new Error('Supabase not available') }) } };
 }
 
-export const supabase = supabaseClient || createMockSupabaseClient();
+export const supabase = _sharedClient || createMockSupabaseClient();
 
 export type SavedCompanyRecord = {
   id: string;
