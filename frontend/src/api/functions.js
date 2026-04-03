@@ -1,10 +1,5 @@
 /**
  * Frontend API -> Direct HTTP Calls (via Supabase Edge Functions)
- *
- * This file wraps our Supabase edge functions so that the frontend can
- * invoke them through the same httpCall helper used elsewhere in the app.
- * The legacy API Gateway endpoints have been replaced with Supabase
- * function names (billing-checkout, billing-portal, billing-webhook).
  */
 
 import { httpCall } from './httpClient';
@@ -12,8 +7,29 @@ import { supabase } from '../lib/supabase';
 
 // ---------- Shared helpers ----------
 async function invokeEdgeFunction(functionName, options = {}) {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw sessionError;
+  }
+
+  const accessToken = session?.access_token;
+
+  console.log(`[Billing Debug] ${functionName} session exists:`, !!session);
+  console.log(`[Billing Debug] ${functionName} token exists:`, !!accessToken);
+
+  if (!accessToken) {
+    throw new Error('No active session found. Please sign in again.');
+  }
+
   const { data, error } = await supabase.functions.invoke(functionName, {
     body: options.body || {},
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
   if (error) {
