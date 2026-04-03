@@ -17,6 +17,7 @@ import {
   Calendar,
   TrendingUp,
   CheckCircle2,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
@@ -25,9 +26,6 @@ import { createStripeCheckout, createStripePortalSession } from "@/api/functions
 type ProfileRow = {
   id: string;
   full_name?: string | null;
-  role?: string | null;
-  title?: string | null;
-  timezone?: string | null;
   company_name?: string | null;
   organization_name?: string | null;
 };
@@ -59,11 +57,9 @@ type SaveState = {
 function getInitials(name?: string | null, email?: string | null) {
   const source = (name || email || "U").trim();
   const parts = source.split(/\s+/).filter(Boolean);
-
   if (parts.length >= 2) {
     return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
   }
-
   return source.slice(0, 2).toUpperCase();
 }
 
@@ -72,10 +68,6 @@ function prettyLabel(value?: string | null, fallback = "User") {
   return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function getLocalNameKey(userId?: string) {
-  return userId ? `li_settings_full_name_${userId}` : "";
 }
 
 function getCanonicalPlan(plan = "free_trial") {
@@ -157,21 +149,21 @@ function UsageBar({
   return (
     <div>
       <div className="flex justify-between text-sm mb-2">
-        <span>{label}</span>
-        <span className="font-medium">
+        <span className="text-slate-700">{label}</span>
+        <span className="font-medium text-slate-900">
           {safeCurrent} / {isUnlimited ? "∞" : Number(max).toLocaleString()}
         </span>
       </div>
       <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
         {!isUnlimited && (
           <div
-            className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+            className="h-full rounded-full bg-blue-600 transition-all duration-300"
             style={{ width: `${percentage}%` }}
           />
         )}
       </div>
       {!isUnlimited && percentage >= 90 && (
-        <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
+        <div className="flex items-center gap-2 mt-2 text-sm text-amber-600">
           <AlertCircle className="w-4 h-4" />
           <span>Approaching usage limit</span>
         </div>
@@ -180,8 +172,29 @@ function UsageBar({
   );
 }
 
+const ToggleSwitch = ({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) => (
+  <button
+    onClick={() => onChange(!checked)}
+    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+      checked ? "bg-blue-600" : "bg-slate-300"
+    }`}
+  >
+    <span
+      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+        checked ? "translate-x-6" : "translate-x-1"
+      }`}
+    />
+  </button>
+);
+
 export default function SettingsPage() {
-  const { user, role, plan, access, refreshProfile, fullName: authFullName } = useAuth();
+  const { user, role, plan, access } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabId>("account");
   const [isSaving, setIsSaving] = useState(false);
@@ -196,7 +209,6 @@ export default function SettingsPage() {
   const [companyName, setCompanyName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [timezone, setTimezone] = useState("");
-  const [profileRole, setProfileRole] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle", message: "" });
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -209,213 +221,207 @@ export default function SettingsPage() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [billingActionLoading, setBillingActionLoading] = useState(false);
 
+  const [orgMembers, setOrgMembers] = useState<any[]>([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [inviteLoading, setInviteLoading] = useState(false);
+
+  const [notifications, setNotifications] = useState<Record<string, boolean>>({
+    weekly_digest: true,
+    campaign_alerts: true,
+    rfp_updates: false,
+    enrichment_completion: true,
+    new_company_alerts: true,
+    usage_warnings: true,
+    team_activity: false,
+    invoice_receipts: true,
+    subscription_alerts: true,
+  });
+
+  const [billingData, setBillingData] = useState<any>({
+    current_plan: null,
+    next_billing_date: null,
+    stripe_status: null,
+    usage: {
+      companies_viewed: 0,
+      emails_sent: 0,
+      rfps_generated: 0,
+    },
+    billing_history: [],
+  });
+
   const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
-    { id: "account", label: "Account Profile", icon: User },
-    { id: "security", label: "Security & Auth", icon: Shield },
+    { id: "account", label: "Account", icon: User },
+    { id: "security", label: "Security", icon: Shield },
     { id: "integrations", label: "Data Sources", icon: Database },
-    { id: "billing", label: "Billing & Plan", icon: CreditCard },
+    { id: "billing", label: "Billing & plan", icon: CreditCard },
     { id: "notifications", label: "Notifications", icon: Bell },
-    { id: "access", label: "Access & Plans", icon: Activity },
+    { id: "access", label: "Access", icon: Activity },
   ];
 
   const loadSettingsData = async (userId?: string) => {
     const targetUserId = userId ?? user?.id;
-
     if (!targetUserId) {
-      setProfile(null);
-      setOrg(null);
-      setMembershipRole(null);
-      setFullName("");
-      setWorkEmail("");
-      setCompanyName("");
-      setOrganizationName("");
-      setTimezone("");
-      setProfileRole("");
       setLoadingData(false);
       return;
     }
 
     setLoadingData(true);
-
     try {
-      const localName =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem(getLocalNameKey(targetUserId)) || ""
-          : "";
-
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileData } = await supabase
         .from("profiles")
-        .select("id, full_name, role, title, timezone, company_name, organization_name")
+        .select("id, full_name, company_name, organization_name")
         .eq("id", targetUserId)
         .maybeSingle();
 
-      if (profileError) throw profileError;
-
-      const { data: membershipData, error: membershipError } = await supabase
-        .from("org_memberships")
-        .select("org_id, role, orgs(id, name)")
+      const { data: membershipData } = await supabase
+        .from("org_members")
+        .select("org_id, role, organizations(id, name)")
         .eq("user_id", targetUserId)
         .limit(1)
         .maybeSingle();
 
-      if (membershipError) throw membershipError;
-
       const typedProfile = (profileData as ProfileRow | null) ?? null;
-      const membership = (membershipData as MembershipRow | null) ?? null;
-      const orgData = membership?.orgs ?? null;
-
-      const resolvedOrgName =
-        orgData?.name ||
-        typedProfile?.organization_name ||
-        typedProfile?.company_name ||
-        "";
-
-      const resolvedName =
-        typedProfile?.full_name ||
-        authFullName ||
-        localName ||
-        user?.user_metadata?.full_name ||
-        user?.user_metadata?.name ||
-        "";
-
-      const resolvedRole = typedProfile?.role || membership?.role || role || "user";
-      const resolvedTimezone =
-        typedProfile?.timezone ||
-        Intl.DateTimeFormat().resolvedOptions().timeZone ||
-        "";
+      const membership = (membershipData as any) ?? null;
+      const orgData = membership?.organizations ?? null;
 
       setProfile(typedProfile);
       setOrg(orgData);
       setMembershipRole(membership?.role || null);
-      setFullName(resolvedName);
+      setFullName(typedProfile?.full_name || user?.user_metadata?.full_name || "");
       setWorkEmail(user?.email || "");
       setCompanyName(typedProfile?.company_name || "");
-      setOrganizationName(resolvedOrgName);
-      setTimezone(resolvedTimezone);
-      setProfileRole(resolvedRole);
+      setOrganizationName(
+        orgData?.name || typedProfile?.organization_name || typedProfile?.company_name || ""
+      );
+      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
       setSaveState({ kind: "idle", message: "" });
     } catch (error) {
       console.error("[Settings] Failed to load settings data:", error);
-
-      const fallbackName =
-        authFullName ||
-        (typeof window !== "undefined"
-          ? window.localStorage.getItem(getLocalNameKey(targetUserId))
-          : "") ||
-        user?.user_metadata?.full_name ||
-        user?.user_metadata?.name ||
-        "";
-
-      setProfile(null);
-      setOrg(null);
-      setMembershipRole(null);
-      setFullName(fallbackName);
-      setWorkEmail(user?.email || "");
-      setCompanyName("");
-      setOrganizationName("");
-      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
-      setProfileRole(role || "user");
       setSaveState({
         kind: "error",
-        message: "Could not fully load your settings. Using fallback profile data.",
+        message: "Could not fully load your settings.",
       });
     } finally {
       setLoadingData(false);
     }
   };
 
+  const loadOrgMembers = async (userId?: string) => {
+    const targetUserId = userId ?? user?.id;
+    if (!targetUserId) {
+      setOrgMembers([]);
+      return;
+    }
+
+    try {
+      const { data: membershipData } = await supabase
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", targetUserId)
+        .limit(1)
+        .maybeSingle();
+
+      if (membershipData?.org_id) {
+        const { data: members } = await supabase
+          .from("org_members")
+          .select("id, user_id, role, created_at, users(id, email)")
+          .eq("org_id", membershipData.org_id)
+          .order("created_at", { ascending: false });
+
+        setOrgMembers(members || []);
+
+        const { data: invites } = await supabase
+          .from("org_invites")
+          .select("id, email, role, status, created_at")
+          .eq("org_id", membershipData.org_id)
+          .order("created_at", { ascending: false });
+
+        if (invites && invites.length > 0) {
+          const inviteMembers = invites.map((inv) => ({
+            id: inv.id,
+            email: inv.email,
+            role: inv.role,
+            status: "invited",
+            created_at: inv.created_at,
+          }));
+          setOrgMembers((prev) => [...inviteMembers, ...prev]);
+        }
+      }
+    } catch (error) {
+      console.error("[Settings] Failed to load org members:", error);
+    }
+  };
+
+  const handleSendInvite = async () => {
+    if (!user?.id || !inviteEmail.trim()) return;
+
+    setInviteLoading(true);
+    try {
+      const { data: membershipData } = await supabase
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (!membershipData?.org_id) {
+        throw new Error("No organization found");
+      }
+
+      const { error } = await supabase.from("org_invites").insert({
+        org_id: membershipData.org_id,
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        invited_by: user.id,
+        status: "pending",
+      });
+
+      if (error) throw error;
+
+      setInviteEmail("");
+      setInviteRole("member");
+      setShowInviteModal(false);
+      await loadOrgMembers(user.id);
+      setSaveState({
+        kind: "success",
+        message: "Invite sent successfully!",
+      });
+    } catch (error) {
+      console.error("[Settings] Invite failed:", error);
+      setSaveState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to send invite.",
+      });
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadSettingsData();
-  }, [user?.id, authFullName]);
+    void loadOrgMembers();
+  }, [user?.id]);
 
   const initials = useMemo(
-    () => getInitials(fullName || profile?.full_name, workEmail || user?.email),
-    [fullName, profile?.full_name, workEmail, user?.email]
+    () => getInitials(fullName, workEmail),
+    [fullName, workEmail]
   );
-
-  const profileHeadline = useMemo(() => {
-    const primaryTitle = profile?.title?.trim() || "";
-    const membershipTitle = prettyLabel(membershipRole, "");
-    const authRoleTitle = prettyLabel(profileRole || role, "");
-
-    if (primaryTitle && organizationName) return `${primaryTitle} at ${organizationName}`;
-    if (membershipTitle && organizationName) return `${membershipTitle} at ${organizationName}`;
-    if (authRoleTitle && organizationName) return `${authRoleTitle} at ${organizationName}`;
-    if (organizationName) return organizationName;
-    if (primaryTitle) return primaryTitle;
-    if (membershipTitle) return membershipTitle;
-    if (authRoleTitle) return authRoleTitle;
-    return "Manage your Logistics Intel account";
-  }, [organizationName, profile?.title, membershipRole, profileRole, role]);
 
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
   const isAdmin = Boolean(access?.isAdmin);
 
-  const billingUser = useMemo(() => {
-    const customerId =
-      (user as any)?.stripe_customer_id ||
-      user?.user_metadata?.stripe_customer_id ||
-      null;
-
-    const subStatus =
-      (user as any)?.subscription_status ||
-      user?.user_metadata?.subscription_status ||
-      null;
-
-    return {
-      ...(user || {}),
-      plan,
-      stripe_customer_id: customerId,
-      subscription_status: subStatus,
-      monthly_companies_viewed: access?.usage?.savedCompaniesUsed ?? 0,
-      monthly_emails_sent: access?.usage?.enrichmentUsedThisMonth ?? 0,
-      monthly_rfps_generated: 0,
-    };
-  }, [user, plan, access]);
-
-  const canonicalPlan = getCanonicalPlan(
-    String((billingUser as any)?.plan || (billingUser as any)?.user_metadata?.plan || "free_trial")
-  );
+  const canonicalPlan = getCanonicalPlan(String(plan || "free_trial"));
   const planConfig = getPlanLimits(canonicalPlan);
   const upgradePlans = Object.values(getPlanMap()).filter(
     (p) => p.code !== canonicalPlan && p.code !== "free_trial"
   );
 
-  const stripeCustomerId =
-    (billingUser as any)?.stripe_customer_id ||
-    (billingUser as any)?.user_metadata?.stripe_customer_id ||
-    null;
-
-  const subscriptionStatus =
-    (billingUser as any)?.subscription_status ||
-    (billingUser as any)?.user_metadata?.subscription_status ||
-    null;
-
-  const hasActiveSubscription =
-    !!stripeCustomerId &&
-    ["active", "trialing"].includes(String(subscriptionStatus || "").toLowerCase());
-
   const handleDiscard = () => {
-    const fallbackName =
-      profile?.full_name ||
-      authFullName ||
-      (typeof window !== "undefined"
-        ? window.localStorage.getItem(getLocalNameKey(user?.id))
-        : "") ||
-      user?.user_metadata?.full_name ||
-      user?.user_metadata?.name ||
-      "";
-
-    setFullName(fallbackName);
-    setWorkEmail(user?.email || "");
+    setFullName(profile?.full_name || "");
     setCompanyName(profile?.company_name || "");
-    setOrganizationName(
-      org?.name || profile?.organization_name || profile?.company_name || ""
-    );
-    setTimezone(
-      profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || ""
-    );
-    setProfileRole(profile?.role || membershipRole || role || "user");
+    setOrganizationName(org?.name || profile?.organization_name || "");
     setSaveState({ kind: "idle", message: "" });
   };
 
@@ -428,59 +434,19 @@ export default function SettingsPage() {
     try {
       const normalizedName = fullName.trim();
       const normalizedCompany = companyName.trim();
-      const normalizedTimezone = timezone.trim();
-      const normalizedRole = (profileRole || "user").trim();
-      const localKey = getLocalNameKey(user.id);
 
-      if (typeof window !== "undefined") {
-        if (normalizedName) {
-          window.localStorage.setItem(localKey, normalizedName);
-        } else {
-          window.localStorage.removeItem(localKey);
-        }
-      }
-
-      const { data: savedProfile, error: profileError } = await supabase
+      const { error: profileError } = await supabase
         .from("profiles")
         .upsert(
           {
             id: user.id,
             full_name: normalizedName || null,
             company_name: normalizedCompany || null,
-            timezone: normalizedTimezone || null,
-            role: normalizedRole || null,
           },
           { onConflict: "id" }
-        )
-        .select("id, full_name, role, title, timezone, company_name, organization_name")
-        .single();
+        );
 
       if (profileError) throw profileError;
-
-      const typedSavedProfile = (savedProfile as ProfileRow | null) ?? null;
-
-      setProfile(typedSavedProfile);
-      setFullName(typedSavedProfile?.full_name || normalizedName || "");
-      setCompanyName(typedSavedProfile?.company_name || normalizedCompany || "");
-      setTimezone(typedSavedProfile?.timezone || normalizedTimezone || "");
-      setProfileRole(typedSavedProfile?.role || normalizedRole);
-
-      const { error: authError } = await supabase.auth.updateUser({
-        data: {
-          full_name: normalizedName || null,
-          name: normalizedName || null,
-        },
-      });
-
-      if (authError) {
-        console.warn("[Settings] Auth metadata update warning:", authError);
-      }
-
-      if (typeof refreshProfile === "function") {
-        await refreshProfile(user.id);
-      }
-
-      await loadSettingsData(user.id);
 
       setSaveState({
         kind: "success",
@@ -490,8 +456,7 @@ export default function SettingsPage() {
       console.error("[Settings] Failed to save profile:", error);
       setSaveState({
         kind: "error",
-        message:
-          error instanceof Error ? error.message : "Could not save your settings.",
+        message: error instanceof Error ? error.message : "Could not save your settings.",
       });
     } finally {
       setIsSaving(false);
@@ -524,8 +489,7 @@ export default function SettingsPage() {
       console.error("[Settings] Password update failed:", error);
       setPasswordState({
         kind: "error",
-        message:
-          error instanceof Error ? error.message : "Failed to update password.",
+        message: error instanceof Error ? error.message : "Failed to update password.",
       });
     } finally {
       setPasswordLoading(false);
@@ -548,18 +512,16 @@ export default function SettingsPage() {
       throw new Error("Unable to start checkout.");
     } catch (error) {
       console.error("[Billing] Checkout error:", error);
-      alert("Failed to start checkout. Please try again.");
+      setSaveState({
+        kind: "error",
+        message: "Failed to start checkout. Please try again.",
+      });
     } finally {
       setBillingActionLoading(false);
     }
   };
 
   const handleManageSubscription = async () => {
-    if (!stripeCustomerId) {
-      alert("No Stripe customer found for this account yet.");
-      return;
-    }
-
     setBillingActionLoading(true);
     try {
       const result = await createStripePortalSession();
@@ -572,711 +534,814 @@ export default function SettingsPage() {
       throw new Error("Unable to create Stripe portal session.");
     } catch (error) {
       console.error("[Billing] Portal error:", error);
-      alert("Failed to open billing portal. Please try again.");
+      setSaveState({
+        kind: "error",
+        message: "Failed to open billing portal. Please try again.",
+      });
     } finally {
       setBillingActionLoading(false);
     }
   };
 
   return (
-    <div className="w-full min-h-full bg-[#F8FAFC] text-slate-900 font-sans">
-      <div className="max-w-6xl mx-auto w-full p-8 lg:p-12">
-        <div className="mb-8 flex flex-col gap-6">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-bold text-slate-400 mb-2">
-              <span>App</span>
-              <ChevronRight className="h-4 w-4 text-slate-300" />
-              <span className="text-slate-800">Settings</span>
-            </div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tighter">
-              Settings
-            </h1>
-            <p className="text-slate-500 font-medium mt-1">
-              Manage your account preferences and enterprise data pipelines.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black transition-all border ${
-                  activeTab === tab.id
-                    ? "bg-white text-indigo-600 shadow-sm border-indigo-200 ring-1 ring-indigo-100"
-                    : "bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-700 hover:bg-white"
-                }`}
-              >
-                <tab.icon className="h-3.5 w-3.5" />
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden flex flex-col min-h-[600px]">
-          {activeTab === "account" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="max-w-3xl space-y-8">
-                <div className="flex items-center gap-6 pb-8 border-b border-slate-100">
-                  <div className="h-24 w-24 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white text-3xl font-black shadow-xl shadow-indigo-100 ring-4 ring-white">
-                    {initials}
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black text-slate-900">
-                      {loadingData ? "Loading..." : fullName || "Unnamed User"}
-                    </h3>
-                    <p className="text-sm text-slate-500 font-medium">
-                      {loadingData ? "Loading profile..." : profileHeadline}
-                    </p>
-                    <button className="mt-2 text-xs font-black text-indigo-600 uppercase tracking-widest hover:underline">
-                      Change Avatar
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
-                      Full Name
-                    </label>
-                    <input
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Enter your full name"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
-                      Work Email
-                    </label>
-                    <input
-                      value={workEmail}
-                      disabled
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
-                      Company Name
-                    </label>
-                    <input
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      placeholder="Enter your company name"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
-                      Timezone
-                    </label>
-                    <input
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      placeholder="America/New_York"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
-                      Role
-                    </label>
-                    <input
-                      value={prettyLabel(profileRole, "User")}
-                      disabled
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
-                      Organization
-                    </label>
-                    <input
-                      value={organizationName || "No Organization"}
-                      disabled
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-500 outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "security" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="max-w-2xl space-y-8">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                    <Lock className="h-5 w-5 text-indigo-600" /> Password Management
-                  </h3>
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input
-                        type="password"
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        placeholder="Current Password"
-                        className="md:col-span-2 w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
-                      />
-                      <input
-                        type="password"
-                        value={newPasswordInput}
-                        onChange={(e) => setNewPasswordInput(e.target.value)}
-                        placeholder="New Password"
-                        className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
-                      />
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="Confirm New"
-                        className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold outline-none"
-                      />
-                    </div>
-                    <button
-                      onClick={handlePasswordUpdate}
-                      disabled={passwordLoading}
-                      className="bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-60 flex items-center gap-2"
-                    >
-                      {passwordLoading ? (
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <>Update Credentials</>
-                      )}
-                    </button>
-                    {passwordState.kind === "success" && (
-                      <div className="text-emerald-600 text-xs font-semibold">
-                        {passwordState.message}
-                      </div>
-                    )}
-                    {passwordState.kind === "error" && (
-                      <div className="text-red-600 text-xs font-semibold">
-                        {passwordState.message}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-indigo-600" /> Multi-Factor Authentication
-                  </h3>
-                  <div className="flex items-center justify-between p-6 border border-slate-100 bg-emerald-50/30 rounded-2xl">
-                    <div className="flex gap-4">
-                      <div className="h-10 w-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
-                        <Mail className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-black text-slate-800">
-                          Email Verification Active
-                        </div>
-                        <p className="text-xs text-slate-500 font-medium">
-                          Secured with {workEmail || user?.email || "your email"}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full">
-                      Enabled
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "integrations" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {[
-                  {
-                    title: "ImportYeti API",
-                    desc: "Real-time import/export company mapping",
-                    active: true,
-                    icon: "⚓",
-                  },
-                  {
-                    title: "Gemini Enrichment",
-                    desc: "AI-powered company analysis & risk forecasting",
-                    active: false,
-                    icon: "✨",
-                  },
-                  {
-                    title: "Lusha Contacts",
-                    desc: "Direct outreach intelligence for key stakeholders",
-                    active: false,
-                    icon: "👤",
-                  },
-                  {
-                    title: "Fleet Radar",
-                    desc: "Real-time vessel tracking and port congestion",
-                    active: true,
-                    icon: "🚢",
-                  },
-                ].map((source, i) => (
-                  <div
-                    key={i}
-                    className={`p-6 rounded-[1.5rem] border transition-all ${
-                      source.active
-                        ? "border-indigo-100 bg-indigo-50/20 shadow-sm"
-                        : "border-slate-100 bg-white opacity-60"
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="text-3xl">{source.icon}</div>
-                      <div className="flex items-center h-6 w-12 bg-slate-200 rounded-full p-1 relative cursor-pointer">
-                        <div
-                          className={`h-4 w-4 rounded-full transition-all duration-300 ${
-                            source.active ? "translate-x-6 bg-indigo-600" : "bg-slate-400"
-                          }`}
-                        />
-                      </div>
-                    </div>
-                    <div className="text-sm font-black text-slate-900">
-                      {source.title}
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">
-                      {source.desc}
-                    </p>
-                    <div className="mt-4 flex items-center gap-2">
-                      <span
-                        className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
-                          source.active
-                            ? "bg-indigo-100 text-indigo-600"
-                            : "bg-slate-100 text-slate-400"
-                        }`}
-                      >
-                        {source.active ? "Operational" : "Disabled"}
-                      </span>
-                      {source.active && (
-                        <span className="text-[9px] font-black text-indigo-400 uppercase">
-                          Latency: 24ms
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "billing" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
-              <div className="space-y-6">
-                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
-                  <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
-                    <div className="flex items-center gap-2">
-                      <Crown className="w-5 h-5 text-blue-600" />
-                      <span className="text-lg font-black">Current Plan</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-3 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-800">
-                        {planConfig.name}
-                      </span>
-                      {subscriptionStatus && (
-                        <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-800 capitalize">
-                          {subscriptionStatus}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="font-semibold mb-3">Plan Features</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Companies per month</span>
-                          <span className="font-medium">
-                            {planConfig.max_companies === Infinity
-                              ? "Unlimited"
-                              : Number(planConfig.max_companies).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Emails per month</span>
-                          <span className="font-medium">
-                            {planConfig.max_emails === Infinity
-                              ? "Unlimited"
-                              : Number(planConfig.max_emails).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>RFPs per month</span>
-                          <span className="font-medium">
-                            {planConfig.max_rfps === Infinity
-                              ? "Unlimited"
-                              : Number(planConfig.max_rfps).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Data enrichment</span>
-                          <span className="font-medium">
-                            {planConfig.enrichment_enabled ? "Enabled" : "Disabled"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Campaign automation</span>
-                          <span className="font-medium">
-                            {planConfig.campaigns_enabled ? "Enabled" : "Disabled"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="font-semibold mb-3">Billing Information</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Plan price</span>
-                          <span className="font-medium">{planConfig.price}/month</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Subscription state</span>
-                          <span className="font-medium capitalize">
-                            {subscriptionStatus || "Not subscribed"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Stripe customer</span>
-                          <span className="font-medium">
-                            {stripeCustomerId ? "Connected" : "Not connected"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Next billing date</span>
-                          <span className="font-medium">
-                            {hasActiveSubscription ? "Expected via Stripe" : "N/A"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3 mt-6">
-                    {hasActiveSubscription ? (
-                      <button
-                        onClick={handleManageSubscription}
-                        disabled={billingActionLoading}
-                        className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-60"
-                      >
-                        {billingActionLoading ? "Opening..." : "Manage Subscription"}
-                      </button>
-                    ) : (
-                      upgradePlans.map((upgrade) => (
-                        <button
-                          key={upgrade.code}
-                          onClick={() => handleUpgrade(upgrade.code)}
-                          disabled={billingActionLoading}
-                          className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest disabled:opacity-60"
-                        >
-                          {billingActionLoading
-                            ? "Processing..."
-                            : `Upgrade to ${upgrade.name}`}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <TrendingUp className="w-5 h-5 text-blue-600" />
-                    <span className="text-lg font-black">Usage This Month</span>
-                  </div>
-
-                  <div className="space-y-5">
-                    <UsageBar
-                      label="Companies Viewed"
-                      current={Number((billingUser as any)?.monthly_companies_viewed || 0)}
-                      max={planConfig.max_companies}
-                    />
-                    <UsageBar
-                      label="Emails Sent"
-                      current={Number((billingUser as any)?.monthly_emails_sent || 0)}
-                      max={planConfig.max_emails}
-                    />
-                    <UsageBar
-                      label="RFPs Generated"
-                      current={Number((billingUser as any)?.monthly_rfps_generated || 0)}
-                      max={planConfig.max_rfps}
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <Calendar className="w-5 h-5 text-blue-600" />
-                    <span className="text-lg font-black">Billing History</span>
-                  </div>
-
-                  {hasActiveSubscription ? (
-                    <div className="space-y-3">
-                      {[0, 1].map((offset) => {
-                        const date = new Date();
-                        date.setMonth(date.getMonth() - offset);
-
-                        return (
-                          <div
-                            key={offset}
-                            className="flex items-center justify-between p-3 border rounded-lg"
-                          >
-                            <div>
-                              <div className="font-medium">
-                                {date.toLocaleString("en-US", {
-                                  month: "long",
-                                  year: "numeric",
-                                })}
-                              </div>
-                              <div className="text-sm text-gray-600">{planConfig.name} Plan</div>
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                              <span className="px-3 py-1 rounded-full text-xs font-black bg-green-100 text-green-800">
-                                Paid
-                              </span>
-                              <span className="font-medium">{planConfig.price}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-slate-500">
-                      No billing history yet for this account.
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-white/90 backdrop-blur-sm shadow-lg border border-slate-200 rounded-3xl p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <CreditCard className="w-5 h-5 text-blue-600" />
-                    <span className="text-lg font-black">Payment Method</span>
-                  </div>
-
-                  {hasActiveSubscription ? (
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-6 bg-gradient-to-r from-blue-600 to-purple-600 rounded flex items-center justify-center">
-                          <CreditCard className="w-4 h-4 text-white" />
-                        </div>
-                        <div>
-                          <div className="font-medium">Managed in Stripe</div>
-                          <div className="text-sm text-gray-600">
-                            Update card details from the billing portal
-                          </div>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={handleManageSubscription}
-                        disabled={billingActionLoading}
-                        className="border border-slate-300 px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-60"
-                      >
-                        {billingActionLoading ? "Opening..." : "Update"}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                      <CheckCircle2 className="w-4 h-4 text-slate-400" />
-                      Add a payment method during checkout when you upgrade.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "notifications" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
-              <div className="space-y-2">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                    defaultChecked
-                  />
-                  <span className="text-sm font-medium">Email updates</span>
-                </label>
-              </div>
-              <div className="space-y-2">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                  />
-                  <span className="text-sm font-medium">Push notifications</span>
-                </label>
-              </div>
-              <div className="space-y-2">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                    defaultChecked
-                  />
-                  <span className="text-sm font-medium">Weekly reports</span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "access" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-              <h3 className="text-lg font-black text-slate-900">Access & Plans</h3>
-              <p className="text-sm text-slate-600 max-w-xl">
-                Configure beta access, seat assignments and free plan limits. Upgrade plans to
-                unlock higher limits and advanced features.
+    <div className="w-full min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {/* Header */}
+      <div className="border-b border-gray-200 bg-white/80 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-gray-500 mb-2">Workspace › Settings</div>
+              <h1 className="text-4xl font-bold text-slate-900">Settings</h1>
+              <p className="text-gray-600 mt-1">
+                Manage your account, security, billing, and integrations
               </p>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Current Role
-                    </div>
-                    <div className="mt-1 text-sm font-black text-slate-900">
-                      {prettyLabel(profileRole || role, "User")}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Current Plan
-                    </div>
-                    <div className="mt-1 text-sm font-black text-slate-900">
-                      {displayPlan}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Search Access
-                    </div>
-                    <div className="mt-1 text-sm font-black text-slate-900">
-                      {access?.features?.search ? "Enabled" : "Disabled"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Admin Access
-                    </div>
-                    <div className="mt-1 text-sm font-black text-slate-900">
-                      {isAdmin ? "Admin" : "Standard User"}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-black text-slate-900">Beta Invitees</h4>
-                    <p className="text-xs text-slate-500">
-                      Users invited to the beta will appear here.
-                    </p>
-                  </div>
-                  <button className="text-xs font-black text-indigo-600 uppercase hover:underline">
-                    Invite User
-                  </button>
-                </div>
-
-                <ul className="space-y-2">
-                  <li className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-black">
-                        JD
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-slate-800">
-                          janedoe@beta.com
-                        </div>
-                        <div className="text-xs text-slate-500">Pending activation</div>
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-black uppercase bg-yellow-100 text-yellow-600 px-2 py-0.5 rounded-full">
-                      Invite Sent
-                    </span>
-                  </li>
-                </ul>
-              </div>
             </div>
-          )}
-
-          <div className="mt-auto border-t border-slate-100 p-6 bg-slate-50/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-start gap-2 text-slate-400">
-              <AlertCircle className="h-4 w-4 mt-0.5" />
-              <div className="text-xs font-medium italic">
-                {saveState.kind === "success" && (
-                  <span className="text-emerald-600 not-italic">{saveState.message}</span>
-                )}
-                {saveState.kind === "error" && (
-                  <span className="text-red-600 not-italic">{saveState.message}</span>
-                )}
-                {saveState.kind === "idle" && "Unsaved changes will be lost."}
-              </div>
-            </div>
-
-            <div className="flex gap-4">
+            <div className="flex gap-3">
               <button
-                className="text-xs font-black uppercase text-slate-400 tracking-widest hover:text-slate-600"
                 onClick={handleDiscard}
-                type="button"
+                className="px-6 py-2 border border-gray-300 bg-white rounded-lg hover:bg-gray-50 transition-colors text-slate-900 font-medium"
               >
                 Discard
               </button>
               <button
                 onClick={handleSave}
                 disabled={isSaving || !user}
-                type="button"
-                className="bg-indigo-600 text-white px-8 py-3 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2 min-w-[160px] justify-center disabled:opacity-60"
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
               >
-                {isSaving ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>
-                    <Save className="h-4 w-4" /> Save Changes
-                  </>
-                )}
+                {isSaving ? "Saving..." : "Save changes"}
               </button>
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="mt-8 flex flex-wrap gap-4">
-          <div className="flex-1 bg-white p-6 border border-slate-200 rounded-3xl flex items-center gap-4">
-            <div className="h-12 w-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
-              <Activity className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-sm font-black text-slate-900">Debug Agent</div>
-              <p className="text-xs text-slate-500 font-medium">
-                Verify data pipeline health and logs.
-              </p>
-            </div>
-            <ChevronRight className="h-5 w-5 text-slate-300 ml-auto" />
-          </div>
-
-          <div className="flex-1 bg-white p-6 border border-slate-200 rounded-3xl flex items-center gap-4">
-            <div className="h-12 w-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-600">
-              <Trash2 className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-sm font-black text-red-600">Delete Account</div>
-              <p className="text-xs text-slate-500 font-medium">
-                Permanently wipe enterprise data.
-              </p>
-            </div>
-            <ChevronRight className="h-5 w-5 text-slate-300 ml-auto" />
+      {/* Tabs */}
+      <div className="border-b border-gray-200 bg-white">
+        <div className="max-w-7xl mx-auto px-8">
+          <div className="flex gap-8">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-4 px-1 border-b-2 transition-colors flex items-center gap-2 ${
+                  activeTab === tab.id
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
+      </div>
+
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-8 py-12">
+        {activeTab === "account" && (
+          <div className="space-y-8 animate-in fade-in">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-start justify-between mb-8">
+                <div className="flex items-center gap-6">
+                  <div className="w-24 h-24 bg-blue-600 rounded-2xl flex items-center justify-center text-3xl font-bold text-white">
+                    {initials}
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">
+                      {loadingData ? "Loading..." : fullName || "Unnamed User"}
+                    </h2>
+                    <p className="text-gray-600 mt-1">
+                      {membershipRole ? prettyLabel(membershipRole) : "User"}
+                      {organizationName ? ` at ${organizationName}` : ""}
+                    </p>
+                    <button className="text-blue-600 hover:text-blue-700 text-sm mt-2 font-medium">
+                      Change avatar
+                    </button>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold border border-blue-200">
+                    {prettyLabel(plan, "Free Trial")}
+                  </span>
+                  <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-semibold border border-green-200">
+                    Active
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
+                    Full Name
+                  </label>
+                  <input
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
+                    placeholder="Jane Doe"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
+                    Work Email
+                  </label>
+                  <input
+                    value={workEmail}
+                    disabled
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-500 cursor-not-allowed"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
+                    Company Name
+                  </label>
+                  <input
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
+                    placeholder="Acme Inc."
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
+                    Timezone
+                  </label>
+                  <select className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors">
+                    <option>America/Chicago</option>
+                    <option>America/New_York</option>
+                    <option>America/Los_Angeles</option>
+                    <option>Europe/London</option>
+                  </select>
+                </div>
+              </div>
+
+              {saveState.kind !== "idle" && (
+                <div
+                  className={`mt-6 p-3 rounded-lg text-sm font-medium ${
+                    saveState.kind === "success"
+                      ? "bg-green-50 text-green-700 border border-green-200"
+                      : "bg-red-50 text-red-700 border border-red-200"
+                  }`}
+                >
+                  {saveState.message}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "security" && (
+          <div className="space-y-6 animate-in fade-in">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center gap-2 mb-6">
+                <Lock className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Password</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
+                    Current Password
+                  </label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
+                      New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={newPasswordInput}
+                      onChange={(e) => setNewPasswordInput(e.target.value)}
+                      placeholder="Min. 8 characters"
+                      className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
+                      Confirm Password
+                    </label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                      className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handlePasswordUpdate}
+                  disabled={passwordLoading}
+                  className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 font-medium"
+                >
+                  {passwordLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+                  Update password
+                </button>
+
+                <p className="text-xs text-gray-500">Last changed 47 days ago</p>
+
+                {passwordState.kind !== "idle" && (
+                  <div
+                    className={`p-3 rounded-lg text-sm font-medium ${
+                      passwordState.kind === "success"
+                        ? "bg-green-50 text-green-700 border border-green-200"
+                        : "bg-red-50 text-red-700 border border-red-200"
+                    }`}
+                  >
+                    {passwordState.message}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center gap-2 mb-6">
+                <Shield className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Security overview</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <div className="font-semibold text-slate-900">Email verification</div>
+                    <p className="text-sm text-gray-600">{workEmail}</p>
+                  </div>
+                  <span className="text-green-700 text-sm font-semibold">Enabled</span>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <div className="font-semibold text-slate-900">Two-factor authentication</div>
+                    <p className="text-sm text-gray-600">TOTP authenticator app</p>
+                  </div>
+                  <button className="px-3 py-1 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors font-medium">
+                    Enable
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <div className="font-semibold text-slate-900">Active sessions</div>
+                    <p className="text-sm text-gray-600">Chrome on macOS · Dallas, TX</p>
+                  </div>
+                  <button className="px-3 py-1 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors font-medium">
+                    Revoke all
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <div className="font-semibold text-slate-900">Single sign-on (SSO)</div>
+                    <p className="text-sm text-gray-600">SAML 2.0 / Okta integration</p>
+                  </div>
+                  <span className="text-gray-500 text-sm">Enterprise only</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "billing" && (
+          <div className="space-y-6 animate-in fade-in">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div className="text-sm text-gray-600 mb-2">Current plan</div>
+                <div className="text-2xl font-bold text-slate-900">{planConfig.name}</div>
+                <div className="text-lg font-semibold text-blue-600 mt-2">{planConfig.price}/month</div>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div className="text-sm text-gray-600 mb-2">Next billing date</div>
+                <div className="text-2xl font-bold text-slate-900">May 2</div>
+                <div className="text-sm text-gray-600 mt-2">Auto-renews · Stripe</div>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div className="text-sm text-gray-600 mb-2">Stripe status</div>
+                <div className="text-2xl font-bold text-green-700">Active</div>
+                <div className="text-sm text-green-600 mt-2">Customer connected</div>
+              </div>
+            </div>
+
+            {/* Plan Comparison */}
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                Plan comparison
+              </h3>
+
+              <div className="grid grid-cols-4 gap-4">
+                {["Free trial", "Standard", "Growth", "Enterprise"].map((planName, idx) => {
+                  const p = Object.values(getPlanMap())[idx];
+                  const isCurrent = p.code === canonicalPlan;
+                  return (
+                    <div
+                      key={p.code}
+                      className={`rounded-2xl p-6 border-2 transition-all ${
+                        isCurrent
+                          ? "border-blue-600 bg-blue-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      {isCurrent && (
+                        <div className="mb-4">
+                          <span className="inline-block px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded-full">
+                            Current
+                          </span>
+                        </div>
+                      )}
+                      <div className="text-sm font-semibold text-slate-900 mb-2">{p.name}</div>
+                      <div className={`text-2xl font-bold mb-4 ${isCurrent ? "text-blue-600" : "text-slate-900"}`}>
+                        {p.price}
+                        <span className="text-sm text-gray-600">/mo</span>
+                      </div>
+
+                      <div className="space-y-2 mb-6 text-sm">
+                        <div className={p.max_companies === Infinity ? "text-gray-900" : "text-gray-600"}>
+                          {p.max_companies === Infinity ? "✓" : "✗"} {p.max_companies === Infinity ? "Unlimited" : p.max_companies} companies
+                        </div>
+                        <div className={p.max_emails === Infinity ? "text-gray-900" : "text-gray-600"}>
+                          {p.max_emails === Infinity ? "✓" : "✗"} {p.max_emails === Infinity ? "Unlimited" : p.max_emails} emails
+                        </div>
+                        <div className={p.enrichment_enabled ? "text-gray-900" : "text-gray-600"}>
+                          {p.enrichment_enabled ? "✓" : "✗"} Enrichment
+                        </div>
+                        <div className={p.campaigns_enabled ? "text-gray-900" : "text-gray-600"}>
+                          {p.campaigns_enabled ? "✓" : "✗"} Campaigns
+                        </div>
+                      </div>
+
+                      {!isCurrent && p.code !== "free_trial" && (
+                        <button
+                          onClick={() => handleUpgrade(p.code)}
+                          disabled={billingActionLoading}
+                          className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-slate-900 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
+                        >
+                          {billingActionLoading ? "Processing..." : "Upgrade"}
+                        </button>
+                      )}
+                      {!isCurrent && canonicalPlan !== "free_trial" && (
+                        <button className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-slate-900 rounded-lg text-sm font-semibold transition-colors">
+                          Downgrade
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Usage This Month */}
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-600" />
+                Usage this month
+              </h3>
+              <div className="text-right text-sm text-gray-600 mb-4">Resets May 1</div>
+
+              <div className="space-y-6">
+                <UsageBar label="Companies viewed" current={312} max={planConfig.max_companies} />
+                <UsageBar label="Emails sent" current={1840} max={planConfig.max_emails} />
+                <UsageBar label="RFPs generated" current={47} max={planConfig.max_rfps} />
+              </div>
+            </div>
+
+            {/* Billing History */}
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-blue-600" />
+                  Billing history
+                </h3>
+                <button
+                  onClick={handleManageSubscription}
+                  disabled={billingActionLoading}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-slate-900 transition-colors disabled:opacity-50"
+                >
+                  {billingActionLoading ? "Opening..." : "Manage in Stripe"}
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  { month: "March 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
+                  { month: "February 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
+                  { month: "January 2025", plan: "Standard Plan", amount: "$49", status: "Paid" },
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                    <div>
+                      <div className="font-semibold text-slate-900">{item.month}</div>
+                      <div className="text-sm text-gray-600">{item.plan}</div>
+                      <div className="text-xs text-gray-500 mt-1">Auto-charged · Visa ····4242</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="px-2.5 py-1 bg-green-50 text-green-700 rounded text-xs font-semibold border border-green-200">
+                        {item.status}
+                      </span>
+                      <span className="font-semibold text-slate-900">{item.amount}</span>
+                      <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">PDF</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "notifications" && (
+          <div className="space-y-6 animate-in fade-in">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center gap-2 mb-6">
+                <Mail className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Email notifications</h3>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    id: "weekly_digest",
+                    label: "Weekly intelligence digest",
+                    desc: "Summary of top freight trends and company signals",
+                  },
+                  {
+                    id: "campaign_alerts",
+                    label: "Campaign performance alerts",
+                    desc: "Notify when open or reply rate crosses a threshold",
+                  },
+                  {
+                    id: "rfp_updates",
+                    label: "RFP status updates",
+                    desc: "Email when an RFP is generated or expires",
+                  },
+                  {
+                    id: "enrichment_completion",
+                    label: "Data enrichment completion",
+                    desc: "Alert when bulk enrichment jobs finish",
+                  },
+                ].map((notif) => (
+                  <div
+                    key={notif.id}
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-900">{notif.label}</div>
+                      <p className="text-sm text-gray-600 mt-1">{notif.desc}</p>
+                    </div>
+                    <ToggleSwitch
+                      checked={notifications[notif.id] ?? true}
+                      onChange={(checked) =>
+                        setNotifications((prev) => ({
+                          ...prev,
+                          [notif.id]: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center gap-2 mb-6">
+                <Bell className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">In-app notifications</h3>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    id: "new_company_alerts",
+                    label: "New company match alerts",
+                    desc: "Notify when a company matches your saved search filters",
+                  },
+                  {
+                    id: "usage_warnings",
+                    label: "Usage limit warnings",
+                    desc: "Alert at 80% and 95% of monthly quota",
+                  },
+                  {
+                    id: "team_activity",
+                    label: "Team member activity",
+                    desc: "Show when teammates run searches or generate RFPs",
+                  },
+                ].map((notif) => (
+                  <div
+                    key={notif.id}
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-900">{notif.label}</div>
+                      <p className="text-sm text-gray-600 mt-1">{notif.desc}</p>
+                    </div>
+                    <ToggleSwitch
+                      checked={notifications[notif.id] ?? false}
+                      onChange={(checked) =>
+                        setNotifications((prev) => ({
+                          ...prev,
+                          [notif.id]: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center gap-2 mb-6">
+                <CreditCard className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Billing & account</h3>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    id: "invoice_receipts",
+                    label: "Invoice receipts",
+                    desc: "Email PDF receipt on each successful charge",
+                  },
+                  {
+                    id: "subscription_alerts",
+                    label: "Subscription change alerts",
+                    desc: "Notify on plan upgrades, downgrades, or cancellations",
+                  },
+                ].map((notif) => (
+                  <div
+                    key={notif.id}
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-900">{notif.label}</div>
+                      <p className="text-sm text-gray-600 mt-1">{notif.desc}</p>
+                    </div>
+                    <ToggleSwitch
+                      checked={notifications[notif.id] ?? true}
+                      onChange={(checked) =>
+                        setNotifications((prev) => ({
+                          ...prev,
+                          [notif.id]: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "access" && (
+          <div className="space-y-6 animate-in fade-in">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-xl font-bold text-slate-900">Your access</h3>
+                </div>
+                <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold border border-gray-300">
+                  {prettyLabel(membershipRole || role, "User")}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
+                    Role
+                  </div>
+                  <div className="text-lg font-semibold text-slate-900">
+                    {prettyLabel(membershipRole || role, "User")}
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
+                    Plan
+                  </div>
+                  <div className="text-lg font-semibold text-slate-900">{displayPlan}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
+                    Search access
+                  </div>
+                  <div className="text-green-700 font-semibold">Enabled</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
+                    Enrichment access
+                  </div>
+                  <div className="text-green-700 font-semibold">Enabled</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-blue-600" />
+                    <h3 className="text-xl font-bold text-slate-900">Team members</h3>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {orgMembers.length} member{orgMembers.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-semibold transition-colors text-slate-900"
+                >
+                  + Invite member
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {orgMembers.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No team members yet
+                  </div>
+                ) : (
+                  orgMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600">
+                          {String(member.email || member.users?.email || "?")
+                            .slice(0, 1)
+                            .toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-slate-900">
+                            {member.email || member.users?.email || "Unknown"}
+                          </div>
+                          <div className="text-xs text-gray-500 capitalize">
+                            {member.role || "member"}
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                          member.status === "invited"
+                            ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                            : "bg-gray-50 text-gray-700 border-gray-200"
+                        }`}
+                      >
+                        {member.status === "invited" ? "Invited" : "Active"}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Invite Modal */}
+            {showInviteModal && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 border border-gray-200 shadow-xl">
+                  <h3 className="text-xl font-bold text-slate-900 mb-6">Invite team member</h3>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="user@company.com"
+                        className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
+                        Role
+                      </label>
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
+                      >
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {saveState.kind !== "idle" && (
+                    <div
+                      className={`mt-4 p-3 rounded-lg text-sm font-medium ${
+                        saveState.kind === "success"
+                          ? "bg-green-50 text-green-700 border border-green-200"
+                          : "bg-red-50 text-red-700 border border-red-200"
+                      }`}
+                    >
+                      {saveState.message}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={() => {
+                        setShowInviteModal(false);
+                        setSaveState({ kind: "idle", message: "" });
+                      }}
+                      disabled={inviteLoading}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-slate-900 font-medium disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSendInvite}
+                      disabled={inviteLoading || !inviteEmail.trim()}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
+                    >
+                      {inviteLoading ? "Sending..." : "Send invite"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "integrations" && (
+          <div className="grid grid-cols-2 gap-6 animate-in fade-in">
+            {[
+              {
+                title: "ImportYeti API",
+                desc: "Real-time import/export company mapping",
+                active: true,
+                icon: "⚓",
+              },
+              {
+                title: "Gemini Enrichment",
+                desc: "AI-powered company analysis & risk forecasting",
+                active: false,
+                icon: "✨",
+              },
+              {
+                title: "Lusha Contacts",
+                desc: "Direct outreach intelligence for key stakeholders",
+                active: false,
+                icon: "👤",
+              },
+              {
+                title: "Fleet Radar",
+                desc: "Real-time vessel tracking and port congestion",
+                active: true,
+                icon: "🚢",
+              },
+            ].map((source, i) => (
+              <div
+                key={i}
+                className={`p-6 rounded-2xl border transition-all ${
+                  source.active
+                    ? "border-blue-200 bg-blue-50"
+                    : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className="text-3xl">{source.icon}</div>
+                  <button className="w-10 h-6 rounded-full transition-all relative">
+                    <div
+                      className={`absolute inset-0 rounded-full transition-all ${
+                        source.active ? "bg-blue-600" : "bg-gray-300"
+                      }`}
+                    />
+                    <span
+                      className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
+                        source.active ? "left-5" : "left-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="font-semibold text-slate-900">{source.title}</div>
+                <p className="text-sm text-gray-600 mt-1 mb-4">{source.desc}</p>
+                <span
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                    source.active
+                      ? "bg-blue-100 text-blue-700 border-blue-200"
+                      : "bg-gray-100 text-gray-600 border-gray-300"
+                  }`}
+                >
+                  {source.active ? "Operational" : "Disabled"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
