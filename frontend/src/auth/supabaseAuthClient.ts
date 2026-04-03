@@ -20,7 +20,7 @@ try {
   authError = error as Error;
 }
 
-export const auth = authClient;
+export const supabase = authClient;
 
 // Email/Password Sign In
 export async function signInWithEmailPassword(email: string, password: string) {
@@ -193,3 +193,11 @@ export async function updateProfile(updates: {
 export const loginWithGoogle = signInWithGoogle;
 export const loginWithMicrosoft = signInWithMicrosoft;
 export const loginWithEmailPassword = signInWithEmailPassword;
+
+export function isSupabaseAvailable() {
+  return !!authClient && !authError;
+}
+
+export function getSupabaseError() {
+  return authError;
+}
