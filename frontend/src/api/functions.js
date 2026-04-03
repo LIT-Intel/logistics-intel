@@ -7,6 +7,7 @@
  * function names (billing-checkout, billing-portal, billing-webhook).
  */
 
+import { supabase } from '../lib/supabase';
 import { httpCall } from './httpClient';
 import { supabase } from './supabase';
 
