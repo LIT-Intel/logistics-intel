@@ -199,6 +199,12 @@ export default function SettingsPage() {
   const [profileRole, setProfileRole] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle", message: "" });
 
+  const [orgMembers, setOrgMembers] = useState<any[]>([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [inviteLoading, setInviteLoading] = useState(false);
+
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -245,7 +251,7 @@ export default function SettingsPage() {
 
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("id, full_name, role, title, timezone, company_name, organization_name")
+        .select("id, full_name, company_name, organization_name")
         .eq("id", targetUserId)
         .maybeSingle();
 
@@ -324,8 +330,94 @@ export default function SettingsPage() {
     }
   };
 
+  const loadOrgMembers = async (userId?: string) => {
+    const targetUserId = userId ?? user?.id;
+    if (!targetUserId) {
+      setOrgMembers([]);
+      return;
+    }
+
+    try {
+      const { data: membershipData } = await supabase
+        .from("org_memberships")
+        .select("org_id")
+        .eq("user_id", targetUserId)
+        .limit(1)
+        .maybeSingle();
+
+      if (membershipData?.org_id) {
+        const { data: members } = await supabase
+          .from("org_memberships")
+          .select("id, user_id, role, created_at, users(id, email)")
+          .eq("org_id", membershipData.org_id)
+          .order("created_at", { ascending: false });
+
+        setOrgMembers(members || []);
+
+        // Also load pending invites
+        const { data: invites } = await supabase
+          .from("org_invites")
+          .select("id, email, role, status, created_at")
+          .eq("org_id", membershipData.org_id)
+          .order("created_at", { ascending: false });
+
+        if (invites && invites.length > 0) {
+          const inviteMembers = invites.map((inv) => ({
+            id: inv.id,
+            email: inv.email,
+            role: inv.role,
+            status: "invited",
+            created_at: inv.created_at,
+          }));
+          setOrgMembers((prev) => [...inviteMembers, ...prev]);
+        }
+      }
+    } catch (error) {
+      console.error("[Settings] Failed to load org members:", error);
+    }
+  };
+
+  const handleSendInvite = async () => {
+    if (!user?.id || !inviteEmail.trim()) return;
+
+    setInviteLoading(true);
+    try {
+      const { data: membershipData } = await supabase
+        .from("org_memberships")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (!membershipData?.org_id) {
+        throw new Error("No organization found");
+      }
+
+      const { error } = await supabase.from("org_invites").insert({
+        org_id: membershipData.org_id,
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        invited_by: user.id,
+        status: "pending",
+      });
+
+      if (error) throw error;
+
+      setInviteEmail("");
+      setInviteRole("member");
+      setShowInviteModal(false);
+      await loadOrgMembers(user.id);
+    } catch (error) {
+      console.error("[Settings] Invite failed:", error);
+      alert("Failed to send invite. Please try again.");
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadSettingsData();
+    void loadOrgMembers();
   }, [user?.id, authFullName]);
 
   const initials = useMemo(
@@ -447,12 +539,10 @@ export default function SettingsPage() {
             id: user.id,
             full_name: normalizedName || null,
             company_name: normalizedCompany || null,
-            timezone: normalizedTimezone || null,
-            role: normalizedRole || null,
           },
           { onConflict: "id" }
         )
-        .select("id, full_name, role, title, timezone, company_name, organization_name")
+        .select("id, full_name, company_name, organization_name")
         .single();
 
       if (profileError) throw profileError;
@@ -1096,35 +1186,136 @@ export default function SettingsPage() {
           )}
 
           {activeTab === "notifications" && (
-            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
-              <div className="space-y-2">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                    defaultChecked
-                  />
-                  <span className="text-sm font-medium">Email updates</span>
-                </label>
-              </div>
-              <div className="space-y-2">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                  />
-                  <span className="text-sm font-medium">Push notifications</span>
-                </label>
-              </div>
-              <div className="space-y-2">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                    defaultChecked
-                  />
-                  <span className="text-sm font-medium">Weekly reports</span>
-                </label>
+            <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="max-w-3xl space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Mail className="h-5 w-5 text-indigo-600" />
+                    <h3 className="text-lg font-black text-slate-900">Email Notifications</h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    {[
+                      {
+                        id: "email_updates",
+                        label: "Weekly Updates",
+                        desc: "Get weekly summaries of your activity and insights",
+                        defaultChecked: true,
+                      },
+                      {
+                        id: "email_alerts",
+                        label: "Alert Notifications",
+                        desc: "Important alerts about your account and platform changes",
+                        defaultChecked: true,
+                      },
+                      {
+                        id: "email_campaigns",
+                        label: "Campaign Reports",
+                        desc: "Performance reports for your active campaigns",
+                        defaultChecked: false,
+                      },
+                    ].map((notif) => (
+                      <div
+                        key={notif.id}
+                        className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all"
+                      >
+                        <div>
+                          <div className="text-sm font-bold text-slate-900">{notif.label}</div>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">{notif.desc}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          defaultChecked={notif.defaultChecked}
+                          className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Bell className="h-5 w-5 text-indigo-600" />
+                    <h3 className="text-lg font-black text-slate-900">App Notifications</h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    {[
+                      {
+                        id: "push_notifications",
+                        label: "Push Notifications",
+                        desc: "Real-time notifications in the app",
+                        defaultChecked: true,
+                      },
+                      {
+                        id: "search_alerts",
+                        label: "Search Alerts",
+                        desc: "Get notified when new companies match your criteria",
+                        defaultChecked: false,
+                      },
+                      {
+                        id: "team_updates",
+                        label: "Team Updates",
+                        desc: "Updates about team member activity",
+                        defaultChecked: true,
+                      },
+                    ].map((notif) => (
+                      <div
+                        key={notif.id}
+                        className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all"
+                      >
+                        <div>
+                          <div className="text-sm font-bold text-slate-900">{notif.label}</div>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">{notif.desc}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          defaultChecked={notif.defaultChecked}
+                          className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Calendar className="h-5 w-5 text-indigo-600" />
+                    <h3 className="text-lg font-black text-slate-900">Reports & Digests</h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    {[
+                      {
+                        id: "weekly_reports",
+                        label: "Weekly Reports",
+                        desc: "Comprehensive weekly summary of platform activity",
+                        defaultChecked: true,
+                      },
+                      {
+                        id: "monthly_insights",
+                        label: "Monthly Insights",
+                        desc: "Deep dive analysis and trend reports",
+                        defaultChecked: false,
+                      },
+                    ].map((notif) => (
+                      <div
+                        key={notif.id}
+                        className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all"
+                      >
+                        <div>
+                          <div className="text-sm font-bold text-slate-900">{notif.label}</div>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">{notif.desc}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          defaultChecked={notif.defaultChecked}
+                          className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1133,8 +1324,8 @@ export default function SettingsPage() {
             <div className="flex-1 p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
               <h3 className="text-lg font-black text-slate-900">Access & Plans</h3>
               <p className="text-sm text-slate-600 max-w-xl">
-                Configure beta access, seat assignments and free plan limits. Upgrade plans to
-                unlock higher limits and advanced features.
+                Configure team access, seat assignments and plan limits. Upgrade plans to unlock
+                higher limits and advanced features.
               </p>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
@@ -1176,37 +1367,109 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                   <div>
-                    <h4 className="text-sm font-black text-slate-900">Beta Invitees</h4>
+                    <h4 className="text-sm font-black text-slate-900">Team Members</h4>
                     <p className="text-xs text-slate-500">
-                      Users invited to the beta will appear here.
+                      {orgMembers.length} member{orgMembers.length !== 1 ? "s" : ""}
                     </p>
                   </div>
-                  <button className="text-xs font-black text-indigo-600 uppercase hover:underline">
+                  <button
+                    onClick={() => setShowInviteModal(true)}
+                    className="text-xs font-black text-indigo-600 uppercase hover:underline"
+                  >
                     Invite User
                   </button>
                 </div>
 
-                <ul className="space-y-2">
-                  <li className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-black">
-                        JD
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-slate-800">
-                          janedoe@beta.com
+                <ul className="space-y-2 max-h-96 overflow-y-auto">
+                  {orgMembers.length === 0 ? (
+                    <li className="text-center py-8 text-slate-500">
+                      <p className="text-sm font-medium">No team members yet</p>
+                    </li>
+                  ) : (
+                    orgMembers.map((member) => (
+                      <li key={member.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-black">
+                            {String(member.email || member.users?.email || "?").slice(0, 1).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold text-slate-800">
+                              {member.email || member.users?.email || "Unknown"}
+                            </div>
+                            <div className="text-xs text-slate-500 capitalize">{member.role || "member"}</div>
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-500">Pending activation</div>
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-black uppercase bg-yellow-100 text-yellow-600 px-2 py-0.5 rounded-full">
-                      Invite Sent
-                    </span>
-                  </li>
+                        <span
+                          className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            member.status === "invited"
+                              ? "bg-yellow-100 text-yellow-600"
+                              : "bg-emerald-100 text-emerald-600"
+                          }`}
+                        >
+                          {member.status === "invited" ? "Invite Pending" : "Active"}
+                        </span>
+                      </li>
+                    ))
+                  )}
                 </ul>
               </div>
+
+              {showInviteModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-in fade-in">
+                  <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 animate-in slide-in-from-bottom-4">
+                    <h3 className="text-lg font-black text-slate-900 mb-4">Invite Team Member</h3>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
+                          Email Address
+                        </label>
+                        <input
+                          type="email"
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                          placeholder="user@company.com"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
+                          Role
+                        </label>
+                        <select
+                          value={inviteRole}
+                          onChange={(e) => setInviteRole(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:bg-white outline-none ring-indigo-50 focus:ring-4 transition-all"
+                        >
+                          <option value="member">Member</option>
+                          <option value="admin">Admin</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 mt-6">
+                      <button
+                        onClick={() => setShowInviteModal(false)}
+                        disabled={inviteLoading}
+                        className="flex-1 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-black uppercase disabled:opacity-60"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSendInvite}
+                        disabled={inviteLoading || !inviteEmail.trim()}
+                        className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase disabled:opacity-60"
+                      >
+                        {inviteLoading ? "Sending..." : "Send Invite"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
