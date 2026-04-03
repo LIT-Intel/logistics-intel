@@ -130,6 +130,48 @@ function getPlanLimits(plan = "free_trial") {
   return planMap[canonical as keyof typeof planMap] || planMap.free_trial;
 }
 
+function UsageBar({
+  label,
+  current,
+  max,
+}: {
+  label: string;
+  current: number;
+  max: number;
+}) {
+  const safeCurrent = Number(current || 0);
+  const isUnlimited = max === Infinity;
+  const percentage =
+    !isUnlimited && Number(max) > 0
+      ? Math.min((safeCurrent / Number(max)) * 100, 100)
+      : 0;
+
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-2">
+        <span className="text-slate-700">{label}</span>
+        <span className="font-medium text-slate-900">
+          {safeCurrent} / {isUnlimited ? "∞" : Number(max).toLocaleString()}
+        </span>
+      </div>
+      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+        {!isUnlimited && (
+          <div
+            className="h-full rounded-full bg-blue-600 transition-all duration-300"
+            style={{ width: `${percentage}%` }}
+          />
+        )}
+      </div>
+      {!isUnlimited && percentage >= 90 && (
+        <div className="flex items-center gap-2 mt-2 text-sm text-amber-600">
+          <AlertCircle className="w-4 h-4" />
+          <span>Approaching usage limit</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ToggleSwitch = ({
   checked,
   onChange,
@@ -140,7 +182,7 @@ const ToggleSwitch = ({
   <button
     onClick={() => onChange(!checked)}
     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-      checked ? "bg-blue-500" : "bg-gray-600"
+      checked ? "bg-blue-600" : "bg-slate-300"
     }`}
   >
     <span
@@ -197,6 +239,18 @@ export default function SettingsPage() {
     subscription_alerts: true,
   });
 
+  const [billingData, setBillingData] = useState<any>({
+    current_plan: null,
+    next_billing_date: null,
+    stripe_status: null,
+    usage: {
+      companies_viewed: 0,
+      emails_sent: 0,
+      rfps_generated: 0,
+    },
+    billing_history: [],
+  });
+
   const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
     { id: "account", label: "Account", icon: User },
     { id: "security", label: "Security", icon: Shield },
@@ -215,26 +269,22 @@ export default function SettingsPage() {
 
     setLoadingData(true);
     try {
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileData } = await supabase
         .from("profiles")
         .select("id, full_name, company_name, organization_name")
         .eq("id", targetUserId)
         .maybeSingle();
 
-      if (profileError) throw profileError;
-
-      const { data: membershipData, error: membershipError } = await supabase
-        .from("org_memberships")
-        .select("org_id, role, orgs(id, name)")
+      const { data: membershipData } = await supabase
+        .from("org_members")
+        .select("org_id, role, organizations(id, name)")
         .eq("user_id", targetUserId)
         .limit(1)
         .maybeSingle();
 
-      if (membershipError) throw membershipError;
-
       const typedProfile = (profileData as ProfileRow | null) ?? null;
-      const membership = (membershipData as MembershipRow | null) ?? null;
-      const orgData = membership?.orgs ?? null;
+      const membership = (membershipData as any) ?? null;
+      const orgData = membership?.organizations ?? null;
 
       setProfile(typedProfile);
       setOrg(orgData);
@@ -267,7 +317,7 @@ export default function SettingsPage() {
 
     try {
       const { data: membershipData } = await supabase
-        .from("org_memberships")
+        .from("org_members")
         .select("org_id")
         .eq("user_id", targetUserId)
         .limit(1)
@@ -275,7 +325,7 @@ export default function SettingsPage() {
 
       if (membershipData?.org_id) {
         const { data: members } = await supabase
-          .from("org_memberships")
+          .from("org_members")
           .select("id, user_id, role, created_at, users(id, email)")
           .eq("org_id", membershipData.org_id)
           .order("created_at", { ascending: false });
@@ -310,7 +360,7 @@ export default function SettingsPage() {
     setInviteLoading(true);
     try {
       const { data: membershipData } = await supabase
-        .from("org_memberships")
+        .from("org_members")
         .select("org_id")
         .eq("user_id", user.id)
         .limit(1)
@@ -334,9 +384,16 @@ export default function SettingsPage() {
       setInviteRole("member");
       setShowInviteModal(false);
       await loadOrgMembers(user.id);
+      setSaveState({
+        kind: "success",
+        message: "Invite sent successfully!",
+      });
     } catch (error) {
       console.error("[Settings] Invite failed:", error);
-      alert("Failed to send invite. Please try again.");
+      setSaveState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to send invite.",
+      });
     } finally {
       setInviteLoading(false);
     }
@@ -355,44 +412,11 @@ export default function SettingsPage() {
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
   const isAdmin = Boolean(access?.isAdmin);
 
-  const billingUser = useMemo(() => {
-    const customerId =
-      (user as any)?.stripe_customer_id ||
-      user?.user_metadata?.stripe_customer_id ||
-      null;
-
-    const subStatus =
-      (user as any)?.subscription_status ||
-      user?.user_metadata?.subscription_status ||
-      null;
-
-    return {
-      ...(user || {}),
-      plan,
-      stripe_customer_id: customerId,
-      subscription_status: subStatus,
-    };
-  }, [user, plan]);
-
   const canonicalPlan = getCanonicalPlan(String(plan || "free_trial"));
   const planConfig = getPlanLimits(canonicalPlan);
   const upgradePlans = Object.values(getPlanMap()).filter(
     (p) => p.code !== canonicalPlan && p.code !== "free_trial"
   );
-
-  const stripeCustomerId =
-    (billingUser as any)?.stripe_customer_id ||
-    (billingUser as any)?.user_metadata?.stripe_customer_id ||
-    null;
-
-  const subscriptionStatus =
-    (billingUser as any)?.subscription_status ||
-    (billingUser as any)?.user_metadata?.subscription_status ||
-    null;
-
-  const hasActiveSubscription =
-    !!stripeCustomerId &&
-    ["active", "trialing"].includes(String(subscriptionStatus || "").toLowerCase());
 
   const handleDiscard = () => {
     setFullName(profile?.full_name || "");
@@ -411,7 +435,7 @@ export default function SettingsPage() {
       const normalizedName = fullName.trim();
       const normalizedCompany = companyName.trim();
 
-      const { data: savedProfile, error: profileError } = await supabase
+      const { error: profileError } = await supabase
         .from("profiles")
         .upsert(
           {
@@ -420,13 +444,10 @@ export default function SettingsPage() {
             company_name: normalizedCompany || null,
           },
           { onConflict: "id" }
-        )
-        .select("id, full_name, company_name")
-        .single();
+        );
 
       if (profileError) throw profileError;
 
-      setProfile(savedProfile);
       setSaveState({
         kind: "success",
         message: "Settings saved successfully.",
@@ -491,18 +512,16 @@ export default function SettingsPage() {
       throw new Error("Unable to start checkout.");
     } catch (error) {
       console.error("[Billing] Checkout error:", error);
-      alert("Failed to start checkout. Please try again.");
+      setSaveState({
+        kind: "error",
+        message: "Failed to start checkout. Please try again.",
+      });
     } finally {
       setBillingActionLoading(false);
     }
   };
 
   const handleManageSubscription = async () => {
-    if (!stripeCustomerId) {
-      alert("No Stripe customer found for this account yet.");
-      return;
-    }
-
     setBillingActionLoading(true);
     try {
       const result = await createStripePortalSession();
@@ -515,36 +534,39 @@ export default function SettingsPage() {
       throw new Error("Unable to create Stripe portal session.");
     } catch (error) {
       console.error("[Billing] Portal error:", error);
-      alert("Failed to open billing portal. Please try again.");
+      setSaveState({
+        kind: "error",
+        message: "Failed to open billing portal. Please try again.",
+      });
     } finally {
       setBillingActionLoading(false);
     }
   };
 
   return (
-    <div className="w-full min-h-screen bg-slate-950 text-white font-sans">
+    <div className="w-full min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header */}
-      <div className="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-40">
+      <div className="border-b border-gray-200 bg-white/80 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-slate-400 mb-2">Workspace › Settings</div>
-              <h1 className="text-4xl font-bold">Settings</h1>
-              <p className="text-slate-400 mt-1">
+              <div className="text-sm text-gray-500 mb-2">Workspace › Settings</div>
+              <h1 className="text-4xl font-bold text-slate-900">Settings</h1>
+              <p className="text-gray-600 mt-1">
                 Manage your account, security, billing, and integrations
               </p>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={handleDiscard}
-                className="px-6 py-2 border border-slate-700 rounded-lg hover:bg-slate-800 transition-colors"
+                className="px-6 py-2 border border-gray-300 bg-white rounded-lg hover:bg-gray-50 transition-colors text-slate-900 font-medium"
               >
                 Discard
               </button>
               <button
                 onClick={handleSave}
                 disabled={isSaving || !user}
-                className="px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors disabled:opacity-50"
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
               >
                 {isSaving ? "Saving..." : "Save changes"}
               </button>
@@ -554,7 +576,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-slate-800 bg-slate-900/30">
+      <div className="border-b border-gray-200 bg-white">
         <div className="max-w-7xl mx-auto px-8">
           <div className="flex gap-8">
             {tabs.map((tab) => (
@@ -563,8 +585,8 @@ export default function SettingsPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`py-4 px-1 border-b-2 transition-colors flex items-center gap-2 ${
                   activeTab === tab.id
-                    ? "border-blue-500 text-white"
-                    : "border-transparent text-slate-400 hover:text-slate-300"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
                 }`}
               >
                 <tab.icon className="w-4 h-4" />
@@ -579,90 +601,87 @@ export default function SettingsPage() {
       <div className="max-w-7xl mx-auto px-8 py-12">
         {activeTab === "account" && (
           <div className="space-y-8 animate-in fade-in">
-            {/* Profile Card */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-start justify-between mb-8">
                 <div className="flex items-center gap-6">
-                  <div className="w-24 h-24 bg-blue-600 rounded-xl flex items-center justify-center text-3xl font-bold">
+                  <div className="w-24 h-24 bg-blue-600 rounded-2xl flex items-center justify-center text-3xl font-bold text-white">
                     {initials}
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">
+                    <h2 className="text-2xl font-bold text-slate-900">
                       {loadingData ? "Loading..." : fullName || "Unnamed User"}
                     </h2>
-                    <p className="text-slate-400 mt-1">
+                    <p className="text-gray-600 mt-1">
                       {membershipRole ? prettyLabel(membershipRole) : "User"}
                       {organizationName ? ` at ${organizationName}` : ""}
                     </p>
-                    <button className="text-blue-400 hover:text-blue-300 text-sm mt-2">
+                    <button className="text-blue-600 hover:text-blue-700 text-sm mt-2 font-medium">
                       Change avatar
                     </button>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <span className="px-3 py-1 bg-blue-600/20 text-blue-300 rounded-full text-xs font-semibold">
+                  <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold border border-blue-200">
                     {prettyLabel(plan, "Free Trial")}
                   </span>
-                  <span className="px-3 py-1 bg-green-600/20 text-green-300 rounded-full text-xs font-semibold">
+                  <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-semibold border border-green-200">
                     Active
                   </span>
                 </div>
               </div>
 
-              {/* Form Fields */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="text-xs uppercase tracking-wider text-slate-400 mb-3 block">
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
                     Full Name
                   </label>
                   <input
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none transition-colors"
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
                     placeholder="Jane Doe"
                   />
                 </div>
                 <div>
-                  <label className="text-xs uppercase tracking-wider text-slate-400 mb-3 block">
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
                     Work Email
                   </label>
                   <input
                     value={workEmail}
                     disabled
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-slate-400 cursor-not-allowed"
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-500 cursor-not-allowed"
                   />
                 </div>
                 <div>
-                  <label className="text-xs uppercase tracking-wider text-slate-400 mb-3 block">
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
                     Company Name
                   </label>
                   <input
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none transition-colors"
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
                     placeholder="Acme Inc."
                   />
                 </div>
                 <div>
-                  <label className="text-xs uppercase tracking-wider text-slate-400 mb-3 block">
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-3 block font-semibold">
                     Timezone
                   </label>
-                  <select className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:outline-none transition-colors">
+                  <select className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors">
                     <option>America/Chicago</option>
                     <option>America/New_York</option>
                     <option>America/Los_Angeles</option>
                     <option>Europe/London</option>
-                    <option>Europe/Paris</option>
                   </select>
                 </div>
               </div>
 
               {saveState.kind !== "idle" && (
                 <div
-                  className={`mt-6 p-3 rounded-lg text-sm ${
+                  className={`mt-6 p-3 rounded-lg text-sm font-medium ${
                     saveState.kind === "success"
-                      ? "bg-green-900/30 text-green-300"
-                      : "bg-red-900/30 text-red-300"
+                      ? "bg-green-50 text-green-700 border border-green-200"
+                      : "bg-red-50 text-red-700 border border-red-200"
                   }`}
                 >
                   {saveState.message}
@@ -674,16 +693,15 @@ export default function SettingsPage() {
 
         {activeTab === "security" && (
           <div className="space-y-6 animate-in fade-in">
-            {/* Password Management */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
-                <Lock className="w-5 h-5 text-blue-400" />
-                <h3 className="text-xl font-bold">Password</h3>
+                <Lock className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Password</h3>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">
+                  <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
                     Current Password
                   </label>
                   <input
@@ -691,13 +709,13 @@ export default function SettingsPage() {
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none transition-colors"
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">
+                    <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
                       New Password
                     </label>
                     <input
@@ -705,11 +723,11 @@ export default function SettingsPage() {
                       value={newPasswordInput}
                       onChange={(e) => setNewPasswordInput(e.target.value)}
                       placeholder="Min. 8 characters"
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none transition-colors"
+                      className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">
+                    <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
                       Confirm Password
                     </label>
                     <input
@@ -717,7 +735,7 @@ export default function SettingsPage() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Repeat new password"
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none transition-colors"
+                      className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -725,20 +743,20 @@ export default function SettingsPage() {
                 <button
                   onClick={handlePasswordUpdate}
                   disabled={passwordLoading}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                  className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 font-medium"
                 >
                   {passwordLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
                   Update password
                 </button>
 
-                <p className="text-xs text-slate-400">Last changed 47 days ago</p>
+                <p className="text-xs text-gray-500">Last changed 47 days ago</p>
 
                 {passwordState.kind !== "idle" && (
                   <div
-                    className={`p-3 rounded-lg text-sm ${
+                    className={`p-3 rounded-lg text-sm font-medium ${
                       passwordState.kind === "success"
-                        ? "bg-green-900/30 text-green-300"
-                        : "bg-red-900/30 text-red-300"
+                        ? "bg-green-50 text-green-700 border border-green-200"
+                        : "bg-red-50 text-red-700 border border-red-200"
                     }`}
                   >
                     {passwordState.message}
@@ -747,48 +765,47 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Security Overview */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
-                <Shield className="w-5 h-5 text-blue-400" />
-                <h3 className="text-xl font-bold">Security overview</h3>
+                <Shield className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Security overview</h3>
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-slate-800 rounded-lg">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
-                    <div className="font-semibold">Email verification</div>
-                    <p className="text-sm text-slate-400">{workEmail}</p>
+                    <div className="font-semibold text-slate-900">Email verification</div>
+                    <p className="text-sm text-gray-600">{workEmail}</p>
                   </div>
-                  <span className="text-green-400 text-sm font-semibold">Enabled</span>
+                  <span className="text-green-700 text-sm font-semibold">Enabled</span>
                 </div>
 
-                <div className="flex items-center justify-between p-4 border border-slate-800 rounded-lg">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
-                    <div className="font-semibold">Two-factor authentication</div>
-                    <p className="text-sm text-slate-400">TOTP authenticator app</p>
+                    <div className="font-semibold text-slate-900">Two-factor authentication</div>
+                    <p className="text-sm text-gray-600">TOTP authenticator app</p>
                   </div>
-                  <button className="px-3 py-1 border border-slate-600 rounded-lg text-sm hover:bg-slate-800 transition-colors">
+                  <button className="px-3 py-1 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors font-medium">
                     Enable
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between p-4 border border-slate-800 rounded-lg">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
-                    <div className="font-semibold">Active sessions</div>
-                    <p className="text-sm text-slate-400">Chrome on macOS · Dallas, TX</p>
+                    <div className="font-semibold text-slate-900">Active sessions</div>
+                    <p className="text-sm text-gray-600">Chrome on macOS · Dallas, TX</p>
                   </div>
-                  <button className="px-3 py-1 border border-slate-600 rounded-lg text-sm hover:bg-slate-800 transition-colors">
+                  <button className="px-3 py-1 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors font-medium">
                     Revoke all
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between p-4 border border-slate-800 rounded-lg">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
-                    <div className="font-semibold">Single sign-on (SSO)</div>
-                    <p className="text-sm text-slate-400">SAML 2.0 / Okta integration</p>
+                    <div className="font-semibold text-slate-900">Single sign-on (SSO)</div>
+                    <p className="text-sm text-gray-600">SAML 2.0 / Okta integration</p>
                   </div>
-                  <span className="text-slate-500 text-sm">Enterprise only</span>
+                  <span className="text-gray-500 text-sm">Enterprise only</span>
                 </div>
               </div>
             </div>
@@ -797,100 +814,145 @@ export default function SettingsPage() {
 
         {activeTab === "billing" && (
           <div className="space-y-6 animate-in fade-in">
-            {/* Current Plan */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <Crown className="w-5 h-5 text-blue-400" />
-                  <h3 className="text-xl font-bold">Current Plan</h3>
-                </div>
-                <div className="flex gap-2">
-                  <span className="px-3 py-1 bg-blue-600/20 text-blue-300 rounded-full text-xs font-semibold">
-                    {planConfig.name}
-                  </span>
-                  {subscriptionStatus && (
-                    <span className="px-3 py-1 bg-slate-800 text-slate-300 rounded-full text-xs font-semibold capitalize">
-                      {subscriptionStatus}
-                    </span>
-                  )}
-                </div>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div className="text-sm text-gray-600 mb-2">Current plan</div>
+                <div className="text-2xl font-bold text-slate-900">{planConfig.name}</div>
+                <div className="text-lg font-semibold text-blue-600 mt-2">{planConfig.price}/month</div>
               </div>
-
-              <div className="grid grid-cols-2 gap-8 mb-6">
-                <div>
-                  <h4 className="font-semibold mb-4">Plan Features</h4>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Companies per month</span>
-                      <span>
-                        {planConfig.max_companies === Infinity
-                          ? "Unlimited"
-                          : Number(planConfig.max_companies).toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Emails per month</span>
-                      <span>
-                        {planConfig.max_emails === Infinity
-                          ? "Unlimited"
-                          : Number(planConfig.max_emails).toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Data enrichment</span>
-                      <span>{planConfig.enrichment_enabled ? "Enabled" : "Disabled"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Campaign automation</span>
-                      <span>{planConfig.campaigns_enabled ? "Enabled" : "Disabled"}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold mb-4">Billing Information</h4>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Plan price</span>
-                      <span>{planConfig.price}/month</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Subscription state</span>
-                      <span capitalize>{subscriptionStatus || "Not subscribed"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Next billing date</span>
-                      <span>
-                        {hasActiveSubscription ? "Expected via Stripe" : "N/A"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div className="text-sm text-gray-600 mb-2">Next billing date</div>
+                <div className="text-2xl font-bold text-slate-900">May 2</div>
+                <div className="text-sm text-gray-600 mt-2">Auto-renews · Stripe</div>
               </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div className="text-sm text-gray-600 mb-2">Stripe status</div>
+                <div className="text-2xl font-bold text-green-700">Active</div>
+                <div className="text-sm text-green-600 mt-2">Customer connected</div>
+              </div>
+            </div>
 
-              <div className="flex flex-wrap gap-3">
-                {hasActiveSubscription ? (
-                  <button
-                    onClick={handleManageSubscription}
-                    disabled={billingActionLoading}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {billingActionLoading ? "Opening..." : "Manage Subscription"}
-                  </button>
-                ) : (
-                  upgradePlans.map((upgrade) => (
-                    <button
-                      key={upgrade.code}
-                      onClick={() => handleUpgrade(upgrade.code)}
-                      disabled={billingActionLoading}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+            {/* Plan Comparison */}
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                Plan comparison
+              </h3>
+
+              <div className="grid grid-cols-4 gap-4">
+                {["Free trial", "Standard", "Growth", "Enterprise"].map((planName, idx) => {
+                  const p = Object.values(getPlanMap())[idx];
+                  const isCurrent = p.code === canonicalPlan;
+                  return (
+                    <div
+                      key={p.code}
+                      className={`rounded-2xl p-6 border-2 transition-all ${
+                        isCurrent
+                          ? "border-blue-600 bg-blue-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
                     >
-                      {billingActionLoading
-                        ? "Processing..."
-                        : `Upgrade to ${upgrade.name}`}
-                    </button>
-                  ))
-                )}
+                      {isCurrent && (
+                        <div className="mb-4">
+                          <span className="inline-block px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded-full">
+                            Current
+                          </span>
+                        </div>
+                      )}
+                      <div className="text-sm font-semibold text-slate-900 mb-2">{p.name}</div>
+                      <div className={`text-2xl font-bold mb-4 ${isCurrent ? "text-blue-600" : "text-slate-900"}`}>
+                        {p.price}
+                        <span className="text-sm text-gray-600">/mo</span>
+                      </div>
+
+                      <div className="space-y-2 mb-6 text-sm">
+                        <div className={p.max_companies === Infinity ? "text-gray-900" : "text-gray-600"}>
+                          {p.max_companies === Infinity ? "✓" : "✗"} {p.max_companies === Infinity ? "Unlimited" : p.max_companies} companies
+                        </div>
+                        <div className={p.max_emails === Infinity ? "text-gray-900" : "text-gray-600"}>
+                          {p.max_emails === Infinity ? "✓" : "✗"} {p.max_emails === Infinity ? "Unlimited" : p.max_emails} emails
+                        </div>
+                        <div className={p.enrichment_enabled ? "text-gray-900" : "text-gray-600"}>
+                          {p.enrichment_enabled ? "✓" : "✗"} Enrichment
+                        </div>
+                        <div className={p.campaigns_enabled ? "text-gray-900" : "text-gray-600"}>
+                          {p.campaigns_enabled ? "✓" : "✗"} Campaigns
+                        </div>
+                      </div>
+
+                      {!isCurrent && p.code !== "free_trial" && (
+                        <button
+                          onClick={() => handleUpgrade(p.code)}
+                          disabled={billingActionLoading}
+                          className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-slate-900 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
+                        >
+                          {billingActionLoading ? "Processing..." : "Upgrade"}
+                        </button>
+                      )}
+                      {!isCurrent && canonicalPlan !== "free_trial" && (
+                        <button className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-slate-900 rounded-lg text-sm font-semibold transition-colors">
+                          Downgrade
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Usage This Month */}
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-600" />
+                Usage this month
+              </h3>
+              <div className="text-right text-sm text-gray-600 mb-4">Resets May 1</div>
+
+              <div className="space-y-6">
+                <UsageBar label="Companies viewed" current={312} max={planConfig.max_companies} />
+                <UsageBar label="Emails sent" current={1840} max={planConfig.max_emails} />
+                <UsageBar label="RFPs generated" current={47} max={planConfig.max_rfps} />
+              </div>
+            </div>
+
+            {/* Billing History */}
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-blue-600" />
+                  Billing history
+                </h3>
+                <button
+                  onClick={handleManageSubscription}
+                  disabled={billingActionLoading}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-slate-900 transition-colors disabled:opacity-50"
+                >
+                  {billingActionLoading ? "Opening..." : "Manage in Stripe"}
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  { month: "March 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
+                  { month: "February 2025", plan: "Growth Plan", amount: "$299", status: "Paid" },
+                  { month: "January 2025", plan: "Standard Plan", amount: "$49", status: "Paid" },
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                    <div>
+                      <div className="font-semibold text-slate-900">{item.month}</div>
+                      <div className="text-sm text-gray-600">{item.plan}</div>
+                      <div className="text-xs text-gray-500 mt-1">Auto-charged · Visa ····4242</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="px-2.5 py-1 bg-green-50 text-green-700 rounded text-xs font-semibold border border-green-200">
+                        {item.status}
+                      </span>
+                      <span className="font-semibold text-slate-900">{item.amount}</span>
+                      <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">PDF</button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -898,11 +960,10 @@ export default function SettingsPage() {
 
         {activeTab === "notifications" && (
           <div className="space-y-6 animate-in fade-in">
-            {/* Email Notifications */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
-                <Mail className="w-5 h-5 text-blue-400" />
-                <h3 className="text-xl font-bold">Email notifications</h3>
+                <Mail className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Email notifications</h3>
               </div>
 
               <div className="space-y-4">
@@ -930,11 +991,11 @@ export default function SettingsPage() {
                 ].map((notif) => (
                   <div
                     key={notif.id}
-                    className="flex items-center justify-between p-4 border border-slate-800 rounded-lg"
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <div>
-                      <div className="font-semibold">{notif.label}</div>
-                      <p className="text-sm text-slate-400 mt-1">{notif.desc}</p>
+                      <div className="font-semibold text-slate-900">{notif.label}</div>
+                      <p className="text-sm text-gray-600 mt-1">{notif.desc}</p>
                     </div>
                     <ToggleSwitch
                       checked={notifications[notif.id] ?? true}
@@ -950,11 +1011,10 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* In-app Notifications */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
-                <Bell className="w-5 h-5 text-blue-400" />
-                <h3 className="text-xl font-bold">In-app notifications</h3>
+                <Bell className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">In-app notifications</h3>
               </div>
 
               <div className="space-y-4">
@@ -977,11 +1037,11 @@ export default function SettingsPage() {
                 ].map((notif) => (
                   <div
                     key={notif.id}
-                    className="flex items-center justify-between p-4 border border-slate-800 rounded-lg"
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <div>
-                      <div className="font-semibold">{notif.label}</div>
-                      <p className="text-sm text-slate-400 mt-1">{notif.desc}</p>
+                      <div className="font-semibold text-slate-900">{notif.label}</div>
+                      <p className="text-sm text-gray-600 mt-1">{notif.desc}</p>
                     </div>
                     <ToggleSwitch
                       checked={notifications[notif.id] ?? false}
@@ -997,11 +1057,10 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Billing & Account */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
-                <CreditCard className="w-5 h-5 text-blue-400" />
-                <h3 className="text-xl font-bold">Billing & account</h3>
+                <CreditCard className="w-5 h-5 text-blue-600" />
+                <h3 className="text-xl font-bold text-slate-900">Billing & account</h3>
               </div>
 
               <div className="space-y-4">
@@ -1019,11 +1078,11 @@ export default function SettingsPage() {
                 ].map((notif) => (
                   <div
                     key={notif.id}
-                    className="flex items-center justify-between p-4 border border-slate-800 rounded-lg"
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <div>
-                      <div className="font-semibold">{notif.label}</div>
-                      <p className="text-sm text-slate-400 mt-1">{notif.desc}</p>
+                      <div className="font-semibold text-slate-900">{notif.label}</div>
+                      <p className="text-sm text-gray-600 mt-1">{notif.desc}</p>
                     </div>
                     <ToggleSwitch
                       checked={notifications[notif.id] ?? true}
@@ -1043,63 +1102,61 @@ export default function SettingsPage() {
 
         {activeTab === "access" && (
           <div className="space-y-6 animate-in fade-in">
-            {/* Your Access */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-blue-400" />
-                  <h3 className="text-xl font-bold">Your access</h3>
+                  <Activity className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-xl font-bold text-slate-900">Your access</h3>
                 </div>
-                <span className="px-3 py-1 bg-slate-800 text-slate-300 rounded-full text-xs font-semibold">
+                <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold border border-gray-300">
                   {prettyLabel(membershipRole || role, "User")}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
                     Role
                   </div>
-                  <div className="text-lg font-semibold">
+                  <div className="text-lg font-semibold text-slate-900">
                     {prettyLabel(membershipRole || role, "User")}
                   </div>
                 </div>
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
                     Plan
                   </div>
-                  <div className="text-lg font-semibold">{displayPlan}</div>
+                  <div className="text-lg font-semibold text-slate-900">{displayPlan}</div>
                 </div>
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
                     Search access
                   </div>
-                  <div className="text-green-400 font-semibold">Enabled</div>
+                  <div className="text-green-700 font-semibold">Enabled</div>
                 </div>
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <div className="text-xs uppercase tracking-wider text-slate-400 mb-2">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">
                     Enrichment access
                   </div>
-                  <div className="text-green-400 font-semibold">Enabled</div>
+                  <div className="text-green-700 font-semibold">Enabled</div>
                 </div>
               </div>
             </div>
 
-            {/* Team Members */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <div className="flex items-center gap-2">
-                    <Users className="w-5 h-5 text-blue-400" />
-                    <h3 className="text-xl font-bold">Team members</h3>
+                    <Users className="w-5 h-5 text-blue-600" />
+                    <h3 className="text-xl font-bold text-slate-900">Team members</h3>
                   </div>
-                  <p className="text-sm text-slate-400 mt-1">
+                  <p className="text-sm text-gray-600 mt-1">
                     {orgMembers.length} member{orgMembers.length !== 1 ? "s" : ""}
                   </p>
                 </div>
                 <button
                   onClick={() => setShowInviteModal(true)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-semibold transition-colors text-slate-900"
                 >
                   + Invite member
                 </button>
@@ -1107,38 +1164,38 @@ export default function SettingsPage() {
 
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {orgMembers.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
+                  <div className="text-center py-8 text-gray-500">
                     No team members yet
                   </div>
                 ) : (
                   orgMembers.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-center justify-between p-4 border border-slate-800 rounded-lg"
+                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600">
                           {String(member.email || member.users?.email || "?")
                             .slice(0, 1)
                             .toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-semibold">
+                          <div className="font-semibold text-slate-900">
                             {member.email || member.users?.email || "Unknown"}
                           </div>
-                          <div className="text-xs text-slate-400 capitalize">
+                          <div className="text-xs text-gray-500 capitalize">
                             {member.role || "member"}
                           </div>
                         </div>
                       </div>
                       <span
-                        className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
                           member.status === "invited"
-                            ? "bg-yellow-900/30 text-yellow-300"
-                            : "bg-slate-800 text-slate-300"
+                            ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                            : "bg-gray-50 text-gray-700 border-gray-200"
                         }`}
                       >
-                        {member.status === "invited" ? "Invited" : "Admin"}
+                        {member.status === "invited" ? "Invited" : "Active"}
                       </span>
                     </div>
                   ))
@@ -1149,12 +1206,12 @@ export default function SettingsPage() {
             {/* Invite Modal */}
             {showInviteModal && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full mx-4">
-                  <h3 className="text-xl font-bold mb-6">Invite team member</h3>
+                <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 border border-gray-200 shadow-xl">
+                  <h3 className="text-xl font-bold text-slate-900 mb-6">Invite team member</h3>
 
                   <div className="space-y-4">
                     <div>
-                      <label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">
+                      <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
                         Email Address
                       </label>
                       <input
@@ -1162,18 +1219,18 @@ export default function SettingsPage() {
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                         placeholder="user@company.com"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none transition-colors"
+                        className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 placeholder-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
                       />
                     </div>
 
                     <div>
-                      <label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">
+                      <label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block font-semibold">
                         Role
                       </label>
                       <select
                         value={inviteRole}
                         onChange={(e) => setInviteRole(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:outline-none transition-colors"
+                        className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none transition-colors"
                       >
                         <option value="member">Member</option>
                         <option value="admin">Admin</option>
@@ -1182,17 +1239,33 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  {saveState.kind !== "idle" && (
+                    <div
+                      className={`mt-4 p-3 rounded-lg text-sm font-medium ${
+                        saveState.kind === "success"
+                          ? "bg-green-50 text-green-700 border border-green-200"
+                          : "bg-red-50 text-red-700 border border-red-200"
+                      }`}
+                    >
+                      {saveState.message}
+                    </div>
+                  )}
+
                   <div className="flex gap-3 mt-6">
                     <button
-                      onClick={() => setShowInviteModal(false)}
-                      className="flex-1 px-4 py-2 border border-slate-700 rounded-lg hover:bg-slate-800 transition-colors"
+                      onClick={() => {
+                        setShowInviteModal(false);
+                        setSaveState({ kind: "idle", message: "" });
+                      }}
+                      disabled={inviteLoading}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-slate-900 font-medium disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={handleSendInvite}
                       disabled={inviteLoading || !inviteEmail.trim()}
-                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
                     >
                       {inviteLoading ? "Sending..." : "Send invite"}
                     </button>
@@ -1235,27 +1308,32 @@ export default function SettingsPage() {
                 key={i}
                 className={`p-6 rounded-2xl border transition-all ${
                   source.active
-                    ? "border-blue-600/50 bg-blue-600/10"
-                    : "border-slate-800 bg-slate-900"
+                    ? "border-blue-200 bg-blue-50"
+                    : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
                 <div className="flex justify-between items-start mb-4">
                   <div className="text-3xl">{source.icon}</div>
-                  <button className="w-10 h-6 rounded-full bg-slate-700 relative">
+                  <button className="w-10 h-6 rounded-full transition-all relative">
+                    <div
+                      className={`absolute inset-0 rounded-full transition-all ${
+                        source.active ? "bg-blue-600" : "bg-gray-300"
+                      }`}
+                    />
                     <span
-                      className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-all ${
-                        source.active ? "bg-blue-500 left-5" : "bg-slate-500"
+                      className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
+                        source.active ? "left-5" : "left-1"
                       }`}
                     />
                   </button>
                 </div>
-                <div className="font-semibold">{source.title}</div>
-                <p className="text-sm text-slate-400 mt-1 mb-4">{source.desc}</p>
+                <div className="font-semibold text-slate-900">{source.title}</div>
+                <p className="text-sm text-gray-600 mt-1 mb-4">{source.desc}</p>
                 <span
-                  className={`text-xs font-semibold px-2 py-1 rounded ${
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
                     source.active
-                      ? "bg-blue-600/20 text-blue-300"
-                      : "bg-slate-800 text-slate-400"
+                      ? "bg-blue-100 text-blue-700 border-blue-200"
+                      : "bg-gray-100 text-gray-600 border-gray-300"
                   }`}
                 >
                   {source.active ? "Operational" : "Disabled"}
