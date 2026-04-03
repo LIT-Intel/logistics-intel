@@ -7,9 +7,8 @@
  * function names (billing-checkout, billing-portal, billing-webhook).
  */
 
-import { supabase } from '../lib/supabase';
 import { httpCall } from './httpClient';
-import { supabase } from './supabase';
+import { supabase } from '../lib/supabase';
 
 // ---------- Shared helpers ----------
 async function invokeEdgeFunction(functionName, options = {}) {
@@ -25,11 +24,6 @@ async function invokeEdgeFunction(functionName, options = {}) {
 }
 
 // ---------- Stripe & billing ----------
-// IMPORTANT:
-// Billing must call Supabase Edge Functions directly.
-// Do NOT route these through httpCall('/functions/...') because that ends up
-// hitting the old /api/lit/functions/* path in the browser and returns 404.
-
 export const generateRfpPdf = httpCall('/functions/generateRfpPdf', { ok: false });
 export const stripeWebhookHandler = httpCall('/functions/billing-webhook', { ok: false });
 
@@ -97,7 +91,7 @@ export const litPingIndex = httpCall('/functions/litPing_index', {
   ok: true,
   ts: Date.now(),
   uid: null,
-}); // back-compat
+});
 
 // ---------- Company data ----------
 export const getCompanyDetails = httpCall('/functions/getCompanyDetails', {
@@ -124,7 +118,7 @@ export const companySave = httpCall('/functions/company_save', {
   ok: false,
 });
 
-export const saveCompany = companySave; // legacy alias
+export const saveCompany = companySave;
 
 // ---------- AI endpoints ----------
 export const ai = httpCall('/functions/ai', {
@@ -135,7 +129,7 @@ export const aiEnrichCompany = httpCall('/functions/ai_enrichCompany', {
   ok: false,
 });
 
-export const enrichCompany = aiEnrichCompany; // legacy alias
+export const enrichCompany = aiEnrichCompany;
 
 // ---------- Automations ----------
 export const automationsRun = httpCall('/functions/automations_run', {
