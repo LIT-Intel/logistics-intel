@@ -4,54 +4,143 @@
  * This file wraps our Supabase edge functions so that the frontend can
  * invoke them through the same httpCall helper used elsewhere in the app.
  * The legacy API Gateway endpoints have been replaced with Supabase
- * function names (billing‑checkout, billing‑portal, billing‑webhook).
+ * function names (billing-checkout, billing-portal, billing-webhook).
  */
 
 import { httpCall } from './httpClient';
+import { supabase } from './supabase';
+
+// ---------- Shared helpers ----------
+type InvokeFunctionOptions = {
+  body?: unknown;
+};
+
+async function invokeEdgeFunction<T = any>(
+  functionName: string,
+  options: InvokeFunctionOptions = {}
+): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body: options.body ?? {},
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data as T;
+}
 
 // ---------- Stripe & billing ----------
-// Note: these functions call Supabase edge functions under the hood. The
-// paths reflect the /functions/* routing configured by the Supabase Edge
-// runtime. See supabase/functions for the implementation.
-export const generateRfpPdf            = httpCall('/functions/generateRfpPdf',      { ok: false });
-export const stripeWebhookHandler      = httpCall('/functions/billing-webhook',     { ok: false });
-export const createStripeCheckout      = httpCall('/functions/billing-checkout',    { ok: false });
-export const createStripePortalSession = httpCall('/functions/billing-portal',      { ok: false });
-export const sendEmail                 = httpCall('/functions/sendEmail',           { ok: false, message: 'Email not yet wired' });
+// IMPORTANT:
+// Billing must call Supabase Edge Functions directly.
+// Do NOT route these through httpCall('/functions/...') because that ends up
+// hitting the old /api/lit/functions/* path in the browser and returns 404.
+
+export const generateRfpPdf = httpCall('/functions/generateRfpPdf', { ok: false });
+export const stripeWebhookHandler = httpCall('/functions/billing-webhook', { ok: false });
+
+export const createStripeCheckout = async (payload: {
+  plan_code: string;
+  interval?: 'month' | 'year';
+}) => {
+  return invokeEdgeFunction<{ url?: string; ok?: boolean; [key: string]: any }>(
+    'billing-checkout',
+    { body: payload }
+  );
+};
+
+export const createStripePortalSession = async () => {
+  return invokeEdgeFunction<{ url?: string; ok?: boolean; [key: string]: any }>(
+    'billing-portal',
+    { body: {} }
+  );
+};
+
+export const sendEmail = httpCall('/functions/sendEmail', {
+  ok: false,
+  message: 'Email not yet wired',
+});
 
 // ---------- Enrichment & outreach ----------
-export const enrichCompanyWithApollo   = httpCall('/functions/enrichCompanyWithApollo',   { ok: false, contacts: [] });
-export const findCompanyContacts       = httpCall('/functions/findCompanyContacts',       { ok: true, contacts: [] });
-export const phantombusterLinkedIn     = httpCall('/functions/phantombusterLinkedIn',     { ok: false, message: 'Disabled' });
-export const searchLeads               = httpCall('/functions/searchLeads',               { ok: true, results: [], total: 0 });
-export const toggleCompanySave         = httpCall('/functions/toggleCompanySave',         { ok: true, saved: false });
-export const debugAgent                = httpCall('/functions/debugAgent',                { ok: false });
-export const getOutreachHistory        = httpCall('/functions/getOutreachHistory',        { ok: true, items: [] });
+export const enrichCompanyWithApollo = httpCall('/functions/enrichCompanyWithApollo', {
+  ok: false,
+  contacts: [],
+});
+export const findCompanyContacts = httpCall('/functions/findCompanyContacts', {
+  ok: true,
+  contacts: [],
+});
+export const phantombusterLinkedIn = httpCall('/functions/phantombusterLinkedIn', {
+  ok: false,
+  message: 'Disabled',
+});
+export const searchLeads = httpCall('/functions/searchLeads', {
+  ok: true,
+  results: [],
+  total: 0,
+});
+export const toggleCompanySave = httpCall('/functions/toggleCompanySave', {
+  ok: true,
+  saved: false,
+});
+export const debugAgent = httpCall('/functions/debugAgent', { ok: false });
+export const getOutreachHistory = httpCall('/functions/getOutreachHistory', {
+  ok: true,
+  items: [],
+});
 
 // ---------- Health / ping ----------
-export const litPing                   = httpCall('/functions/litPing',            { ok: true, ts: Date.now(), uid: null });
-export const litPingIndex              = httpCall('/functions/litPing_index',      { ok: true, ts: Date.now(), uid: null }); // back‑compat
+export const litPing = httpCall('/functions/litPing', {
+  ok: true,
+  ts: Date.now(),
+  uid: null,
+});
+export const litPingIndex = httpCall('/functions/litPing_index', {
+  ok: true,
+  ts: Date.now(),
+  uid: null,
+}); // back-compat
 
 // ---------- Company data ----------
-export const getCompanyDetails         = httpCall('/functions/getCompanyDetails',   { ok: true, data: null });
-export const getCompanyOverview        = httpCall('/functions/getCompanyOverview',  { totals: { shipments: 0, spendUSD: 0, lanes: 0, carriers: 0 }, trend: [], byMode: [] });
-export const getCompanyShipments       = httpCall('/functions/getCompanyShipments', { rows: [], total: 0 });
-export const company                   = httpCall('/functions/company',             { ok: false });
-export const companySave               = httpCall('/functions/company_save',        { ok: false });
-export const saveCompany               = companySave; // legacy alias
+export const getCompanyDetails = httpCall('/functions/getCompanyDetails', {
+  ok: true,
+  data: null,
+});
+export const getCompanyOverview = httpCall('/functions/getCompanyOverview', {
+  totals: { shipments: 0, spendUSD: 0, lanes: 0, carriers: 0 },
+  trend: [],
+  byMode: [],
+});
+export const getCompanyShipments = httpCall('/functions/getCompanyShipments', {
+  rows: [],
+  total: 0,
+});
+export const company = httpCall('/functions/company', { ok: false });
+export const companySave = httpCall('/functions/company_save', { ok: false });
+export const saveCompany = companySave; // legacy alias
 
 // ---------- AI endpoints ----------
-export const ai                        = httpCall('/functions/ai',                       { ok: false });
-export const aiEnrichCompany           = httpCall('/functions/ai_enrichCompany',         { ok: false });
-export const enrichCompany             = aiEnrichCompany; // legacy alias
+export const ai = httpCall('/functions/ai', { ok: false });
+export const aiEnrichCompany = httpCall('/functions/ai_enrichCompany', { ok: false });
+export const enrichCompany = aiEnrichCompany; // legacy alias
 
 // ---------- Automations ----------
-export const automationsRun            = httpCall('/functions/automations_run',          { ok: false });
+export const automationsRun = httpCall('/functions/automations_run', { ok: false });
 
 // ---------- Search ----------
-export const searchShipments           = httpCall('/functions/searchShipments',          { rows: [], total: 0 });
-export const getFilterOptionsIndex     = httpCall('/functions/getFilterOptions_index',   { modes: [], statuses: [], years: [] });
-export const searchCompaniesIndex      = httpCall('/functions/searchCompanies_index',    { results: [], total: 0 });
+export const searchShipments = httpCall('/functions/searchShipments', {
+  rows: [],
+  total: 0,
+});
+export const getFilterOptionsIndex = httpCall('/functions/getFilterOptions_index', {
+  modes: [],
+  statuses: [],
+  years: [],
+});
+export const searchCompaniesIndex = httpCall('/functions/searchCompanies_index', {
+  results: [],
+  total: 0,
+});
 
 // ---------- Lib helpers ----------
-export const libCors                   = httpCall('/functions/_lib_cors',                { ok: true });
+export const libCors = httpCall('/functions/_lib_cors', { ok: true });
