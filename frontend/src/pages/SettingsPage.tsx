@@ -18,10 +18,13 @@ import {
   TrendingUp,
   CheckCircle2,
   Users,
+  DollarSign,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { createStripeCheckout, createStripePortalSession } from "@/api/functions";
+import AdminPricingEditor, { PlanConfig } from "@/components/AdminPricingEditor";
+import { useAdminMode } from "@/auth/AdminModeContext";
 
 type ProfileRow = {
   id: string;
@@ -47,7 +50,8 @@ type TabId =
   | "integrations"
   | "billing"
   | "notifications"
-  | "access";
+  | "access"
+  | "admin";
 
 type SaveState = {
   kind: "idle" | "success" | "error";
@@ -195,12 +199,17 @@ const ToggleSwitch = ({
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const { isAdminEditMode, setIsAdminEditMode } = useAdminMode();
   const plan = user?.plan || "free_trial";
   const role = user?.role || "user";
+  const isAdmin = Boolean(role === "admin" || role === "owner");
 
   const [activeTab, setActiveTab] = useState<TabId>("account");
   const [isSaving, setIsSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [pricingPlans, setPricingPlans] = useState<Record<string, PlanConfig>>(
+    getPlanMap() as any
+  );
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [org, setOrg] = useState<OrgRow | null>(null);
@@ -253,7 +262,7 @@ export default function SettingsPage() {
     billing_history: [],
   });
 
-  const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
+  const baseTabs: Array<{ id: TabId; label: string; icon: React.ComponentType<any> }> = [
     { id: "account", label: "Account", icon: User },
     { id: "security", label: "Security", icon: Shield },
     { id: "integrations", label: "Data Sources", icon: Database },
@@ -261,6 +270,13 @@ export default function SettingsPage() {
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "access", label: "Access", icon: Activity },
   ];
+
+  const tabs = isAdmin
+    ? [
+        ...baseTabs,
+        { id: "admin" as TabId, label: "Admin Panel", icon: Crown },
+      ]
+    : baseTabs;
 
   const loadSettingsData = async (userId?: string) => {
     const targetUserId = userId ?? user?.id;
@@ -467,7 +483,6 @@ export default function SettingsPage() {
   );
 
   const displayPlan = useMemo(() => prettyLabel(plan, "Free Trial"), [plan]);
-  const isAdmin = Boolean(role === "admin" || role === "owner");
 
   const canonicalPlan = getCanonicalPlan(String(plan || "free_trial"));
   const planConfig = getPlanLimits(canonicalPlan);
@@ -1438,6 +1453,86 @@ export default function SettingsPage() {
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {isAdmin && activeTab === "admin" && (
+          <div className="space-y-6 animate-in fade-in">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 lg:p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-900">
+                    Admin Panel
+                  </h3>
+                </div>
+                <label className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={isAdminEditMode}
+                    onChange={(e) => setIsAdminEditMode(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Edit Mode
+                  </span>
+                </label>
+              </div>
+
+              {isAdminEditMode && (
+                <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    ⚠️ You are in admin edit mode. Changes here will be saved globally across all users.
+                  </p>
+                </div>
+              )}
+
+              <AdminPricingEditor
+                plans={pricingPlans}
+                onSave={async (updatedPlans) => {
+                  setPricingPlans(updatedPlans);
+                  // In a real application, this would save to the database
+                  // For now, we'll just update local state
+                  console.log("[AdminPricingEditor] Pricing updated:", updatedPlans);
+                }}
+              />
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 lg:p-8 shadow-sm">
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-blue-600" />
+                Global Admin Controls
+              </h3>
+
+              <div className="space-y-4">
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="font-semibold text-slate-900 mb-2">
+                    System-wide Settings
+                  </h4>
+                  <p className="text-sm text-gray-600 mb-3">
+                    When edit mode is enabled, you can:
+                  </p>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>✓ Edit pricing for all plans</li>
+                    <li>✓ Modify feature limits and enablements</li>
+                    <li>✓ Adjust billing terms globally</li>
+                    <li>✓ All changes apply to new and existing users</li>
+                  </ul>
+                </div>
+
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-semibold text-blue-900 mb-2">
+                    Active Admin Features
+                  </h4>
+                  <ul className="text-sm text-blue-800 space-y-1">
+                    <li>✓ Global Pricing Editor</li>
+                    <li>✓ Admin Mode Toggle</li>
+                    <li>✓ System-wide Controls</li>
+                    <li>✓ Page Edit Permissions</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthProvider";
+import { AdminModeProvider } from "./auth/AdminModeContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import App from "./App";
@@ -28,9 +29,11 @@ createRoot(document.getElementById("root")).render(
   <ErrorBoundary>
     <BrowserRouter>
       <AuthProvider>
-        <QueryClientProvider client={queryClient}>
-          <App />
-        </QueryClientProvider>
+        <AdminModeProvider>
+          <QueryClientProvider client={queryClient}>
+            <App />
+          </QueryClientProvider>
+        </AdminModeProvider>
       </AuthProvider>
     </BrowserRouter>
   </ErrorBoundary>
