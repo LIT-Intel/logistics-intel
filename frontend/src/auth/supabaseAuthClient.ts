@@ -21,6 +21,7 @@ try {
 }
 
 export const supabase = authClient;
+export const auth = authClient; // backward compatibility alias
 
 // Email/Password Sign In
 export async function signInWithEmailPassword(email: string, password: string) {
