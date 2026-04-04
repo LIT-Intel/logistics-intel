@@ -75,104 +75,210 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function ProfileSection() {
+type ProfileSectionProps = {
+  initialData?: {
+    name?: string;
+    title?: string;
+    phone?: string;
+    location?: string;
+    bio?: string;
+    email?: string;
+    plan?: string;
+    savedCount?: number;
+    campaignsCount?: number;
+    rfpsCount?: number;
+  };
+  onSave?: (data: Record<string, string>) => Promise<void>;
+};
+
+export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}) {
   const [profile, setProfile] = React.useState({
-    name: "Ava Patel",
-    title: "Head of Ocean Procurement",
-    phone: "+1 (312) 555-1400",
-    location: "Chicago, IL",
-    bio: "Owns North America ocean sourcing, carrier scorecards, and yearly bids.",
+    name: initialData?.name || "Ava Patel",
+    title: initialData?.title || "Head of Ocean Procurement",
+    phone: initialData?.phone || "+1 (312) 555-1400",
+    location: initialData?.location || "Chicago, IL",
+    bio: initialData?.bio || "Owns North America ocean sourcing, carrier scorecards, and yearly bids.",
   });
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+
+  const email = initialData?.email || "";
+  const plan = initialData?.plan || "free_trial";
+  const savedCount = initialData?.savedCount ?? 0;
+  const campaignsCount = initialData?.campaignsCount ?? 0;
+  const rfpsCount = initialData?.rfpsCount ?? 0;
+
+  // Derive initials for avatar
+  const initials = React.useMemo(() => {
+    const src = (profile.name || email || "U").trim();
+    const parts = src.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return src.slice(0, 2).toUpperCase();
+  }, [profile.name, email]);
+
+  async function handleSave() {
+    if (!onSave) return;
+    setSaving(true);
+    try {
+      await onSave(profile);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const planLabel = plan === "free_trial" ? "Free Trial"
+    : plan === "standard" ? "Standard"
+    : plan === "growth" ? "Growth"
+    : plan === "enterprise" ? "Enterprise"
+    : plan;
 
   return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-sm ring-1 ring-black/[0.02]">
+      {/* Cover photo strip */}
+      <div className="relative h-32 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-600">
+        <button
+          type="button"
+          className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-black/30 px-3 py-1.5 text-xs text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
+        >
+          <MapPin className="h-3 w-3" />
+          Change cover
+        </button>
+      </div>
+
+      <div className="px-6 pb-6">
+        {/* Avatar row — overlaps cover */}
+        <div className="flex items-end justify-between -mt-10 mb-4">
+          <div className="relative">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-2xl font-bold text-white ring-4 ring-white">
+              {initials}
+            </div>
+            <button
+              type="button"
+              className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700"
+              title="Upload photo"
+            >
+              <Globe className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              Active
+            </span>
+            <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
+              {planLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* Name + title */}
         <div>
-          <Pill label="Profile" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Personal identity
-          </h2>
+          <h2 className="text-xl font-semibold text-slate-900">{profile.name || "Your Name"}</h2>
+          <p className="text-sm text-slate-500">{profile.title || "Add your title"}{profile.location ? ` · ${profile.location}` : ""}</p>
+        </div>
+
+        {/* Stats bar */}
+        <div className="mt-5 grid grid-cols-3 gap-4 rounded-2xl border border-slate-100 bg-slate-50 py-4">
+          <div className="text-center">
+            <p className="text-2xl font-semibold text-slate-900">{savedCount}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">Saved Companies</p>
+          </div>
+          <div className="border-x border-slate-200 text-center">
+            <p className="text-2xl font-semibold text-slate-900">{campaignsCount}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">Campaigns</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-semibold text-slate-900">{rfpsCount}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">RFPs</p>
+          </div>
+        </div>
+
+        {/* Section header */}
+        <div className="mt-6 mb-5">
+          <Pill label="Personal Information" tone="primary" />
           <p className="mt-2 text-sm text-slate-600">
-            Keep your LIT Search profile, signature, and contact details aligned
-            with the rest of your team.
+            Keep your LIT Search profile, signature, and contact details aligned with your team.
           </p>
         </div>
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700">
-          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          Synced with workspace directory
+
+        {/* Form */}
+        <div className="grid gap-5 md:grid-cols-2">
+          <label className="text-sm font-semibold text-slate-700">
+            Full name
+            <input
+              className={inputClass}
+              value={profile.name}
+              onChange={(e) => setProfile((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="Enter your name"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-700">
+            Title / Role
+            <input
+              className={inputClass}
+              value={profile.title}
+              onChange={(e) => setProfile((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="Title"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-700">
+            Phone
+            <input
+              className={inputClass}
+              value={profile.phone}
+              onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
+              placeholder="+1 (555) 123-4567"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-700">
+            Location
+            <input
+              className={inputClass}
+              value={profile.location}
+              onChange={(e) => setProfile((prev) => ({ ...prev, location: e.target.value }))}
+              placeholder="City, Country"
+            />
+          </label>
+          {email && (
+            <label className="text-sm font-semibold text-slate-700">
+              Email address
+              <input
+                className={cn(inputClass, "bg-slate-50 cursor-not-allowed text-slate-400")}
+                value={email}
+                readOnly
+              />
+              <span className="mt-1 block text-xs text-slate-400">Managed by your auth provider</span>
+            </label>
+          )}
+          <label className="md:col-span-2">
+            <span className="text-sm font-semibold text-slate-700">
+              What should prospects know?
+            </span>
+            <textarea
+              className={cn(inputClass, "min-h-[100px] resize-none")}
+              value={profile.bio}
+              onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
+            />
+          </label>
         </div>
-      </div>
-      <div className="mt-6 grid gap-5 md:grid-cols-2">
-        <label className="text-sm font-semibold text-slate-700">
-          Full name
-          <input
-            className={inputClass}
-            value={profile.name}
-            onChange={(e) =>
-              setProfile((prev) => ({ ...prev, name: e.target.value }))
-            }
-            placeholder="Enter your name"
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Title / Role
-          <input
-            className={inputClass}
-            value={profile.title}
-            onChange={(e) =>
-              setProfile((prev) => ({ ...prev, title: e.target.value }))
-            }
-            placeholder="Title"
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Phone
-          <input
-            className={inputClass}
-            value={profile.phone}
-            onChange={(e) =>
-              setProfile((prev) => ({ ...prev, phone: e.target.value }))
-            }
-            placeholder="+1 (555) 123-4567"
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Location
-          <input
-            className={inputClass}
-            value={profile.location}
-            onChange={(e) =>
-              setProfile((prev) => ({ ...prev, location: e.target.value }))
-            }
-            placeholder="City, Country"
-          />
-        </label>
-        <label className="md:col-span-2">
-          <span className="text-sm font-semibold text-slate-700">
-            What should prospects know?
-          </span>
-          <textarea
-            className={cn(inputClass, "min-h-[120px] resize-none")}
-            value={profile.bio}
-            onChange={(e) =>
-              setProfile((prev) => ({ ...prev, bio: e.target.value }))
-            }
-          />
-        </label>
-      </div>
-      <div className="mt-6 flex flex-wrap gap-3">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition hover:bg-slate-800"
-        >
-          Save profile
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Reset
-        </button>
+
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
+          {saved && (
+            <span className="flex items-center gap-1.5 text-sm text-emerald-600">
+              <CheckCircle2 className="h-4 w-4" /> Saved
+            </span>
+          )}
+          <button
+            type="button"
+            disabled={saving || !onSave}
+            onClick={handleSave}
+            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition hover:bg-slate-800 disabled:opacity-50 ml-auto"
+          >
+            {saving ? "Saving…" : "Save profile"}
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -460,13 +566,62 @@ export function LinkedInSection() {
   );
 }
 
-export function AccessRolesSection() {
-  const team = [
-    { name: "Ava Patel", role: "Owner", scope: "Full access" },
-    { name: "Noor Idris", role: "Admin", scope: "Billing + Command Center" },
-    { name: "Elliot Warren", role: "Contributor", scope: "Campaigns + Search" },
-    { name: "Lena Cho", role: "Viewer", scope: "Saved companies only" },
-  ];
+type OrgMember = {
+  id?: string;
+  user_id?: string;
+  email?: string;
+  full_name?: string;
+  role: string;
+  status?: string;
+  created_at?: string;
+};
+
+type AccessRolesSectionProps = {
+  members?: OrgMember[];
+  seatLimit?: number;
+  onInvite?: () => void;
+};
+
+const ROLE_STYLES: Record<string, string> = {
+  owner:       "bg-emerald-100 text-emerald-700",
+  admin:       "bg-indigo-100 text-indigo-700",
+  contributor: "bg-amber-100 text-amber-700",
+  viewer:      "bg-slate-100 text-slate-600",
+};
+
+const SCOPE_LABELS: Record<string, string> = {
+  owner:       "Full access",
+  admin:       "Billing + Command Center",
+  contributor: "Campaigns + Search",
+  viewer:      "Saved companies only",
+};
+
+const MOCK_MEMBERS: OrgMember[] = [
+  { id: "1", full_name: "Ava Patel",     role: "owner",       status: "active" },
+  { id: "2", full_name: "Noor Idris",    role: "admin",       status: "active" },
+  { id: "3", full_name: "Elliot Warren", role: "contributor", status: "active" },
+  { id: "4", full_name: "Lena Cho",      role: "viewer",      status: "pending" },
+];
+
+function getInitials(name?: string, email?: string): string {
+  const label = name || email || "?";
+  return label.split(/[\s@]/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+}
+
+const AVATAR_COLORS = [
+  "bg-indigo-500",
+  "bg-emerald-500",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-sky-500",
+  "bg-violet-500",
+];
+
+export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRolesSectionProps = {}) {
+  const team = members && members.length > 0 ? members : MOCK_MEMBERS;
+  const seatUsed = team.length;
+  const seatTotal = seatLimit ?? 10;
+  const seatPct = Math.min(100, Math.round((seatUsed / seatTotal) * 100));
 
   return (
     <section className={cardBase}>
@@ -483,37 +638,76 @@ export function AccessRolesSection() {
         </div>
         <button
           type="button"
+          onClick={onInvite}
           className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
         >
           <Users2 className="h-4 w-4" />
           Invite teammate
         </button>
       </div>
-      <div className="mt-6 rounded-2xl border border-slate-100">
-        <div className="grid grid-cols-[1.5fr_1fr_1fr_80px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+
+      {/* Seat usage bar */}
+      <div className="mt-5 flex items-center gap-3">
+        <div className="flex-1 overflow-hidden rounded-full bg-slate-100 h-2">
+          <div
+            className="h-2 rounded-full bg-slate-800 transition-all"
+            style={{ width: `${seatPct}%` }}
+          />
+        </div>
+        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
+          {seatUsed} / {seatTotal} seats used
+        </span>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-slate-100 overflow-hidden">
+        <div className="grid grid-cols-[2fr_1fr_1fr_80px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
           <span>Member</span>
           <span>Role</span>
-          <span>Scope</span>
-          <span>Seat</span>
+          <span>Status</span>
+          <span>Actions</span>
         </div>
-        {team.map((member) => (
-          <div
-            key={member.name}
-            className="grid grid-cols-[1.5fr_1fr_1fr_80px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0"
-          >
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                {member.name}
-              </p>
-              <p className="text-xs text-slate-500">{member.scope}</p>
+        {team.map((member, idx) => {
+          const roleKey = member.role?.toLowerCase() ?? "viewer";
+          const roleStyle = ROLE_STYLES[roleKey] ?? ROLE_STYLES.viewer;
+          const scope = SCOPE_LABELS[roleKey] ?? member.role;
+          const displayName = member.full_name || member.email || member.user_id || "Unknown";
+          const initials = getInitials(member.full_name, member.email);
+          const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+          const isActive = (member.status ?? "active") === "active";
+
+          return (
+            <div
+              key={member.id ?? member.user_id ?? idx}
+              className="grid grid-cols-[2fr_1fr_1fr_80px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0 hover:bg-slate-50/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn("flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0", avatarColor)}>
+                  {initials}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{displayName}</p>
+                  {member.email && member.full_name && (
+                    <p className="text-xs text-slate-400">{member.email}</p>
+                  )}
+                  <p className="text-xs text-slate-400">{scope}</p>
+                </div>
+              </div>
+              <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize w-fit", roleStyle)}>
+                {roleKey}
+              </span>
+              <span className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
+                isActive ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+              )}>
+                <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-green-500" : "bg-yellow-500")} />
+                {isActive ? "Active" : "Pending"}
+              </span>
+              <button className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                Edit
+              </button>
             </div>
-            <Pill label={member.role} tone="success" />
-            <p className="text-sm text-slate-700">{member.scope}</p>
-            <button className="text-xs font-semibold text-indigo-600">
-              Edit
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">

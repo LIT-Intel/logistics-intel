@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import ModernLoginPage from "@/components/layout/ModernLoginPage";
 import ModernSignupPage from "@/components/layout/ModernSignupPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
 
 // Lazy-load primary pages
@@ -88,6 +89,8 @@ export default function App() {
         <Route path="/signup" element={<ModernSignupPage />} />
         {/* Alias: /request-demo → signup (temporary) */}
         <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
+        {/* Password reset page */}
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         {/* OAuth callback handler */}
         <Route path="/auth/callback" element={<AuthCallback />} />
         {/* Legal pages */}
