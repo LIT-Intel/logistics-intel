@@ -117,6 +117,7 @@ export default function Signup() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
   useEffect(() => {
     document.title = "Create an account — Logistics Intel";
   }, []);
@@ -126,8 +127,7 @@ export default function Signup() {
       setErr("");
       setLoading(true);
       await registerWithEmailPassword({ fullName, email, password });
-      alert("Check your inbox to verify your email. After verification, you can sign in.");
-      navigate("/login");
+      setSignupSuccess(true);
     } catch (e) {
       setErr(e?.message || "Sign‑up failed");
     } finally {
@@ -152,6 +152,31 @@ export default function Signup() {
         {/* Form container */}
         <div className="flex flex-1 flex-col items-center justify-center px-8 sm:px-12 lg:px-24">
           <div className="w-full max-w-md space-y-8">
+
+            {/* ── Signup success state ── */}
+            {signupSuccess && (
+              <div className="flex flex-col items-center gap-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                  <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">Account created!</h2>
+                  <p className="mt-3 text-sm font-medium text-slate-600">
+                    We sent a verification link to <span className="font-bold text-slate-900">{email}</span>.
+                    Click it to activate your account, then sign in.
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">Don't see it? Check your spam folder.</p>
+                </div>
+                <button
+                  onClick={() => navigate("/login")}
+                  className="flex items-center gap-2 rounded-full bg-slate-900 px-8 py-3 text-sm font-bold text-white hover:bg-slate-800 transition-colors"
+                >
+                  Go to sign in <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {!signupSuccess && (<>
             <div className="text-center lg:text-left">
               <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
                 Ready to optimize?
@@ -294,6 +319,7 @@ export default function Signup() {
               </a>
               .
             </p>
+            </>)}
           </div>
         </div>
         {/* Footer */}

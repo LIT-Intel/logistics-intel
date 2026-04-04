@@ -1,120 +1,84 @@
 import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { User, Company, Contact } from '@/api/entities';
-import { Search, Building2, Users, Mail, Download, Plus, Filter, Target } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+import { Company, Contact } from '@/api/entities';
+import {
+  Search, Building2, Users, Download, Target, Zap, Settings, ExternalLink,
+  ChevronDown, ChevronUp,
+} from 'lucide-react';
+import { useAuth } from '@/auth/AuthProvider';
 import { searchLeads } from '@/api/functions';
-import LitPageHeader from '../components/ui/LitPageHeader';
-import LitPanel from '../components/ui/LitPanel';
-import LitWatermark from '../components/ui/LitWatermark';
+
+const VIBE_API_CONFIGURED = Boolean(import.meta.env.VITE_VIBE_API_KEY);
+
+const INDUSTRIES = [
+  'Freight Forwarding', 'Logistics', '3PL', 'Shipping', 'Transportation',
+  'Supply Chain', 'Warehousing', 'Manufacturing', 'Import/Export',
+  'Trucking', 'Ocean Freight', 'Air Freight', 'Rail Transport',
+];
+
+const COMPANY_SIZES = [
+  { label: '1-10 employees',    value: '1,10' },
+  { label: '11-50 employees',   value: '11,50' },
+  { label: '51-200 employees',  value: '51,200' },
+  { label: '201-1000 employees',value: '201,1000' },
+  { label: '1000+ employees',   value: '1000,10000' },
+];
 
 export default function LeadProspecting() {
-  const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
+  const [searchMode, setSearchMode] = useState('natural'); // 'natural' | 'structured'
+  const [nlQuery, setNlQuery] = useState('');
   const [searchCriteria, setSearchCriteria] = useState({
     industry: '',
     employee_count_min: '',
     employee_count_max: '',
-    revenue_min: '',
-    revenue_max: '',
     location: '',
     keywords: '',
     job_titles: 'CEO,President,VP Sales,Sales Manager,Logistics Manager,Operations Manager',
     company_size: '',
-    technology_used: ''
   });
   const [searchResults, setSearchResults] = useState([]);
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [searchPerformed, setSearchPerformed] = useState(false);
-
-  React.useEffect(() => {
-    const checkAccess = async () => {
-      try {
-        const userData = await User.me();
-        if (userData.role !== 'admin') {
-          navigate(createPageUrl('Dashboard'));
-          return;
-        }
-        setUser(userData);
-      } catch (error) {
-        navigate(createPageUrl('Dashboard'));
-      }
-    };
-    checkAccess();
-  }, [navigate]);
-
-  const industries = [
-    'Freight Forwarding', 'Logistics', '3PL', 'Shipping', 'Transportation',
-    'Supply Chain', 'Warehousing', 'Manufacturing', 'Import/Export',
-    'Trucking', 'Ocean Freight', 'Air Freight', 'Rail Transport'
-  ];
-
-  const companySizes = [
-    { label: '1-10 employees', value: '1,10' },
-    { label: '11-50 employees', value: '11,50' },
-    { label: '51-200 employees', value: '51,200' },
-    { label: '201-1000 employees', value: '201,1000' },
-    { label: '1000+ employees', value: '1000,10000' }
-  ];
+  const [expandedRows, setExpandedRows] = useState(new Set());
 
   const handleSearch = async () => {
     setIsSearching(true);
     try {
-      const response = await searchLeads(searchCriteria);
-      
+      const criteria = searchMode === 'natural'
+        ? { ...searchCriteria, keywords: nlQuery }
+        : searchCriteria;
+      const response = await searchLeads(criteria);
       if (response.status === 200) {
         setSearchResults(response.data.results || []);
         setSearchPerformed(true);
-      } else {
-        alert('Search failed. Please try again.');
       }
-    } catch (error) {
-      console.error('Search error:', error);
-      alert('Search failed. Please check your criteria and try again.');
+    } catch (err) {
+      console.error('Search error:', err);
     }
     setIsSearching(false);
   };
 
   const handleSelectAll = (checked) => {
-    if (checked) {
-      setSelectedCompanies(searchResults.map(company => company.id));
-    } else {
-      setSelectedCompanies([]);
-    }
+    setSelectedCompanies(checked ? searchResults.map((c) => c.id) : []);
   };
 
   const handleSelectCompany = (companyId, checked) => {
-    if (checked) {
-      setSelectedCompanies([...selectedCompanies, companyId]);
-    } else {
-      setSelectedCompanies(selectedCompanies.filter(id => id !== companyId));
-    }
+    setSelectedCompanies((prev) =>
+      checked ? [...prev, companyId] : prev.filter((id) => id !== companyId)
+    );
   };
 
   const handleImportSelected = async () => {
-    if (selectedCompanies.length === 0) {
-      alert('Please select companies to import.');
-      return;
-    }
-
+    if (selectedCompanies.length === 0) return;
     setIsImporting(true);
     try {
-      const selectedResults = searchResults.filter(company => 
-        selectedCompanies.includes(company.id)
-      );
-
-      // Import companies and contacts
-      for (const result of selectedResults) {
-        // Create company record
-        const companyData = {
+      const selected = searchResults.filter((c) => selectedCompanies.includes(c.id));
+      for (const result of selected) {
+        const company = await Company.create({
           name: result.name,
           domain: result.domain,
           hq_city: result.city,
@@ -123,247 +87,390 @@ export default function LeadProspecting() {
           employee_count: result.employee_count,
           annual_revenue: result.annual_revenue,
           enrichment_status: 'enriched',
-          enrichment_data: {
-            source: 'apollo_prospecting',
-            imported_date: new Date().toISOString(),
-            ...result
-          }
-        };
-
-        const company = await Company.create(companyData);
-
-        // Import contacts if available
-        if (result.contacts && result.contacts.length > 0) {
-          for (const contactData of result.contacts) {
+          enrichment_data: { source: 'vibe_prospecting', imported_date: new Date().toISOString(), ...result },
+        });
+        if (result.contacts?.length > 0) {
+          for (const contact of result.contacts) {
             await Contact.create({
               company_id: company.id,
-              full_name: contactData.name,
-              title: contactData.title,
-              dept: contactData.department,
-              email: contactData.email,
-              phone: contactData.phone,
-              linkedin: contactData.linkedin_url,
-              source: 'apollo',
-              verified: contactData.email_verified || false
+              full_name: contact.name,
+              title: contact.title,
+              dept: contact.department,
+              email: contact.email,
+              phone: contact.phone,
+              linkedin: contact.linkedin_url,
+              source: 'vibe',
+              verified: contact.email_verified || false,
             });
           }
         }
       }
-
-      alert(`Successfully imported ${selectedCompanies.length} companies and their contacts.`);
       setSelectedCompanies([]);
-      
-    } catch (error) {
-      console.error('Import error:', error);
-      alert('Import failed. Some companies may have been imported successfully.');
+    } catch (err) {
+      console.error('Import error:', err);
     }
     setIsImporting(false);
   };
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  const toggleRow = (id) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const estimatedCredits = searchResults.length > 0
+    ? searchResults.length * 5
+    : null;
 
   return (
-    <div className="relative px-2 md:px-5 py-3 min-h-screen">
-      <LitWatermark />
-      <div className="max-w-7xl mx-auto">
-        <LitPageHeader title="Lead Prospecting" />
+    <div className="w-full px-6 py-6 space-y-6">
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Search Criteria */}
-          <div className="lg:col-span-1">
-            <LitPanel title="Search Criteria">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Industry</label>
-                  <Select value={searchCriteria.industry} onValueChange={(value) => setSearchCriteria({...searchCriteria, industry: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select industry" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {industries.map((industry) => (
-                        <SelectItem key={industry} value={industry}>{industry}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+      {/* Header */}
+      <div className="space-y-1">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Lead Intelligence</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-3xl font-semibold text-slate-900">Vibe Prospecting</h1>
+          {VIBE_API_CONFIGURED ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              API Connected
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Setup Required
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-slate-500">
+          AI-powered lead discovery · Natural language or structured search · Powered by Explorium
+        </p>
+      </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-1">Company Size</label>
-                  <Select value={searchCriteria.company_size} onValueChange={(value) => setSearchCriteria({...searchCriteria, company_size: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select company size" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {companySizes.map((size) => (
-                        <SelectItem key={size.value} value={size.value}>{size.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Location</label>
-                  <Input
-                    placeholder="e.g., United States, New York"
-                    value={searchCriteria.location}
-                    onChange={(e) => setSearchCriteria({...searchCriteria, location: e.target.value})}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Keywords</label>
-                  <Input
-                    placeholder="e.g., freight, logistics, shipping"
-                    value={searchCriteria.keywords}
-                    onChange={(e) => setSearchCriteria({...searchCriteria, keywords: e.target.value})}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Target Job Titles</label>
-                  <Input
-                    placeholder="Comma-separated titles"
-                    value={searchCriteria.job_titles}
-                    onChange={(e) => setSearchCriteria({...searchCriteria, job_titles: e.target.value})}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Default includes decision makers</p>
-                </div>
-
-                <Button onClick={handleSearch} disabled={isSearching} className="w-full">
-                  {isSearching ? (
-                    <>Searching...</>
-                  ) : (
-                    <>
-                      <Search className="w-4 h-4 mr-2" />
-                      Search Leads
-                    </>
-                  )}
-                </Button>
-            </LitPanel>
+      {/* API Setup Notice */}
+      {!VIBE_API_CONFIGURED && (
+        <div className="flex items-start gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <Settings className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">Vibe Prospecting API not configured</p>
+            <p className="mt-0.5 text-sm text-amber-700">
+              Connect your Explorium API key in Settings &rsaquo; Security &amp; API to activate live results.
+              Search results will use mock data until configured.
+            </p>
           </div>
+          <a
+            href="/app/settings"
+            className="flex-shrink-0 text-xs font-semibold text-amber-700 hover:text-amber-900 underline whitespace-nowrap"
+          >
+            Go to Settings →
+          </a>
+        </div>
+      )}
 
-          {/* Results */}
-          <div className="lg:col-span-2">
-            {!searchPerformed ? (
-              <LitPanel>
-                <div className="text-center">
-                  <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Search for Leads</h3>
-                  <p className="text-gray-500">Configure your search criteria and find potential LIT subscribers</p>
-                </div>
-              </LitPanel>
-            ) : searchResults.length === 0 ? (
-              <LitPanel>
-                <div className="text-center">
-                  <Search className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Results Found</h3>
-                  <p className="text-gray-500">Try adjusting your search criteria</p>
-                </div>
-              </LitPanel>
-            ) : (
-              <div className="space-y-4">
-                {/* Results Header */}
-                <LitPanel>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <Checkbox 
-                          checked={selectedCompanies.length === searchResults.length}
-                          onCheckedChange={handleSelectAll}
-                        />
-                        <span className="font-medium">
-                          {searchResults.length} companies found
-                        </span>
-                        {selectedCompanies.length > 0 && (
-                          <Badge variant="secondary">
-                            {selectedCompanies.length} selected
-                          </Badge>
-                        )}
-                      </div>
-                      
-                      <Button 
-                        onClick={handleImportSelected}
-                        disabled={selectedCompanies.length === 0 || isImporting}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        {isImporting ? (
-                          <>Importing...</>
-                        ) : (
-                          <>
-                            <Download className="w-4 h-4 mr-2" />
-                            Import Selected
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                </LitPanel>
+      {/* Search Panel */}
+      <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
+        {/* Mode tabs */}
+        <div className="mb-5 flex gap-1 rounded-xl bg-slate-100 p-1 w-fit">
+          {[
+            { id: 'natural', label: 'Natural Language' },
+            { id: 'structured', label: 'Structured Filters' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSearchMode(tab.id)}
+              className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-all ${
+                searchMode === tab.id
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-                {/* Results List */}
-                <div className="space-y-3">
-                  {searchResults.map((company) => (
-                    <LitPanel key={company.id}>
-                        <div className="flex items-start gap-4">
-                          <Checkbox 
+        {searchMode === 'natural' ? (
+          <div className="space-y-4">
+            <textarea
+              rows={4}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 resize-none"
+              placeholder="Find VP of Operations at logistics companies with 50–500 employees in the US that use intermodal transport..."
+              value={nlQuery}
+              onChange={(e) => setNlQuery(e.target.value)}
+            />
+            <button
+              onClick={handleSearch}
+              disabled={isSearching || !nlQuery.trim()}
+              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSearching ? (
+                <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Searching...</>
+              ) : (
+                <><Zap className="h-4 w-4" /> Search with AI</>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Industry</label>
+                <Select
+                  value={searchCriteria.industry}
+                  onValueChange={(v) => setSearchCriteria({ ...searchCriteria, industry: v })}
+                >
+                  <SelectTrigger className="rounded-xl border-slate-200 text-sm">
+                    <SelectValue placeholder="Select industry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INDUSTRIES.map((ind) => (
+                      <SelectItem key={ind} value={ind}>{ind}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Company Size</label>
+                <Select
+                  value={searchCriteria.company_size}
+                  onValueChange={(v) => setSearchCriteria({ ...searchCriteria, company_size: v })}
+                >
+                  <SelectTrigger className="rounded-xl border-slate-200 text-sm">
+                    <SelectValue placeholder="Select size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMPANY_SIZES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Location</label>
+                <input
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  placeholder="e.g., United States, New York"
+                  value={searchCriteria.location}
+                  onChange={(e) => setSearchCriteria({ ...searchCriteria, location: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Keywords</label>
+                <input
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  placeholder="e.g., freight, logistics, shipping"
+                  value={searchCriteria.keywords}
+                  onChange={(e) => setSearchCriteria({ ...searchCriteria, keywords: e.target.value })}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Target Job Titles</label>
+                <input
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Comma-separated titles"
+                  value={searchCriteria.job_titles}
+                  onChange={(e) => setSearchCriteria({ ...searchCriteria, job_titles: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-5 pt-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Enrichment</p>
+              {['Firmographics', 'Contact Info', 'Technographics', 'Intent Signals'].map((opt, i) => (
+                <label key={opt} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                  <Checkbox defaultChecked={i < 2} />
+                  {opt}
+                </label>
+              ))}
+            </div>
+            <button
+              onClick={handleSearch}
+              disabled={isSearching}
+              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSearching ? (
+                <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Searching...</>
+              ) : (
+                <><Search className="h-4 w-4" /> Search Leads</>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Results */}
+      {!searchPerformed ? (
+        /* Empty state */
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 text-center shadow-sm ring-1 ring-black/[0.02]">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+            <Target className="h-7 w-7 text-slate-400" />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-slate-800">Ready to find your next customers</h3>
+          <p className="mt-2 max-w-sm text-sm text-slate-500">
+            Try natural language: "Find logistics companies in Chicago with 50–500 employees"
+          </p>
+        </div>
+      ) : searchResults.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 text-center shadow-sm">
+          <Search className="h-10 w-10 text-slate-300" />
+          <h3 className="mt-4 text-lg font-semibold text-slate-700">No results found</h3>
+          <p className="mt-1 text-sm text-slate-500">Try adjusting your search criteria</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Cost estimate banner */}
+          {estimatedCredits && (
+            <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3">
+              <Zap className="h-4 w-4 flex-shrink-0 text-amber-500" />
+              <p className="text-sm text-amber-800">
+                <span className="font-semibold">Estimated cost:</span> ~{estimatedCredits} credits for {searchResults.length} results
+              </p>
+              <div className="ml-auto flex gap-2">
+                <button
+                  onClick={() => { setSearchPerformed(false); setSearchResults([]); }}
+                  className="rounded-full border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                >
+                  Refine Search
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Results table */}
+          <div className="rounded-3xl border border-slate-200 bg-white/95 shadow-sm ring-1 ring-black/[0.02] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  checked={selectedCompanies.length === searchResults.length && searchResults.length > 0}
+                  onCheckedChange={handleSelectAll}
+                />
+                <span className="text-sm font-semibold text-slate-700">
+                  {searchResults.length} companies found
+                </span>
+                {selectedCompanies.length > 0 && (
+                  <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                    {selectedCompanies.length} selected
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={handleImportSelected}
+                disabled={selectedCompanies.length === 0 || isImporting}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isImporting ? (
+                  <><div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Importing...</>
+                ) : (
+                  <><Download className="h-3.5 w-3.5" /> Import Selected</>
+                )}
+              </button>
+            </div>
+
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="w-10 px-4 py-3" />
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Company</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 hidden md:table-cell">Industry</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 hidden lg:table-cell">Location</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 hidden sm:table-cell">Employees</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Contacts</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {searchResults.map((company) => {
+                  const isExpanded = expandedRows.has(company.id);
+                  return (
+                    <React.Fragment key={company.id}>
+                      <tr className="hover:bg-slate-50/70 transition-colors">
+                        <td className="px-4 py-3 text-center">
+                          <Checkbox
                             checked={selectedCompanies.includes(company.id)}
                             onCheckedChange={(checked) => handleSelectCompany(company.id, checked)}
                           />
-                          
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-2">
-                              <h3 className="font-semibold text-lg">{company.name}</h3>
-                              <div className="flex items-center gap-2">
-                                {company.domain && (
-                                  <Badge variant="outline">{company.domain}</Badge>
-                                )}
-                              </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-7 w-7 flex-shrink-0 rounded-md bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+                              <Building2 className="h-3.5 w-3.5 text-slate-500" />
                             </div>
-                            
-                            <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-600">
-                              <div>
-                                <p><strong>Industry:</strong> {company.industry || 'Unknown'}</p>
-                                <p><strong>Location:</strong> {company.city}, {company.country}</p>
-                                <p><strong>Employees:</strong> {company.employee_count || 'Unknown'}</p>
-                              </div>
-                              <div>
-                                <p><strong>Revenue:</strong> {company.annual_revenue ? `$${company.annual_revenue.toLocaleString()}` : 'Unknown'}</p>
-                                {company.contacts && (
-                                  <p><strong>Contacts:</strong> {company.contacts.length} found</p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Contact Preview */}
-                            {company.contacts && company.contacts.length > 0 && (
-                              <div className="mt-3 pt-3 border-t border-gray-200">
-                                <p className="text-xs text-gray-500 mb-2">Key Contacts:</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {company.contacts.slice(0, 3).map((contact, idx) => (
-                                    <Badge key={idx} variant="secondary" className="text-xs">
-                                      {contact.name} • {contact.title}
-                                    </Badge>
-                                  ))}
-                                  {company.contacts.length > 3 && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      +{company.contacts.length - 3} more
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
+                            <span className="font-semibold text-slate-900">{company.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{company.industry || '—'}</td>
+                        <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">
+                          {[company.city, company.country].filter(Boolean).join(', ') || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-center text-slate-500 hidden sm:table-cell">
+                          {company.employee_count ? Number(company.employee_count).toLocaleString() : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {company.contacts?.length > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                              <Users className="h-3 w-3" />
+                              {company.contacts.length}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {company.domain && (
+                              <a
+                                href={company.domain.startsWith('http') ? company.domain : `https://${company.domain}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-slate-400 hover:text-slate-600"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            {company.contacts?.length > 0 && (
+                              <button
+                                onClick={() => toggleRow(company.id)}
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                              >
+                                {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                Contacts
+                              </button>
                             )}
                           </div>
-                        </div>
-                    </LitPanel>
-                  ))}
-                </div>
-              </div>
-            )}
+                        </td>
+                      </tr>
+                      {isExpanded && company.contacts?.length > 0 && (
+                        <tr>
+                          <td colSpan={7} className="bg-slate-50/70 px-6 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              {company.contacts.slice(0, 5).map((contact, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200 px-3 py-1 text-xs text-slate-700 shadow-sm"
+                                >
+                                  <span className="font-semibold">{contact.name}</span>
+                                  <span className="text-slate-400">·</span>
+                                  <span>{contact.title}</span>
+                                </span>
+                              ))}
+                              {company.contacts.length > 5 && (
+                                <span className="rounded-full bg-slate-200 px-3 py-1 text-xs text-slate-500">
+                                  +{company.contacts.length - 5} more
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

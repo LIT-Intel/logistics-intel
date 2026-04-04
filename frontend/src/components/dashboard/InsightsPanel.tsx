@@ -1,163 +1,87 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { Lightbulb, TrendingUp, AlertCircle, Zap, ArrowRight, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
-
-interface Insight {
-  id: string;
-  type: 'action' | 'trend' | 'opportunity' | 'alert';
-  title: string;
-  description: string;
-  action?: {
-    label: string;
-    href: string;
-  };
-}
+import { Building2, Mail, FileText, ArrowUpRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface InsightsPanelProps {
-  insights?: Insight[];
+  totalCompanies?: number;
+  emailsSent?: number;
+  rfpsGenerated?: number;
 }
 
-const getInsightIcon = (type: Insight['type']) => {
-  switch (type) {
-    case 'action':
-      return Zap;
-    case 'trend':
-      return TrendingUp;
-    case 'opportunity':
-      return Sparkles;
-    case 'alert':
-      return AlertCircle;
-    default:
-      return Lightbulb;
-  }
-};
+const STATS = [
+  {
+    label: 'Companies Tracked',
+    key: 'totalCompanies' as const,
+    icon: Building2,
+    href: '/app/command-center',
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+    desc: 'in Command Center',
+  },
+  {
+    label: 'Emails Sent',
+    key: 'emailsSent' as const,
+    icon: Mail,
+    href: '/app/campaigns',
+    color: 'text-indigo-600',
+    bg: 'bg-indigo-50',
+    desc: 'across all campaigns',
+  },
+  {
+    label: 'RFPs Generated',
+    key: 'rfpsGenerated' as const,
+    icon: FileText,
+    href: '/app/rfp-studio',
+    color: 'text-violet-600',
+    bg: 'bg-violet-50',
+    desc: 'ready to send',
+  },
+];
 
-const getInsightColor = (type: Insight['type']) => {
-  switch (type) {
-    case 'action':
-      return {
-        bg: 'from-blue-50 to-blue-100',
-        text: 'text-blue-700',
-        icon: 'text-blue-600',
-        border: 'border-blue-200',
-      };
-    case 'trend':
-      return {
-        bg: 'from-emerald-50 to-emerald-100',
-        text: 'text-emerald-700',
-        icon: 'text-emerald-600',
-        border: 'border-emerald-200',
-      };
-    case 'opportunity':
-      return {
-        bg: 'from-amber-50 to-amber-100',
-        text: 'text-amber-700',
-        icon: 'text-amber-600',
-        border: 'border-amber-200',
-      };
-    case 'alert':
-      return {
-        bg: 'from-red-50 to-red-100',
-        text: 'text-red-700',
-        icon: 'text-red-600',
-        border: 'border-red-200',
-      };
-    default:
-      return {
-        bg: 'from-slate-50 to-slate-100',
-        text: 'text-slate-700',
-        icon: 'text-slate-600',
-        border: 'border-slate-200',
-      };
-  }
-};
-
-export default function InsightsPanel({ insights = [] }: InsightsPanelProps) {
-  const defaultInsights: Insight[] = [
-    {
-      id: '1',
-      type: 'action',
-      title: 'Recommended Actions',
-      description: '5 companies haven\'t been contacted in 30+ days',
-      action: {
-        label: 'Review companies',
-        href: '/app/command-center',
-      },
-    },
-    {
-      id: '2',
-      type: 'trend',
-      title: 'This Week\'s Trends',
-      description: 'Import volume from Asia up 18% • Container rates decreased 5%',
-      action: {
-        label: 'View trends',
-        href: '/app/search',
-      },
-    },
-    {
-      id: '3',
-      type: 'opportunity',
-      title: 'Hot Opportunities',
-      description: '12 new companies matching your ideal customer profile',
-      action: {
-        label: 'View opportunities',
-        href: '/app/search',
-      },
-    },
-  ];
-
-  const displayInsights = insights.length > 0 ? insights : defaultInsights;
+export default function InsightsPanel({
+  totalCompanies = 0,
+  emailsSent = 0,
+  rfpsGenerated = 0,
+}: InsightsPanelProps) {
+  const values = { totalCompanies, emailsSent, rfpsGenerated };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-      <div className="px-6 py-4 border-b border-slate-200">
-        <div className="flex items-center gap-2">
-          <Lightbulb className="w-5 h-5 text-amber-500" />
-          <h2 className="text-lg font-semibold text-slate-900">Insights & Recommendations</h2>
-        </div>
-        <p className="text-sm text-slate-600 mt-1">AI-powered suggestions to grow your pipeline</p>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.35 }}
+      className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
+    >
+      <div className="px-6 py-4 border-b border-slate-100">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Summary</p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-900">Activity Snapshot</h2>
       </div>
-
-      <div className="p-6 space-y-4">
-        {displayInsights.map((insight, index) => {
-          const Icon = getInsightIcon(insight.type);
-          const colors = getInsightColor(insight.type);
-
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+        {STATS.map((stat) => {
+          const Icon = stat.icon;
+          const value = values[stat.key];
           return (
-            <motion.div
-              key={insight.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
-              className={`p-4 rounded-lg border ${colors.border} bg-gradient-to-br ${colors.bg} group hover:shadow-sm transition-shadow`}
+            <Link
+              key={stat.key}
+              to={stat.href}
+              className="group flex flex-col gap-3 p-5 hover:bg-slate-50/60 transition-colors"
             >
-              <div className="flex items-start gap-3">
-                <div className={`w-8 h-8 rounded-lg bg-white/80 backdrop-blur-sm flex items-center justify-center ${colors.icon} flex-shrink-0`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className={`font-semibold text-sm ${colors.text} mb-1`}>
-                    {insight.title}
-                  </div>
-                  <div className="text-sm text-slate-700">
-                    {insight.description}
-                  </div>
-                  {insight.action && (
-                    <Link
-                      to={insight.action.href}
-                      className={`inline-flex items-center gap-1 text-sm font-medium ${colors.text} mt-2 hover:underline`}
-                    >
-                      {insight.action.label}
-                      <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                    </Link>
-                  )}
-                </div>
+              <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${stat.bg}`}>
+                <Icon className={`h-4.5 w-4.5 ${stat.color}`} size={18} />
               </div>
-            </motion.div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{value.toLocaleString()}</p>
+                <p className="mt-0.5 text-xs font-medium text-slate-500">{stat.label}</p>
+                <p className="text-[11px] text-slate-400">{stat.desc}</p>
+              </div>
+              <div className="mt-auto flex items-center gap-1 text-xs font-semibold text-slate-400 group-hover:text-slate-700 transition-colors">
+                View <ArrowUpRight className="h-3 w-3" />
+              </div>
+            </Link>
           );
         })}
       </div>
-    </div>
+    </motion.div>
   );
 }

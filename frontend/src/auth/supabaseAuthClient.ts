@@ -20,7 +20,20 @@ try {
   authError = error as Error;
 }
 
+// The ONE true browser-side Supabase client.
+// All frontend code must import `supabase` from here (or via @/lib/supabase which re-exports it).
+export const supabase = authClient;
+
+// Legacy alias — keep existing imports that use `auth` working.
 export const auth = authClient;
+
+export function isSupabaseAvailable(): boolean {
+  return authClient !== null;
+}
+
+export function getSupabaseError(): Error | null {
+  return authError;
+}
 
 // Email/Password Sign In
 export async function signInWithEmailPassword(email: string, password: string) {

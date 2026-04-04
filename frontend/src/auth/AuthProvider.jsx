@@ -7,10 +7,22 @@ import {
   listenToAuth,
   logout,
 } from './supabaseAuthClient';
-import { supabase } from '@/lib/supabase';
 
-// Extend the default context to include a fullName helper
-const AuthCtx = createContext({ user: null, loading: true, authReady: false, fullName: null });
+// Admin emails — keep in sync with billing-checkout normalizePlanCode admin check.
+const ADMIN_EMAILS = new Set([
+  'vraymond@sparkfusiondigital.com',
+  'support@logisticintel.com',
+]);
+
+const AuthCtx = createContext({
+  user: null,
+  loading: true,
+  authReady: false,
+  fullName: null,
+  role: null,
+  plan: null,
+  access: null,
+});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -21,53 +33,31 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (user?.displayName) {
-      try {
-        localStorage.setItem('litName', user.displayName);
-      } catch {
-        // Ignore storage exceptions
-      }
+      try { localStorage.setItem('litName', user.displayName); } catch { /* ignore */ }
     }
   }, [user?.displayName]);
 
   useEffect(() => {
-    // On mount, determine if a session exists to set the authReady flag
-    supabase.auth.getSession().then(({ data }) => {
-      if (data?.session) {
-        setAuthReady(true);
-      }
-    });
-    // Listen for auth state changes from Supabase
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthReady(!!session);
-    });
-
-    // Local subscription to our auth client so we can enrich user object
+    // Single subscription via listenToAuth (which uses the ONE shared GoTrueClient).
+    // This replaces the previous duplicate supabase.auth.onAuthStateChange call that
+    // caused "Multiple GoTrueClient instances detected" warnings.
     const unsub = listenToAuth((u) => {
       if (u) {
-        // Temporary admin email check until roles are persisted server‑side
-        const adminEmails = new Set([
-          'vraymond@sparkfusiondigital.com',
-          'support@logisticintel.com',
-        ]);
-        // Attempt to retrieve a previously saved name from local storage
         let savedName = null;
         try {
-          if (typeof window !== 'undefined') {
-            savedName = localStorage.getItem('litName');
-          }
-        } catch {
-          savedName = null;
-        }
-        // Build an enriched user object with role, plan, display name, and basic billing fields
+          if (typeof window !== 'undefined') savedName = localStorage.getItem('litName');
+        } catch { /* ignore */ }
+
+        const isAdmin = ADMIN_EMAILS.has(u.email);
+        const role = isAdmin ? 'admin' : (u.user_metadata?.role || 'user');
+        const plan = isAdmin ? 'enterprise' : (u.user_metadata?.plan || 'free_trial');
+
         const enrichedUser = {
           ...u,
-          role: adminEmails.has(u.email) ? 'admin' : (u.user_metadata?.role || 'user'),
-          // Default plan is 'free' when not provided; enterprise for admin accounts
-          plan: adminEmails.has(u.email) ? 'enterprise' : (u.user_metadata?.plan || 'free'),
-          // Stripe customer and subscription fields bubbled up to top‑level for easy access
+          role,
+          plan,
           stripe_customer_id: u.user_metadata?.stripe_customer_id || null,
           subscription_status: u.user_metadata?.subscription_status || null,
-          // Normalized display name fallback chain
           displayName:
             u.user_metadata?.full_name ||
             u.user_metadata?.display_name ||
@@ -75,33 +65,46 @@ export function AuthProvider({ children }) {
             (u.email?.split('@')[0] ?? ''),
         };
         setUser(enrichedUser);
+        setAuthReady(true);
       } else {
         setUser(null);
+        setAuthReady(false);
       }
       setLoading(false);
     });
 
-    return () => {
-      unsub();
-      listener.subscription.unsubscribe();
-    };
+    return () => { unsub(); };
   }, []);
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    const role = user?.role ?? null;
+    const plan = user?.plan ?? null;
+    // access object — consumed by SettingsPage and other feature-gated components
+    const access = user
+      ? {
+          isAdmin: role === 'admin',
+          canUpgrade: plan === 'free_trial' || plan === 'free',
+          canManageBilling: true,
+          plan,
+          role,
+        }
+      : null;
+
+    return {
       user,
       loading,
       authReady,
+      role,
+      plan,
+      access,
       signInWithGoogle,
       signInWithMicrosoft,
       signInWithEmailPassword,
       registerWithEmailPassword,
       logout,
-      // Expose a fullName alias so consumers can access a consistent display name
       fullName: user?.displayName || null,
-    }),
-    [user, loading, authReady]
-  );
+    };
+  }, [user, loading, authReady]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
