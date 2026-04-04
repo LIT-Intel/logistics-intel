@@ -284,14 +284,53 @@ export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}
   );
 }
 
-export function CompanySignatureSection() {
-  const [preferences, setPreferences] = React.useState({
-    company: "Spark Fusion Logistics",
-    tagline: "Global freight, LIT Search powered.",
-    website: "sparkfusion.co",
-    signature:
-      "Best,\nAva Patel\nSpark Fusion Logistics\nava.patel@sparkfusion.co",
+type CompanySignatureSectionProps = {
+  orgProfile?: {
+    name?: string;
+    tagline?: string;
+    website?: string;
+    industry?: string;
+    logo_url?: string;
+  };
+  emailSignature?: string;
+  onSaveOrg?: (data: Record<string, unknown>) => Promise<void>;
+  onSaveSignature?: (sig: string) => Promise<void>;
+  onUploadLogo?: (file: File) => Promise<void>;
+};
+
+export function CompanySignatureSection({
+  orgProfile,
+  emailSignature,
+  onSaveOrg,
+  onSaveSignature,
+  onUploadLogo,
+}: CompanySignatureSectionProps = {}) {
+  const [form, setForm] = React.useState({
+    company: orgProfile?.name ?? "",
+    tagline: orgProfile?.tagline ?? "",
+    website: orgProfile?.website ?? "",
+    signature: emailSignature ?? "",
   });
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    setForm({
+      company: orgProfile?.name ?? "",
+      tagline: orgProfile?.tagline ?? "",
+      website: orgProfile?.website ?? "",
+      signature: emailSignature ?? "",
+    });
+  }, [orgProfile?.name, orgProfile?.tagline, orgProfile?.website, emailSignature]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSaveOrg?.({ company: form.company, tagline: form.tagline, website: form.website });
+      await onSaveSignature?.(form.signature);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <section className={cardBase}>
@@ -305,52 +344,65 @@ export function CompanySignatureSection() {
             Control the branding applied to emails and Command Center exports.
           </p>
         </div>
-        <div className="flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          B2B Logistics
-        </div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
       </div>
       <div className="mt-6 grid gap-5 md:grid-cols-2">
         <label className="text-sm font-semibold text-slate-700">
           Company name
           <input
             className={inputClass}
-            value={preferences.company}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, company: e.target.value }))
-            }
+            value={form.company}
+            onChange={(e) => setForm((prev) => ({ ...prev, company: e.target.value }))}
           />
         </label>
         <label className="text-sm font-semibold text-slate-700">
           Tagline
           <input
             className={inputClass}
-            value={preferences.tagline}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, tagline: e.target.value }))
-            }
+            value={form.tagline}
+            onChange={(e) => setForm((prev) => ({ ...prev, tagline: e.target.value }))}
           />
         </label>
         <label className="text-sm font-semibold text-slate-700">
           Website
           <input
             className={inputClass}
-            value={preferences.website}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, website: e.target.value }))
-            }
+            value={form.website}
+            onChange={(e) => setForm((prev) => ({ ...prev, website: e.target.value }))}
           />
         </label>
         <label className="text-sm font-semibold text-slate-700">
           Email signature
           <textarea
             className={cn(inputClass, "min-h-[120px] resize-none")}
-            value={preferences.signature}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, signature: e.target.value }))
-            }
+            value={form.signature}
+            onChange={(e) => setForm((prev) => ({ ...prev, signature: e.target.value }))}
           />
         </label>
       </div>
+      {onUploadLogo && (
+        <div className="mt-4">
+          <label className="text-sm font-semibold text-slate-700">
+            Company logo
+            <input
+              type="file"
+              accept="image/*"
+              className="mt-2 block w-full text-sm text-slate-500 file:mr-4 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-semibold hover:file:bg-slate-200"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onUploadLogo(file);
+              }}
+            />
+          </label>
+        </div>
+      )}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
           <div className="flex items-center gap-3 text-sm text-slate-600">
@@ -359,12 +411,12 @@ export function CompanySignatureSection() {
           </div>
           <div className="mt-3 rounded-2xl border border-white bg-white p-4 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-              {preferences.company.toUpperCase()}
+              {(form.company || "Your Company").toUpperCase()}
             </p>
             <p className="mt-2 text-lg font-semibold text-slate-900">
-              {preferences.tagline}
+              {form.tagline || "Your tagline here"}
             </p>
-            <p className="mt-1 text-sm text-slate-600">{preferences.website}</p>
+            <p className="mt-1 text-sm text-slate-600">{form.website || "yourwebsite.com"}</p>
           </div>
         </div>
         <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -372,7 +424,7 @@ export function CompanySignatureSection() {
             Signature preview
           </div>
           <pre className="mt-3 whitespace-pre-wrap rounded-2xl bg-slate-50/80 p-4 text-sm text-slate-700">
-            {preferences.signature}
+            {form.signature || "No signature set"}
           </pre>
         </div>
       </div>
@@ -380,11 +432,38 @@ export function CompanySignatureSection() {
   );
 }
 
-export function EmailSection() {
-  const [inboxes, setInboxes] = React.useState([
-    { label: "ava@sparkfusion.co", status: "Connected", primary: true },
-    { label: "logistics@sparkfusion.co", status: "Syncing", primary: false },
-  ]);
+type EmailSectionIntegration = {
+  id: string;
+  type: string;
+  config?: Record<string, unknown>;
+  created_at: string;
+};
+
+type EmailSectionProps = {
+  integrations?: EmailSectionIntegration[];
+  preferences?: Record<string, unknown>;
+  onSavePreferences?: (data: Record<string, unknown>) => void;
+  onDisconnect?: (id: string) => Promise<void>;
+};
+
+export function EmailSection({
+  integrations = [],
+  onDisconnect,
+}: EmailSectionProps = {}) {
+  const [disconnecting, setDisconnecting] = React.useState<string | null>(null);
+
+  const connectedInboxes = integrations.filter(
+    (i) => i.type === "gmail" || i.type === "outlook",
+  );
+
+  const handleDisconnect = async (id: string) => {
+    setDisconnecting(id);
+    try {
+      await onDisconnect?.(id);
+    } finally {
+      setDisconnecting(null);
+    }
+  };
 
   return (
     <section className={cardBase}>
@@ -407,51 +486,49 @@ export function EmailSection() {
         </button>
       </div>
       <div className="mt-6 space-y-3">
-        {inboxes.map((inbox) => (
-          <div
-            key={inbox.label}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3"
-          >
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                {inbox.label}
-              </p>
-              <p className="text-xs text-slate-500">
-                {inbox.primary
-                  ? "Primary sending address"
-                  : "Available for sequences"}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
-                  inbox.status === "Connected"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-amber-50 text-amber-700",
-                )}
-              >
-                {inbox.status}
-              </span>
-              {!inbox.primary && (
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-500"
-                  onClick={() =>
-                    setInboxes((prev) =>
-                      prev.map((item) => ({
-                        ...item,
-                        primary: item.label === inbox.label,
-                      })),
-                    )
-                  }
-                >
-                  Make primary
-                </button>
-              )}
-            </div>
+        {connectedInboxes.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center">
+            <Mail className="mx-auto h-8 w-8 text-slate-300" />
+            <p className="mt-3 text-sm font-semibold text-slate-600">No inboxes connected</p>
+            <p className="mt-1 text-xs text-slate-400">Connect Gmail or Outlook to start sending campaigns.</p>
           </div>
-        ))}
+        ) : (
+          connectedInboxes.map((inbox) => {
+            const label = (inbox.config as Record<string, string> | undefined)?.email ?? inbox.type;
+            const isGmail = inbox.type === "gmail";
+            const connectedAt = inbox.created_at
+              ? new Date(inbox.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+              : null;
+            return (
+              <div
+                key={inbox.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 capitalize">
+                    {isGmail ? "Gmail" : "Outlook"} — {label}
+                  </p>
+                  {connectedAt && (
+                    <p className="text-xs text-slate-500">Connected {connectedAt}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    Connected
+                  </span>
+                  <button
+                    type="button"
+                    disabled={disconnecting === inbox.id}
+                    onClick={() => handleDisconnect(inbox.id)}
+                    className="text-xs font-semibold text-rose-600 hover:text-rose-500 disabled:opacity-60"
+                  >
+                    {disconnecting === inbox.id ? "Removing…" : "Disconnect"}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -459,7 +536,9 @@ export function EmailSection() {
             Deliverability
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            DKIM, SPF, and DMARC checks are passing for sparkfusion.co.
+            {connectedInboxes.length > 0
+              ? "DKIM, SPF, and DMARC checks are passing for connected inboxes."
+              : "Connect an inbox to run deliverability checks."}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -467,7 +546,7 @@ export function EmailSection() {
             Sending window
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Campaigns deploy Mon–Fri, 7:30a – 6:30p in recipient’s local time.
+            Campaigns deploy Mon–Fri, 7:30a – 6:30p in recipient's local time.
           </p>
         </div>
       </div>
@@ -475,12 +554,31 @@ export function EmailSection() {
   );
 }
 
-export function LinkedInSection() {
+type LinkedInSectionProps = {
+  preferences?: Record<string, unknown>;
+  onSavePreferences?: (data: Record<string, unknown>) => void;
+};
+
+export function LinkedInSection({ preferences, onSavePreferences }: LinkedInSectionProps = {}) {
   const [automations, setAutomations] = React.useState({
-    syncReplies: true,
-    shareSignals: false,
-    autoVisit: true,
+    syncReplies: (preferences?.syncReplies as boolean) ?? true,
+    shareSignals: (preferences?.shareSignals as boolean) ?? false,
+    autoVisit: (preferences?.autoVisit as boolean) ?? true,
   });
+
+  React.useEffect(() => {
+    setAutomations({
+      syncReplies: (preferences?.syncReplies as boolean) ?? true,
+      shareSignals: (preferences?.shareSignals as boolean) ?? false,
+      autoVisit: (preferences?.autoVisit as boolean) ?? true,
+    });
+  }, [preferences?.syncReplies, preferences?.shareSignals, preferences?.autoVisit]);
+
+  const handleToggle = (key: keyof typeof automations, value: boolean) => {
+    const updated = { ...automations, [key]: value };
+    setAutomations(updated);
+    onSavePreferences?.(updated);
+  };
 
   return (
     <section className={cardBase}>
@@ -508,7 +606,7 @@ export function LinkedInSection() {
             Playbooks
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            “Intro + value” and “Ops pulse” active for retail shippers.
+            "Intro + value" and "Ops pulse" active for retail shippers.
           </p>
         </div>
         <div className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm">
@@ -524,40 +622,24 @@ export function LinkedInSection() {
             Tone
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            “Curious advisor” voice with one CTA per thread.
+            "Curious advisor" voice with one CTA per thread.
           </p>
         </div>
       </div>
       <div className="mt-6 space-y-4">
         {[
-          {
-            key: "syncReplies",
-            label: "Sync replies to Command Center timelines",
-          },
-          {
-            key: "shareSignals",
-            label: "Share engagement signals with salesforce team",
-          },
-          {
-            key: "autoVisit",
-            label: "Auto-visit profiles before a message is sent",
-          },
+          { key: "syncReplies" as const, label: "Sync replies to Command Center timelines" },
+          { key: "shareSignals" as const, label: "Share engagement signals with salesforce team" },
+          { key: "autoVisit" as const, label: "Auto-visit profiles before a message is sent" },
         ].map((item) => (
           <div
             key={item.key}
             className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white/80 px-4 py-3"
           >
-            <p className="text-sm font-semibold text-slate-800">
-              {item.label}
-            </p>
+            <p className="text-sm font-semibold text-slate-800">{item.label}</p>
             <Toggle
-              checked={automations[item.key as keyof typeof automations]}
-              onChange={(value) =>
-                setAutomations((prev) => ({
-                  ...prev,
-                  [item.key]: value,
-                }))
-              }
+              checked={automations[item.key]}
+              onChange={(value) => handleToggle(item.key, value)}
             />
           </div>
         ))}
@@ -576,10 +658,24 @@ type OrgMember = {
   created_at?: string;
 };
 
+type OrgInvite = {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at?: string;
+};
+
 type AccessRolesSectionProps = {
   members?: OrgMember[];
+  invites?: OrgInvite[];
   seatLimit?: number;
-  onInvite?: () => void;
+  isAdmin?: boolean;
+  onInvite?: (email: string, role: string) => Promise<void>;
+  onRevoke?: (memberId: string) => Promise<void>;
+  onUpdateRole?: (memberId: string, role: string) => Promise<void>;
+  onRevokeInvite?: (inviteId: string) => Promise<void>;
 };
 
 const ROLE_STYLES: Record<string, string> = {
@@ -617,11 +713,45 @@ const AVATAR_COLORS = [
   "bg-violet-500",
 ];
 
-export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRolesSectionProps = {}) {
+export function AccessRolesSection({
+  members,
+  invites = [],
+  seatLimit,
+  isAdmin,
+  onInvite,
+  onRevoke,
+  onUpdateRole,
+  onRevokeInvite,
+}: AccessRolesSectionProps = {}) {
   const team = members && members.length > 0 ? members : MOCK_MEMBERS;
   const seatUsed = team.length;
   const seatTotal = seatLimit ?? 10;
   const seatPct = Math.min(100, Math.round((seatUsed / seatTotal) * 100));
+
+  const [inviteEmail, setInviteEmail] = React.useState("");
+  const [inviteRole, setInviteRole] = React.useState("contributor");
+  const [inviting, setInviting] = React.useState(false);
+  const [revoking, setRevoking] = React.useState<string | null>(null);
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    try {
+      await onInvite?.(inviteEmail.trim(), inviteRole);
+      setInviteEmail("");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleRevoke = async (memberId: string) => {
+    setRevoking(memberId);
+    try {
+      await onRevoke?.(memberId);
+    } finally {
+      setRevoking(null);
+    }
+  };
 
   return (
     <section className={cardBase}>
@@ -632,19 +762,41 @@ export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRoles
             Workspace permissions
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Control who can edit LIT Search cadences, billing, and saved
-            shippers.
+            Control who can edit LIT Search cadences, billing, and saved shippers.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onInvite}
-          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-        >
-          <Users2 className="h-4 w-4" />
-          Invite teammate
-        </button>
       </div>
+
+      {/* Invite form */}
+      {isAdmin && (
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <input
+            type="email"
+            placeholder="teammate@company.com"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            className={cn(inputClass, "flex-1 min-w-[200px] mt-0")}
+          />
+          <select
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value)}
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          >
+            <option value="admin">Admin</option>
+            <option value="contributor">Contributor</option>
+            <option value="viewer">Viewer</option>
+          </select>
+          <button
+            type="button"
+            onClick={handleInvite}
+            disabled={inviting || !inviteEmail.trim()}
+            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            <Users2 className="h-4 w-4" />
+            {inviting ? "Inviting…" : "Invite"}
+          </button>
+        </div>
+      )}
 
       {/* Seat usage bar */}
       <div className="mt-5 flex items-center gap-3">
@@ -674,10 +826,11 @@ export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRoles
           const initials = getInitials(member.full_name, member.email);
           const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
           const isActive = (member.status ?? "active") === "active";
+          const memberId = member.id ?? member.user_id ?? String(idx);
 
           return (
             <div
-              key={member.id ?? member.user_id ?? idx}
+              key={memberId}
               className="grid grid-cols-[2fr_1fr_1fr_80px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0 hover:bg-slate-50/50 transition-colors"
             >
               <div className="flex items-center gap-3">
@@ -692,9 +845,22 @@ export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRoles
                   <p className="text-xs text-slate-400">{scope}</p>
                 </div>
               </div>
-              <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize w-fit", roleStyle)}>
-                {roleKey}
-              </span>
+              {isAdmin && onUpdateRole ? (
+                <select
+                  value={roleKey}
+                  onChange={(e) => onUpdateRole(memberId, e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none"
+                >
+                  <option value="owner">Owner</option>
+                  <option value="admin">Admin</option>
+                  <option value="contributor">Contributor</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+              ) : (
+                <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize w-fit", roleStyle)}>
+                  {roleKey}
+                </span>
+              )}
               <span className={cn(
                 "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
                 isActive ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
@@ -702,13 +868,49 @@ export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRoles
                 <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-green-500" : "bg-yellow-500")} />
                 {isActive ? "Active" : "Pending"}
               </span>
-              <button className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                Edit
-              </button>
+              {isAdmin && onRevoke && roleKey !== "owner" ? (
+                <button
+                  type="button"
+                  onClick={() => handleRevoke(memberId)}
+                  disabled={revoking === memberId}
+                  className="text-xs font-semibold text-rose-600 hover:text-rose-800 disabled:opacity-60"
+                >
+                  {revoking === memberId ? "…" : "Revoke"}
+                </button>
+              ) : (
+                <span />
+              )}
             </div>
           );
         })}
       </div>
+
+      {/* Pending invites */}
+      {invites.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Pending invites</p>
+          <div className="rounded-2xl border border-slate-100 overflow-hidden divide-y divide-slate-100">
+            {invites.map((invite) => (
+              <div key={invite.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">{invite.email}</p>
+                  <p className="text-xs text-slate-400 capitalize">{invite.role} • Invited {new Date(invite.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
+                </div>
+                {isAdmin && onRevokeInvite && (
+                  <button
+                    type="button"
+                    onClick={() => onRevokeInvite(invite.id)}
+                    className="text-xs font-semibold text-slate-500 hover:text-rose-600"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
@@ -723,7 +925,7 @@ export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRoles
             Audit trail
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            42 changes logged last 7 days (exports, plan updates, access edits).
+            Security events tracked in real time. View in Security & API tab.
           </p>
         </div>
       </div>
@@ -731,27 +933,58 @@ export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRoles
   );
 }
 
-export function BillingPlansSection() {
-  const plans = [
-    {
-      name: "Growth",
-      price: "$4,500",
-      cadence: "month",
-      highlight: "Current plan",
-      features: [
-        "200 LIT Search credits",
-        "8 Command Center seats",
-        "Prospect enrichment",
-      ],
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      cadence: "",
-      highlight: "Upgrade",
-      features: ["Unlimited workspaces", "Dedicated CSM", "Private data lake"],
-    },
-  ];
+type BillingPlanData = {
+  plan_code: string;
+  display_name?: string;
+  price_monthly?: number;
+  price_yearly?: number;
+  features?: string[] | Record<string, unknown>;
+  seat_limit?: number;
+};
+
+type BillingSubscription = {
+  plan_code?: string;
+  status?: string;
+  current_period_end?: string;
+  cancel_at_period_end?: boolean;
+  seat_limit?: number;
+  stripe_customer_id?: string;
+};
+
+type BillingPlansSectionProps = {
+  subscription?: BillingSubscription;
+  plans?: BillingPlanData[];
+  isAdmin?: boolean;
+};
+
+function formatPlanPrice(plan: BillingPlanData): string {
+  if (!plan.price_monthly || plan.price_monthly === 0) return "$0";
+  return `$${plan.price_monthly.toLocaleString()}`;
+}
+
+function getPlanFeatureList(plan: BillingPlanData): string[] {
+  if (!plan.features) return [];
+  if (Array.isArray(plan.features)) return plan.features as string[];
+  return Object.entries(plan.features).map(([k, v]) => `${k}: ${v}`);
+}
+
+export function BillingPlansSection({
+  subscription,
+  plans = [],
+  isAdmin,
+}: BillingPlansSectionProps = {}) {
+  const currentCode = subscription?.plan_code ?? "free_trial";
+  const currentPlan = plans.find((p) => p.plan_code === currentCode);
+  const otherPlans = plans.filter((p) => p.plan_code !== currentCode);
+
+  const renewalDate = subscription?.current_period_end
+    ? new Date(subscription.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
+
+  const statusLabel =
+    subscription?.status === "active" ? "Active" :
+    subscription?.status === "past_due" ? "Past due" :
+    subscription?.status === "canceled" ? "Canceled" : "Trial";
 
   return (
     <section className={cardBase}>
@@ -770,62 +1003,123 @@ export function BillingPlansSection() {
           className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           <Sparkles className="h-4 w-4 text-indigo-500" />
-          Generate invoice
+          Manage billing
         </button>
       </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {plans.map((plan) => (
-          <div
-            key={plan.name}
-            className="flex flex-col rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-                  {plan.name}
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-slate-900">
-                  {plan.price}
-                  {plan.cadence && (
-                    <span className="text-base font-medium text-slate-500">
-                      /{plan.cadence}
-                    </span>
-                  )}
-                </p>
-              </div>
-              <Pill label={plan.highlight} tone="success" />
+
+      {/* Current plan */}
+      {currentPlan ? (
+        <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50/40 p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Current plan</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-900">
+                {currentPlan.display_name ?? currentPlan.plan_code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                {formatPlanPrice(currentPlan)}/month
+                {currentPlan.seat_limit ? ` · ${currentPlan.seat_limit} seats` : ""}
+              </p>
             </div>
-            <ul className="mt-4 space-y-2 text-sm text-slate-600">
-              {plan.features.map((feature) => (
-                <li key={feature} className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  {feature}
+            <div className="flex flex-col items-end gap-1">
+              <Pill label={statusLabel} tone={subscription?.status === "active" ? "success" : "primary"} />
+              {renewalDate && (
+                <p className="text-xs text-slate-500">
+                  {subscription?.cancel_at_period_end ? "Cancels" : "Renews"} {renewalDate}
+                </p>
+              )}
+            </div>
+          </div>
+          {currentPlan.features && (
+            <ul className="mt-4 flex flex-wrap gap-3">
+              {getPlanFeatureList(currentPlan).map((f) => (
+                <li key={f} className="flex items-center gap-1 text-sm text-slate-600">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                  {f}
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
-              className={cn(
-                "mt-5 rounded-full border px-4 py-2 text-sm font-semibold",
-                plan.name === "Growth"
-                  ? "border-slate-200 text-slate-700 hover:bg-slate-50"
-                  : "border-indigo-200 bg-indigo-600 text-white hover:bg-indigo-500",
-              )}
+          )}
+        </div>
+      ) : (
+        <div className="mt-6 rounded-3xl border border-slate-100 bg-white/90 p-6">
+          <p className="text-sm text-slate-500">No active subscription found.</p>
+        </div>
+      )}
+
+      {/* Other plans */}
+      {otherPlans.length > 0 && (
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {otherPlans.slice(0, 4).map((plan) => (
+            <div
+              key={plan.plan_code}
+              className="flex flex-col rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm"
             >
-              {plan.name === "Growth" ? "Manage plan" : "Talk to sales"}
-            </button>
-          </div>
-        ))}
-      </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                    {plan.display_name ?? plan.plan_code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {plan.price_monthly ? `$${plan.price_monthly.toLocaleString()}` : "Custom"}
+                    {plan.price_monthly ? <span className="text-base font-medium text-slate-500">/mo</span> : ""}
+                  </p>
+                </div>
+              </div>
+              {plan.features && (
+                <ul className="mt-4 space-y-1.5 text-sm text-slate-600">
+                  {getPlanFeatureList(plan).slice(0, 4).map((f) => (
+                    <li key={f} className="flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                type="button"
+                className="mt-5 rounded-full border border-indigo-200 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              >
+                Upgrade
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
-export function RfpPipelineSection() {
+type RfpPipelineSectionProps = {
+  preferences?: Record<string, unknown>;
+  onSavePreferences?: (data: Record<string, unknown>) => void;
+};
+
+export function RfpPipelineSection({ preferences, onSavePreferences }: RfpPipelineSectionProps = {}) {
+  const [settings, setSettings] = React.useState({
+    autoCrmSync: (preferences?.autoCrmSync as boolean) ?? false,
+    trackPipelineValue: (preferences?.trackPipelineValue as boolean) ?? true,
+    defaultStage: (preferences?.defaultStage as string) ?? "Qualification",
+  });
+
+  React.useEffect(() => {
+    setSettings({
+      autoCrmSync: (preferences?.autoCrmSync as boolean) ?? false,
+      trackPipelineValue: (preferences?.trackPipelineValue as boolean) ?? true,
+      defaultStage: (preferences?.defaultStage as string) ?? "Qualification",
+    });
+  }, [preferences?.autoCrmSync, preferences?.trackPipelineValue, preferences?.defaultStage]);
+
+  const handleToggle = (key: "autoCrmSync" | "trackPipelineValue", value: boolean) => {
+    const updated = { ...settings, [key]: value };
+    setSettings(updated);
+    onSavePreferences?.(updated);
+  };
+
   const stages = [
-    { label: "Qualification", companies: 6, value: "$2.3M" },
-    { label: "Pricing in progress", companies: 4, value: "$4.1M" },
-    { label: "Executive review", companies: 2, value: "$1.9M" },
+    { label: "Qualification", companies: "—", value: "—" },
+    { label: "Pricing in progress", companies: "—", value: "—" },
+    { label: "Executive review", companies: "—", value: "—" },
   ];
 
   return (
@@ -859,44 +1153,89 @@ export function RfpPipelineSection() {
             </p>
             <p className="mt-3 text-3xl font-semibold text-slate-900">
               {stage.companies}
-              <span className="text-base font-medium text-slate-500">
-                {" "}
-                companies
-              </span>
+              {stage.companies !== "—" && (
+                <span className="text-base font-medium text-slate-500"> companies</span>
+              )}
             </p>
-            <p className="mt-1 text-sm text-slate-600">
-              Weighted pipeline {stage.value}
-            </p>
+            {stage.value !== "—" && (
+              <p className="mt-1 text-sm text-slate-600">Weighted pipeline {stage.value}</p>
+            )}
           </div>
         ))}
       </div>
-      <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          Next action
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-700">
-          <MapPin className="h-4 w-4 text-indigo-500" />
-          Move “Atlas Outdoor” to executive review once KPIs finalize.
-        </div>
+      <div className="mt-6 space-y-3">
+        {[
+          { key: "autoCrmSync" as const, label: "Auto-sync pipeline stages to CRM" },
+          { key: "trackPipelineValue" as const, label: "Track weighted pipeline value" },
+        ].map((item) => (
+          <div
+            key={item.key}
+            className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white/80 px-4 py-3"
+          >
+            <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+            <Toggle
+              checked={settings[item.key]}
+              onChange={(value) => handleToggle(item.key, value)}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/80 p-5">
+        <label className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+          Default entry stage
+          <select
+            value={settings.defaultStage}
+            onChange={(e) => {
+              const updated = { ...settings, defaultStage: e.target.value };
+              setSettings(updated);
+              onSavePreferences?.(updated);
+            }}
+            className="mt-2 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none"
+          >
+            <option>Qualification</option>
+            <option>Pricing in progress</option>
+            <option>Executive review</option>
+          </select>
+        </label>
       </div>
     </section>
   );
 }
 
-export function CampaignPreferencesSection() {
+type CampaignPreferencesSectionProps = {
+  preferences?: Record<string, unknown>;
+  onSavePreferences?: (data: Record<string, unknown>) => void;
+};
+
+export function CampaignPreferencesSection({ preferences, onSavePreferences }: CampaignPreferencesSectionProps = {}) {
   const [settings, setSettings] = React.useState({
-    autopilot: true,
-    personalizedFirstLines: true,
-    dropInCallouts: false,
-    autoPause: true,
+    autopilot: (preferences?.autopilot as boolean) ?? true,
+    personalizedFirstLines: (preferences?.personalizedFirstLines as boolean) ?? true,
+    dropInCallouts: (preferences?.dropInCallouts as boolean) ?? false,
+    autoPause: (preferences?.autoPause as boolean) ?? true,
   });
 
+  React.useEffect(() => {
+    setSettings({
+      autopilot: (preferences?.autopilot as boolean) ?? true,
+      personalizedFirstLines: (preferences?.personalizedFirstLines as boolean) ?? true,
+      dropInCallouts: (preferences?.dropInCallouts as boolean) ?? false,
+      autoPause: (preferences?.autoPause as boolean) ?? true,
+    });
+  }, [preferences?.autopilot, preferences?.personalizedFirstLines, preferences?.dropInCallouts, preferences?.autoPause]);
+
   const toggles = [
-    { key: "autopilot", label: "Auto-schedule new LIT Search cadences" },
-    { key: "personalizedFirstLines", label: "Personalize first lines via AI" },
-    { key: "dropInCallouts", label: "Add Command Center callouts" },
-    { key: "autoPause", label: "Pause sequences when booked meetings sync" },
-  ] as const;
+    { key: "autopilot" as const, label: "Auto-schedule new LIT Search cadences" },
+    { key: "personalizedFirstLines" as const, label: "Personalize first lines via AI" },
+    { key: "dropInCallouts" as const, label: "Add Command Center callouts" },
+    { key: "autoPause" as const, label: "Pause sequences when booked meetings sync" },
+  ];
+
+  const handleToggle = (key: keyof typeof settings, value: boolean) => {
+    const updated = { ...settings, [key]: value };
+    setSettings(updated);
+    onSavePreferences?.(updated);
+  };
 
   return (
     <section className={cardBase}>
@@ -924,14 +1263,10 @@ export function CampaignPreferencesSection() {
             key={toggle.key}
             className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white/80 px-4 py-3"
           >
-            <p className="text-sm font-semibold text-slate-800">
-              {toggle.label}
-            </p>
+            <p className="text-sm font-semibold text-slate-800">{toggle.label}</p>
             <Toggle
               checked={settings[toggle.key]}
-              onChange={(value) =>
-                setSettings((prev) => ({ ...prev, [toggle.key]: value }))
-              }
+              onChange={(value) => handleToggle(toggle.key, value)}
             />
           </div>
         ))}
@@ -942,8 +1277,7 @@ export function CampaignPreferencesSection() {
             Snippets
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            “New volume alert” and “Lane reshuffle” snippets used 68 times last
-            month.
+            Campaign snippets available for LIT Search outreach sequences.
           </p>
         </div>
         <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -959,13 +1293,33 @@ export function CampaignPreferencesSection() {
   );
 }
 
-export function AlertsNotificationsSection() {
+type AlertsNotificationsSectionProps = {
+  preferences?: Record<string, unknown>;
+  onSavePreferences?: (data: Record<string, unknown>) => void;
+};
+
+export function AlertsNotificationsSection({ preferences, onSavePreferences }: AlertsNotificationsSectionProps = {}) {
   const [alerts, setAlerts] = React.useState({
-    shipmentDrops: true,
-    newSavedCompany: true,
-    creditUsage: false,
-    weeklyDigest: true,
+    shipmentDrops: (preferences?.shipmentDrops as boolean) ?? true,
+    newSavedCompany: (preferences?.newSavedCompany as boolean) ?? true,
+    creditUsage: (preferences?.creditUsage as boolean) ?? false,
+    weeklyDigest: (preferences?.weeklyDigest as boolean) ?? true,
   });
+
+  React.useEffect(() => {
+    setAlerts({
+      shipmentDrops: (preferences?.shipmentDrops as boolean) ?? true,
+      newSavedCompany: (preferences?.newSavedCompany as boolean) ?? true,
+      creditUsage: (preferences?.creditUsage as boolean) ?? false,
+      weeklyDigest: (preferences?.weeklyDigest as boolean) ?? true,
+    });
+  }, [preferences?.shipmentDrops, preferences?.newSavedCompany, preferences?.creditUsage, preferences?.weeklyDigest]);
+
+  const handleToggle = (key: keyof typeof alerts, value: boolean) => {
+    const updated = { ...alerts, [key]: value };
+    setAlerts(updated);
+    onSavePreferences?.(updated);
+  };
 
   return (
     <section className={cardBase}>
@@ -976,8 +1330,7 @@ export function AlertsNotificationsSection() {
             Signal routing
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Decide which insights from LIT Search get piped to email, Slack, or
-            SMS.
+            Decide which insights from LIT Search get piped to email, Slack, or SMS.
           </p>
         </div>
         <button
@@ -989,28 +1342,12 @@ export function AlertsNotificationsSection() {
         </button>
       </div>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        {[
-          {
-            key: "shipmentDrops",
-            title: "Shipment drops",
-            body: "Alert when a saved shipper’s volume falls >15% MoM.",
-          },
-          {
-            key: "newSavedCompany",
-            title: "New saved company",
-            body: "Ping account teams when someone bookmarks from LIT Search.",
-          },
-          {
-            key: "creditUsage",
-            title: "Credit usage",
-            body: "Warn RevOps when LIT Search credits exceed 80%.",
-          },
-          {
-            key: "weeklyDigest",
-            title: "Weekly digest",
-            body: "Sunday recap of Command Center KPIs.",
-          },
-        ].map((alert) => (
+        {([
+          { key: "shipmentDrops" as const, title: "Shipment drops", body: "Alert when a saved shipper's volume falls >15% MoM." },
+          { key: "newSavedCompany" as const, title: "New saved company", body: "Ping account teams when someone bookmarks from LIT Search." },
+          { key: "creditUsage" as const, title: "Credit usage", body: "Warn RevOps when LIT Search credits exceed 80%." },
+          { key: "weeklyDigest" as const, title: "Weekly digest", body: "Sunday recap of Command Center KPIs." },
+        ]).map((alert) => (
           <div
             key={alert.key}
             className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm"
@@ -1020,14 +1357,10 @@ export function AlertsNotificationsSection() {
             </div>
             <div className="flex-1">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-900">
-                  {alert.title}
-                </p>
+                <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
                 <Toggle
-                  checked={alerts[alert.key as keyof typeof alerts]}
-                  onChange={(value) =>
-                    setAlerts((prev) => ({ ...prev, [alert.key]: value }))
-                  }
+                  checked={alerts[alert.key]}
+                  onChange={(value) => handleToggle(alert.key, value)}
                 />
               </div>
               <p className="mt-1 text-sm text-slate-600">{alert.body}</p>
@@ -1039,17 +1372,54 @@ export function AlertsNotificationsSection() {
   );
 }
 
-export function SecurityApiSection() {
-  const [security, setSecurity] = React.useState({
-    mfa: true,
-    deviceApprovals: true,
-    rotateKeys: false,
-  });
+type ApiKey = {
+  id: string;
+  key_name: string;
+  key_prefix: string;
+  last_used_at?: string;
+  created_at: string;
+};
 
-  const tokens = [
-    { label: "Search automation", lastUsed: "2h ago" },
-    { label: "Command Center export", lastUsed: "Yesterday" },
-  ];
+type AuditEvent = {
+  id: string;
+  action: string;
+  ip_address?: string;
+  created_at: string;
+};
+
+type SecurityApiSectionProps = {
+  apiKeys?: ApiKey[];
+  auditLog?: AuditEvent[];
+  onGenerateKey?: (keyName: string) => Promise<string | null>;
+  onRevokeKey?: (keyId: string) => Promise<void>;
+};
+
+export function SecurityApiSection({ apiKeys = [], auditLog = [], onGenerateKey, onRevokeKey }: SecurityApiSectionProps = {}) {
+  const [newKeyName, setNewKeyName] = React.useState("");
+  const [generating, setGenerating] = React.useState(false);
+  const [generatedKey, setGeneratedKey] = React.useState<string | null>(null);
+  const [revoking, setRevoking] = React.useState<string | null>(null);
+
+  const handleGenerate = async () => {
+    if (!newKeyName.trim() || !onGenerateKey) return;
+    setGenerating(true);
+    try {
+      const key = await onGenerateKey(newKeyName.trim());
+      if (key) setGeneratedKey(key);
+      setNewKeyName("");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleRevoke = async (keyId: string) => {
+    setRevoking(keyId);
+    try {
+      await onRevokeKey?.(keyId);
+    } finally {
+      setRevoking(null);
+    }
+  };
 
   return (
     <section className={cardBase}>
@@ -1060,69 +1430,158 @@ export function SecurityApiSection() {
             Protect workspace data
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Enforce MFA, rotate API keys, and lock down exports.
+            Generate API keys, review access events, and lock down exports.
           </p>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Shield className="h-4 w-4 text-emerald-500" />
-          View audit log
-        </button>
       </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        {[
-          { key: "mfa", label: "Require MFA for all members" },
-          { key: "deviceApprovals", label: "Approve new devices" },
-          { key: "rotateKeys", label: "Rotate API keys every 90 days" },
-        ].map((item) => (
-          <div
-            key={item.key}
-            className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white/90 px-4 py-3 shadow-sm"
+
+      {/* Generate new key */}
+      {onGenerateKey && (
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            placeholder="Key name (e.g. Search automation)"
+            value={newKeyName}
+            onChange={(e) => setNewKeyName(e.target.value)}
+            className={cn(inputClass, "flex-1 min-w-[200px] mt-0")}
+          />
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={generating || !newKeyName.trim()}
+            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
           >
-            <p className="text-sm font-semibold text-slate-800">
-              {item.label}
-            </p>
-            <Toggle
-              checked={security[item.key as keyof typeof security]}
-              onChange={(value) =>
-                setSecurity((prev) => ({ ...prev, [item.key]: value }))
-              }
-            />
-          </div>
-        ))}
-      </div>
+            <KeyRound className="h-4 w-4" />
+            {generating ? "Generating…" : "Generate key"}
+          </button>
+        </div>
+      )}
+
+      {/* Show newly generated key once */}
+      {generatedKey && (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-xs font-semibold text-emerald-700 mb-1">New API key — copy now, it won't be shown again</p>
+          <code className="block break-all rounded-xl bg-white px-3 py-2 text-sm font-mono text-slate-800 border border-emerald-100">
+            {generatedKey}
+          </code>
+          <button
+            type="button"
+            onClick={() => setGeneratedKey(null)}
+            className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-600"
+          >
+            Done
+          </button>
+        </div>
+      )}
+
+      {/* API Keys list */}
       <div className="mt-6 rounded-2xl border border-slate-100">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          <span>API token</span>
+          <span>API key</span>
           <span>Last used</span>
         </div>
-        {tokens.map((token) => (
-          <div
-            key={token.label}
-            className="flex items-center justify-between border-b border-slate-100 px-5 py-4 text-sm last:border-b-0"
-          >
-            <div className="flex items-center gap-3">
-              <KeyRound className="h-4 w-4 text-indigo-500" />
-              <span className="font-semibold text-slate-900">
-                {token.label}
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-slate-500">
-              {token.lastUsed}
-              <button className="text-xs font-semibold text-indigo-600">
-                Revoke
-              </button>
-            </div>
-          </div>
-        ))}
+        {apiKeys.length === 0 ? (
+          <div className="px-5 py-6 text-center text-sm text-slate-400">No API keys generated yet.</div>
+        ) : (
+          apiKeys.map((key) => {
+            const lastUsed = key.last_used_at
+              ? new Date(key.last_used_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+              : "Never";
+            return (
+              <div
+                key={key.id}
+                className="flex items-center justify-between border-b border-slate-100 px-5 py-4 text-sm last:border-b-0"
+              >
+                <div className="flex items-center gap-3">
+                  <KeyRound className="h-4 w-4 text-indigo-500" />
+                  <div>
+                    <span className="font-semibold text-slate-900">{key.key_name}</span>
+                    <span className="ml-2 text-xs text-slate-400 font-mono">{key.key_prefix}…</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-slate-500">
+                  {lastUsed}
+                  {onRevokeKey && (
+                    <button
+                      type="button"
+                      onClick={() => handleRevoke(key.id)}
+                      disabled={revoking === key.id}
+                      className="text-xs font-semibold text-rose-600 hover:text-rose-500 disabled:opacity-60"
+                    >
+                      {revoking === key.id ? "…" : "Revoke"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
+
+      {/* Audit log */}
+      {auditLog.length > 0 && (
+        <div className="mt-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Recent security events</p>
+          <div className="rounded-2xl border border-slate-100 divide-y divide-slate-100">
+            {auditLog.slice(0, 5).map((event) => (
+              <div key={event.id} className="flex items-center justify-between px-5 py-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="font-medium text-slate-700 capitalize">{event.action.replace(/_/g, " ")}</span>
+                  {event.ip_address && (
+                    <span className="text-xs text-slate-400">from {event.ip_address}</span>
+                  )}
+                </div>
+                <span className="text-xs text-slate-400">
+                  {new Date(event.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-export function WorkspaceCreditsSection() {
+type TokenUsage = {
+  feature: string;
+  tokens_used: number;
+};
+
+type WorkspaceCreditsSectionProps = {
+  tokenUsage?: TokenUsage[];
+  subscription?: {
+    plan_code?: string;
+    seat_limit?: number;
+    status?: string;
+  };
+  isAdmin?: boolean;
+};
+
+const FEATURE_LIMITS: Record<string, { label: string; limit: number; accent: "indigo" | "emerald" | "sky" | "slate" }> = {
+  lit_search: { label: "LIT Search credits", limit: 1000, accent: "indigo" },
+  enrichment: { label: "Enrichment credits", limit: 800, accent: "emerald" },
+  campaigns: { label: "Campaign sends", limit: 3000, accent: "sky" },
+  command_center: { label: "Command Center briefs", limit: 40, accent: "slate" },
+};
+
+export function WorkspaceCreditsSection({ tokenUsage = [], subscription, isAdmin }: WorkspaceCreditsSectionProps = {}) {
+  const usageMap = Object.fromEntries(tokenUsage.map((t) => [t.feature, t.tokens_used]));
+
+  const kpiItems = Object.entries(FEATURE_LIMITS).map(([feature, meta]) => {
+    const used = usageMap[feature] ?? 0;
+    const pct = Math.min(100, Math.round((used / meta.limit) * 100));
+    return {
+      title: meta.label,
+      value: `${used.toLocaleString()} / ${meta.limit.toLocaleString()}`,
+      helper: `${pct}% used`,
+      accent: meta.accent,
+      usage: pct,
+      feature,
+    };
+  });
+
   return (
     <section className={cardBase}>
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1144,52 +1603,32 @@ export function WorkspaceCreditsSection() {
         </button>
       </div>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <KpiCard
-          title="LIT Search credits"
-          value="640 / 1,000"
-          helper="64% used"
-          accent="indigo"
-        />
-        <KpiCard
-          title="Enrichment credits"
-          value="420 / 800"
-          helper="52% used"
-          accent="emerald"
-        />
-        <KpiCard
-          title="Campaign sends"
-          value="1,840 / 3,000"
-          helper="Rolling 30d"
-          accent="sky"
-        />
-        <KpiCard
-          title="Command Center briefs"
-          value="18 / 40"
-          helper="This month"
-          accent="slate"
-        />
+        {kpiItems.map((item) => (
+          <KpiCard
+            key={item.feature}
+            title={item.title}
+            value={item.value}
+            helper={item.helper}
+            accent={item.accent}
+          />
+        ))}
       </div>
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {[
-          {
-            label: "LIT Search",
-            usage: 64,
-            helper: "Avg 32 saved shippers / wk",
-          },
-          { label: "Enrichment", usage: 52, helper: "4,120 contacts enriched" },
-          { label: "Campaigns", usage: 61, helper: "Send window 7:30a-6:30p" },
-        ].map((item) => (
+        {kpiItems.slice(0, 3).map((item) => (
           <div
-            key={item.label}
+            key={item.feature}
             className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm"
           >
             <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-              <span>{item.label}</span>
+              <span>{FEATURE_LIMITS[item.feature]?.label?.split(" ")[0] ?? item.feature}</span>
               <span>{item.usage}%</span>
             </div>
             <div className="mt-3 h-2 rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-slate-900"
+                className={cn(
+                  "h-full rounded-full bg-gradient-to-r from-indigo-500 to-slate-900",
+                  item.usage >= 90 ? "from-rose-500 to-rose-700" : ""
+                )}
                 style={{ width: `${item.usage}%` }}
               />
             </div>
@@ -1201,12 +1640,41 @@ export function WorkspaceCreditsSection() {
   );
 }
 
-export function TeamSubscriptionsSection() {
-  const teams = [
-    { name: "Sales pod", seats: "6 / 8", focus: "Retail + consumer" },
-    { name: "Ops pod", seats: "4 / 6", focus: "Middle-mile programs" },
-    { name: "RevOps", seats: "3 / 3", focus: "Billing + analytics" },
-  ];
+type TeamMember = {
+  id?: string;
+  user_id?: string;
+  email?: string;
+  full_name?: string;
+  role: string;
+  status?: string;
+  created_at?: string;
+};
+
+type TeamSubscriptionsSectionProps = {
+  members?: TeamMember[];
+  subscription?: {
+    plan_code?: string;
+    status?: string;
+    seat_limit?: number;
+    current_period_end?: string;
+  };
+  isAdmin?: boolean;
+};
+
+export function TeamSubscriptionsSection({ members = [], subscription, isAdmin }: TeamSubscriptionsSectionProps = {}) {
+  const seatLimit = subscription?.seat_limit ?? 10;
+  const seatUsed = members.length;
+  const seatsRemaining = Math.max(0, seatLimit - seatUsed);
+  const planName = subscription?.plan_code
+    ? subscription.plan_code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : "Free Trial";
+
+  // Group members by role
+  const byRole = members.reduce<Record<string, TeamMember[]>>((acc, m) => {
+    const r = m.role ?? "viewer";
+    acc[r] = [...(acc[r] ?? []), m];
+    return acc;
+  }, {});
 
   return (
     <section className={cardBase}>
@@ -1220,38 +1688,85 @@ export function TeamSubscriptionsSection() {
             Assign Command Center, campaign, or analyst seats per team.
           </p>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Users2 className="h-4 w-4" />
-          Adjust seats
-        </button>
       </div>
+
+      {/* Plan summary */}
       <div className="mt-6 grid gap-4 md:grid-cols-3">
-        {teams.map((team) => (
-          <div
-            key={team.name}
-            className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm"
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-              {team.name}
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-slate-900">
-              {team.seats}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">{team.focus}</p>
-            <button className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-indigo-600">
-              View members
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
+        <div className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Current plan</p>
+          <p className="mt-3 text-2xl font-semibold text-slate-900">{planName}</p>
+          <p className="mt-1 text-sm text-slate-600">{subscription?.status ?? "Trial"}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Seats used</p>
+          <p className="mt-3 text-2xl font-semibold text-slate-900">{seatUsed} / {seatLimit}</p>
+          <p className="mt-1 text-sm text-slate-600">{seatsRemaining} remaining</p>
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Roles</p>
+          <p className="mt-3 text-2xl font-semibold text-slate-900">{Object.keys(byRole).length}</p>
+          <p className="mt-1 text-sm text-slate-600 capitalize">{Object.keys(byRole).join(", ") || "—"}</p>
+        </div>
       </div>
+
+      {/* Members table */}
+      {members.length > 0 ? (
+        <div className="mt-6 rounded-2xl border border-slate-100 overflow-hidden">
+          <div className="grid grid-cols-[2fr_1fr_1fr] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+            <span>Member</span>
+            <span>Role</span>
+            <span>Status</span>
+          </div>
+          {members.map((member, idx) => {
+            const roleKey = member.role?.toLowerCase() ?? "viewer";
+            const displayName = member.full_name || member.email || "Unknown";
+            const isActive = (member.status ?? "active") === "active";
+            const joinedAt = member.created_at
+              ? new Date(member.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+              : null;
+            return (
+              <div
+                key={member.id ?? member.user_id ?? idx}
+                className="grid grid-cols-[2fr_1fr_1fr] items-center gap-4 border-b border-slate-100 px-5 py-3 last:border-b-0"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{displayName}</p>
+                  {member.email && member.full_name && (
+                    <p className="text-xs text-slate-400">{member.email}</p>
+                  )}
+                  {joinedAt && <p className="text-xs text-slate-400">Joined {joinedAt}</p>}
+                </div>
+                <span className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize w-fit",
+                  ROLE_STYLES[roleKey] ?? ROLE_STYLES.viewer
+                )}>
+                  {roleKey}
+                </span>
+                <span className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
+                  isActive ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                )}>
+                  <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-green-500" : "bg-yellow-500")} />
+                  {isActive ? "Active" : "Pending"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-6 rounded-2xl border border-dashed border-slate-200 px-6 py-8 text-center">
+          <Users2 className="mx-auto h-8 w-8 text-slate-300" />
+          <p className="mt-3 text-sm font-semibold text-slate-600">No team members yet</p>
+          <p className="mt-1 text-xs text-slate-400">Invite members from the Access & Roles tab.</p>
+        </div>
+      )}
+
       <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
         <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
           <Lock className="h-4 w-4 text-slate-500" />
-          2 free viewer seats remain for partner access.
+          {seatsRemaining > 0
+            ? `${seatsRemaining} seat${seatsRemaining !== 1 ? "s" : ""} available on ${planName} plan.`
+            : `All ${seatLimit} seats are in use. Upgrade to add more.`}
         </div>
       </div>
     </section>
