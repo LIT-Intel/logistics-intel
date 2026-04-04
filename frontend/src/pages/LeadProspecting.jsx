@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { User, Company, Contact } from '@/api/entities';
+import { Company, Contact } from '@/api/entities';
 import {
   Search, Building2, Users, Download, Target, Zap, Settings, ExternalLink,
   ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+import { useAuth } from '@/auth/AuthProvider';
 import { searchLeads } from '@/api/functions';
 
 const VIBE_API_CONFIGURED = Boolean(import.meta.env.VITE_VIBE_API_KEY);
@@ -28,8 +26,7 @@ const COMPANY_SIZES = [
 ];
 
 export default function LeadProspecting() {
-  const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
   const [searchMode, setSearchMode] = useState('natural'); // 'natural' | 'structured'
   const [nlQuery, setNlQuery] = useState('');
   const [searchCriteria, setSearchCriteria] = useState({
@@ -47,22 +44,6 @@ export default function LeadProspecting() {
   const [isImporting, setIsImporting] = useState(false);
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
-
-  React.useEffect(() => {
-    const checkAccess = async () => {
-      try {
-        const userData = await User.me();
-        if (userData.role !== 'admin') {
-          navigate(createPageUrl('Dashboard'));
-          return;
-        }
-        setUser(userData);
-      } catch {
-        navigate(createPageUrl('Dashboard'));
-      }
-    };
-    checkAccess();
-  }, [navigate]);
 
   const handleSearch = async () => {
     setIsSearching(true);
@@ -138,14 +119,6 @@ export default function LeadProspecting() {
       return next;
     });
   };
-
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600" />
-      </div>
-    );
-  }
 
   const estimatedCredits = searchResults.length > 0
     ? searchResults.length * 5

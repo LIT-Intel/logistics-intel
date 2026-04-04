@@ -75,7 +75,7 @@ function buildKpiData(
       title: "Active users",
       value: activeMemberCount > 0 ? String(activeMemberCount) : "—",
       helper: "workspace members",
-      accent: "blue" as const,
+      accent: "indigo" as const,
     },
     {
       title: "Plan",

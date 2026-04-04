@@ -9,7 +9,6 @@ import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
 import ActivityFeed from "@/components/dashboard/ActivityFeed";
 import InsightsPanel from "@/components/dashboard/InsightsPanel";
-import GettingStartedChecklist from "@/components/dashboard/GettingStartedChecklist";
 import PerformanceChart from "@/components/dashboard/PerformanceChart";
 import QuickActionsButton from "@/components/dashboard/QuickActionsButton";
 import { DashboardLoadingSkeleton } from "@/components/dashboard/LoadingSkeletons";
@@ -98,10 +97,15 @@ export default function Dashboard() {
 
   const activeCampaigns = campaigns.filter(c => c?.status === 'active' || c?.status === 'live').length;
 
+  const displayName =
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email?.split('@')[0];
+
   return (
     <>
-      <div className="space-y-8">
-        <DashboardHeader userName={user?.email || user?.displayName} />
+      <div className="px-4 sm:px-6 py-6 space-y-6">
+        <DashboardHeader userName={displayName} />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <EnhancedKpiCard
@@ -144,17 +148,14 @@ export default function Dashboard() {
           />
         </div>
 
-        {savedCompanies.length < 5 && (
-          <GettingStartedChecklist
-            savedCompaniesCount={savedCompanies.length}
-            campaignsCount={campaigns.length}
-          />
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <PerformanceChart />
-            <InsightsPanel />
+            <InsightsPanel
+              totalCompanies={savedCompanies.length}
+              emailsSent={campaigns.reduce((sum, c) => sum + (c?.emails_sent || 0), 0)}
+              rfpsGenerated={rfpCount}
+            />
           </div>
 
           <div className="space-y-6">
