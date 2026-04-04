@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LIT — Billing & Plans (Mockup)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    .sidebar-gradient { background: linear-gradient(to bottom, #1e293b, #334155, #0f172a); }
+  </style>
+</head>
+<body class="bg-slate-100 flex h-screen overflow-hidden">
+
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="sidebar-gradient w-64 flex-shrink-0 flex flex-col h-full z-40">
+    <div class="h-16 flex items-center px-5 border-b border-white/10">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">LIT</div>
+      <span class="ml-3 font-semibold text-white text-sm">Logistics Intel</span>
+    </div>
+    <nav class="flex-1 py-4 px-3 space-y-0.5">
+      <p class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 px-3 pt-2 pb-1">Menu</p>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        Search
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        Command Center
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Campaigns
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+        RFP Studio
+      </a>
+      <p class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 px-3 pt-4 pb-1">Account</p>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/10 text-white text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        Settings
+      </a>
+    </nav>
+    <div class="border-t border-white/10 p-4">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center text-white text-xs font-semibold">AP</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-white truncate">Ava Patel</p>
+          <p class="text-xs text-slate-400 truncate">Growth Plan</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========== MAIN ========== -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+    <header class="h-14 bg-white/90 backdrop-blur-sm border-b border-slate-200 flex items-center justify-between px-6 flex-shrink-0">
+      <nav class="flex items-center gap-1.5 text-sm">
+        <span class="text-slate-400">Settings</span>
+        <svg class="w-3 h-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        <span class="font-medium text-slate-900">Billing & Plans</span>
+      </nav>
+      <div class="flex items-center gap-3">
+        <button class="relative w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+        </button>
+        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center text-white text-xs font-semibold">AP</div>
+      </div>
+    </header>
+
+    <!-- Tab bar -->
+    <div class="bg-white border-b border-slate-200 px-6">
+      <div class="flex gap-0 -mb-px overflow-x-auto">
+        <button class="px-4 py-3.5 text-sm text-slate-500 border-b-2 border-transparent whitespace-nowrap">Profile</button>
+        <button class="px-4 py-3.5 text-sm text-slate-500 border-b-2 border-transparent whitespace-nowrap">Company & Signature</button>
+        <button class="px-4 py-3.5 text-sm text-slate-500 border-b-2 border-transparent whitespace-nowrap">Email</button>
+        <button class="px-4 py-3.5 text-sm text-slate-500 border-b-2 border-transparent whitespace-nowrap">Access & Roles</button>
+        <button class="px-4 py-3.5 text-sm font-medium text-slate-900 border-b-2 border-slate-900 whitespace-nowrap">Billing & Plans</button>
+        <button class="px-4 py-3.5 text-sm text-slate-500 border-b-2 border-transparent whitespace-nowrap">Security & API</button>
+        <button class="px-4 py-3.5 text-sm text-slate-500 border-b-2 border-transparent whitespace-nowrap">Team</button>
+      </div>
+    </div>
+
+    <main class="flex-1 overflow-y-auto">
+      <div class="p-6 max-w-5xl mx-auto space-y-6">
+
+        <!-- ── Current Subscription Banner ── -->
+        <div class="rounded-3xl bg-slate-900 p-6 text-white shadow-lg">
+          <div class="flex items-center justify-between flex-wrap gap-4">
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2 mb-0.5">
+                  <span class="text-lg font-semibold">Growth Plan</span>
+                  <span class="text-xs bg-green-500/20 text-green-300 px-2.5 py-0.5 rounded-full font-medium border border-green-500/30">Active</span>
+                </div>
+                <p class="text-slate-400 text-sm">$299/month · Renews May 3, 2026</p>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button class="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-sm font-medium text-white transition-colors border border-white/10">Manage in Stripe</button>
+              <button class="px-4 py-2 rounded-full bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 transition-colors">Upgrade Plan</button>
+            </div>
+          </div>
+
+          <!-- Usage bars -->
+          <div class="mt-6 grid grid-cols-3 gap-6 pt-5 border-t border-white/10">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-slate-400">Saved Companies</span>
+                <span class="text-xs font-medium text-white">142 / 500</span>
+              </div>
+              <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-400 rounded-full" style="width: 28%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-slate-400">Email Credits</span>
+                <span class="text-xs font-medium text-white">3,420 / 10,000</span>
+              </div>
+              <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div class="h-full bg-green-400 rounded-full" style="width: 34%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-slate-400">RFP Drafts</span>
+                <span class="text-xs font-medium text-white">23 / 100</span>
+              </div>
+              <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div class="h-full bg-amber-400 rounded-full" style="width: 23%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Plan Comparison Cards ── -->
+        <div class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
+          <div class="mb-6">
+            <span class="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Plans</span>
+            <h3 class="mt-2 text-lg font-semibold text-slate-900">Choose your plan</h3>
+          </div>
+
+          <!-- Billing toggle -->
+          <div class="flex items-center gap-3 mb-6">
+            <span class="text-sm text-slate-500">Monthly</span>
+            <button class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border border-slate-200 bg-slate-200 transition">
+              <span class="inline-block h-4 w-4 translate-x-1 transform rounded-full bg-white transition"></span>
+            </button>
+            <span class="text-sm text-slate-500">Yearly <span class="text-xs text-green-600 font-medium bg-green-100 px-2 py-0.5 rounded-full">Save 17%</span></span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-4">
+
+            <!-- Free Trial -->
+            <div class="rounded-2xl border border-slate-200 p-5 flex flex-col">
+              <div class="mb-4">
+                <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Free Trial</span>
+                <div class="mt-2 flex items-baseline gap-1">
+                  <span class="text-3xl font-bold text-slate-900">$0</span>
+                  <span class="text-sm text-slate-400">/mo</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1.5">Get started, no credit card required</p>
+              </div>
+              <ul class="space-y-2 flex-1 mb-5">
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  25 saved companies
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  100 email credits
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-400">
+                  <svg class="w-3.5 h-3.5 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Enrichment
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-400">
+                  <svg class="w-3.5 h-3.5 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Campaigns
+                </li>
+              </ul>
+              <button class="w-full rounded-full border border-slate-200 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Current Plan</button>
+            </div>
+
+            <!-- Standard -->
+            <div class="rounded-2xl border border-slate-200 p-5 flex flex-col">
+              <div class="mb-4">
+                <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Standard</span>
+                <div class="mt-2 flex items-baseline gap-1">
+                  <span class="text-3xl font-bold text-slate-900">$49</span>
+                  <span class="text-sm text-slate-400">/mo</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1.5">For individual freight professionals</p>
+              </div>
+              <ul class="space-y-2 flex-1 mb-5">
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  200 saved companies
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  1,000 email credits
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  Enrichment enabled
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-400">
+                  <svg class="w-3.5 h-3.5 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Campaigns
+                </li>
+              </ul>
+              <button class="w-full rounded-full border border-slate-200 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Upgrade</button>
+            </div>
+
+            <!-- Growth — ACTIVE -->
+            <div class="rounded-2xl border-2 border-slate-900 p-5 flex flex-col relative overflow-hidden shadow-lg">
+              <div class="absolute top-0 right-0 bg-slate-900 text-white text-[10px] font-bold uppercase tracking-wide px-3 py-1 rounded-bl-xl">Current</div>
+              <div class="mb-4">
+                <span class="text-xs font-semibold uppercase tracking-wide text-slate-900">Growth</span>
+                <div class="mt-2 flex items-baseline gap-1">
+                  <span class="text-3xl font-bold text-slate-900">$299</span>
+                  <span class="text-sm text-slate-400">/mo</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1.5">For teams managing carrier networks</p>
+              </div>
+              <ul class="space-y-2 flex-1 mb-5">
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  500 saved companies
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  10,000 email credits
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  Enrichment + Campaigns
+                </li>
+                <li class="flex items-center gap-2 text-xs text-slate-600">
+                  <svg class="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  5 seats included
+                </li>
+              </ul>
+              <button class="w-full rounded-full bg-slate-900 py-2 text-sm font-semibold text-white hover:bg-slate-800 transition-colors">Manage Plan</button>
+            </div>
+
+          </div>
+
+          <p class="text-xs text-center text-slate-400 mt-4">
+            Need enterprise pricing? <a href="#" class="text-slate-700 underline">Contact sales</a>
+          </p>
+        </div>
+
+        <!-- ── Payment Method ── -->
+        <div class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <span class="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Payment</span>
+              <h3 class="mt-2 text-lg font-semibold text-slate-900">Payment Method</h3>
+            </div>
+            <button class="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors">Update</button>
+          </div>
+          <div class="flex items-center gap-4 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+            <!-- Card icon -->
+            <div class="w-12 h-8 rounded-md bg-slate-900 flex items-center justify-center flex-shrink-0">
+              <span class="text-white text-[10px] font-bold">VISA</span>
+            </div>
+            <div class="flex-1">
+              <p class="text-sm font-medium text-slate-900">Visa ending in 4242</p>
+              <p class="text-xs text-slate-500">Expires 12/2027</p>
+            </div>
+            <span class="text-xs text-green-700 bg-green-100 px-2.5 py-0.5 rounded-full font-medium">Default</span>
+          </div>
+        </div>
+
+        <!-- ── Billing History ── -->
+        <div class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <span class="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">History</span>
+              <h3 class="mt-2 text-lg font-semibold text-slate-900">Billing History</h3>
+            </div>
+            <button class="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Open Stripe Portal
+            </button>
+          </div>
+          <table class="w-full">
+            <thead>
+              <tr class="text-left border-b border-slate-100">
+                <th class="pb-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">Date</th>
+                <th class="pb-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">Description</th>
+                <th class="pb-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">Amount</th>
+                <th class="pb-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">Status</th>
+                <th class="pb-3"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+              <tr class="hover:bg-slate-50/50 transition-colors">
+                <td class="py-3.5 text-sm text-slate-600">Apr 3, 2026</td>
+                <td class="py-3.5 text-sm text-slate-900">Growth Plan — Monthly</td>
+                <td class="py-3.5 text-sm font-medium text-slate-900">$299.00</td>
+                <td class="py-3.5"><span class="text-xs bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-medium">Paid</span></td>
+                <td class="py-3.5 text-right"><button class="text-xs text-slate-500 hover:text-slate-900">PDF</button></td>
+              </tr>
+              <tr class="hover:bg-slate-50/50 transition-colors">
+                <td class="py-3.5 text-sm text-slate-600">Mar 3, 2026</td>
+                <td class="py-3.5 text-sm text-slate-900">Growth Plan — Monthly</td>
+                <td class="py-3.5 text-sm font-medium text-slate-900">$299.00</td>
+                <td class="py-3.5"><span class="text-xs bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-medium">Paid</span></td>
+                <td class="py-3.5 text-right"><button class="text-xs text-slate-500 hover:text-slate-900">PDF</button></td>
+              </tr>
+              <tr class="hover:bg-slate-50/50 transition-colors">
+                <td class="py-3.5 text-sm text-slate-600">Feb 3, 2026</td>
+                <td class="py-3.5 text-sm text-slate-900">Growth Plan — Monthly</td>
+                <td class="py-3.5 text-sm font-medium text-slate-900">$299.00</td>
+                <td class="py-3.5"><span class="text-xs bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-medium">Paid</span></td>
+                <td class="py-3.5 text-right"><button class="text-xs text-slate-500 hover:text-slate-900">PDF</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="text-xs text-slate-400 mt-4 text-center">Full invoice history available in the Stripe portal</p>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <div class="fixed bottom-4 right-4 bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg z-50">MOCKUP — Billing & Plans</div>
+</body>
+</html>
