@@ -30,7 +30,6 @@ export const SETTINGS_SECTIONS = [
   "Email",
   "LinkedIn",
   "Access & Roles",
-  "Billing & Plans",
   "RFP & Pipeline",
   "Campaign Preferences",
   "Alerts & Notifications",
@@ -90,7 +89,9 @@ type ProfileSectionProps = {
     campaignsCount?: number;
     rfpsCount?: number;
   };
-  onSave?: (data: Record<string, string>) => Promise<void>;
+  onSave?: (data: Record<string, string>) => Promise<{ error?: string }>;
+  onUploadAvatar?: (file: File) => Promise<void>;
+  isAdmin?: boolean;
 };
 
 export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}) {
@@ -103,18 +104,17 @@ export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}
   });
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
 
-  // Re-sync when initialData loads asynchronously
+  // Re-sync when initialData loads asynchronously (e.g. after Supabase fetch completes)
   React.useEffect(() => {
-    if (initialData) {
-      setProfile({
-        name: initialData.name || "",
-        title: initialData.title || "",
-        phone: initialData.phone || "",
-        location: initialData.location || "",
-        bio: initialData.bio || "",
-      });
-    }
+    setProfile({
+      name: initialData?.name || "",
+      title: initialData?.title || "",
+      phone: initialData?.phone || "",
+      location: initialData?.location || "",
+      bio: initialData?.bio || "",
+    });
   }, [initialData?.name, initialData?.title, initialData?.phone, initialData?.location, initialData?.bio]);
 
   const email = initialData?.email || "";
@@ -134,10 +134,17 @@ export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}
   async function handleSave() {
     if (!onSave) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      await onSave(profile);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      const result = await onSave(profile);
+      if (result?.error) {
+        setSaveError(result.error);
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (e: any) {
+      setSaveError(e?.message ?? "Save failed. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -282,7 +289,12 @@ export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}
         <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
           {saved && (
             <span className="flex items-center gap-1.5 text-sm text-emerald-600">
-              <CheckCircle2 className="h-4 w-4" /> Saved
+              <CheckCircle2 className="h-4 w-4" /> Saved successfully
+            </span>
+          )}
+          {saveError && (
+            <span className="flex items-center gap-1.5 text-sm text-rose-600">
+              <AlertTriangle className="h-4 w-4" /> {saveError}
             </span>
           )}
           <button

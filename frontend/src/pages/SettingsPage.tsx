@@ -198,9 +198,9 @@ export default function SettingsPage() {
 
   // ─── Save handlers ──────────────────────────────────────────────────────────
 
-  const onSaveProfile = async (data: Record<string, unknown>) => {
+  const onSaveProfile = async (data: Record<string, unknown>): Promise<{ error?: string }> => {
     const uid = user?.id;
-    if (!uid) return;
+    if (!uid) return { error: "Not authenticated" };
 
     const updates: Record<string, unknown> = { user_id: uid };
     if (data.name !== undefined) updates.full_name = String(data.name || "").trim() || null;
@@ -209,14 +209,24 @@ export default function SettingsPage() {
     if (data.location !== undefined) updates.location = String(data.location || "").trim() || null;
     if (data.bio !== undefined) updates.bio = String(data.bio || "").trim() || null;
 
-    await supabase.from("user_profiles").upsert(updates, { onConflict: "user_id" });
+    const { error } = await supabase
+      .from("user_profiles")
+      .upsert(updates, { onConflict: "user_id" });
+
+    if (error) {
+      console.error("[onSaveProfile] upsert failed:", error.message, error);
+      return { error: error.message };
+    }
 
     // Also update auth metadata full_name
     if (data.name) {
-      await updateProfile({ full_name: String(data.name) });
+      await updateProfile({ full_name: String(data.name) }).catch((e) =>
+        console.warn("[onSaveProfile] updateProfile metadata failed:", e)
+      );
     }
 
     await loadAll();
+    return {};
   };
 
   const onUploadAvatar = async (file: File) => {
@@ -241,16 +251,24 @@ export default function SettingsPage() {
     if (data.logo_url !== undefined) updates.logo_url = data.logo_url;
     if (data.industry !== undefined) updates.industry = data.industry;
     if (data.size !== undefined) updates.size = data.size;
-    await supabase.from("organizations").upsert(updates, { onConflict: "id" });
+    const { error } = await supabase.from("organizations").upsert(updates, { onConflict: "id" });
+    if (error) {
+      console.error("[onSaveOrgProfile] upsert failed:", error.message);
+      return;
+    }
     setOrgProfile((prev) => ({ ...prev, ...updates }));
   };
 
   const onSaveEmailSignature = async (signature: string) => {
     const uid = user?.id;
     if (!uid) return;
-    await supabase
+    const { error } = await supabase
       .from("user_preferences")
       .upsert({ user_id: uid, email_signature: signature }, { onConflict: "user_id" });
+    if (error) {
+      console.error("[onSaveEmailSignature] upsert failed:", error.message);
+      return;
+    }
     setPreferences((prev) => ({ ...prev, email_signature: signature }));
   };
 
@@ -275,10 +293,14 @@ export default function SettingsPage() {
       .eq("user_id", uid)
       .maybeSingle();
     const merged = { ...(existing?.preferences ?? {}), [section]: data };
-    await supabase
+    const { error } = await supabase
       .from("user_preferences")
       .upsert({ user_id: uid, preferences: merged }, { onConflict: "user_id" });
-    setPreferences((prev) => ({ ...prev, preferences: merged }));
+    if (error) {
+      console.error(`[onSavePreferences:${section}] upsert failed:`, error.message);
+      return;
+    }
+    setPreferences((prev: any) => ({ ...prev, preferences: merged }));
   };
 
   const onInviteMember = async (email: string, role: string) => {

@@ -8,7 +8,6 @@ import {
   EmailSection,
   LinkedInSection,
   AccessRolesSection,
-  BillingPlansSection,
   RfpPipelineSection,
   CampaignPreferencesSection,
   AlertsNotificationsSection,
@@ -99,8 +98,8 @@ type TokenUsage = {
 
 type Integration = {
   id: string;
-  type: string;
-  config?: Record<string, any>;
+  integration_type?: string;
+  type?: string; // legacy alias
   created_at: string;
 };
 
@@ -127,7 +126,7 @@ export type SettingsLayoutProps = {
   integrations?: Integration[];
   isAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
-  onSaveProfile?: (data: Record<string, unknown>) => Promise<void>;
+  onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string }>;
   onUploadAvatar?: (file: File) => Promise<void>;
   onSaveOrgProfile?: (data: Record<string, unknown>) => Promise<void>;
   onSaveEmailSignature?: (sig: string) => Promise<void>;
@@ -155,9 +154,10 @@ function buildKpiData(
     ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
     : "No active plan";
 
-  const connectedInboxes = (integrations ?? []).filter(
-    (i) => i.type === "gmail" || i.type === "outlook"
-  ).length;
+  const connectedInboxes = (integrations ?? []).filter((i) => {
+    const t = i.integration_type ?? i.type ?? "";
+    return t === "gmail" || t === "outlook";
+  }).length;
 
   return [
     {
@@ -234,14 +234,6 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           onRevoke={props.onRevokeMember}
           onUpdateRole={props.onUpdateMemberRole}
           onRevokeInvite={props.onRevokeInvite}
-          isAdmin={props.isAdmin}
-        />
-      );
-    case "Billing & Plans":
-      return (
-        <BillingPlansSection
-          subscription={props.subscription}
-          plans={props.plans}
           isAdmin={props.isAdmin}
         />
       );
