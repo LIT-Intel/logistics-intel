@@ -42,9 +42,13 @@ export default function SettingsPage() {
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
 
-  const isAdmin =
+  const isAdminEmail =
     ADMIN_EMAILS.includes(user?.email ?? "") ||
     user?.user_metadata?.role === "admin";
+  const isOrgOwner = orgMembers.some(
+    (m) => m.user_id === user?.id && (m.role === "owner" || m.role === "admin")
+  );
+  const isAdmin = isAdminEmail || isOrgOwner;
 
   const canAccess = useCallback(
     (minPlan: string) => isAdmin || (PLAN_RANK[plan ?? "free_trial"] ?? 0) >= (PLAN_RANK[minPlan] ?? 0),
@@ -140,7 +144,11 @@ export default function SettingsPage() {
       supabase.from("plans").select("*").order("price_monthly", { ascending: true }),
     ]);
     if (subResult.status === "fulfilled") setSubscription(subResult.value.data ?? null);
-    if (plansResult.status === "fulfilled") setPlans(plansResult.value.data ?? []);
+    if (plansResult.status === "fulfilled") {
+      // DB column is "code" but UI expects "plan_code" — map here
+      const rawPlans = plansResult.value.data ?? [];
+      setPlans(rawPlans.map((p: any) => ({ ...p, plan_code: p.plan_code ?? p.code })));
+    }
 
     // 9. api keys
     const { data: keysData } = await supabase
@@ -169,7 +177,7 @@ export default function SettingsPage() {
     // 12. integrations
     const { data: intData } = await supabase
       .from("integrations")
-      .select("id, type, config, created_at")
+      .select("id, integration_type, created_at")
       .eq("user_id", uid);
     setIntegrations(intData ?? []);
 

@@ -148,8 +148,19 @@ export default function CampaignsPage() {
     );
   }
 
-  // Use the hasAccess state variable directly
-  // Do not early-return on access denied here; we want to render smoke-test cards
+  // Show upgrade prompt for users without campaign access
+  if (!hasAccess && !isLoading) {
+    return (
+      <UpgradePrompt
+        isOpen={true}
+        onClose={() => window.history.back()}
+        feature="campaigns"
+        currentPlan={user?.user_metadata?.plan || 'free_trial'}
+        title="Campaigns requires Growth Plan"
+        description="Upgrade to Growth or Enterprise to create and manage outreach campaigns."
+      />
+    );
+  }
 
   if (isCreating || editingCampaign) {
     return (

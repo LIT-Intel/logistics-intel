@@ -16,7 +16,9 @@ import {
   Sparkles,
   Users2,
   Zap,
+  Chrome,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { KpiCard, Pill } from "./SettingsPrimitives";
 
 const cardBase =
@@ -93,14 +95,27 @@ type ProfileSectionProps = {
 
 export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}) {
   const [profile, setProfile] = React.useState({
-    name: initialData?.name || "Ava Patel",
-    title: initialData?.title || "Head of Ocean Procurement",
-    phone: initialData?.phone || "+1 (312) 555-1400",
-    location: initialData?.location || "Chicago, IL",
-    bio: initialData?.bio || "Owns North America ocean sourcing, carrier scorecards, and yearly bids.",
+    name: initialData?.name || "",
+    title: initialData?.title || "",
+    phone: initialData?.phone || "",
+    location: initialData?.location || "",
+    bio: initialData?.bio || "",
   });
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+
+  // Re-sync when initialData loads asynchronously
+  React.useEffect(() => {
+    if (initialData) {
+      setProfile({
+        name: initialData.name || "",
+        title: initialData.title || "",
+        phone: initialData.phone || "",
+        location: initialData.location || "",
+        bio: initialData.bio || "",
+      });
+    }
+  }, [initialData?.name, initialData?.title, initialData?.phone, initialData?.location, initialData?.bio]);
 
   const email = initialData?.email || "";
   const plan = initialData?.plan || "free_trial";
@@ -434,8 +449,8 @@ export function CompanySignatureSection({
 
 type EmailSectionIntegration = {
   id: string;
-  type: string;
-  config?: Record<string, unknown>;
+  integration_type?: string;
+  type?: string;
   created_at: string;
 };
 
@@ -451,10 +466,14 @@ export function EmailSection({
   onDisconnect,
 }: EmailSectionProps = {}) {
   const [disconnecting, setDisconnecting] = React.useState<string | null>(null);
+  const [connecting, setConnecting] = React.useState<string | null>(null);
+  const [showAddMenu, setShowAddMenu] = React.useState(false);
 
-  const connectedInboxes = integrations.filter(
-    (i) => i.type === "gmail" || i.type === "outlook",
-  );
+  // Support both integration_type (DB column) and type (legacy)
+  const connectedInboxes = integrations.filter((i) => {
+    const t = i.integration_type ?? i.type ?? "";
+    return t === "gmail" || t === "outlook";
+  });
 
   const handleDisconnect = async (id: string) => {
     setDisconnecting(id);
@@ -462,6 +481,39 @@ export function EmailSection({
       await onDisconnect?.(id);
     } finally {
       setDisconnecting(null);
+    }
+  };
+
+  const handleConnectGmail = async () => {
+    setConnecting("gmail");
+    setShowAddMenu(false);
+    try {
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          scopes: "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly",
+          redirectTo: `${window.location.origin}/auth/callback?next=/app/settings`,
+          queryParams: { access_type: "offline", prompt: "consent" },
+        },
+      });
+    } catch {
+      setConnecting(null);
+    }
+  };
+
+  const handleConnectOutlook = async () => {
+    setConnecting("outlook");
+    setShowAddMenu(false);
+    try {
+      await supabase.auth.signInWithOAuth({
+        provider: "azure",
+        options: {
+          scopes: "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read",
+          redirectTo: `${window.location.origin}/auth/callback?next=/app/settings`,
+        },
+      });
+    } catch {
+      setConnecting(null);
     }
   };
 
@@ -477,13 +529,37 @@ export function EmailSection({
             Route LIT Search campaigns through Gmail, Outlook, or custom SMTP.
           </p>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Mail className="h-4 w-4" />
-          Add inbox
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowAddMenu((v) => !v)}
+            disabled={!!connecting}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            <Mail className="h-4 w-4" />
+            {connecting ? `Connecting ${connecting}…` : "Add inbox"}
+          </button>
+          {showAddMenu && (
+            <div className="absolute right-0 top-10 z-10 w-52 rounded-2xl border border-slate-200 bg-white shadow-lg">
+              <button
+                type="button"
+                onClick={handleConnectGmail}
+                className="flex w-full items-center gap-3 rounded-t-2xl px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Chrome className="h-4 w-4 text-red-500" />
+                Connect Gmail
+              </button>
+              <button
+                type="button"
+                onClick={handleConnectOutlook}
+                className="flex w-full items-center gap-3 rounded-b-2xl border-t border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Mail className="h-4 w-4 text-sky-600" />
+                Connect Outlook
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="mt-6 space-y-3">
         {connectedInboxes.length === 0 ? (
@@ -491,11 +567,19 @@ export function EmailSection({
             <Mail className="mx-auto h-8 w-8 text-slate-300" />
             <p className="mt-3 text-sm font-semibold text-slate-600">No inboxes connected</p>
             <p className="mt-1 text-xs text-slate-400">Connect Gmail or Outlook to start sending campaigns.</p>
+            <div className="mt-4 flex justify-center gap-3">
+              <button type="button" onClick={handleConnectGmail} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700">
+                <Chrome className="h-3.5 w-3.5" /> Gmail
+              </button>
+              <button type="button" onClick={handleConnectOutlook} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                <Mail className="h-3.5 w-3.5 text-sky-600" /> Outlook
+              </button>
+            </div>
           </div>
         ) : (
           connectedInboxes.map((inbox) => {
-            const label = (inbox.config as Record<string, string> | undefined)?.email ?? inbox.type;
-            const isGmail = inbox.type === "gmail";
+            const t = inbox.integration_type ?? inbox.type ?? "";
+            const isGmail = t === "gmail";
             const connectedAt = inbox.created_at
               ? new Date(inbox.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
               : null;
@@ -506,7 +590,7 @@ export function EmailSection({
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-900 capitalize">
-                    {isGmail ? "Gmail" : "Outlook"} — {label}
+                    {isGmail ? "Gmail" : "Outlook"}
                   </p>
                   {connectedAt && (
                     <p className="text-xs text-slate-500">Connected {connectedAt}</p>
@@ -811,7 +895,8 @@ export function AccessRolesSection({
         </span>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-slate-100 overflow-hidden">
+      <div className="mt-5 rounded-2xl border border-slate-100 overflow-x-auto">
+        <div className="min-w-[500px]">
         <div className="grid grid-cols-[2fr_1fr_1fr_80px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
           <span>Member</span>
           <span>Role</span>
@@ -883,6 +968,7 @@ export function AccessRolesSection({
             </div>
           );
         })}
+        </div>
       </div>
 
       {/* Pending invites */}
@@ -1014,7 +1100,7 @@ export function BillingPlansSection({
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Current plan</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">
-                {currentPlan.display_name ?? currentPlan.plan_code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                {(currentPlan.display_name ?? (currentPlan.plan_code ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())) || "Free Trial"}
               </p>
               <p className="mt-1 text-sm text-slate-600">
                 {formatPlanPrice(currentPlan)}/month
@@ -1058,7 +1144,7 @@ export function BillingPlansSection({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-                    {plan.display_name ?? plan.plan_code.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    {(plan.display_name ?? (plan.plan_code ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())) || "Plan"}
                   </p>
                   <p className="mt-2 text-2xl font-semibold text-slate-900">
                     {plan.price_monthly ? `$${plan.price_monthly.toLocaleString()}` : "Custom"}
@@ -1711,7 +1797,8 @@ export function TeamSubscriptionsSection({ members = [], subscription, isAdmin }
 
       {/* Members table */}
       {members.length > 0 ? (
-        <div className="mt-6 rounded-2xl border border-slate-100 overflow-hidden">
+        <div className="mt-6 rounded-2xl border border-slate-100 overflow-x-auto">
+          <div className="min-w-[400px]">
           <div className="grid grid-cols-[2fr_1fr_1fr] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
             <span>Member</span>
             <span>Role</span>
@@ -1752,6 +1839,7 @@ export function TeamSubscriptionsSection({ members = [], subscription, isAdmin }
               </div>
             );
           })}
+          </div>
         </div>
       ) : (
         <div className="mt-6 rounded-2xl border border-dashed border-slate-200 px-6 py-8 text-center">
