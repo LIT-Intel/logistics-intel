@@ -1,11 +1,26 @@
 import React from "react";
 import {
   LayoutDashboard,
+  Search,
+  Briefcase,
+  Megaphone,
+  Settings,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 
+const navItems = [
+  { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
+  { label: "Search", href: "/app/search", icon: Search },
+  { label: "Command Center", href: "/app/command-center", icon: Briefcase },
+  { label: "Campaigns", href: "/app/campaigns", icon: Megaphone },
+  { label: "Settings", href: "/app/settings", icon: Settings },
+];
+
 const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
+  const currentPath =
+    typeof window !== "undefined" ? window.location.pathname : "";
+
   return (
     <aside
       className={[
@@ -46,14 +61,45 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         </div>
 
         <nav className="flex flex-col gap-2">
-          <a
-            href="/app/dashboard"
-            className="flex items-center gap-3 rounded-xl px-3 py-2 border"
-          >
-            <LayoutDashboard size={18} />
-            {sidebarOpen && <span className="text-sm font-medium">Dashboard</span>}
-          </a>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive =
+              currentPath === item.href ||
+              (item.href !== "/" && currentPath.startsWith(item.href));
+
+            return (
+              <a
+                key={item.label}
+                href={item.href}
+                className={[
+                  "flex items-center gap-3 rounded-xl px-3 py-2 border text-sm",
+                  isActive ? "bg-gray-100 font-semibold" : "hover:bg-gray-50",
+                ].join(" ")}
+                title={item.label}
+              >
+                <Icon size={18} />
+                {sidebarOpen && <span className="truncate">{item.label}</span>}
+              </a>
+            );
+          })}
         </nav>
+      </div>
+
+      <div className="p-4 border-t">
+        <div className="rounded-xl border bg-white p-4">
+          {sidebarOpen ? (
+            <>
+              <div className="text-sm font-semibold">Pro Intelligence</div>
+              <div className="mt-1 text-xs text-gray-500 leading-5">
+                Track companies, campaigns, and shipment activity in one place.
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center text-xs font-semibold">
+              PRO
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );
