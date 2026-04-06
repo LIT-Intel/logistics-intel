@@ -9,40 +9,7 @@ import TemplateSelector from './TemplateSelector';
 import { api } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
-type CampaignStep = {
-  step_number: number;
-  type: 'email' | 'linkedin' | 'linkedin_message';
-  wait_days: number;
-  subject?: string;
-  template?: string;
-};
-
-type CampaignDraft = {
-  name: string;
-  campaign_type: string;
-  status: string;
-  email_template: string;
-  linkedin_template: string;
-  subject_line: string;
-  target_companies: string[];
-  target_contacts: string[];
-  sequence_steps: CampaignStep[];
-  created_by?: string;
-  updated_by?: string;
-};
-
-type CampaignCreatorProps = {
-  campaign?: any;
-  onClose?: () => void;
-  onSave?: (campaign: any) => void;
-};
-
-type ContactOption = {
-  email?: string;
-  full_name?: string;
-};
-
-const emptyForm: CampaignDraft = {
+const emptyForm = {
   name: '',
   campaign_type: 'email_only',
   status: 'draft',
@@ -54,7 +21,7 @@ const emptyForm: CampaignDraft = {
   sequence_steps: [],
 };
 
-function normalizeStringArray(value: unknown): string[] {
+function normalizeStringArray(value) {
   if (Array.isArray(value)) {
     return value
       .map((item) => String(item ?? '').trim())
@@ -71,10 +38,10 @@ function normalizeStringArray(value: unknown): string[] {
   return [];
 }
 
-function normalizeSteps(value: unknown): CampaignStep[] {
+function normalizeSteps(value) {
   if (!Array.isArray(value)) return [];
 
-  return value.map((step: any, index) => ({
+  return value.map((step, index) => ({
     step_number: Number(step?.step_number ?? index + 1),
     type: step?.type === 'linkedin' || step?.type === 'linkedin_message' ? step.type : 'email',
     wait_days: Number(step?.wait_days ?? step?.day_offset ?? 0),
@@ -83,10 +50,11 @@ function normalizeSteps(value: unknown): CampaignStep[] {
   }));
 }
 
-function buildFormData(source?: any): CampaignDraft {
+function buildFormData(source) {
   const draft = source?.metrics?.draft ?? source?.draft ?? source ?? {};
 
   return {
+    ...emptyForm,
     name: String(draft?.name ?? source?.name ?? ''),
     campaign_type: String(draft?.campaign_type ?? source?.campaign_type ?? source?.channel ?? 'email_only'),
     status: String(draft?.status ?? source?.status ?? 'draft'),
@@ -101,7 +69,7 @@ function buildFormData(source?: any): CampaignDraft {
   };
 }
 
-function getStepIcon(type: CampaignStep['type']) {
+function getStepIcon(type) {
   switch (type) {
     case 'email':
       return <Mail className="w-4 h-4" />;
@@ -129,7 +97,7 @@ async function getCurrentUserIdentity() {
   };
 }
 
-async function saveCampaignRecord(campaignId: string | undefined, draftPayload: CampaignDraft) {
+async function saveCampaignRecord(campaignId, draftPayload) {
   const identity = await getCurrentUserIdentity();
   const timestamp = new Date().toISOString();
 
@@ -144,7 +112,7 @@ async function saveCampaignRecord(campaignId: string | undefined, draftPayload: 
     sequence: draftPayload.sequence_steps,
   };
 
-  const rowVariants: Record<string, any>[] = [
+  const rowVariants = [
     {
       name: draftPayload.name || 'New Campaign',
       status: draftPayload.status || 'draft',
@@ -183,7 +151,7 @@ async function saveCampaignRecord(campaignId: string | undefined, draftPayload: 
     },
   ];
 
-  let lastError: any = null;
+  let lastError = null;
 
   for (const row of rowVariants) {
     const payload = campaignId
@@ -220,10 +188,10 @@ async function saveCampaignRecord(campaignId: string | undefined, draftPayload: 
   throw lastError;
 }
 
-export default function CampaignCreator({ campaign, onClose, onSave }: CampaignCreatorProps) {
+export default function CampaignCreator({ campaign, onClose, onSave }) {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
-  const [formData, setFormData] = useState<CampaignDraft>(() => buildFormData(campaign));
-  const [availableContacts, setAvailableContacts] = useState<ContactOption[]>([]);
+  const [formData, setFormData] = useState(() => buildFormData(campaign));
+  const [availableContacts, setAvailableContacts] = useState([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -244,11 +212,11 @@ export default function CampaignCreator({ campaign, onClose, onSave }: CampaignC
 
         setAvailableContacts(
           rows
-            .map((lead: any) => ({
+            .map((lead) => ({
               email: lead?.email,
               full_name: lead?.contact_name ?? lead?.full_name ?? lead?.name,
             }))
-            .filter((lead: ContactOption) => Boolean(lead.email))
+            .filter((lead) => Boolean(lead.email))
         );
       } catch (error) {
         console.error('Failed to load available contacts:', error);
@@ -267,30 +235,28 @@ export default function CampaignCreator({ campaign, onClose, onSave }: CampaignC
   }, []);
 
   const contactPreview = useMemo(() => {
-    const preview = availableContacts
+    return availableContacts
       .map((contact) => contact.email)
       .filter(Boolean)
       .slice(0, 5)
       .join(', ');
-
-    return preview;
   }, [availableContacts]);
 
-  const setField = <K extends keyof CampaignDraft>(field: K, value: CampaignDraft[K]) => {
+  const setField = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleTemplateSelect = (template: any) => {
+  const handleTemplateSelect = (template) => {
     const steps = Array.isArray(template?.steps) ? template.steps : [];
 
     setFormData((prev) => ({
       ...prev,
       name: template?.name || prev.name,
-      email_template: steps.find((step: any) => step?.type === 'email')?.body || prev.email_template,
-      subject_line: steps.find((step: any) => step?.type === 'email')?.subject || prev.subject_line,
+      email_template: steps.find((step) => step?.type === 'email')?.body || prev.email_template,
+      subject_line: steps.find((step) => step?.type === 'email')?.subject || prev.subject_line,
       linkedin_template:
-        steps.find((step: any) => step?.type === 'linkedin_message')?.message || prev.linkedin_template,
-      sequence_steps: steps.map((step: any, index: number) => ({
+        steps.find((step) => step?.type === 'linkedin_message')?.message || prev.linkedin_template,
+      sequence_steps: steps.map((step, index) => ({
         step_number: index + 1,
         type: step?.type === 'linkedin' || step?.type === 'linkedin_message' ? step.type : 'email',
         wait_days: Number(step?.day_offset ?? step?.wait_days ?? 0),
@@ -318,18 +284,18 @@ export default function CampaignCreator({ campaign, onClose, onSave }: CampaignC
     }));
   };
 
-  const updateStep = (index: number, field: keyof CampaignStep, value: string | number) => {
+  const updateStep = (index, field, value) => {
     setFormData((prev) => {
       const nextSteps = [...prev.sequence_steps];
       nextSteps[index] = {
         ...nextSteps[index],
         [field]: value,
-      } as CampaignStep;
+      };
       return { ...prev, sequence_steps: nextSteps };
     });
   };
 
-  const removeStep = (index: number) => {
+  const removeStep = (index) => {
     setFormData((prev) => {
       const nextSteps = prev.sequence_steps
         .filter((_, stepIndex) => stepIndex !== index)
@@ -345,7 +311,7 @@ export default function CampaignCreator({ campaign, onClose, onSave }: CampaignC
     });
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!formData.name.trim()) {
@@ -353,7 +319,7 @@ export default function CampaignCreator({ campaign, onClose, onSave }: CampaignC
       return;
     }
 
-    const normalizedDraft: CampaignDraft = {
+    const normalizedDraft = {
       ...formData,
       name: formData.name.trim(),
       target_companies: normalizeStringArray(formData.target_companies),
@@ -378,7 +344,7 @@ export default function CampaignCreator({ campaign, onClose, onSave }: CampaignC
         },
       });
       onClose?.();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error saving campaign:', error);
       const errorMessage =
         error?.message || error?.details || 'Failed to save campaign. Please try again.';
@@ -527,9 +493,7 @@ export default function CampaignCreator({ campaign, onClose, onSave }: CampaignC
                             <label className="mb-1 block text-xs font-medium">Type</label>
                             <Select
                               value={step.type}
-                              onValueChange={(value) =>
-                                updateStep(index, 'type', value as CampaignStep['type'])
-                              }
+                              onValueChange={(value) => updateStep(index, 'type', value)}
                             >
                               <SelectTrigger>
                                 <SelectValue />
