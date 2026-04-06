@@ -7,37 +7,37 @@ import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
 
 // Lazy-load primary pages
-const Landing        = lazy(() => import("@/pages/LandingPage"));
-const Dashboard      = lazy(() => import("@/pages/Dashboard"));
-const LITDashboard   = lazy(() => import("./components/dashboard/litdashboard.jsx"));
-const Search         = lazy(() => import("@/pages/Search"));
-const SearchTrends   = lazy(() => import("@/pages/search/Trends"));
+const Landing = lazy(() => import("@/pages/LandingPage"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
+const Search = lazy(() => import("@/pages/Search"));
+const SearchTrends = lazy(() => import("@/pages/search/Trends"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
-const Companies      = lazy(() => import("@/pages/companies/index"));
-const Campaigns      = lazy(() => import("@/pages/Campaigns"));
-const CampaignBuilder= lazy(() => import("@/pages/CampaignBuilder"));
-const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));
-const RFPStudio      = lazy(() => import("@/pages/RFPStudio"));
-const Settings       = lazy(() => import("@/pages/SettingsPage"));
-const Billing        = lazy(() => import("@/pages/BillingNew"));
-const AffiliateDash  = lazy(() => import("@/pages/AffiliateDashboard"));
+const Companies = lazy(() => import("@/pages/companies/index"));
+const Campaigns = lazy(() => import("@/pages/Campaigns"));
+const CampaignBuilder = lazy(() => import("@/pages/CampaignBuilder"));
+const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
+const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
+const Settings = lazy(() => import("@/pages/SettingsPage"));
+const Billing = lazy(() => import("@/pages/BillingNew"));
+const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
-const AdminSettings  = lazy(() => import("@/pages/AdminSettings"));
-const LeadProspecting= lazy(() => import("@/pages/LeadProspecting"));
-const CMSManager     = lazy(() => import("@/pages/CMSManager"));
-const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
-const AdminAgent     = lazy(() => import("@/pages/AdminAgent"));
-const SearchPanel    = lazy(() => import("@/pages/SearchPanel"));
-const Signup         = lazy(() => import("@/pages/signup/Signup"));
-const Transactions   = lazy(() => import("@/pages/Transactions"));
-const Widgets        = lazy(() => import("@/pages/Widgets"));
-const Company        = lazy(() => import("@/pages/Company"));
+const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
+const LeadProspecting = lazy(() => import("@/pages/LeadProspecting"));
+const CMSManager = lazy(() => import("@/pages/CMSManager"));
+const Diagnostic = lazy(() => import("@/pages/Diagnostic"));
+const AdminAgent = lazy(() => import("@/pages/AdminAgent"));
+const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
+const Signup = lazy(() => import("@/pages/signup/Signup"));
+const Transactions = lazy(() => import("@/pages/Transactions"));
+const Widgets = lazy(() => import("@/pages/Widgets"));
+const Company = lazy(() => import("@/pages/Company"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
-const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
-const DemoCompany    = lazy(() => import("@/pages/demo/company"));
+const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
+const DemoCompany = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
-const AuthCallback   = lazy(() => import("@/pages/AuthCallback"));
-const PrivacyPolicy  = lazy(() => import("@/pages/PrivacyPolicy"));
+const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
@@ -54,29 +54,42 @@ export default function App() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading…</div>}>
       <Routes>
-
-        {/* Root */}
         <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
 
-        {/* Public */}
         <Route
           path="/company/:id"
-          element={<Layout currentPageName="Company"><Company /></Layout>}
+          element={
+            <Layout currentPageName="Company">
+              <Company />
+            </Layout>
+          }
         />
 
         <Route
           path="/demo"
-          element={<Layout currentPageName="Demo"><SearchPanel /></Layout>}
+          element={
+            <Layout currentPageName="Demo">
+              <SearchPanel />
+            </Layout>
+          }
         />
 
         <Route
           path="/demo/company"
-          element={<Layout currentPageName="Company Demo"><DemoCompany /></Layout>}
+          element={
+            <Layout currentPageName="Company Demo">
+              <DemoCompany />
+            </Layout>
+          }
         />
 
         <Route
           path="/companies"
-          element={<Layout currentPageName="Command Center"><CompaniesIndex /></Layout>}
+          element={
+            <Layout currentPageName="Command Center">
+              <CompaniesIndex />
+            </Layout>
+          }
         />
 
         <Route path="/login" element={<ModernLoginPage />} />
@@ -88,7 +101,6 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 
-        {/* DASHBOARD (UPDATED) */}
         <Route
           path="/app/dashboard"
           element={
@@ -98,12 +110,13 @@ export default function App() {
           }
         />
 
-        {/* App routes (unchanged) */}
         <Route
           path="/app/search"
           element={
             <RequireAuth>
-              <Layout currentPageName="Search"><Search /></Layout>
+              <Layout currentPageName="Search">
+                <Search />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -112,31 +125,47 @@ export default function App() {
           path="/app/search/trends"
           element={
             <RequireAuth>
-              <Layout currentPageName="Search"><SearchTrends /></Layout>
+              <Layout currentPageName="Search">
+                <SearchTrends />
+              </Layout>
             </RequireAuth>
           }
         />
 
         <Route
           path="/app/companies"
-          element={<Layout currentPageName="Command Center"><Companies /></Layout>}
+          element={
+            <Layout currentPageName="Command Center">
+              <Companies />
+            </Layout>
+          }
         />
 
         <Route
           path="/app/command-center"
-          element={<Layout currentPageName="Command Center"><CommandCenterPage /></Layout>}
+          element={
+            <Layout currentPageName="Command Center">
+              <CommandCenterPage />
+            </Layout>
+          }
         />
 
         <Route
           path="/command-center"
-          element={<Layout currentPageName="Command Center"><CommandCenterPage /></Layout>}
+          element={
+            <Layout currentPageName="Command Center">
+              <CommandCenterPage />
+            </Layout>
+          }
         />
 
         <Route
           path="/app/companies/:id"
           element={
             <RequireAuth>
-              <Layout currentPageName="Company"><Company /></Layout>
+              <Layout currentPageName="Company">
+                <Company />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -145,7 +174,9 @@ export default function App() {
           path="/app/campaigns"
           element={
             <RequireAuth>
-              <Layout currentPageName="Campaigns"><Campaigns /></Layout>
+              <Layout currentPageName="Campaigns">
+                <Campaigns />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -154,7 +185,9 @@ export default function App() {
           path="/app/campaigns/new"
           element={
             <RequireAuth>
-              <Layout currentPageName="New Campaign"><CampaignBuilder /></Layout>
+              <Layout currentPageName="New Campaign">
+                <CampaignBuilder />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -163,7 +196,9 @@ export default function App() {
           path="/app/email"
           element={
             <RequireAuth>
-              <Layout currentPageName="EmailCenter"><EmailCenter /></Layout>
+              <Layout currentPageName="EmailCenter">
+                <EmailCenter />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -172,7 +207,9 @@ export default function App() {
           path="/app/rfp"
           element={
             <RequireAuth>
-              <Layout currentPageName="RFPStudio"><RFPStudio /></Layout>
+              <Layout currentPageName="RFPStudio">
+                <RFPStudio />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -181,7 +218,9 @@ export default function App() {
           path="/app/settings"
           element={
             <RequireAuth>
-              <Layout currentPageName="Settings"><Settings /></Layout>
+              <Layout currentPageName="Settings">
+                <Settings />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -190,7 +229,9 @@ export default function App() {
           path="/app/admin/settings"
           element={
             <RequireAuth>
-              <Layout currentPageName="Admin Settings"><AdminSettings /></Layout>
+              <Layout currentPageName="Admin Settings">
+                <AdminSettings />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -199,7 +240,9 @@ export default function App() {
           path="/app/widgets"
           element={
             <RequireAuth>
-              <Layout currentPageName="Widgets"><Widgets /></Layout>
+              <Layout currentPageName="Widgets">
+                <Widgets />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -208,7 +251,9 @@ export default function App() {
           path="/app/pre-call"
           element={
             <RequireAuth>
-              <Layout currentPageName="Pre-Call Briefing"><PreCallBriefing /></Layout>
+              <Layout currentPageName="Pre-Call Briefing">
+                <PreCallBriefing />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -217,7 +262,9 @@ export default function App() {
           path="/app/billing"
           element={
             <RequireAuth>
-              <Layout currentPageName="Billing"><Billing /></Layout>
+              <Layout currentPageName="Billing">
+                <Billing />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -226,17 +273,20 @@ export default function App() {
           path="/app/affiliate"
           element={
             <RequireAuth>
-              <Layout currentPageName="AffiliateDashboard"><AffiliateDash /></Layout>
+              <Layout currentPageName="AffiliateDashboard">
+                <AffiliateDash />
+              </Layout>
             </RequireAuth>
           }
         />
 
-        {/* Admin */}
         <Route
           path="/app/admin"
           element={
             <RequireAuth>
-              <Layout currentPageName="AdminDashboard"><AdminDashboard /></Layout>
+              <Layout currentPageName="AdminDashboard">
+                <AdminDashboard />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -245,7 +295,9 @@ export default function App() {
           path="/app/prospecting"
           element={
             <RequireAuth>
-              <Layout currentPageName="LeadProspecting"><LeadProspecting /></Layout>
+              <Layout currentPageName="LeadProspecting">
+                <LeadProspecting />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -254,7 +306,9 @@ export default function App() {
           path="/app/cms"
           element={
             <RequireAuth>
-              <Layout currentPageName="CMSManager"><CMSManager /></Layout>
+              <Layout currentPageName="CMSManager">
+                <CMSManager />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -263,7 +317,9 @@ export default function App() {
           path="/app/diagnostic"
           element={
             <RequireAuth>
-              <Layout currentPageName="Diagnostic"><Diagnostic /></Layout>
+              <Layout currentPageName="Diagnostic">
+                <Diagnostic />
+              </Layout>
             </RequireAuth>
           }
         />
@@ -272,12 +328,13 @@ export default function App() {
           path="/app/agent"
           element={
             <RequireAuth>
-              <Layout currentPageName="AdminAgent"><AdminAgent /></Layout>
+              <Layout currentPageName="AdminAgent">
+                <AdminAgent />
+              </Layout>
             </RequireAuth>
           }
         />
 
-        {/* Fallbacks */}
         <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
