@@ -6,7 +6,6 @@ import ModernSignupPage from "@/components/layout/ModernSignupPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
 
-// Lazy-load primary pages
 const Landing = lazy(() => import("@/pages/LandingPage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
@@ -105,9 +104,7 @@ export default function App() {
           path="/app/dashboard"
           element={
             <RequireAuth>
-              <Layout currentPageName="Dashboard">
-              <Dashboard />
-              </Layout>
+              <LITDashboard />
             </RequireAuth>
           }
         />
