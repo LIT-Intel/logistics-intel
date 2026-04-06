@@ -1,228 +1,431 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { User } from '@/api/entities';
-import { X, Plus, FileText, Trash2, Mail, UserPlus, MessageSquare } from 'lucide-react';
+import { Plus, FileText, Trash2, Mail, UserPlus, MessageSquare, Loader2 } from 'lucide-react';
 import TemplateSelector from './TemplateSelector';
 import { api } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
-export default function CampaignCreator({ campaign, onClose, onSave }) {
+type CampaignStep = {
+  step_number: number;
+  type: 'email' | 'linkedin' | 'linkedin_message';
+  wait_days: number;
+  subject?: string;
+  template?: string;
+};
+
+type CampaignDraft = {
+  name: string;
+  campaign_type: string;
+  status: string;
+  email_template: string;
+  linkedin_template: string;
+  subject_line: string;
+  target_companies: string[];
+  target_contacts: string[];
+  sequence_steps: CampaignStep[];
+  created_by?: string;
+  updated_by?: string;
+};
+
+type CampaignCreatorProps = {
+  campaign?: any;
+  onClose?: () => void;
+  onSave?: (campaign: any) => void;
+};
+
+type ContactOption = {
+  email?: string;
+  full_name?: string;
+};
+
+const emptyForm: CampaignDraft = {
+  name: '',
+  campaign_type: 'email_only',
+  status: 'draft',
+  email_template: '',
+  linkedin_template: '',
+  subject_line: '',
+  target_companies: [],
+  target_contacts: [],
+  sequence_steps: [],
+};
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? '').trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function normalizeSteps(value: unknown): CampaignStep[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.map((step: any, index) => ({
+    step_number: Number(step?.step_number ?? index + 1),
+    type: step?.type === 'linkedin' || step?.type === 'linkedin_message' ? step.type : 'email',
+    wait_days: Number(step?.wait_days ?? step?.day_offset ?? 0),
+    subject: String(step?.subject ?? ''),
+    template: String(step?.template ?? step?.body ?? step?.message ?? ''),
+  }));
+}
+
+function buildFormData(source?: any): CampaignDraft {
+  const draft = source?.metrics?.draft ?? source?.draft ?? source ?? {};
+
+  return {
+    name: String(draft?.name ?? source?.name ?? ''),
+    campaign_type: String(draft?.campaign_type ?? source?.campaign_type ?? source?.channel ?? 'email_only'),
+    status: String(draft?.status ?? source?.status ?? 'draft'),
+    email_template: String(draft?.email_template ?? source?.email_template ?? ''),
+    linkedin_template: String(draft?.linkedin_template ?? source?.linkedin_template ?? ''),
+    subject_line: String(draft?.subject_line ?? source?.subject_line ?? ''),
+    target_companies: normalizeStringArray(draft?.target_companies ?? source?.target_companies),
+    target_contacts: normalizeStringArray(draft?.target_contacts ?? source?.target_contacts),
+    sequence_steps: normalizeSteps(draft?.sequence_steps ?? source?.sequence_steps),
+    created_by: typeof draft?.created_by === 'string' ? draft.created_by : undefined,
+    updated_by: typeof draft?.updated_by === 'string' ? draft.updated_by : undefined,
+  };
+}
+
+function getStepIcon(type: CampaignStep['type']) {
+  switch (type) {
+    case 'email':
+      return <Mail className="w-4 h-4" />;
+    case 'linkedin':
+      return <UserPlus className="w-4 h-4" />;
+    case 'linkedin_message':
+      return <MessageSquare className="w-4 h-4" />;
+    default:
+      return <Mail className="w-4 h-4" />;
+  }
+}
+
+async function getCurrentUserIdentity() {
+  const [authResult, entityResult] = await Promise.allSettled([
+    supabase.auth.getUser(),
+    User.me(),
+  ]);
+
+  const authUser = authResult.status === 'fulfilled' ? authResult.value?.data?.user : null;
+  const modelUser = entityResult.status === 'fulfilled' ? entityResult.value : null;
+
+  return {
+    id: authUser?.id ?? modelUser?.id ?? null,
+    email: authUser?.email ?? modelUser?.email ?? null,
+  };
+}
+
+async function saveCampaignRecord(campaignId: string | undefined, draftPayload: CampaignDraft) {
+  const identity = await getCurrentUserIdentity();
+  const timestamp = new Date().toISOString();
+
+  const metricsPayload = {
+    draft: draftPayload,
+    audience: {
+      companies: draftPayload.target_companies,
+      contacts: draftPayload.target_contacts,
+      companyCount: draftPayload.target_companies.length,
+      contactCount: draftPayload.target_contacts.length,
+    },
+    sequence: draftPayload.sequence_steps,
+  };
+
+  const rowVariants: Record<string, any>[] = [
+    {
+      name: draftPayload.name || 'New Campaign',
+      status: draftPayload.status || 'draft',
+      channel: draftPayload.campaign_type || 'email_only',
+      campaign_type: draftPayload.campaign_type || 'email_only',
+      subject_line: draftPayload.subject_line || null,
+      email_template: draftPayload.email_template || null,
+      linkedin_template: draftPayload.linkedin_template || null,
+      target_companies: draftPayload.target_companies,
+      target_contacts: draftPayload.target_contacts,
+      sequence_steps: draftPayload.sequence_steps,
+      metrics: metricsPayload,
+      metadata: metricsPayload,
+      audience_count: draftPayload.target_contacts.length || draftPayload.target_companies.length || 0,
+      created_by: draftPayload.created_by || identity.email,
+      updated_by: identity.email,
+      user_id: identity.id,
+      owner_user_id: identity.id,
+      updated_at: timestamp,
+    },
+    {
+      name: draftPayload.name || 'New Campaign',
+      status: draftPayload.status || 'draft',
+      channel: draftPayload.campaign_type || 'email_only',
+      campaign_type: draftPayload.campaign_type || 'email_only',
+      metrics: metricsPayload,
+      metadata: metricsPayload,
+      updated_by: identity.email,
+      updated_at: timestamp,
+    },
+    {
+      name: draftPayload.name || 'New Campaign',
+      status: draftPayload.status || 'draft',
+      channel: draftPayload.campaign_type || 'email_only',
+      metrics: { draft: draftPayload },
+    },
+  ];
+
+  let lastError: any = null;
+
+  for (const row of rowVariants) {
+    const payload = campaignId
+      ? { ...row }
+      : {
+          ...row,
+          created_at: timestamp,
+        };
+
+    const query = campaignId
+      ? supabase.from('lit_campaigns').update(payload).eq('id', campaignId)
+      : supabase.from('lit_campaigns').insert(payload);
+
+    const { data, error } = await query.select('*').maybeSingle();
+
+    if (!error) {
+      return data ?? payload;
+    }
+
+    lastError = error;
+
+    const message = String(error?.message ?? '').toLowerCase();
+    const details = String(error?.details ?? '').toLowerCase();
+
+    if (
+      !message.includes('column') &&
+      !message.includes('schema cache') &&
+      !details.includes('column')
+    ) {
+      break;
+    }
+  }
+
+  throw lastError;
+}
+
+export default function CampaignCreator({ campaign, onClose, onSave }: CampaignCreatorProps) {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    campaign_type: 'email_only',
-    status: 'draft', // Retained as it was in original code, not explicitly removed in outline
-    email_template: '',
-    linkedin_template: '',
-    subject_line: '',
-    target_companies: [], // Added as per outline
-    target_contacts: [], // Added as per outline
-    sequence_steps: []
-  });
-  const [availableContacts, setAvailableContacts] = useState([]); // Added as per outline
-  const [isLoading, setIsLoading] = useState(false); // Added as per outline
+  const [formData, setFormData] = useState<CampaignDraft>(() => buildFormData(campaign));
+  const [availableContacts, setAvailableContacts] = useState<ContactOption[]>([]);
+  const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (campaign) {
-      setFormData({
-        name: campaign.name || '',
-        campaign_type: campaign.campaign_type || 'email_only',
-        status: campaign.status || 'draft',
-        email_template: campaign.email_template || '',
-        linkedin_template: campaign.linkedin_template || '',
-        subject_line: campaign.subject_line || '',
-        target_companies: campaign.target_companies || [], // Set from campaign data
-        target_contacts: campaign.target_contacts || [],   // Set from campaign data
-        sequence_steps: campaign.sequence_steps || []
-      });
-    }
+    setFormData(buildFormData(campaign));
   }, [campaign]);
 
-  // New useEffect to load contacts
   useEffect(() => {
+    let active = true;
+
     const loadContacts = async () => {
-      setIsLoading(true);
+      setIsLoadingContacts(true);
       try {
         const res = await api.get('/crm/leads?limit=100');
-        const rows = Array.isArray(res?.rows) ? res.rows : (Array.isArray(res) ? res : []);
-        setAvailableContacts(rows.map(l => ({ email: l.email, full_name: l.contact_name })));
+        const rows = Array.isArray(res?.rows) ? res.rows : Array.isArray(res) ? res : [];
+
+        if (!active) return;
+
+        setAvailableContacts(
+          rows
+            .map((lead: any) => ({
+              email: lead?.email,
+              full_name: lead?.contact_name ?? lead?.full_name ?? lead?.name,
+            }))
+            .filter((lead: ContactOption) => Boolean(lead.email))
+        );
       } catch (error) {
         console.error('Failed to load available contacts:', error);
       } finally {
-        setIsLoading(false);
+        if (active) {
+          setIsLoadingContacts(false);
+        }
       }
     };
+
     loadContacts();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const user = await User.me().catch(() => null);
+  const contactPreview = useMemo(() => {
+    const preview = availableContacts
+      .map((contact) => contact.email)
+      .filter(Boolean)
+      .slice(0, 5)
+      .join(', ');
 
-      const draftPayload = {
-        name: formData.name,
-        campaign_type: formData.campaign_type,
-        status: formData.status,
-        email_template: formData.email_template,
-        linkedin_template: formData.linkedin_template,
-        subject_line: formData.subject_line,
-        target_companies: formData.target_companies,
-        target_contacts: formData.target_contacts,
-        sequence_steps: (formData.sequence_steps || []).map((s, index) => ({
-          step_number: s.step_number || index + 1,
-          type: s.type,
-          wait_days: s.wait_days,
-          subject: s.subject || '',
-          template: s.template || '',
-        })),
-        created_by: user?.email || undefined,
-      };
+    return preview;
+  }, [availableContacts]);
 
-      const dbRow = {
-        name: draftPayload.name || 'New Campaign',
-        status: draftPayload.status || 'draft',
-        channel: draftPayload.campaign_type || 'email_only',
-        metrics: {
-          draft: draftPayload,
-        },
-      };
-
-      let result;
-      let error;
-
-      if (campaign?.id) {
-        ({ data: result, error } = await supabase
-          .from('lit_campaigns')
-          .update(dbRow)
-          .eq('id', campaign.id)
-          .select()
-          .single());
-      } else {
-        ({ data: result, error } = await supabase
-          .from('lit_campaigns')
-          .insert(dbRow)
-          .select()
-          .single());
-      }
-
-      if (error) throw error;
-
-      onSave && onSave(result);
-      onClose && onClose();
-    } catch (error) {
-      console.error('Error saving campaign:', error);
-      alert('Failed to save campaign. Please try again.');
-    }
+  const setField = <K extends keyof CampaignDraft>(field: K, value: CampaignDraft[K]) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleTemplateSelect = (template) => {
-    setFormData(prev => ({
+  const handleTemplateSelect = (template: any) => {
+    const steps = Array.isArray(template?.steps) ? template.steps : [];
+
+    setFormData((prev) => ({
       ...prev,
-      name: template.name,
-      // Campaign type is not explicitly set by template selection in this updated flow,
-      // it remains 'email_only' by default or what the user selects manually.
-      email_template: template.steps.find(s => s.type === 'email')?.body || '',
-      subject_line: template.steps.find(s => s.type === 'email')?.subject || '',
-      linkedin_template: template.steps.find(s => s.type === 'linkedin_message')?.message || '',
-      sequence_steps: template.steps.map((step, index) => ({
+      name: template?.name || prev.name,
+      email_template: steps.find((step: any) => step?.type === 'email')?.body || prev.email_template,
+      subject_line: steps.find((step: any) => step?.type === 'email')?.subject || prev.subject_line,
+      linkedin_template:
+        steps.find((step: any) => step?.type === 'linkedin_message')?.message || prev.linkedin_template,
+      sequence_steps: steps.map((step: any, index: number) => ({
         step_number: index + 1,
-        type: step.type,
-        wait_days: step.day_offset,
-        template: step.body || step.message || '', // Use body for email, message for LinkedIn
-        subject: step.subject || '' // Subject only for email steps
-      }))
+        type: step?.type === 'linkedin' || step?.type === 'linkedin_message' ? step.type : 'email',
+        wait_days: Number(step?.day_offset ?? step?.wait_days ?? 0),
+        template: step?.body || step?.message || '',
+        subject: step?.subject || '',
+      })),
     }));
+
     setShowTemplateSelector(false);
   };
 
-  // determineType function removed as per outline implication (no longer used by handleTemplateSelect)
-
   const addStep = () => {
-    const newStep = {
-      step_number: formData.sequence_steps.length + 1,
-      type: 'email',
-      wait_days: formData.sequence_steps.length === 0 ? 0 : 3,
-      template: '',
-      subject: ''
+    setFormData((prev) => ({
+      ...prev,
+      sequence_steps: [
+        ...prev.sequence_steps,
+        {
+          step_number: prev.sequence_steps.length + 1,
+          type: 'email',
+          wait_days: prev.sequence_steps.length === 0 ? 0 : 3,
+          template: '',
+          subject: '',
+        },
+      ],
+    }));
+  };
+
+  const updateStep = (index: number, field: keyof CampaignStep, value: string | number) => {
+    setFormData((prev) => {
+      const nextSteps = [...prev.sequence_steps];
+      nextSteps[index] = {
+        ...nextSteps[index],
+        [field]: value,
+      } as CampaignStep;
+      return { ...prev, sequence_steps: nextSteps };
+    });
+  };
+
+  const removeStep = (index: number) => {
+    setFormData((prev) => {
+      const nextSteps = prev.sequence_steps
+        .filter((_, stepIndex) => stepIndex !== index)
+        .map((step, stepIndex) => ({
+          ...step,
+          step_number: stepIndex + 1,
+        }));
+
+      return {
+        ...prev,
+        sequence_steps: nextSteps,
+      };
+    });
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!formData.name.trim()) {
+      alert('Campaign name is required.');
+      return;
+    }
+
+    const normalizedDraft: CampaignDraft = {
+      ...formData,
+      name: formData.name.trim(),
+      target_companies: normalizeStringArray(formData.target_companies),
+      target_contacts: normalizeStringArray(formData.target_contacts),
+      sequence_steps: normalizeSteps(formData.sequence_steps),
     };
-    setFormData({
-      ...formData,
-      sequence_steps: [...formData.sequence_steps, newStep]
-    });
-  };
 
-  const updateStep = (index, field, value) => {
-    const updatedSteps = [...formData.sequence_steps];
-    updatedSteps[index][field] = value;
-    setFormData({
-      ...formData,
-      sequence_steps: updatedSteps
-    });
-  };
+    setIsSaving(true);
 
-  const removeStep = (index) => {
-    const updatedSteps = formData.sequence_steps.filter((_, idx) => idx !== index);
-    // Renumber steps
-    updatedSteps.forEach((step, idx) => {
-      step.step_number = idx + 1;
-    });
-    setFormData({
-      ...formData,
-      sequence_steps: updatedSteps
-    });
-  };
+    try {
+      const identity = await getCurrentUserIdentity();
+      normalizedDraft.created_by = normalizedDraft.created_by || identity.email || undefined;
+      normalizedDraft.updated_by = identity.email || undefined;
 
-  const getStepIcon = (type) => {
-    switch (type) {
-      case 'email': return <Mail className="w-4 h-4" />;
-      case 'linkedin': return <UserPlus className="w-4 h-4" />;
-      case 'linkedin_message': return <MessageSquare className="w-4 h-4" />;
-      default: return <Mail className="w-4 h-4" />;
+      const savedCampaign = await saveCampaignRecord(campaign?.id, normalizedDraft);
+
+      onSave?.({
+        ...savedCampaign,
+        metrics: {
+          ...(savedCampaign?.metrics ?? {}),
+          draft: normalizedDraft,
+        },
+      });
+      onClose?.();
+    } catch (error: any) {
+      console.error('Error saving campaign:', error);
+      const errorMessage =
+        error?.message || error?.details || 'Failed to save campaign. Please try again.';
+      alert(`Failed to save campaign. ${errorMessage}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
-          <div className="p-6 border-b flex justify-between items-center">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="flex h-[90vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b p-6">
             <h2 className="text-2xl font-bold text-gray-900">
               {campaign ? 'Edit Campaign' : 'Create New Campaign'}
             </h2>
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowTemplateSelector(true)}
-              >
+              <Button variant="outline" type="button" onClick={() => setShowTemplateSelector(true)}>
                 Use Template
               </Button>
-              <Button variant="outline" onClick={onClose}>Close</Button>
+              <Button variant="outline" type="button" onClick={onClose}>
+                Close
+              </Button>
             </div>
           </div>
 
           <div className="flex-1 overflow-auto p-6">
             <form onSubmit={handleSubmit} className="space-y-6">
-
-              {/* Basic Information */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Campaign Name</label>
+                  <label className="mb-1 block text-sm font-medium">Campaign Name</label>
                   <Input
                     required
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => setField('name', e.target.value)}
                     placeholder="e.g., Q1 Manufacturing Outreach"
                   />
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Campaign Type</label>
-                    <Select value={formData.campaign_type} onValueChange={(value) => setFormData({ ...formData, campaign_type: value })}>
+                    <label className="mb-1 block text-sm font-medium">Campaign Type</label>
+                    <Select
+                      value={formData.campaign_type}
+                      onValueChange={(value) => setField('campaign_type', value)}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -234,8 +437,8 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
                     </Select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Status</label>
-                    <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                    <label className="mb-1 block text-sm font-medium">Status</label>
+                    <Select value={formData.status} onValueChange={(value) => setField('status', value)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -249,89 +452,84 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
                   </div>
                 </div>
 
-                {/* Target Companies */}
                 <div>
-                  <label className="block text-sm font-medium mb-1">Target Companies (comma-separated)</label>
+                  <label className="mb-1 block text-sm font-medium">Target Companies (comma-separated)</label>
                   <Textarea
                     value={formData.target_companies.join(', ')}
-                    onChange={(e) => setFormData({ ...formData, target_companies: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                    onChange={(e) => setField('target_companies', normalizeStringArray(e.target.value))}
                     placeholder="e.g., Google, Microsoft, Apple"
                     rows={2}
                   />
                 </div>
 
-                {/* Target Contacts */}
                 <div>
-                  <label className="block text-sm font-medium mb-1">Target Contacts (email addresses, comma-separated)</label>
+                  <label className="mb-1 block text-sm font-medium">
+                    Target Contacts (email addresses, comma-separated)
+                  </label>
                   <Textarea
                     value={formData.target_contacts.join(', ')}
-                    onChange={(e) => setFormData({ ...formData, target_contacts: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                    onChange={(e) => setField('target_contacts', normalizeStringArray(e.target.value))}
                     placeholder="e.g., john.doe@example.com, jane.smith@example.com"
                     rows={3}
                   />
-                  {isLoading ? (
-                    <p className="text-sm text-gray-500 mt-1">Loading available contacts...</p>
-                  ) : (
-                    availableContacts.length > 0 && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        Available: {availableContacts.map(c => c.email).join(', ').substring(0, 100)}{availableContacts.length > 5 ? '...' : ''}
-                      </p>
-                    )
-                  )}
+                  {isLoadingContacts ? (
+                    <p className="mt-1 text-sm text-gray-500">Loading available contacts...</p>
+                  ) : availableContacts.length > 0 ? (
+                    <p className="mt-1 text-sm text-gray-500">
+                      Available: {contactPreview}
+                      {availableContacts.length > 5 ? '...' : ''}
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
-              {/* Sequence Steps */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium">Campaign Sequence</h3>
                   <Button type="button" variant="outline" size="sm" onClick={addStep}>
-                    <Plus className="w-4 h-4 mr-1" />
+                    <Plus className="mr-1 h-4 w-4" />
                     Add Step
                   </Button>
                 </div>
 
                 {formData.sequence_steps.length === 0 ? (
-                  <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
-                    <p className="text-gray-500 mb-3">No sequence steps yet</p>
+                  <div className="rounded-lg border-2 border-dashed border-gray-300 py-8 text-center">
+                    <p className="mb-3 text-gray-500">No sequence steps yet</p>
                     <Button type="button" variant="outline" onClick={() => setShowTemplateSelector(true)}>
-                      <FileText className="w-4 h-4 mr-2" />
+                      <FileText className="mr-2 h-4 w-4" />
                       Use Template
                     </Button>
-                    <span className="text-gray-400 mx-2">or</span>
+                    <span className="mx-2 text-gray-400">or</span>
                     <Button type="button" variant="outline" onClick={addStep}>
-                      <Plus className="w-4 h-4 mr-2" />
+                      <Plus className="mr-2 h-4 w-4" />
                       Create Step
                     </Button>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {formData.sequence_steps.map((step, index) => (
-                      <div key={index} className="border rounded-lg p-4 bg-gray-50">
-                        <div className="flex items-center justify-between mb-3">
+                      <div key={`${step.step_number}-${index}`} className="rounded-lg border bg-gray-50 p-4">
+                        <div className="mb-3 flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
                               {step.step_number}
                             </div>
                             <span className="font-medium">Step {step.step_number}</span>
                             {getStepIcon(step.type)}
                           </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeStep(index)}
-                          >
-                            <Trash2 className="w-4 h-4" />
+                          <Button type="button" variant="ghost" size="sm" onClick={() => removeStep(index)}>
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
 
-                        <div className="grid md:grid-cols-3 gap-4 mb-4">
+                        <div className={`mb-4 grid gap-4 ${step.type === 'email' ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
                           <div>
-                            <label className="block text-xs font-medium mb-1">Type</label>
+                            <label className="mb-1 block text-xs font-medium">Type</label>
                             <Select
                               value={step.type}
-                              onValueChange={(value) => updateStep(index, 'type', value)}
+                              onValueChange={(value) =>
+                                updateStep(index, 'type', value as CampaignStep['type'])
+                              }
                             >
                               <SelectTrigger>
                                 <SelectValue />
@@ -344,32 +542,34 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
                             </Select>
                           </div>
                           <div>
-                            <label className="block text-xs font-medium mb-1">Wait Days</label>
+                            <label className="mb-1 block text-xs font-medium">Wait Days</label>
                             <Input
                               type="number"
                               min="0"
                               value={step.wait_days}
-                              onChange={(e) => updateStep(index, 'wait_days', parseInt(e.target.value) || 0)}
+                              onChange={(e) =>
+                                updateStep(index, 'wait_days', Number.parseInt(e.target.value || '0', 10) || 0)
+                              }
                             />
                           </div>
-                          {step.type === 'email' && (
+                          {step.type === 'email' ? (
                             <div>
-                              <label className="block text-xs font-medium mb-1">Subject</label>
+                              <label className="mb-1 block text-xs font-medium">Subject</label>
                               <Input
                                 value={step.subject || ''}
                                 onChange={(e) => updateStep(index, 'subject', e.target.value)}
                                 placeholder="Email subject..."
                               />
                             </div>
-                          )}
+                          ) : null}
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium mb-1">
+                          <label className="mb-1 block text-xs font-medium">
                             {step.type === 'email' ? 'Email Content' : 'LinkedIn Message'}
                           </label>
                           <Textarea
-                            value={step.template}
+                            value={step.template || ''}
                             onChange={(e) => updateStep(index, 'template', e.target.value)}
                             placeholder={step.type === 'email' ? 'Email body...' : 'LinkedIn message...'}
                             rows={4}
@@ -381,13 +581,21 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
                 )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-6 border-t">
-                <Button type="button" variant="outline" onClick={onClose}>
+              <div className="flex justify-end gap-3 border-t pt-6">
+                <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
                   Cancel
                 </Button>
-                <Button type="submit">
-                  {campaign ? 'Update Campaign' : 'Create Campaign'}
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : campaign ? (
+                    'Update Campaign'
+                  ) : (
+                    'Create Campaign'
+                  )}
                 </Button>
               </div>
             </form>
@@ -395,12 +603,12 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
         </div>
       </div>
 
-      {showTemplateSelector && (
+      {showTemplateSelector ? (
         <TemplateSelector
           onSelectTemplate={handleTemplateSelect}
           onClose={() => setShowTemplateSelector(false)}
         />
-      )}
+      ) : null}
     </>
   );
 }
