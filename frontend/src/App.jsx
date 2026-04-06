@@ -101,13 +101,11 @@ export default function App() {
         <Route path="/terms" element={<TermsOfService />} />
 
         <Route
-            path="/app/dashboard"
-            element={
-              <RequireAuth>
-                <Layout currentPageName="Dashboard">
-                  <Dashboard />
-                </Layout>
-              </RequireAuth>
+          path="/app/dashboard"
+          element={
+          <RequireAuth>
+            <LITDashboard />
+            </RequireAuth>
           }
         />
 
