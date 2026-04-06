@@ -9,7 +9,7 @@ import { useAuth } from "@/auth/AuthProvider";
 // Lazy-load primary pages
 const Landing        = lazy(() => import("@/pages/LandingPage"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
-const LITDashboard   = lazy(() => import("@/components/dashboard/LITDashboard")); // NEW
+const LITDashboard = lazy(() => import("@/components/dashboard/LITDashboard.jsx"));
 const Search         = lazy(() => import("@/pages/Search"));
 const SearchTrends   = lazy(() => import("@/pages/search/Trends"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
