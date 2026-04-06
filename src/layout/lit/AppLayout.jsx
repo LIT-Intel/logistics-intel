@@ -2,27 +2,23 @@ import React, { useState } from "react";
 import AppSidebar from "@/layout/lit/AppSidebar.jsx";
 import AppHeader from "@/layout/lit/AppHeader.jsx";
 
-type AppLayoutProps = {
-  children: React.ReactNode;
-};
-
-export default function AppLayout({ children }: AppLayoutProps) {
+export default function AppLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="lit-dashboard-shell flex min-h-screen">
+    <div className="lit-dashboard-shell flex min-h-screen bg-[var(--lit-dashboard-bg)]">
       <AppSidebar
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
 
-      <div className="flex min-h-screen flex-1 flex-col">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <AppHeader
           sidebarOpen={sidebarOpen}
           setSidebarOpen={setSidebarOpen}
         />
 
-        <main className="lit-dashboard-page flex-1">
+        <main className="lit-dashboard-page flex-1 overflow-x-hidden">
           {children}
         </main>
       </div>
