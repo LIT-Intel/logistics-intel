@@ -1,14 +1,7 @@
 import React from "react";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 
-type StatCardProps = {
-  label: string;
-  value: string;
-  change: string;
-  positive?: boolean;
-};
-
-function StatCard({ label, value, change, positive = true }: StatCardProps) {
+function StatCard({ label, value, change, positive = true }) {
   return (
     <div className="lit-kpi-card">
       <div className="lit-kpi-label">{label}</div>
