@@ -28,7 +28,6 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
           <Bell size={18} />
         </button>
 
-        {/* 👇 THIS is the last untested part */}
         <button
           type="button"
           className="inline-flex items-center gap-3 rounded-xl border px-3 py-2"
