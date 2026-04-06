@@ -6,19 +6,19 @@ export default function AppLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen bg-slate-100 md:flex">
       <AppSidebar
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
 
-      <div className="min-h-screen flex-1 flex flex-col">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <AppHeader
           sidebarOpen={sidebarOpen}
           setSidebarOpen={setSidebarOpen}
         />
 
-        <main className="p-6 flex-1">
+        <main className="flex-1 overflow-x-hidden">
           {children}
         </main>
       </div>
