@@ -1,5 +1,5 @@
 import React from "react";
-import AppLayout from "../../layout/lit/AppLayout.jsx";
+import AppLayout from "@/layout/lit/AppLayout.jsx";
 
 export default function LITDashboard() {
   return (
