@@ -1,5 +1,5 @@
 import React from "react";
-import { Menu, Search, Bell } from "lucide-react";
+import { Menu, Search, Bell, ChevronDown } from "lucide-react";
 
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   return (
@@ -7,7 +7,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
       <div className="flex items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold">Dashboard</h1>
-          <p className="text-sm text-gray-500">Header bell test</p>
+          <p className="text-sm text-gray-500">Header profile test</p>
         </div>
       </div>
 
@@ -26,6 +26,21 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border"
         >
           <Bell size={18} />
+        </button>
+
+        {/* 👇 THIS is the last untested part */}
+        <button
+          type="button"
+          className="inline-flex items-center gap-3 rounded-xl border px-3 py-2"
+        >
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-sm font-semibold">
+            VR
+          </div>
+          <div className="hidden sm:block text-left">
+            <div className="text-sm font-semibold">Valesco</div>
+            <div className="text-xs text-gray-500">Admin</div>
+          </div>
+          <ChevronDown size={16} />
         </button>
 
         <button
