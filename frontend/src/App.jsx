@@ -9,6 +9,7 @@ import { useAuth } from "@/auth/AuthProvider";
 // Lazy-load primary pages
 const Landing        = lazy(() => import("@/pages/LandingPage"));
 const Dashboard      = lazy(() => import("@/pages/Dashboard"));
+const LITDashboard   = lazy(() => import("@/components/dashboard/LITDashboard")); // NEW
 const Search         = lazy(() => import("@/pages/Search"));
 const SearchTrends   = lazy(() => import("@/pages/search/Trends"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
@@ -43,8 +44,8 @@ const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
-  if (DEMO_MODE) return children;      // allow viewing protected pages in demo builds
-  if (loading) return null;            // keep it simple: no flicker
+  if (DEMO_MODE) return children;
+  if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
   return children;
 }
@@ -52,59 +53,52 @@ function RequireAuth({ children }) {
 export default function App() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading…</div>}>
-      {/* Marketing / public */}
       <Routes>
-          <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
-        {/* Public Company route → use full Company page for consistency */}
+
+        {/* Root */}
+        <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+
+        {/* Public */}
         <Route
           path="/company/:id"
-          element={
-            <Layout currentPageName="Company"><Company /></Layout>
-          }
+          element={<Layout currentPageName="Company"><Company /></Layout>}
         />
-        {/* Public demo page */}
+
         <Route
           path="/demo"
-          element={
-            <Layout currentPageName="Demo"><SearchPanel /></Layout>
-          }
+          element={<Layout currentPageName="Demo"><SearchPanel /></Layout>}
         />
+
         <Route
           path="/demo/company"
-          element={
-            <Layout currentPageName="Company Demo"><DemoCompany /></Layout>
-          }
+          element={<Layout currentPageName="Company Demo"><DemoCompany /></Layout>}
         />
-        {/* Public companies (manual create demo) */}
+
         <Route
           path="/companies"
-          element={
-            <Layout currentPageName="Command Center"><CompaniesIndex /></Layout>
-          }
+          element={<Layout currentPageName="Command Center"><CompaniesIndex /></Layout>}
         />
+
         <Route path="/login" element={<ModernLoginPage />} />
-        {/* Alias: /app/login → login page */}
         <Route path="/app/login" element={<ModernLoginPage />} />
-        {/* Signup page */}
         <Route path="/signup" element={<ModernSignupPage />} />
-        {/* Alias: /request-demo → signup (temporary) */}
         <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
-        {/* Password reset page */}
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-        {/* OAuth callback handler */}
         <Route path="/auth/callback" element={<AuthCallback />} />
-        {/* Legal pages */}
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
-        {/* App (protected) */}
+
+        {/* DASHBOARD (UPDATED) */}
         <Route
           path="/app/dashboard"
           element={
             <RequireAuth>
-              <Layout currentPageName="Dashboard"><Dashboard /></Layout>
+              <LITDashboard />
             </RequireAuth>
           }
         />
+
+        {/* App routes (unchanged) */}
         <Route
           path="/app/search"
           element={
@@ -113,6 +107,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/search/trends"
           element={
@@ -121,24 +116,22 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/companies"
-          element={
-            <Layout currentPageName="Command Center"><Companies /></Layout>
-          }
+          element={<Layout currentPageName="Command Center"><Companies /></Layout>}
         />
+
         <Route
           path="/app/command-center"
-          element={
-            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
-          }
+          element={<Layout currentPageName="Command Center"><CommandCenterPage /></Layout>}
         />
+
         <Route
           path="/command-center"
-          element={
-            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
-          }
+          element={<Layout currentPageName="Command Center"><CommandCenterPage /></Layout>}
         />
+
         <Route
           path="/app/companies/:id"
           element={
@@ -147,6 +140,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/campaigns"
           element={
@@ -155,6 +149,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/campaigns/new"
           element={
@@ -163,6 +158,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/email"
           element={
@@ -171,6 +167,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/rfp"
           element={
@@ -179,6 +176,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/settings"
           element={
@@ -187,6 +185,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/admin/settings"
           element={
@@ -195,7 +194,7 @@ export default function App() {
             </RequireAuth>
           }
         />
-        {/* Transactions removed */}
+
         <Route
           path="/app/widgets"
           element={
@@ -204,6 +203,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/pre-call"
           element={
@@ -212,6 +212,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/billing"
           element={
@@ -220,6 +221,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/affiliate"
           element={
@@ -238,6 +240,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/prospecting"
           element={
@@ -246,6 +249,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/cms"
           element={
@@ -254,6 +258,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/diagnostic"
           element={
@@ -262,6 +267,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/agent"
           element={
@@ -270,7 +276,6 @@ export default function App() {
             </RequireAuth>
           }
         />
-
 
         {/* Fallbacks */}
         <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
@@ -283,6 +288,7 @@ export default function App() {
 function CompanyDrawerRoute() {
   const { id } = useParams();
   const company = id ? { id } : null;
+
   return (
     <Layout currentPageName="Company">
       <CompanyDetailModal
