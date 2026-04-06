@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +7,7 @@ import { User } from '@/api/entities';
 import { X, Plus, FileText, Trash2, Mail, UserPlus, MessageSquare } from 'lucide-react';
 import TemplateSelector from './TemplateSelector';
 import { api } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 export default function CampaignCreator({ campaign, onClose, onSave }) {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
@@ -62,28 +62,56 @@ export default function CampaignCreator({ campaign, onClose, onSave }) {
     e.preventDefault();
     try {
       const user = await User.me().catch(() => null);
-      const payload = {
+
+      const draftPayload = {
         name: formData.name,
-        type: formData.campaign_type,
+        campaign_type: formData.campaign_type,
         status: formData.status,
-        steps: (formData.sequence_steps || []).map(s => ({
-          type: s.type,
-          wait_days: s.wait_days,
-          subject: s.subject,
-          template: s.template,
-        })),
-        audience: {
-          emails: formData.target_contacts,
-          companies: formData.target_companies,
-        },
-        subject_line: formData.subject_line,
         email_template: formData.email_template,
         linkedin_template: formData.linkedin_template,
+        subject_line: formData.subject_line,
+        target_companies: formData.target_companies,
+        target_contacts: formData.target_contacts,
+        sequence_steps: (formData.sequence_steps || []).map((s, index) => ({
+          step_number: s.step_number || index + 1,
+          type: s.type,
+          wait_days: s.wait_days,
+          subject: s.subject || '',
+          template: s.template || '',
+        })),
         created_by: user?.email || undefined,
       };
 
-      await api.post('/crm/campaigns', payload);
-      onSave && onSave(payload);
+      const dbRow = {
+        name: draftPayload.name || 'New Campaign',
+        status: draftPayload.status || 'draft',
+        channel: draftPayload.campaign_type || 'email_only',
+        metrics: {
+          draft: draftPayload,
+        },
+      };
+
+      let result;
+      let error;
+
+      if (campaign?.id) {
+        ({ data: result, error } = await supabase
+          .from('lit_campaigns')
+          .update(dbRow)
+          .eq('id', campaign.id)
+          .select()
+          .single());
+      } else {
+        ({ data: result, error } = await supabase
+          .from('lit_campaigns')
+          .insert(dbRow)
+          .select()
+          .single());
+      }
+
+      if (error) throw error;
+
+      onSave && onSave(result);
       onClose && onClose();
     } catch (error) {
       console.error('Error saving campaign:', error);
