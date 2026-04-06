@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getCampaigns } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import {
   type AudienceContact,
   type CampaignDraft,
@@ -29,6 +30,8 @@ const DEFAULT_METRICS: CampaignMetrics = {
   replies: 0,
   bounces: 0,
 };
+
+const LOCAL_STORAGE_KEY = 'lit_campaigns_page_v1';
 
 const MOCK_TEMPLATES: CampaignTemplate[] = [
   {
@@ -245,7 +248,7 @@ function createDraft(summary?: CampaignSummary): CampaignDraft {
 }
 
 function mapRemoteCampaign(raw: any, index: number): CampaignSummary {
-  const stats = raw?.stats ?? {};
+  const stats = raw?.stats ?? raw?.metrics_json ?? raw?.stats_json ?? {};
   return {
     id: String(raw?.id ?? raw?.campaign_id ?? `cmp_remote_${index}`),
     name: raw?.name ?? raw?.campaign_name ?? 'Untitled Campaign',
@@ -262,6 +265,31 @@ function mapRemoteCampaign(raw: any, index: number): CampaignSummary {
   };
 }
 
+function readLocalCampaignCache(): { campaigns: CampaignSummary[]; drafts: Record<string, CampaignDraft> } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      campaigns: Array.isArray(parsed?.campaigns) ? parsed.campaigns : [],
+      drafts: parsed?.drafts && typeof parsed.drafts === 'object' ? parsed.drafts : {},
+    };
+  } catch (error) {
+    console.warn('[campaigns] failed to read local cache', error);
+    return null;
+  }
+}
+
+function writeLocalCampaignCache(campaigns: CampaignSummary[], drafts: Record<string, CampaignDraft>) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ campaigns, drafts }));
+  } catch (error) {
+    console.warn('[campaigns] failed to write local cache', error);
+  }
+}
+
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [drafts, setDrafts] = useState<Record<string, CampaignDraft>>({});
@@ -270,41 +298,81 @@ export default function CampaignsPage() {
   const [activeTab, setActiveTab] = useState<string>('builder');
   const [stepTemplateTarget, setStepTemplateTarget] = useState<SequenceStep | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState<'remote' | 'local' | 'mock'>('mock');
   const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function loadCampaignPage() {
+      setLoading(true);
+      const localCache = readLocalCampaignCache();
+
+      if (localCache?.campaigns?.length) {
+        setCampaigns(localCache.campaigns);
+        setDrafts(localCache.drafts);
+        setSelectedCampaignId(localCache.campaigns[0]?.id ?? null);
+        setSelectedStepId(localCache.drafts[localCache.campaigns[0]?.id ?? '']?.steps?.[0]?.id ?? null);
+        setDataSource('local');
+      }
+
       try {
         const remote = await getCampaigns();
-        const list = Array.isArray(remote) && remote.length
-          ? remote.map(mapRemoteCampaign)
-          : MOCK_CAMPAIGNS;
+        const list = Array.isArray(remote) && remote.length ? remote.map(mapRemoteCampaign) : [];
+
         if (cancelled) return;
-        const nextDrafts = Object.fromEntries(list.map((summary) => [summary.id, createDraft(summary)]));
-        setCampaigns(list);
-        setDrafts(nextDrafts);
-        setSelectedCampaignId(list[0]?.id ?? null);
-        setSelectedStepId(nextDrafts[list[0]?.id ?? '']?.steps[0]?.id ?? null);
+
+        if (list.length) {
+          const nextDrafts = Object.fromEntries(
+            list.map((summary) => {
+              const cachedDraft = localCache?.drafts?.[summary.id];
+              return [summary.id, cachedDraft ? { ...cachedDraft, id: summary.id } : createDraft(summary)];
+            })
+          );
+
+          setCampaigns(list);
+          setDrafts(nextDrafts);
+          setSelectedCampaignId(list[0]?.id ?? null);
+          setSelectedStepId(nextDrafts[list[0]?.id ?? '']?.steps?.[0]?.id ?? null);
+          setDataSource('remote');
+          writeLocalCampaignCache(list, nextDrafts);
+          return;
+        }
+
+        throw new Error('No campaigns returned');
       } catch (error) {
-        console.warn('[campaigns] load failed, using mock data', error);
-        if (!cancelled) {
+        console.warn('[campaigns] remote load failed, using cache or seed data', error);
+
+        if (cancelled) return;
+
+        if (localCache?.campaigns?.length) {
+          setDataSource('local');
+        } else {
           const list = MOCK_CAMPAIGNS;
           const nextDrafts = Object.fromEntries(list.map((summary) => [summary.id, createDraft(summary)]));
           setCampaigns(list);
           setDrafts(nextDrafts);
           setSelectedCampaignId(list[0]?.id ?? null);
-          setSelectedStepId(nextDrafts[list[0]?.id ?? '']?.steps[0]?.id ?? null);
+          setSelectedStepId(nextDrafts[list[0]?.id ?? '']?.steps?.[0]?.id ?? null);
+          setDataSource('mock');
+          writeLocalCampaignCache(list, nextDrafts);
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    loadCampaignPage();
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!campaigns.length) return;
+    writeLocalCampaignCache(campaigns, drafts);
+  }, [campaigns, drafts]);
 
   const draft = selectedCampaignId ? drafts[selectedCampaignId] : null;
   const metrics = draft?.metrics ?? DEFAULT_METRICS;
@@ -324,6 +392,8 @@ export default function CampaignsPage() {
     setSelectedCampaignId(id);
     setSelectedStepId(newDraft.steps[0]?.id ?? null);
     setActiveTab('builder');
+    setDataSource('local');
+    toast({ title: 'Campaign created', description: 'New draft created locally. Click Save to persist it.' });
   };
 
   const handleSelectCampaign = (id: string) => {
@@ -345,20 +415,61 @@ export default function CampaignsPage() {
   };
 
   const handleSaveDraft = async (nextDraft: CampaignDraft) => {
-    handleDraftChange(nextDraft);
-    setCampaigns((prev) =>
-      prev.map((campaign) =>
-        campaign.id === nextDraft.id
-          ? {
-              ...campaign,
-              status: nextDraft.status,
-              updatedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
-              stats: { ...campaign.stats, ...nextDraft.metrics },
-            }
-          : campaign
-      )
-    );
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    const updatedSummary: CampaignSummary = {
+      id: nextDraft.id,
+      name: nextDraft.name,
+      status: nextDraft.status,
+      updatedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+      stats: { ...DEFAULT_METRICS, ...nextDraft.metrics },
+    };
+
+    const nextCampaigns = campaigns.some((campaign) => campaign.id === nextDraft.id)
+      ? campaigns.map((campaign) => (campaign.id === nextDraft.id ? updatedSummary : campaign))
+      : [updatedSummary, ...campaigns];
+
+    const nextDrafts = { ...drafts, [nextDraft.id]: nextDraft };
+
+    setCampaigns(nextCampaigns);
+    setDrafts(nextDrafts);
+    setDataSource('local');
+    writeLocalCampaignCache(nextCampaigns, nextDrafts);
+
+    const payload = {
+      id: nextDraft.id,
+      name: nextDraft.name,
+      status: nextDraft.status,
+      updated_at: new Date().toISOString(),
+      stats: nextDraft.metrics,
+    };
+
+    try {
+      const litResult = await supabase
+        .from('lit_campaigns')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id')
+        .single();
+
+      if (litResult.error) {
+        const fallbackResult = await supabase
+          .from('campaigns')
+          .upsert(payload, { onConflict: 'id' })
+          .select('id')
+          .single();
+
+        if (fallbackResult.error) {
+          throw fallbackResult.error;
+        }
+      }
+
+      setDataSource('remote');
+      toast({ title: 'Campaign saved', description: `${nextDraft.name} saved successfully.` });
+    } catch (error) {
+      console.warn('[campaigns] remote save failed; keeping local copy', error);
+      toast({
+        title: 'Saved locally',
+        description: 'Campaign saved in this browser. Remote sync still needs a live campaigns table.',
+      });
+    }
   };
 
   const handleTestSent = (result: { messageId: string; to: string }) => {
@@ -366,12 +477,12 @@ export default function CampaignsPage() {
     setDrafts((prev) => {
       const current = prev[selectedCampaignId];
       if (!current) return prev;
-      const metrics = {
+      const nextMetrics = {
         ...current.metrics,
         sent: current.metrics.sent + 1,
         delivered: current.metrics.delivered + 1,
       };
-      const nextDraft = { ...current, metrics };
+      const nextDraft = { ...current, metrics: nextMetrics };
       return { ...prev, [selectedCampaignId]: nextDraft };
     });
     setCampaigns((prev) =>
@@ -390,7 +501,7 @@ export default function CampaignsPage() {
     );
     toast({
       title: 'Test email sent',
-      description: `Mock delivery queued to ${result.to}.`,
+      description: `Test delivery queued to ${result.to}.`,
     });
   };
 
@@ -456,7 +567,7 @@ export default function CampaignsPage() {
           </p>
         </div>
         <Badge className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
-          Live demo — in-memory data
+          {dataSource === 'remote' ? 'Live data' : dataSource === 'local' ? 'Local draft cache' : 'Demo seed data'}
         </Badge>
       </div>
 
