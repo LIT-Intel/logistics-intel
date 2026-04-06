@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import AppSidebar from "./AppSidebar";
-import AppHeader from "./AppHeader";
+import AppSidebar from "./AppSidebar.jsx";
+import AppHeader from "./AppHeader.jsx";
 
 const AppLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
