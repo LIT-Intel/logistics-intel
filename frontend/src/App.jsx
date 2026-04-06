@@ -105,7 +105,9 @@ export default function App() {
           path="/app/dashboard"
           element={
             <RequireAuth>
-              <LITDashboard />
+              <Layout currentPageName="Dashboard">
+              <Dashboard />
+              </Layout>
             </RequireAuth>
           }
         />
