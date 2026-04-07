@@ -90,11 +90,15 @@ type ProfileSectionProps = {
     rfpsCount?: number;
   };
   onSave?: (data: Record<string, string>) => Promise<{ error?: string }>;
-  onUploadAvatar?: (file: File) => Promise<void>;
+  onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
   isAdmin?: boolean;
 };
 
-export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}) {
+export function ProfileSection({
+  initialData,
+  onSave,
+  onUploadAvatar,
+}: ProfileSectionProps = {}) {
   const [profile, setProfile] = React.useState({
     name: initialData?.name || "",
     title: initialData?.title || "",
@@ -105,8 +109,9 @@ export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  // Re-sync when initialData loads asynchronously (e.g. after Supabase fetch completes)
   React.useEffect(() => {
     setProfile({
       name: initialData?.name || "",
@@ -122,8 +127,8 @@ export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}
   const savedCount = initialData?.savedCount ?? 0;
   const campaignsCount = initialData?.campaignsCount ?? 0;
   const rfpsCount = initialData?.rfpsCount ?? 0;
+  const avatarUrl = initialData?.avatar_url || "";
 
-  // Derive initials for avatar
   const initials = React.useMemo(() => {
     const src = (profile.name || email || "U").trim();
     const parts = src.split(/\s+/).filter(Boolean);
@@ -150,179 +155,216 @@ export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}
     }
   }
 
-  const planLabel = plan === "free_trial" ? "Free Trial"
+  async function handleAvatarFile(file?: File | null) {
+    if (!file || !onUploadAvatar) return;
+    setUploadingAvatar(true);
+    setSaveError(null);
+    try {
+      const result = await onUploadAvatar(file);
+      if ((result as any)?.error) {
+        setSaveError((result as any).error);
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (e: any) {
+      setSaveError(e?.message ?? "Avatar upload failed.");
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  const planLabel =
+    plan === "admin" ? "Admin"
+    : plan === "unlimited" ? "Unlimited"
+    : plan === "free_trial" ? "Free Trial"
     : plan === "standard" ? "Standard"
     : plan === "growth" ? "Growth"
     : plan === "enterprise" ? "Enterprise"
     : plan;
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-sm ring-1 ring-black/[0.02]">
-      {/* Cover photo strip */}
-      <div className="relative h-32 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-600">
-        <button
-          type="button"
-          className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-black/30 px-3 py-1.5 text-xs text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
-        >
-          <MapPin className="h-3 w-3" />
-          Change cover
-        </button>
-      </div>
-
-      <div className="px-6 pb-6">
-        {/* Avatar row — overlaps cover */}
-        <div className="flex items-end justify-between -mt-10 mb-4">
+    <section className={cardBase}>
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-4">
           <div className="relative">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-2xl font-bold text-white ring-4 ring-white">
-              {initials}
-            </div>
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={profile.name || "Profile avatar"}
+                className="h-20 w-20 rounded-full object-cover ring-4 ring-white shadow-md"
+              />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-2xl font-bold text-white ring-4 ring-white shadow-md">
+                {initials}
+              </div>
+            )}
             <button
               type="button"
-              className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAvatar || !onUploadAvatar}
+              className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700 disabled:opacity-60"
               title="Upload photo"
             >
-              <Globe className="h-3 w-3" />
+              <Globe className="h-3.5 w-3.5" />
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleAvatarFile(e.target.files?.[0])}
+            />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-              Active
-            </span>
-            <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
-              {planLabel}
-            </span>
+
+          <div>
+            <Pill label="Personal Information" tone="primary" />
+            <h2 className="mt-3 text-2xl font-semibold text-slate-900">
+              {profile.name || "Your profile"}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {profile.title || "Add your title"}
+              {profile.location ? ` · ${profile.location}` : ""}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Active
+              </span>
+              <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
+                {planLabel}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Name + title */}
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">{profile.name || "Your Name"}</h2>
-          <p className="text-sm text-slate-500">{profile.title || "Add your title"}{profile.location ? ` · ${profile.location}` : ""}</p>
-        </div>
-
-        {/* Stats bar */}
-        <div className="mt-5 grid grid-cols-3 gap-4 rounded-2xl border border-slate-100 bg-slate-50 py-4">
+        <div className="grid grid-cols-3 gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 lg:min-w-[420px]">
           <div className="text-center">
             <p className="text-2xl font-semibold text-slate-900">{savedCount}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">Saved Companies</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+              Saved Companies
+            </p>
           </div>
           <div className="border-x border-slate-200 text-center">
             <p className="text-2xl font-semibold text-slate-900">{campaignsCount}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">Campaigns</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+              Campaigns
+            </p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-semibold text-slate-900">{rfpsCount}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">RFPs</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+              RFPs
+            </p>
           </div>
         </div>
+      </div>
 
-        {/* Section header */}
-        <div className="mt-6 mb-5">
-          <Pill label="Personal Information" tone="primary" />
-          <p className="mt-2 text-sm text-slate-600">
-            Keep your LIT Search profile, signature, and contact details aligned with your team.
-          </p>
-        </div>
+      <div className="mt-6 mb-5">
+        <p className="text-sm text-slate-600">
+          Keep your LIT Search profile, signature, and contact details aligned with your team.
+        </p>
+      </div>
 
-        {/* Form */}
-        <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2">
+        <label className="text-sm font-semibold text-slate-700">
+          Full name
+          <input
+            className={inputClass}
+            value={profile.name}
+            onChange={(e) => setProfile((prev) => ({ ...prev, name: e.target.value }))}
+            placeholder="Enter your name"
+          />
+        </label>
+        <label className="text-sm font-semibold text-slate-700">
+          Title / Role
+          <input
+            className={inputClass}
+            value={profile.title}
+            onChange={(e) => setProfile((prev) => ({ ...prev, title: e.target.value }))}
+            placeholder="Title"
+          />
+        </label>
+        <label className="text-sm font-semibold text-slate-700">
+          Phone
+          <input
+            className={inputClass}
+            value={profile.phone}
+            onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
+            placeholder="+1 (555) 123-4567"
+          />
+        </label>
+        <label className="text-sm font-semibold text-slate-700">
+          Location
+          <input
+            className={inputClass}
+            value={profile.location}
+            onChange={(e) => setProfile((prev) => ({ ...prev, location: e.target.value }))}
+            placeholder="City, Country"
+          />
+        </label>
+        {email && (
           <label className="text-sm font-semibold text-slate-700">
-            Full name
+            Email address
             <input
-              className={inputClass}
-              value={profile.name}
-              onChange={(e) => setProfile((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="Enter your name"
+              className={cn(inputClass, "cursor-not-allowed bg-slate-50 text-slate-400")}
+              value={email}
+              readOnly
             />
+            <span className="mt-1 block text-xs text-slate-400">Managed by your auth provider</span>
           </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Title / Role
-            <input
-              className={inputClass}
-              value={profile.title}
-              onChange={(e) => setProfile((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder="Title"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Phone
-            <input
-              className={inputClass}
-              value={profile.phone}
-              onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
-              placeholder="+1 (555) 123-4567"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Location
-            <input
-              className={inputClass}
-              value={profile.location}
-              onChange={(e) => setProfile((prev) => ({ ...prev, location: e.target.value }))}
-              placeholder="City, Country"
-            />
-          </label>
-          {email && (
-            <label className="text-sm font-semibold text-slate-700">
-              Email address
-              <input
-                className={cn(inputClass, "bg-slate-50 cursor-not-allowed text-slate-400")}
-                value={email}
-                readOnly
-              />
-              <span className="mt-1 block text-xs text-slate-400">Managed by your auth provider</span>
-            </label>
-          )}
-          <label className="md:col-span-2">
-            <span className="text-sm font-semibold text-slate-700">
-              What should prospects know?
-            </span>
-            <textarea
-              className={cn(inputClass, "min-h-[100px] resize-none")}
-              value={profile.bio}
-              onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
-            />
-          </label>
-        </div>
+        )}
+        <label className="md:col-span-2">
+          <span className="text-sm font-semibold text-slate-700">What should prospects know?</span>
+          <textarea
+            className={cn(inputClass, "min-h-[100px] resize-none")}
+            value={profile.bio}
+            onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
+          />
+        </label>
+      </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
-          {saved && (
-            <span className="flex items-center gap-1.5 text-sm text-emerald-600">
-              <CheckCircle2 className="h-4 w-4" /> Saved successfully
-            </span>
-          )}
-          {saveError && (
-            <span className="flex items-center gap-1.5 text-sm text-rose-600">
-              <AlertTriangle className="h-4 w-4" /> {saveError}
-            </span>
-          )}
-          <button
-            type="button"
-            disabled={saving || !onSave}
-            onClick={handleSave}
-            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition hover:bg-slate-800 disabled:opacity-50 ml-auto"
-          >
-            {saving ? "Saving…" : "Save profile"}
-          </button>
-        </div>
+      <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
+        {saved && (
+          <span className="flex items-center gap-1.5 text-sm text-emerald-600">
+            <CheckCircle2 className="h-4 w-4" /> Saved successfully
+          </span>
+        )}
+        {saveError && (
+          <span className="flex items-center gap-1.5 text-sm text-rose-600">
+            <AlertTriangle className="h-4 w-4" /> {saveError}
+          </span>
+        )}
+        <button
+          type="button"
+          disabled={saving || !onSave}
+          onClick={handleSave}
+          className="ml-auto inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition hover:bg-slate-800 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save profile"}
+        </button>
       </div>
     </section>
   );
 }
 
-type CompanySignatureSectionProps = {
+
+type CompanySignatureSectionPropstype CompanySignatureSectionProps = {
   orgProfile?: {
     name?: string;
     tagline?: string;
     website?: string;
     industry?: string;
     logo_url?: string;
+    supportEmail?: string;
+    address?: string;
+    timezone?: string;
   };
   emailSignature?: string;
-  onSaveOrg?: (data: Record<string, unknown>) => Promise<void>;
-  onSaveSignature?: (sig: string) => Promise<void>;
-  onUploadLogo?: (file: File) => Promise<void>;
+  onSaveOrg?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onSaveSignature?: (sig: string) => Promise<{ error?: string } | void>;
+  onUploadLogo?: (file: File) => Promise<{ error?: string } | void>;
 };
 
 export function CompanySignatureSection({
@@ -336,26 +378,85 @@ export function CompanySignatureSection({
     company: orgProfile?.name ?? "",
     tagline: orgProfile?.tagline ?? "",
     website: orgProfile?.website ?? "",
+    supportEmail: orgProfile?.supportEmail ?? "",
+    address: orgProfile?.address ?? "",
+    timezone: orgProfile?.timezone ?? "",
     signature: emailSignature ?? "",
   });
   const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [saved, setSaved] = React.useState(false);
+  const [uploadingLogo, setUploadingLogo] = React.useState(false);
 
   React.useEffect(() => {
     setForm({
       company: orgProfile?.name ?? "",
       tagline: orgProfile?.tagline ?? "",
       website: orgProfile?.website ?? "",
+      supportEmail: orgProfile?.supportEmail ?? "",
+      address: orgProfile?.address ?? "",
+      timezone: orgProfile?.timezone ?? "",
       signature: emailSignature ?? "",
     });
-  }, [orgProfile?.name, orgProfile?.tagline, orgProfile?.website, emailSignature]);
+  }, [
+    orgProfile?.name,
+    orgProfile?.tagline,
+    orgProfile?.website,
+    orgProfile?.supportEmail,
+    orgProfile?.address,
+    orgProfile?.timezone,
+    emailSignature,
+  ]);
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
-      await onSaveOrg?.({ company: form.company, tagline: form.tagline, website: form.website });
-      await onSaveSignature?.(form.signature);
+      const orgResult = await onSaveOrg?.({
+        company: form.company,
+        tagline: form.tagline,
+        website: form.website,
+        supportEmail: form.supportEmail,
+        address: form.address,
+        timezone: form.timezone,
+      });
+
+      if ((orgResult as any)?.error) {
+        setSaveError((orgResult as any).error);
+        return;
+      }
+
+      const sigResult = await onSaveSignature?.(form.signature);
+      if ((sigResult as any)?.error) {
+        setSaveError((sigResult as any).error);
+        return;
+      }
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e: any) {
+      setSaveError(e?.message ?? "Failed saving company settings.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogoUpload = async (file?: File | null) => {
+    if (!file || !onUploadLogo) return;
+    setUploadingLogo(true);
+    setSaveError(null);
+    try {
+      const result = await onUploadLogo(file);
+      if ((result as any)?.error) {
+        setSaveError((result as any).error);
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (e: any) {
+      setSaveError(e?.message ?? "Failed uploading logo.");
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -380,6 +481,7 @@ export function CompanySignatureSection({
           {saving ? "Saving…" : "Save changes"}
         </button>
       </div>
+
       <div className="mt-6 grid gap-5 md:grid-cols-2">
         <label className="text-sm font-semibold text-slate-700">
           Company name
@@ -406,6 +508,33 @@ export function CompanySignatureSection({
           />
         </label>
         <label className="text-sm font-semibold text-slate-700">
+          Support email
+          <input
+            className={inputClass}
+            value={form.supportEmail}
+            onChange={(e) => setForm((prev) => ({ ...prev, supportEmail: e.target.value }))}
+            placeholder="support@company.com"
+          />
+        </label>
+        <label className="text-sm font-semibold text-slate-700">
+          Address
+          <input
+            className={inputClass}
+            value={form.address}
+            onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))}
+            placeholder="Business address"
+          />
+        </label>
+        <label className="text-sm font-semibold text-slate-700">
+          Timezone
+          <input
+            className={inputClass}
+            value={form.timezone}
+            onChange={(e) => setForm((prev) => ({ ...prev, timezone: e.target.value }))}
+            placeholder="America/New_York"
+          />
+        </label>
+        <label className="md:col-span-2 text-sm font-semibold text-slate-700">
           Email signature
           <textarea
             className={cn(inputClass, "min-h-[120px] resize-none")}
@@ -414,22 +543,21 @@ export function CompanySignatureSection({
           />
         </label>
       </div>
-      {onUploadLogo && (
-        <div className="mt-4">
-          <label className="text-sm font-semibold text-slate-700">
-            Company logo
-            <input
-              type="file"
-              accept="image/*"
-              className="mt-2 block w-full text-sm text-slate-500 file:mr-4 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-semibold hover:file:bg-slate-200"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onUploadLogo(file);
-              }}
-            />
-          </label>
-        </div>
-      )}
+
+      <div className="mt-4">
+        <label className="text-sm font-semibold text-slate-700">
+          Company logo
+          <input
+            type="file"
+            accept="image/*"
+            className="mt-2 block w-full text-sm text-slate-500 file:mr-4 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-semibold hover:file:bg-slate-200"
+            onChange={(e) => handleLogoUpload(e.target.files?.[0])}
+            disabled={uploadingLogo || !onUploadLogo}
+          />
+          {uploadingLogo && <span className="mt-2 block text-xs text-slate-500">Uploading logo…</span>}
+        </label>
+      </div>
+
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
           <div className="flex items-center gap-3 text-sm text-slate-600">
@@ -444,6 +572,11 @@ export function CompanySignatureSection({
               {form.tagline || "Your tagline here"}
             </p>
             <p className="mt-1 text-sm text-slate-600">{form.website || "yourwebsite.com"}</p>
+            {(form.supportEmail || form.timezone) && (
+              <p className="mt-2 text-xs text-slate-500">
+                {[form.supportEmail, form.timezone].filter(Boolean).join(" • ")}
+              </p>
+            )}
           </div>
         </div>
         <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -455,11 +588,25 @@ export function CompanySignatureSection({
           </pre>
         </div>
       </div>
+
+      <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
+        {saved && (
+          <span className="flex items-center gap-1.5 text-sm text-emerald-600">
+            <CheckCircle2 className="h-4 w-4" /> Saved successfully
+          </span>
+        )}
+        {saveError && (
+          <span className="flex items-center gap-1.5 text-sm text-rose-600">
+            <AlertTriangle className="h-4 w-4" /> {saveError}
+          </span>
+        )}
+      </div>
     </section>
   );
 }
 
-type EmailSectionIntegration = {
+
+type EmailSectionIntegrationtype EmailSectionIntegration = {
   id: string;
   integration_type?: string;
   type?: string;
@@ -768,10 +915,10 @@ type AccessRolesSectionProps = {
   invites?: OrgInvite[];
   seatLimit?: number;
   isAdmin?: boolean;
-  onInvite?: (email: string, role: string) => Promise<void>;
-  onRevoke?: (memberId: string) => Promise<void>;
-  onUpdateRole?: (memberId: string, role: string) => Promise<void>;
-  onRevokeInvite?: (inviteId: string) => Promise<void>;
+  onInvite?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onRevoke?: (memberId: string) => Promise<{ error?: string } | void>;
+  onUpdateRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
 };
 
 const ROLE_STYLES: Record<string, string> = {
@@ -810,7 +957,7 @@ const AVATAR_COLORS = [
 ];
 
 export function AccessRolesSection({
-  members,
+  members = [],
   invites = [],
   seatLimit,
   isAdmin,
@@ -819,21 +966,28 @@ export function AccessRolesSection({
   onUpdateRole,
   onRevokeInvite,
 }: AccessRolesSectionProps = {}) {
-  const team = members && members.length > 0 ? members : MOCK_MEMBERS;
+  const team = members;
   const seatUsed = team.length;
   const seatTotal = seatLimit ?? 10;
-  const seatPct = Math.min(100, Math.round((seatUsed / seatTotal) * 100));
+  const seatPct = seatTotal > 0 ? Math.min(100, Math.round((seatUsed / seatTotal) * 100)) : 0;
 
   const [inviteEmail, setInviteEmail] = React.useState("");
   const [inviteRole, setInviteRole] = React.useState("contributor");
   const [inviting, setInviting] = React.useState(false);
+  const [inviteError, setInviteError] = React.useState<string | null>(null);
   const [revoking, setRevoking] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
     setInviting(true);
+    setInviteError(null);
     try {
-      await onInvite?.(inviteEmail.trim(), inviteRole);
+      const result = await onInvite?.(inviteEmail.trim(), inviteRole);
+      if ((result as any)?.error) {
+        setInviteError((result as any).error);
+        return;
+      }
       setInviteEmail("");
     } finally {
       setInviting(false);
@@ -842,11 +996,19 @@ export function AccessRolesSection({
 
   const handleRevoke = async (memberId: string) => {
     setRevoking(memberId);
+    setActionError(null);
     try {
-      await onRevoke?.(memberId);
+      const result = await onRevoke?.(memberId);
+      if ((result as any)?.error) setActionError((result as any).error);
     } finally {
       setRevoking(null);
     }
+  };
+
+  const handleRoleUpdate = async (memberId: string, role: string) => {
+    setActionError(null);
+    const result = await onUpdateRole?.(memberId, role);
+    if ((result as any)?.error) setActionError((result as any).error);
   };
 
   return (
@@ -863,7 +1025,6 @@ export function AccessRolesSection({
         </div>
       </div>
 
-      {/* Invite form */}
       {isAdmin && (
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <input
@@ -871,7 +1032,7 @@ export function AccessRolesSection({
             placeholder="teammate@company.com"
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
-            className={cn(inputClass, "flex-1 min-w-[200px] mt-0")}
+            className={cn(inputClass, "mt-0 min-w-[200px] flex-1")}
           />
           <select
             value={inviteRole}
@@ -894,105 +1055,114 @@ export function AccessRolesSection({
         </div>
       )}
 
-      {/* Seat usage bar */}
-      <div className="mt-5 flex items-center gap-3">
-        <div className="flex-1 overflow-hidden rounded-full bg-slate-100 h-2">
-          <div
-            className="h-2 rounded-full bg-slate-800 transition-all"
-            style={{ width: `${seatPct}%` }}
-          />
+      {(inviteError || actionError) && (
+        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {inviteError || actionError}
         </div>
-        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
+      )}
+
+      <div className="mt-5 flex items-center gap-3">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-2 rounded-full bg-slate-800 transition-all" style={{ width: `${seatPct}%` }} />
+        </div>
+        <span className="whitespace-nowrap text-xs font-semibold text-slate-500">
           {seatUsed} / {seatTotal} seats used
         </span>
       </div>
 
       <div className="mt-5 rounded-2xl border border-slate-100 overflow-x-auto">
         <div className="min-w-[500px]">
-        <div className="grid grid-cols-[2fr_1fr_1fr_80px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          <span>Member</span>
-          <span>Role</span>
-          <span>Status</span>
-          <span>Actions</span>
-        </div>
-        {team.map((member, idx) => {
-          const roleKey = member.role?.toLowerCase() ?? "viewer";
-          const roleStyle = ROLE_STYLES[roleKey] ?? ROLE_STYLES.viewer;
-          const scope = SCOPE_LABELS[roleKey] ?? member.role;
-          const displayName = member.full_name || member.email || member.user_id || "Unknown";
-          const initials = getInitials(member.full_name, member.email);
-          const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
-          const isActive = (member.status ?? "active") === "active";
-          const memberId = member.id ?? member.user_id ?? String(idx);
-
-          return (
-            <div
-              key={memberId}
-              className="grid grid-cols-[2fr_1fr_1fr_80px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0 hover:bg-slate-50/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className={cn("flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0", avatarColor)}>
-                  {initials}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{displayName}</p>
-                  {member.email && member.full_name && (
-                    <p className="text-xs text-slate-400">{member.email}</p>
-                  )}
-                  <p className="text-xs text-slate-400">{scope}</p>
-                </div>
-              </div>
-              {isAdmin && onUpdateRole ? (
-                <select
-                  value={roleKey}
-                  onChange={(e) => onUpdateRole(memberId, e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none"
-                >
-                  <option value="owner">Owner</option>
-                  <option value="admin">Admin</option>
-                  <option value="contributor">Contributor</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              ) : (
-                <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize w-fit", roleStyle)}>
-                  {roleKey}
-                </span>
-              )}
-              <span className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
-                isActive ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-              )}>
-                <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-green-500" : "bg-yellow-500")} />
-                {isActive ? "Active" : "Pending"}
-              </span>
-              {isAdmin && onRevoke && roleKey !== "owner" ? (
-                <button
-                  type="button"
-                  onClick={() => handleRevoke(memberId)}
-                  disabled={revoking === memberId}
-                  className="text-xs font-semibold text-rose-600 hover:text-rose-800 disabled:opacity-60"
-                >
-                  {revoking === memberId ? "…" : "Revoke"}
-                </button>
-              ) : (
-                <span />
-              )}
+          <div className="grid grid-cols-[2fr_1fr_1fr_80px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+            <span>Member</span>
+            <span>Role</span>
+            <span>Status</span>
+            <span>Actions</span>
+          </div>
+          {team.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-400">
+              No workspace members found yet.
             </div>
-          );
-        })}
+          ) : (
+            team.map((member, idx) => {
+              const roleKey = member.role?.toLowerCase() ?? "viewer";
+              const roleStyle = ROLE_STYLES[roleKey] ?? ROLE_STYLES.viewer;
+              const scope = SCOPE_LABELS[roleKey] ?? member.role;
+              const displayName = member.full_name || member.email || member.user_id || "Unknown";
+              const initials = getInitials(member.full_name, member.email);
+              const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+              const isActive = (member.status ?? "active") === "active";
+              const memberId = member.id ?? member.user_id ?? String(idx);
+
+              return (
+                <div
+                  key={memberId}
+                  className="grid grid-cols-[2fr_1fr_1fr_80px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0 hover:bg-slate-50/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white", avatarColor)}>
+                      {initials}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{displayName}</p>
+                      {member.email && member.full_name && (
+                        <p className="text-xs text-slate-400">{member.email}</p>
+                      )}
+                      <p className="text-xs text-slate-400">{scope}</p>
+                    </div>
+                  </div>
+                  {isAdmin && onUpdateRole ? (
+                    <select
+                      value={roleKey}
+                      onChange={(e) => handleRoleUpdate(memberId, e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none"
+                    >
+                      <option value="owner">Owner</option>
+                      <option value="admin">Admin</option>
+                      <option value="contributor">Contributor</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  ) : (
+                    <span className={cn("inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", roleStyle)}>
+                      {roleKey}
+                    </span>
+                  )}
+                  <span className={cn(
+                    "inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                    isActive ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                  )}>
+                    <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-green-500" : "bg-yellow-500")} />
+                    {isActive ? "Active" : "Pending"}
+                  </span>
+                  {isAdmin && onRevoke && roleKey !== "owner" ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRevoke(memberId)}
+                      disabled={revoking === memberId}
+                      className="text-xs font-semibold text-rose-600 hover:text-rose-800 disabled:opacity-60"
+                    >
+                      {revoking === memberId ? "…" : "Revoke"}
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Pending invites */}
       {invites.length > 0 && (
         <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Pending invites</p>
-          <div className="rounded-2xl border border-slate-100 overflow-hidden divide-y divide-slate-100">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Pending invites</p>
+          <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-100">
             {invites.map((invite) => (
               <div key={invite.id} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-700">{invite.email}</p>
-                  <p className="text-xs text-slate-400 capitalize">{invite.role} • Invited {new Date(invite.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
+                  <p className="text-xs text-slate-400 capitalize">
+                    {invite.role} • Invited {new Date(invite.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </p>
                 </div>
                 {isAdmin && onRevokeInvite && (
                   <button
@@ -1031,7 +1201,8 @@ export function AccessRolesSection({
   );
 }
 
-type BillingPlanData = {
+
+type BillingPlanDatatype BillingPlanData = {
   plan_code: string;
   display_name?: string;
   price_monthly?: number;
