@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
@@ -51,6 +51,20 @@ function RequireAuth({ children }) {
 }
 
 function LITPage({ children }) {
+  useEffect(() => {
+    document.title = "Logistics Intel";
+
+    let favicon = document.querySelector("link[rel='icon']");
+    if (!favicon) {
+      favicon = document.createElement("link");
+      favicon.setAttribute("rel", "icon");
+      document.head.appendChild(favicon);
+    }
+
+    favicon.setAttribute("type", "image/svg+xml");
+    favicon.setAttribute("href", "/favicon-lit.svg");
+  }, []);
+
   return <AppLayout>{children}</AppLayout>;
 }
 
