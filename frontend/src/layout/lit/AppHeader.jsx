@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Menu, Search, Bell, ChevronDown, User, Settings, LogOut } from "lucide-react";
+import { Menu, Search, Bell, ChevronDown, Settings, CreditCard, LogOut } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const [profileOpen, setProfileOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const profileRef = useRef(null);
 
   useEffect(() => {
@@ -19,6 +21,26 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
       document.removeEventListener("touchstart", handleClickOutside);
     };
   }, []);
+
+  const goTo = (href) => {
+    setProfileOpen(false);
+    window.location.href = href;
+  };
+
+  const handleSignOut = async () => {
+    try {
+      setSigningOut(true);
+      if (supabase?.auth?.signOut) {
+        await supabase.auth.signOut();
+      }
+    } catch (error) {
+      console.error("Sign out failed", error);
+    } finally {
+      setProfileOpen(false);
+      setSigningOut(false);
+      window.location.href = "/login";
+    }
+  };
 
   return (
     <header className="relative z-40 h-20 border-b border-slate-200/80 bg-white px-4 md:px-6">
@@ -86,13 +108,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                 <div className="p-2">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <User size={16} />
-                    Profile
-                  </button>
-                  <button
-                    type="button"
+                    onClick={() => goTo("/settings")}
                     className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                   >
                     <Settings size={16} />
@@ -100,10 +116,20 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                   </button>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
+                    onClick={() => goTo("/billing")}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <CreditCard size={16} />
+                    Billing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-60"
                   >
                     <LogOut size={16} />
-                    Sign out
+                    {signingOut ? "Signing out..." : "Sign out"}
                   </button>
                 </div>
               </div>
