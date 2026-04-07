@@ -17,6 +17,15 @@ import {
   TrendingUp,
   Briefcase,
   ShieldCheck,
+  MapPinned,
+  Radar,
+  Sparkles,
+  Activity,
+  SearchCheck,
+  Megaphone,
+  UserRoundPlus,
+  FileText,
+  PlusCircle,
 } from "lucide-react";
 
 const monthlyTrendData = [
@@ -222,6 +231,34 @@ function StatCard({
   );
 }
 
+function SectionCardHeader({
+  eyebrow,
+  title,
+  subtitle,
+  icon: Icon,
+  iconAccent = "from-blue-600 to-indigo-600",
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        {eyebrow ? (
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            {eyebrow}
+          </div>
+        ) : null}
+        <div className="mt-1 text-sm font-semibold text-slate-800">{title}</div>
+        {subtitle ? (
+          <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
+        ) : null}
+      </div>
+
+      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconAccent} text-white shadow-sm`}>
+        <Icon size={18} />
+      </div>
+    </div>
+  );
+}
+
 function StatusPill({ value, tone = "green" }) {
   const styles = {
     green: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -246,6 +283,23 @@ function MiniProgress({ value }) {
       />
     </div>
   );
+}
+
+function getActivityIcon(type) {
+  switch (type) {
+    case "Search":
+      return SearchCheck;
+    case "Campaign":
+      return Megaphone;
+    case "Lead Prospect":
+      return UserRoundPlus;
+    case "RFP Generated":
+      return FileText;
+    case "Campaign Created":
+      return PlusCircle;
+    default:
+      return Activity;
+  }
 }
 
 function TradeMapPanel() {
@@ -348,9 +402,11 @@ function TradeMapPanel() {
               },
             ],
           },
-          onRegionTipShow(event, tooltip, code) {
+          onRegionTipShow(event, tooltip) {
             const countryLabel = tooltip.text();
-            tooltip.html(`${countryLabel}<div style="font-size:11px;color:#64748b;margin-top:4px;">${selectedRegion} activity</div>`);
+            tooltip.html(
+              `${countryLabel}<div style="font-size:11px;color:#64748b;margin-top:4px;">${selectedRegion} activity</div>`,
+            );
           },
         });
       } catch (error) {
@@ -405,60 +461,113 @@ function TradeMapPanel() {
 
         <div className="flex flex-wrap gap-2">
           {Object.keys(regionDetails).map((region) => (
-            <button key={region} type="button" className={regionButton(region)} onClick={() => setSelectedRegion(region)}>
+            <button
+              key={region}
+              type="button"
+              className={regionButton(region)}
+              onClick={() => setSelectedRegion(region)}
+            >
               {region}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_.85fr]">
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_.9fr]">
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div ref={mapRef} className="h-[320px] w-full" />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-            Active Region
+          <SectionCardHeader
+            eyebrow="Region Intelligence"
+            title="Active Region"
+            subtitle="Regional concentration and saved-account coverage"
+            icon={MapPinned}
+            iconAccent="from-blue-600 to-indigo-600"
+          />
+
+          <div className="mt-5 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+              Current Focus
+            </div>
+            <div className="mt-1 text-2xl font-semibold text-slate-900">
+              {selectedRegion}
+            </div>
           </div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900">{selectedRegion}</div>
 
-          <div className="mt-5 space-y-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                Top Countries
-              </div>
-              <div className="mt-1 text-sm text-slate-600">{active.countries}</div>
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                Coverage Note
-              </div>
-              <div className="mt-1 text-sm text-slate-600">{active.emphasis}</div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                  Lane Density
+          <div className="mt-4 space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
+                  <Globe2 size={16} />
                 </div>
-                <div className="mt-2 text-xl font-semibold text-slate-900">84%</div>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                  Saved Accounts
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Top Countries
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {active.countries}
+                  </div>
                 </div>
-                <div className="mt-2 text-xl font-semibold text-slate-900">21</div>
               </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                Suggested Use
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200">
+                  <Radar size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Coverage Note
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {active.emphasis}
+                  </div>
+                </div>
               </div>
-              <div className="mt-2 text-sm text-slate-600">
-                Use this panel to identify high-value sourcing regions and prioritize saved accounts by lane activity.
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
+                    <Activity size={15} />
+                  </div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Lane Density
+                  </div>
+                </div>
+                <div className="mt-3 text-xl font-semibold text-slate-900">84%</div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-violet-600 shadow-sm ring-1 ring-slate-200">
+                    <Building2 size={15} />
+                  </div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Saved Accounts
+                  </div>
+                </div>
+                <div className="mt-3 text-xl font-semibold text-slate-900">21</div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-cyan-600 shadow-sm ring-1 ring-slate-200">
+                  <Sparkles size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Suggested Use
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Use this panel to identify high-value sourcing regions and prioritize saved accounts by lane activity.
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -527,87 +636,21 @@ export default function LITDashboard() {
 
           <TradeMapPanel />
 
-          <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.75fr)_minmax(320px,.9fr)]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-slate-800">
-                    Performance Trends
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    Saved companies and enriched contacts over time
-                  </div>
-                </div>
-
-                <div className="flex gap-6 text-sm">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                      Companies
-                    </div>
-                    <div className="mt-1 text-2xl font-semibold text-slate-900">28</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                      Contacts
-                    </div>
-                    <div className="mt-1 text-2xl font-semibold text-slate-900">13</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 h-[320px] rounded-xl border border-slate-100 bg-slate-50 p-3">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyTrendData} barCategoryGap="20%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fill: "#64748b", fontSize: 12 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: "#64748b", fontSize: 12 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip />
-                    <Bar dataKey="companies" radius={[6, 6, 0, 0]} fill="#3b82f6" />
-                    <Bar dataKey="contacts" radius={[6, 6, 0, 0]} fill="#6366f1" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-sm font-semibold text-slate-800">Activity Feed</div>
-              <div className="mt-1 text-sm text-slate-500">
-                Recent actions and updates
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {activityFeed.map((item) => (
-                  <div
-                    key={`${item.type}-${item.name}`}
-                    className="rounded-xl border border-slate-200 px-4 py-3"
-                  >
-                    <div className="text-sm font-semibold text-slate-800">
-                      {item.type}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">{item.name}</div>
-                    <div className="mt-1 text-xs text-slate-400">{item.when}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
-              <div className="text-sm font-semibold text-slate-800">
-                Saved Companies
-              </div>
-              <div className="mt-1 text-sm text-slate-500">
-                Responsive company list with shipment intelligence
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    Saved Companies
+                  </div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    Responsive company list with shipment intelligence
+                  </div>
+                </div>
+
+                <div className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm md:flex">
+                  <Building2 size={18} />
+                </div>
               </div>
             </div>
 
@@ -669,12 +712,21 @@ export default function LITDashboard() {
                       <td className="px-5 py-4 text-sm text-slate-600">{row.mode}</td>
                       <td className="px-5 py-4 text-sm text-slate-700">{row.lastShipment}</td>
                       <td className="px-5 py-4">
-                        <StatusPill value={row.recency} tone={row.recency === "Recent" ? "green" : "yellow"} />
+                        <StatusPill
+                          value={row.recency}
+                          tone={row.recency === "Recent" ? "green" : "yellow"}
+                        />
                       </td>
                       <td className="px-5 py-4">
                         <StatusPill
                           value={row.status}
-                          tone={row.status === "High" ? "green" : row.status === "Medium" ? "yellow" : "slate"}
+                          tone={
+                            row.status === "High"
+                              ? "green"
+                              : row.status === "Medium"
+                                ? "yellow"
+                                : "slate"
+                          }
                         />
                       </td>
                       <td className="px-5 py-4">
@@ -691,6 +743,96 @@ export default function LITDashboard() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.75fr)_minmax(340px,.95fr)]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <SectionCardHeader
+                eyebrow="Trend Intelligence"
+                title="Performance Trends"
+                subtitle="Saved companies and enriched contacts over time"
+                icon={TrendingUp}
+                iconAccent="from-sky-600 to-blue-500"
+              />
+
+              <div className="mt-5 flex gap-6 text-sm">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Companies
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-900">28</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Contacts
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-900">13</div>
+                </div>
+              </div>
+
+              <div className="mt-4 h-[320px] rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyTrendData} barCategoryGap="20%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip />
+                    <Bar dataKey="companies" radius={[6, 6, 0, 0]} fill="#3b82f6" />
+                    <Bar dataKey="contacts" radius={[6, 6, 0, 0]} fill="#6366f1" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <SectionCardHeader
+                eyebrow="Timeline"
+                title="Activity Feed"
+                subtitle="Recent actions and updates"
+                icon={Activity}
+                iconAccent="from-violet-600 to-indigo-600"
+              />
+
+              <div className="mt-5 space-y-3">
+                {activityFeed.map((item) => {
+                  const ItemIcon = getActivityIcon(item.type);
+
+                  return (
+                    <div
+                      key={`${item.type}-${item.name}`}
+                      className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
+                          <ItemIcon size={16} />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-800">
+                            {item.type}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-600">
+                            {item.name}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-400">
+                            {item.when}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </section>
         </div>
