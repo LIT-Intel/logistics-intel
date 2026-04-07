@@ -37,10 +37,10 @@ export function Lock(props) {
 
 export function PulseIcon(props) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-      <path d="M3 12h4.5l2.2-4.2L12 16l2.2-4H19" />
-      <path d="M19 12h1.25" />
-      <circle cx="21" cy="12" r="1.15" fill="currentColor" stroke="none" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
+      <path d="M2.75 12h4.9l2.25-4.3L12 16.25l2.2-4.25h4.85" />
+      <path d="M19.05 12h1.15" />
+      <circle cx="21.15" cy="12" r="1.15" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -48,11 +48,11 @@ export function PulseIcon(props) {
 export function LitAppIcon(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={props.className}>
-      <path d="M4 4v16h8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M10 4h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <path d="M10 10h4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <path d="M16 10v10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <path d="M10 20h6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M4 4v16h7.8" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10.35 4h9.65" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
+      <path d="M10.35 10h4.2" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
+      <path d="M15.85 10v9.9" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
+      <path d="M10.35 19.9h5.5" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
     </svg>
   );
 }
