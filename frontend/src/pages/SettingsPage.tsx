@@ -29,27 +29,22 @@ export default function SettingsPage() {
   const { user, plan } = useAuth();
   const mountedRef = useRef(true);
 
-  // Core profile state
   const [profile, setProfile] = useState<JsonMap>({});
   const [orgProfile, setOrgProfile] = useState<JsonMap>({});
   const [preferences, setPreferences] = useState<JsonMap>({});
 
-  // Team state
   const [orgMembers, setOrgMembers] = useState<any[]>([]);
   const [orgInvites, setOrgInvites] = useState<any[]>([]);
   const [orgId, setOrgId] = useState<string | null>(null);
 
-  // Billing state
   const [subscription, setSubscription] = useState<any>(null);
   const [plans, setPlans] = useState<any[]>([]);
 
-  // Security / Credits state
   const [apiKeys, setApiKeys] = useState<any[]>([]);
   const [auditLog, setAuditLog] = useState<any[]>([]);
   const [tokenUsage, setTokenUsage] = useState<any[]>([]);
   const [integrations, setIntegrations] = useState<any[]>([]);
 
-  // Stats for profile section
   const [savedCount, setSavedCount] = useState(0);
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
@@ -93,7 +88,6 @@ export default function SettingsPage() {
       return;
     }
 
-    // 1) user_profiles
     const { data: userProfileData, error: userProfileError } = await supabase
       .from("user_profiles")
       .select("*")
@@ -101,7 +95,6 @@ export default function SettingsPage() {
       .maybeSingle();
     requireNoError(userProfileError, "Failed loading user profile");
 
-    // 2) base profiles
     const { data: baseProfileData, error: baseProfileError } = await supabase
       .from("profiles")
       .select("id, full_name, company_name, organization_name, avatar_url")
@@ -131,7 +124,6 @@ export default function SettingsPage() {
       });
     });
 
-    // 3) preferences
     const { data: prefsData, error: prefsError } = await supabase
       .from("user_preferences")
       .select("*")
@@ -140,7 +132,6 @@ export default function SettingsPage() {
     requireNoError(prefsError, "Failed loading user preferences");
     safeSet(() => setPreferences(prefsData ?? {}));
 
-    // 4) membership
     const { data: membership, error: membershipError } = await supabase
       .from("org_members")
       .select("org_id")
@@ -153,7 +144,6 @@ export default function SettingsPage() {
     safeSet(() => setOrgId(currentOrgId));
 
     if (currentOrgId) {
-      // 5) organization
       const { data: orgData, error: orgError } = await supabase
         .from("organizations")
         .select("*")
@@ -171,7 +161,6 @@ export default function SettingsPage() {
         })
       );
 
-      // 6) members
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
         .select("id, user_id, role, status, created_at, email, full_name")
@@ -180,7 +169,6 @@ export default function SettingsPage() {
       requireNoError(membersError, "Failed loading organization members");
       safeSet(() => setOrgMembers(membersData ?? []));
 
-      // 7) invites
       const { data: invitesData, error: invitesError } = await supabase
         .from("org_invites")
         .select("id, email, role, status, created_at, expires_at")
@@ -197,7 +185,6 @@ export default function SettingsPage() {
       });
     }
 
-    // 8) subscription + plans
     const [subResult, plansResult] = await Promise.allSettled([
       supabase
         .from("subscriptions")
@@ -222,7 +209,6 @@ export default function SettingsPage() {
       safeSet(() => setPlans(plansResult.value.data ?? []));
     }
 
-    // 9) api keys
     const { data: keysData, error: keysError } = await supabase
       .from("api_keys")
       .select("id, key_name, key_prefix, last_used_at, created_at")
@@ -231,7 +217,6 @@ export default function SettingsPage() {
     requireNoError(keysError, "Failed loading API keys");
     safeSet(() => setApiKeys(keysData ?? []));
 
-    // 10) audit log
     const { data: auditData, error: auditError } = await supabase
       .from("security_audit_log")
       .select("id, action, ip_address, created_at")
@@ -241,7 +226,6 @@ export default function SettingsPage() {
     requireNoError(auditError, "Failed loading audit log");
     safeSet(() => setAuditLog(auditData ?? []));
 
-    // 11) token usage
     const { data: tokenData, error: tokenError } = await supabase
       .from("token_ledger")
       .select("feature, tokens_used")
@@ -249,7 +233,6 @@ export default function SettingsPage() {
     requireNoError(tokenError, "Failed loading token usage");
     safeSet(() => setTokenUsage(tokenData ?? []));
 
-    // 12) integrations
     const { data: intData, error: integrationsError } = await supabase
       .from("integrations")
       .select("id, type, config, created_at")
@@ -257,7 +240,6 @@ export default function SettingsPage() {
     requireNoError(integrationsError, "Failed loading integrations");
     safeSet(() => setIntegrations(intData ?? []));
 
-    // 13) stats
     const [savedRes, campRes, rfpRes] = await Promise.allSettled([
       supabase
         .from("saved_companies")
@@ -586,35 +568,37 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="w-full px-6 py-6">
-      <SettingsLayout
-        profile={profileWithStats}
-        orgProfile={orgProfile}
-        preferences={preferences}
-        subscription={subscription ?? undefined}
-        plans={plans}
-        members={orgMembers}
-        invites={orgInvites}
-        apiKeys={apiKeys}
-        auditLog={auditLog}
-        tokenUsage={tokenUsage}
-        integrations={integrations}
-        isAdmin={isAdmin}
-        canAccess={canAccess}
-        onSaveProfile={onSaveProfile}
-        onUploadAvatar={onUploadAvatar}
-        onSaveOrgProfile={onSaveOrgProfile}
-        onSaveEmailSignature={onSaveEmailSignature}
-        onUploadLogo={onUploadLogo}
-        onSavePreferences={onSavePreferences}
-        onInviteMember={onInviteMember}
-        onRevokeMember={onRevokeMember}
-        onUpdateMemberRole={onUpdateMemberRole}
-        onRevokeInvite={onRevokeInvite}
-        onGenerateApiKey={onGenerateApiKey}
-        onRevokeApiKey={onRevokeApiKey}
-        onDisconnectIntegration={onDisconnectIntegration}
-      />
+    <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
+      <div className="mx-auto max-w-[1600px]">
+        <SettingsLayout
+          profile={profileWithStats}
+          orgProfile={orgProfile}
+          preferences={preferences}
+          subscription={subscription ?? undefined}
+          plans={plans}
+          members={orgMembers}
+          invites={orgInvites}
+          apiKeys={apiKeys}
+          auditLog={auditLog}
+          tokenUsage={tokenUsage}
+          integrations={integrations}
+          isAdmin={isAdmin}
+          canAccess={canAccess}
+          onSaveProfile={onSaveProfile}
+          onUploadAvatar={onUploadAvatar}
+          onSaveOrgProfile={onSaveOrgProfile}
+          onSaveEmailSignature={onSaveEmailSignature}
+          onUploadLogo={onUploadLogo}
+          onSavePreferences={onSavePreferences}
+          onInviteMember={onInviteMember}
+          onRevokeMember={onRevokeMember}
+          onUpdateMemberRole={onUpdateMemberRole}
+          onRevokeInvite={onRevokeInvite}
+          onGenerateApiKey={onGenerateApiKey}
+          onRevokeApiKey={onRevokeApiKey}
+          onDisconnectIntegration={onDisconnectIntegration}
+        />
+      </div>
     </div>
   );
 }
