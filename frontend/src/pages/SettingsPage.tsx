@@ -20,6 +20,28 @@ function normalizeError(error: any, fallback: string) {
   return error?.message || fallback;
 }
 
+function normalizePlanCode(value: string | null | undefined) {
+  return String(value || "free_trial").trim().toLowerCase();
+}
+
+async function uploadAsset(file: File): Promise<{ file_url?: string; error?: string }> {
+  try {
+    if (typeof UploadFile !== "function") {
+      return { error: "Upload service is not configured" };
+    }
+
+    const result = await UploadFile({ file });
+
+    if (!result?.file_url) {
+      return { error: "Upload failed" };
+    }
+
+    return { file_url: result.file_url };
+  } catch (error: any) {
+    return { error: normalizeError(error, "Upload failed") };
+  }
+}
+
 export default function SettingsPage() {
   const { user, plan } = useAuth();
 
@@ -43,19 +65,23 @@ export default function SettingsPage() {
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
 
-  const isAdminEmail =
+  const isSuperAdmin =
     ADMIN_EMAILS.includes(user?.email ?? "") ||
-    user?.user_metadata?.role === "admin";
+    user?.user_metadata?.role === "admin" ||
+    user?.user_metadata?.role === "super_admin";
+
   const isOrgOwner = orgMembers.some(
     (m) =>
       m.user_id === user?.id &&
-      (m.role === "owner" || m.role === "admin" || m.role === "super_admin")
+      ["owner", "admin", "super_admin"].includes(String(m.role || "").toLowerCase())
   );
-  const isAdmin = isAdminEmail || isOrgOwner;
+
+  const isAdmin = isSuperAdmin || isOrgOwner;
 
   const canAccess = useCallback(
     (minPlan: string) =>
-      isAdmin || (PLAN_RANK[plan ?? "free_trial"] ?? 0) >= (PLAN_RANK[minPlan] ?? 0),
+      isAdmin ||
+      (PLAN_RANK[normalizePlanCode(plan)] ?? 0) >= (PLAN_RANK[normalizePlanCode(minPlan)] ?? 0),
     [isAdmin, plan]
   );
 
@@ -93,7 +119,7 @@ export default function SettingsPage() {
         user?.user_metadata?.avatar_url ||
         "",
       email: user?.email || "",
-      plan: isAdmin ? "admin" : (plan ?? "free_trial"),
+      plan: isAdmin ? "admin" : normalizePlanCode(plan),
       isAdmin,
     });
 
@@ -105,15 +131,45 @@ export default function SettingsPage() {
     if (prefsError) console.error("[settings] user_preferences", prefsError);
     setPreferences(prefsData ?? {});
 
+    let currentOrgId: string | null = null;
+
     const { data: membership, error: membershipError } = await supabase
       .from("org_members")
-      .select("org_id")
+      .select("org_id, role, status")
       .eq("user_id", uid)
+      .in("status", ["active", "pending", "invited"])
       .limit(1)
       .maybeSingle();
     if (membershipError) console.error("[settings] org_members membership", membershipError);
 
-    const currentOrgId = membership?.org_id ?? null;
+    currentOrgId = membership?.org_id ?? null;
+
+    if (!currentOrgId) {
+      const possibleNames = [
+        baseProfileData?.organization_name,
+        baseProfileData?.company_name,
+        user?.user_metadata?.organization_name,
+        user?.user_metadata?.company_name,
+      ]
+        .map((value: any) => String(value || "").trim())
+        .filter(Boolean);
+
+      if (possibleNames.length > 0) {
+        const { data: fallbackOrg, error: fallbackOrgError } = await supabase
+          .from("organizations")
+          .select("*")
+          .in("name", possibleNames)
+          .limit(1)
+          .maybeSingle();
+
+        if (fallbackOrgError) {
+          console.error("[settings] organizations fallback lookup", fallbackOrgError);
+        } else if (fallbackOrg?.id) {
+          currentOrgId = fallbackOrg.id;
+        }
+      }
+    }
+
     setOrgId(currentOrgId);
 
     if (currentOrgId) {
@@ -127,7 +183,7 @@ export default function SettingsPage() {
       setOrgProfile({
         ...(orgData ?? {}),
         company: orgData?.name ?? orgData?.company ?? "",
-        supportEmail: orgData?.support_email ?? orgData?.supportEmail ?? "",
+        supportEmail: orgData?.support_email ?? orgData?.supportEmail ?? user?.email ?? "",
         address: orgData?.address ?? "",
         timezone: orgData?.timezone ?? "",
       });
@@ -149,7 +205,15 @@ export default function SettingsPage() {
       if (invitesError) console.error("[settings] org_invites", invitesError);
       setOrgInvites(invitesData ?? []);
     } else {
-      setOrgProfile({});
+      setOrgProfile({
+        company:
+          baseProfileData?.organization_name ||
+          baseProfileData?.company_name ||
+          user?.user_metadata?.organization_name ||
+          user?.user_metadata?.company_name ||
+          "",
+        supportEmail: user?.email || "",
+      });
       setOrgMembers([]);
       setOrgInvites([]);
     }
@@ -251,10 +315,12 @@ export default function SettingsPage() {
     const uid = user?.id;
     if (!uid) return { error: "Not authenticated" };
 
-    const result = await UploadFile({ file });
-    if (!result?.file_url) return { error: "Avatar upload failed" };
+    const uploaded = await uploadAsset(file);
+    if (uploaded.error || !uploaded.file_url) {
+      return { error: uploaded.error || "Avatar upload failed" };
+    }
 
-    const avatarUrl = result.file_url;
+    const avatarUrl = uploaded.file_url;
 
     const { error: userProfileError } = await supabase
       .from("user_profiles")
@@ -278,7 +344,13 @@ export default function SettingsPage() {
   const onSaveOrgProfile = async (
     data: Record<string, unknown>
   ): Promise<{ error?: string }> => {
-    if (!orgId) return { error: "No organization found" };
+    if (!orgId) {
+      return {
+        error: isSuperAdmin
+          ? "No active organization is linked to this account yet"
+          : "No organization found",
+      };
+    }
 
     const updates: Record<string, unknown> = { id: orgId };
     if (data.company !== undefined) updates.name = String(data.company || "").trim() || null;
@@ -339,19 +411,27 @@ export default function SettingsPage() {
   };
 
   const onUploadLogo = async (file: File): Promise<{ error?: string }> => {
-    if (!orgId) return { error: "No organization found" };
+    if (!orgId) {
+      return {
+        error: isSuperAdmin
+          ? "No active organization is linked to this account yet"
+          : "No organization found",
+      };
+    }
 
-    const result = await UploadFile({ file });
-    if (!result?.file_url) return { error: "Logo upload failed" };
+    const uploaded = await uploadAsset(file);
+    if (uploaded.error || !uploaded.file_url) {
+      return { error: uploaded.error || "Logo upload failed" };
+    }
 
     const { error } = await supabase
       .from("organizations")
-      .update({ logo_url: result.file_url })
+      .update({ logo_url: uploaded.file_url })
       .eq("id", orgId);
 
     if (error) return { error: normalizeError(error, "Failed saving company logo") };
 
-    setOrgProfile((prev) => ({ ...prev, logo_url: result.file_url }));
+    setOrgProfile((prev) => ({ ...prev, logo_url: uploaded.file_url }));
     await loadAll();
     return {};
   };
@@ -383,7 +463,25 @@ export default function SettingsPage() {
   };
 
   const onInviteMember = async (email: string, role: string): Promise<{ error?: string }> => {
-    if (!orgId) return { error: "No organization found" };
+    if (!orgId) {
+      return {
+        error: isSuperAdmin
+          ? "No active organization is linked to this account yet"
+          : "No organization found",
+      };
+    }
+
+    if (!email?.trim()) return { error: "Email is required" };
+
+    const seatLimit = subscription?.seat_limit ?? null;
+    if (
+      typeof seatLimit === "number" &&
+      seatLimit > 0 &&
+      (orgMembers.length + orgInvites.length) >= seatLimit &&
+      !isSuperAdmin
+    ) {
+      return { error: "Seat limit reached for this workspace plan" };
+    }
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
