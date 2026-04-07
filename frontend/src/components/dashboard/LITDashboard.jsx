@@ -191,6 +191,15 @@ const REGION_LABELS = {
   OC: "Oceania",
 };
 
+const COUNTRY_CODE_LABELS = {
+  US: 'United States', CA: 'Canada', MX: 'Mexico', PR: 'Puerto Rico',
+  DE: 'Germany', NL: 'Netherlands', IT: 'Italy', FR: 'France', ES: 'Spain', BE: 'Belgium', PL: 'Poland', GB: 'United Kingdom',
+  CN: 'China', IN: 'India', VN: 'Vietnam', JP: 'Japan', KR: 'South Korea', TH: 'Thailand', MY: 'Malaysia', ID: 'Indonesia', SG: 'Singapore', HK: 'Hong Kong', TW: 'Taiwan',
+  BR: 'Brazil', AR: 'Argentina', CL: 'Chile', CO: 'Colombia', PE: 'Peru',
+  ZA: 'South Africa', MA: 'Morocco', EG: 'Egypt', NG: 'Nigeria', KE: 'Kenya',
+  AU: 'Australia', NZ: 'New Zealand', PG: 'Papua New Guinea',
+};
+
 const COUNTRY_TO_REGION = {
   US: "NA",
   CA: "NA",
@@ -293,6 +302,23 @@ function titleCase(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function looksLikeOpaqueId(value) {
+  const v = String(value || '').trim();
+  if (!v) return false;
+  return /^[a-f0-9]{24,}$/i.test(v) || /^[a-f0-9-]{24,}$/i.test(v);
+}
+
+function prettifyCompanyName(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Unknown Company';
+  if (raw.includes('/')) {
+    const last = raw.split('/').pop();
+    if (last) return titleCase(last);
+  }
+  if (looksLikeOpaqueId(raw)) return raw;
+  return titleCase(raw);
+}
+
 
 function safeJsonParse(value) {
   if (!value) return null;
@@ -393,12 +419,13 @@ function normalizeSavedCompanyRow(row) {
   const raw = row?.raw || {};
   const companyData = row?.companyData || safeJsonParse(raw?.company_data) || {};
 
-  const companyName =
+  const rawCompanyName =
     company?.name ||
-    raw?.company_name ||
     companyData?.name ||
     companyData?.title ||
+    (!looksLikeOpaqueId(raw?.company_name) ? raw?.company_name : '') ||
     raw?.company_key?.split("/").pop()?.replace(/[-_]+/g, " ") ||
+    raw?.company_name ||
     raw?.company_id ||
     "Unknown Company";
 
@@ -444,12 +471,10 @@ function normalizeSavedCompanyRow(row) {
 
   const companyId = raw?.company_id || company?.internal_id || company?.company_id || raw?.company_key || '';
   const companyKey = raw?.company_key || company?.company_id || raw?.company_id || '';
-  const commandCenterHref = companyId
-    ? `/command-center/company/${slugifyCompanyId(companyId)}`
-    : getCommandCenterHref({ companyId, companyKey, company: companyName });
+  const commandCenterHref = getCommandCenterHref({ companyId, companyKey, company: rawCompanyName });
 
   return {
-    company: titleCase(companyName),
+    company: prettifyCompanyName(rawCompanyName),
     type: row?.stage ? titleCase(row.stage) : raw?.source ? titleCase(raw.source) : 'Saved Company',
     location,
     shipments: formatNumber(shipmentsValue),
@@ -534,7 +559,7 @@ function buildRegionSummary(companies) {
   const topCountries = Object.entries(countryCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
-    .map(([code]) => code)
+    .map(([code]) => COUNTRY_CODE_LABELS[code] || code)
     .join(", ");
 
   return {
@@ -559,8 +584,9 @@ function buildTrendData(companies) {
   const monthBuckets = new Map();
 
   companies.forEach((company) => {
-    const lastShipment = company?.raw?.company_data?.lastShipmentDate ||
-      company?.raw?.company_data?.last_shipment_date ||
+    const companyData = safeJsonParse(company?.raw?.company_data) || company?.raw?.company_data || {};
+    const lastShipment = companyData?.lastShipmentDate ||
+      companyData?.last_shipment_date ||
       company?.raw?.updated_at ||
       company?.raw?.created_at;
 
@@ -689,10 +715,10 @@ function getActivityIcon(type) {
 }
 
 function TradeMapPanel({ mapScales, regionSummary }) {
-  const activeFlags = getRegionFlags(selectedRegion);
   const [selectedRegion, setSelectedRegion] = useState(
     regionSummary?.activeRegionLabel || "North America",
   );
+  const activeFlags = getRegionFlags(selectedRegion);
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
 
