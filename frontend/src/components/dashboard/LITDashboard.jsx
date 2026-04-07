@@ -729,15 +729,6 @@ function buildRegionSummary(companies) {
 }
 
 function buildMapColorValues(mapCounts, selectedRegion) {
-  const palette = {
-    NA: ['#d5e5ff', '#a8c6ff', '#78a3ff', '#4f7eff', '#2f5bff'],
-    EU: ['#dcf5e5', '#aae6bd', '#76d497', '#4fc16f', '#34a853'],
-    AS: ['#ece5ff', '#cfbfff', '#b39aff', '#966eff', '#7c3aed'],
-    SA: ['#ffe6c8', '#ffc98f', '#ffb25d', '#ff9834', '#f97316'],
-    AF: ['#ddf4ff', '#a5e4ff', '#67d0ff', '#2fb8ff', '#0ea5e9'],
-    OC: ['#ffe0f2', '#ffb6df', '#ff8dd0', '#ff66c0', '#ec4899'],
-  };
-
   const regionKey = Object.entries(REGION_LABELS).find(([, label]) => label === selectedRegion)?.[0] || 'NA';
   const selectedCounts = mapCounts?.[regionKey] || {};
   const values = {};
@@ -746,12 +737,15 @@ function buildMapColorValues(mapCounts, selectedRegion) {
   const maxCount = Math.max(...entries.map(([, count]) => Number(count) || 0), 1);
 
   fallbackCodes.forEach((code) => {
-    values[code] = palette[regionKey][1];
+    values[code] = 'tier2';
   });
 
   entries.forEach(([code, count]) => {
-    const intensity = Math.max(2, Math.min(4, Math.round(((Number(count) || 1) / maxCount) * 4)));
-    values[code] = palette[regionKey][intensity];
+    const ratio = (Number(count) || 1) / maxCount;
+    if (ratio >= 0.85) values[code] = 'tier5';
+    else if (ratio >= 0.6) values[code] = 'tier4';
+    else if (ratio >= 0.35) values[code] = 'tier3';
+    else values[code] = 'tier2';
   });
 
   return values;
@@ -989,6 +983,13 @@ function TradeMapPanel({ mapScales, regionSummary }) {
             regions: [
               {
                 attribute: "fill",
+                scale: {
+                  tier1: '#eef3f9',
+                  tier2: selectedRegionKey === 'NA' ? '#a8c6ff' : selectedRegionKey === 'EU' ? '#aae6bd' : selectedRegionKey === 'AS' ? '#cfbfff' : selectedRegionKey === 'SA' ? '#ffc98f' : selectedRegionKey === 'AF' ? '#a5e4ff' : '#ffb6df',
+                  tier3: selectedRegionKey === 'NA' ? '#78a3ff' : selectedRegionKey === 'EU' ? '#76d497' : selectedRegionKey === 'AS' ? '#b39aff' : selectedRegionKey === 'SA' ? '#ffb25d' : selectedRegionKey === 'AF' ? '#67d0ff' : '#ff8dd0',
+                  tier4: selectedRegionKey === 'NA' ? '#4f7eff' : selectedRegionKey === 'EU' ? '#4fc16f' : selectedRegionKey === 'AS' ? '#966eff' : selectedRegionKey === 'SA' ? '#ff9834' : selectedRegionKey === 'AF' ? '#2fb8ff' : '#ff66c0',
+                  tier5: selectedRegionKey === 'NA' ? '#2f5bff' : selectedRegionKey === 'EU' ? '#34a853' : selectedRegionKey === 'AS' ? '#7c3aed' : selectedRegionKey === 'SA' ? '#f97316' : selectedRegionKey === 'AF' ? '#0ea5e9' : '#ec4899',
+                },
                 values: buildMapColorValues(mapScales, selectedRegion),
               },
             ],
