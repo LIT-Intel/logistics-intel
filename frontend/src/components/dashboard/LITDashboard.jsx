@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
-import { getSavedCompanies } from "@/lib/api";
+import { getSavedCompanies, getIyCompanyProfile } from "@/lib/api";
 import { getCampaignsFromSupabase } from "@/lib/supabase";
 import {
   ResponsiveContainer,
@@ -427,7 +427,7 @@ function getCommandCenterHref(row) {
   if (row?.companyKey) params.set('companyKey', row.companyKey);
   if (row?.company) params.set('company', row.company);
   const query = params.toString();
-  return query ? `/command-center?${query}` : '/command-center';
+  return query ? `/app/command-center?${query}` : '/app/command-center';
 }
 
 function cleanRouteLabel(value) {
@@ -471,6 +471,12 @@ function inferFallbackRoute(location, countryCode) {
 
 function inferRouteRegion(routeLabel, companyRegion) {
   const route = String(routeLabel || '').toUpperCase();
+  const destinationSegment = route.includes('→') ? route.split('→').pop()?.trim() || route : route;
+  for (const [code, label] of Object.entries(COUNTRY_CODE_LABELS)) {
+    if (destinationSegment.includes(label.toUpperCase()) || destinationSegment.includes(` ${code} `) || destinationSegment.endsWith(` ${code}`) || destinationSegment.includes(`, ${code}`)) {
+      return COUNTRY_TO_REGION[code] || companyRegion || 'NA';
+    }
+  }
   for (const [code, label] of Object.entries(COUNTRY_CODE_LABELS)) {
     if (route.includes(label.toUpperCase()) || route.includes(` ${code} `) || route.endsWith(` ${code}`) || route.includes(`, ${code}`)) {
       return COUNTRY_TO_REGION[code] || companyRegion || 'NA';
@@ -478,7 +484,52 @@ function inferRouteRegion(routeLabel, companyRegion) {
   }
   return companyRegion || 'NA';
 }
-function normalizeSavedCompanyRow(row) {
+
+function formatRouteText(origin, destination) {
+  const o = String(origin || '').trim();
+  const d = String(destination || '').trim();
+  if (!o && !d) return null;
+  if (!o) return d;
+  if (!d) return o;
+  return `${o} → ${d}`;
+}
+
+function extractProfileTradeRoutes(profile, fallbackLocation) {
+  const routes = [];
+  const push = (label, count = 1) => {
+    const clean = cleanRouteLabel(label);
+    if (!clean) return;
+    const existing = routes.find((item) => item.label === clean);
+    if (existing) {
+      existing.count = Math.max(existing.count, Number(count) || 1);
+      return;
+    }
+    routes.push({ label: clean, count: Number(count) || 1 });
+  };
+
+  const recent = Array.isArray(profile?.recentBols) ? profile.recentBols : Array.isArray(profile?.recent_bols) ? profile.recent_bols : [];
+  recent.forEach((entry) => {
+    const origin = entry?.origin || entry?.supplierCountry || entry?.shipper_country || entry?.supplier_country || null;
+    const destination = fallbackLocation || entry?.destination || entry?.companyCountry || entry?.destination_country || null;
+    push(formatRouteText(origin, destination), entry?.containersCount || entry?.teu || 1);
+  });
+
+  const topRoutes = profile?.routeKpis?.topRoutesLast12m || profile?.routeKpis?.top_routes_last_12m || profile?.routeKpis?.top_routes || profile?.top_routes || [];
+  (Array.isArray(topRoutes) ? topRoutes : []).forEach((entry) => {
+    if (typeof entry === 'string') {
+      push(entry, 1);
+      return;
+    }
+    const label = entry?.route || formatRouteText(entry?.origin || entry?.origin_port || entry?.originPort, fallbackLocation || entry?.destination || entry?.destination_port || entry?.destinationPort);
+    push(label, entry?.shipments || entry?.count || entry?.teu || 1);
+  });
+
+  push(profile?.routeKpis?.topRouteLast12m || profile?.routeKpis?.top_route_last_12m, 1);
+  push(profile?.routeKpis?.mostRecentRoute || profile?.routeKpis?.most_recent_route, 1);
+
+  return routes.slice(0, 5);
+}
+function normalizeSavedCompanyRow(row, enrichedProfile = null) {
   const company = row?.company || {};
   const raw = row?.raw || {};
   const companyData = row?.companyData || safeJsonParse(raw?.company_data) || {};
@@ -538,6 +589,7 @@ function normalizeSavedCompanyRow(row) {
   const companyId = raw?.company_id || company?.internal_id || company?.company_id || raw?.company_key || '';
   const companyKey = raw?.company_key || company?.company_id || raw?.company_id || '';
   const commandCenterHref = getCommandCenterHref({ companyId, companyKey, company: rawCompanyName });
+  const profileRoutes = extractProfileTradeRoutes(enrichedProfile, location);
   const rawRoutes = [
     raw?.top_route_12m,
     raw?.recent_route,
@@ -549,9 +601,20 @@ function normalizeSavedCompanyRow(row) {
     ...(Array.isArray(companyData?.top_routes) ? companyData.top_routes : []),
   ]
     .map(extractRouteCandidate)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((label) => ({ label, count: 1 }));
   const fallbackRoute = inferFallbackRoute(location, countryCode);
-  const tradeRoutes = Array.from(new Set([...(rawRoutes || []), ...(fallbackRoute ? [fallbackRoute] : [])])).slice(0, 5);
+  const tradeRoutes = [];
+  [...(profileRoutes || []), ...(rawRoutes || []), ...(fallbackRoute ? [{ label: fallbackRoute, count: 1 }] : [])].forEach((item) => {
+    const label = typeof item === 'string' ? item : item?.label;
+    const count = typeof item === 'string' ? 1 : item?.count || 1;
+    const clean = cleanRouteLabel(label);
+    if (!clean) return;
+    const existing = tradeRoutes.find((entry) => entry.label === clean);
+    if (existing) existing.count = Math.max(existing.count, count);
+    else tradeRoutes.push({ label: clean, count });
+  });
+  
 
   return {
     company: prettifyCompanyName(rawCompanyName),
@@ -600,8 +663,10 @@ function buildRegionSummary(companies) {
     }
     const tradeRoutes = Array.isArray(company?.tradeRoutes) ? company.tradeRoutes : [];
     tradeRoutes.forEach((route) => {
-      const routeRegion = inferRouteRegion(route, region);
-      routesByRegion[routeRegion].push(route);
+      const label = typeof route === 'string' ? route : route?.label;
+      const count = typeof route === 'string' ? 1 : route?.count || 1;
+      const routeRegion = inferRouteRegion(label, region);
+      routesByRegion[routeRegion].push({ label, count });
     });
   });
 
@@ -609,7 +674,12 @@ function buildRegionSummary(companies) {
 
   const aggregateRoutes = (routeList) => {
     const counts = new Map();
-    routeList.forEach((route) => counts.set(route, (counts.get(route) || 0) + 1));
+    routeList.forEach((route) => {
+      const label = typeof route === 'string' ? route : route?.label;
+      const count = typeof route === 'string' ? 1 : route?.count || 1;
+      if (!label) return;
+      counts.set(label, (counts.get(label) || 0) + count);
+    });
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -624,6 +694,7 @@ function buildRegionSummary(companies) {
     activeRegionLabel: REGION_LABELS[topRegionEntry[0]] || "North America",
     savedAccounts: companies.length,
     laneDensity: companies.length > 0 ? `${Math.min(100, Math.max(12, Math.round((topRegionEntry[1] / companies.length) * 100)))}%` : "0%",
+    regionCounts,
     regionRoutes,
     activeTradeRoutes: activeRoutes,
     topCountries: Object.entries(countryCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([code]) => COUNTRY_CODE_LABELS[code] || code),
@@ -632,27 +703,31 @@ function buildRegionSummary(companies) {
 
 function buildMapColorValues(mapCounts, selectedRegion) {
   const palette = {
-    NA: { active: '#2563eb', base: '#93c5fd' },
-    EU: { active: '#16a34a', base: '#86efac' },
-    AS: { active: '#7c3aed', base: '#c4b5fd' },
-    SA: { active: '#ea580c', base: '#fdba74' },
-    AF: { active: '#0891b2', base: '#67e8f9' },
-    OC: { active: '#db2777', base: '#f9a8d4' },
+    NA: ['#d8e7ff', '#b7d0ff', '#8eb4ff', '#5c8dff', '#2f5bff'],
+    EU: ['#e0f7e7', '#baf0c8', '#8dde9f', '#5dc777', '#34a853'],
+    AS: ['#ede7ff', '#d7c8ff', '#baa0ff', '#9b75ff', '#7c3aed'],
+    SA: ['#ffe8cc', '#ffd19c', '#ffb866', '#ff9f43', '#f97316'],
+    AF: ['#dff7ff', '#b5ecff', '#7fdcff', '#49c6ff', '#0ea5e9'],
+    OC: ['#ffe2f4', '#ffc1e7', '#ff9cdb', '#ff78cc', '#ec4899'],
   };
+
+  const regionKey = Object.entries(REGION_LABELS).find(([, label]) => label === selectedRegion)?.[0] || 'NA';
+  const selectedCounts = mapCounts?.[regionKey] || {};
   const values = {};
-  Object.entries(mapCounts || {}).forEach(([region, countries]) => {
-    const entries = Object.entries(countries || {});
-    if (!entries.length) {
-      const fallback = Object.keys(fallbackMapCountryScales[region] || {});
-      fallback.forEach((code) => {
-        values[code] = region === (Object.entries(REGION_LABELS).find(([,label])=>label===selectedRegion)?.[0]) ? palette[region].active : palette[region].base;
-      });
-      return;
-    }
-    entries.forEach(([code]) => {
-      values[code] = region === (Object.entries(REGION_LABELS).find(([,label])=>label===selectedRegion)?.[0]) ? palette[region].active : palette[region].base;
-    });
-  });
+  const entries = Object.entries(selectedCounts);
+  const maxCount = Math.max(...entries.map(([, count]) => Number(count) || 0), 1);
+
+  const applyScale = (code, count = 1) => {
+    const intensity = Math.max(0, Math.min(4, Math.round(((Number(count) || 1) / maxCount) * 4)));
+    values[code] = palette[regionKey][intensity];
+  };
+
+  if (entries.length) {
+    entries.forEach(([code, count]) => applyScale(code, count));
+  } else {
+    Object.keys(fallbackMapCountryScales[regionKey] || {}).forEach((code) => applyScale(code, 1));
+  }
+
   return values;
 }
 
@@ -878,7 +953,7 @@ function TradeMapPanel({ mapScales, regionSummary }) {
               strokeWidth: 1.25,
             },
             hover: {
-              fill: "#60a5fa",
+              fill: "#1d4ed8",
             },
             selected: {
               fill: "#2563eb",
@@ -966,8 +1041,8 @@ function TradeMapPanel({ mapScales, regionSummary }) {
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_.9fr]">
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div ref={mapRef} className="h-[320px] w-full" />
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100/90 p-2 md:p-3">
+          <div ref={mapRef} className="h-[420px] md:h-[520px] w-full" style={{ filter: "contrast(1.02) brightness(0.94) saturate(1.02)" }} />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -1023,10 +1098,10 @@ function TradeMapPanel({ mapScales, regionSummary }) {
                     {visibleRoutes.length ? visibleRoutes.map((route) => (
                       <div
                         key={route.label}
-                        className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60"
+                        className="group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60 sm:flex-row sm:items-center sm:justify-between"
                         title={`${route.label} • ${route.count} saved account${route.count === 1 ? '' : 's'}`}
                       >
-                        <span className="truncate font-medium text-slate-700 group-hover:text-slate-900">{route.label}</span>
+                        <span className="font-medium leading-6 text-slate-700 group-hover:text-slate-900 break-words sm:pr-3">{route.label}</span>
                         <span className="ml-3 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700">{route.count}</span>
                       </div>
                     )) : (
@@ -1050,7 +1125,7 @@ function TradeMapPanel({ mapScales, regionSummary }) {
                   </div>
                 </div>
                 <div className="mt-3 text-xl font-semibold text-slate-900">
-                  {showingLiveRegion ? regionSummary?.laneDensity || "0%" : "—"}
+                  {visibleRoutes.length ? regionSummary?.laneDensity || "0%" : "—"}
                 </div>
               </div>
 
@@ -1095,6 +1170,7 @@ export default function LITDashboard() {
   const navigate = useNavigate();
   const [savedCompaniesLive, setSavedCompaniesLive] = useState([]);
   const [campaignsLive, setCampaignsLive] = useState([]);
+  const [profileRoutesByCompany, setProfileRoutesByCompany] = useState({});
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
   useEffect(() => {
@@ -1131,13 +1207,55 @@ export default function LITDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRouteProfiles() {
+      if (!savedCompaniesLive.length) {
+        if (!cancelled) setProfileRoutesByCompany({});
+        return;
+      }
+
+      const targetRows = savedCompaniesLive.slice(0, 10);
+      const results = await Promise.all(targetRows.map(async (row) => {
+        const companyKey = row?.company?.company_id || row?.company?.companyId || row?.company_id || row?.companyKey || row?.company_key || '';
+        if (!companyKey) return null;
+        try {
+          const data = await getIyCompanyProfile({ companyKey });
+          return [companyKey, data?.companyProfile || null];
+        } catch (error) {
+          console.warn('Dashboard route profile fetch failed for', companyKey, error);
+          return [companyKey, null];
+        }
+      }));
+
+      if (cancelled) return;
+      const next = {};
+      results.forEach((entry) => {
+        if (!entry) return;
+        const [key, value] = entry;
+        next[key] = value;
+      });
+      setProfileRoutesByCompany(next);
+    }
+
+    loadRouteProfiles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [savedCompaniesLive]);
+
   const normalizedCompanies = useMemo(() => {
     if (savedCompaniesLive.length > 0) {
-      return savedCompaniesLive.map(normalizeSavedCompanyRow);
+      return savedCompaniesLive.map((row) => {
+        const companyId = row?.company?.company_id || row?.company?.companyId || row?.company?.source_company_key || row?.company_id || row?.companyKey || row?.company_key || "";
+        return normalizeSavedCompanyRow(row, companyId ? profileRoutesByCompany[companyId] || null : null);
+      });
     }
     if (!dashboardLoading) return [];
     return companiesTable.slice(0, 10);
-  }, [savedCompaniesLive, dashboardLoading]);
+  }, [savedCompaniesLive, dashboardLoading, profileRoutesByCompany]);
 
   const mapScales = useMemo(
     () => buildMapScalesFromCompanies(normalizedCompanies),
@@ -1324,7 +1442,7 @@ export default function LITDashboard() {
                           <button
                             type="button"
                             onClick={() => {
-                              window.location.href = commandCenterHref;
+                              navigate(commandCenterHref);
                             }}
                             className="rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
                             title="Open in Command Center"
