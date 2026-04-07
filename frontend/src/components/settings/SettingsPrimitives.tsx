@@ -99,7 +99,7 @@ export type SettingsHeaderProps = {
 export function SettingsHeader({
   title,
   description,
-  workspaceName = "Spark Fusion",
+  workspaceName,
 }: SettingsHeaderProps) {
   return (
     <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
