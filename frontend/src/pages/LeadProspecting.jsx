@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Company, Contact } from '@/api/entities';
 import {
   Search, Building2, Users, Download, Target, Zap, Settings, ExternalLink,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Sparkles, AlertCircle
 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { searchLeads } from '@/api/functions';
+import { PulseIcon } from '@/components/shared/AppIcons';
 
-const VIBE_API_CONFIGURED = Boolean(import.meta.env.VITE_VIBE_API_KEY);
+const PULSE_API_CONFIGURED = Boolean(import.meta.env.VITE_VIBE_API_KEY);
 
 const INDUSTRIES = [
   'Freight Forwarding', 'Logistics', '3PL', 'Shipping', 'Transportation',
@@ -18,16 +19,30 @@ const INDUSTRIES = [
 ];
 
 const COMPANY_SIZES = [
-  { label: '1-10 employees',    value: '1,10' },
-  { label: '11-50 employees',   value: '11,50' },
-  { label: '51-200 employees',  value: '51,200' },
-  { label: '201-1000 employees',value: '201,1000' },
-  { label: '1000+ employees',   value: '1000,10000' },
+  { label: '1-10 employees', value: '1,10' },
+  { label: '11-50 employees', value: '11,50' },
+  { label: '51-200 employees', value: '51,200' },
+  { label: '201-1000 employees', value: '201,1000' },
+  { label: '1000+ employees', value: '1000,10000' },
 ];
+
+function normalizeContact(contact) {
+  return {
+    name: contact?.name || contact?.full_name || '',
+    full_name: contact?.full_name || contact?.name || '',
+    title: contact?.title || '',
+    department: contact?.department || contact?.dept || '',
+    email: contact?.email || '',
+    phone: contact?.phone || '',
+    linkedin_url: contact?.linkedin_url || contact?.linkedin || '',
+    linkedin: contact?.linkedin || contact?.linkedin_url || '',
+    email_verified: contact?.email_verified || contact?.verified || false,
+  };
+}
 
 export default function LeadProspecting() {
   const { user } = useAuth();
-  const [searchMode, setSearchMode] = useState('natural'); // 'natural' | 'structured'
+  const [searchMode, setSearchMode] = useState('natural');
   const [nlQuery, setNlQuery] = useState('');
   const [searchCriteria, setSearchCriteria] = useState({
     industry: '',
@@ -44,39 +59,88 @@ export default function LeadProspecting() {
   const [isImporting, setIsImporting] = useState(false);
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
+  const [apiStatus, setApiStatus] = useState(PULSE_API_CONFIGURED ? 'unknown' : 'warning');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const statusPill = useMemo(() => {
+    if (apiStatus === 'connected') {
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-green-500 pulse-ping-dot" />
+          Live API
+        </span>
+      );
+    }
+
+    if (apiStatus === 'error') {
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+          API Error
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+        {PULSE_API_CONFIGURED ? 'Not Verified' : 'Setup Required'}
+      </span>
+    );
+  }, [apiStatus]);
 
   const handleSearch = async () => {
     setIsSearching(true);
+    setErrorMessage('');
+    setSearchPerformed(false);
+
     try {
       const criteria = searchMode === 'natural'
-        ? { ...searchCriteria, keywords: nlQuery }
-        : searchCriteria;
+        ? { ...searchCriteria, keywords: nlQuery.trim(), query: nlQuery.trim(), mode: 'natural' }
+        : { ...searchCriteria, mode: 'structured' };
+
       const response = await searchLeads(criteria);
-      if (response.status === 200) {
-        setSearchResults(response.data.results || []);
-        setSearchPerformed(true);
+      const results = Array.isArray(response?.data?.results) ? response.data.results : [];
+
+      setSearchResults(results);
+      setSearchPerformed(true);
+      setApiStatus(response?.ok === false ? 'warning' : 'connected');
+
+      if (!results.length && response?.error) {
+        setApiStatus('error');
+        setErrorMessage(typeof response.error === 'string' ? response.error : 'Search returned no usable records.');
+      } else if (!results.length) {
+        setErrorMessage('No companies matched the current search. Try broader criteria or verify the searchLeads edge function response.');
       }
     } catch (err) {
-      console.error('Search error:', err);
+      console.error('Pulse search error:', err);
+      setApiStatus('error');
+      setSearchResults([]);
+      setSearchPerformed(true);
+      setErrorMessage(err?.message || 'Pulse search failed. Check the searchLeads edge function and payload mapping.');
     }
+
     setIsSearching(false);
   };
 
   const handleSelectAll = (checked) => {
-    setSelectedCompanies(checked ? searchResults.map((c) => c.id) : []);
+    setSelectedCompanies(Boolean(checked) ? searchResults.map((c) => c.id) : []);
   };
 
   const handleSelectCompany = (companyId, checked) => {
     setSelectedCompanies((prev) =>
-      checked ? [...prev, companyId] : prev.filter((id) => id !== companyId)
+      Boolean(checked) ? [...prev, companyId] : prev.filter((id) => id !== companyId)
     );
   };
 
   const handleImportSelected = async () => {
     if (selectedCompanies.length === 0) return;
+
     setIsImporting(true);
+
     try {
       const selected = searchResults.filter((c) => selectedCompanies.includes(c.id));
+
       for (const result of selected) {
         const company = await Company.create({
           name: result.name,
@@ -87,28 +151,38 @@ export default function LeadProspecting() {
           employee_count: result.employee_count,
           annual_revenue: result.annual_revenue,
           enrichment_status: 'enriched',
-          enrichment_data: { source: 'vibe_prospecting', imported_date: new Date().toISOString(), ...result },
+          enrichment_data: {
+            source: 'pulse',
+            imported_date: new Date().toISOString(),
+            imported_by: user?.id ?? null,
+            ...result,
+          },
         });
+
         if (result.contacts?.length > 0) {
-          for (const contact of result.contacts) {
+          for (const rawContact of result.contacts) {
+            const contact = normalizeContact(rawContact);
             await Contact.create({
               company_id: company.id,
-              full_name: contact.name,
+              full_name: contact.full_name || contact.name,
               title: contact.title,
               dept: contact.department,
               email: contact.email,
               phone: contact.phone,
-              linkedin: contact.linkedin_url,
-              source: 'vibe',
+              linkedin: contact.linkedin_url || contact.linkedin,
+              source: 'pulse',
               verified: contact.email_verified || false,
             });
           }
         }
       }
+
       setSelectedCompanies([]);
     } catch (err) {
       console.error('Import error:', err);
+      setErrorMessage('Import failed. Review Company / Contact entity permissions and payload fields.');
     }
+
     setIsImporting(false);
   };
 
@@ -120,44 +194,39 @@ export default function LeadProspecting() {
     });
   };
 
-  const estimatedCredits = searchResults.length > 0
-    ? searchResults.length * 5
-    : null;
+  const estimatedCredits = searchResults.length > 0 ? searchResults.length * 5 : null;
 
   return (
     <div className="w-full px-6 py-6 space-y-6">
-
-      {/* Header */}
-      <div className="space-y-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Lead Intelligence</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-semibold text-slate-900">Vibe Prospecting</h1>
-          {VIBE_API_CONFIGURED ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-              API Connected
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              Setup Required
-            </span>
-          )}
+      <div className="relative overflow-hidden rounded-3xl border border-[var(--pulse-border)] bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-80 bg-[radial-gradient(circle_at_center,rgba(0,224,255,0.12),transparent_60%)]" />
+        <div className="relative space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[var(--pulse-muted)]">Lead Intelligence</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 shadow-inner ring-1 ring-white/10">
+                <PulseIcon className="h-7 w-7 text-cyan-400 pulse-orbit" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-semibold text-slate-900">Pulse</h1>
+                <p className="text-sm text-slate-500">AI-powered lead discovery for Logistics Intel</p>
+              </div>
+            </div>
+            {statusPill}
+          </div>
+          <p className="text-sm text-slate-500">
+            Natural language or structured search · Powered by Explorium
+          </p>
         </div>
-        <p className="text-sm text-slate-500">
-          AI-powered lead discovery · Natural language or structured search · Powered by Explorium
-        </p>
       </div>
 
-      {/* API Setup Notice */}
-      {!VIBE_API_CONFIGURED && (
+      {!PULSE_API_CONFIGURED && (
         <div className="flex items-start gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <Settings className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-amber-800">Vibe Prospecting API not configured</p>
+            <p className="text-sm font-semibold text-amber-800">Pulse API not configured</p>
             <p className="mt-0.5 text-sm text-amber-700">
               Connect your Explorium API key in Settings &rsaquo; Security &amp; API to activate live results.
-              Search results will use mock data until configured.
             </p>
           </div>
           <a
@@ -169,9 +238,14 @@ export default function LeadProspecting() {
         </div>
       )}
 
-      {/* Search Panel */}
+      {errorMessage && (
+        <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+          <div>{errorMessage}</div>
+        </div>
+      )}
+
       <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
-        {/* Mode tabs */}
         <div className="mb-5 flex gap-1 rounded-xl bg-slate-100 p-1 w-fit">
           {[
             { id: 'natural', label: 'Natural Language' },
@@ -195,7 +269,7 @@ export default function LeadProspecting() {
           <div className="space-y-4">
             <textarea
               rows={4}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 resize-none"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 resize-none"
               placeholder="Find VP of Operations at logistics companies with 50–500 employees in the US that use intermodal transport..."
               value={nlQuery}
               onChange={(e) => setNlQuery(e.target.value)}
@@ -206,9 +280,15 @@ export default function LeadProspecting() {
               className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSearching ? (
-                <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Searching...</>
+                <>
+                  <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                  Searching...
+                </>
               ) : (
-                <><Zap className="h-4 w-4" /> Search with AI</>
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Search with Pulse
+                </>
               )}
             </button>
           </div>
@@ -250,7 +330,7 @@ export default function LeadProspecting() {
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Location</label>
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
                   placeholder="e.g., United States, New York"
                   value={searchCriteria.location}
                   onChange={(e) => setSearchCriteria({ ...searchCriteria, location: e.target.value })}
@@ -259,7 +339,7 @@ export default function LeadProspecting() {
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Keywords</label>
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
                   placeholder="e.g., freight, logistics, shipping"
                   value={searchCriteria.keywords}
                   onChange={(e) => setSearchCriteria({ ...searchCriteria, keywords: e.target.value })}
@@ -268,7 +348,7 @@ export default function LeadProspecting() {
               <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Target Job Titles</label>
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
                   placeholder="Comma-separated titles"
                   value={searchCriteria.job_titles}
                   onChange={(e) => setSearchCriteria({ ...searchCriteria, job_titles: e.target.value })}
@@ -290,21 +370,25 @@ export default function LeadProspecting() {
               className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSearching ? (
-                <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Searching...</>
+                <>
+                  <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                  Searching...
+                </>
               ) : (
-                <><Search className="h-4 w-4" /> Search Leads</>
+                <>
+                  <Search className="h-4 w-4" />
+                  Search Pulse
+                </>
               )}
             </button>
           </div>
         )}
       </div>
 
-      {/* Results */}
       {!searchPerformed ? (
-        /* Empty state */
         <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 text-center shadow-sm ring-1 ring-black/[0.02]">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-            <Target className="h-7 w-7 text-slate-400" />
+            <PulseIcon className="h-7 w-7 text-[var(--pulse-brand)] pulse-breathe" />
           </div>
           <h3 className="mt-4 text-lg font-semibold text-slate-800">Ready to find your next customers</h3>
           <p className="mt-2 max-w-sm text-sm text-slate-500">
@@ -315,11 +399,10 @@ export default function LeadProspecting() {
         <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 text-center shadow-sm">
           <Search className="h-10 w-10 text-slate-300" />
           <h3 className="mt-4 text-lg font-semibold text-slate-700">No results found</h3>
-          <p className="mt-1 text-sm text-slate-500">Try adjusting your search criteria</p>
+          <p className="mt-1 text-sm text-slate-500">Try adjusting your search criteria or verify the searchLeads response mapping.</p>
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Cost estimate banner */}
           {estimatedCredits && (
             <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3">
               <Zap className="h-4 w-4 flex-shrink-0 text-amber-500" />
@@ -328,7 +411,7 @@ export default function LeadProspecting() {
               </p>
               <div className="ml-auto flex gap-2">
                 <button
-                  onClick={() => { setSearchPerformed(false); setSearchResults([]); }}
+                  onClick={() => { setSearchPerformed(false); setSearchResults([]); setErrorMessage(''); }}
                   className="rounded-full border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
                 >
                   Refine Search
@@ -337,7 +420,6 @@ export default function LeadProspecting() {
             </div>
           )}
 
-          {/* Results table */}
           <div className="rounded-3xl border border-slate-200 bg-white/95 shadow-sm ring-1 ring-black/[0.02] overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <div className="flex items-center gap-3">
@@ -349,7 +431,7 @@ export default function LeadProspecting() {
                   {searchResults.length} companies found
                 </span>
                 {selectedCompanies.length > 0 && (
-                  <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                  <span className="rounded-full bg-cyan-100 px-2.5 py-0.5 text-xs font-semibold text-cyan-700">
                     {selectedCompanies.length} selected
                   </span>
                 )}
@@ -360,9 +442,15 @@ export default function LeadProspecting() {
                 className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {isImporting ? (
-                  <><div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Importing...</>
+                  <>
+                    <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                    Importing...
+                  </>
                 ) : (
-                  <><Download className="h-3.5 w-3.5" /> Import Selected</>
+                  <>
+                    <Download className="h-3.5 w-3.5" />
+                    Import Selected
+                  </>
                 )}
               </button>
             </div>
@@ -382,6 +470,7 @@ export default function LeadProspecting() {
               <tbody className="divide-y divide-slate-50">
                 {searchResults.map((company) => {
                   const isExpanded = expandedRows.has(company.id);
+
                   return (
                     <React.Fragment key={company.id}>
                       <tr className="hover:bg-slate-50/70 transition-colors">
@@ -408,7 +497,7 @@ export default function LeadProspecting() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           {company.contacts?.length > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2.5 py-0.5 text-xs font-semibold text-cyan-700">
                               <Users className="h-3 w-3" />
                               {company.contacts.length}
                             </span>
@@ -431,7 +520,7 @@ export default function LeadProspecting() {
                             {company.contacts?.length > 0 && (
                               <button
                                 onClick={() => toggleRow(company.id)}
-                                className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-600 hover:text-cyan-800"
                               >
                                 {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                                 Contacts
@@ -444,16 +533,19 @@ export default function LeadProspecting() {
                         <tr>
                           <td colSpan={7} className="bg-slate-50/70 px-6 py-3">
                             <div className="flex flex-wrap gap-2">
-                              {company.contacts.slice(0, 5).map((contact, idx) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200 px-3 py-1 text-xs text-slate-700 shadow-sm"
-                                >
-                                  <span className="font-semibold">{contact.name}</span>
-                                  <span className="text-slate-400">·</span>
-                                  <span>{contact.title}</span>
-                                </span>
-                              ))}
+                              {company.contacts.slice(0, 5).map((rawContact, idx) => {
+                                const contact = normalizeContact(rawContact);
+                                return (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200 px-3 py-1 text-xs text-slate-700 shadow-sm"
+                                  >
+                                    <span className="font-semibold">{contact.name || contact.full_name}</span>
+                                    <span className="text-slate-400">·</span>
+                                    <span>{contact.title || 'Contact'}</span>
+                                  </span>
+                                );
+                              })}
                               {company.contacts.length > 5 && (
                                 <span className="rounded-full bg-slate-200 px-3 py-1 text-xs text-slate-500">
                                   +{company.contacts.length - 5} more
