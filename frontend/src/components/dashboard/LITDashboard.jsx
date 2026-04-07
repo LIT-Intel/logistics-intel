@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
-import { getSavedCompaniesFromSupabase, getCampaignsFromSupabase } from "@/lib/supabase";
+import { getSavedCompanies } from "@/lib/api";
+import { getCampaignsFromSupabase } from "@/lib/supabase";
 import {
   ResponsiveContainer,
   BarChart,
@@ -27,6 +28,8 @@ import {
   UserRoundPlus,
   FileText,
   PlusCircle,
+  Ship,
+  Plane,
 } from "lucide-react";
 
 const monthlyTrendData = [
@@ -353,6 +356,30 @@ function inferCountryCodeFromText(text) {
   return '';
 }
 
+function getRegionFlags(regionLabel) {
+  switch (regionLabel) {
+    case "North America":
+      return ["🇺🇸", "🇨🇦", "🇲🇽"];
+    case "Europe":
+      return ["🇩🇪", "🇳🇱", "🇮🇹"];
+    case "Asia":
+      return ["🇨🇳", "🇻🇳", "🇮🇳"];
+    case "South America":
+      return ["🇧🇷", "🇨🇱", "🇨🇴"];
+    case "Africa":
+      return ["🇿🇦", "🇲🇦", "🇪🇬"];
+    case "Oceania":
+      return ["🇦🇺", "🇳🇿", "🇵🇬"];
+    default:
+      return [];
+  }
+}
+
+function slugifyCompanyId(value) {
+  if (!value) return '';
+  return encodeURIComponent(String(value));
+}
+
 function getCommandCenterHref(row) {
   const params = new URLSearchParams();
   if (row?.companyId) params.set('companyId', row.companyId);
@@ -362,28 +389,25 @@ function getCommandCenterHref(row) {
   return query ? `/command-center?${query}` : '/command-center';
 }
 function normalizeSavedCompanyRow(row) {
-  const parsedCompanyData = safeJsonParse(row?.company_data) || {};
-  const companyData = typeof parsedCompanyData === "object" && !Array.isArray(parsedCompanyData)
-    ? parsedCompanyData
-    : {};
+  const company = row?.company || {};
+  const raw = row?.raw || {};
+  const companyData = row?.companyData || safeJsonParse(raw?.company_data) || {};
 
   const companyName =
-    row?.company_name ||
+    company?.name ||
+    raw?.company_name ||
     companyData?.name ||
     companyData?.title ||
-    companyData?.company_name ||
-    row?.company_key?.split("/").pop()?.replace(/[-_]+/g, " ") ||
-    row?.company_id ||
+    raw?.company_key?.split("/").pop()?.replace(/[-_]+/g, " ") ||
+    raw?.company_id ||
     "Unknown Company";
 
   const shipmentsValue = Number(
-    companyData?.shipmentsLast12m ??
+    company?.kpis?.shipments_12m ??
+      companyData?.shipmentsLast12m ??
       companyData?.shipments_last_12m ??
       companyData?.totalShipments ??
-      companyData?.total_shipments ??
       companyData?.shipments ??
-      companyData?.stats?.shipmentsLast12m ??
-      companyData?.snapshot?.shipmentsLast12m ??
       0,
   );
 
@@ -392,51 +416,53 @@ function normalizeSavedCompanyRow(row) {
       companyData?.teu_last_12m ??
       companyData?.teu ??
       companyData?.total_teu ??
-      companyData?.stats?.teuLast12m ??
-      companyData?.snapshot?.teuLast12m ??
       0,
   );
 
   const lastShipment =
     companyData?.lastShipmentDate ||
     companyData?.last_shipment_date ||
+    company?.kpis?.last_activity ||
     companyData?.mostRecentShipment ||
-    companyData?.most_recent_shipment ||
-    companyData?.stats?.lastShipmentDate ||
-    companyData?.snapshot?.lastShipmentDate ||
-    row?.updated_at ||
-    row?.created_at ||
+    raw?.updated_at ||
+    raw?.created_at ||
     null;
 
   const mode =
     companyData?.mode ||
     companyData?.shipment_mode ||
     companyData?.transport_mode ||
-    companyData?.primary_mode ||
-    companyData?.stats?.mode ||
-    "—";
+    (teuValue > 0 || shipmentsValue > 0 ? "Ocean" : "—");
 
-  const countryCode = extractCountryCode(row, companyData);
-  const addressParts = [companyData?.city, companyData?.state, countryCode].filter(Boolean);
+  const countryCode = extractCountryCode(raw, companyData) || company?.country_code || '';
   const location =
+    company?.address ||
     companyData?.address ||
     companyData?.location ||
-    (addressParts.length ? addressParts.join(", ") : "—");
+    [companyData?.city, companyData?.state, countryCode].filter(Boolean).join(', ') ||
+    '—';
+
+  const companyId = raw?.company_id || company?.internal_id || company?.company_id || raw?.company_key || '';
+  const companyKey = raw?.company_key || company?.company_id || raw?.company_id || '';
+  const commandCenterHref = companyId
+    ? `/command-center/company/${slugifyCompanyId(companyId)}`
+    : getCommandCenterHref({ companyId, companyKey, company: companyName });
 
   return {
     company: titleCase(companyName),
-    type: row?.source ? titleCase(row.source) : "Saved Company",
+    type: row?.stage ? titleCase(row.stage) : raw?.source ? titleCase(raw.source) : 'Saved Company',
     location,
     shipments: formatNumber(shipmentsValue),
     shipmentsValue,
-    teu: Number.isFinite(teuValue) ? teuValue : 0,
-    mode: titleCase(mode),
+    teu: teuValue,
+    mode,
     lastShipment: formatDate(lastShipment),
-    recency: lastShipment ? "Recent" : "Inactive",
-    status: shipmentsValue >= 1000 ? "High" : shipmentsValue >= 100 ? "Medium" : "Low",
-    countryCode,
-    companyId: row?.company_id || "",
-    companyKey: row?.company_key || "",
+    recency: lastShipment ? 'Recent' : 'Inactive',
+    status: shipmentsValue >= 1000 ? 'High' : shipmentsValue >= 100 ? 'Medium' : 'Low',
+    countryCode: countryCode || '',
+    companyId,
+    companyKey,
+    commandCenterHref,
     raw: row,
   };
 }
@@ -663,6 +689,7 @@ function getActivityIcon(type) {
 }
 
 function TradeMapPanel({ mapScales, regionSummary }) {
+  const activeFlags = getRegionFlags(selectedRegion);
   const [selectedRegion, setSelectedRegion] = useState(
     regionSummary?.activeRegionLabel || "North America",
   );
@@ -849,20 +876,41 @@ function TradeMapPanel({ mapScales, regionSummary }) {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <SectionCardHeader
-            eyebrow="Region Intelligence"
-            title="Active Region"
-            subtitle="Regional concentration and saved-account coverage"
-            icon={MapPinned}
-            iconAccent="from-blue-600 to-indigo-600"
-          />
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Region Intelligence
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-800">Active Region</div>
+              <div className="mt-1 text-sm text-slate-500">Regional concentration and saved-account coverage</div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm">
+                <Ship size={18} />
+              </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-400 shadow-sm">
+                <Plane size={18} />
+              </div>
+            </div>
+          </div>
 
           <div className="mt-5 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-4">
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
               Current Focus
             </div>
-            <div className="mt-1 text-2xl font-semibold text-slate-900">
-              {selectedRegion}
+            <div className="mt-1 flex items-center gap-3">
+              <div className="text-2xl font-semibold text-slate-900">{selectedRegion}</div>
+              <div className="flex items-center gap-1.5">
+                {activeFlags.map((flag) => (
+                  <span
+                    key={flag}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-100 bg-white text-base shadow-sm"
+                  >
+                    {flag}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -962,7 +1010,7 @@ export default function LITDashboard() {
     async function loadDashboardData() {
       try {
         const [savedRes, campaignsRes] = await Promise.all([
-          getSavedCompaniesFromSupabase("prospect"),
+          getSavedCompanies(),
           getCampaignsFromSupabase(),
         ]);
 
@@ -994,8 +1042,9 @@ export default function LITDashboard() {
     if (savedCompaniesLive.length > 0) {
       return savedCompaniesLive.map(normalizeSavedCompanyRow);
     }
-    return companiesTable;
-  }, [savedCompaniesLive]);
+    if (!dashboardLoading) return [];
+    return companiesTable.slice(0, 10);
+  }, [savedCompaniesLive, dashboardLoading]);
 
   const mapScales = useMemo(
     () => buildMapScalesFromCompanies(normalizedCompanies),
@@ -1126,8 +1175,14 @@ export default function LITDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedCompanies.map((row) => {
-                    const commandCenterHref = getCommandCenterHref(row);
+                  {displayedCompanies.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-500">
+                      No saved companies yet
+                    </td>
+                  </tr>
+                ) : displayedCompanies.map((row) => {
+                    const commandCenterHref = row.commandCenterHref || getCommandCenterHref(row);
                     return (
                     <tr key={`${row.company}-${row.location}`} className="border-b border-slate-100 align-top">
                       <td className="px-5 py-4">
