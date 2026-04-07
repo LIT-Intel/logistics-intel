@@ -198,7 +198,7 @@ export default function SettingsPage() {
       }
     }
 
-    const activeWorkspaceName = currentOrgId ? (fallbackOrgName || "Workspace") : "Admin Console";
+    let activeWorkspaceName = "Admin Console";
 
     setProfile({
       name:
@@ -239,6 +239,8 @@ export default function SettingsPage() {
         .maybeSingle();
       if (orgError) console.error("[settings] organizations", orgError);
 
+      activeWorkspaceName = orgData?.name || fallbackOrgName || "Workspace";
+
       setOrgProfile({
         ...(orgData ?? {}),
         company: orgData?.name ?? orgData?.company ?? activeWorkspaceName ?? "",
@@ -275,7 +277,11 @@ export default function SettingsPage() {
       setOrgMembers([]);
       setOrgInvites([]);
     }
-
+setProfile((prev) => ({
+  ...prev,
+  company_name: activeWorkspaceName,
+}));
+    
     const [subResult, plansResult] = await Promise.allSettled([
       currentOrgId
         ? supabase
