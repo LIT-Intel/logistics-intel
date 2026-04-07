@@ -7,13 +7,13 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  RadioTower,
   Blocks,
   CreditCard,
   Shield,
   Database,
   Bug,
 } from "lucide-react";
+import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 
 const sections = [
   {
@@ -23,7 +23,7 @@ const sections = [
       { label: "Search", href: "/app/search", icon: Search },
       { label: "Command Center", href: "/app/command-center", icon: Briefcase },
       { label: "Campaigns", href: "/app/campaigns", icon: Megaphone },
-      { label: "Lead Prospecting", href: "/app/prospecting", icon: RadioTower },
+      { label: "Pulse", href: "/app/prospecting", icon: PulseIcon },
     ],
   },
   {
@@ -65,8 +65,8 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
     >
       <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-bold text-white shadow-lg">
-            LIT
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 shadow-lg ring-1 ring-white/10">
+            <LitAppIcon className="h-7 w-7 text-white" />
           </div>
 
           {sidebarOpen && (
@@ -75,7 +75,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 Trade Intelligence
               </div>
               <div className="truncate text-xs text-slate-300">
-                Logistic Intel
+                Logistics Intel
               </div>
             </div>
           )}
@@ -118,7 +118,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                         : "text-slate-200 hover:bg-white/5 hover:text-white",
                     ].join(" ")}
                   >
-                    <Icon size={18} className="shrink-0" />
+                    <Icon className={`shrink-0 ${item.label === "Pulse" && isActive ? "pulse-sidebar-active text-cyan-300" : ""}`} size={18} />
                     {sidebarOpen && <span className="truncate">{item.label}</span>}
                   </a>
                 );
@@ -136,7 +136,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 Pro Intelligence
               </div>
               <div className="mt-1 text-xs leading-5 text-slate-300">
-                Track companies, campaigns, shipment activity, and pipeline in one place.
+                Track companies, campaigns, shipment activity, pipeline, and AI prospecting in one place.
               </div>
             </>
           ) : (
