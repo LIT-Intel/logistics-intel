@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
-import { getCampaigns } from "@/lib/api";
-import { getSavedCompaniesFromSupabase } from "@/lib/supabase";
+import { getSavedCompaniesFromSupabase, getCampaignsFromSupabase } from "@/lib/supabase";
 import {
   ResponsiveContainer,
   BarChart,
@@ -292,32 +291,38 @@ function titleCase(value) {
 }
 
 function normalizeSavedCompanyRow(row) {
-  const companyData = row?.company_data || {};
-  const countryCode = (
-    companyData?.countryCode ||
-    companyData?.country_code ||
-    companyData?.country ||
-    row?.company_key?.split("/").pop()?.slice(-2) ||
-    ""
-  )
-    .toString()
-    .trim()
-    .toUpperCase();
+  const parsedCompanyData = safeJsonParse(row?.company_data) || {};
+  const companyData = typeof parsedCompanyData === "object" && !Array.isArray(parsedCompanyData)
+    ? parsedCompanyData
+    : {};
+
+  const companyName =
+    row?.company_name ||
+    companyData?.name ||
+    companyData?.title ||
+    companyData?.company_name ||
+    row?.company_key?.split("/").pop()?.replace(/[-_]+/g, " ") ||
+    row?.company_id ||
+    "Unknown Company";
 
   const shipmentsValue = Number(
-    companyData?.shipmentsLast12m ||
-      companyData?.shipments_last_12m ||
-      companyData?.totalShipments ||
-      companyData?.total_shipments ||
-      companyData?.shipments ||
+    companyData?.shipmentsLast12m ??
+      companyData?.shipments_last_12m ??
+      companyData?.totalShipments ??
+      companyData?.total_shipments ??
+      companyData?.shipments ??
+      companyData?.stats?.shipmentsLast12m ??
+      companyData?.snapshot?.shipmentsLast12m ??
       0,
   );
 
   const teuValue = Number(
-    companyData?.teuLast12m ||
-      companyData?.teu_last_12m ||
-      companyData?.teu ||
-      companyData?.total_teu ||
+    companyData?.teuLast12m ??
+      companyData?.teu_last_12m ??
+      companyData?.teu ??
+      companyData?.total_teu ??
+      companyData?.stats?.teuLast12m ??
+      companyData?.snapshot?.teuLast12m ??
       0,
   );
 
@@ -326,6 +331,8 @@ function normalizeSavedCompanyRow(row) {
     companyData?.last_shipment_date ||
     companyData?.mostRecentShipment ||
     companyData?.most_recent_shipment ||
+    companyData?.stats?.lastShipmentDate ||
+    companyData?.snapshot?.lastShipmentDate ||
     row?.updated_at ||
     row?.created_at ||
     null;
@@ -334,20 +341,19 @@ function normalizeSavedCompanyRow(row) {
     companyData?.mode ||
     companyData?.shipment_mode ||
     companyData?.transport_mode ||
+    companyData?.primary_mode ||
+    companyData?.stats?.mode ||
     "—";
 
-  const addressParts = [
-    companyData?.city,
-    companyData?.state,
-    companyData?.countryCode || companyData?.country_code || countryCode,
-  ].filter(Boolean);
-
+  const countryCode = extractCountryCode(row, companyData);
+  const addressParts = [companyData?.city, companyData?.state, countryCode].filter(Boolean);
   const location =
     companyData?.address ||
+    companyData?.location ||
     (addressParts.length ? addressParts.join(", ") : "—");
 
   return {
-    company: row?.company_name || companyData?.name || "Unknown Company",
+    company: titleCase(companyName),
     type: row?.source ? titleCase(row.source) : "Saved Company",
     location,
     shipments: formatNumber(shipmentsValue),
@@ -356,9 +362,10 @@ function normalizeSavedCompanyRow(row) {
     mode: titleCase(mode),
     lastShipment: formatDate(lastShipment),
     recency: lastShipment ? "Recent" : "Inactive",
-    status:
-      shipmentsValue >= 1000 ? "High" : shipmentsValue >= 100 ? "Medium" : "Low",
+    status: shipmentsValue >= 1000 ? "High" : shipmentsValue >= 100 ? "Medium" : "Low",
     countryCode,
+    companyId: row?.company_id || "",
+    companyKey: row?.company_key || "",
     raw: row,
   };
 }
@@ -885,7 +892,7 @@ export default function LITDashboard() {
       try {
         const [savedRes, campaignsRes] = await Promise.all([
           getSavedCompaniesFromSupabase("prospect"),
-          getCampaigns(),
+          getCampaignsFromSupabase(),
         ]);
 
         if (cancelled) return;
@@ -934,6 +941,7 @@ export default function LITDashboard() {
     [normalizedCompanies],
   );
 
+  const displayedCompanies = normalizedCompanies.slice(0, 10);
   const savedCompaniesCount = normalizedCompanies.length;
   const activeCampaignsCount = campaignsLive.length;
 
@@ -1003,7 +1011,7 @@ export default function LITDashboard() {
                     Saved Companies
                   </div>
                   <div className="mt-1 text-sm text-slate-500">
-                    Responsive company list with shipment intelligence
+                    Showing the 10 most recent saved accounts with live CRM data
                   </div>
                 </div>
 
@@ -1047,7 +1055,9 @@ export default function LITDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {normalizedCompanies.map((row) => (
+                  {displayedCompanies.map((row) => {
+                    const commandCenterHref = buildCommandCenterHref(row);
+                    return (
                     <tr key={`${row.company}-${row.location}`} className="border-b border-slate-100 align-top">
                       <td className="px-5 py-4">
                         <div className="flex items-start gap-3">
@@ -1090,16 +1100,29 @@ export default function LITDashboard() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3 text-slate-500">
-                          <button type="button" className="hover:text-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.location.href = commandCenterHref;
+                            }}
+                            className="rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                            title="Open in Command Center"
+                          >
                             <Eye size={18} />
                           </button>
-                          <button type="button" className="hover:text-slate-800">
-                            <Bookmark size={18} />
+                          <button
+                            type="button"
+                            className="rounded-lg bg-blue-50 p-1 text-blue-600 ring-1 ring-blue-200"
+                            title="Already saved"
+                            aria-label="Already saved"
+                          >
+                            <Bookmark size={18} fill="currentColor" />
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
