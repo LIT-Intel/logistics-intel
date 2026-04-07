@@ -56,12 +56,32 @@ const mobileSections = [
   },
 ];
 
+const PAGE_META = [
+  { match: /^\/app\/dashboard/, title: "Dashboard", subtitle: "Trade Intelligence overview" },
+  { match: /^\/app\/search/, title: "Search", subtitle: "Find companies and shipment intelligence" },
+  { match: /^\/app\/command-center/, title: "Command Center", subtitle: "Your saved accounts and CRM workspace" },
+  { match: /^\/app\/campaigns/, title: "Campaigns", subtitle: "Create and manage campaigns" },
+  { match: /^\/app\/prospecting/, title: "Lead Prospecting", subtitle: "Target outreach and pipeline generation" },
+  { match: /^\/app\/rfp/, title: "RFP Studio", subtitle: "Build and manage freight RFPs" },
+  { match: /^\/app\/widgets/, title: "Widgets", subtitle: "Interactive logistics tools" },
+  { match: /^\/app\/settings/, title: "Settings", subtitle: "Manage profile, preferences, and account" },
+  { match: /^\/app\/billing/, title: "Billing", subtitle: "Plan, invoices, and payment methods" },
+  { match: /^\/app\/affiliate/, title: "Affiliate", subtitle: "Partner performance and referrals" },
+  { match: /^\/app\/admin/, title: "Admin", subtitle: "Administration and internal controls" },
+  { match: /^\/app\/cms/, title: "CMS", subtitle: "Content and publishing controls" },
+  { match: /^\/app\/agent/, title: "Debug Agent", subtitle: "Diagnostics and developer tools" },
+];
+
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const profileRef = useRef(null);
+  const currentMeta = useMemo(
+    () => PAGE_META.find((item) => item.match.test(location.pathname)) || PAGE_META[0],
+    [location.pathname],
+  );
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -130,8 +150,8 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
       <header className="relative z-40 h-20 border-b border-slate-200/80 bg-white px-4 md:px-6">
         <div className="flex h-full items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-tight text-slate-900">Dashboard</h1>
-            <p className="text-sm text-slate-500">Trade Intelligence overview</p>
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900">{currentMeta.title}</h1>
+            <p className="text-sm text-slate-500">{currentMeta.subtitle}</p>
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
