@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Menu, Search, Bell, ChevronDown, Settings, CreditCard, LogOut } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
+  const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef(null);
 
@@ -12,16 +14,16 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
         setProfileOpen(false);
       }
     }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-  useEffect(() => {
     function handleEscape(event) {
       if (event.key === "Escape") setProfileOpen(false);
     }
+
+    document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   const handleSignOut = async () => {
@@ -38,7 +40,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
       console.error("Sign out cleanup failed", error);
     }
 
-    window.location.href = "/login";
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -102,21 +104,29 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 top-[calc(100%+12px)] w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+              <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
                 <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-900">Valesco</div>
                   <div className="text-xs text-slate-500">Admin</div>
                 </div>
 
                 <div className="p-2">
-                  <a href="/settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <Link
+                    to="/app/settings"
+                    onClick={() => setProfileOpen(false)}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
                     <Settings size={16} />
                     Settings
-                  </a>
-                  <a href="/settings?tab=billing" className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  </Link>
+                  <Link
+                    to="/app/billing"
+                    onClick={() => setProfileOpen(false)}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
                     <CreditCard size={16} />
                     Billing
-                  </a>
+                  </Link>
                   <button
                     type="button"
                     onClick={handleSignOut}
