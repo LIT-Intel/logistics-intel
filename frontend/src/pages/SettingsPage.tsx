@@ -20,26 +20,59 @@ function normalizeError(error: any, fallback: string) {
   return error?.message || fallback;
 }
 
-function normalizePlanCode(value: string | null | undefined) {
-  return String(value || "free_trial").trim().toLowerCase();
+function toStringOrNull(value: unknown) {
+  const next = String(value ?? "").trim();
+  return next || null;
 }
 
-async function uploadAsset(file: File): Promise<{ file_url?: string; error?: string }> {
+function buildAdminSubscription() {
+  return {
+    plan_code: "unlimited",
+    status: "active",
+    cancel_at_period_end: false,
+    seat_limit: null,
+    current_period_end: null,
+    is_admin_override: true,
+  };
+}
+
+async function uploadAsset(params: {
+  file: File;
+  folder: "avatars" | "logos";
+  uid: string;
+}): Promise<{ file_url?: string; error?: string }> {
+  const { file, folder, uid } = params;
+
   try {
-    if (typeof UploadFile !== "function") {
-      return { error: "Upload service is not configured" };
+    if (typeof UploadFile === "function") {
+      const result = await UploadFile({ file });
+
+      if (result?.file_url) {
+        return { file_url: result.file_url };
+      }
+
+      if (result?.error) {
+        console.warn(`[settings] UploadFile ${folder} upload returned error, falling back to storage`, result.error);
+      }
     }
-
-    const result = await UploadFile({ file });
-
-    if (!result?.file_url) {
-      return { error: "Upload failed" };
-    }
-
-    return { file_url: result.file_url };
-  } catch (error: any) {
-    return { error: normalizeError(error, "Upload failed") };
+  } catch (error) {
+    console.warn(`[settings] UploadFile ${folder} upload failed, falling back to storage`, error);
   }
+
+  const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
+  const safeExt = (ext || "bin").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "bin";
+  const path = `${folder}/${uid}/${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("assets")
+    .upload(path, file, { upsert: true });
+
+  if (uploadError) {
+    return { error: normalizeError(uploadError, `Failed uploading ${folder.slice(0, -1)}`) };
+  }
+
+  const { data } = supabase.storage.from("assets").getPublicUrl(path);
+  return { file_url: data?.publicUrl };
 }
 
 export default function SettingsPage() {
@@ -65,7 +98,7 @@ export default function SettingsPage() {
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
 
-  const isSuperAdmin =
+  const isAdminEmail =
     ADMIN_EMAILS.includes(user?.email ?? "") ||
     user?.user_metadata?.role === "admin" ||
     user?.user_metadata?.role === "super_admin";
@@ -73,15 +106,14 @@ export default function SettingsPage() {
   const isOrgOwner = orgMembers.some(
     (m) =>
       m.user_id === user?.id &&
-      ["owner", "admin", "super_admin"].includes(String(m.role || "").toLowerCase())
+      ["owner", "admin", "super_admin"].includes(m.role)
   );
 
-  const isAdmin = isSuperAdmin || isOrgOwner;
+  const isAdmin = isAdminEmail || isOrgOwner;
 
   const canAccess = useCallback(
     (minPlan: string) =>
-      isAdmin ||
-      (PLAN_RANK[normalizePlanCode(plan)] ?? 0) >= (PLAN_RANK[normalizePlanCode(minPlan)] ?? 0),
+      isAdmin || (PLAN_RANK[plan ?? "free_trial"] ?? 0) >= (PLAN_RANK[minPlan] ?? 0),
     [isAdmin, plan]
   );
 
@@ -103,6 +135,71 @@ export default function SettingsPage() {
       .maybeSingle();
     if (baseProfileError) console.error("[settings] profiles", baseProfileError);
 
+    const fallbackOrgName =
+      baseProfileData?.organization_name ||
+      baseProfileData?.company_name ||
+      user?.user_metadata?.organization_name ||
+      user?.user_metadata?.company_name ||
+      "";
+
+    let currentOrgId: string | null = null;
+
+    const { data: membership, error: membershipError } = await supabase
+      .from("org_members")
+      .select("org_id")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (membershipError) console.error("[settings] org_members membership", membershipError);
+    currentOrgId = membership?.org_id ?? null;
+
+    if (!currentOrgId && isAdminEmail) {
+      const candidateNames = [
+        fallbackOrgName,
+        user?.user_metadata?.workspace_name,
+        "Admin Console",
+      ].filter(Boolean) as string[];
+
+      for (const candidate of candidateNames) {
+        const { data: adminOrg, error: adminOrgError } = await supabase
+          .from("organizations")
+          .select("*")
+          .ilike("name", candidate)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (adminOrgError) {
+          console.error("[settings] organizations admin fallback by name", adminOrgError);
+        }
+
+        if (adminOrg?.id) {
+          currentOrgId = adminOrg.id;
+          break;
+        }
+      }
+
+      if (!currentOrgId && user?.email) {
+        const { data: emailOrg, error: emailOrgError } = await supabase
+          .from("organizations")
+          .select("*")
+          .or(`support_email.eq.${user.email},owner_email.eq.${user.email}`)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (emailOrgError) {
+          console.error("[settings] organizations admin fallback by email", emailOrgError);
+        }
+
+        if (emailOrg?.id) currentOrgId = emailOrg.id;
+      }
+    }
+
+    const activeWorkspaceName = currentOrgId ? (fallbackOrgName || "Workspace") : "Admin Console";
+
     setProfile({
       name:
         userProfileData?.full_name ||
@@ -119,7 +216,8 @@ export default function SettingsPage() {
         user?.user_metadata?.avatar_url ||
         "",
       email: user?.email || "",
-      plan: isAdmin ? "admin" : normalizePlanCode(plan),
+      company_name: activeWorkspaceName,
+      plan: isAdmin ? "unlimited" : (plan ?? "free_trial"),
       isAdmin,
     });
 
@@ -130,45 +228,6 @@ export default function SettingsPage() {
       .maybeSingle();
     if (prefsError) console.error("[settings] user_preferences", prefsError);
     setPreferences(prefsData ?? {});
-
-    let currentOrgId: string | null = null;
-
-    const { data: membership, error: membershipError } = await supabase
-      .from("org_members")
-      .select("org_id, role, status")
-      .eq("user_id", uid)
-      .in("status", ["active", "pending", "invited"])
-      .limit(1)
-      .maybeSingle();
-    if (membershipError) console.error("[settings] org_members membership", membershipError);
-
-    currentOrgId = membership?.org_id ?? null;
-
-    if (!currentOrgId) {
-      const possibleNames = [
-        baseProfileData?.organization_name,
-        baseProfileData?.company_name,
-        user?.user_metadata?.organization_name,
-        user?.user_metadata?.company_name,
-      ]
-        .map((value: any) => String(value || "").trim())
-        .filter(Boolean);
-
-      if (possibleNames.length > 0) {
-        const { data: fallbackOrg, error: fallbackOrgError } = await supabase
-          .from("organizations")
-          .select("*")
-          .in("name", possibleNames)
-          .limit(1)
-          .maybeSingle();
-
-        if (fallbackOrgError) {
-          console.error("[settings] organizations fallback lookup", fallbackOrgError);
-        } else if (fallbackOrg?.id) {
-          currentOrgId = fallbackOrg.id;
-        }
-      }
-    }
 
     setOrgId(currentOrgId);
 
@@ -182,7 +241,8 @@ export default function SettingsPage() {
 
       setOrgProfile({
         ...(orgData ?? {}),
-        company: orgData?.name ?? orgData?.company ?? "",
+        company: orgData?.name ?? orgData?.company ?? activeWorkspaceName ?? "",
+        name: orgData?.name ?? activeWorkspaceName ?? "",
         supportEmail: orgData?.support_email ?? orgData?.supportEmail ?? user?.email ?? "",
         address: orgData?.address ?? "",
         timezone: orgData?.timezone ?? "",
@@ -206,38 +266,48 @@ export default function SettingsPage() {
       setOrgInvites(invitesData ?? []);
     } else {
       setOrgProfile({
-        company:
-          baseProfileData?.organization_name ||
-          baseProfileData?.company_name ||
-          user?.user_metadata?.organization_name ||
-          user?.user_metadata?.company_name ||
-          "",
-        supportEmail: user?.email || "",
+        id: null,
+        name: "Admin Console",
+        company: "Admin Console",
+        supportEmail: user?.email ?? "",
+        is_platform_admin_context: true,
       });
       setOrgMembers([]);
       setOrgInvites([]);
     }
 
     const [subResult, plansResult] = await Promise.allSettled([
-      supabase
-        .from("subscriptions")
-        .select("*")
-        .eq("user_id", uid)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+      currentOrgId
+        ? supabase
+            .from("subscriptions")
+            .select("*")
+            .eq("org_id", currentOrgId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : supabase
+            .from("subscriptions")
+            .select("*")
+            .eq("user_id", uid)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
       supabase.from("plans").select("*").order("price_monthly", { ascending: true }),
     ]);
-
-    if (subResult.status === "fulfilled") {
-      if (subResult.value.error) console.error("[settings] subscriptions", subResult.value.error);
-      setSubscription(subResult.value.data ?? null);
-    }
 
     if (plansResult.status === "fulfilled") {
       if (plansResult.value.error) console.error("[settings] plans", plansResult.value.error);
       const rawPlans = plansResult.value.data ?? [];
       setPlans(rawPlans.map((p: any) => ({ ...p, plan_code: p.plan_code ?? p.code })));
+    }
+
+    if (isAdmin) {
+      setSubscription(buildAdminSubscription());
+    } else if (subResult.status === "fulfilled") {
+      if (subResult.value.error) console.error("[settings] subscriptions", subResult.value.error);
+      setSubscription(subResult.value.data ?? null);
+    } else {
+      setSubscription(null);
     }
 
     const { data: keysData } = await supabase
@@ -276,11 +346,70 @@ export default function SettingsPage() {
     if (savedRes.status === "fulfilled") setSavedCount(savedRes.value.count ?? 0);
     if (campRes.status === "fulfilled") setCampaignCount(campRes.value.count ?? 0);
     if (rfpRes.status === "fulfilled") setRfpCount(rfpRes.value.count ?? 0);
-  }, [user?.id, user?.email, user?.user_metadata, plan, isAdmin]);
+  }, [user?.id, user?.email, user?.user_metadata, plan, isAdmin, isAdminEmail]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  const ensureOrgContext = useCallback(async (): Promise<{ orgId: string | null; error?: string }> => {
+    if (orgId) return { orgId };
+
+    if (!isAdmin || !user?.id) {
+      return { orgId: null, error: "No active organization is linked to this account yet" };
+    }
+
+    const companyName =
+      toStringOrNull(orgProfile?.company) ||
+      toStringOrNull(orgProfile?.name) ||
+      toStringOrNull(profile?.company_name) ||
+      "Admin Console";
+
+    const { data, error } = await supabase
+      .from("organizations")
+      .insert({
+        name: companyName,
+        support_email: user.email ?? null,
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      return { orgId: null, error: normalizeError(error, "Failed creating organization") };
+    }
+
+    if (data?.id) {
+      const membershipPayload = {
+        org_id: data.id,
+        user_id: user.id,
+        email: user.email ?? null,
+        full_name: profile?.name ?? user.user_metadata?.full_name ?? null,
+        role: isAdminEmail ? "super_admin" : "owner",
+        status: "active",
+      };
+
+      const { error: membershipUpsertError } = await supabase
+        .from("org_members")
+        .upsert(membershipPayload, { onConflict: "org_id,user_id" });
+
+      if (membershipUpsertError) {
+        console.error("[settings] org_members bootstrap", membershipUpsertError);
+      }
+
+      setOrgId(data.id);
+      setOrgProfile((prev) => ({
+        ...prev,
+        ...data,
+        company: data.name ?? companyName,
+        name: data.name ?? companyName,
+        supportEmail: data.support_email ?? user.email ?? "",
+      }));
+      await loadAll();
+      return { orgId: data.id };
+    }
+
+    return { orgId: null, error: "Failed creating organization" };
+  }, [orgId, isAdmin, isAdminEmail, user?.id, user?.email, user?.user_metadata, orgProfile?.company, orgProfile?.name, profile?.company_name, profile?.name, loadAll]);
 
   const onSaveProfile = async (
     data: Record<string, unknown>
@@ -289,11 +418,11 @@ export default function SettingsPage() {
     if (!uid) return { error: "Not authenticated" };
 
     const updates: Record<string, unknown> = { user_id: uid };
-    if (data.name !== undefined) updates.full_name = String(data.name || "").trim() || null;
-    if (data.title !== undefined) updates.title = String(data.title || "").trim() || null;
-    if (data.phone !== undefined) updates.phone = String(data.phone || "").trim() || null;
-    if (data.location !== undefined) updates.location = String(data.location || "").trim() || null;
-    if (data.bio !== undefined) updates.bio = String(data.bio || "").trim() || null;
+    if (data.name !== undefined) updates.full_name = toStringOrNull(data.name);
+    if (data.title !== undefined) updates.title = toStringOrNull(data.title);
+    if (data.phone !== undefined) updates.phone = toStringOrNull(data.phone);
+    if (data.location !== undefined) updates.location = toStringOrNull(data.location);
+    if (data.bio !== undefined) updates.bio = toStringOrNull(data.bio);
 
     const { error } = await supabase
       .from("user_profiles")
@@ -315,12 +444,11 @@ export default function SettingsPage() {
     const uid = user?.id;
     if (!uid) return { error: "Not authenticated" };
 
-    const uploaded = await uploadAsset(file);
-    if (uploaded.error || !uploaded.file_url) {
-      return { error: uploaded.error || "Avatar upload failed" };
-    }
+    const result = await uploadAsset({ file, folder: "avatars", uid });
+    if (result.error) return { error: result.error };
+    if (!result.file_url) return { error: "Avatar upload failed" };
 
-    const avatarUrl = uploaded.file_url;
+    const avatarUrl = result.file_url;
 
     const { error: userProfileError } = await supabase
       .from("user_profiles")
@@ -344,24 +472,19 @@ export default function SettingsPage() {
   const onSaveOrgProfile = async (
     data: Record<string, unknown>
   ): Promise<{ error?: string }> => {
-    if (!orgId) {
-      return {
-        error: isSuperAdmin
-          ? "No active organization is linked to this account yet"
-          : "No organization found",
-      };
-    }
+    const ensured = await ensureOrgContext();
+    if (!ensured.orgId) return { error: ensured.error ?? "No active organization is linked to this account yet" };
 
-    const updates: Record<string, unknown> = { id: orgId };
-    if (data.company !== undefined) updates.name = String(data.company || "").trim() || null;
-    if (data.tagline !== undefined) updates.tagline = String(data.tagline || "").trim() || null;
-    if (data.website !== undefined) updates.website = String(data.website || "").trim() || null;
+    const updates: Record<string, unknown> = { id: ensured.orgId };
+    if (data.company !== undefined) updates.name = toStringOrNull(data.company);
+    if (data.tagline !== undefined) updates.tagline = toStringOrNull(data.tagline);
+    if (data.website !== undefined) updates.website = toStringOrNull(data.website);
     if (data.logo_url !== undefined) updates.logo_url = data.logo_url || null;
-    if (data.industry !== undefined) updates.industry = data.industry || null;
-    if (data.size !== undefined) updates.size = data.size || null;
-    if (data.supportEmail !== undefined) updates.support_email = String(data.supportEmail || "").trim() || null;
-    if (data.address !== undefined) updates.address = String(data.address || "").trim() || null;
-    if (data.timezone !== undefined) updates.timezone = String(data.timezone || "").trim() || null;
+    if (data.industry !== undefined) updates.industry = toStringOrNull(data.industry);
+    if (data.size !== undefined) updates.size = toStringOrNull(data.size);
+    if (data.supportEmail !== undefined) updates.support_email = toStringOrNull(data.supportEmail);
+    if (data.address !== undefined) updates.address = toStringOrNull(data.address);
+    if (data.timezone !== undefined) updates.timezone = toStringOrNull(data.timezone);
 
     const { error } = await supabase
       .from("organizations")
@@ -373,6 +496,7 @@ export default function SettingsPage() {
       ...prev,
       ...updates,
       company: updates.name ?? prev.company ?? "",
+      name: updates.name ?? prev.name ?? "",
       supportEmail: updates.support_email ?? prev.supportEmail ?? "",
     }));
 
@@ -411,27 +535,21 @@ export default function SettingsPage() {
   };
 
   const onUploadLogo = async (file: File): Promise<{ error?: string }> => {
-    if (!orgId) {
-      return {
-        error: isSuperAdmin
-          ? "No active organization is linked to this account yet"
-          : "No organization found",
-      };
-    }
+    const ensured = await ensureOrgContext();
+    if (!ensured.orgId) return { error: ensured.error ?? "No active organization is linked to this account yet" };
 
-    const uploaded = await uploadAsset(file);
-    if (uploaded.error || !uploaded.file_url) {
-      return { error: uploaded.error || "Logo upload failed" };
-    }
+    const result = await uploadAsset({ file, folder: "logos", uid: ensured.orgId });
+    if (result.error) return { error: result.error };
+    if (!result.file_url) return { error: "Logo upload failed" };
 
     const { error } = await supabase
       .from("organizations")
-      .update({ logo_url: uploaded.file_url })
-      .eq("id", orgId);
+      .update({ logo_url: result.file_url })
+      .eq("id", ensured.orgId);
 
     if (error) return { error: normalizeError(error, "Failed saving company logo") };
 
-    setOrgProfile((prev) => ({ ...prev, logo_url: uploaded.file_url }));
+    setOrgProfile((prev) => ({ ...prev, logo_url: result.file_url }));
     await loadAll();
     return {};
   };
@@ -463,31 +581,14 @@ export default function SettingsPage() {
   };
 
   const onInviteMember = async (email: string, role: string): Promise<{ error?: string }> => {
-    if (!orgId) {
-      return {
-        error: isSuperAdmin
-          ? "No active organization is linked to this account yet"
-          : "No organization found",
-      };
-    }
-
-    if (!email?.trim()) return { error: "Email is required" };
-
-    const seatLimit = subscription?.seat_limit ?? null;
-    if (
-      typeof seatLimit === "number" &&
-      seatLimit > 0 &&
-      (orgMembers.length + orgInvites.length) >= seatLimit &&
-      !isSuperAdmin
-    ) {
-      return { error: "Seat limit reached for this workspace plan" };
-    }
+    const ensured = await ensureOrgContext();
+    if (!ensured.orgId) return { error: ensured.error ?? "No active organization is linked to this account yet" };
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const { error } = await supabase.from("org_invites").insert({
-      org_id: orgId,
+      org_id: ensured.orgId,
       email: email.trim().toLowerCase(),
       role,
       token,
@@ -586,6 +687,8 @@ export default function SettingsPage() {
     rfpsCount: rfpCount,
   };
 
+  const effectiveSubscription = isAdmin ? buildAdminSubscription() : (subscription ?? undefined);
+
   return (
     <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
       <div className="mx-auto max-w-[1600px]">
@@ -593,7 +696,7 @@ export default function SettingsPage() {
           profile={profileWithStats}
           orgProfile={orgProfile}
           preferences={preferences}
-          subscription={subscription ?? undefined}
+          subscription={effectiveSubscription}
           plans={plans}
           members={orgMembers}
           invites={orgInvites}
