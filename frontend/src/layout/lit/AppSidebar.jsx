@@ -51,6 +51,8 @@ const sections = [
   },
 ];
 
+const iconClass = "h-[18px] w-[18px] shrink-0";
+
 const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const currentPath =
     typeof window !== "undefined" ? window.location.pathname : "";
@@ -66,7 +68,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 shadow-lg ring-1 ring-white/10">
-            <LitAppIcon className="h-7 w-7 text-white" />
+            <LitAppIcon className="h-7 w-7 text-cyan-300" />
           </div>
 
           {sidebarOpen && (
@@ -118,7 +120,15 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                         : "text-slate-200 hover:bg-white/5 hover:text-white",
                     ].join(" ")}
                   >
-                    <Icon className={`shrink-0 ${item.label === "Pulse" && isActive ? "pulse-sidebar-active text-cyan-300" : ""}`} size={18} />
+                    <Icon
+                      className={`${iconClass} ${
+                        item.label === "Pulse"
+                          ? isActive
+                            ? "text-cyan-300 pulse-sidebar-active"
+                            : "text-cyan-200/90"
+                          : ""
+                      }`}
+                    />
                     {sidebarOpen && <span className="truncate">{item.label}</span>}
                   </a>
                 );
@@ -129,19 +139,22 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
       </div>
 
       <div className="border-t border-white/10 p-4">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
           {sidebarOpen ? (
-            <>
-              <div className="text-sm font-semibold text-white">
-                Pro Intelligence
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 ring-1 ring-white/10">
+                <PulseIcon className="h-[18px] w-[18px] text-cyan-300" />
               </div>
-              <div className="mt-1 text-xs leading-5 text-slate-300">
-                Track companies, campaigns, shipment activity, pipeline, and AI prospecting in one place.
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-white">Pulse</div>
+                <div className="truncate text-xs text-slate-300">
+                  AI lead intelligence
+                </div>
               </div>
-            </>
+            </div>
           ) : (
-            <div className="flex items-center justify-center text-xs font-semibold text-white">
-              PRO
+            <div className="flex items-center justify-center">
+              <PulseIcon className="h-[18px] w-[18px] text-cyan-300" />
             </div>
           )}
         </div>
