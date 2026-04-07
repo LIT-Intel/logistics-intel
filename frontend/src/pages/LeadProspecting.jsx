@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Company, Contact } from '@/api/entities';
 import {
-  Search, Building2, Users, Download, Target, Zap, Settings, ExternalLink,
+  Search, Building2, Users, Download, Zap, Settings, ExternalLink,
   ChevronDown, ChevronUp, Sparkles, AlertCircle
 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
@@ -197,27 +197,16 @@ export default function LeadProspecting() {
   const estimatedCredits = searchResults.length > 0 ? searchResults.length * 5 : null;
 
   return (
-    <div className="w-full px-6 py-6 space-y-6">
-      <div className="relative overflow-hidden rounded-3xl border border-[var(--pulse-border)] bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-80 bg-[radial-gradient(circle_at_center,rgba(0,224,255,0.12),transparent_60%)]" />
-        <div className="relative space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[var(--pulse-muted)]">Lead Intelligence</p>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 shadow-inner ring-1 ring-white/10">
-                <PulseIcon className="h-7 w-7 text-cyan-400 pulse-orbit" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-semibold text-slate-900">Pulse</h1>
-                <p className="text-sm text-slate-500">AI-powered lead discovery for Logistics Intel</p>
-              </div>
-            </div>
-            {statusPill}
-          </div>
-          <p className="text-sm text-slate-500">
-            Natural language or structured search · Powered by Explorium
-          </p>
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Lead intelligence</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <h1 className="text-[40px] font-semibold tracking-[-0.03em] text-slate-950">Pulse</h1>
+          {statusPill}
         </div>
+        <p className="mt-2 max-w-3xl text-[15px] leading-6 text-slate-500">
+          AI-powered lead discovery, contact enrichment, and import workflows for Logistics Intel.
+        </p>
       </div>
 
       {!PULSE_API_CONFIGURED && (
@@ -226,7 +215,7 @@ export default function LeadProspecting() {
           <div className="flex-1">
             <p className="text-sm font-semibold text-amber-800">Pulse API not configured</p>
             <p className="mt-0.5 text-sm text-amber-700">
-              Connect your Explorium API key in Settings &rsaquo; Security &amp; API to activate live results.
+              Connect your Explorium API key in Settings › Security & API to activate live results.
             </p>
           </div>
           <a
@@ -239,167 +228,189 @@ export default function LeadProspecting() {
       )}
 
       {errorMessage && (
-        <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+        <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
           <div>{errorMessage}</div>
         </div>
       )}
 
-      <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
-        <div className="mb-5 flex gap-1 rounded-xl bg-slate-100 p-1 w-fit">
-          {[
-            { id: 'natural', label: 'Natural Language' },
-            { id: 'structured', label: 'Structured Filters' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setSearchMode(tab.id)}
-              className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-all ${
-                searchMode === tab.id
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {searchMode === 'natural' ? (
-          <div className="space-y-4">
-            <textarea
-              rows={4}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 resize-none"
-              placeholder="Find VP of Operations at logistics companies with 50–500 employees in the US that use intermodal transport..."
-              value={nlQuery}
-              onChange={(e) => setNlQuery(e.target.value)}
-            />
-            <button
-              onClick={handleSearch}
-              disabled={isSearching || !nlQuery.trim()}
-              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSearching ? (
-                <>
-                  <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
-                  Searching...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Search with Pulse
-                </>
-              )}
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Industry</label>
-                <Select
-                  value={searchCriteria.industry}
-                  onValueChange={(v) => setSearchCriteria({ ...searchCriteria, industry: v })}
-                >
-                  <SelectTrigger className="rounded-xl border-slate-200 text-sm">
-                    <SelectValue placeholder="Select industry" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INDUSTRIES.map((ind) => (
-                      <SelectItem key={ind} value={ind}>{ind}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+      <div className="lit-dashboard-card overflow-hidden">
+        <div className="lit-dashboard-card-body space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 ring-1 ring-slate-200/10">
+                <PulseIcon className="h-7 w-7 text-cyan-300 pulse-orbit" />
               </div>
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Company Size</label>
-                <Select
-                  value={searchCriteria.company_size}
-                  onValueChange={(v) => setSearchCriteria({ ...searchCriteria, company_size: v })}
-                >
-                  <SelectTrigger className="rounded-xl border-slate-200 text-sm">
-                    <SelectValue placeholder="Select size" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COMPANY_SIZES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Location</label>
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
-                  placeholder="e.g., United States, New York"
-                  value={searchCriteria.location}
-                  onChange={(e) => setSearchCriteria({ ...searchCriteria, location: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Keywords</label>
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
-                  placeholder="e.g., freight, logistics, shipping"
-                  value={searchCriteria.keywords}
-                  onChange={(e) => setSearchCriteria({ ...searchCriteria, keywords: e.target.value })}
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold uppercase tracking-[0.35em] text-slate-500 mb-2">Target Job Titles</label>
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
-                  placeholder="Comma-separated titles"
-                  value={searchCriteria.job_titles}
-                  onChange={(e) => setSearchCriteria({ ...searchCriteria, job_titles: e.target.value })}
-                />
+                <div className="text-sm font-semibold text-slate-900">Pulse Workspace</div>
+                <div className="text-sm text-slate-500">Natural language or structured search · Powered by Explorium</div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-5 pt-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Enrichment</p>
-              {['Firmographics', 'Contact Info', 'Technographics', 'Intent Signals'].map((opt, i) => (
-                <label key={opt} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
-                  <Checkbox defaultChecked={i < 2} />
-                  {opt}
-                </label>
+
+            <div className="flex gap-1 rounded-xl bg-slate-100 p-1 w-fit">
+              {[
+                { id: 'natural', label: 'Natural Language' },
+                { id: 'structured', label: 'Structured Filters' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setSearchMode(tab.id)}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+                    searchMode === tab.id
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
               ))}
             </div>
-            <button
-              onClick={handleSearch}
-              disabled={isSearching}
-              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSearching ? (
-                <>
-                  <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
-                  Searching...
-                </>
-              ) : (
-                <>
-                  <Search className="h-4 w-4" />
-                  Search Pulse
-                </>
-              )}
-            </button>
           </div>
-        )}
+
+          {searchMode === 'natural' ? (
+            <div className="space-y-4">
+              <textarea
+                rows={4}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 resize-none"
+                placeholder="Find VP of Sales at logistics companies with 50–500 employees in Georgia that import from Vietnam"
+                value={nlQuery}
+                onChange={(e) => setNlQuery(e.target.value)}
+              />
+              <button
+                onClick={handleSearch}
+                disabled={isSearching || !nlQuery.trim()}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSearching ? (
+                  <>
+                    <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Search with Pulse
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Industry</label>
+                  <Select value={searchCriteria.industry} onValueChange={(v) => setSearchCriteria({ ...searchCriteria, industry: v })}>
+                    <SelectTrigger className="rounded-xl border-slate-200 text-sm">
+                      <SelectValue placeholder="Select industry" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INDUSTRIES.map((ind) => (
+                        <SelectItem key={ind} value={ind}>{ind}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Company Size</label>
+                  <Select value={searchCriteria.company_size} onValueChange={(v) => setSearchCriteria({ ...searchCriteria, company_size: v })}>
+                    <SelectTrigger className="rounded-xl border-slate-200 text-sm">
+                      <SelectValue placeholder="Select size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {COMPANY_SIZES.map((s) => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Location</label>
+                  <input
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
+                    placeholder="e.g., United States, New York"
+                    value={searchCriteria.location}
+                    onChange={(e) => setSearchCriteria({ ...searchCriteria, location: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Keywords</label>
+                  <input
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
+                    placeholder="e.g., freight, logistics, shipping"
+                    value={searchCriteria.keywords}
+                    onChange={(e) => setSearchCriteria({ ...searchCriteria, keywords: e.target.value })}
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Target Job Titles</label>
+                  <input
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100"
+                    placeholder="Comma-separated titles"
+                    value={searchCriteria.job_titles}
+                    onChange={(e) => setSearchCriteria({ ...searchCriteria, job_titles: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-5 pt-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Enrichment</p>
+                {['Firmographics', 'Contact Info', 'Technographics', 'Intent Signals'].map((opt, i) => (
+                  <label key={opt} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                    <Checkbox defaultChecked={i < 2} />
+                    {opt}
+                  </label>
+                ))}
+              </div>
+
+              <button
+                onClick={handleSearch}
+                disabled={isSearching}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSearching ? (
+                  <>
+                    <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4" />
+                    Search Pulse
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {!searchPerformed ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 text-center shadow-sm ring-1 ring-black/[0.02]">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-            <PulseIcon className="h-7 w-7 text-[var(--pulse-brand)] pulse-breathe" />
+        <div className="lit-dashboard-card">
+          <div className="lit-dashboard-card-body">
+            <div className="flex flex-col items-center justify-center py-14 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                <PulseIcon className="h-7 w-7 text-[var(--pulse-brand)] pulse-breathe" />
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-slate-800">Ready to find your next customers</h3>
+              <p className="mt-2 max-w-sm text-sm text-slate-500">
+                Try natural language: “Find logistics companies in Chicago with 50–500 employees”
+              </p>
+            </div>
           </div>
-          <h3 className="mt-4 text-lg font-semibold text-slate-800">Ready to find your next customers</h3>
-          <p className="mt-2 max-w-sm text-sm text-slate-500">
-            Try natural language: "Find logistics companies in Chicago with 50–500 employees"
-          </p>
         </div>
       ) : searchResults.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 text-center shadow-sm">
-          <Search className="h-10 w-10 text-slate-300" />
-          <h3 className="mt-4 text-lg font-semibold text-slate-700">No results found</h3>
-          <p className="mt-1 text-sm text-slate-500">Try adjusting your search criteria or verify the searchLeads response mapping.</p>
+        <div className="lit-dashboard-card">
+          <div className="lit-dashboard-card-body">
+            <div className="flex flex-col items-center justify-center py-14 text-center">
+              <Search className="h-10 w-10 text-slate-300" />
+              <h3 className="mt-4 text-lg font-semibold text-slate-700">No results found</h3>
+              <p className="mt-1 text-sm text-slate-500">Try adjusting your search criteria or verify the searchLeads response mapping.</p>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -420,16 +431,14 @@ export default function LeadProspecting() {
             </div>
           )}
 
-          <div className="rounded-3xl border border-slate-200 bg-white/95 shadow-sm ring-1 ring-black/[0.02] overflow-hidden">
+          <div className="lit-dashboard-card overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <div className="flex items-center gap-3">
                 <Checkbox
                   checked={selectedCompanies.length === searchResults.length && searchResults.length > 0}
                   onCheckedChange={handleSelectAll}
                 />
-                <span className="text-sm font-semibold text-slate-700">
-                  {searchResults.length} companies found
-                </span>
+                <span className="text-sm font-semibold text-slate-700">{searchResults.length} companies found</span>
                 {selectedCompanies.length > 0 && (
                   <span className="rounded-full bg-cyan-100 px-2.5 py-0.5 text-xs font-semibold text-cyan-700">
                     {selectedCompanies.length} selected
@@ -459,12 +468,12 @@ export default function LeadProspecting() {
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="w-10 px-4 py-3" />
-                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Company</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 hidden md:table-cell">Industry</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 hidden lg:table-cell">Location</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400 hidden sm:table-cell">Employees</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Contacts</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Company</th>
+                  <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 md:table-cell">Industry</th>
+                  <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 lg:table-cell">Location</th>
+                  <th className="hidden px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 sm:table-cell">Employees</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Contacts</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -473,28 +482,31 @@ export default function LeadProspecting() {
 
                   return (
                     <React.Fragment key={company.id}>
-                      <tr className="hover:bg-slate-50/70 transition-colors">
+                      <tr className="transition-colors hover:bg-slate-50/70">
                         <td className="px-4 py-3 text-center">
                           <Checkbox
                             checked={selectedCompanies.includes(company.id)}
                             onCheckedChange={(checked) => handleSelectCompany(company.id, checked)}
                           />
                         </td>
+
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
-                            <div className="h-7 w-7 flex-shrink-0 rounded-md bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+                            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-slate-100 to-slate-200">
                               <Building2 className="h-3.5 w-3.5 text-slate-500" />
                             </div>
                             <span className="font-semibold text-slate-900">{company.name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{company.industry || '—'}</td>
-                        <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">
+
+                        <td className="hidden px-4 py-3 text-slate-500 md:table-cell">{company.industry || '—'}</td>
+                        <td className="hidden px-4 py-3 text-slate-500 lg:table-cell">
                           {[company.city, company.country].filter(Boolean).join(', ') || '—'}
                         </td>
-                        <td className="px-4 py-3 text-center text-slate-500 hidden sm:table-cell">
+                        <td className="hidden px-4 py-3 text-center text-slate-500 sm:table-cell">
                           {company.employee_count ? Number(company.employee_count).toLocaleString() : '—'}
                         </td>
+
                         <td className="px-4 py-3 text-center">
                           {company.contacts?.length > 0 ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2.5 py-0.5 text-xs font-semibold text-cyan-700">
@@ -505,6 +517,7 @@ export default function LeadProspecting() {
                             <span className="text-slate-300">—</span>
                           )}
                         </td>
+
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             {company.domain && (
@@ -529,6 +542,7 @@ export default function LeadProspecting() {
                           </div>
                         </td>
                       </tr>
+
                       {isExpanded && company.contacts?.length > 0 && (
                         <tr>
                           <td colSpan={7} className="bg-slate-50/70 px-6 py-3">
@@ -538,7 +552,7 @@ export default function LeadProspecting() {
                                 return (
                                   <span
                                     key={idx}
-                                    className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200 px-3 py-1 text-xs text-slate-700 shadow-sm"
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm"
                                   >
                                     <span className="font-semibold">{contact.name || contact.full_name}</span>
                                     <span className="text-slate-400">·</span>
