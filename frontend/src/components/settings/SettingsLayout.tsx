@@ -337,7 +337,9 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
             />
           ))}
         </div>
-        {renderSection(activeSection, props)}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+  Section rendering temporarily disabled for debug.
+</div>
       </main>
     </div>
   );
