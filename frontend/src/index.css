@@ -46,10 +46,10 @@
 
   --lit-header-bg: rgba(255, 255, 255, 0.9);
 
-  --pulse-brand: #00e0ff;
+  --pulse-brand: #67e8f9;
   --pulse-brand-secondary: #635bff;
-  --pulse-brand-glow: rgba(0, 224, 255, 0.22);
-  --pulse-border: rgba(14, 165, 233, 0.14);
+  --pulse-brand-glow: rgba(103, 232, 249, 0.35);
+  --pulse-border: rgba(148, 163, 184, 0.18);
   --pulse-muted: #64748b;
 }
 
@@ -76,9 +76,9 @@
 
   --lit-header-bg: rgba(16, 24, 40, 0.88);
 
-  --pulse-brand: #4ddfff;
+  --pulse-brand: #67e8f9;
   --pulse-brand-secondary: #8b5cf6;
-  --pulse-brand-glow: rgba(77, 223, 255, 0.18);
+  --pulse-brand-glow: rgba(103, 232, 249, 0.24);
   --pulse-border: rgba(77, 223, 255, 0.16);
   --pulse-muted: #93a4c2;
 }
@@ -243,7 +243,7 @@
 }
 
 .pulse-sidebar-active {
-  filter: drop-shadow(0 0 8px var(--pulse-brand-glow));
+  filter: drop-shadow(0 0 10px var(--pulse-brand-glow));
 }
 
 @keyframes pulseBreathe {
