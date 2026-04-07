@@ -18,7 +18,7 @@ import {
   Bug,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/auth/AuthProvider";
 
 const mobileSections = [
   {
@@ -72,16 +72,35 @@ const PAGE_META = [
   { match: /^\/app\/agent/, title: "Debug Agent", subtitle: "Diagnostics and developer tools" },
 ];
 
+function getInitials(nameOrEmail) {
+  const value = (nameOrEmail || "").trim();
+  if (!value) return "U";
+
+  const parts = value.split(" ").filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+  }
+
+  return value.slice(0, 2).toUpperCase();
+}
+
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, fullName, role, logout } = useAuth();
+
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const profileRef = useRef(null);
+
   const currentMeta = useMemo(
     () => PAGE_META.find((item) => item.match.test(location.pathname)) || PAGE_META[0],
     [location.pathname],
   );
+
+  const displayName = fullName || user?.displayName || user?.email?.split("@")[0] || "User";
+  const displayRole = role === "admin" ? "Admin" : role === "owner" ? "Owner" : "User";
+  const displayInitials = getInitials(displayName || user?.email || "User");
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -89,6 +108,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
         setProfileOpen(false);
       }
     }
+
     function handleEscape(event) {
       if (event.key === "Escape") {
         setProfileOpen(false);
@@ -98,6 +118,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
 
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
+
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
@@ -106,8 +127,10 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
 
   useEffect(() => {
     if (!mobileNavOpen) return;
+
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
     return () => {
       document.body.style.overflow = previous;
     };
@@ -120,21 +143,14 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
 
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut?.();
+      await logout();
     } catch (error) {
-      console.error("Supabase sign out failed", error);
+      console.error("Sign out failed", error);
+    } finally {
+      setProfileOpen(false);
+      setMobileNavOpen(false);
+      navigate("/login", { replace: true });
     }
-
-    try {
-      localStorage.removeItem("supabase.auth.token");
-      sessionStorage.clear();
-    } catch (error) {
-      console.error("Sign out cleanup failed", error);
-    }
-
-    setProfileOpen(false);
-    setMobileNavOpen(false);
-    navigate("/login", { replace: true });
   };
 
   const profileMenuItems = useMemo(
@@ -201,12 +217,12 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                 className="inline-flex items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50/70 px-3 py-2 shadow-sm transition hover:border-blue-200 hover:from-white hover:to-blue-50"
               >
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-sm ring-2 ring-blue-100">
-                  VR
+                  {displayInitials}
                 </div>
 
                 <div className="hidden text-left sm:block">
-                  <div className="text-sm font-semibold leading-tight text-slate-900">Valesco</div>
-                  <div className="text-xs font-medium text-slate-500">Admin</div>
+                  <div className="text-sm font-semibold leading-tight text-slate-900">{displayName}</div>
+                  <div className="text-xs font-medium text-slate-500">{displayRole}</div>
                 </div>
 
                 <ChevronDown
@@ -218,8 +234,8 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               {profileOpen && (
                 <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
                   <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-                    <div className="text-sm font-semibold text-slate-900">Valesco</div>
-                    <div className="text-xs text-slate-500">Admin</div>
+                    <div className="text-sm font-semibold text-slate-900">{displayName}</div>
+                    <div className="text-xs text-slate-500">{displayRole}</div>
                   </div>
 
                   <div className="p-2">
@@ -281,6 +297,18 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               >
                 <X size={18} />
               </button>
+            </div>
+
+            <div className="border-b border-white/10 px-4 py-4">
+              <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-sm font-semibold text-white">
+                  {displayInitials}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-white">{displayName}</div>
+                  <div className="text-xs text-slate-300">{displayRole}</div>
+                </div>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-5">
