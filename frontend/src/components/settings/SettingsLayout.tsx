@@ -316,9 +316,12 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
 
   return (
   <div className="p-6">
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-      Settings layout shell test
-    </div>
+    <main className="flex-1 space-y-6">
+      <SettingsHeader
+        title="Workspace controls"
+        description="Adjust messaging defaults, workspace credits, security, and billing for LIT Search."
+      />
+    </main>
   </div>
 );
 }
