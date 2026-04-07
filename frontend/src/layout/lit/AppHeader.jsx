@@ -1,9 +1,27 @@
-import React from "react";
-import { Menu, Search, Bell, ChevronDown } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Menu, Search, Bell, ChevronDown, User, Settings, LogOut } from "lucide-react";
 
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setProfileOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, []);
+
   return (
-    <header className="h-20 border-b border-slate-200/80 bg-white px-4 md:px-6">
+    <header className="relative z-40 h-20 border-b border-slate-200/80 bg-white px-4 md:px-6">
       <div className="flex h-full items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight text-slate-900">
@@ -33,25 +51,64 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
             <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full border border-white bg-emerald-500" />
           </button>
 
-          <button
-            type="button"
-            className="inline-flex items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50/70 px-3 py-2 shadow-sm transition hover:border-blue-200 hover:from-white hover:to-blue-50"
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-sm ring-2 ring-blue-100">
-              VR
-            </div>
-
-            <div className="hidden text-left sm:block">
-              <div className="text-sm font-semibold leading-tight text-slate-900">
-                Valesco
+          <div className="relative" ref={profileRef}>
+            <button
+              type="button"
+              onClick={() => setProfileOpen((prev) => !prev)}
+              className="inline-flex items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50/70 px-3 py-2 shadow-sm transition hover:border-blue-200 hover:from-white hover:to-blue-50"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-sm ring-2 ring-blue-100">
+                VR
               </div>
-              <div className="text-xs font-medium text-slate-500">
-                Admin
-              </div>
-            </div>
 
-            <ChevronDown size={16} className="text-slate-500" />
-          </button>
+              <div className="hidden text-left sm:block">
+                <div className="text-sm font-semibold leading-tight text-slate-900">
+                  Valesco
+                </div>
+                <div className="text-xs font-medium text-slate-500">
+                  Admin
+                </div>
+              </div>
+
+              <ChevronDown
+                size={16}
+                className={`text-slate-500 transition ${profileOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="text-sm font-semibold text-slate-900">Valesco</div>
+                  <div className="text-xs text-slate-500">Admin</div>
+                </div>
+
+                <div className="p-2">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <User size={16} />
+                    Profile
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Settings size={16} />
+                    Settings
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
+                  >
+                    <LogOut size={16} />
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
