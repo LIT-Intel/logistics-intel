@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const profileRef = useRef(null);
 
   useEffect(() => {
@@ -16,7 +15,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
       }
     }
     function handleEscape(event) {
-      if (event.key === "Escape") { setProfileOpen(false); setMobileNavOpen(false); }
+      if (event.key === "Escape") setProfileOpen(false);
     }
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -75,7 +74,6 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
             type="button"
             onClick={() => {
               setProfileOpen(false);
-              setMobileNavOpen((prev) => !prev);
               setSidebarOpen(!sidebarOpen);
             }}
             aria-label="Toggle menu"
@@ -143,28 +141,6 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
           </div>
         </div>
       </div>
-      {mobileNavOpen && (
-        <div className="absolute inset-x-4 top-[calc(100%+12px)] z-50 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl md:hidden">
-          {[
-            ["Dashboard", "/dashboard"],
-            ["Search", "/search"],
-            ["Command Center", "/command-center"],
-            ["Campaigns", "/campaigns"],
-            ["Settings", "/app/settings"],
-            ["Billing", "/app/billing"],
-          ].map(([label, href]) => (
-            <Link
-              key={href}
-              to={href}
-              onClick={() => setMobileNavOpen(false)}
-              className="block rounded-xl px-3 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {label}
-            </Link>
-          ))}
-        </div>
-      )}
-
     </header>
   );
 };
