@@ -290,6 +290,77 @@ function titleCase(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+
+function safeJsonParse(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function extractCountryCode(row, companyData = {}) {
+  const candidates = [
+    row?.country_code,
+    row?.country,
+    companyData?.countryCode,
+    companyData?.country_code,
+    companyData?.country,
+    companyData?.address?.countryCode,
+    companyData?.address?.country_code,
+    companyData?.address?.country,
+    companyData?.location?.countryCode,
+    companyData?.location?.country_code,
+    companyData?.location?.country,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const value = String(candidate).trim().toUpperCase();
+    if (value.length === 2 || value.length === 3) {
+      if (value === 'USA') return 'US';
+      if (value === 'GBR') return 'GB';
+      return value.slice(0, 2);
+    }
+  }
+
+  const locationText = [companyData?.address, companyData?.location, row?.company_name]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase();
+
+  const inferred = inferCountryCodeFromText(locationText);
+  return inferred || '';
+}
+
+
+function inferCountryCodeFromText(text) {
+  const value = String(text || '').toUpperCase();
+  if (value.includes('UNITED STATES') || value.includes(', US') || value.includes(' USA')) return 'US';
+  if (value.includes('CANADA') || value.includes(', CA')) return 'CA';
+  if (value.includes('MEXICO') || value.includes(', MX')) return 'MX';
+  if (value.includes('GERMANY')) return 'DE';
+  if (value.includes('NETHERLANDS')) return 'NL';
+  if (value.includes('ITALY')) return 'IT';
+  if (value.includes('FRANCE')) return 'FR';
+  if (value.includes('CHINA')) return 'CN';
+  if (value.includes('VIETNAM')) return 'VN';
+  if (value.includes('INDIA')) return 'IN';
+  if (value.includes('BRAZIL')) return 'BR';
+  if (value.includes('AUSTRALIA')) return 'AU';
+  if (value.includes('SOUTH AFRICA')) return 'ZA';
+  return '';
+}
+
+function getCommandCenterHref(row) {
+  const params = new URLSearchParams();
+  if (row?.companyId) params.set('companyId', row.companyId);
+  if (row?.companyKey) params.set('companyKey', row.companyKey);
+  if (row?.company) params.set('company', row.company);
+  const query = params.toString();
+  return query ? `/command-center?${query}` : '/command-center';
+}
 function normalizeSavedCompanyRow(row) {
   const parsedCompanyData = safeJsonParse(row?.company_data) || {};
   const companyData = typeof parsedCompanyData === "object" && !Array.isArray(parsedCompanyData)
@@ -1056,7 +1127,7 @@ export default function LITDashboard() {
                 </thead>
                 <tbody>
                   {displayedCompanies.map((row) => {
-                    const commandCenterHref = buildCommandCenterHref(row);
+                    const commandCenterHref = getCommandCenterHref(row);
                     return (
                     <tr key={`${row.company}-${row.location}`} className="border-b border-slate-100 align-top">
                       <td className="px-5 py-4">
