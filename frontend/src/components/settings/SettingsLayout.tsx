@@ -315,32 +315,9 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
   const kpiData = buildKpiData(members, subscription, integrations);
 
   return (
-    <div className="flex w-full flex-col gap-6 lg:flex-row lg:gap-8">
-      <SettingsSidebar
-        sections={SETTINGS_SECTIONS}
-        activeSection={activeSection}
-        onSelectSection={setActiveSection}
-      />
-      <main className="flex-1 space-y-6">
-        <SettingsHeader
-          title="Workspace controls"
-          description="Adjust messaging defaults, workspace credits, security, and billing for LIT Search."
-        />
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {kpiData.map((kpi) => (
-            <KpiCard
-              key={kpi.title}
-              title={kpi.title}
-              value={kpi.value}
-              helper={kpi.helper}
-              accent={kpi.accent}
-            />
-          ))}
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-  Section rendering temporarily disabled for debug.
-</div>
-      </main>
+  <div className="p-6">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+      Settings layout shell test
     </div>
-  );
-}
+  </div>
+);
