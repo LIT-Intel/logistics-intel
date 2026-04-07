@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   User,
   Building2,
@@ -14,7 +14,6 @@ import {
   Users,
   Upload,
   Trash2,
-  RefreshCw,
   Plus,
   CheckCircle2,
   AlertCircle,
@@ -209,7 +208,7 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
 
   const planLabel = isAdmin ? "Admin" : (initialData?.plan || "Free trial");
 
-  React.useEffect(() => {
+  useEffect(() => {
     setForm({
       name: initialData?.name || "",
       title: initialData?.title || "",
@@ -404,7 +403,7 @@ export function CompanySignatureSection({
   const [success, setSuccess] = useState<string | null>(null);
   const logoRef = useRef<HTMLInputElement | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setForm({
       company: orgProfile?.company || orgProfile?.name || "",
       tagline: orgProfile?.tagline || "",
@@ -582,8 +581,19 @@ export function EmailSection({
     senderName: preferences?.senderName || "",
   });
   const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setState({
+      replyTo: preferences?.replyTo || "",
+      senderName: preferences?.senderName || "",
+    });
+  }, [preferences]);
+
   const inboxes = useMemo(
-    () => (integrations || []).filter((i: any) => (i.type || i.integration_type) === "gmail" || (i.type || i.integration_type) === "outlook"),
+    () =>
+      (integrations || []).filter(
+        (i: any) => (i.type || i.integration_type) === "gmail" || (i.type || i.integration_type) === "outlook"
+      ),
     [integrations]
   );
 
@@ -614,17 +624,19 @@ export function EmailSection({
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
         <div className="mb-4 text-sm font-semibold text-slate-900">Connected inboxes</div>
         <div className="space-y-3">
-          {inboxes.length ? inboxes.map((item: any) => (
-            <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
-              <div>
-                <div className="font-medium text-slate-900">{item.integration_type || item.type}</div>
-                <div className="text-sm text-slate-500">Connected</div>
+          {inboxes.length ? (
+            inboxes.map((item: any) => (
+              <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                <div>
+                  <div className="font-medium text-slate-900">{item.integration_type || item.type}</div>
+                  <div className="text-sm text-slate-500">Connected</div>
+                </div>
+                <ActionButton variant="danger" onClick={() => onDisconnect?.(item.id)}>
+                  Disconnect
+                </ActionButton>
               </div>
-              <ActionButton variant="danger" onClick={() => onDisconnect?.(item.id)}>
-                Disconnect
-              </ActionButton>
-            </div>
-          )) : (
+            ))
+          ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
               No connected inboxes yet.
             </div>
@@ -640,6 +652,14 @@ export function LinkedInSection({ preferences, onSavePreferences }: any) {
     sender: preferences?.sender || "",
     personalization: preferences?.personalization || "",
   });
+
+  useEffect(() => {
+    setState({
+      sender: preferences?.sender || "",
+      personalization: preferences?.personalization || "",
+    });
+  }, [preferences]);
+
   return (
     <SectionShell title="LinkedIn" description="Set your default LinkedIn outreach preferences.">
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
@@ -688,40 +708,42 @@ export function AccessRolesSection({
         </div>
 
         <div className="space-y-3">
-          {members.length ? members.map((m: any) => (
-            <div key={m.id} className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-[minmax(0,1fr)_180px_120px] md:items-center">
-              <div className="min-w-0">
-                <div className="font-medium text-slate-900">{m.full_name || m.email || "User"}</div>
-                <div className="truncate text-sm text-slate-500">{m.email || m.user_id}</div>
+          {members.length ? (
+            members.map((m: any) => (
+              <div key={m.id} className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-[minmax(0,1fr)_180px_120px] md:items-center">
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-900">{m.full_name || m.email || "User"}</div>
+                  <div className="truncate text-sm text-slate-500">{m.email || m.user_id}</div>
+                </div>
+                <Select
+                  value={m.role}
+                  disabled={!isAdmin}
+                  onChange={async (e) => {
+                    const result = await onUpdateRole?.(m.id, e.target.value);
+                    if (result?.error) setErr(result.error);
+                    else setMsg("Role updated");
+                  }}
+                >
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                  <option value="owner">Owner</option>
+                  <option value="super_admin">Super Admin</option>
+                </Select>
+                <ActionButton
+                  variant="danger"
+                  disabled={!isAdmin}
+                  onClick={async () => {
+                    const result = await onRevoke?.(m.id);
+                    if (result?.error) setErr(result.error);
+                    else setMsg("Member removed");
+                  }}
+                >
+                  <Trash2 size={16} />
+                  Remove
+                </ActionButton>
               </div>
-              <Select
-                value={m.role}
-                disabled={!isAdmin}
-                onChange={async (e) => {
-                  const result = await onUpdateRole?.(m.id, e.target.value);
-                  if (result?.error) setErr(result.error);
-                  else setMsg("Role updated");
-                }}
-              >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-                <option value="owner">Owner</option>
-                <option value="super_admin">Super Admin</option>
-              </Select>
-              <ActionButton
-                variant="danger"
-                disabled={!isAdmin}
-                onClick={async () => {
-                  const result = await onRevoke?.(m.id);
-                  if (result?.error) setErr(result.error);
-                  else setMsg("Member removed");
-                }}
-              >
-                <Trash2 size={16} />
-                Remove
-              </ActionButton>
-            </div>
-          )) : (
+            ))
+          ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
               No members found.
             </div>
@@ -757,24 +779,26 @@ export function AccessRolesSection({
         </div>
 
         <div className="mt-5 space-y-3">
-          {invites.length ? invites.map((invite: any) => (
-            <div key={invite.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
-              <div>
-                <div className="font-medium text-slate-900">{invite.email}</div>
-                <div className="text-sm text-slate-500">{invite.role} • pending</div>
+          {invites.length ? (
+            invites.map((invite: any) => (
+              <div key={invite.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                <div>
+                  <div className="font-medium text-slate-900">{invite.email}</div>
+                  <div className="text-sm text-slate-500">{invite.role} • pending</div>
+                </div>
+                <ActionButton
+                  variant="danger"
+                  onClick={async () => {
+                    const result = await onRevokeInvite?.(invite.id);
+                    if (result?.error) setErr(result.error);
+                    else setMsg("Invite revoked");
+                  }}
+                >
+                  Revoke
+                </ActionButton>
               </div>
-              <ActionButton
-                variant="danger"
-                onClick={async () => {
-                  const result = await onRevokeInvite?.(invite.id);
-                  if (result?.error) setErr(result.error);
-                  else setMsg("Invite revoked");
-                }}
-              >
-                Revoke
-              </ActionButton>
-            </div>
-          )) : null}
+            ))
+          ) : null}
         </div>
       </div>
     </SectionShell>
@@ -809,9 +833,7 @@ export function BillingPlansSection({ subscription, plans, isAdmin }: any) {
           {(plans || []).map((plan: any) => (
             <div key={plan.plan_code} className="rounded-2xl border border-slate-200 p-4">
               <div className="font-semibold text-slate-900">{plan.display_name || plan.plan_code}</div>
-              <div className="mt-1 text-sm text-slate-500">
-                ${plan.price_monthly ?? 0}/mo
-              </div>
+              <div className="mt-1 text-sm text-slate-500">${plan.price_monthly ?? 0}/mo</div>
             </div>
           ))}
         </div>
@@ -822,6 +844,11 @@ export function BillingPlansSection({ subscription, plans, isAdmin }: any) {
 
 export function RfpPipelineSection({ preferences, onSavePreferences }: any) {
   const [state, setState] = useState(preferences || {});
+
+  useEffect(() => {
+    setState(preferences || {});
+  }, [preferences]);
+
   return (
     <SectionShell title="RFP & Pipeline" description="Configure pipeline defaults for RFP workflows.">
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
@@ -838,6 +865,11 @@ export function RfpPipelineSection({ preferences, onSavePreferences }: any) {
 
 export function CampaignPreferencesSection({ preferences, onSavePreferences }: any) {
   const [state, setState] = useState(preferences || {});
+
+  useEffect(() => {
+    setState(preferences || {});
+  }, [preferences]);
+
   return (
     <SectionShell title="Campaign Preferences" description="Choose defaults for outbound campaign behavior.">
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
@@ -857,17 +889,33 @@ export function AlertsNotificationsSection({ preferences, onSavePreferences }: a
     emailAlerts: preferences?.emailAlerts ?? true,
     productUpdates: preferences?.productUpdates ?? true,
   });
+
+  useEffect(() => {
+    setState({
+      emailAlerts: preferences?.emailAlerts ?? true,
+      productUpdates: preferences?.productUpdates ?? true,
+    });
+  }, [preferences]);
+
   return (
     <SectionShell title="Alerts & Notifications" description="Decide what notifications you want to receive.">
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
         <div className="space-y-4">
           <label className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
             <span className="text-sm font-medium text-slate-700">Email alerts</span>
-            <input type="checkbox" checked={state.emailAlerts} onChange={(e) => setState((p) => ({ ...p, emailAlerts: e.target.checked }))} />
+            <input
+              type="checkbox"
+              checked={state.emailAlerts}
+              onChange={(e) => setState((p) => ({ ...p, emailAlerts: e.target.checked }))}
+            />
           </label>
           <label className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
             <span className="text-sm font-medium text-slate-700">Product updates</span>
-            <input type="checkbox" checked={state.productUpdates} onChange={(e) => setState((p) => ({ ...p, productUpdates: e.target.checked }))} />
+            <input
+              type="checkbox"
+              checked={state.productUpdates}
+              onChange={(e) => setState((p) => ({ ...p, productUpdates: e.target.checked }))}
+            />
           </label>
         </div>
         <div className="mt-5 flex justify-end">
@@ -881,6 +929,7 @@ export function AlertsNotificationsSection({ preferences, onSavePreferences }: a
 export function SecurityApiSection({ apiKeys = [], auditLog = [], onGenerateKey, onRevokeKey }: any) {
   const [keyName, setKeyName] = useState("");
   const [generated, setGenerated] = useState<string | null>(null);
+
   return (
     <SectionShell title="Security & API" description="Manage API keys and review recent security events.">
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
@@ -943,12 +992,14 @@ export function WorkspaceCreditsSection({ tokenUsage = [], subscription, isAdmin
           {isAdmin ? "Unlimited credits for admin workspace" : `Plan: ${subscription?.plan_code || "trial"}`}
         </div>
         <div className="space-y-3">
-          {tokenUsage.length ? tokenUsage.map((item: any, idx: number) => (
-            <div key={`${item.feature}-${idx}`} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
-              <div className="font-medium text-slate-900">{item.feature}</div>
-              <div className="text-sm text-slate-600">{item.tokens_used}</div>
-            </div>
-          )) : (
+          {tokenUsage.length ? (
+            tokenUsage.map((item: any, idx: number) => (
+              <div key={`${item.feature}-${idx}`} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                <div className="font-medium text-slate-900">{item.feature}</div>
+                <div className="text-sm text-slate-600">{item.tokens_used}</div>
+              </div>
+            ))
+          ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
               No usage data yet.
             </div>
