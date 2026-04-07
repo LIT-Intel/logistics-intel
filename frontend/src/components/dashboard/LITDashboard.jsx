@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
+import { getCampaigns } from "@/lib/api";
+import { getSavedCompaniesFromSupabase } from "@/lib/supabase";
 import {
   ResponsiveContainer,
   BarChart,
@@ -43,66 +45,78 @@ const companiesTable = [
     type: "Import/Export",
     location: "601 N Walton Blvd 7, US",
     shipments: "459,934",
+    shipmentsValue: 459934,
     teu: 82,
     mode: "Ocean",
     lastShipment: "Mar 11, 2026",
     recency: "Recent",
     status: "High",
+    countryCode: "US",
   },
   {
     company: "Walmart / 508 Sw 8Th St",
     type: "Import/Export",
     location: "Bentonville, US",
     shipments: "104,807",
+    shipmentsValue: 104807,
     teu: 68,
     mode: "Ocean",
     lastShipment: "Mar 11, 2026",
     recency: "Recent",
     status: "High",
+    countryCode: "US",
   },
   {
     company: "Walmart 601 N Walton Blvd",
     type: "Import/Export",
     location: "Bentonville, US",
     shipments: "22,481",
+    shipmentsValue: 22481,
     teu: 51,
     mode: "Ocean",
     lastShipment: "Jul 17, 2025",
     recency: "Inactive",
     status: "High",
+    countryCode: "US",
   },
   {
     company: "Walmart Global Logistics",
     type: "Import/Export",
     location: "508 Se 8Th St, US",
     shipments: "1,599",
+    shipmentsValue: 1599,
     teu: 39,
     mode: "Ocean",
     lastShipment: "Mar 9, 2026",
     recency: "Recent",
     status: "High",
+    countryCode: "US",
   },
   {
     company: "Walmart Puerto Rico",
     type: "Import/Export",
     location: "Carolina, US",
     shipments: "970",
+    shipmentsValue: 970,
     teu: 24,
     mode: "Air",
     lastShipment: "Mar 3, 2026",
     recency: "Recent",
     status: "Medium",
+    countryCode: "US",
   },
   {
     company: "Sams Club Walmart Stores",
     type: "Import/Export",
     location: "601 N Walton Blvd 7, US",
     shipments: "587",
+    shipmentsValue: 587,
     teu: 17,
     mode: "Ocean",
     lastShipment: "Mar 10, 2026",
     recency: "Recent",
     status: "Medium",
+    countryCode: "US",
   },
 ];
 
@@ -114,7 +128,7 @@ const activityFeed = [
   { type: "Campaign Created", name: "Top Retailers Q2", when: "4 days ago" },
 ];
 
-const mapCountryScales = {
+const fallbackMapCountryScales = {
   NA: {
     US: "scale8",
     CA: "scale7",
@@ -166,6 +180,64 @@ const mapCountryScales = {
   },
 };
 
+const REGION_LABELS = {
+  NA: "North America",
+  EU: "Europe",
+  AS: "Asia",
+  SA: "South America",
+  AF: "Africa",
+  OC: "Oceania",
+};
+
+const COUNTRY_TO_REGION = {
+  US: "NA",
+  CA: "NA",
+  MX: "NA",
+  GT: "NA",
+  CR: "NA",
+  PA: "NA",
+  DO: "NA",
+  PR: "NA",
+
+  DE: "EU",
+  NL: "EU",
+  IT: "EU",
+  FR: "EU",
+  ES: "EU",
+  BE: "EU",
+  PL: "EU",
+  GB: "EU",
+  UK: "EU",
+
+  CN: "AS",
+  IN: "AS",
+  VN: "AS",
+  JP: "AS",
+  KR: "AS",
+  TH: "AS",
+  MY: "AS",
+  ID: "AS",
+  SG: "AS",
+  HK: "AS",
+  TW: "AS",
+
+  BR: "SA",
+  AR: "SA",
+  CL: "SA",
+  CO: "SA",
+  PE: "SA",
+
+  ZA: "AF",
+  MA: "AF",
+  EG: "AF",
+  NG: "AF",
+  KE: "AF",
+
+  AU: "OC",
+  NZ: "OC",
+  PG: "OC",
+};
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[src="${src}"]`);
@@ -191,6 +263,218 @@ function loadScript(src) {
     script.onerror = reject;
     document.body.appendChild(script);
   });
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatNumber(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString();
+}
+
+function titleCase(value) {
+  if (!value) return "—";
+  return String(value)
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function normalizeSavedCompanyRow(row) {
+  const companyData = row?.company_data || {};
+  const countryCode = (
+    companyData?.countryCode ||
+    companyData?.country_code ||
+    companyData?.country ||
+    row?.company_key?.split("/").pop()?.slice(-2) ||
+    ""
+  )
+    .toString()
+    .trim()
+    .toUpperCase();
+
+  const shipmentsValue = Number(
+    companyData?.shipmentsLast12m ||
+      companyData?.shipments_last_12m ||
+      companyData?.totalShipments ||
+      companyData?.total_shipments ||
+      companyData?.shipments ||
+      0,
+  );
+
+  const teuValue = Number(
+    companyData?.teuLast12m ||
+      companyData?.teu_last_12m ||
+      companyData?.teu ||
+      companyData?.total_teu ||
+      0,
+  );
+
+  const lastShipment =
+    companyData?.lastShipmentDate ||
+    companyData?.last_shipment_date ||
+    companyData?.mostRecentShipment ||
+    companyData?.most_recent_shipment ||
+    row?.updated_at ||
+    row?.created_at ||
+    null;
+
+  const mode =
+    companyData?.mode ||
+    companyData?.shipment_mode ||
+    companyData?.transport_mode ||
+    "—";
+
+  const addressParts = [
+    companyData?.city,
+    companyData?.state,
+    companyData?.countryCode || companyData?.country_code || countryCode,
+  ].filter(Boolean);
+
+  const location =
+    companyData?.address ||
+    (addressParts.length ? addressParts.join(", ") : "—");
+
+  return {
+    company: row?.company_name || companyData?.name || "Unknown Company",
+    type: row?.source ? titleCase(row.source) : "Saved Company",
+    location,
+    shipments: formatNumber(shipmentsValue),
+    shipmentsValue,
+    teu: Number.isFinite(teuValue) ? teuValue : 0,
+    mode: titleCase(mode),
+    lastShipment: formatDate(lastShipment),
+    recency: lastShipment ? "Recent" : "Inactive",
+    status:
+      shipmentsValue >= 1000 ? "High" : shipmentsValue >= 100 ? "Medium" : "Low",
+    countryCode,
+    raw: row,
+  };
+}
+
+function buildMapScalesFromCompanies(companies) {
+  const regionCountryCounts = {
+    NA: {},
+    EU: {},
+    AS: {},
+    SA: {},
+    AF: {},
+    OC: {},
+  };
+
+  companies.forEach((company) => {
+    const code = (company?.countryCode || "").toUpperCase();
+    const region = COUNTRY_TO_REGION[code];
+    if (!region || !code) return;
+    regionCountryCounts[region][code] = (regionCountryCounts[region][code] || 0) + 1;
+  });
+
+  const toScaleBucket = (count) => {
+    if (count >= 9) return "scale9";
+    if (count >= 8) return "scale8";
+    if (count >= 7) return "scale7";
+    if (count >= 6) return "scale6";
+    if (count >= 5) return "scale5";
+    if (count >= 4) return "scale4";
+    if (count >= 3) return "scale3";
+    if (count >= 2) return "scale2";
+    return "scale1";
+  };
+
+  const dynamic = Object.fromEntries(
+    Object.entries(regionCountryCounts).map(([regionKey, countries]) => [
+      regionKey,
+      Object.fromEntries(
+        Object.entries(countries).map(([code, count]) => [code, toScaleBucket(count)]),
+      ),
+    ]),
+  );
+
+  return Object.keys(dynamic).some((key) => Object.keys(dynamic[key]).length > 0)
+    ? dynamic
+    : fallbackMapCountryScales;
+}
+
+function buildRegionSummary(companies) {
+  const regionCounts = {
+    NA: 0,
+    EU: 0,
+    AS: 0,
+    SA: 0,
+    AF: 0,
+    OC: 0,
+  };
+
+  const countryCounts = {};
+
+  companies.forEach((company) => {
+    const code = (company?.countryCode || "").toUpperCase();
+    const region = COUNTRY_TO_REGION[code];
+    if (!region) return;
+    regionCounts[region] += 1;
+    countryCounts[code] = (countryCounts[code] || 0) + 1;
+  });
+
+  const topRegionEntry = Object.entries(regionCounts).sort((a, b) => b[1] - a[1])[0] || ["NA", 0];
+  const topCountries = Object.entries(countryCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([code]) => code)
+    .join(", ");
+
+  return {
+    activeRegionKey: topRegionEntry[0],
+    activeRegionLabel: REGION_LABELS[topRegionEntry[0]] || "North America",
+    savedAccounts: companies.length,
+    laneDensity:
+      companies.length > 0
+        ? `${Math.min(100, Math.max(12, Math.round((topRegionEntry[1] / companies.length) * 100)))}%`
+        : "0%",
+    topCountries: topCountries || "—",
+    coverageNote:
+      companies.length > 0
+        ? `Live coverage based on ${companies.length} saved account${companies.length === 1 ? "" : "s"}`
+        : "No saved company coverage yet",
+  };
+}
+
+function buildTrendData(companies) {
+  if (!companies.length) return monthlyTrendData;
+
+  const monthBuckets = new Map();
+
+  companies.forEach((company) => {
+    const lastShipment = company?.raw?.company_data?.lastShipmentDate ||
+      company?.raw?.company_data?.last_shipment_date ||
+      company?.raw?.updated_at ||
+      company?.raw?.created_at;
+
+    const date = new Date(lastShipment || Date.now());
+    if (Number.isNaN(date.getTime())) return;
+
+    const label = date.toLocaleDateString("en-US", { month: "short" });
+    const current = monthBuckets.get(label) || { month: label, companies: 0, contacts: 0 };
+    current.companies += 1;
+    monthBuckets.set(label, current);
+  });
+
+  const orderedMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const data = orderedMonths
+    .map((month) => monthBuckets.get(month))
+    .filter(Boolean);
+
+  return data.length ? data.slice(-6) : monthlyTrendData;
 }
 
 function StatCard({
@@ -247,9 +531,7 @@ function SectionCardHeader({
           </div>
         ) : null}
         <div className="mt-1 text-sm font-semibold text-slate-800">{title}</div>
-        {subtitle ? (
-          <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
-        ) : null}
+        {subtitle ? <div className="mt-1 text-sm text-slate-500">{subtitle}</div> : null}
       </div>
 
       <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconAccent} text-white shadow-sm`}>
@@ -279,7 +561,7 @@ function MiniProgress({ value }) {
     <div className="h-3 w-16 rounded-full bg-slate-200">
       <div
         className="h-3 rounded-full bg-slate-400"
-        style={{ width: `${Math.max(8, Math.min(100, value))}%` }}
+        style={{ width: `${Math.max(8, Math.min(100, value || 0))}%` }}
       />
     </div>
   );
@@ -302,40 +584,48 @@ function getActivityIcon(type) {
   }
 }
 
-function TradeMapPanel() {
-  const [selectedRegion, setSelectedRegion] = useState("North America");
+function TradeMapPanel({ mapScales, regionSummary }) {
+  const [selectedRegion, setSelectedRegion] = useState(
+    regionSummary?.activeRegionLabel || "North America",
+  );
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
+
+  useEffect(() => {
+    if (regionSummary?.activeRegionLabel) {
+      setSelectedRegion(regionSummary.activeRegionLabel);
+    }
+  }, [regionSummary?.activeRegionLabel]);
 
   const regionDetails = {
     "North America": {
       countries: "United States, Canada, Mexico",
-      emphasis: "High search and CRM activity",
+      emphasis: "Regional account coverage",
       key: "NA",
     },
     Europe: {
       countries: "Germany, Netherlands, Italy",
-      emphasis: "Growing sourcing lanes",
+      emphasis: "Regional account coverage",
       key: "EU",
     },
     Asia: {
       countries: "China, Vietnam, India",
-      emphasis: "Top importing origins",
+      emphasis: "Regional account coverage",
       key: "AS",
     },
     "South America": {
       countries: "Brazil, Chile, Colombia",
-      emphasis: "Selective account expansion",
+      emphasis: "Regional account coverage",
       key: "SA",
     },
     Africa: {
       countries: "South Africa, Morocco",
-      emphasis: "Low but emerging coverage",
+      emphasis: "Regional account coverage",
       key: "AF",
     },
     Oceania: {
       countries: "Australia, New Zealand",
-      emphasis: "Low-frequency shipments",
+      emphasis: "Regional account coverage",
       key: "OC",
     },
   };
@@ -398,7 +688,7 @@ function TradeMapPanel() {
                   scale8: "#346fe1",
                   scale9: "#2158ca",
                 },
-                values: mapCountryScales[active.key],
+                values: mapScales?.[active.key] || fallbackMapCountryScales[active.key] || {},
               },
             ],
           },
@@ -419,7 +709,7 @@ function TradeMapPanel() {
     return () => {
       mounted = false;
     };
-  }, [active.key, selectedRegion]);
+  }, [active.key, selectedRegion, mapScales]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -446,6 +736,8 @@ function TradeMapPanel() {
         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
     ].join(" ");
 
+  const showingLiveRegion = selectedRegion === regionSummary?.activeRegionLabel;
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -455,7 +747,7 @@ function TradeMapPanel() {
             Global Trade Map
           </div>
           <div className="mt-1 text-sm text-slate-500">
-            Tabler-style vector map with regional shipment visibility and sourcing coverage
+            Live regional visibility based on saved company coverage
           </div>
         </div>
 
@@ -507,7 +799,7 @@ function TradeMapPanel() {
                     Top Countries
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    {active.countries}
+                    {showingLiveRegion ? regionSummary?.topCountries || "—" : active.countries}
                   </div>
                 </div>
               </div>
@@ -523,7 +815,7 @@ function TradeMapPanel() {
                     Coverage Note
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    {active.emphasis}
+                    {showingLiveRegion ? regionSummary?.coverageNote || "No saved company coverage yet" : active.emphasis}
                   </div>
                 </div>
               </div>
@@ -539,7 +831,9 @@ function TradeMapPanel() {
                     Lane Density
                   </div>
                 </div>
-                <div className="mt-3 text-xl font-semibold text-slate-900">84%</div>
+                <div className="mt-3 text-xl font-semibold text-slate-900">
+                  {showingLiveRegion ? regionSummary?.laneDensity || "0%" : "—"}
+                </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -551,7 +845,9 @@ function TradeMapPanel() {
                     Saved Accounts
                   </div>
                 </div>
-                <div className="mt-3 text-xl font-semibold text-slate-900">21</div>
+                <div className="mt-3 text-xl font-semibold text-slate-900">
+                  {regionSummary?.savedAccounts ?? 0}
+                </div>
               </div>
             </div>
 
@@ -565,7 +861,7 @@ function TradeMapPanel() {
                     Suggested Use
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Use this panel to identify high-value sourcing regions and prioritize saved accounts by lane activity.
+                    Use this panel to identify high-value sourcing regions and prioritize saved accounts by live CRM coverage.
                   </div>
                 </div>
               </div>
@@ -578,6 +874,69 @@ function TradeMapPanel() {
 }
 
 export default function LITDashboard() {
+  const [savedCompaniesLive, setSavedCompaniesLive] = useState([]);
+  const [campaignsLive, setCampaignsLive] = useState([]);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboardData() {
+      try {
+        const [savedRes, campaignsRes] = await Promise.all([
+          getSavedCompaniesFromSupabase("prospect"),
+          getCampaigns(),
+        ]);
+
+        if (cancelled) return;
+
+        setSavedCompaniesLive(Array.isArray(savedRes?.rows) ? savedRes.rows : []);
+        setCampaignsLive(Array.isArray(campaignsRes) ? campaignsRes : []);
+      } catch (error) {
+        console.error("Dashboard load error:", error);
+        if (!cancelled) {
+          setSavedCompaniesLive([]);
+          setCampaignsLive([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setDashboardLoading(false);
+        }
+      }
+    }
+
+    loadDashboardData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const normalizedCompanies = useMemo(() => {
+    if (savedCompaniesLive.length > 0) {
+      return savedCompaniesLive.map(normalizeSavedCompanyRow);
+    }
+    return companiesTable;
+  }, [savedCompaniesLive]);
+
+  const mapScales = useMemo(
+    () => buildMapScalesFromCompanies(normalizedCompanies),
+    [normalizedCompanies],
+  );
+
+  const regionSummary = useMemo(
+    () => buildRegionSummary(normalizedCompanies),
+    [normalizedCompanies],
+  );
+
+  const trendData = useMemo(
+    () => buildTrendData(normalizedCompanies),
+    [normalizedCompanies],
+  );
+
+  const savedCompaniesCount = normalizedCompanies.length;
+  const activeCampaignsCount = campaignsLive.length;
+
   return (
     <AppLayout>
       <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
@@ -598,17 +957,17 @@ export default function LITDashboard() {
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               title="Saved Companies"
-              value="21"
-              change="+12%"
-              note="vs last month"
+              value={dashboardLoading ? "—" : String(savedCompaniesCount)}
+              change=""
+              note="Live CRM count"
               icon={Building2}
               accent="from-blue-600 to-indigo-600"
               chip="CRM"
             />
             <StatCard
               title="Active Campaigns"
-              value="0"
-              note="No campaigns yet"
+              value={dashboardLoading ? "—" : String(activeCampaignsCount)}
+              note="Live campaign count"
               change=""
               icon={Briefcase}
               accent="from-violet-600 to-indigo-600"
@@ -634,7 +993,7 @@ export default function LITDashboard() {
             />
           </section>
 
-          <TradeMapPanel />
+          <TradeMapPanel mapScales={mapScales} regionSummary={regionSummary} />
 
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
@@ -688,8 +1047,8 @@ export default function LITDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {companiesTable.map((row) => (
-                    <tr key={row.company} className="border-b border-slate-100 align-top">
+                  {normalizedCompanies.map((row) => (
+                    <tr key={`${row.company}-${row.location}`} className="border-b border-slate-100 align-top">
                       <td className="px-5 py-4">
                         <div className="flex items-start gap-3">
                           <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
@@ -705,8 +1064,8 @@ export default function LITDashboard() {
                       <td className="px-5 py-4 text-sm font-semibold text-slate-900">{row.shipments}</td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <MiniProgress value={row.teu} />
-                          <span className="text-sm text-slate-600">{row.teu}</span>
+                          <MiniProgress value={row.teu || 0} />
+                          <span className="text-sm text-slate-600">{row.teu || 0}</span>
                         </div>
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-600">{row.mode}</td>
@@ -761,7 +1120,7 @@ export default function LITDashboard() {
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                     Companies
                   </div>
-                  <div className="mt-1 text-2xl font-semibold text-slate-900">28</div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-900">{dashboardLoading ? "—" : savedCompaniesCount}</div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
@@ -773,7 +1132,7 @@ export default function LITDashboard() {
 
               <div className="mt-4 h-[320px] rounded-xl border border-slate-100 bg-slate-50 p-3">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyTrendData} barCategoryGap="20%">
+                  <BarChart data={trendData} barCategoryGap="20%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       dataKey="month"
