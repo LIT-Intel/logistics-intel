@@ -8,6 +8,7 @@ import {
   EmailSection,
   LinkedInSection,
   AccessRolesSection,
+  BillingPlansSection,
   RfpPipelineSection,
   CampaignPreferencesSection,
   AlertsNotificationsSection,
@@ -55,11 +56,15 @@ type ProfileData = {
 type OrgProfileData = {
   id?: string;
   name?: string;
+  company?: string;
   tagline?: string;
   website?: string;
   industry?: string;
   size?: string;
   logo_url?: string;
+  supportEmail?: string;
+  address?: string;
+  timezone?: string;
 };
 
 type PreferencesData = {
@@ -99,7 +104,7 @@ type TokenUsage = {
 type Integration = {
   id: string;
   integration_type?: string;
-  type?: string; // legacy alias
+  type?: string;
   created_at: string;
 };
 
@@ -126,16 +131,16 @@ export type SettingsLayoutProps = {
   integrations?: Integration[];
   isAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
-  onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string }>;
-  onUploadAvatar?: (file: File) => Promise<void>;
-  onSaveOrgProfile?: (data: Record<string, unknown>) => Promise<void>;
-  onSaveEmailSignature?: (sig: string) => Promise<void>;
-  onUploadLogo?: (file: File) => Promise<void>;
-  onSavePreferences?: (section: string, data: Record<string, unknown>) => Promise<void>;
-  onInviteMember?: (email: string, role: string) => Promise<void>;
-  onRevokeMember?: (memberId: string) => Promise<void>;
-  onUpdateMemberRole?: (memberId: string, role: string) => Promise<void>;
-  onRevokeInvite?: (inviteId: string) => Promise<void>;
+  onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
+  onSaveOrgProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onSaveEmailSignature?: (sig: string) => Promise<{ error?: string } | void>;
+  onUploadLogo?: (file: File) => Promise<{ error?: string } | void>;
+  onSavePreferences?: (section: string, data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onInviteMember?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeMember?: (memberId: string) => Promise<{ error?: string } | void>;
+  onUpdateMemberRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
   onGenerateApiKey?: (keyName: string) => Promise<string | null>;
   onRevokeApiKey?: (keyId: string) => Promise<void>;
   onDisconnectIntegration?: (id: string) => Promise<void>;
@@ -234,6 +239,14 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           onRevoke={props.onRevokeMember}
           onUpdateRole={props.onUpdateMemberRole}
           onRevokeInvite={props.onRevokeInvite}
+          isAdmin={props.isAdmin}
+        />
+      );
+    case "Billing & Plans":
+      return (
+        <BillingPlansSection
+          subscription={props.subscription}
+          plans={props.plans}
           isAdmin={props.isAdmin}
         />
       );
