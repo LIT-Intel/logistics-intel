@@ -240,22 +240,22 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
     case "RFP & Pipeline":
       return (
         <RfpPipelineSection
-          preferences={props.preferences?.preferences?.rfp}
-          onSavePreferences={(data) => props.onSavePreferences?.("rfp", data)}
+          preferences={props.preferences?.preferences?.rfp_pipeline}
+          onSavePreferences={(data) => props.onSavePreferences?.("rfp_pipeline", data)}
         />
       );
     case "Campaign Preferences":
       return (
         <CampaignPreferencesSection
-          preferences={props.preferences?.preferences?.campaigns}
-          onSavePreferences={(data) => props.onSavePreferences?.("campaigns", data)}
+          preferences={props.preferences?.preferences?.campaign_preferences}
+          onSavePreferences={(data) => props.onSavePreferences?.("campaign_preferences", data)}
         />
       );
     case "Alerts & Notifications":
       return (
         <AlertsNotificationsSection
-          preferences={props.preferences?.preferences?.notifications}
-          onSavePreferences={(data) => props.onSavePreferences?.("notifications", data)}
+          preferences={props.preferences?.preferences?.alerts_notifications}
+          onSavePreferences={(data) => props.onSavePreferences?.("alerts_notifications", data)}
         />
       );
     case "Security & API":
