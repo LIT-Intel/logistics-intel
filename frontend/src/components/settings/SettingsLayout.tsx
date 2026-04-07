@@ -321,11 +321,13 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
       activeSection={activeSection}
       onSelectSection={setActiveSection}
     />
+
     <main className="flex-1 space-y-6">
       <SettingsHeader
         title="Workspace controls"
         description="Adjust messaging defaults, workspace credits, security, and billing for LIT Search."
       />
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {kpiData.map((kpi) => (
           <KpiCard
@@ -337,6 +339,8 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
           />
         ))}
       </div>
+
+      {renderSection(activeSection, props)}
     </main>
   </div>
 );
