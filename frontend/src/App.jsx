@@ -1,6 +1,7 @@
 import React, { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "@/pages/Layout";
+import AppLayout from "@/layout/lit/AppLayout.jsx";
 import ModernLoginPage from "@/components/layout/ModernLoginPage";
 import ModernSignupPage from "@/components/layout/ModernSignupPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
@@ -47,6 +48,10 @@ function RequireAuth({ children }) {
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
   return children;
+}
+
+function LITPage({ children }) {
+  return <AppLayout>{children}</AppLayout>;
 }
 
 export default function App() {
@@ -113,9 +118,7 @@ export default function App() {
           path="/app/search"
           element={
             <RequireAuth>
-              <Layout currentPageName="Search">
-                <Search />
-              </Layout>
+              <LITPage><Search /></LITPage>
             </RequireAuth>
           }
         />
@@ -124,9 +127,7 @@ export default function App() {
           path="/app/search/trends"
           element={
             <RequireAuth>
-              <Layout currentPageName="Search">
-                <SearchTrends />
-              </Layout>
+              <LITPage><SearchTrends /></LITPage>
             </RequireAuth>
           }
         />
@@ -134,27 +135,21 @@ export default function App() {
         <Route
           path="/app/companies"
           element={
-            <Layout currentPageName="Command Center">
-              <Companies />
-            </Layout>
+            <LITPage><Companies /></LITPage>
           }
         />
 
         <Route
           path="/app/command-center"
           element={
-            <Layout currentPageName="Command Center">
-              <CommandCenterPage />
-            </Layout>
+            <LITPage><CommandCenterPage /></LITPage>
           }
         />
 
         <Route
           path="/command-center"
           element={
-            <Layout currentPageName="Command Center">
-              <CommandCenterPage />
-            </Layout>
+            <LITPage><CommandCenterPage /></LITPage>
           }
         />
 
@@ -162,9 +157,7 @@ export default function App() {
           path="/app/companies/:id"
           element={
             <RequireAuth>
-              <Layout currentPageName="Company">
-                <Company />
-              </Layout>
+              <LITPage><Company /></LITPage>
             </RequireAuth>
           }
         />
@@ -173,9 +166,7 @@ export default function App() {
           path="/app/campaigns"
           element={
             <RequireAuth>
-              <Layout currentPageName="Campaigns">
-                <Campaigns />
-              </Layout>
+              <LITPage><Campaigns /></LITPage>
             </RequireAuth>
           }
         />
@@ -184,9 +175,7 @@ export default function App() {
           path="/app/campaigns/new"
           element={
             <RequireAuth>
-              <Layout currentPageName="New Campaign">
-                <CampaignBuilder />
-              </Layout>
+              <LITPage><CampaignBuilder /></LITPage>
             </RequireAuth>
           }
         />
@@ -195,9 +184,7 @@ export default function App() {
           path="/app/email"
           element={
             <RequireAuth>
-              <Layout currentPageName="EmailCenter">
-                <EmailCenter />
-              </Layout>
+              <LITPage><EmailCenter /></LITPage>
             </RequireAuth>
           }
         />
@@ -206,9 +193,7 @@ export default function App() {
           path="/app/rfp"
           element={
             <RequireAuth>
-              <Layout currentPageName="RFPStudio">
-                <RFPStudio />
-              </Layout>
+              <LITPage><RFPStudio /></LITPage>
             </RequireAuth>
           }
         />
@@ -217,9 +202,7 @@ export default function App() {
           path="/app/settings"
           element={
             <RequireAuth>
-              <Layout currentPageName="Settings">
-                <Settings />
-              </Layout>
+              <LITPage><Settings /></LITPage>
             </RequireAuth>
           }
         />
@@ -228,9 +211,7 @@ export default function App() {
           path="/app/admin/settings"
           element={
             <RequireAuth>
-              <Layout currentPageName="Admin Settings">
-                <AdminSettings />
-              </Layout>
+              <LITPage><AdminSettings /></LITPage>
             </RequireAuth>
           }
         />
@@ -239,9 +220,7 @@ export default function App() {
           path="/app/widgets"
           element={
             <RequireAuth>
-              <Layout currentPageName="Widgets">
-                <Widgets />
-              </Layout>
+              <LITPage><Widgets /></LITPage>
             </RequireAuth>
           }
         />
@@ -250,9 +229,7 @@ export default function App() {
           path="/app/pre-call"
           element={
             <RequireAuth>
-              <Layout currentPageName="Pre-Call Briefing">
-                <PreCallBriefing />
-              </Layout>
+              <LITPage><PreCallBriefing /></LITPage>
             </RequireAuth>
           }
         />
@@ -261,9 +238,7 @@ export default function App() {
           path="/app/billing"
           element={
             <RequireAuth>
-              <Layout currentPageName="Billing">
-                <Billing />
-              </Layout>
+              <LITPage><Billing /></LITPage>
             </RequireAuth>
           }
         />
@@ -272,9 +247,7 @@ export default function App() {
           path="/app/affiliate"
           element={
             <RequireAuth>
-              <Layout currentPageName="AffiliateDashboard">
-                <AffiliateDash />
-              </Layout>
+              <LITPage><AffiliateDash /></LITPage>
             </RequireAuth>
           }
         />
@@ -283,9 +256,7 @@ export default function App() {
           path="/app/admin"
           element={
             <RequireAuth>
-              <Layout currentPageName="AdminDashboard">
-                <AdminDashboard />
-              </Layout>
+              <LITPage><AdminDashboard /></LITPage>
             </RequireAuth>
           }
         />
@@ -294,9 +265,7 @@ export default function App() {
           path="/app/prospecting"
           element={
             <RequireAuth>
-              <Layout currentPageName="LeadProspecting">
-                <LeadProspecting />
-              </Layout>
+              <LITPage><LeadProspecting /></LITPage>
             </RequireAuth>
           }
         />
@@ -305,9 +274,7 @@ export default function App() {
           path="/app/cms"
           element={
             <RequireAuth>
-              <Layout currentPageName="CMSManager">
-                <CMSManager />
-              </Layout>
+              <LITPage><CMSManager /></LITPage>
             </RequireAuth>
           }
         />
@@ -316,9 +283,7 @@ export default function App() {
           path="/app/diagnostic"
           element={
             <RequireAuth>
-              <Layout currentPageName="Diagnostic">
-                <Diagnostic />
-              </Layout>
+              <LITPage><Diagnostic /></LITPage>
             </RequireAuth>
           }
         />
@@ -327,9 +292,7 @@ export default function App() {
           path="/app/agent"
           element={
             <RequireAuth>
-              <Layout currentPageName="AdminAgent">
-                <AdminAgent />
-              </Layout>
+              <LITPage><AdminAgent /></LITPage>
             </RequireAuth>
           }
         />
