@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Menu, Search, Bell, ChevronDown, Settings, CreditCard, LogOut } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const [profileOpen, setProfileOpen] = useState(false);
@@ -15,14 +16,28 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+  useEffect(() => {
+    function handleEscape(event) {
+      if (event.key === "Escape") setProfileOpen(false);
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, []);
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut?.();
+    } catch (error) {
+      console.error("Supabase sign out failed", error);
+    }
+
     try {
       localStorage.removeItem("supabase.auth.token");
       sessionStorage.clear();
     } catch (error) {
       console.error("Sign out cleanup failed", error);
     }
+
     window.location.href = "/login";
   };
 
@@ -34,7 +49,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
           <p className="text-sm text-slate-500">Trade Intelligence overview</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
           <div className="hidden min-w-[280px] items-center gap-2 rounded-2xl border border-blue-100 bg-gradient-to-r from-slate-50 to-blue-50/60 px-3 py-2 shadow-sm md:flex">
             <Search size={16} className="text-slate-400" />
             <input
@@ -51,6 +66,18 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
           >
             <Bell size={18} className="stroke-[2.2]" />
             <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full border border-white bg-emerald-500" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setProfileOpen(false);
+              setSidebarOpen(!sidebarOpen);
+            }}
+            aria-label="Toggle menu"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-700 shadow-sm transition hover:border-blue-200 hover:from-blue-100 hover:to-indigo-100 hover:text-blue-700 md:hidden"
+          >
+            <Menu size={18} className="stroke-[2.2]" />
           </button>
 
           <div className="relative" ref={profileRef}>
@@ -86,7 +113,7 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
                     <Settings size={16} />
                     Settings
                   </a>
-                  <a href="/billing" className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <a href="/settings?tab=billing" className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
                     <CreditCard size={16} />
                     Billing
                   </a>
@@ -102,15 +129,6 @@ const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
               </div>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label="Toggle menu"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-blue-100 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-700 shadow-sm transition hover:border-blue-200 hover:from-blue-100 hover:to-indigo-100 hover:text-blue-700 md:hidden"
-          >
-            <Menu size={18} className="stroke-[2.2]" />
-          </button>
         </div>
       </div>
     </header>
