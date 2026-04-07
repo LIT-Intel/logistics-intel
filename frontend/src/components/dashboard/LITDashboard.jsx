@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import { getSavedCompanies } from "@/lib/api";
 import { getCampaignsFromSupabase } from "@/lib/supabase";
@@ -279,12 +280,26 @@ function loadScript(src) {
 function formatDate(value) {
   if (!value) return "—";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
+  if (Number.isNaN(d.getTime())) return "—";
+  const maxFuture = new Date();
+  maxFuture.setDate(maxFuture.getDate() + 1);
+  if (d > maxFuture) return "—";
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
+}
+
+function firstValidDate(...values) {
+  const maxFuture = new Date();
+  maxFuture.setDate(maxFuture.getDate() + 1);
+  for (const value of values.flat()) {
+    if (!value) continue;
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime()) && d <= maxFuture) return value;
+  }
+  return null;
 }
 
 function formatNumber(value) {
@@ -414,6 +429,55 @@ function getCommandCenterHref(row) {
   const query = params.toString();
   return query ? `/command-center?${query}` : '/command-center';
 }
+
+function cleanRouteLabel(value) {
+  if (!value) return null;
+  const normalized = String(value)
+    .replace(/\s*->\s*/g, ' → ')
+    .replace(/\s*-\s*/g, ' → ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized || normalized.length < 5) return null;
+  return normalized;
+}
+
+function cityStateFromLocation(location) {
+  const raw = String(location || '').trim();
+  if (!raw || raw === '—') return null;
+  const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0]}, ${parts[1]}`;
+  return parts[0] || null;
+}
+
+function extractRouteCandidate(candidate) {
+  if (!candidate) return null;
+  if (typeof candidate === 'string') return cleanRouteLabel(candidate);
+  if (typeof candidate === 'object') {
+    const direct = candidate.route || candidate.label || candidate.name || candidate.summary;
+    if (direct) return cleanRouteLabel(direct);
+    const origin = [candidate.origin_port, candidate.originPort, candidate.origin_city, candidate.originCity, candidate.origin_country, candidate.originCountry].filter(Boolean).join(', ');
+    const dest = [candidate.destination_port, candidate.destinationPort, candidate.destination_city, candidate.destinationCity, candidate.destination_state, candidate.destinationState, candidate.destination_country, candidate.destinationCountry].filter(Boolean).join(', ');
+    if (origin || dest) return cleanRouteLabel(`${origin} → ${dest}`);
+  }
+  return null;
+}
+
+function inferFallbackRoute(location, countryCode) {
+  const destination = cityStateFromLocation(location);
+  const originCountry = COUNTRY_CODE_LABELS[countryCode] || countryCode;
+  if (!destination || !originCountry) return null;
+  return `${originCountry} → ${destination}`;
+}
+
+function inferRouteRegion(routeLabel, companyRegion) {
+  const route = String(routeLabel || '').toUpperCase();
+  for (const [code, label] of Object.entries(COUNTRY_CODE_LABELS)) {
+    if (route.includes(label.toUpperCase()) || route.includes(` ${code} `) || route.endsWith(` ${code}`) || route.includes(`, ${code}`)) {
+      return COUNTRY_TO_REGION[code] || companyRegion || 'NA';
+    }
+  }
+  return companyRegion || 'NA';
+}
 function normalizeSavedCompanyRow(row) {
   const company = row?.company || {};
   const raw = row?.raw || {};
@@ -446,14 +510,16 @@ function normalizeSavedCompanyRow(row) {
       0,
   );
 
-  const lastShipment =
-    companyData?.lastShipmentDate ||
-    companyData?.last_shipment_date ||
-    company?.kpis?.last_activity ||
-    companyData?.mostRecentShipment ||
-    raw?.updated_at ||
-    raw?.created_at ||
-    null;
+  const lastShipment = firstValidDate(
+    companyData?.lastShipmentDate,
+    companyData?.last_shipment_date,
+    company?.kpis?.last_activity,
+    companyData?.mostRecentShipment,
+    raw?.most_recent_shipment_date,
+    raw?.saved_at,
+    raw?.updated_at,
+    raw?.created_at,
+  );
 
   const mode =
     companyData?.mode ||
@@ -472,6 +538,20 @@ function normalizeSavedCompanyRow(row) {
   const companyId = raw?.company_id || company?.internal_id || company?.company_id || raw?.company_key || '';
   const companyKey = raw?.company_key || company?.company_id || raw?.company_id || '';
   const commandCenterHref = getCommandCenterHref({ companyId, companyKey, company: rawCompanyName });
+  const rawRoutes = [
+    raw?.top_route_12m,
+    raw?.recent_route,
+    companyData?.top_route_12m,
+    companyData?.recent_route,
+    companyData?.most_recent_route,
+    companyData?.route_kpis?.top_route_last_12m,
+    companyData?.route_kpis?.most_recent_route,
+    ...(Array.isArray(companyData?.top_routes) ? companyData.top_routes : []),
+  ]
+    .map(extractRouteCandidate)
+    .filter(Boolean);
+  const fallbackRoute = inferFallbackRoute(location, countryCode);
+  const tradeRoutes = Array.from(new Set([...(rawRoutes || []), ...(fallbackRoute ? [fallbackRoute] : [])])).slice(0, 5);
 
   return {
     company: prettifyCompanyName(rawCompanyName),
@@ -488,19 +568,13 @@ function normalizeSavedCompanyRow(row) {
     companyId,
     companyKey,
     commandCenterHref,
+    tradeRoutes,
     raw: row,
   };
 }
 
 function buildMapScalesFromCompanies(companies) {
-  const regionCountryCounts = {
-    NA: {},
-    EU: {},
-    AS: {},
-    SA: {},
-    AF: {},
-    OC: {},
-  };
+  const regionCountryCounts = { NA: {}, EU: {}, AS: {}, SA: {}, AF: {}, OC: {} };
 
   companies.forEach((company) => {
     const code = (company?.countryCode || "").toUpperCase();
@@ -509,73 +583,77 @@ function buildMapScalesFromCompanies(companies) {
     regionCountryCounts[region][code] = (regionCountryCounts[region][code] || 0) + 1;
   });
 
-  const toScaleBucket = (count) => {
-    if (count >= 9) return "scale9";
-    if (count >= 8) return "scale8";
-    if (count >= 7) return "scale7";
-    if (count >= 6) return "scale6";
-    if (count >= 5) return "scale5";
-    if (count >= 4) return "scale4";
-    if (count >= 3) return "scale3";
-    if (count >= 2) return "scale2";
-    return "scale1";
-  };
-
-  const dynamic = Object.fromEntries(
-    Object.entries(regionCountryCounts).map(([regionKey, countries]) => [
-      regionKey,
-      Object.fromEntries(
-        Object.entries(countries).map(([code, count]) => [code, toScaleBucket(count)]),
-      ),
-    ]),
-  );
-
-  return Object.keys(dynamic).some((key) => Object.keys(dynamic[key]).length > 0)
-    ? dynamic
-    : fallbackMapCountryScales;
+  return regionCountryCounts;
 }
 
 function buildRegionSummary(companies) {
-  const regionCounts = {
-    NA: 0,
-    EU: 0,
-    AS: 0,
-    SA: 0,
-    AF: 0,
-    OC: 0,
-  };
-
+  const regionCounts = { NA: 0, EU: 0, AS: 0, SA: 0, AF: 0, OC: 0 };
   const countryCounts = {};
+  const routesByRegion = { NA: [], EU: [], AS: [], SA: [], AF: [], OC: [] };
 
   companies.forEach((company) => {
     const code = (company?.countryCode || "").toUpperCase();
-    const region = COUNTRY_TO_REGION[code];
-    if (!region) return;
-    regionCounts[region] += 1;
-    countryCounts[code] = (countryCounts[code] || 0) + 1;
+    const region = COUNTRY_TO_REGION[code] || 'NA';
+    if (code) {
+      regionCounts[region] += 1;
+      countryCounts[code] = (countryCounts[code] || 0) + 1;
+    }
+    const tradeRoutes = Array.isArray(company?.tradeRoutes) ? company.tradeRoutes : [];
+    tradeRoutes.forEach((route) => {
+      const routeRegion = inferRouteRegion(route, region);
+      routesByRegion[routeRegion].push(route);
+    });
   });
 
   const topRegionEntry = Object.entries(regionCounts).sort((a, b) => b[1] - a[1])[0] || ["NA", 0];
-  const topCountries = Object.entries(countryCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([code]) => COUNTRY_CODE_LABELS[code] || code)
-    .join(", ");
+
+  const aggregateRoutes = (routeList) => {
+    const counts = new Map();
+    routeList.forEach((route) => counts.set(route, (counts.get(route) || 0) + 1));
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([label, count]) => ({ label, count }));
+  };
+
+  const regionRoutes = Object.fromEntries(Object.entries(routesByRegion).map(([key, value]) => [key, aggregateRoutes(value)]));
+  const activeRoutes = regionRoutes[topRegionEntry[0]] || [];
 
   return {
     activeRegionKey: topRegionEntry[0],
     activeRegionLabel: REGION_LABELS[topRegionEntry[0]] || "North America",
     savedAccounts: companies.length,
-    laneDensity:
-      companies.length > 0
-        ? `${Math.min(100, Math.max(12, Math.round((topRegionEntry[1] / companies.length) * 100)))}%`
-        : "0%",
-    topCountries: topCountries || "—",
-    coverageNote:
-      companies.length > 0
-        ? `Live coverage based on ${companies.length} saved account${companies.length === 1 ? "" : "s"}`
-        : "No saved company coverage yet",
+    laneDensity: companies.length > 0 ? `${Math.min(100, Math.max(12, Math.round((topRegionEntry[1] / companies.length) * 100)))}%` : "0%",
+    regionRoutes,
+    activeTradeRoutes: activeRoutes,
+    topCountries: Object.entries(countryCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([code]) => COUNTRY_CODE_LABELS[code] || code),
   };
+}
+
+function buildMapColorValues(mapCounts, selectedRegion) {
+  const palette = {
+    NA: { active: '#2563eb', base: '#93c5fd' },
+    EU: { active: '#16a34a', base: '#86efac' },
+    AS: { active: '#7c3aed', base: '#c4b5fd' },
+    SA: { active: '#ea580c', base: '#fdba74' },
+    AF: { active: '#0891b2', base: '#67e8f9' },
+    OC: { active: '#db2777', base: '#f9a8d4' },
+  };
+  const values = {};
+  Object.entries(mapCounts || {}).forEach(([region, countries]) => {
+    const entries = Object.entries(countries || {});
+    if (!entries.length) {
+      const fallback = Object.keys(fallbackMapCountryScales[region] || {});
+      fallback.forEach((code) => {
+        values[code] = region === (Object.entries(REGION_LABELS).find(([,label])=>label===selectedRegion)?.[0]) ? palette[region].active : palette[region].base;
+      });
+      return;
+    }
+    entries.forEach(([code]) => {
+      values[code] = region === (Object.entries(REGION_LABELS).find(([,label])=>label===selectedRegion)?.[0]) ? palette[region].active : palette[region].base;
+    });
+  });
+  return values;
 }
 
 function buildTrendData(companies) {
@@ -762,6 +840,8 @@ function TradeMapPanel({ mapScales, regionSummary }) {
   };
 
   const active = regionDetails[selectedRegion];
+  const selectedRegionKey = active?.key || regionSummary?.activeRegionKey || "NA";
+  const visibleRoutes = (regionSummary?.regionRoutes?.[selectedRegionKey] || []).slice(0, 5);
 
   useEffect(() => {
     let mounted = true;
@@ -808,18 +888,7 @@ function TradeMapPanel({ mapScales, regionSummary }) {
             regions: [
               {
                 attribute: "fill",
-                scale: {
-                  scale1: "#dbeafe",
-                  scale2: "#cfe2ff",
-                  scale3: "#bfd8ff",
-                  scale4: "#a9c8ff",
-                  scale5: "#8cb5ff",
-                  scale6: "#6fa0fa",
-                  scale7: "#4f87ef",
-                  scale8: "#346fe1",
-                  scale9: "#2158ca",
-                },
-                values: mapScales?.[active.key] || fallbackMapCountryScales[active.key] || {},
+                values: buildMapColorValues(mapScales, selectedRegion),
               },
             ],
           },
@@ -944,30 +1013,27 @@ function TradeMapPanel({ mapScales, regionSummary }) {
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
-                  <Globe2 size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    Top Countries
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {showingLiveRegion ? regionSummary?.topCountries || "—" : active.countries}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200">
                   <Radar size={16} />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    Coverage Note
+                    Top Trade Routes
                   </div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {showingLiveRegion ? regionSummary?.coverageNote || "No saved company coverage yet" : active.emphasis}
+                  <div className="mt-2 space-y-2">
+                    {visibleRoutes.length ? visibleRoutes.map((route) => (
+                      <div
+                        key={route.label}
+                        className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60"
+                        title={`${route.label} • ${route.count} saved account${route.count === 1 ? '' : 's'}`}
+                      >
+                        <span className="truncate font-medium text-slate-700 group-hover:text-slate-900">{route.label}</span>
+                        <span className="ml-3 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700">{route.count}</span>
+                      </div>
+                    )) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
+                        Trade routes will appear here as lane data becomes available.
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1026,6 +1092,7 @@ function TradeMapPanel({ mapScales, regionSummary }) {
 }
 
 export default function LITDashboard() {
+  const navigate = useNavigate();
   const [savedCompaniesLive, setSavedCompaniesLive] = useState([]);
   const [campaignsLive, setCampaignsLive] = useState([]);
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -1087,7 +1154,9 @@ export default function LITDashboard() {
     [normalizedCompanies],
   );
 
-  const displayedCompanies = normalizedCompanies.slice(0, 10);
+  const displayedCompanies = [...normalizedCompanies]
+    .sort((a, b) => new Date(b?.raw?.created_at || b?.raw?.saved_at || 0) - new Date(a?.raw?.created_at || a?.raw?.saved_at || 0))
+    .slice(0, 10);
   const savedCompaniesCount = normalizedCompanies.length;
   const activeCampaignsCount = campaignsLive.length;
 
