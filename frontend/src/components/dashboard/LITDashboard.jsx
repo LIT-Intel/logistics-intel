@@ -449,17 +449,64 @@ function cityStateFromLocation(location) {
   return parts[0] || null;
 }
 
-function extractRouteCandidate(candidate) {
+function extractRouteCandidate(candidate, fallbackDestination = '') {
   if (!candidate) return null;
   if (typeof candidate === 'string') return cleanRouteLabel(candidate);
   if (typeof candidate === 'object') {
-    const direct = candidate.route || candidate.label || candidate.name || candidate.summary;
+    const direct = candidate.route || candidate.label || candidate.name || candidate.summary || candidate.top_route_12m || candidate.recent_route;
     if (direct) return cleanRouteLabel(direct);
-    const origin = [candidate.origin_port, candidate.originPort, candidate.origin_city, candidate.originCity, candidate.origin_country, candidate.originCountry].filter(Boolean).join(', ');
-    const dest = [candidate.destination_port, candidate.destinationPort, candidate.destination_city, candidate.destinationCity, candidate.destination_state, candidate.destinationState, candidate.destination_country, candidate.destinationCountry].filter(Boolean).join(', ');
-    if (origin || dest) return cleanRouteLabel(`${origin} → ${dest}`);
+
+    const originCountry = [
+      candidate.origin_country,
+      candidate.originCountry,
+      candidate.supplier_country,
+      candidate.shipper_country,
+      candidate.country_of_origin,
+      candidate.countryOfOrigin,
+      candidate.export_country,
+      candidate.exportCountry,
+    ].filter(Boolean)[0];
+    const originPort = [candidate.origin_port, candidate.originPort, candidate.port_of_lading, candidate.loading_port, candidate.pol].filter(Boolean)[0];
+    const originCity = [candidate.origin_city, candidate.originCity, candidate.shipper_city, candidate.supplier_city].filter(Boolean)[0];
+
+    const destinationAddress = [
+      candidate.destination_address,
+      candidate.destinationAddress,
+      candidate.consignee_address,
+      candidate.consigneeAddress,
+      candidate.delivery_address,
+      candidate.deliveryAddress,
+      fallbackDestination,
+    ].filter(Boolean)[0];
+    const destinationPort = [candidate.destination_port, candidate.destinationPort, candidate.port_of_discharge, candidate.discharge_port, candidate.pod].filter(Boolean)[0];
+    const destinationCity = [candidate.destination_city, candidate.destinationCity, candidate.consignee_city, candidate.delivery_city].filter(Boolean)[0];
+    const destinationState = [candidate.destination_state, candidate.destinationState, candidate.consignee_state, candidate.delivery_state].filter(Boolean)[0];
+    const destinationCountry = [candidate.destination_country, candidate.destinationCountry, candidate.consignee_country, candidate.delivery_country].filter(Boolean)[0];
+
+    const origin = originCountry || originPort || originCity;
+    const destination = destinationAddress || [destinationCity, destinationState, destinationCountry].filter(Boolean).join(', ') || destinationPort;
+    if (origin || destination) return cleanRouteLabel(`${origin || 'Origin TBD'} → ${destination || 'Destination TBD'}`);
   }
   return null;
+}
+
+function extractRoutesFromBolData(companyData, location) {
+  const sources = [
+    companyData?.bols,
+    companyData?.bills_of_lading,
+    companyData?.bill_of_ladings,
+    companyData?.shipments,
+    companyData?.recent_shipments,
+    companyData?.recent_bols,
+    companyData?.bol_data,
+    companyData?.route_kpis?.top_routes_last_12m,
+    companyData?.top_trade_routes,
+  ].filter(Array.isArray);
+
+  return sources
+    .flat()
+    .map((item) => extractRouteCandidate(item, location))
+    .filter(Boolean);
 }
 
 function inferFallbackRoute(location, countryCode) {
@@ -547,8 +594,9 @@ function normalizeSavedCompanyRow(row) {
     companyData?.route_kpis?.top_route_last_12m,
     companyData?.route_kpis?.most_recent_route,
     ...(Array.isArray(companyData?.top_routes) ? companyData.top_routes : []),
+    ...extractRoutesFromBolData(companyData, location),
   ]
-    .map(extractRouteCandidate)
+    .map((candidate) => extractRouteCandidate(candidate, location))
     .filter(Boolean);
   const fallbackRoute = inferFallbackRoute(location, countryCode);
   const tradeRoutes = Array.from(new Set([...(rawRoutes || []), ...(fallbackRoute ? [fallbackRoute] : [])])).slice(0, 5);
@@ -631,29 +679,33 @@ function buildRegionSummary(companies) {
 }
 
 function buildMapColorValues(mapCounts, selectedRegion) {
-  const palette = {
-    NA: { active: '#2563eb', base: '#93c5fd' },
-    EU: { active: '#16a34a', base: '#86efac' },
-    AS: { active: '#7c3aed', base: '#c4b5fd' },
-    SA: { active: '#ea580c', base: '#fdba74' },
-    AF: { active: '#0891b2', base: '#67e8f9' },
-    OC: { active: '#db2777', base: '#f9a8d4' },
-  };
+  const selectedRegionKey = Object.entries(REGION_LABELS).find(([, label]) => label === selectedRegion)?.[0] || 'NA';
   const values = {};
-  Object.entries(mapCounts || {}).forEach(([region, countries]) => {
-    const entries = Object.entries(countries || {});
-    if (!entries.length) {
-      const fallback = Object.keys(fallbackMapCountryScales[region] || {});
-      fallback.forEach((code) => {
-        values[code] = region === (Object.entries(REGION_LABELS).find(([,label])=>label===selectedRegion)?.[0]) ? palette[region].active : palette[region].base;
-      });
-      return;
-    }
-    entries.forEach(([code]) => {
-      values[code] = region === (Object.entries(REGION_LABELS).find(([,label])=>label===selectedRegion)?.[0]) ? palette[region].active : palette[region].base;
+  const scale = {
+    NA_BASE: '#8fbaf6',
+    NA_ACTIVE: '#1d4ed8',
+    EU_BASE: '#9fddb0',
+    EU_ACTIVE: '#15803d',
+    AS_BASE: '#c4b5fd',
+    AS_ACTIVE: '#6d28d9',
+    SA_BASE: '#fdba74',
+    SA_ACTIVE: '#c2410c',
+    AF_BASE: '#7dd3fc',
+    AF_ACTIVE: '#0e7490',
+    OC_BASE: '#f9a8d4',
+    OC_ACTIVE: '#be185d',
+  };
+
+  Object.keys(REGION_LABELS).forEach((region) => {
+    const liveCodes = Object.keys(mapCounts?.[region] || {});
+    const fallbackCodes = Object.keys(fallbackMapCountryScales[region] || {});
+    const codes = Array.from(new Set([...fallbackCodes, ...liveCodes]));
+    codes.forEach((code) => {
+      values[code] = region === selectedRegionKey ? `${region}_ACTIVE` : `${region}_BASE`;
     });
   });
-  return values;
+
+  return { values, scale };
 }
 
 function buildTrendData(companies) {
@@ -873,22 +925,24 @@ function TradeMapPanel({ mapScales, regionSummary }) {
           markersSelectable: false,
           regionStyle: {
             initial: {
-              fill: "#dbeafe",
+              fill: "#d7e7fb",
               stroke: "#ffffff",
-              strokeWidth: 1.25,
+              strokeWidth: 1.4,
             },
             hover: {
-              fill: "#60a5fa",
+              fill: "#334155",
+              fillOpacity: 0.88,
             },
             selected: {
-              fill: "#2563eb",
+              fill: "#1d4ed8",
             },
           },
           series: {
             regions: [
               {
                 attribute: "fill",
-                values: buildMapColorValues(mapScales, selectedRegion),
+                scale: buildMapColorValues(mapScales, selectedRegion).scale,
+                values: buildMapColorValues(mapScales, selectedRegion).values,
               },
             ],
           },
@@ -965,9 +1019,9 @@ function TradeMapPanel({ mapScales, regionSummary }) {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_.9fr]">
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div ref={mapRef} className="h-[320px] w-full" />
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.75fr_.85fr]">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 p-2 sm:p-3">
+          <div ref={mapRef} className="h-[420px] w-full sm:h-[500px] xl:h-[560px]" />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -1023,10 +1077,10 @@ function TradeMapPanel({ mapScales, regionSummary }) {
                     {visibleRoutes.length ? visibleRoutes.map((route) => (
                       <div
                         key={route.label}
-                        className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60"
+                        className="group flex items-start justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60"
                         title={`${route.label} • ${route.count} saved account${route.count === 1 ? '' : 's'}`}
                       >
-                        <span className="truncate font-medium text-slate-700 group-hover:text-slate-900">{route.label}</span>
+                        <span className="min-w-0 flex-1 break-words pr-2 text-left font-medium leading-5 text-slate-700 group-hover:text-slate-900">{route.label}</span>
                         <span className="ml-3 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700">{route.count}</span>
                       </div>
                     )) : (
