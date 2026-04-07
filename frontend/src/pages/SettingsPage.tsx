@@ -36,6 +36,31 @@ function buildAdminSubscription() {
   };
 }
 
+function deriveOrgName(params: {
+  explicitName?: string | null;
+  fallbackOrgName?: string | null;
+  email?: string | null;
+}) {
+  const explicit = toStringOrNull(params.explicitName);
+  if (explicit) return explicit;
+
+  const fallback = toStringOrNull(params.fallbackOrgName);
+  if (fallback) return fallback;
+
+  const email = (params.email || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) return "My Workspace";
+
+  const domain = email.split("@")[1] || "";
+  const base = domain.split(".")[0] || "";
+  if (!base) return "My Workspace";
+
+  return base
+    .split(/[-_.]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 async function uploadAsset(params: {
   file: File;
   folder: "avatars" | "logos";
@@ -99,14 +124,14 @@ export default function SettingsPage() {
   const [rfpCount, setRfpCount] = useState(0);
 
   const isAdminEmail =
-    ADMIN_EMAILS.includes(user?.email ?? "") ||
+    ADMIN_EMAILS.includes((user?.email ?? "").toLowerCase()) ||
     user?.user_metadata?.role === "admin" ||
     user?.user_metadata?.role === "super_admin";
 
   const isOrgOwner = orgMembers.some(
     (m) =>
       m.user_id === user?.id &&
-      ["owner", "admin", "super_admin"].includes(m.role)
+      ["owner", "admin"].includes(m.role)
   );
 
   const isAdmin = isAdminEmail || isOrgOwner;
@@ -115,6 +140,77 @@ export default function SettingsPage() {
     (minPlan: string) =>
       isAdmin || (PLAN_RANK[plan ?? "free_trial"] ?? 0) >= (PLAN_RANK[minPlan] ?? 0),
     [isAdmin, plan]
+  );
+
+  const ensureOrgContext = useCallback(
+    async (
+      explicitOrgName?: string | null
+    ): Promise<{ orgId: string | null; error?: string }> => {
+      if (orgId) return { orgId };
+
+      if (!user?.id) {
+        return { orgId: null, error: "Not authenticated" };
+      }
+
+      const fallbackOrgName =
+        profile?.company_name ||
+        user?.user_metadata?.organization_name ||
+        user?.user_metadata?.company_name ||
+        null;
+
+      const companyName = deriveOrgName({
+        explicitName: explicitOrgName || orgProfile?.company || orgProfile?.name || null,
+        fallbackOrgName,
+        email: user.email ?? null,
+      });
+
+      const { data: createdOrg, error: orgError } = await supabase
+        .from("organizations")
+        .insert({
+          name: companyName,
+          owner_id: user.id,
+          support_email: user.email ?? null,
+          owner_email: user.email ?? null,
+          timezone: "America/New_York",
+        })
+        .select("*")
+        .single();
+
+      if (orgError || !createdOrg?.id) {
+        return { orgId: null, error: normalizeError(orgError, "Failed creating organization") };
+      }
+
+      const membershipPayload = {
+        org_id: createdOrg.id,
+        user_id: user.id,
+        email: user.email ?? null,
+        full_name: user?.user_metadata?.full_name || profile?.name || null,
+        role: isAdminEmail ? "owner" : "owner",
+        status: "active",
+      };
+
+      const { error: membershipUpsertError } = await supabase
+        .from("org_members")
+        .upsert(membershipPayload, { onConflict: "org_id,user_id" });
+
+      if (membershipUpsertError) {
+        return {
+          orgId: null,
+          error: normalizeError(membershipUpsertError, "Failed linking organization membership"),
+        };
+      }
+
+      setOrgId(createdOrg.id);
+      setOrgProfile({
+        ...(createdOrg ?? {}),
+        company: createdOrg.name ?? companyName,
+        name: createdOrg.name ?? companyName,
+        supportEmail: createdOrg.support_email ?? user.email ?? "",
+      });
+
+      return { orgId: createdOrg.id };
+    },
+    [orgId, user?.id, user?.email, user?.user_metadata, profile?.company_name, profile?.name, orgProfile?.company, orgProfile?.name, isAdminEmail]
   );
 
   const loadAll = useCallback(async () => {
@@ -198,6 +294,14 @@ export default function SettingsPage() {
       }
     }
 
+    if (!currentOrgId && !isAdminEmail) {
+      const bootstrap = await ensureOrgContext(fallbackOrgName || null);
+      if (bootstrap.error) {
+        console.error("[settings] org bootstrap", bootstrap.error);
+      }
+      currentOrgId = bootstrap.orgId ?? null;
+    }
+
     let activeWorkspaceName = "Admin Console";
 
     setProfile({
@@ -277,11 +381,12 @@ export default function SettingsPage() {
       setOrgMembers([]);
       setOrgInvites([]);
     }
-setProfile((prev) => ({
-  ...prev,
-  company_name: activeWorkspaceName,
-}));
-    
+
+    setProfile((prev) => ({
+      ...prev,
+      company_name: activeWorkspaceName,
+    }));
+
     const [subResult, plansResult] = await Promise.allSettled([
       currentOrgId
         ? supabase
@@ -352,70 +457,11 @@ setProfile((prev) => ({
     if (savedRes.status === "fulfilled") setSavedCount(savedRes.value.count ?? 0);
     if (campRes.status === "fulfilled") setCampaignCount(campRes.value.count ?? 0);
     if (rfpRes.status === "fulfilled") setRfpCount(rfpRes.value.count ?? 0);
-  }, [user?.id, user?.email, user?.user_metadata, plan, isAdmin, isAdminEmail]);
+  }, [user?.id, user?.email, user?.user_metadata, plan, isAdmin, isAdminEmail, ensureOrgContext]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
-
-  const ensureOrgContext = useCallback(async (): Promise<{ orgId: string | null; error?: string }> => {
-    if (orgId) return { orgId };
-
-    if (!isAdmin || !user?.id) {
-      return { orgId: null, error: "No active organization is linked to this account yet" };
-    }
-
-    const companyName =
-      toStringOrNull(orgProfile?.company) ||
-      toStringOrNull(orgProfile?.name) ||
-      toStringOrNull(profile?.company_name) ||
-      "Admin Console";
-
-    const { data, error } = await supabase
-      .from("organizations")
-      .insert({
-        name: companyName,
-        support_email: user.email ?? null,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      return { orgId: null, error: normalizeError(error, "Failed creating organization") };
-    }
-
-    if (data?.id) {
-      const membershipPayload = {
-        org_id: data.id,
-        user_id: user.id,
-        email: user.email ?? null,
-        full_name: profile?.name ?? user.user_metadata?.full_name ?? null,
-        role: isAdminEmail ? "super_admin" : "owner",
-        status: "active",
-      };
-
-      const { error: membershipUpsertError } = await supabase
-        .from("org_members")
-        .upsert(membershipPayload, { onConflict: "org_id,user_id" });
-
-      if (membershipUpsertError) {
-        console.error("[settings] org_members bootstrap", membershipUpsertError);
-      }
-
-      setOrgId(data.id);
-      setOrgProfile((prev) => ({
-        ...prev,
-        ...data,
-        company: data.name ?? companyName,
-        name: data.name ?? companyName,
-        supportEmail: data.support_email ?? user.email ?? "",
-      }));
-      await loadAll();
-      return { orgId: data.id };
-    }
-
-    return { orgId: null, error: "Failed creating organization" };
-  }, [orgId, isAdmin, isAdminEmail, user?.id, user?.email, user?.user_metadata, orgProfile?.company, orgProfile?.name, profile?.company_name, profile?.name, loadAll]);
 
   const onSaveProfile = async (
     data: Record<string, unknown>
@@ -478,7 +524,9 @@ setProfile((prev) => ({
   const onSaveOrgProfile = async (
     data: Record<string, unknown>
   ): Promise<{ error?: string }> => {
-    const ensured = await ensureOrgContext();
+    const ensured = await ensureOrgContext(
+      toStringOrNull(data.company) || null
+    );
     if (!ensured.orgId) return { error: ensured.error ?? "No active organization is linked to this account yet" };
 
     const updates: Record<string, unknown> = { id: ensured.orgId };
