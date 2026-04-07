@@ -324,9 +324,15 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
 
     <main className="flex-1 space-y-6">
       <SettingsHeader
-        title="Workspace controls"
-        description="Adjust messaging defaults, workspace credits, security, and billing for LIT Search."
-      />
+  title="Workspace controls"
+  description="Adjust messaging defaults, workspace credits, security, and billing for LIT Search."
+  workspaceName={
+    props.orgProfile?.name ||
+    props.orgProfile?.company ||
+    props.profile?.company_name ||
+    "Workspace"
+  }
+/>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {kpiData.map((kpi) => (
