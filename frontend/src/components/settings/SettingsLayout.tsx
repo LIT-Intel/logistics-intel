@@ -321,6 +321,17 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
         title="Workspace controls"
         description="Adjust messaging defaults, workspace credits, security, and billing for LIT Search."
       />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {kpiData.map((kpi) => (
+          <KpiCard
+            key={kpi.title}
+            title={kpi.title}
+            value={kpi.value}
+            helper={kpi.helper}
+            accent={kpi.accent}
+          />
+        ))}
+      </div>
     </main>
   </div>
 );
