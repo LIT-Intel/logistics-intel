@@ -146,43 +146,66 @@ export default function SettingsPage() {
   );
 
   const ensureOrgContext = useCallback(
-    async (explicitOrgName?: string | null): Promise<{ orgId: string | null; error?: string }> => {
-      if (orgId) return { orgId };
+  async (explicitOrgName?: string | null): Promise<{ orgId: string | null; error?: string }> => {
+    if (orgId) return { orgId };
 
-      if (!user?.id) {
-        return { orgId: null, error: "Not authenticated" };
-      }
+    if (!user?.id) {
+      return { orgId: null, error: "Not authenticated" };
+    }
 
-      const fallbackOrgName =
-        profile?.company_name ||
-        user?.user_metadata?.organization_name ||
-        user?.user_metadata?.company_name ||
-        null;
+    const fallbackOrgName =
+      profile?.company_name ||
+      user?.user_metadata?.organization_name ||
+      user?.user_metadata?.company_name ||
+      null;
 
-      const companyName = deriveOrgName({
-        explicitName: explicitOrgName || orgProfile?.company || orgProfile?.name || null,
-        fallbackOrgName,
-        email: user.email ?? null,
-      });
+    const companyName = deriveOrgName({
+      explicitName: explicitOrgName || orgProfile?.company || orgProfile?.name || null,
+      fallbackOrgName,
+      email: user.email ?? null,
+    });
 
-      const { data: createdOrg, error: orgError } = await supabase
-        .from("organizations")
-        .insert({
-          name: companyName,
-          owner_id: user.id,
-          support_email: user.email ?? null,
-          owner_email: user.email ?? null,
-          timezone: "America/New_York",
-        })
-        .select("*")
-        .single();
+    // 1. Reuse an existing org first
+    const { data: existingMembership, error: membershipError } = await supabase
+      .from("org_members")
+      .select("org_id")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-      if (orgError || !createdOrg?.id) {
-        return { orgId: null, error: normalizeError(orgError, "Failed creating organization") };
-      }
+    if (membershipError) {
+      return {
+        orgId: null,
+        error: normalizeError(membershipError, "Failed checking organization membership"),
+      };
+    }
 
+    if (existingMembership?.org_id) {
+      setOrgId(existingMembership.org_id);
+      return { orgId: existingMembership.org_id };
+    }
+
+    // 2. Reuse an existing org owned by this user if it exists
+    const { data: existingOrg, error: existingOrgError } = await supabase
+      .from("organizations")
+      .select("*")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingOrgError) {
+      return {
+        orgId: null,
+        error: normalizeError(existingOrgError, "Failed checking existing organization"),
+      };
+    }
+
+    if (existingOrg?.id) {
       const membershipPayload = {
-        org_id: createdOrg.id,
+        org_id: existingOrg.id,
         user_id: user.id,
         email: user.email ?? null,
         full_name: user?.user_metadata?.full_name || profile?.name || null,
@@ -201,27 +224,75 @@ export default function SettingsPage() {
         };
       }
 
-      setOrgId(createdOrg.id);
+      setOrgId(existingOrg.id);
       setOrgProfile({
-        ...(createdOrg ?? {}),
-        company: createdOrg.name ?? companyName,
-        name: createdOrg.name ?? companyName,
-        supportEmail: createdOrg.support_email ?? user.email ?? "",
+        ...(existingOrg ?? {}),
+        company: existingOrg.name ?? companyName,
+        name: existingOrg.name ?? companyName,
+        supportEmail: existingOrg.support_email ?? user.email ?? "",
       });
 
-      return { orgId: createdOrg.id };
-    },
-    [
-      orgId,
-      user?.id,
-      user?.email,
-      user?.user_metadata,
-      profile?.company_name,
-      profile?.name,
-      orgProfile?.company,
-      orgProfile?.name,
-    ]
-  );
+      return { orgId: existingOrg.id };
+    }
+
+    // 3. Only create a new org if absolutely none exists
+    const { data: createdOrg, error: orgError } = await supabase
+      .from("organizations")
+      .insert({
+        name: companyName,
+        owner_id: user.id,
+        support_email: user.email ?? null,
+        owner_email: user.email ?? null,
+        timezone: "America/New_York",
+      })
+      .select("*")
+      .single();
+
+    if (orgError || !createdOrg?.id) {
+      return { orgId: null, error: normalizeError(orgError, "Failed creating organization") };
+    }
+
+    const membershipPayload = {
+      org_id: createdOrg.id,
+      user_id: user.id,
+      email: user.email ?? null,
+      full_name: user?.user_metadata?.full_name || profile?.name || null,
+      role: "owner",
+      status: "active",
+    };
+
+    const { error: membershipUpsertError } = await supabase
+      .from("org_members")
+      .upsert(membershipPayload, { onConflict: "org_id,user_id" });
+
+    if (membershipUpsertError) {
+      return {
+        orgId: null,
+        error: normalizeError(membershipUpsertError, "Failed linking organization membership"),
+      };
+    }
+
+    setOrgId(createdOrg.id);
+    setOrgProfile({
+      ...(createdOrg ?? {}),
+      company: createdOrg.name ?? companyName,
+      name: createdOrg.name ?? companyName,
+      supportEmail: createdOrg.support_email ?? user.email ?? "",
+    });
+
+    return { orgId: createdOrg.id };
+  },
+  [
+    orgId,
+    user?.id,
+    user?.email,
+    user?.user_metadata,
+    profile?.company_name,
+    profile?.name,
+    orgProfile?.company,
+    orgProfile?.name,
+  ]
+);
 
   const loadAll = useCallback(async () => {
     const uid = user?.id;
