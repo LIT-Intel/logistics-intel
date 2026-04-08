@@ -191,7 +191,7 @@ serve(async (req) => {
     const formattedExpiry = formatExpiry(invite.expires_at);
 
     // Update this path only if your public asset path is different.
-    const logoUrl = "https://logisticintel.com/logo_email.png";
+    const logoUrl = "https://<your-project-ref>.supabase.co/storage/v1/object/public/public-assets/logo_email.png";
 
     const emailHtml = `
 <!DOCTYPE html>
