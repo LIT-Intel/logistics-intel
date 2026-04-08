@@ -918,10 +918,12 @@ export default function SettingsPage() {
     };
   }
 
+    const sentAt = new Date().toISOString();
+
   const { error: markInviteReadyError } = await supabase
     .from("org_invites")
     .update({
-      email_sent_at: new Date().toISOString(),
+      email_sent_at: sentAt,
     })
     .eq("id", savedInvite.id)
     .eq("org_id", ensured.orgId);
@@ -935,10 +937,25 @@ export default function SettingsPage() {
     };
   }
 
-  await loadWorkspaceAccess();
+  setOrgInvites((prev) => [
+    {
+      id: savedInvite.id,
+      email: normalizedEmail,
+      role: normalizedRole,
+      status: "pending",
+      created_at: savedInvite.created_at ?? sentAt,
+      expires_at: savedInvite.expires_at ?? expiresAt,
+    },
+    ...prev.filter(
+      (invite) => (invite.email ?? "").trim().toLowerCase() !== normalizedEmail
+    ),
+  ]);
+
+  void loadWorkspaceAccess();
 
   return {};
 };
+  
   const onRevokeMember = async (memberId: string): Promise<{ error?: string }> => {
     if (!canManageMembers) {
       return { error: "Only workspace admins can manage access." };
