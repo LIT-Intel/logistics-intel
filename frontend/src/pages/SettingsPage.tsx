@@ -477,8 +477,9 @@ export default function SettingsPage() {
     if (data.bio !== undefined) updates.bio = toStringOrNull(data.bio);
 
     const { error } = await supabase
-      .from("user_profiles")
-      .upsert(updates, { onConflict: "user_id" });
+  .from("organizations")
+  .update(updates)
+  .eq("id", ensured.orgId);
 
     if (error) return { error: normalizeError(error, "Failed saving profile") };
 
