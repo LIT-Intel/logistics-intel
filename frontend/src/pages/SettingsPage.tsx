@@ -498,8 +498,15 @@ const { error } = await supabase
     );
   }
 
-  await loadAll();
-  return {};
+  setOrgProfile((prev) => ({
+  ...prev,
+  ...updates,
+  company: updates.name ?? prev.company ?? "",
+  name: updates.name ?? prev.name ?? "",
+  supportEmail: updates.support_email ?? prev.supportEmail ?? "",
+}));
+
+return {};
 };
 
   const onSaveOrgProfile = async (
