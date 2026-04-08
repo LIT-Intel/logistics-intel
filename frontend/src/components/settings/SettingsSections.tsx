@@ -209,22 +209,22 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
   const planLabel = isAdmin ? "Admin" : (initialData?.plan || "Free trial");
 
   useEffect(() => {
-  setForm({
-    name: initialData?.name || "",
-    title: initialData?.title || "",
-    phone: initialData?.phone || "",
-    location: initialData?.location || "",
-    bio: initialData?.bio || "",
-  });
-  setAvatarUrl(initialData?.avatar_url || "");
-}, [
-  initialData?.name,
-  initialData?.title,
-  initialData?.phone,
-  initialData?.location,
-  initialData?.bio,
-  initialData?.avatar_url,
-]);
+    setForm({
+      name: initialData?.name || "",
+      title: initialData?.title || "",
+      phone: initialData?.phone || "",
+      location: initialData?.location || "",
+      bio: initialData?.bio || "",
+    });
+    setAvatarUrl(initialData?.avatar_url || "");
+  }, [
+    initialData?.name,
+    initialData?.title,
+    initialData?.phone,
+    initialData?.location,
+    initialData?.bio,
+    initialData?.avatar_url,
+  ]);
 
   async function handleSave() {
     setSaving(true);
@@ -367,6 +367,7 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
 
 type CompanySignatureSectionProps = {
   orgProfile?: {
+    id?: string | null;
     name?: string;
     company?: string;
     tagline?: string;
@@ -411,32 +412,32 @@ export function CompanySignatureSection({
   const logoRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-  setForm({
-    company: orgProfile?.company || orgProfile?.name || "",
-    tagline: orgProfile?.tagline || "",
-    website: orgProfile?.website || "",
-    industry: orgProfile?.industry || "",
-    size: orgProfile?.size || "",
-    supportEmail: orgProfile?.supportEmail || "",
-    address: orgProfile?.address || "",
-    timezone: orgProfile?.timezone || "",
-  });
-  setSignature(emailSignature || "");
-  setLogoUrl(orgProfile?.logo_url || "");
-}, [
-  orgProfile?.id,
-  orgProfile?.name,
-  orgProfile?.company,
-  orgProfile?.tagline,
-  orgProfile?.website,
-  orgProfile?.industry,
-  orgProfile?.size,
-  orgProfile?.supportEmail,
-  orgProfile?.address,
-  orgProfile?.timezone,
-  orgProfile?.logo_url,
-  emailSignature,
-]);
+    setForm({
+      company: orgProfile?.company || orgProfile?.name || "",
+      tagline: orgProfile?.tagline || "",
+      website: orgProfile?.website || "",
+      industry: orgProfile?.industry || "",
+      size: orgProfile?.size || "",
+      supportEmail: orgProfile?.supportEmail || "",
+      address: orgProfile?.address || "",
+      timezone: orgProfile?.timezone || "",
+    });
+    setSignature(emailSignature || "");
+    setLogoUrl(orgProfile?.logo_url || "");
+  }, [
+    orgProfile?.id,
+    orgProfile?.name,
+    orgProfile?.company,
+    orgProfile?.tagline,
+    orgProfile?.website,
+    orgProfile?.industry,
+    orgProfile?.size,
+    orgProfile?.supportEmail,
+    orgProfile?.address,
+    orgProfile?.timezone,
+    orgProfile?.logo_url,
+    emailSignature,
+  ]);
 
   async function handleSaveOrg() {
     setSavingOrg(true);
@@ -729,40 +730,50 @@ export function AccessRolesSection({
 
         <div className="space-y-3">
           {members.length ? (
-            members.map((m: any) => (
-              <div key={m.id} className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-[minmax(0,1fr)_180px_120px] md:items-center">
-                <div className="min-w-0">
-                  <div className="font-medium text-slate-900">{m.full_name || m.email || "User"}</div>
-                  <div className="truncate text-sm text-slate-500">{m.email || m.user_id}</div>
+            members.map((m: any) => {
+              const isOwner = m.role === "owner";
+
+              return (
+                <div
+                  key={m.id}
+                  className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-[minmax(0,1fr)_180px_140px] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-900">{m.full_name || m.email || "User"}</div>
+                    <div className="truncate text-sm text-slate-500">{m.email || m.user_id}</div>
+                  </div>
+                  <Select
+                    value={m.role}
+                    disabled={!isAdmin || isOwner}
+                    onChange={async (e) => {
+                      setErr(null);
+                      setMsg(null);
+                      const result = await onUpdateRole?.(m.id, e.target.value);
+                      if (result?.error) setErr(result.error);
+                      else setMsg("Role updated");
+                    }}
+                  >
+                    {isOwner ? <option value="owner">Owner</option> : null}
+                    <option value="admin">Admin</option>
+                    <option value="member">Member</option>
+                  </Select>
+                  <ActionButton
+                    variant="danger"
+                    disabled={!isAdmin || isOwner}
+                    onClick={async () => {
+                      setErr(null);
+                      setMsg(null);
+                      const result = await onRevoke?.(m.id);
+                      if (result?.error) setErr(result.error);
+                      else setMsg("Member removed");
+                    }}
+                  >
+                    <Trash2 size={16} />
+                    Remove
+                  </ActionButton>
                 </div>
-                <Select
-                  value={m.role}
-                  disabled={!isAdmin}
-                  onChange={async (e) => {
-                    const result = await onUpdateRole?.(m.id, e.target.value);
-                    if (result?.error) setErr(result.error);
-                    else setMsg("Role updated");
-                  }}
-                >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="owner">Owner</option>
-                  <option value="super_admin">Super Admin</option>
-                </Select>
-                <ActionButton
-                  variant="danger"
-                  disabled={!isAdmin}
-                  onClick={async () => {
-                    const result = await onRevoke?.(m.id);
-                    if (result?.error) setErr(result.error);
-                    else setMsg("Member removed");
-                  }}
-                >
-                  <Trash2 size={16} />
-                  Remove
-                </ActionButton>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
               No members found.
@@ -808,7 +819,10 @@ export function AccessRolesSection({
                 </div>
                 <ActionButton
                   variant="danger"
+                  disabled={!isAdmin}
                   onClick={async () => {
+                    setErr(null);
+                    setMsg(null);
                     const result = await onRevokeInvite?.(invite.id);
                     if (result?.error) setErr(result.error);
                     else setMsg("Invite revoked");
@@ -818,7 +832,11 @@ export function AccessRolesSection({
                 </ActionButton>
               </div>
             ))
-          ) : null}
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              No pending invites.
+            </div>
+          )}
         </div>
       </div>
     </SectionShell>
