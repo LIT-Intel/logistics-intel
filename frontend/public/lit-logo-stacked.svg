@@ -21,20 +21,20 @@
   </g>
 
   <!-- Text -->
-  <text x="300" y="120"
-        fill="#FFFFFF"
-        font-family="Arial, sans-serif"
-        font-size="110"
-        font-weight="700">
-    Logistic
-  </text>
+  <text x="300" y="150"
+      fill="#FFFFFF"
+      font-family="Arial, sans-serif"
+      font-size="110"
+      font-weight="700">
+  Logistic
+</text>
 
-  <text x="300" y="240"
-        fill="#FFFFFF"
-        font-family="Arial, sans-serif"
-        font-size="110"
-        font-weight="700">
-    Intel
-  </text>
+<text x="300" y="270"
+      fill="#FFFFFF"
+      font-family="Arial, sans-serif"
+      font-size="110"
+      font-weight="700">
+  Intel
+</text>
 
 </svg>
