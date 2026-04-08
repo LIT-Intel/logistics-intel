@@ -11,7 +11,6 @@ import {
 // Admin emails — keep in sync with billing-checkout normalizePlanCode admin check.
 const ADMIN_EMAILS = new Set([
   'vraymond@sparkfusiondigital.com',
-  'support@logisticintel.com',
 ]);
 
 const AuthCtx = createContext({
