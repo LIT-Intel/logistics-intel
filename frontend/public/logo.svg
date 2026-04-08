@@ -1,5 +1,0 @@
-<svg width="600" height="120" viewBox="0 0 600 120" xmlns="http://www.w3.org/2000/svg">
-  <rect x="10" y="10" width="100" height="100" rx="20" fill="none" stroke="#5eead4" stroke-width="3"/>
-  <path d="M35 80 L35 40 L75 40" stroke="#5eead4" stroke-width="6" fill="none" stroke-linecap="round"/>
-  <text x="130" y="75" font-family="Arial, sans-serif" font-size="40" fill="#1f2937">Logistic Intel</text>
-</svg>
