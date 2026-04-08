@@ -316,7 +316,7 @@ serve(async (req) => {
 
     console.log("[send-org-invite] sending email", {
       to: invite.email,
-      from: inviteFromEmail,
+      from: `Logistics Intel <${inviteFromEmail}>`,
       workspaceName,
       logoUrl,
     });
@@ -328,7 +328,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: inviteFromEmail,
+        from: `Logistics Intel <${inviteFromEmail}>`,
         to: [invite.email],
         subject: `You’ve been invited to join ${workspaceName}`,
         html: emailHtml,
