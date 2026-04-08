@@ -951,7 +951,7 @@ export default function SettingsPage() {
     ),
   ]);
 
-  void loadWorkspaceAccess();
+  void loadAll();
 
   return {};
 };
