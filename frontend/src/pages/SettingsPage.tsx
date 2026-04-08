@@ -171,7 +171,7 @@ export default function SettingsPage() {
       .select("org_id")
       .eq("user_id", user.id)
       .eq("status", "active")
-      .order("created_at", { ascending: true })
+      .order("org_id", { ascending: true })
       .limit(1)
       .maybeSingle();
 
