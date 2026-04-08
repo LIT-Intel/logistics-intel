@@ -25,6 +25,23 @@ async function invokeSupabaseFunction(functionName, body = {}) {
   return data ?? { ok: false, message: `No response returned from ${functionName}` };
 }
 
+function normalizeLeadResults(raw) {
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((item, index) => ({
+    id: item?.id ?? item?.company_id ?? item?.domain ?? item?.name ?? `pulse-${index}`,
+    name: item?.name ?? item?.company_name ?? item?.title ?? 'Unknown Company',
+    domain: item?.domain ?? item?.website ?? item?.company_domain ?? '',
+    city: item?.city ?? item?.hq_city ?? item?.location_city ?? '',
+    country: item?.country ?? item?.hq_country ?? item?.location_country ?? '',
+    industry: item?.industry ?? item?.industry_name ?? '',
+    employee_count: item?.employee_count ?? item?.employees ?? item?.employeeCount ?? '',
+    annual_revenue: item?.annual_revenue ?? item?.revenue ?? '',
+    contacts: Array.isArray(item?.contacts) ? item.contacts : [],
+    source: item?.source ?? 'pulse',
+  }));
+}
+
 // ============================================================
 // STRIPE / BILLING (FIXED)
 // ============================================================
@@ -67,11 +84,37 @@ export const phantombusterLinkedIn = httpCall('/functions/phantombusterLinkedIn'
   message: 'Disabled',
 });
 
-export const searchLeads = httpCall('/functions/searchLeads', {
+const rawSearchLeads = httpCall('/functions/searchLeads', {
   ok: true,
   results: [],
   total: 0,
 });
+
+export const searchLeads = async (payload = {}) => {
+  const response = await rawSearchLeads(payload);
+  const data = response?.data ?? response ?? {};
+
+  const rawResults =
+    data?.results ??
+    data?.data?.results ??
+    data?.items ??
+    response?.results ??
+    [];
+
+  const normalizedResults = normalizeLeadResults(rawResults);
+
+  return {
+    ...response,
+    ok: response?.ok ?? data?.ok ?? true,
+    status: response?.status ?? 200,
+    error: response?.error ?? data?.error ?? null,
+    data: {
+      ...data,
+      results: normalizedResults,
+      total: data?.total ?? normalizedResults.length,
+    },
+  };
+};
 
 export const toggleCompanySave = httpCall('/functions/toggleCompanySave', {
   ok: true,

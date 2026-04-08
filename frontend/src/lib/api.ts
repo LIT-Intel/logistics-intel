@@ -3505,6 +3505,41 @@ export async function createRfpWorkspace(body: {
   return res.json();
 }
 
+
+
+export async function sendCampaignEmail(campaignEmailId: string) {
+  if (!campaignEmailId || typeof campaignEmailId !== "string") {
+    throw new Error("sendCampaignEmail requires a valid campaignEmailId");
+  }
+
+  if (!SUPABASE_URL) {
+    throw new Error("VITE_SUPABASE_URL is not configured");
+  }
+
+  const response = await fetch(
+    `${SUPABASE_URL}/functions/v1/send-campaign-email`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        campaign_email_id: campaignEmailId,
+      }),
+    },
+  );
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error || data?.message || "Failed to send campaign email",
+    );
+  }
+
+  return data;
+}
+
 export const api = {
   searchCompanies,
   getFilterOptions,
@@ -3517,6 +3552,7 @@ export const api = {
   getEmailThreads,
   getCalendarEvents,
   createAlert,
+  sendCampaignEmail,
   kpiFrom,
   getCrmCompanyDetail,
   getCrmCampaigns,

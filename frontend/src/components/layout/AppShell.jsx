@@ -114,6 +114,7 @@ export default function AppShell({ currentPageName, children }) {
             <SideLink to="/app/search" icon={Search} label={collapsed ? "" : "Search"} />
             <SideLink to="/app/command-center" icon={Building2} label={collapsed ? "" : "Command Center"} />
             <SideLink to="/app/campaigns" icon={Mail} label={collapsed ? "" : "Campaigns"} />
+            <SideLink to="/app/prospecting" icon={TrendingUp} label={collapsed ? "" : "Lead Prospecting"} />
           </nav>
           {!collapsed && (
             <div className="px-4 py-2 text-gray-400 text-xs font-semibold uppercase tracking-wider">Tools</div>
@@ -135,7 +136,6 @@ export default function AppShell({ currentPageName, children }) {
           )}
           <nav className="mb-6">
             <SideLink to="/app/admin" icon={Shield} label={collapsed ? "" : "Admin Dashboard"} />
-            <SideLink to="/app/prospecting" icon={TrendingUp} label={collapsed ? "" : "Lead Prospecting"} />
             <SideLink to="/app/cms" icon={Database} label={collapsed ? "" : "CMS"} />
             <SideLink to="/app/diagnostic" icon={Bug} label={collapsed ? "" : "Debug Agent"} />
           </nav>

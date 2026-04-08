@@ -5,13 +5,12 @@ import {
   signInWithEmailPassword,
   registerWithEmailPassword,
   listenToAuth,
-  logout,
+  logout as logoutClient,
 } from './supabaseAuthClient';
 
 // Admin emails — keep in sync with billing-checkout normalizePlanCode admin check.
 const ADMIN_EMAILS = new Set([
   'vraymond@sparkfusiondigital.com',
-  'support@logisticintel.com',
 ]);
 
 const AuthCtx = createContext({
@@ -22,49 +21,56 @@ const AuthCtx = createContext({
   role: null,
   plan: null,
   access: null,
+  signInWithGoogle: async () => {},
+  signInWithMicrosoft: async () => {},
+  signInWithEmailPassword: async () => {},
+  registerWithEmailPassword: async () => {},
+  logout: async () => {},
 });
+
+function getDisplayName(u) {
+  if (!u) return '';
+
+  const meta = u.user_metadata || {};
+  const joinedName = [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim();
+
+  return (
+    meta.full_name ||
+    meta.display_name ||
+    meta.name ||
+    joinedName ||
+    (u.email?.split('@')[0] ?? '')
+  );
+}
+
+function normalizeUser(u) {
+  if (!u) return null;
+
+  const email = (u.email || '').toLowerCase();
+  const meta = u.user_metadata || {};
+  const isAdmin = ADMIN_EMAILS.has(email);
+  const role = isAdmin ? 'admin' : (meta.role || 'user');
+  const plan = isAdmin ? 'unlimited' : (meta.plan || 'free_trial');
+
+  return {
+    ...u,
+    role,
+    plan,
+    stripe_customer_id: meta.stripe_customer_id || null,
+    subscription_status: meta.subscription_status || null,
+    displayName: getDisplayName(u),
+  };
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
 
-  // Persist the last known displayName so it survives page reloads
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (user?.displayName) {
-      try { localStorage.setItem('litName', user.displayName); } catch { /* ignore */ }
-    }
-  }, [user?.displayName]);
-
-  useEffect(() => {
-    // Single subscription via listenToAuth (which uses the ONE shared GoTrueClient).
-    // This replaces the previous duplicate supabase.auth.onAuthStateChange call that
-    // caused "Multiple GoTrueClient instances detected" warnings.
     const unsub = listenToAuth((u) => {
       if (u) {
-        let savedName = null;
-        try {
-          if (typeof window !== 'undefined') savedName = localStorage.getItem('litName');
-        } catch { /* ignore */ }
-
-        const isAdmin = ADMIN_EMAILS.has(u.email);
-        const role = isAdmin ? 'admin' : (u.user_metadata?.role || 'user');
-        const plan = isAdmin ? 'enterprise' : (u.user_metadata?.plan || 'free_trial');
-
-        const enrichedUser = {
-          ...u,
-          role,
-          plan,
-          stripe_customer_id: u.user_metadata?.stripe_customer_id || null,
-          subscription_status: u.user_metadata?.subscription_status || null,
-          displayName:
-            u.user_metadata?.full_name ||
-            u.user_metadata?.display_name ||
-            savedName ||
-            (u.email?.split('@')[0] ?? ''),
-        };
-        setUser(enrichedUser);
+        setUser(normalizeUser(u));
         setAuthReady(true);
       } else {
         setUser(null);
@@ -73,18 +79,41 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    return () => { unsub(); };
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      setLoading(true);
+      setUser(null);
+      setAuthReady(false);
+
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('litName');
+          localStorage.removeItem('supabase.auth.token');
+        }
+      } catch {
+        // ignore storage cleanup issues
+      }
+
+      await logoutClient();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const value = useMemo(() => {
     const role = user?.role ?? null;
     const plan = user?.plan ?? null;
-    // access object — consumed by SettingsPage and other feature-gated components
+
     const access = user
       ? {
           isAdmin: role === 'admin',
-          canUpgrade: plan === 'free_trial' || plan === 'free',
-          canManageBilling: true,
+          canUpgrade: !['unlimited', 'enterprise'].includes(plan || ''),
+          canManageBilling: role === 'admin',
           plan,
           role,
         }
@@ -101,7 +130,7 @@ export function AuthProvider({ children }) {
       signInWithMicrosoft,
       signInWithEmailPassword,
       registerWithEmailPassword,
-      logout,
+      logout: handleLogout,
       fullName: user?.displayName || null,
     };
   }, [user, loading, authReady]);

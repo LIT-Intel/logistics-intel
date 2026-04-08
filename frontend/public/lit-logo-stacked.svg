@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500" viewBox="0 0 900 500" fill="none">
+
+  <defs>
+    <filter id="neon-glow" x="-60%" y="-60%" width="220%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="0" stdDeviation="1.2" flood-color="#00F0FF" flood-opacity="0.55"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#00F0FF" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- Icon -->
+  <rect x="40" y="40" width="200" height="200" rx="30" fill="#020617"/>
+
+  <g filter="url(#neon-glow)">
+    <g transform="translate(40 40) scale(3.125)">
+      <path d="M14 14v36h20" stroke="#00F0FF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M30 14h22" stroke="#00F0FF" stroke-width="6" stroke-linecap="round"/>
+      <path d="M30 28h9" stroke="#00F0FF" stroke-width="6" stroke-linecap="round"/>
+      <path d="M44 28v22" stroke="#00F0FF" stroke-width="6" stroke-linecap="round"/>
+      <path d="M30 50h14" stroke="#00F0FF" stroke-width="6" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Text -->
+  <text x="300" y="130"
+      fill="#FFFFFF"
+      font-family="Arial, sans-serif"
+      font-size="110"
+      font-weight="700">
+  Logistic
+</text>
+
+<text x="300" y="240"
+      fill="#FFFFFF"
+      font-family="Arial, sans-serif"
+      font-size="110"
+      font-weight="700">
+  Intel
+</text>
+
+</svg>

@@ -532,6 +532,14 @@ const currentYear = new Date().getFullYear();
           } as MockCompany;
         });
         setResults(mappedResults);
+        // Track search usage in search_queries table
+        if (user?.id) {
+          supabase.from('search_queries').insert({
+            user_id: user.id,
+            query: query.trim(),
+            results_count: mappedResults.length,
+          }).then(() => {});
+        }
         if (mappedResults.length === 0) {
           toast({
             title: 'No results found',

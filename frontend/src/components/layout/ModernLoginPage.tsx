@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthProvider";
 import { User, Lock, Eye, EyeOff } from "lucide-react";
 
 export default function ModernLoginPage() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const { signInWithGoogle, signInWithMicrosoft, signInWithEmailPassword } = useAuth();
   const [err, setErr] = useState("");
   const [email, setEmail] = useState("");
@@ -13,6 +14,19 @@ export default function ModernLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
+  const inviteToken = (searchParams.get("token") || "").trim();
+  const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
+  const nextParam = (searchParams.get("next") || "").trim();
+  const postAuthPath = inviteToken
+    ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
+        inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
+      }`
+    : nextParam || "/app/dashboard";
+  const signupPath = inviteToken
+    ? `/signup?token=${encodeURIComponent(inviteToken)}${
+        inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
+      }`
+    : "/signup";
 
   async function handleEmailPassword(e: React.FormEvent) {
     e?.preventDefault?.();
@@ -20,7 +34,7 @@ export default function ModernLoginPage() {
       setErr("");
       setLoading(true);
       await signInWithEmailPassword(email, password);
-      nav("/app/dashboard");
+      nav(postAuthPath, { replace: true });
     } catch (e: any) {
       setErr(e?.message || "Sign-in failed");
     } finally {
@@ -31,8 +45,8 @@ export default function ModernLoginPage() {
   async function handleGoogle() {
     try {
       setErr("");
-      await signInWithGoogle();
-      nav("/app/dashboard");
+      await signInWithGoogle(postAuthPath);
+      nav(postAuthPath, { replace: true });
     } catch (e: any) {
       setErr(e?.message || "Google sign-in failed");
     }
@@ -41,8 +55,8 @@ export default function ModernLoginPage() {
   async function handleMicrosoft() {
     try {
       setErr("");
-      await signInWithMicrosoft();
-      nav("/app/dashboard");
+      await signInWithMicrosoft(postAuthPath);
+      nav(postAuthPath, { replace: true });
     } catch (e: any) {
       setErr(e?.message || "Microsoft sign-in failed");
     }
@@ -75,7 +89,7 @@ export default function ModernLoginPage() {
             <Button
               variant="outline"
               className="border-white/20 text-white hover:bg-white/10"
-              onClick={() => nav("/signup")}
+              onClick={() => nav(signupPath)}
             >
               Learn more
             </Button>
@@ -89,7 +103,7 @@ export default function ModernLoginPage() {
             New to Logistics Intel?{" "}
             <button
               className="font-semibold text-cyan-400 hover:text-cyan-300 underline"
-              onClick={() => nav("/signup")}
+              onClick={() => nav(signupPath)}
             >
               Start your free trial, now!
             </button>
@@ -186,7 +200,7 @@ export default function ModernLoginPage() {
                 <div className="text-center text-sm text-slate-600 pt-4">
                   Don't have an account?{" "}
                   <button
-                    onClick={() => nav("/signup")}
+                    onClick={() => nav(signupPath)}
                     className="font-semibold text-blue-600 hover:text-blue-700"
                   >
                     Sign Up

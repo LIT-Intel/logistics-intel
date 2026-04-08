@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { getCampaigns } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import {
   type AudienceContact,
   type CampaignDraft,
@@ -29,6 +29,8 @@ const DEFAULT_METRICS: CampaignMetrics = {
   replies: 0,
   bounces: 0,
 };
+
+const STORAGE_KEY = 'lit.campaigns.local';
 
 const MOCK_TEMPLATES: CampaignTemplate[] = [
   {
@@ -244,22 +246,67 @@ function createDraft(summary?: CampaignSummary): CampaignDraft {
   };
 }
 
-function mapRemoteCampaign(raw: any, index: number): CampaignSummary {
-  const stats = raw?.stats ?? {};
-  return {
-    id: String(raw?.id ?? raw?.campaign_id ?? `cmp_remote_${index}`),
-    name: raw?.name ?? raw?.campaign_name ?? 'Untitled Campaign',
-    status: raw?.status ?? 'draft',
-    updatedAt: raw?.updatedAt ?? raw?.updated_at ?? 'Today',
-    stats: {
-      enrolled: Number(stats.enrolled ?? stats.total ?? 0),
-      sent: Number(stats.sent ?? stats.emails_sent ?? 0),
-      delivered: Number(stats.delivered ?? stats.sent ?? 0),
-      opens: Number(stats.opens ?? stats.unique_opens ?? 0),
-      replies: Number(stats.replies ?? stats.responses ?? 0),
-      bounces: Number(stats.bounces ?? 0),
-    },
+function mapDbCampaign(row: any): { summary: CampaignSummary; draft: CampaignDraft } {
+  const metrics = row?.metrics ?? {};
+  const savedDraft = metrics?.draft ?? {};
+  const stats = {
+    enrolled: Number(metrics?.enrolled ?? metrics?.stats?.enrolled ?? 0),
+    sent: Number(metrics?.sent ?? metrics?.stats?.sent ?? 0),
+    delivered: Number(metrics?.delivered ?? metrics?.stats?.delivered ?? metrics?.stats?.sent ?? 0),
+    opens: Number(metrics?.opens ?? metrics?.stats?.opens ?? 0),
+    replies: Number(metrics?.replies ?? metrics?.stats?.replies ?? 0),
+    bounces: Number(metrics?.bounces ?? metrics?.stats?.bounces ?? 0),
   };
+
+  const summary: CampaignSummary = {
+    id: String(row.id),
+    name: row.name ?? savedDraft.name ?? 'Untitled Campaign',
+    status: row.status ?? savedDraft.status ?? 'draft',
+    updatedAt: row.created_at
+      ? new Date(row.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
+      : 'Today',
+    stats,
+  };
+
+  const draft: CampaignDraft = {
+    ...createDraft(summary),
+    id: String(row.id),
+    name: row.name ?? savedDraft.name ?? 'Untitled Campaign',
+    status: row.status ?? savedDraft.status ?? 'draft',
+    subject: savedDraft.subject ?? 'Quick idea for {{company}}',
+    fromName: savedDraft.fromName ?? 'Valesco Raymond',
+    fromEmail: savedDraft.fromEmail ?? 'valesco@sparkfusiondigital.com',
+    replyTo: savedDraft.replyTo ?? '',
+    signature: savedDraft.signature ?? 'Best,\nValesco Raymond\nSpark Fusion Digital',
+    body: savedDraft.body ?? `Hi {{first_name}},\n\nWe help brands like {{company}} reduce landed costs by 8–12%. Worth a 10‑minute walkthrough?\n\n— Valesco`,
+    metrics: stats,
+    updatedAt: summary.updatedAt,
+    steps: Array.isArray(savedDraft.steps) && savedDraft.steps.length ? savedDraft.steps : createDefaultSteps(),
+  };
+
+  return { summary, draft };
+}
+
+function readLocalCampaigns(): { summary: CampaignSummary; draft: CampaignDraft }[] {
+  try {
+    if (typeof window === 'undefined') return [];
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => item?.summary?.id && item?.draft?.id);
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalCampaigns(items: { summary: CampaignSummary; draft: CampaignDraft }[]) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // ignore local cache write failures
+  }
 }
 
 export default function CampaignsPage() {
@@ -270,36 +317,84 @@ export default function CampaignsPage() {
   const [activeTab, setActiveTab] = useState<string>('builder');
   const [stepTemplateTarget, setStepTemplateTarget] = useState<SequenceStep | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dataMode, setDataMode] = useState<'live' | 'local' | 'demo'>('demo');
   const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function loadCampaigns() {
       try {
-        const remote = await getCampaigns();
-        const list = Array.isArray(remote) && remote.length
-          ? remote.map(mapRemoteCampaign)
-          : MOCK_CAMPAIGNS;
-        if (cancelled) return;
-        const nextDrafts = Object.fromEntries(list.map((summary) => [summary.id, createDraft(summary)]));
-        setCampaigns(list);
-        setDrafts(nextDrafts);
-        setSelectedCampaignId(list[0]?.id ?? null);
-        setSelectedStepId(nextDrafts[list[0]?.id ?? '']?.steps[0]?.id ?? null);
-      } catch (error) {
-        console.warn('[campaigns] load failed, using mock data', error);
+        const { data: authData } = await supabase.auth.getUser();
+        const userId = authData?.user?.id ?? null;
+
+        let query = supabase
+          .from('lit_campaigns')
+          .select('id, user_id, name, status, channel, metrics, created_at')
+          .order('created_at', { ascending: false });
+
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const rows = Array.isArray(data) ? data : [];
+        if (rows.length) {
+          const mapped = rows.map(mapDbCampaign);
+          if (cancelled) return;
+          setCampaigns(mapped.map((item) => item.summary));
+          setDrafts(Object.fromEntries(mapped.map((item) => [item.summary.id, item.draft])));
+          setSelectedCampaignId(mapped[0]?.summary.id ?? null);
+          setSelectedStepId(mapped[0]?.draft.steps[0]?.id ?? null);
+          setDataMode('live');
+          writeLocalCampaigns(mapped);
+          return;
+        }
+
+        const local = readLocalCampaigns();
+        if (local.length) {
+          if (cancelled) return;
+          setCampaigns(local.map((item) => item.summary));
+          setDrafts(Object.fromEntries(local.map((item) => [item.summary.id, item.draft])));
+          setSelectedCampaignId(local[0]?.summary.id ?? null);
+          setSelectedStepId(local[0]?.draft.steps[0]?.id ?? null);
+          setDataMode('local');
+          return;
+        }
+
+        const demoDrafts = Object.fromEntries(MOCK_CAMPAIGNS.map((summary) => [summary.id, createDraft(summary)]));
         if (!cancelled) {
-          const list = MOCK_CAMPAIGNS;
-          const nextDrafts = Object.fromEntries(list.map((summary) => [summary.id, createDraft(summary)]));
-          setCampaigns(list);
-          setDrafts(nextDrafts);
-          setSelectedCampaignId(list[0]?.id ?? null);
-          setSelectedStepId(nextDrafts[list[0]?.id ?? '']?.steps[0]?.id ?? null);
+          setCampaigns(MOCK_CAMPAIGNS);
+          setDrafts(demoDrafts);
+          setSelectedCampaignId(MOCK_CAMPAIGNS[0]?.id ?? null);
+          setSelectedStepId(demoDrafts[MOCK_CAMPAIGNS[0]?.id ?? '']?.steps[0]?.id ?? null);
+          setDataMode('demo');
+        }
+      } catch (error) {
+        console.warn('[campaigns] load failed, using local/demo fallback', error);
+        const local = readLocalCampaigns();
+        if (!cancelled && local.length) {
+          setCampaigns(local.map((item) => item.summary));
+          setDrafts(Object.fromEntries(local.map((item) => [item.summary.id, item.draft])));
+          setSelectedCampaignId(local[0]?.summary.id ?? null);
+          setSelectedStepId(local[0]?.draft.steps[0]?.id ?? null);
+          setDataMode('local');
+        } else if (!cancelled) {
+          const demoDrafts = Object.fromEntries(MOCK_CAMPAIGNS.map((summary) => [summary.id, createDraft(summary)]));
+          setCampaigns(MOCK_CAMPAIGNS);
+          setDrafts(demoDrafts);
+          setSelectedCampaignId(MOCK_CAMPAIGNS[0]?.id ?? null);
+          setSelectedStepId(demoDrafts[MOCK_CAMPAIGNS[0]?.id ?? '']?.steps[0]?.id ?? null);
+          setDataMode('demo');
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    loadCampaigns();
 
     return () => {
       cancelled = true;
@@ -308,6 +403,18 @@ export default function CampaignsPage() {
 
   const draft = selectedCampaignId ? drafts[selectedCampaignId] : null;
   const metrics = draft?.metrics ?? DEFAULT_METRICS;
+
+  const persistLocalSnapshot = (nextCampaigns: CampaignSummary[], nextDrafts: Record<string, CampaignDraft>) => {
+    const items = nextCampaigns
+      .map((summary) => {
+        const nextDraft = nextDrafts[summary.id];
+        if (!nextDraft) return null;
+        return { summary, draft: nextDraft };
+      })
+      .filter(Boolean) as { summary: CampaignSummary; draft: CampaignDraft }[];
+
+    writeLocalCampaigns(items);
+  };
 
   const handleCreateCampaign = () => {
     const id = `cmp_${Date.now().toString(36)}`;
@@ -319,11 +426,15 @@ export default function CampaignsPage() {
       stats: { ...DEFAULT_METRICS },
     };
     const newDraft = createDraft(summary);
-    setCampaigns((prev) => [summary, ...prev]);
-    setDrafts((prev) => ({ ...prev, [id]: newDraft }));
+    const nextCampaigns = [summary, ...campaigns];
+    const nextDrafts = { ...drafts, [id]: newDraft };
+    setCampaigns(nextCampaigns);
+    setDrafts(nextDrafts);
+    persistLocalSnapshot(nextCampaigns, nextDrafts);
     setSelectedCampaignId(id);
     setSelectedStepId(newDraft.steps[0]?.id ?? null);
     setActiveTab('builder');
+    setDataMode((prev) => (prev === 'live' ? prev : 'local'));
   };
 
   const handleSelectCampaign = (id: string) => {
@@ -331,34 +442,96 @@ export default function CampaignsPage() {
     const existing = drafts[id];
     if (existing) {
       setSelectedStepId(existing.steps[0]?.id ?? null);
-    } else {
-      const summary = campaigns.find((c) => c.id === id);
-      const nextDraft = createDraft(summary);
-      setDrafts((prev) => ({ ...prev, [id]: nextDraft }));
-      setSelectedStepId(nextDraft.steps[0]?.id ?? null);
+      return;
     }
+
+    const summary = campaigns.find((c) => c.id === id);
+    const nextDraft = createDraft(summary);
+    const nextDrafts = { ...drafts, [id]: nextDraft };
+    setDrafts(nextDrafts);
+    persistLocalSnapshot(campaigns, nextDrafts);
+    setSelectedStepId(nextDraft.steps[0]?.id ?? null);
   };
 
   const handleDraftChange = (nextDraft: CampaignDraft) => {
     if (!selectedCampaignId) return;
-    setDrafts((prev) => ({ ...prev, [selectedCampaignId]: nextDraft }));
+    const nextDrafts = { ...drafts, [selectedCampaignId]: nextDraft };
+    setDrafts(nextDrafts);
+    persistLocalSnapshot(campaigns, nextDrafts);
   };
 
   const handleSaveDraft = async (nextDraft: CampaignDraft) => {
-    handleDraftChange(nextDraft);
-    setCampaigns((prev) =>
-      prev.map((campaign) =>
-        campaign.id === nextDraft.id
-          ? {
-              ...campaign,
-              status: nextDraft.status,
-              updatedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
-              stats: { ...campaign.stats, ...nextDraft.metrics },
-            }
-          : campaign
-      )
-    );
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    if (!nextDraft?.id) return;
+
+    const updatedSummary: CampaignSummary = {
+      id: nextDraft.id,
+      name: nextDraft.name || 'New Campaign',
+      status: nextDraft.status || 'draft',
+      updatedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+      stats: { ...DEFAULT_METRICS, ...nextDraft.metrics },
+    };
+
+    const nextCampaigns = campaigns.some((campaign) => campaign.id === nextDraft.id)
+      ? campaigns.map((campaign) => (campaign.id === nextDraft.id ? updatedSummary : campaign))
+      : [updatedSummary, ...campaigns];
+
+    const nextDrafts = { ...drafts, [nextDraft.id]: nextDraft };
+
+    setCampaigns(nextCampaigns);
+    setDrafts(nextDrafts);
+    persistLocalSnapshot(nextCampaigns, nextDrafts);
+
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id ?? null;
+
+      const payload = {
+        id: nextDraft.id,
+        user_id: userId,
+        name: nextDraft.name || 'New Campaign',
+        status: nextDraft.status || 'draft',
+        channel: 'email',
+        metrics: {
+          enrolled: nextDraft.metrics?.enrolled ?? 0,
+          sent: nextDraft.metrics?.sent ?? 0,
+          delivered: nextDraft.metrics?.delivered ?? 0,
+          opens: nextDraft.metrics?.opens ?? 0,
+          replies: nextDraft.metrics?.replies ?? 0,
+          bounces: nextDraft.metrics?.bounces ?? 0,
+          draft: {
+            name: nextDraft.name,
+            status: nextDraft.status,
+            subject: nextDraft.subject,
+            fromName: nextDraft.fromName,
+            fromEmail: nextDraft.fromEmail,
+            replyTo: nextDraft.replyTo,
+            signature: nextDraft.signature,
+            body: nextDraft.body,
+            steps: nextDraft.steps,
+          },
+        },
+      };
+
+      const { error } = await supabase
+        .from('lit_campaigns')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) throw error;
+
+      setDataMode('live');
+      toast({
+        title: 'Campaign saved',
+        description: `${payload.name} was saved successfully.`,
+      });
+    } catch (error) {
+      console.error('Failed to save campaign:', error);
+      toast({
+        title: 'Saved locally only',
+        description: 'The draft was stored in your browser, but the Supabase save failed.',
+        variant: 'destructive',
+      });
+      throw error;
+    }
   };
 
   const handleTestSent = (result: { messageId: string; to: string }) => {
@@ -366,13 +539,22 @@ export default function CampaignsPage() {
     setDrafts((prev) => {
       const current = prev[selectedCampaignId];
       if (!current) return prev;
-      const metrics = {
+      const nextMetrics = {
         ...current.metrics,
         sent: current.metrics.sent + 1,
         delivered: current.metrics.delivered + 1,
       };
-      const nextDraft = { ...current, metrics };
-      return { ...prev, [selectedCampaignId]: nextDraft };
+      const nextDraft = { ...current, metrics: nextMetrics };
+      const nextDrafts = { ...prev, [selectedCampaignId]: nextDraft };
+      persistLocalSnapshot(
+        campaigns.map((campaign) =>
+          campaign.id === selectedCampaignId
+            ? { ...campaign, stats: { ...campaign.stats, sent: nextMetrics.sent, delivered: nextMetrics.delivered } }
+            : campaign
+        ),
+        nextDrafts
+      );
+      return nextDrafts;
     });
     setCampaigns((prev) =>
       prev.map((campaign) =>
@@ -396,12 +578,12 @@ export default function CampaignsPage() {
 
   const handleUpdateStep = (step: SequenceStep) => {
     if (!selectedCampaignId) return;
-    setDrafts((prev) => {
-      const current = prev[selectedCampaignId];
-      if (!current) return prev;
-      const steps = current.steps.map((existing) => (existing.id === step.id ? step : existing));
-      return { ...prev, [selectedCampaignId]: { ...current, steps } };
-    });
+    const current = drafts[selectedCampaignId];
+    if (!current) return;
+    const steps = current.steps.map((existing) => (existing.id === step.id ? step : existing));
+    const nextDrafts = { ...drafts, [selectedCampaignId]: { ...current, steps } };
+    setDrafts(nextDrafts);
+    persistLocalSnapshot(campaigns, nextDrafts);
   };
 
   const handleAddStep = () => {
@@ -416,25 +598,25 @@ export default function CampaignsPage() {
         body: `Hi {{first_name}},\n\nSharing a quick follow-up in case this is still on your radar.\n\nBest,\nValesco`,
       },
     };
-    setDrafts((prev) => {
-      const current = prev[selectedCampaignId];
-      if (!current) return prev;
-      return {
-        ...prev,
-        [selectedCampaignId]: { ...current, steps: [...current.steps, newStep] },
-      };
-    });
+    const current = drafts[selectedCampaignId];
+    if (!current) return;
+    const nextDrafts = {
+      ...drafts,
+      [selectedCampaignId]: { ...current, steps: [...current.steps, newStep] },
+    };
+    setDrafts(nextDrafts);
+    persistLocalSnapshot(campaigns, nextDrafts);
     setSelectedStepId(newStep.id);
   };
 
   const handleApplyTemplateToEmail = (template: CampaignTemplate) => {
     if (!selectedCampaignId) return;
-    setDrafts((prev) => {
-      const current = prev[selectedCampaignId];
-      if (!current) return prev;
-      const nextDraft = { ...current, subject: template.subject, body: template.body };
-      return { ...prev, [selectedCampaignId]: nextDraft };
-    });
+    const current = drafts[selectedCampaignId];
+    if (!current) return;
+    const nextDraft = { ...current, subject: template.subject, body: template.body };
+    const nextDrafts = { ...drafts, [selectedCampaignId]: nextDraft };
+    setDrafts(nextDrafts);
+    persistLocalSnapshot(campaigns, nextDrafts);
     toast({
       title: 'Template applied',
       description: `${template.name} inserted into the composer.`,
@@ -456,7 +638,7 @@ export default function CampaignsPage() {
           </p>
         </div>
         <Badge className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
-          Live demo — in-memory data
+          {dataMode === 'live' ? 'Live Supabase data' : dataMode === 'local' ? 'Local draft cache' : 'Demo seed data'}
         </Badge>
       </div>
 

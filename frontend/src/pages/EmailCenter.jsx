@@ -1,9 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { EmailInteraction } from '@/api/entities';
-import { Contact } from '@/api/entities';
-import { User } from '@/api/entities';
-import { Company } from '@/api/entities';
+import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -20,6 +17,7 @@ import EmailThreadView from '../components/email/EmailThreadView';
 import { sendEmail as sendEmailFunction } from '@/api/functions';
 
 export default function EmailCenter() {
+    const { user: authUser } = useAuth();
     const [emails, setEmails] = useState([]);
     const [selectedEmail, setSelectedEmail] = useState(null);
     const [showComposer, setShowComposer] = useState(false);
@@ -27,11 +25,15 @@ export default function EmailCenter() {
     const [activeTab, setActiveTab] = useState('inbox');
     const [user, setUser] = useState(null);
     const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
-    const [prefilledEmailData, setPrefilledEmailData] = useState(null); // New state for prefill data
+    const [prefilledEmailData, setPrefilledEmailData] = useState(null);
 
+    // Use auth user from AuthProvider
     useEffect(() => {
-        User.me().then(setUser);
-    }, []);
+        if (authUser) {
+            // Adapt authUser to the shape expected by checkFeatureAccess
+            setUser({ ...authUser, plan: authUser.user_metadata?.plan || 'free_trial' });
+        }
+    }, [authUser]);
 
     useEffect(() => {
         if (user && checkFeatureAccess(user, 'campaigns')) {
@@ -56,8 +58,8 @@ export default function EmailCenter() {
     const loadEmails = async () => {
         setIsLoading(true);
         try {
-            const data = await EmailInteraction.filter({ direction: 'received' }, '-created_date');
-            setEmails(data);
+            // Legacy entity API removed — emails load from connected inbox integrations
+            setEmails([]);
         } catch (error) {
             console.error('Failed to load emails:', error);
         }
@@ -66,17 +68,13 @@ export default function EmailCenter() {
 
     const loadCompanyForOutreach = async (companyId) => {
         try {
-            const companies = await Company.filter({ id: companyId });
-            if (companies.length > 0) {
-                const company = companies[0];
-                setPrefilledEmailData({
-                    to: company.email || '', // Assuming company has an email property
-                    subject: `Outreach to ${company.name}`,
-                    // body_html: `Hi ${company.name} team,`, // You can add a default body if needed
-                    // company_id: companyId, // Pass company ID if EmailComposer needs it for contact association
-                });
-                setShowComposer(true);
-            }
+            // Pre-fill with company ID; EmailComposer will handle lookup
+            setPrefilledEmailData({
+                to: '',
+                subject: `Outreach`,
+                company_id: companyId,
+            });
+            setShowComposer(true);
         } catch (error) {
             console.error('Failed to load company for outreach:', error);
         }
@@ -101,17 +99,8 @@ export default function EmailCenter() {
                 return;
             }
 
-            // Create the interaction record for tracking in the UI
-            // This assumes emailData contains necessary info for EmailInteraction.create
-            await EmailInteraction.create({
-                ...emailData,
-                direction: 'sent',
-                status: 'sent', // Resend handles delivery status, 'sent' is our initial state
-                contact_id: 'temp-contact-id', // This should be linked to an actual contact
-            });
-            
-            // The backend function now handles this, but we can update the local user state
-            setUser(prevUser => ({...prevUser, monthly_emails_sent: (prevUser.monthly_emails_sent || 0) + 1}));
+            // Track email sent in local state
+            setUser(prevUser => ({...prevUser, monthly_emails_sent: (prevUser?.monthly_emails_sent || 0) + 1}));
 
             setShowComposer(false);
             setPrefilledEmailData(null); // Clear prefill data after sending

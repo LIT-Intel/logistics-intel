@@ -78,13 +78,13 @@ export async function registerWithEmailPassword({
 }
 
 // Google OAuth Sign In
-export async function signInWithGoogle() {
+export async function signInWithGoogle(redirectPath = "/app/dashboard") {
   if (!auth) throw new Error('Auth not configured');
 
   const { data, error } = await auth.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}/app/dashboard`,
+      redirectTo: `${window.location.origin}${redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}`}`,
     },
   });
 
@@ -93,13 +93,13 @@ export async function signInWithGoogle() {
 }
 
 // Microsoft OAuth Sign In
-export async function signInWithMicrosoft() {
+export async function signInWithMicrosoft(redirectPath = "/app/dashboard") {
   if (!auth) throw new Error('Auth not configured');
 
   const { data, error } = await auth.auth.signInWithOAuth({
     provider: 'azure',
     options: {
-      redirectTo: `${window.location.origin}/app/dashboard`,
+      redirectTo: `${window.location.origin}${redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}`}`,
       scopes: 'email profile openid',
     },
   });

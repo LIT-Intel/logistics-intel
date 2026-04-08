@@ -4,8 +4,14 @@ import { SettingsSectionId } from "./SettingsSections";
 import { Pill } from "./SettingsPrimitives";
 import { cn } from "@/lib/utils";
 
+type SidebarSection = {
+  id: SettingsSectionId;
+  title: string;
+  icon?: React.ComponentType<{ className?: string }>;
+};
+
 type SettingsSidebarProps = {
-  sections: SettingsSectionId[];
+  sections: SidebarSection[];
   activeSection: SettingsSectionId;
   onSelectSection: (section: SettingsSectionId) => void;
 };
@@ -33,10 +39,12 @@ export default function SettingsSidebar({
 
       <nav className="mt-6 flex flex-col gap-2">
         {sections.map((section) => {
-          const isActive = activeSection === section;
+          const isActive = activeSection === section.id;
+          const Icon = section.icon;
+
           return (
             <button
-              key={section}
+              key={section.id}
               type="button"
               className={cn(
                 "flex items-center justify-between rounded-2xl border px-4 py-2.5 text-left text-sm font-semibold transition",
@@ -44,10 +52,21 @@ export default function SettingsSidebar({
                   ? "border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-900/15"
                   : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-white",
               )}
-              onClick={() => onSelectSection(section)}
+              onClick={() => onSelectSection(section.id)}
             >
-              <span>{section}</span>
-              {section === "Profile" ? (
+              <span className="flex items-center gap-3">
+                {Icon ? (
+                  <Icon
+                    className={cn(
+                      "h-4 w-4",
+                      isActive ? "text-white" : "text-slate-400",
+                    )}
+                  />
+                ) : null}
+                <span>{section.title}</span>
+              </span>
+
+              {section.id === "Profile" ? (
                 <Pill label="Default" tone={isActive ? "warning" : "default"} />
               ) : (
                 <ArrowUpRight

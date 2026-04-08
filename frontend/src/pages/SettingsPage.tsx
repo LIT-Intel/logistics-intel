@@ -49,9 +49,24 @@ export default function SettingsPage() {
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
 
-  const isAdmin =
-    ADMIN_EMAILS.includes(user?.email ?? "") ||
-    user?.user_metadata?.role === "admin";
+  const isAdminEmail =
+    ADMIN_EMAILS.includes((user?.email ?? "").toLowerCase()) ||
+    user?.user_metadata?.role === "admin" ||
+    user?.user_metadata?.role === "super_admin";
+
+  const currentMembership = orgMembers.find(
+    (member) => member.user_id === user?.id && member.status === "active"
+  );
+
+  const currentOrgRole = normalizeOrgRole(
+    currentMembership?.role,
+    isAdminEmail ? "owner" : "member"
+  );
+
+  const isOrgOwner = currentOrgRole === "owner";
+  const isOrgAdmin = currentOrgRole === "admin";
+  const isAdmin = isAdminEmail || isOrgOwner || isOrgAdmin;
+  const canManageMembers = isAdminEmail || isOrgOwner || isOrgAdmin;
 
   const canAccess = useCallback(
     (minPlan: string) =>
@@ -163,7 +178,7 @@ export default function SettingsPage() {
 
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
-        .select("id, user_id, role, status, created_at, email, full_name")
+        .select("id, org_id, user_id, role, status, joined_at, email, full_name")
         .eq("org_id", currentOrgId)
         .order("created_at", { ascending: false });
       requireNoError(membersError, "Failed loading organization members");
@@ -171,7 +186,7 @@ export default function SettingsPage() {
 
       const { data: invitesData, error: invitesError } = await supabase
         .from("org_invites")
-        .select("id, email, role, status, created_at, expires_at")
+        .select("id, org_id, email, role, status, token, created_at, expires_at")
         .eq("org_id", currentOrgId)
         .eq("status", "pending")
         .order("created_at", { ascending: false });
@@ -235,7 +250,7 @@ export default function SettingsPage() {
 
     const { data: intData, error: integrationsError } = await supabase
       .from("integrations")
-      .select("id, type, config, created_at")
+      .select("id, integration_type, type, created_at")
       .eq("user_id", uid);
     requireNoError(integrationsError, "Failed loading integrations");
     safeSet(() => setIntegrations(intData ?? []));
@@ -385,7 +400,9 @@ export default function SettingsPage() {
     await loadAll();
   };
 
-  const onSaveEmailSignature = async (signature: string) => {
+  const onSaveEmailSignature = async (
+    signature: string
+  ): Promise<{ error?: string }> => {
     const uid = user?.id;
     if (!uid) throw new Error("No authenticated user");
 
@@ -409,6 +426,7 @@ export default function SettingsPage() {
     requireNoError(error, "Failed saving email signature");
 
     setPreferences((prev) => ({ ...prev, email_signature: signature }));
+    return {};
   };
 
   const onUploadLogo = async (file: File) => {
@@ -539,7 +557,16 @@ export default function SettingsPage() {
     requireNoError(error, "Failed generating API key");
 
     if (data?.id) {
-      await loadAll();
+      setApiKeys((prev) => [
+        {
+          id: data.id,
+          key_name: keyName.trim(),
+          key_prefix: keyPrefix,
+          last_used_at: null,
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
     }
 
     return fullKey;
@@ -566,6 +593,8 @@ export default function SettingsPage() {
     campaignsCount: campaignCount,
     rfpsCount: rfpCount,
   };
+
+  const effectiveSubscription = isAdmin ? buildAdminSubscription() : subscription ?? undefined;
 
   return (
     <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">

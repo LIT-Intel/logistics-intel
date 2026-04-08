@@ -1,23 +1,18 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Plus, Users, AlertTriangle } from 'lucide-react';
-import CampaignCard from '../components/campaigns/CampaignCard';
+import { AlertTriangle } from 'lucide-react';
 import CampaignCreator from '../components/campaigns/CampaignCreator';
-import CampaignAnalytics from '../components/campaigns/CampaignAnalytics';
-import LockedFeature from '../components/common/LockedFeature';
 import { checkFeatureAccess } from '@/components/utils/planLimits';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from '@/auth/AuthProvider';
-import { api } from '@/lib/api';
+import { api, sendCampaignEmail } from '@/lib/api';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import LitPageHeader from '@/components/ui/LitPageHeader';
 import LitPanel from '@/components/ui/LitPanel';
 import LitKpi from '@/components/ui/LitKpi';
 import LitSidebar from '@/components/ui/LitSidebar';
 import LitWatermark from '@/components/ui/LitWatermark';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
 // Helper function to ensure data is an array, handling various API response formats
 const asArray = (data) => {
@@ -28,6 +23,20 @@ const asArray = (data) => {
   return [];
 };
 
+function AccessFallback({ plan }) {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-[#F6F8FB] p-6">
+      <div className="max-w-xl w-full bg-white border rounded-2xl p-6 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-900">Campaigns requires Growth Plan</h2>
+        <p className="text-sm text-slate-600 mt-2">
+          Upgrade to Growth or Enterprise to create and manage outreach campaigns.
+        </p>
+        <p className="text-xs text-slate-500 mt-4">Current plan: {plan || 'free_trial'}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function CampaignsPage() {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
@@ -36,11 +45,13 @@ export default function CampaignsPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState(null);
   const [debugInfo, setDebugInfo] = useState('');
-  const [hasAccess, setHasAccess] = useState(false); // hasAccess is now a state variable
-  const [selectedCampaign, setSelectedCampaign] = useState(null);
+  const [hasAccess, setHasAccess] = useState(false);
   const [tab, setTab] = useState('overview');
   const [activeId, setActiveId] = useState(null);
   const [sequenceById, setSequenceById] = useState({});
+  const [manualCampaignEmailId, setManualCampaignEmailId] = useState('');
+  const [isSendingManual, setIsSendingManual] = useState(false);
+  const [manualSendMessage, setManualSendMessage] = useState('');
 
   useEffect(() => {
     const loadData = async () => {
@@ -72,7 +83,7 @@ export default function CampaignsPage() {
         }
 
       } catch (e) {
-        console.error("CampaignsPage: Critical error loading user or initial data:", e);
+        console.error('CampaignsPage: Critical error loading user or initial data:', e);
         const errorMsg = `Failed to load initial data: ${e.message}`;
         setError(errorMsg);
         setHasAccess(false);
@@ -85,17 +96,12 @@ export default function CampaignsPage() {
     loadData();
   }, [user]);
 
-  useEffect(()=>{
+  useEffect(() => {
     if (!activeId && campaigns.length) setActiveId(campaigns[0].id);
-  },[campaigns, activeId]);
+  }, [campaigns, activeId]);
 
   const handleCreateNew = () => {
     setEditingCampaign(null);
-    setIsCreating(true);
-  };
-
-  const handleEdit = (campaign) => {
-    setEditingCampaign(campaign);
     setIsCreating(true);
   };
 
@@ -124,14 +130,25 @@ export default function CampaignsPage() {
     }
   };
 
-  const handleDelete = async (campaignId) => {
-    console.warn('Delete campaign not yet implemented');
-    setCampaigns(prev => prev.filter(c => c.id !== campaignId));
-  };
+  const handleSendManualTest = async () => {
+    if (!manualCampaignEmailId.trim()) {
+      alert('Paste a campaign_email_id first.');
+      return;
+    }
 
-  const handleToggle = async (campaignId, status) => {
-    // Writes may not be available; disable toggle for now to avoid errors
-    console.warn('Toggle action is disabled until write API is available');
+    setIsSendingManual(true);
+    setManualSendMessage('');
+
+    try {
+      const result = await sendCampaignEmail(manualCampaignEmailId.trim());
+      const providerMessageId = result?.provider_message_id || 'sent';
+      setManualSendMessage(`Success. Provider message id: ${providerMessageId}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to send campaign email';
+      setManualSendMessage(`Failed: ${message}`);
+    } finally {
+      setIsSendingManual(false);
+    }
   };
 
   if (isLoading) {
@@ -148,8 +165,9 @@ export default function CampaignsPage() {
     );
   }
 
-  // Use the hasAccess state variable directly
-  // Do not early-return on access denied here; we want to render smoke-test cards
+  if (!hasAccess && !isLoading) {
+    return <AccessFallback plan={user?.user_metadata?.plan} />;
+  }
 
   if (isCreating || editingCampaign) {
     return (
@@ -160,25 +178,33 @@ export default function CampaignsPage() {
           setIsCreating(false);
           setEditingCampaign(null);
         }}
-        // Potentially pass companies, contacts, templates to CampaignCreator if needed for selections
-        // companies={companies}
-        // contacts={contacts}
-        // templates={templates}
       />
     );
   }
 
   return (
     <div className="w-full flex gap-[5px] pl-[5px] pr-[5px] min-h-screen">
-      {/* Sidebar */}
       <aside className="hidden md:block w-[340px] shrink-0">
         <LitSidebar title="Campaigns">
-          <Button onClick={handleCreateNew} className="w-full py-2 mb-4 bg-gradient-to-r from-sky-400 to-violet-500 text-white font-semibold rounded-lg shadow hover:opacity-90">
+          <Button
+            onClick={handleCreateNew}
+            className="w-full py-2 mb-4 bg-gradient-to-r from-sky-400 to-violet-500 text-white font-semibold rounded-lg shadow hover:opacity-90"
+          >
             + New Campaign
           </Button>
+
           <div className="space-y-3">
             {campaigns.map((c) => (
-              <button key={c.id} onClick={()=>{ setActiveId(c.id); setTab('builder'); setSelectedCampaign(c); }} className={`w-full text-left p-3 rounded-xl bg-white shadow hover:shadow-md transition border ${activeId===c.id? 'border-violet-400 ring-1 ring-violet-200' : 'border-slate-200'}`}>
+              <button
+                key={c.id}
+                onClick={() => {
+                  setActiveId(c.id);
+                  setTab('builder');
+                }}
+                className={`w-full text-left p-3 rounded-xl bg-white shadow hover:shadow-md transition border ${
+                  activeId === c.id ? 'border-violet-400 ring-1 ring-violet-200' : 'border-slate-200'
+                }`}
+              >
                 <div className="font-semibold">{c.name || c.title || 'Campaign'}</div>
                 <div className="text-xs text-slate-500">{c.status || 'Draft'}</div>
                 <div className="flex justify-between text-xs mt-2">
@@ -191,20 +217,15 @@ export default function CampaignsPage() {
         </LitSidebar>
       </aside>
 
-      {/* Main Workspace */}
       <main className="flex-1 min-w-0 max-w-none p-[5px] relative">
         <LitWatermark />
-        <LitPageHeader title="LIT Campaigns">
-          {/* optional actions */}
-        </LitPageHeader>
+        <LitPageHeader title="LIT Campaigns" />
 
         {error && (
           <Alert variant="destructive" className="mb-4">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Data Loading Error</AlertTitle>
-            <AlertDescription>
-              {error}
-            </AlertDescription>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
@@ -231,69 +252,144 @@ export default function CampaignsPage() {
           </TabsContent>
 
           <TabsContent value="builder" className="mt-6">
-            <LitPanel title="Sequence Builder">
-              {(() => {
-                const currentId = activeId || (campaigns[0] && campaigns[0].id);
-                const seq = sequenceById[currentId] || [
-                  { channel:'email', subject:'Intro', message:'Quick intro about savings…', wait:2 },
-                  { channel:'linkedin', subject:'', message:'Connect note', wait:3 },
-                  { channel:'email', subject:'Follow-up', message:'Just floating this back…', wait:4 },
-                ];
-                const updateSeq = (next) => setSequenceById(prev => ({ ...prev, [currentId]: next }));
-                const onChange = (idx, key, val) => {
-                  const next = seq.map((s,i)=> i===idx? ({ ...s, [key]: val }): s);
-                  updateSeq(next);
-                };
-                return (
-                  <div className="grid gap-3">
-                    {seq.map((step, i)=> (
-                      <div key={i} className="rounded-xl border p-3 bg-white">
-                        <div className="flex items-center gap-2 mb-2">
-                          <select value={step.channel} onChange={e=> onChange(i,'channel', e.target.value)} className="border rounded px-2 py-1 text-sm">
-                            <option value="email">Email</option>
-                            <option value="linkedin">LinkedIn</option>
-                          </select>
-                          {step.channel==='email' && (
-                            <input value={step.subject} onChange={e=> onChange(i,'subject', e.target.value)} placeholder="Subject" className="flex-1 border rounded px-2 py-1 text-sm" />
-                          )}
-                          <input type="number" min="0" value={step.wait} onChange={e=> onChange(i,'wait', Number(e.target.value||0))} className="w-20 border rounded px-2 py-1 text-sm" />
-                          <button className="text-xs px-2 py-1 border rounded" onClick={()=> updateSeq(seq.filter((_,idx)=> idx!==i))}>Remove</button>
+            <div className="space-y-6">
+              <LitPanel title="Sequence Builder">
+                {(() => {
+                  const currentId = activeId || (campaigns[0] && campaigns[0].id);
+                  const seq = sequenceById[currentId] || [
+                    { channel: 'email', subject: 'Intro', message: 'Quick intro about savings…', wait: 2 },
+                    { channel: 'linkedin', subject: '', message: 'Connect note', wait: 3 },
+                    { channel: 'email', subject: 'Follow-up', message: 'Just floating this back…', wait: 4 },
+                  ];
+
+                  const updateSeq = (next) => setSequenceById(prev => ({ ...prev, [currentId]: next }));
+                  const onChange = (idx, key, val) => {
+                    const next = seq.map((s, i) => (i === idx ? { ...s, [key]: val } : s));
+                    updateSeq(next);
+                  };
+
+                  return (
+                    <div className="grid gap-3">
+                      {seq.map((step, i) => (
+                        <div key={i} className="rounded-xl border p-3 bg-white">
+                          <div className="flex items-center gap-2 mb-2">
+                            <select
+                              value={step.channel}
+                              onChange={e => onChange(i, 'channel', e.target.value)}
+                              className="border rounded px-2 py-1 text-sm"
+                            >
+                              <option value="email">Email</option>
+                              <option value="linkedin">LinkedIn</option>
+                            </select>
+
+                            {step.channel === 'email' && (
+                              <input
+                                value={step.subject}
+                                onChange={e => onChange(i, 'subject', e.target.value)}
+                                placeholder="Subject"
+                                className="flex-1 border rounded px-2 py-1 text-sm"
+                              />
+                            )}
+
+                            <input
+                              type="number"
+                              min="0"
+                              value={step.wait}
+                              onChange={e => onChange(i, 'wait', Number(e.target.value || 0))}
+                              className="w-20 border rounded px-2 py-1 text-sm"
+                            />
+
+                            <button
+                              className="text-xs px-2 py-1 border rounded"
+                              onClick={() => updateSeq(seq.filter((_, idx) => idx !== i))}
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <textarea
+                            value={step.message}
+                            onChange={e => onChange(i, 'message', e.target.value)}
+                            placeholder="Message"
+                            className="w-full h-24 border rounded p-2 text-sm"
+                          />
                         </div>
-                        <textarea value={step.message} onChange={e=> onChange(i,'message', e.target.value)} placeholder="Message" className="w-full h-24 border rounded p-2 text-sm" />
+                      ))}
+
+                      <div className="flex gap-2">
+                        <button
+                          className="text-xs px-3 py-1.5 border rounded"
+                          onClick={() => updateSeq([...seq, { channel: 'email', subject: '', message: '', wait: 3 }])}
+                        >
+                          Add Step
+                        </button>
+                        <button
+                          className="text-xs px-3 py-1.5 border rounded"
+                          onClick={() => alert('Sequence saved (stub).')}
+                        >
+                          Save
+                        </button>
                       </div>
-                    ))}
-                    <div className="flex gap-2">
-                      <button className="text-xs px-3 py-1.5 border rounded" onClick={()=> updateSeq([...seq, { channel:'email', subject:'', message:'', wait:3 }])}>Add Step</button>
-                      <button className="text-xs px-3 py-1.5 border rounded" onClick={()=> alert('Sequence saved (stub).')}>Save</button>
                     </div>
+                  );
+                })()}
+              </LitPanel>
+
+              <LitPanel title="Send Test Campaign Email">
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-600">
+                    Paste a real <code>campaign_email_id</code> from your database to test the
+                    <code className="ml-1">send-campaign-email</code> function from the Campaigns UI.
+                  </p>
+
+                  <input
+                    value={manualCampaignEmailId}
+                    onChange={(e) => setManualCampaignEmailId(e.target.value)}
+                    placeholder="campaign_email_id"
+                    className="w-full border rounded px-3 py-2 text-sm"
+                  />
+
+                  <div className="flex gap-2">
+                    <Button onClick={handleSendManualTest} disabled={isSendingManual}>
+                      {isSendingManual ? 'Sending…' : 'Send Test Email'}
+                    </Button>
                   </div>
-                );
-              })()}
-            </LitPanel>
+
+                  {manualSendMessage ? (
+                    <div className="text-sm rounded-lg bg-slate-50 border px-3 py-2 text-slate-700">
+                      {manualSendMessage}
+                    </div>
+                  ) : null}
+                </div>
+              </LitPanel>
+            </div>
           </TabsContent>
 
           <TabsContent value="templates" className="mt-6">
-            <TemplateList onApply={(tpl)=>{
-              const currentId = activeId || (campaigns[0] && campaigns[0].id);
-              const preset = tpl==='Logistics Buyer Intro'
-                ? [
-                    { channel:'email', subject:'Intro', message:'We help reduce freight costs by 12–18%…', wait:2 },
-                    { channel:'linkedin', subject:'', message:'Exploring ways to streamline freight ops…', wait:3 },
-                  ]
-                : [ { channel:'email', subject: tpl, message:`Template: ${tpl}`, wait:2 } ];
-              setSequenceById(prev => ({ ...prev, [currentId]: preset }));
-              setTab('builder');
-            }} />
+            <TemplateList
+              onApply={(tpl) => {
+                const currentId = activeId || (campaigns[0] && campaigns[0].id);
+                const preset = tpl === 'Logistics Buyer Intro'
+                  ? [
+                      { channel: 'email', subject: 'Intro', message: 'We help reduce freight costs by 12–18%…', wait: 2 },
+                      { channel: 'linkedin', subject: '', message: 'Exploring ways to streamline freight ops…', wait: 3 },
+                    ]
+                  : [{ channel: 'email', subject: tpl, message: `Template: ${tpl}`, wait: 2 }];
+                setSequenceById(prev => ({ ...prev, [currentId]: preset }));
+                setTab('builder');
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="analytics" className="mt-6">
             <LitPanel title="Engagement Analytics">
               {(() => {
-                const c = campaigns.find(x=> x.id===activeId) || campaigns[0] || { open:0, reply:0 };
+                const c = campaigns.find(x => x.id === activeId) || campaigns[0] || { open: 0, reply: 0 };
                 const data = [
-                  { k:'Open', v:c.open||0 },
-                  { k:'Reply', v:c.reply||0 },
+                  { k: 'Open', v: c.open || 0 },
+                  { k: 'Reply', v: c.reply || 0 },
                 ];
+
                 return (
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -302,7 +398,7 @@ export default function CampaignsPage() {
                         <XAxis dataKey="k" />
                         <YAxis />
                         <Tooltip />
-                        <Bar dataKey="v" fill="#7c3aed" radius={[6,6,0,0]} />
+                        <Bar dataKey="v" fill="#7c3aed" radius={[6, 6, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -316,9 +412,7 @@ export default function CampaignsPage() {
   );
 }
 
-// KpiCard replaced by LitKpi
-
-function TemplateList() {
+function TemplateList({ onApply }) {
   const templates = [
     'Logistics Buyer Intro',
     'Warehouse Ops Outreach',
@@ -331,13 +425,19 @@ function TemplateList() {
     'Tech/Automation Value Prop',
     'Reconnect after Trade Show',
   ];
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {templates.map((t, i) => (
-        <div key={i} className="p-4 bg-white rounded-lg shadow hover:shadow-md transition cursor-pointer border border-slate-200">
+        <button
+          type="button"
+          key={i}
+          onClick={() => onApply?.(t)}
+          className="text-left p-4 bg-white rounded-lg shadow hover:shadow-md transition cursor-pointer border border-slate-200"
+        >
           <h3 className="font-semibold">{t}</h3>
           <p className="text-xs text-slate-500 mt-2">Click to apply this template</p>
-        </div>
+        </button>
       ))}
     </div>
   );

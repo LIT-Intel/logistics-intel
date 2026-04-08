@@ -1,278 +1,367 @@
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "@/pages/Layout";
+import AppLayout from "@/layout/lit/AppLayout.jsx";
 import ModernLoginPage from "@/components/layout/ModernLoginPage";
 import ModernSignupPage from "@/components/layout/ModernSignupPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
+import AcceptInvitePage from "@/pages/AcceptInvitePage";
 
-// Lazy-load primary pages
-const Landing        = lazy(() => import("@/pages/LandingPage"));
-const Dashboard      = lazy(() => import("@/pages/Dashboard"));
-const Search         = lazy(() => import("@/pages/Search"));
-const SearchTrends   = lazy(() => import("@/pages/search/Trends"));
+const Landing = lazy(() => import("@/pages/LandingPage"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const LITDashboard = lazy(() => import("./components/dashboard/LITDashboard.jsx"));
+const Search = lazy(() => import("@/pages/Search"));
+const SearchTrends = lazy(() => import("@/pages/search/Trends"));
 const CompanyDetailModal = lazy(() => import("@/components/search/CompanyDetailModal"));
-const Companies      = lazy(() => import("@/pages/companies/index"));
-const Campaigns      = lazy(() => import("@/pages/Campaigns"));
-const CampaignBuilder= lazy(() => import("@/pages/CampaignBuilder"));
-const EmailCenter    = lazy(() => import("@/pages/EmailCenter"));
-const RFPStudio      = lazy(() => import("@/pages/RFPStudio"));
-const Settings       = lazy(() => import("@/pages/SettingsPage"));
-const Billing        = lazy(() => import("@/pages/BillingNew"));
-const AffiliateDash  = lazy(() => import("@/pages/AffiliateDashboard"));
+const Companies = lazy(() => import("@/pages/companies/index"));
+const Campaigns = lazy(() => import("@/pages/Campaigns"));
+const CampaignBuilder = lazy(() => import("@/pages/CampaignBuilder"));
+const EmailCenter = lazy(() => import("@/pages/EmailCenter"));
+const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
+const Settings = lazy(() => import("@/pages/SettingsPage"));
+const Billing = lazy(() => import("@/pages/BillingNew"));
+const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
-const AdminSettings  = lazy(() => import("@/pages/AdminSettings"));
-const LeadProspecting= lazy(() => import("@/pages/LeadProspecting"));
-const CMSManager     = lazy(() => import("@/pages/CMSManager"));
-const Diagnostic     = lazy(() => import("@/pages/Diagnostic"));
-const AdminAgent     = lazy(() => import("@/pages/AdminAgent"));
-const SearchPanel    = lazy(() => import("@/pages/SearchPanel"));
-const Signup         = lazy(() => import("@/pages/signup/Signup"));
-const Transactions   = lazy(() => import("@/pages/Transactions"));
-const Widgets        = lazy(() => import("@/pages/Widgets"));
-const Company        = lazy(() => import("@/pages/Company"));
+const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
+const LeadProspecting = lazy(() => import("@/pages/LeadProspecting"));
+const CMSManager = lazy(() => import("@/pages/CMSManager"));
+const Diagnostic = lazy(() => import("@/pages/Diagnostic"));
+const AdminAgent = lazy(() => import("@/pages/AdminAgent"));
+const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
+const Signup = lazy(() => import("@/pages/signup/Signup"));
+const Transactions = lazy(() => import("@/pages/Transactions"));
+const Widgets = lazy(() => import("@/pages/Widgets"));
+const Company = lazy(() => import("@/pages/Company"));
 const CommandCenterPage = lazy(() => import("@/components/command-center/CommandCenter"));
-const PreCallBriefing= lazy(() => import("@/pages/PreCallBriefing"));
-const DemoCompany    = lazy(() => import("@/pages/demo/company"));
+const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
+const DemoCompany = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
-const AuthCallback   = lazy(() => import("@/pages/AuthCallback"));
-const PrivacyPolicy  = lazy(() => import("@/pages/PrivacyPolicy"));
+const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
-  if (DEMO_MODE) return children;      // allow viewing protected pages in demo builds
-  if (loading) return null;            // keep it simple: no flicker
+  if (DEMO_MODE) return children;
+  if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
   return children;
 }
 
+function LITPage({ children }) {
+  useEffect(() => {
+    document.title = "Logistics Intel";
+
+    let favicon = document.querySelector("link[rel='icon']");
+    if (!favicon) {
+      favicon = document.createElement("link");
+      favicon.setAttribute("rel", "icon");
+      document.head.appendChild(favicon);
+    }
+
+    favicon.setAttribute("type", "image/svg+xml");
+    favicon.setAttribute("href", "/favicon-lit.svg");
+  }, []);
+
+  return <AppLayout>{children}</AppLayout>;
+}
+
 export default function App() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading…</div>}>
-      {/* Marketing / public */}
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-gray-500">
+          Loading…
+        </div>
+      }
+    >
       <Routes>
-          <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
-        {/* Public Company route → use full Company page for consistency */}
+        <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+
         <Route
           path="/company/:id"
           element={
-            <Layout currentPageName="Company"><Company /></Layout>
+            <Layout currentPageName="Company">
+              <Company />
+            </Layout>
           }
         />
-        {/* Public demo page */}
+
         <Route
           path="/demo"
           element={
-            <Layout currentPageName="Demo"><SearchPanel /></Layout>
+            <Layout currentPageName="Demo">
+              <SearchPanel />
+            </Layout>
           }
         />
+
         <Route
           path="/demo/company"
           element={
-            <Layout currentPageName="Company Demo"><DemoCompany /></Layout>
+            <Layout currentPageName="Company Demo">
+              <DemoCompany />
+            </Layout>
           }
         />
-        {/* Public companies (manual create demo) */}
+
         <Route
           path="/companies"
           element={
-            <Layout currentPageName="Command Center"><CompaniesIndex /></Layout>
+            <Layout currentPageName="Command Center">
+              <CompaniesIndex />
+            </Layout>
           }
         />
+
         <Route path="/login" element={<ModernLoginPage />} />
-        {/* Alias: /app/login → login page */}
         <Route path="/app/login" element={<ModernLoginPage />} />
-        {/* Signup page */}
         <Route path="/signup" element={<ModernSignupPage />} />
-        {/* Alias: /request-demo → signup (temporary) */}
         <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
-        {/* Password reset page */}
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-        {/* OAuth callback handler */}
         <Route path="/auth/callback" element={<AuthCallback />} />
-        {/* Legal pages */}
+        <Route path="/accept-invite" element={<AcceptInvitePage />} />
+        <Route path="/invite" element={<Navigate to="/accept-invite" replace />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
-        {/* App (protected) */}
+
         <Route
           path="/app/dashboard"
           element={
             <RequireAuth>
-              <Layout currentPageName="Dashboard"><Dashboard /></Layout>
+              <LITDashboard />
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/search"
           element={
             <RequireAuth>
-              <Layout currentPageName="Search"><Search /></Layout>
+              <LITPage>
+                <Search />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/search/trends"
           element={
             <RequireAuth>
-              <Layout currentPageName="Search"><SearchTrends /></Layout>
+              <LITPage>
+                <SearchTrends />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/companies"
           element={
-            <Layout currentPageName="Command Center"><Companies /></Layout>
+            <LITPage>
+              <Companies />
+            </LITPage>
           }
         />
+
         <Route
           path="/app/command-center"
           element={
-            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
+            <LITPage>
+              <CommandCenterPage />
+            </LITPage>
           }
         />
+
         <Route
           path="/command-center"
           element={
-            <Layout currentPageName="Command Center"><CommandCenterPage /></Layout>
+            <LITPage>
+              <CommandCenterPage />
+            </LITPage>
           }
         />
+
         <Route
           path="/app/companies/:id"
           element={
             <RequireAuth>
-              <Layout currentPageName="Company"><Company /></Layout>
+              <LITPage>
+                <Company />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/campaigns"
           element={
             <RequireAuth>
-              <Layout currentPageName="Campaigns"><Campaigns /></Layout>
+              <LITPage>
+                <Campaigns />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/campaigns/new"
           element={
             <RequireAuth>
-              <Layout currentPageName="New Campaign"><CampaignBuilder /></Layout>
+              <LITPage>
+                <CampaignBuilder />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/email"
           element={
             <RequireAuth>
-              <Layout currentPageName="EmailCenter"><EmailCenter /></Layout>
+              <LITPage>
+                <EmailCenter />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/rfp"
           element={
             <RequireAuth>
-              <Layout currentPageName="RFPStudio"><RFPStudio /></Layout>
+              <LITPage>
+                <RFPStudio />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/settings"
           element={
             <RequireAuth>
-              <Layout currentPageName="Settings"><Settings /></Layout>
+              <LITPage>
+                <Settings />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/admin/settings"
           element={
             <RequireAuth>
-              <Layout currentPageName="Admin Settings"><AdminSettings /></Layout>
+              <LITPage>
+                <AdminSettings />
+              </LITPage>
             </RequireAuth>
           }
         />
-        {/* Transactions removed */}
+
         <Route
           path="/app/widgets"
           element={
             <RequireAuth>
-              <Layout currentPageName="Widgets"><Widgets /></Layout>
+              <LITPage>
+                <Widgets />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/pre-call"
           element={
             <RequireAuth>
-              <Layout currentPageName="Pre-Call Briefing"><PreCallBriefing /></Layout>
+              <LITPage>
+                <PreCallBriefing />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/billing"
           element={
             <RequireAuth>
-              <Layout currentPageName="Billing"><Billing /></Layout>
+              <LITPage>
+                <Billing />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/affiliate"
           element={
             <RequireAuth>
-              <Layout currentPageName="AffiliateDashboard"><AffiliateDash /></Layout>
+              <LITPage>
+                <AffiliateDash />
+              </LITPage>
             </RequireAuth>
           }
         />
 
-        {/* Admin */}
         <Route
           path="/app/admin"
           element={
             <RequireAuth>
-              <Layout currentPageName="AdminDashboard"><AdminDashboard /></Layout>
+              <LITPage>
+                <AdminDashboard />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/prospecting"
           element={
             <RequireAuth>
-              <Layout currentPageName="LeadProspecting"><LeadProspecting /></Layout>
+              <LITPage>
+                <LeadProspecting />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/cms"
           element={
             <RequireAuth>
-              <Layout currentPageName="CMSManager"><CMSManager /></Layout>
+              <LITPage>
+                <CMSManager />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/diagnostic"
           element={
             <RequireAuth>
-              <Layout currentPageName="Diagnostic"><Diagnostic /></Layout>
+              <LITPage>
+                <Diagnostic />
+              </LITPage>
             </RequireAuth>
           }
         />
+
         <Route
           path="/app/agent"
           element={
             <RequireAuth>
-              <Layout currentPageName="AdminAgent"><AdminAgent /></Layout>
+              <LITPage>
+                <AdminAgent />
+              </LITPage>
             </RequireAuth>
           }
         />
 
-
-        {/* Fallbacks */}
         <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -283,6 +372,7 @@ export default function App() {
 function CompanyDrawerRoute() {
   const { id } = useParams();
   const company = id ? { id } : null;
+
   return (
     <Layout currentPageName="Company">
       <CompanyDetailModal

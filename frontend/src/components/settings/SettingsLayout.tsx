@@ -56,11 +56,15 @@ type ProfileData = {
 type OrgProfileData = {
   id?: string;
   name?: string;
+  company?: string;
   tagline?: string;
   website?: string;
   industry?: string;
   size?: string;
   logo_url?: string;
+  supportEmail?: string;
+  address?: string;
+  timezone?: string;
 };
 
 type PreferencesData = {
@@ -99,8 +103,8 @@ type TokenUsage = {
 
 type Integration = {
   id: string;
-  type: string;
-  config?: Record<string, any>;
+  integration_type?: string;
+  type?: string;
   created_at: string;
 };
 
@@ -127,16 +131,16 @@ export type SettingsLayoutProps = {
   integrations?: Integration[];
   isAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
-  onSaveProfile?: (data: Record<string, unknown>) => Promise<void>;
-  onUploadAvatar?: (file: File) => Promise<void>;
-  onSaveOrgProfile?: (data: Record<string, unknown>) => Promise<void>;
-  onSaveEmailSignature?: (sig: string) => Promise<void>;
-  onUploadLogo?: (file: File) => Promise<void>;
-  onSavePreferences?: (section: string, data: Record<string, unknown>) => Promise<void>;
-  onInviteMember?: (email: string, role: string) => Promise<void>;
-  onRevokeMember?: (memberId: string) => Promise<void>;
-  onUpdateMemberRole?: (memberId: string, role: string) => Promise<void>;
-  onRevokeInvite?: (inviteId: string) => Promise<void>;
+  onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
+  onSaveOrgProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onSaveEmailSignature?: (sig: string) => Promise<{ error?: string } | void>;
+  onUploadLogo?: (file: File) => Promise<{ error?: string } | void>;
+  onSavePreferences?: (section: string, data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onInviteMember?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeMember?: (memberId: string) => Promise<{ error?: string } | void>;
+  onUpdateMemberRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
   onGenerateApiKey?: (keyName: string) => Promise<string | null>;
   onRevokeApiKey?: (keyId: string) => Promise<void>;
   onDisconnectIntegration?: (id: string) => Promise<void>;
@@ -155,9 +159,10 @@ function buildKpiData(
     ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
     : "No active plan";
 
-  const connectedInboxes = (integrations ?? []).filter(
-    (i) => i.type === "gmail" || i.type === "outlook"
-  ).length;
+  const connectedInboxes = (integrations ?? []).filter((i) => {
+    const t = i.integration_type ?? i.type ?? "";
+    return t === "gmail" || t === "outlook";
+  }).length;
 
   return [
     {
@@ -248,22 +253,22 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
     case "RFP & Pipeline":
       return (
         <RfpPipelineSection
-          preferences={props.preferences?.preferences?.rfp}
-          onSavePreferences={(data) => props.onSavePreferences?.("rfp", data)}
+          preferences={props.preferences?.preferences?.rfp_pipeline}
+          onSavePreferences={(data) => props.onSavePreferences?.("rfp_pipeline", data)}
         />
       );
     case "Campaign Preferences":
       return (
         <CampaignPreferencesSection
-          preferences={props.preferences?.preferences?.campaigns}
-          onSavePreferences={(data) => props.onSavePreferences?.("campaigns", data)}
+          preferences={props.preferences?.preferences?.campaign_preferences}
+          onSavePreferences={(data) => props.onSavePreferences?.("campaign_preferences", data)}
         />
       );
     case "Alerts & Notifications":
       return (
         <AlertsNotificationsSection
-          preferences={props.preferences?.preferences?.notifications}
-          onSavePreferences={(data) => props.onSavePreferences?.("notifications", data)}
+          preferences={props.preferences?.preferences?.alerts_notifications}
+          onSavePreferences={(data) => props.onSavePreferences?.("alerts_notifications", data)}
         />
       );
     case "Security & API":

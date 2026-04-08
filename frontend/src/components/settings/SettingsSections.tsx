@@ -1,1259 +1,1077 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
-  Bell,
-  Briefcase,
+  User,
   Building2,
-  CheckCircle2,
-  ChevronRight,
-  Globe,
-  KeyRound,
-  Linkedin,
-  Lock,
   Mail,
-  MapPin,
-  Shield,
-  Sparkles,
-  Users2,
-  Zap,
+  Linkedin,
+  ShieldCheck,
+  CreditCard,
+  FileText,
+  Megaphone,
+  Bell,
+  KeyRound,
+  Coins,
+  Users,
+  Upload,
+  Trash2,
+  Plus,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
-import { KpiCard, Pill } from "./SettingsPrimitives";
 
-const cardBase =
-  "rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]";
+export type SettingsSectionId =
+  | "Profile"
+  | "Company & Signature"
+  | "Email"
+  | "LinkedIn"
+  | "Access & Roles"
+  | "Billing & Plans"
+  | "RFP & Pipeline"
+  | "Campaign Preferences"
+  | "Alerts & Notifications"
+  | "Security & API"
+  | "Workspace Credits"
+  | "Team Subscriptions";
 
-export const SETTINGS_SECTIONS = [
-  "Profile",
-  "Company & Signature",
-  "Email",
-  "LinkedIn",
-  "Access & Roles",
-  "Billing & Plans",
-  "RFP & Pipeline",
-  "Campaign Preferences",
-  "Alerts & Notifications",
-  "Security & API",
-  "Workspace Credits",
-  "Team Subscriptions",
-] as const;
+export const SETTINGS_SECTIONS: Array<{
+  id: SettingsSectionId;
+  title: string;
+  icon: React.ComponentType<any>;
+}> = [
+  { id: "Profile", title: "Profile", icon: User },
+  { id: "Company & Signature", title: "Company & Signature", icon: Building2 },
+  { id: "Email", title: "Email", icon: Mail },
+  { id: "LinkedIn", title: "LinkedIn", icon: Linkedin },
+  { id: "Access & Roles", title: "Access & Roles", icon: ShieldCheck },
+  { id: "Billing & Plans", title: "Billing & Plans", icon: CreditCard },
+  { id: "RFP & Pipeline", title: "RFP & Pipeline", icon: FileText },
+  { id: "Campaign Preferences", title: "Campaign Preferences", icon: Megaphone },
+  { id: "Alerts & Notifications", title: "Alerts & Notifications", icon: Bell },
+  { id: "Security & API", title: "Security & API", icon: KeyRound },
+  { id: "Workspace Credits", title: "Workspace Credits", icon: Coins },
+  { id: "Team Subscriptions", title: "Team Subscriptions", icon: Users },
+];
 
-export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number];
-
-const inputClass =
-  "mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100";
-
-const toggleClass =
-  "relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition";
-
-const Toggle = ({
-  checked,
-  onChange,
+function SectionShell({
+  title,
+  description,
+  children,
 }: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) => (
-  <button
-    type="button"
-    onClick={() => onChange(!checked)}
-    className={cn(
-      toggleClass,
-      checked
-        ? "border-indigo-500 bg-indigo-500/90"
-        : "border-slate-200 bg-slate-200",
-    )}
-  >
-    <span
-      className={cn(
-        "inline-block h-4 w-4 transform rounded-full bg-white transition",
-        checked ? "translate-x-5" : "translate-x-1",
-      )}
-    />
-  </button>
-);
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+      </div>
+      <div className="space-y-5">{children}</div>
+    </div>
+  );
+}
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={[
+        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition",
+        "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
+        props.className || "",
+      ].join(" ")}
+    />
+  );
+}
+
+function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      {...props}
+      className={[
+        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition",
+        "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
+        props.className || "",
+      ].join(" ")}
+    />
+  );
+}
+
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      {...props}
+      className={[
+        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition",
+        "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
+        props.className || "",
+      ].join(" ")}
+    />
+  );
+}
+
+function ActionButton({
+  children,
+  variant = "primary",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" }) {
+  const variants = {
+    primary:
+      "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm hover:from-blue-700 hover:to-indigo-700",
+    secondary:
+      "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+    danger:
+      "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
+  };
+  return (
+    <button
+      {...props}
+      className={[
+        "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60",
+        variants[variant],
+        props.className || "",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StatusMessage({ error, success }: { error?: string | null; success?: string | null }) {
+  if (!error && !success) return null;
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <AlertCircle size={16} />
+        {error}
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+      <CheckCircle2 size={16} />
+      {success}
+    </div>
+  );
 }
 
 type ProfileSectionProps = {
   initialData?: {
     name?: string;
+    email?: string;
     title?: string;
     phone?: string;
     location?: string;
     bio?: string;
-    email?: string;
-    plan?: string;
+    avatar_url?: string;
     savedCount?: number;
     campaignsCount?: number;
     rfpsCount?: number;
+    plan?: string;
+    isAdmin?: boolean;
   };
-  onSave?: (data: Record<string, string>) => Promise<void>;
+  onSave?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
+  isAdmin?: boolean;
 };
 
-export function ProfileSection({ initialData, onSave }: ProfileSectionProps = {}) {
-  const [profile, setProfile] = React.useState({
-    name: initialData?.name || "Ava Patel",
-    title: initialData?.title || "Head of Ocean Procurement",
-    phone: initialData?.phone || "+1 (312) 555-1400",
-    location: initialData?.location || "Chicago, IL",
-    bio: initialData?.bio || "Owns North America ocean sourcing, carrier scorecards, and yearly bids.",
+export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }: ProfileSectionProps) {
+  const [form, setForm] = useState({
+    name: initialData?.name || "",
+    title: initialData?.title || "",
+    phone: initialData?.phone || "",
+    location: initialData?.location || "",
+    bio: initialData?.bio || "",
   });
-  const [saving, setSaving] = React.useState(false);
-  const [saved, setSaved] = React.useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(initialData?.avatar_url || "");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const email = initialData?.email || "";
-  const plan = initialData?.plan || "free_trial";
-  const savedCount = initialData?.savedCount ?? 0;
-  const campaignsCount = initialData?.campaignsCount ?? 0;
-  const rfpsCount = initialData?.rfpsCount ?? 0;
+  const planLabel = isAdmin ? "Admin" : (initialData?.plan || "Free trial");
 
-  // Derive initials for avatar
-  const initials = React.useMemo(() => {
-    const src = (profile.name || email || "U").trim();
-    const parts = src.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    return src.slice(0, 2).toUpperCase();
-  }, [profile.name, email]);
+  useEffect(() => {
+    setForm({
+      name: initialData?.name || "",
+      title: initialData?.title || "",
+      phone: initialData?.phone || "",
+      location: initialData?.location || "",
+      bio: initialData?.bio || "",
+    });
+    setAvatarUrl(initialData?.avatar_url || "");
+  }, [
+    initialData?.name,
+    initialData?.title,
+    initialData?.phone,
+    initialData?.location,
+    initialData?.bio,
+    initialData?.avatar_url,
+  ]);
 
   async function handleSave() {
-    if (!onSave) return;
     setSaving(true);
+    setError(null);
+    setSuccess(null);
     try {
-      await onSave(profile);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      const result = await onSave?.(form);
+      if ((result as any)?.error) {
+        setError((result as any).error);
+      } else {
+        setSuccess("Profile saved");
+      }
+    } catch (e: any) {
+      setError(e?.message || "Failed saving profile");
     } finally {
       setSaving(false);
     }
   }
 
-  const planLabel = plan === "free_trial" ? "Free Trial"
-    : plan === "standard" ? "Standard"
-    : plan === "growth" ? "Growth"
-    : plan === "enterprise" ? "Enterprise"
-    : plan;
+  async function handleAvatarChange(file?: File | null) {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await onUploadAvatar?.(file);
+      if ((result as any)?.error) {
+        setError((result as any).error);
+      } else {
+        setSuccess("Profile image updated");
+      }
+    } catch (e: any) {
+      setError(e?.message || "Failed uploading avatar");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-sm ring-1 ring-black/[0.02]">
-      {/* Cover photo strip */}
-      <div className="relative h-32 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-600">
-        <button
-          type="button"
-          className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-black/30 px-3 py-1.5 text-xs text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
-        >
-          <MapPin className="h-3 w-3" />
-          Change cover
-        </button>
-      </div>
-
-      <div className="px-6 pb-6">
-        {/* Avatar row — overlaps cover */}
-        <div className="flex items-end justify-between -mt-10 mb-4">
-          <div className="relative">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-2xl font-bold text-white ring-4 ring-white">
-              {initials}
-            </div>
+    <SectionShell
+      title="User profile"
+      description="Update your personal profile, contact details, and account identity."
+    >
+      <StatusMessage error={error} success={success} />
+      <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+          <div className="flex flex-col items-center text-center">
             <button
               type="button"
-              className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-700"
-              title="Upload photo"
+              onClick={() => inputRef.current?.click()}
+              className="group relative mb-4 h-28 w-28 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow"
             >
-              <Globe className="h-3 w-3" />
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-2xl font-semibold text-slate-600">
+                  {(initialData?.name || "U").slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 bg-black/50 px-2 py-1 text-xs text-white opacity-0 transition group-hover:opacity-100">
+                Change
+              </div>
             </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-              Active
-            </span>
-            <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleAvatarChange(e.target.files?.[0])}
+            />
+            <div className="text-lg font-semibold text-slate-900">{initialData?.name || "User"}</div>
+            <div className="mt-1 text-sm text-slate-500">{initialData?.email || "—"}</div>
+            <div className="mt-4 inline-flex rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
               {planLabel}
-            </span>
+            </div>
+            <div className="mt-5 grid w-full grid-cols-3 gap-3 text-center">
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="text-lg font-semibold text-slate-900">{initialData?.savedCount ?? 0}</div>
+                <div className="text-xs text-slate-500">Saved</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="text-lg font-semibold text-slate-900">{initialData?.campaignsCount ?? 0}</div>
+                <div className="text-xs text-slate-500">Campaigns</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="text-lg font-semibold text-slate-900">{initialData?.rfpsCount ?? 0}</div>
+                <div className="text-xs text-slate-500">RFPs</div>
+              </div>
+            </div>
+            <div className="mt-4 w-full">
+              <ActionButton
+                type="button"
+                variant="secondary"
+                onClick={() => inputRef.current?.click()}
+                disabled={uploading}
+                className="w-full"
+              >
+                <Upload size={16} />
+                {uploading ? "Uploading..." : "Upload profile image"}
+              </ActionButton>
+            </div>
           </div>
         </div>
 
-        {/* Name + title */}
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">{profile.name || "Your Name"}</h2>
-          <p className="text-sm text-slate-500">{profile.title || "Add your title"}{profile.location ? ` · ${profile.location}` : ""}</p>
-        </div>
-
-        {/* Stats bar */}
-        <div className="mt-5 grid grid-cols-3 gap-4 rounded-2xl border border-slate-100 bg-slate-50 py-4">
-          <div className="text-center">
-            <p className="text-2xl font-semibold text-slate-900">{savedCount}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">Saved Companies</p>
+        <div className="rounded-3xl border border-slate-200 bg-white p-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Full name">
+              <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+            </Field>
+            <Field label="Title">
+              <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} />
+            </Field>
+            <Field label="Phone">
+              <Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
+            </Field>
+            <Field label="Location">
+              <Input value={form.location} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))} />
+            </Field>
+            <div className="md:col-span-2">
+              <Field label="Bio">
+                <Textarea
+                  rows={5}
+                  value={form.bio}
+                  onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
+                />
+              </Field>
+            </div>
           </div>
-          <div className="border-x border-slate-200 text-center">
-            <p className="text-2xl font-semibold text-slate-900">{campaignsCount}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">Campaigns</p>
+
+          <div className="mt-5 flex justify-end">
+            <ActionButton onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save profile"}
+            </ActionButton>
           </div>
-          <div className="text-center">
-            <p className="text-2xl font-semibold text-slate-900">{rfpsCount}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400 mt-0.5">RFPs</p>
-          </div>
-        </div>
-
-        {/* Section header */}
-        <div className="mt-6 mb-5">
-          <Pill label="Personal Information" tone="primary" />
-          <p className="mt-2 text-sm text-slate-600">
-            Keep your LIT Search profile, signature, and contact details aligned with your team.
-          </p>
-        </div>
-
-        {/* Form */}
-        <div className="grid gap-5 md:grid-cols-2">
-          <label className="text-sm font-semibold text-slate-700">
-            Full name
-            <input
-              className={inputClass}
-              value={profile.name}
-              onChange={(e) => setProfile((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="Enter your name"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Title / Role
-            <input
-              className={inputClass}
-              value={profile.title}
-              onChange={(e) => setProfile((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder="Title"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Phone
-            <input
-              className={inputClass}
-              value={profile.phone}
-              onChange={(e) => setProfile((prev) => ({ ...prev, phone: e.target.value }))}
-              placeholder="+1 (555) 123-4567"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Location
-            <input
-              className={inputClass}
-              value={profile.location}
-              onChange={(e) => setProfile((prev) => ({ ...prev, location: e.target.value }))}
-              placeholder="City, Country"
-            />
-          </label>
-          {email && (
-            <label className="text-sm font-semibold text-slate-700">
-              Email address
-              <input
-                className={cn(inputClass, "bg-slate-50 cursor-not-allowed text-slate-400")}
-                value={email}
-                readOnly
-              />
-              <span className="mt-1 block text-xs text-slate-400">Managed by your auth provider</span>
-            </label>
-          )}
-          <label className="md:col-span-2">
-            <span className="text-sm font-semibold text-slate-700">
-              What should prospects know?
-            </span>
-            <textarea
-              className={cn(inputClass, "min-h-[100px] resize-none")}
-              value={profile.bio}
-              onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
-            />
-          </label>
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
-          {saved && (
-            <span className="flex items-center gap-1.5 text-sm text-emerald-600">
-              <CheckCircle2 className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button
-            type="button"
-            disabled={saving || !onSave}
-            onClick={handleSave}
-            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition hover:bg-slate-800 disabled:opacity-50 ml-auto"
-          >
-            {saving ? "Saving…" : "Save profile"}
-          </button>
         </div>
       </div>
-    </section>
+    </SectionShell>
   );
 }
 
-export function CompanySignatureSection() {
-  const [preferences, setPreferences] = React.useState({
-    company: "Spark Fusion Logistics",
-    tagline: "Global freight, LIT Search powered.",
-    website: "sparkfusion.co",
-    signature:
-      "Best,\nAva Patel\nSpark Fusion Logistics\nava.patel@sparkfusion.co",
+type CompanySignatureSectionProps = {
+  orgProfile?: {
+    id?: string | null;
+    name?: string;
+    company?: string;
+    tagline?: string;
+    website?: string;
+    industry?: string;
+    size?: string;
+    logo_url?: string;
+    supportEmail?: string;
+    address?: string;
+    timezone?: string;
+  };
+  emailSignature?: string;
+  onSaveOrg?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
+  onSaveSignature?: (sig: string) => Promise<{ error?: string } | void>;
+  onUploadLogo?: (file: File) => Promise<{ error?: string } | void>;
+};
+
+export function CompanySignatureSection({
+  orgProfile,
+  emailSignature,
+  onSaveOrg,
+  onSaveSignature,
+  onUploadLogo,
+}: CompanySignatureSectionProps) {
+  const [form, setForm] = useState({
+    company: orgProfile?.company || orgProfile?.name || "",
+    tagline: orgProfile?.tagline || "",
+    website: orgProfile?.website || "",
+    industry: orgProfile?.industry || "",
+    size: orgProfile?.size || "",
+    supportEmail: orgProfile?.supportEmail || "",
+    address: orgProfile?.address || "",
+    timezone: orgProfile?.timezone || "",
   });
+  const [signature, setSignature] = useState(emailSignature || "");
+  const [logoUrl, setLogoUrl] = useState(orgProfile?.logo_url || "");
+  const [savingOrg, setSavingOrg] = useState(false);
+  const [savingSignature, setSavingSignature] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const logoRef = useRef<HTMLInputElement | null>(null);
 
-  return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Company & Signature" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Workspace identity
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Control the branding applied to emails and Command Center exports.
-          </p>
-        </div>
-        <div className="flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          B2B Logistics
-        </div>
-      </div>
-      <div className="mt-6 grid gap-5 md:grid-cols-2">
-        <label className="text-sm font-semibold text-slate-700">
-          Company name
-          <input
-            className={inputClass}
-            value={preferences.company}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, company: e.target.value }))
-            }
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Tagline
-          <input
-            className={inputClass}
-            value={preferences.tagline}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, tagline: e.target.value }))
-            }
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Website
-          <input
-            className={inputClass}
-            value={preferences.website}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, website: e.target.value }))
-            }
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Email signature
-          <textarea
-            className={cn(inputClass, "min-h-[120px] resize-none")}
-            value={preferences.signature}
-            onChange={(e) =>
-              setPreferences((prev) => ({ ...prev, signature: e.target.value }))
-            }
-          />
-        </label>
-      </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-          <div className="flex items-center gap-3 text-sm text-slate-600">
-            <Building2 className="h-4 w-4 text-indigo-500" />
-            Company preview
-          </div>
-          <div className="mt-3 rounded-2xl border border-white bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-              {preferences.company.toUpperCase()}
-            </p>
-            <p className="mt-2 text-lg font-semibold text-slate-900">
-              {preferences.tagline}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">{preferences.website}</p>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-            Signature preview
-          </div>
-          <pre className="mt-3 whitespace-pre-wrap rounded-2xl bg-slate-50/80 p-4 text-sm text-slate-700">
-            {preferences.signature}
-          </pre>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function EmailSection() {
-  const [inboxes, setInboxes] = React.useState([
-    { label: "ava@sparkfusion.co", status: "Connected", primary: true },
-    { label: "logistics@sparkfusion.co", status: "Syncing", primary: false },
+  useEffect(() => {
+    setForm({
+      company: orgProfile?.company || orgProfile?.name || "",
+      tagline: orgProfile?.tagline || "",
+      website: orgProfile?.website || "",
+      industry: orgProfile?.industry || "",
+      size: orgProfile?.size || "",
+      supportEmail: orgProfile?.supportEmail || "",
+      address: orgProfile?.address || "",
+      timezone: orgProfile?.timezone || "",
+    });
+    setSignature(emailSignature || "");
+    setLogoUrl(orgProfile?.logo_url || "");
+  }, [
+    orgProfile?.id,
+    orgProfile?.name,
+    orgProfile?.company,
+    orgProfile?.tagline,
+    orgProfile?.website,
+    orgProfile?.industry,
+    orgProfile?.size,
+    orgProfile?.supportEmail,
+    orgProfile?.address,
+    orgProfile?.timezone,
+    orgProfile?.logo_url,
+    emailSignature,
   ]);
 
-  return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Email" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Connected inboxes
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Route LIT Search campaigns through Gmail, Outlook, or custom SMTP.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Mail className="h-4 w-4" />
-          Add inbox
-        </button>
-      </div>
-      <div className="mt-6 space-y-3">
-        {inboxes.map((inbox) => (
-          <div
-            key={inbox.label}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3"
-          >
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                {inbox.label}
-              </p>
-              <p className="text-xs text-slate-500">
-                {inbox.primary
-                  ? "Primary sending address"
-                  : "Available for sequences"}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
-                  inbox.status === "Connected"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-amber-50 text-amber-700",
-                )}
-              >
-                {inbox.status}
-              </span>
-              {!inbox.primary && (
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-500"
-                  onClick={() =>
-                    setInboxes((prev) =>
-                      prev.map((item) => ({
-                        ...item,
-                        primary: item.label === inbox.label,
-                      })),
-                    )
-                  }
-                >
-                  Make primary
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-            Deliverability
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            DKIM, SPF, and DMARC checks are passing for sparkfusion.co.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-            Sending window
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            Campaigns deploy Mon–Fri, 7:30a – 6:30p in recipient’s local time.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
+  async function handleSaveOrg() {
+    setSavingOrg(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await onSaveOrg?.(form);
+      if ((result as any)?.error) setError((result as any).error);
+      else setSuccess("Company profile saved");
+    } catch (e: any) {
+      setError(e?.message || "Failed saving company profile");
+    } finally {
+      setSavingOrg(false);
+    }
+  }
 
-export function LinkedInSection() {
-  const [automations, setAutomations] = React.useState({
-    syncReplies: true,
-    shareSignals: false,
-    autoVisit: true,
-  });
+  async function handleSaveSignature() {
+    setSavingSignature(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await onSaveSignature?.(signature);
+      if ((result as any)?.error) setError((result as any).error);
+      else setSuccess("Email signature saved");
+    } catch (e: any) {
+      setError(e?.message || "Failed saving email signature");
+    } finally {
+      setSavingSignature(false);
+    }
+  }
+
+  async function handleLogoChange(file?: File | null) {
+    if (!file) return;
+    setUploadingLogo(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await onUploadLogo?.(file);
+      if ((result as any)?.error) setError((result as any).error);
+      else setSuccess("Company logo updated");
+    } catch (e: any) {
+      setError(e?.message || "Failed uploading logo");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
 
   return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="LinkedIn" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Social outreach
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Keep LinkedIn messaging aligned with your campaign rhythms.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Linkedin className="h-4 w-4 text-sky-600" />
-          Connect account
-        </button>
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-            Playbooks
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            “Intro + value” and “Ops pulse” active for retail shippers.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-            Velocity
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            28 daily connection invites across ops teams in AMER + EMEA.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.45em] text-slate-500">
-            Tone
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            “Curious advisor” voice with one CTA per thread.
-          </p>
-        </div>
-      </div>
-      <div className="mt-6 space-y-4">
-        {[
-          {
-            key: "syncReplies",
-            label: "Sync replies to Command Center timelines",
-          },
-          {
-            key: "shareSignals",
-            label: "Share engagement signals with salesforce team",
-          },
-          {
-            key: "autoVisit",
-            label: "Auto-visit profiles before a message is sent",
-          },
-        ].map((item) => (
-          <div
-            key={item.key}
-            className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white/80 px-4 py-3"
-          >
-            <p className="text-sm font-semibold text-slate-800">
-              {item.label}
-            </p>
-            <Toggle
-              checked={automations[item.key as keyof typeof automations]}
-              onChange={(value) =>
-                setAutomations((prev) => ({
-                  ...prev,
-                  [item.key]: value,
-                }))
-              }
-            />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-type OrgMember = {
-  id?: string;
-  user_id?: string;
-  email?: string;
-  full_name?: string;
-  role: string;
-  status?: string;
-  created_at?: string;
-};
-
-type AccessRolesSectionProps = {
-  members?: OrgMember[];
-  seatLimit?: number;
-  onInvite?: () => void;
-};
-
-const ROLE_STYLES: Record<string, string> = {
-  owner:       "bg-emerald-100 text-emerald-700",
-  admin:       "bg-indigo-100 text-indigo-700",
-  contributor: "bg-amber-100 text-amber-700",
-  viewer:      "bg-slate-100 text-slate-600",
-};
-
-const SCOPE_LABELS: Record<string, string> = {
-  owner:       "Full access",
-  admin:       "Billing + Command Center",
-  contributor: "Campaigns + Search",
-  viewer:      "Saved companies only",
-};
-
-const MOCK_MEMBERS: OrgMember[] = [
-  { id: "1", full_name: "Ava Patel",     role: "owner",       status: "active" },
-  { id: "2", full_name: "Noor Idris",    role: "admin",       status: "active" },
-  { id: "3", full_name: "Elliot Warren", role: "contributor", status: "active" },
-  { id: "4", full_name: "Lena Cho",      role: "viewer",      status: "pending" },
-];
-
-function getInitials(name?: string, email?: string): string {
-  const label = name || email || "?";
-  return label.split(/[\s@]/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
-}
-
-const AVATAR_COLORS = [
-  "bg-indigo-500",
-  "bg-emerald-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-sky-500",
-  "bg-violet-500",
-];
-
-export function AccessRolesSection({ members, seatLimit, onInvite }: AccessRolesSectionProps = {}) {
-  const team = members && members.length > 0 ? members : MOCK_MEMBERS;
-  const seatUsed = team.length;
-  const seatTotal = seatLimit ?? 10;
-  const seatPct = Math.min(100, Math.round((seatUsed / seatTotal) * 100));
-
-  return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Access & Roles" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Workspace permissions
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Control who can edit LIT Search cadences, billing, and saved
-            shippers.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onInvite}
-          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-        >
-          <Users2 className="h-4 w-4" />
-          Invite teammate
-        </button>
-      </div>
-
-      {/* Seat usage bar */}
-      <div className="mt-5 flex items-center gap-3">
-        <div className="flex-1 overflow-hidden rounded-full bg-slate-100 h-2">
-          <div
-            className="h-2 rounded-full bg-slate-800 transition-all"
-            style={{ width: `${seatPct}%` }}
-          />
-        </div>
-        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
-          {seatUsed} / {seatTotal} seats used
-        </span>
-      </div>
-
-      <div className="mt-5 rounded-2xl border border-slate-100 overflow-hidden">
-        <div className="grid grid-cols-[2fr_1fr_1fr_80px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          <span>Member</span>
-          <span>Role</span>
-          <span>Status</span>
-          <span>Actions</span>
-        </div>
-        {team.map((member, idx) => {
-          const roleKey = member.role?.toLowerCase() ?? "viewer";
-          const roleStyle = ROLE_STYLES[roleKey] ?? ROLE_STYLES.viewer;
-          const scope = SCOPE_LABELS[roleKey] ?? member.role;
-          const displayName = member.full_name || member.email || member.user_id || "Unknown";
-          const initials = getInitials(member.full_name, member.email);
-          const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
-          const isActive = (member.status ?? "active") === "active";
-
-          return (
-            <div
-              key={member.id ?? member.user_id ?? idx}
-              className="grid grid-cols-[2fr_1fr_1fr_80px] items-center gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0 hover:bg-slate-50/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className={cn("flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0", avatarColor)}>
-                  {initials}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{displayName}</p>
-                  {member.email && member.full_name && (
-                    <p className="text-xs text-slate-400">{member.email}</p>
-                  )}
-                  <p className="text-xs text-slate-400">{scope}</p>
-                </div>
-              </div>
-              <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize w-fit", roleStyle)}>
-                {roleKey}
-              </span>
-              <span className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold w-fit",
-                isActive ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-              )}>
-                <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-green-500" : "bg-yellow-500")} />
-                {isActive ? "Active" : "Pending"}
-              </span>
-              <button className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                Edit
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-            SSO
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            Google Workspace enabled • SCIM sync coming soon.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-            Audit trail
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            42 changes logged last 7 days (exports, plan updates, access edits).
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function BillingPlansSection() {
-  const plans = [
-    {
-      name: "Growth",
-      price: "$4,500",
-      cadence: "month",
-      highlight: "Current plan",
-      features: [
-        "200 LIT Search credits",
-        "8 Command Center seats",
-        "Prospect enrichment",
-      ],
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      cadence: "",
-      highlight: "Upgrade",
-      features: ["Unlimited workspaces", "Dedicated CSM", "Private data lake"],
-    },
-  ];
-
-  return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Billing & Plans" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Subscription controls
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Monitor spend, invoices, and upgrade when volumes spike.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Sparkles className="h-4 w-4 text-indigo-500" />
-          Generate invoice
-        </button>
-      </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {plans.map((plan) => (
-          <div
-            key={plan.name}
-            className="flex flex-col rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-                  {plan.name}
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-slate-900">
-                  {plan.price}
-                  {plan.cadence && (
-                    <span className="text-base font-medium text-slate-500">
-                      /{plan.cadence}
-                    </span>
-                  )}
-                </p>
-              </div>
-              <Pill label={plan.highlight} tone="success" />
-            </div>
-            <ul className="mt-4 space-y-2 text-sm text-slate-600">
-              {plan.features.map((feature) => (
-                <li key={feature} className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
+    <SectionShell
+      title="Company & signature"
+      description="Keep workspace branding and email signature settings current."
+    >
+      <StatusMessage error={error} success={success} />
+      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+          <div className="flex flex-col items-center text-center">
             <button
               type="button"
-              className={cn(
-                "mt-5 rounded-full border px-4 py-2 text-sm font-semibold",
-                plan.name === "Growth"
-                  ? "border-slate-200 text-slate-700 hover:bg-slate-50"
-                  : "border-indigo-200 bg-indigo-600 text-white hover:bg-indigo-500",
-              )}
+              onClick={() => logoRef.current?.click()}
+              className="group relative mb-4 flex h-28 w-28 items-center justify-center overflow-hidden rounded-3xl border-4 border-white bg-white shadow"
             >
-              {plan.name === "Growth" ? "Manage plan" : "Talk to sales"}
-            </button>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-export function RfpPipelineSection() {
-  const stages = [
-    { label: "Qualification", companies: 6, value: "$2.3M" },
-    { label: "Pricing in progress", companies: 4, value: "$4.1M" },
-    { label: "Executive review", companies: 2, value: "$1.9M" },
-  ];
-
-  return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="RFP & Pipeline" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Deal pipeline
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Keep Command Center routes tied to live RFP stages.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Briefcase className="h-4 w-4" />
-          Sync CRM
-        </button>
-      </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {stages.map((stage) => (
-          <div
-            key={stage.label}
-            className="rounded-2xl border border-slate-100 bg-white/90 p-5 shadow-sm"
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-              {stage.label}
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-slate-900">
-              {stage.companies}
-              <span className="text-base font-medium text-slate-500">
-                {" "}
-                companies
-              </span>
-            </p>
-            <p className="mt-1 text-sm text-slate-600">
-              Weighted pipeline {stage.value}
-            </p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          Next action
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-700">
-          <MapPin className="h-4 w-4 text-indigo-500" />
-          Move “Atlas Outdoor” to executive review once KPIs finalize.
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function CampaignPreferencesSection() {
-  const [settings, setSettings] = React.useState({
-    autopilot: true,
-    personalizedFirstLines: true,
-    dropInCallouts: false,
-    autoPause: true,
-  });
-
-  const toggles = [
-    { key: "autopilot", label: "Auto-schedule new LIT Search cadences" },
-    { key: "personalizedFirstLines", label: "Personalize first lines via AI" },
-    { key: "dropInCallouts", label: "Add Command Center callouts" },
-    { key: "autoPause", label: "Pause sequences when booked meetings sync" },
-  ] as const;
-
-  return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Campaign Preferences" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Outreach rhythm
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Tune how cadences behave once shippers are saved from LIT Search.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Zap className="h-4 w-4 text-amber-500" />
-          Apply template
-        </button>
-      </div>
-      <div className="mt-6 space-y-4">
-        {toggles.map((toggle) => (
-          <div
-            key={toggle.key}
-            className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white/80 px-4 py-3"
-          >
-            <p className="text-sm font-semibold text-slate-800">
-              {toggle.label}
-            </p>
-            <Toggle
-              checked={settings[toggle.key]}
-              onChange={(value) =>
-                setSettings((prev) => ({ ...prev, [toggle.key]: value }))
-              }
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-            Snippets
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            “New volume alert” and “Lane reshuffle” snippets used 68 times last
-            month.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-            Escalations
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            Auto-create Slack threads for high-priority shippers.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function AlertsNotificationsSection() {
-  const [alerts, setAlerts] = React.useState({
-    shipmentDrops: true,
-    newSavedCompany: true,
-    creditUsage: false,
-    weeklyDigest: true,
-  });
-
-  return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Alerts & Notifications" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Signal routing
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Decide which insights from LIT Search get piped to email, Slack, or
-            SMS.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Bell className="h-4 w-4 text-amber-500" />
-          Configure channels
-        </button>
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        {[
-          {
-            key: "shipmentDrops",
-            title: "Shipment drops",
-            body: "Alert when a saved shipper’s volume falls >15% MoM.",
-          },
-          {
-            key: "newSavedCompany",
-            title: "New saved company",
-            body: "Ping account teams when someone bookmarks from LIT Search.",
-          },
-          {
-            key: "creditUsage",
-            title: "Credit usage",
-            body: "Warn RevOps when LIT Search credits exceed 80%.",
-          },
-          {
-            key: "weeklyDigest",
-            title: "Weekly digest",
-            body: "Sunday recap of Command Center KPIs.",
-          },
-        ].map((alert) => (
-          <div
-            key={alert.key}
-            className="flex items-start gap-4 rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm"
-          >
-            <div className="rounded-2xl bg-slate-900/5 p-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-900">
-                  {alert.title}
-                </p>
-                <Toggle
-                  checked={alerts[alert.key as keyof typeof alerts]}
-                  onChange={(value) =>
-                    setAlerts((prev) => ({ ...prev, [alert.key]: value }))
-                  }
-                />
+              {logoUrl ? (
+                <img src={logoUrl} alt="Company logo" className="h-full w-full object-cover" />
+              ) : (
+                <Building2 className="h-10 w-10 text-slate-400" />
+              )}
+              <div className="absolute inset-x-0 bottom-0 bg-black/50 px-2 py-1 text-xs text-white opacity-0 transition group-hover:opacity-100">
+                Change
               </div>
-              <p className="mt-1 text-sm text-slate-600">{alert.body}</p>
+            </button>
+            <input
+              ref={logoRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleLogoChange(e.target.files?.[0])}
+            />
+            <div className="text-lg font-semibold text-slate-900">{form.company || "Organization"}</div>
+            <div className="mt-1 text-sm text-slate-500">{form.website || "No website saved"}</div>
+            <div className="mt-4 w-full">
+              <ActionButton
+                type="button"
+                variant="secondary"
+                onClick={() => logoRef.current?.click()}
+                disabled={uploadingLogo}
+                className="w-full"
+              >
+                <Upload size={16} />
+                {uploadingLogo ? "Uploading..." : "Upload logo"}
+              </ActionButton>
             </div>
           </div>
-        ))}
+        </div>
+
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Company name">
+                <Input value={form.company} onChange={(e) => setForm((p) => ({ ...p, company: e.target.value }))} />
+              </Field>
+              <Field label="Tagline">
+                <Input value={form.tagline} onChange={(e) => setForm((p) => ({ ...p, tagline: e.target.value }))} />
+              </Field>
+              <Field label="Website">
+                <Input value={form.website} onChange={(e) => setForm((p) => ({ ...p, website: e.target.value }))} />
+              </Field>
+              <Field label="Industry">
+                <Input value={form.industry} onChange={(e) => setForm((p) => ({ ...p, industry: e.target.value }))} />
+              </Field>
+              <Field label="Company size">
+                <Input value={form.size} onChange={(e) => setForm((p) => ({ ...p, size: e.target.value }))} />
+              </Field>
+              <Field label="Support email">
+                <Input
+                  value={form.supportEmail}
+                  onChange={(e) => setForm((p) => ({ ...p, supportEmail: e.target.value }))}
+                />
+              </Field>
+              <div className="md:col-span-2">
+                <Field label="Address">
+                  <Input value={form.address} onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label="Timezone">
+                <Input
+                  value={form.timezone}
+                  onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
+                />
+              </Field>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <ActionButton onClick={handleSaveOrg} disabled={savingOrg}>
+                {savingOrg ? "Saving..." : "Save company"}
+              </ActionButton>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-5">
+            <Field label="Email signature">
+              <Textarea rows={7} value={signature} onChange={(e) => setSignature(e.target.value)} />
+            </Field>
+            <div className="mt-5 flex justify-end">
+              <ActionButton onClick={handleSaveSignature} disabled={savingSignature}>
+                {savingSignature ? "Saving..." : "Save signature"}
+              </ActionButton>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
+    </SectionShell>
   );
 }
 
-export function SecurityApiSection() {
-  const [security, setSecurity] = React.useState({
-    mfa: true,
-    deviceApprovals: true,
-    rotateKeys: false,
+export function EmailSection({
+  integrations,
+  preferences,
+  onSavePreferences,
+  onDisconnect,
+}: any) {
+  const [state, setState] = useState({
+    replyTo: preferences?.replyTo || "",
+    senderName: preferences?.senderName || "",
+  });
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setState({
+      replyTo: preferences?.replyTo || "",
+      senderName: preferences?.senderName || "",
+    });
+  }, [preferences]);
+
+  const inboxes = useMemo(
+    () =>
+      (integrations || []).filter(
+        (i: any) => (i.type || i.integration_type) === "gmail" || (i.type || i.integration_type) === "outlook"
+      ),
+    [integrations]
+  );
+
+  return (
+    <SectionShell title="Email" description="Manage sending defaults and connected inboxes.">
+      {msg ? <StatusMessage success={msg} /> : null}
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Sender name">
+            <Input value={state.senderName} onChange={(e) => setState((p) => ({ ...p, senderName: e.target.value }))} />
+          </Field>
+          <Field label="Reply-to address">
+            <Input value={state.replyTo} onChange={(e) => setState((p) => ({ ...p, replyTo: e.target.value }))} />
+          </Field>
+        </div>
+        <div className="mt-5 flex justify-end">
+          <ActionButton
+            onClick={async () => {
+              await onSavePreferences?.(state);
+              setMsg("Email preferences saved");
+            }}
+          >
+            Save email settings
+          </ActionButton>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 text-sm font-semibold text-slate-900">Connected inboxes</div>
+        <div className="space-y-3">
+          {inboxes.length ? (
+            inboxes.map((item: any) => (
+              <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                <div>
+                  <div className="font-medium text-slate-900">{item.integration_type || item.type}</div>
+                  <div className="text-sm text-slate-500">Connected</div>
+                </div>
+                <ActionButton variant="danger" onClick={() => onDisconnect?.(item.id)}>
+                  Disconnect
+                </ActionButton>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              No connected inboxes yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+export function LinkedInSection({ preferences, onSavePreferences }: any) {
+  const [state, setState] = useState({
+    sender: preferences?.sender || "",
+    personalization: preferences?.personalization || "",
   });
 
-  const tokens = [
-    { label: "Search automation", lastUsed: "2h ago" },
-    { label: "Command Center export", lastUsed: "Yesterday" },
-  ];
+  useEffect(() => {
+    setState({
+      sender: preferences?.sender || "",
+      personalization: preferences?.personalization || "",
+    });
+  }, [preferences]);
 
   return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Security & API" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Protect workspace data
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Enforce MFA, rotate API keys, and lock down exports.
-          </p>
+    <SectionShell title="LinkedIn" description="Set your default LinkedIn outreach preferences.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="grid gap-4">
+          <Field label="Default sender">
+            <Input value={state.sender} onChange={(e) => setState((p) => ({ ...p, sender: e.target.value }))} />
+          </Field>
+          <Field label="Personalization prompt">
+            <Textarea rows={5} value={state.personalization} onChange={(e) => setState((p) => ({ ...p, personalization: e.target.value }))} />
+          </Field>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Shield className="h-4 w-4 text-emerald-500" />
-          View audit log
-        </button>
+        <div className="mt-5 flex justify-end">
+          <ActionButton onClick={() => onSavePreferences?.(state)}>Save LinkedIn settings</ActionButton>
+        </div>
       </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        {[
-          { key: "mfa", label: "Require MFA for all members" },
-          { key: "deviceApprovals", label: "Approve new devices" },
-          { key: "rotateKeys", label: "Rotate API keys every 90 days" },
-        ].map((item) => (
-          <div
-            key={item.key}
-            className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white/90 px-4 py-3 shadow-sm"
-          >
-            <p className="text-sm font-semibold text-slate-800">
-              {item.label}
-            </p>
-            <Toggle
-              checked={security[item.key as keyof typeof security]}
-              onChange={(value) =>
-                setSecurity((prev) => ({ ...prev, [item.key]: value }))
+    </SectionShell>
+  );
+}
+
+export function AccessRolesSection({
+  members = [],
+  invites = [],
+  seatLimit,
+  onInvite,
+  onRevoke,
+  onUpdateRole,
+  onRevokeInvite,
+  isAdmin,
+}: any) {
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  return (
+    <SectionShell title="Access & Roles" description="Manage workspace access, roles, and pending invites.">
+      <StatusMessage error={err} success={msg} />
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <div className="font-semibold text-slate-900">Workspace members</div>
+            <div className="text-sm text-slate-500">
+              {members.length} active {seatLimit ? `of ${seatLimit} seats` : "members"}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {members.length ? (
+            members.map((m: any) => {
+              const isOwner = m.role === "owner";
+
+              return (
+                <div
+                  key={m.id}
+                  className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-[minmax(0,1fr)_180px_140px] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-900">{m.full_name || m.email || "User"}</div>
+                    <div className="truncate text-sm text-slate-500">{m.email || m.user_id}</div>
+                  </div>
+                  <Select
+                    value={m.role}
+                    disabled={!isAdmin || isOwner}
+                    onChange={async (e) => {
+                      setErr(null);
+                      setMsg(null);
+                      const result = await onUpdateRole?.(m.id, e.target.value);
+                      if (result?.error) setErr(result.error);
+                      else setMsg("Role updated");
+                    }}
+                  >
+                    {isOwner ? <option value="owner">Owner</option> : null}
+                    <option value="admin">Admin</option>
+                    <option value="member">Member</option>
+                  </Select>
+                  <ActionButton
+                    variant="danger"
+                    disabled={!isAdmin || isOwner}
+                    onClick={async () => {
+                      setErr(null);
+                      setMsg(null);
+                      const result = await onRevoke?.(m.id);
+                      if (result?.error) setErr(result.error);
+                      else setMsg("Member removed");
+                    }}
+                  >
+                    <Trash2 size={16} />
+                    Remove
+                  </ActionButton>
+                </div>
+              );
+            })
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              No members found.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 font-semibold text-slate-900">Invite user</div>
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+          <Input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="user@company.com" />
+          <Select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+          </Select>
+          <ActionButton
+            disabled={!isAdmin}
+            onClick={async () => {
+              setErr(null);
+              setMsg(null);
+              const result = await onInvite?.(inviteEmail, inviteRole);
+              if (result?.error) {
+                setErr(result.error);
+              } else {
+                setMsg("Invite sent");
+                setInviteEmail("");
+                setInviteRole("member");
               }
+            }}
+          >
+            <Plus size={16} />
+            Invite
+          </ActionButton>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {invites.length ? (
+            invites.map((invite: any) => (
+              <div key={invite.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                <div>
+                  <div className="font-medium text-slate-900">{invite.email}</div>
+                  <div className="text-sm text-slate-500">{invite.role} • pending</div>
+                </div>
+                <ActionButton
+                  variant="danger"
+                  disabled={!isAdmin}
+                  onClick={async () => {
+                    setErr(null);
+                    setMsg(null);
+                    const result = await onRevokeInvite?.(invite.id);
+                    if (result?.error) setErr(result.error);
+                    else setMsg("Invite revoked");
+                  }}
+                >
+                  Revoke
+                </ActionButton>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              No pending invites.
+            </div>
+          )}
+        </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+export function BillingPlansSection({ subscription, plans, isAdmin }: any) {
+  return (
+    <SectionShell title="Billing & Plans" description="Review your current plan, status, and available upgrades.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Current plan</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {isAdmin ? "Admin" : (subscription?.plan_code || "Free Trial")}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Plan status</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {isAdmin ? "Unlimited" : (subscription?.status || "Trial")}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Seats</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {isAdmin ? "Unlimited" : (subscription?.seat_limit || "—")}
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          {(plans || []).map((plan: any) => (
+            <div key={plan.plan_code} className="rounded-2xl border border-slate-200 p-4">
+              <div className="font-semibold text-slate-900">{plan.display_name || plan.plan_code}</div>
+              <div className="mt-1 text-sm text-slate-500">${plan.price_monthly ?? 0}/mo</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+export function RfpPipelineSection({ preferences, onSavePreferences }: any) {
+  const [state, setState] = useState(preferences || {});
+
+  useEffect(() => {
+    setState(preferences || {});
+  }, [preferences]);
+
+  return (
+    <SectionShell title="RFP & Pipeline" description="Configure pipeline defaults for RFP workflows.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <Field label="Default pipeline owner">
+          <Input value={state.owner || ""} onChange={(e) => setState((p: any) => ({ ...p, owner: e.target.value }))} />
+        </Field>
+        <div className="mt-5 flex justify-end">
+          <ActionButton onClick={() => onSavePreferences?.(state)}>Save RFP settings</ActionButton>
+        </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+export function CampaignPreferencesSection({ preferences, onSavePreferences }: any) {
+  const [state, setState] = useState(preferences || {});
+
+  useEffect(() => {
+    setState(preferences || {});
+  }, [preferences]);
+
+  return (
+    <SectionShell title="Campaign Preferences" description="Choose defaults for outbound campaign behavior.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <Field label="Default campaign sender">
+          <Input value={state.sender || ""} onChange={(e) => setState((p: any) => ({ ...p, sender: e.target.value }))} />
+        </Field>
+        <div className="mt-5 flex justify-end">
+          <ActionButton onClick={() => onSavePreferences?.(state)}>Save campaign settings</ActionButton>
+        </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+export function AlertsNotificationsSection({ preferences, onSavePreferences }: any) {
+  const [state, setState] = useState({
+    emailAlerts: preferences?.emailAlerts ?? true,
+    productUpdates: preferences?.productUpdates ?? true,
+  });
+
+  useEffect(() => {
+    setState({
+      emailAlerts: preferences?.emailAlerts ?? true,
+      productUpdates: preferences?.productUpdates ?? true,
+    });
+  }, [preferences]);
+
+  return (
+    <SectionShell title="Alerts & Notifications" description="Decide what notifications you want to receive.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="space-y-4">
+          <label className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+            <span className="text-sm font-medium text-slate-700">Email alerts</span>
+            <input
+              type="checkbox"
+              checked={state.emailAlerts}
+              onChange={(e) => setState((p) => ({ ...p, emailAlerts: e.target.checked }))}
             />
-          </div>
-        ))}
-      </div>
-      <div className="mt-6 rounded-2xl border border-slate-100">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-          <span>API token</span>
-          <span>Last used</span>
+          </label>
+          <label className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+            <span className="text-sm font-medium text-slate-700">Product updates</span>
+            <input
+              type="checkbox"
+              checked={state.productUpdates}
+              onChange={(e) => setState((p) => ({ ...p, productUpdates: e.target.checked }))}
+            />
+          </label>
         </div>
-        {tokens.map((token) => (
-          <div
-            key={token.label}
-            className="flex items-center justify-between border-b border-slate-100 px-5 py-4 text-sm last:border-b-0"
+        <div className="mt-5 flex justify-end">
+          <ActionButton onClick={() => onSavePreferences?.(state)}>Save notification settings</ActionButton>
+        </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+export function SecurityApiSection({ apiKeys = [], auditLog = [], onGenerateKey, onRevokeKey }: any) {
+  const [keyName, setKeyName] = useState("");
+  const [generated, setGenerated] = useState<string | null>(null);
+
+  return (
+    <SectionShell title="Security & API" description="Manage API keys and review recent security events.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+          <Input value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="New key name" />
+          <ActionButton
+            onClick={async () => {
+              const value = await onGenerateKey?.(keyName);
+              if (value) {
+                setGenerated(value);
+                setKeyName("");
+              }
+            }}
           >
-            <div className="flex items-center gap-3">
-              <KeyRound className="h-4 w-4 text-indigo-500" />
-              <span className="font-semibold text-slate-900">
-                {token.label}
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-slate-500">
-              {token.lastUsed}
-              <button className="text-xs font-semibold text-indigo-600">
+            <Plus size={16} />
+            Generate key
+          </ActionButton>
+        </div>
+        {generated ? (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            Copy this key now. It will only be shown once:
+            <div className="mt-2 break-all rounded-xl bg-white p-3 font-mono text-xs text-slate-800">{generated}</div>
+          </div>
+        ) : null}
+        <div className="mt-5 space-y-3">
+          {apiKeys.map((key: any) => (
+            <div key={key.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div>
+                <div className="font-medium text-slate-900">{key.key_name}</div>
+                <div className="text-sm text-slate-500">{key.key_prefix}••••</div>
+              </div>
+              <ActionButton variant="danger" onClick={() => onRevokeKey?.(key.id)}>
                 Revoke
-              </button>
+              </ActionButton>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </section>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 font-semibold text-slate-900">Recent audit events</div>
+        <div className="space-y-3">
+          {auditLog.map((event: any) => (
+            <div key={event.id} className="rounded-2xl border border-slate-200 p-4">
+              <div className="font-medium text-slate-900">{event.action}</div>
+              <div className="text-sm text-slate-500">{event.created_at}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </SectionShell>
   );
 }
 
-export function WorkspaceCreditsSection() {
+export function WorkspaceCreditsSection({ tokenUsage = [], subscription, isAdmin }: any) {
   return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Workspace Credits" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Usage across teams
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Track LIT Search, enrichment, and campaign credits in one place.
-          </p>
+    <SectionShell title="Workspace Credits" description="View token and credit usage across workspace features.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="mb-4 text-sm text-slate-500">
+          {isAdmin ? "Unlimited credits for admin workspace" : `Plan: ${subscription?.plan_code || "trial"}`}
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Globe className="h-4 w-4 text-slate-500" />
-          Export report
-        </button>
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <KpiCard
-          title="LIT Search credits"
-          value="640 / 1,000"
-          helper="64% used"
-          accent="indigo"
-        />
-        <KpiCard
-          title="Enrichment credits"
-          value="420 / 800"
-          helper="52% used"
-          accent="emerald"
-        />
-        <KpiCard
-          title="Campaign sends"
-          value="1,840 / 3,000"
-          helper="Rolling 30d"
-          accent="sky"
-        />
-        <KpiCard
-          title="Command Center briefs"
-          value="18 / 40"
-          helper="This month"
-          accent="slate"
-        />
-      </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {[
-          {
-            label: "LIT Search",
-            usage: 64,
-            helper: "Avg 32 saved shippers / wk",
-          },
-          { label: "Enrichment", usage: 52, helper: "4,120 contacts enriched" },
-          { label: "Campaigns", usage: 61, helper: "Send window 7:30a-6:30p" },
-        ].map((item) => (
-          <div
-            key={item.label}
-            className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm"
-          >
-            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-              <span>{item.label}</span>
-              <span>{item.usage}%</span>
+        <div className="space-y-3">
+          {tokenUsage.length ? (
+            tokenUsage.map((item: any, idx: number) => (
+              <div key={`${item.feature}-${idx}`} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                <div className="font-medium text-slate-900">{item.feature}</div>
+                <div className="text-sm text-slate-600">{item.tokens_used}</div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              No usage data yet.
             </div>
-            <div className="mt-3 h-2 rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-slate-900"
-                style={{ width: `${item.usage}%` }}
-              />
-            </div>
-            <p className="mt-2 text-sm text-slate-600">{item.helper}</p>
-          </div>
-        ))}
+          )}
+        </div>
       </div>
-    </section>
+    </SectionShell>
   );
 }
 
-export function TeamSubscriptionsSection() {
-  const teams = [
-    { name: "Sales pod", seats: "6 / 8", focus: "Retail + consumer" },
-    { name: "Ops pod", seats: "4 / 6", focus: "Middle-mile programs" },
-    { name: "RevOps", seats: "3 / 3", focus: "Billing + analytics" },
-  ];
-
+export function TeamSubscriptionsSection({ members = [], subscription, isAdmin }: any) {
   return (
-    <section className={cardBase}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Pill label="Team Subscriptions" tone="primary" />
-          <h2 className="mt-3 text-2xl font-semibold text-slate-900">
-            Seat allocation
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Assign Command Center, campaign, or analyst seats per team.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Users2 className="h-4 w-4" />
-          Adjust seats
-        </button>
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        {teams.map((team) => (
-          <div
-            key={team.name}
-            className="rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-sm"
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-              {team.name}
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-slate-900">
-              {team.seats}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">{team.focus}</p>
-            <button className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-indigo-600">
-              View members
-              <ChevronRight className="h-3 w-3" />
-            </button>
+    <SectionShell title="Team Subscriptions" description="Review seat usage and workspace subscription visibility.">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Members</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">{members.length}</div>
           </div>
-        ))}
-      </div>
-      <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
-        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
-          <Lock className="h-4 w-4 text-slate-500" />
-          2 free viewer seats remain for partner access.
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Seat limit</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {isAdmin ? "Unlimited" : (subscription?.seat_limit || "—")}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="text-sm text-slate-500">Subscription</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {isAdmin ? "Admin" : (subscription?.status || "Trial")}
+            </div>
+          </div>
         </div>
       </div>
-    </section>
+    </SectionShell>
   );
 }
