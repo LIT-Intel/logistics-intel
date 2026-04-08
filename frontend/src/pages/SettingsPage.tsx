@@ -77,7 +77,10 @@ async function uploadAsset(params: {
       }
 
       if (result?.error) {
-        console.warn(`[settings] UploadFile ${folder} upload returned error, falling back to storage`, result.error);
+        console.warn(
+          `[settings] UploadFile ${folder} upload returned error, falling back to storage`,
+          result.error
+        );
       }
     }
   } catch (error) {
@@ -93,7 +96,9 @@ async function uploadAsset(params: {
     .upload(path, file, { upsert: true });
 
   if (uploadError) {
-    return { error: normalizeError(uploadError, `Failed uploading ${folder.slice(0, -1)}`) };
+    return {
+      error: normalizeError(uploadError, `Failed uploading ${folder.slice(0, -1)}`),
+    };
   }
 
   const { data } = supabase.storage.from("assets").getPublicUrl(path);
@@ -129,9 +134,7 @@ export default function SettingsPage() {
     user?.user_metadata?.role === "super_admin";
 
   const isOrgOwner = orgMembers.some(
-    (m) =>
-      m.user_id === user?.id &&
-      ["owner", "admin"].includes(m.role)
+    (m) => m.user_id === user?.id && ["owner", "admin"].includes(m.role)
   );
 
   const isAdmin = isAdminEmail || isOrgOwner;
@@ -143,9 +146,7 @@ export default function SettingsPage() {
   );
 
   const ensureOrgContext = useCallback(
-    async (
-      explicitOrgName?: string | null
-    ): Promise<{ orgId: string | null; error?: string }> => {
+    async (explicitOrgName?: string | null): Promise<{ orgId: string | null; error?: string }> => {
       if (orgId) return { orgId };
 
       if (!user?.id) {
@@ -185,7 +186,7 @@ export default function SettingsPage() {
         user_id: user.id,
         email: user.email ?? null,
         full_name: user?.user_metadata?.full_name || profile?.name || null,
-        role: isAdminEmail ? "owner" : "owner",
+        role: "owner",
         status: "active",
       };
 
@@ -210,7 +211,16 @@ export default function SettingsPage() {
 
       return { orgId: createdOrg.id };
     },
-    [orgId, user?.id, user?.email, user?.user_metadata, profile?.company_name, profile?.name, orgProfile?.company, orgProfile?.name, isAdminEmail]
+    [
+      orgId,
+      user?.id,
+      user?.email,
+      user?.user_metadata,
+      profile?.company_name,
+      profile?.name,
+      orgProfile?.company,
+      orgProfile?.name,
+    ]
   );
 
   const loadAll = useCallback(async () => {
@@ -463,97 +473,105 @@ export default function SettingsPage() {
     void loadAll();
   }, [loadAll]);
 
-  const onSaveOrgProfile = async (
-  data: Record<string, unknown>
-): Promise<{ error?: string }> => {
-  const ensured = await ensureOrgContext(toStringOrNull(data.company) || null);
-  if (!ensured.orgId) {
-    return { error: ensured.error ?? "No active organization is linked to this account yet" };
-  }
+  const onSaveProfile = async (
+    data: Record<string, unknown>
+  ): Promise<{ error?: string }> => {
+    const uid = user?.id;
+    if (!uid) return { error: "Not authenticated" };
 
-  const uid = user?.id;
-  if (!uid) return { error: "Not authenticated" };
+    const { error: insertError } = await supabase
+      .from("user_profiles")
+      .insert({ user_id: uid })
+      .select()
+      .maybeSingle();
 
-  const updates: Record<string, unknown> = {
-    owner_id: uid,
+    if (
+      insertError &&
+      !String(insertError.message || "").toLowerCase().includes("duplicate") &&
+      !String(insertError.message || "").toLowerCase().includes("unique")
+    ) {
+      return { error: normalizeError(insertError, "Failed initializing profile") };
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (data.name !== undefined) updates.full_name = toStringOrNull(data.name);
+    if (data.title !== undefined) updates.title = toStringOrNull(data.title);
+    if (data.phone !== undefined) updates.phone = toStringOrNull(data.phone);
+    if (data.location !== undefined) updates.location = toStringOrNull(data.location);
+    if (data.bio !== undefined) updates.bio = toStringOrNull(data.bio);
+
+    const { error } = await supabase
+      .from("user_profiles")
+      .update(updates)
+      .eq("user_id", uid);
+
+    if (error) return { error: normalizeError(error, "Failed saving profile") };
+
+    if (data.name) {
+      await updateProfile({ full_name: String(data.name) }).catch((e) =>
+        console.warn("[settings] updateProfile metadata failed", e)
+      );
+    }
+
+    setProfile((prev) => ({
+      ...prev,
+      name: updates.full_name ?? prev.name ?? "",
+      title: updates.title ?? prev.title ?? "",
+      phone: updates.phone ?? prev.phone ?? "",
+      location: updates.location ?? prev.location ?? "",
+      bio: updates.bio ?? prev.bio ?? "",
+    }));
+
+    return {};
   };
 
-  if (data.company !== undefined) updates.name = toStringOrNull(data.company);
-  if (data.tagline !== undefined) updates.tagline = toStringOrNull(data.tagline);
-  if (data.website !== undefined) updates.website = toStringOrNull(data.website);
-  if (data.logo_url !== undefined) updates.logo_url = data.logo_url || null;
-  if (data.industry !== undefined) updates.industry = toStringOrNull(data.industry);
-  if (data.size !== undefined) updates.size = toStringOrNull(data.size);
-  if (data.supportEmail !== undefined) updates.support_email = toStringOrNull(data.supportEmail);
-  if (data.address !== undefined) updates.address = toStringOrNull(data.address);
-  if (data.timezone !== undefined) updates.timezone = toStringOrNull(data.timezone);
-
-  const { error } = await supabase
-    .from("organizations")
-    .update(updates)
-    .eq("id", ensured.orgId);
-
-  if (error) return { error: normalizeError(error, "Failed saving organization") };
-
-  setOrgProfile((prev) => ({
-    ...prev,
-    ...updates,
-    company: updates.name ?? prev.company ?? "",
-    name: updates.name ?? prev.name ?? "",
-    supportEmail: updates.support_email ?? prev.supportEmail ?? "",
-  }));
-
-  setProfile((prev) => ({
-    ...prev,
-    company_name: updates.name ?? prev.company_name ?? "",
-  }));
-
-  return {};
-};
-
   const onSaveOrgProfile = async (
-  data: Record<string, unknown>
-): Promise<{ error?: string }> => {
-  const ensured = await ensureOrgContext(
-    toStringOrNull(data.company) || null
-  );
-  if (!ensured.orgId) {
-    return { error: ensured.error ?? "No active organization is linked to this account yet" };
-  }
+    data: Record<string, unknown>
+  ): Promise<{ error?: string }> => {
+    const ensured = await ensureOrgContext(toStringOrNull(data.company) || null);
+    if (!ensured.orgId) {
+      return { error: ensured.error ?? "No active organization is linked to this account yet" };
+    }
 
-  const updates: Record<string, unknown> = {};
-  const uid = user?.id;
-  if (!uid) return { error: "Not authenticated" };
-    updates.owner_id = uid;
-    
-  if (data.company !== undefined) updates.name = toStringOrNull(data.company);
-  if (data.tagline !== undefined) updates.tagline = toStringOrNull(data.tagline);
-  if (data.website !== undefined) updates.website = toStringOrNull(data.website);
-  if (data.logo_url !== undefined) updates.logo_url = data.logo_url || null;
-  if (data.industry !== undefined) updates.industry = toStringOrNull(data.industry);
-  if (data.size !== undefined) updates.size = toStringOrNull(data.size);
-  if (data.supportEmail !== undefined) updates.support_email = toStringOrNull(data.supportEmail);
-  if (data.address !== undefined) updates.address = toStringOrNull(data.address);
-  if (data.timezone !== undefined) updates.timezone = toStringOrNull(data.timezone);
+    const uid = user?.id;
+    if (!uid) return { error: "Not authenticated" };
 
-  const { error } = await supabase
-    .from("organizations")
-    .update(updates)
-    .eq("id", ensured.orgId);
+    const updates: Record<string, unknown> = {
+      owner_id: uid,
+    };
 
-  if (error) return { error: normalizeError(error, "Failed saving organization") };
+    if (data.company !== undefined) updates.name = toStringOrNull(data.company);
+    if (data.tagline !== undefined) updates.tagline = toStringOrNull(data.tagline);
+    if (data.website !== undefined) updates.website = toStringOrNull(data.website);
+    if (data.logo_url !== undefined) updates.logo_url = data.logo_url || null;
+    if (data.industry !== undefined) updates.industry = toStringOrNull(data.industry);
+    if (data.size !== undefined) updates.size = toStringOrNull(data.size);
+    if (data.supportEmail !== undefined) updates.support_email = toStringOrNull(data.supportEmail);
+    if (data.address !== undefined) updates.address = toStringOrNull(data.address);
+    if (data.timezone !== undefined) updates.timezone = toStringOrNull(data.timezone);
 
-  setOrgProfile((prev) => ({
-  ...prev,
-  ...updates,
-  company: updates.name ?? prev.company ?? "",
-  name: updates.name ?? prev.name ?? "",
-  supportEmail: updates.support_email ?? prev.supportEmail ?? "",
-}));
+    const { error } = await supabase
+      .from("organizations")
+      .update(updates)
+      .eq("id", ensured.orgId);
 
-return {};
-    
-};
+    if (error) return { error: normalizeError(error, "Failed saving organization") };
+
+    setOrgProfile((prev) => ({
+      ...prev,
+      ...updates,
+      company: updates.name ?? prev.company ?? "",
+      name: updates.name ?? prev.name ?? "",
+      supportEmail: updates.support_email ?? prev.supportEmail ?? "",
+    }));
+
+    setProfile((prev) => ({
+      ...prev,
+      company_name: updates.name ?? prev.company_name ?? "",
+    }));
+
+    return {};
+  };
 
   const onUploadAvatar = async (file: File): Promise<{ error?: string }> => {
     const uid = user?.id;
@@ -580,7 +598,6 @@ return {};
     );
 
     setProfile((prev) => ({ ...prev, avatar_url: avatarUrl }));
-    await loadAll();
     return {};
   };
 
@@ -610,13 +627,14 @@ return {};
     if (error) return { error: normalizeError(error, "Failed saving signature") };
 
     setPreferences((prev) => ({ ...prev, email_signature: signature }));
-    await loadAll();
     return {};
   };
 
   const onUploadLogo = async (file: File): Promise<{ error?: string }> => {
     const ensured = await ensureOrgContext();
-    if (!ensured.orgId) return { error: ensured.error ?? "No active organization is linked to this account yet" };
+    if (!ensured.orgId) {
+      return { error: ensured.error ?? "No active organization is linked to this account yet" };
+    }
 
     const result = await uploadAsset({ file, folder: "logos", uid: ensured.orgId });
     if (result.error) return { error: result.error };
@@ -630,7 +648,6 @@ return {};
     if (error) return { error: normalizeError(error, "Failed saving company logo") };
 
     setOrgProfile((prev) => ({ ...prev, logo_url: result.file_url }));
-    await loadAll();
     return {};
   };
 
@@ -662,7 +679,9 @@ return {};
 
   const onInviteMember = async (email: string, role: string): Promise<{ error?: string }> => {
     const ensured = await ensureOrgContext();
-    if (!ensured.orgId) return { error: ensured.error ?? "No active organization is linked to this account yet" };
+    if (!ensured.orgId) {
+      return { error: ensured.error ?? "No active organization is linked to this account yet" };
+    }
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -678,13 +697,25 @@ return {};
 
     if (error) return { error: normalizeError(error, "Failed creating invite") };
 
-    await loadAll();
+    setOrgInvites((prev) => [
+      {
+        id: token,
+        email: email.trim().toLowerCase(),
+        role,
+        status: "pending",
+        created_at: new Date().toISOString(),
+        expires_at: expiresAt,
+      },
+      ...prev,
+    ]);
+
     return {};
   };
 
   const onRevokeMember = async (memberId: string): Promise<{ error?: string }> => {
     const { error } = await supabase.from("org_members").delete().eq("id", memberId);
     if (error) return { error: normalizeError(error, "Failed revoking member") };
+
     setOrgMembers((prev) => prev.filter((m) => m.id !== memberId));
     return {};
   };
@@ -692,6 +723,7 @@ return {};
   const onUpdateMemberRole = async (memberId: string, role: string): Promise<{ error?: string }> => {
     const { error } = await supabase.from("org_members").update({ role }).eq("id", memberId);
     if (error) return { error: normalizeError(error, "Failed updating member role") };
+
     setOrgMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role } : m)));
     return {};
   };
@@ -699,6 +731,7 @@ return {};
   const onRevokeInvite = async (inviteId: string): Promise<{ error?: string }> => {
     const { error } = await supabase.from("org_invites").delete().eq("id", inviteId);
     if (error) return { error: normalizeError(error, "Failed revoking invite") };
+
     setOrgInvites((prev) => prev.filter((i) => i.id !== inviteId));
     return {};
   };
@@ -738,7 +771,19 @@ return {};
       return null;
     }
 
-    if (data?.id) await loadAll();
+    if (data?.id) {
+      setApiKeys((prev) => [
+        {
+          id: data.id,
+          key_name: keyName.trim(),
+          key_prefix: keyPrefix,
+          last_used_at: null,
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    }
+
     return fullKey;
   };
 
@@ -767,7 +812,7 @@ return {};
     rfpsCount: rfpCount,
   };
 
-  const effectiveSubscription = isAdmin ? buildAdminSubscription() : (subscription ?? undefined);
+  const effectiveSubscription = isAdmin ? buildAdminSubscription() : subscription ?? undefined;
 
   return (
     <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
