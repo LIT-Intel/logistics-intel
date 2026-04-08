@@ -532,43 +532,6 @@ export default function SettingsPage() {
     return {};
   };
 
-  const onSaveOrgProfile = async (
-    data: Record<string, unknown>
-  ): Promise<{ error?: string }> => {
-    const ensured = await ensureOrgContext(
-      toStringOrNull(data.company) || null
-    );
-    if (!ensured.orgId) return { error: ensured.error ?? "No active organization is linked to this account yet" };
-
-    const updates: Record<string, unknown> = { id: ensured.orgId };
-    if (data.company !== undefined) updates.name = toStringOrNull(data.company);
-    if (data.tagline !== undefined) updates.tagline = toStringOrNull(data.tagline);
-    if (data.website !== undefined) updates.website = toStringOrNull(data.website);
-    if (data.logo_url !== undefined) updates.logo_url = data.logo_url || null;
-    if (data.industry !== undefined) updates.industry = toStringOrNull(data.industry);
-    if (data.size !== undefined) updates.size = toStringOrNull(data.size);
-    if (data.supportEmail !== undefined) updates.support_email = toStringOrNull(data.supportEmail);
-    if (data.address !== undefined) updates.address = toStringOrNull(data.address);
-    if (data.timezone !== undefined) updates.timezone = toStringOrNull(data.timezone);
-
-    const { error } = await supabase
-      .from("organizations")
-      .upsert(updates, { onConflict: "id" });
-
-    if (error) return { error: normalizeError(error, "Failed saving organization") };
-
-    setOrgProfile((prev) => ({
-      ...prev,
-      ...updates,
-      company: updates.name ?? prev.company ?? "",
-      name: updates.name ?? prev.name ?? "",
-      supportEmail: updates.support_email ?? prev.supportEmail ?? "",
-    }));
-
-    await loadAll();
-    return {};
-  };
-
   const onSaveEmailSignature = async (
     signature: string
   ): Promise<{ error?: string }> => {
