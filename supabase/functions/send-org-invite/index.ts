@@ -187,7 +187,7 @@ serve(async (req) => {
       "A workspace admin";
 
     const workspaceName = String(org?.name || "Logistic Intel").trim();
-    const acceptUrl = `${inviteBaseUrl.replace(/\/$/, "")}?token=${encodeURIComponent(invite.token)}`;
+    const acceptUrl = `https://www.logisticintel.com/accept-invite?token=${encodeURIComponent(invite.token)}&email=${encodeURIComponent(invite.email)}`;
     const formattedExpiry = formatExpiry(invite.expires_at);
 
     // Update this path only if your public asset path is different.
