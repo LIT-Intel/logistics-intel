@@ -58,10 +58,9 @@ export default function SettingsPage() {
     (member) => member.user_id === user?.id && member.status === "active"
   );
 
-  const currentOrgRole = normalizeOrgRole(
-    currentMembership?.role,
-    isAdminEmail ? "owner" : "member"
-  );
+  const currentOrgRole = String(
+  currentMembership?.role || (isAdminEmail ? "owner" : "member")
+).toLowerCase();
 
   const isOrgOwner = currentOrgRole === "owner";
   const isOrgAdmin = currentOrgRole === "admin";
