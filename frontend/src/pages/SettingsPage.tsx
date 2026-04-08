@@ -463,35 +463,45 @@ export default function SettingsPage() {
     void loadAll();
   }, [loadAll]);
 
-  const onSaveProfile = async (
-    data: Record<string, unknown>
-  ): Promise<{ error?: string }> => {
-    const uid = user?.id;
-    if (!uid) return { error: "Not authenticated" };
+  const onSaveOrgProfile = async (
+  data: Record<string, unknown>
+): Promise<{ error?: string }> => {
+  const ensured = await ensureOrgContext(
+    toStringOrNull(data.company) || null
+  );
+  if (!ensured.orgId) {
+    return { error: ensured.error ?? "No active organization is linked to this account yet" };
+  }
 
-    const updates: Record<string, unknown> = { user_id: uid };
-    if (data.name !== undefined) updates.full_name = toStringOrNull(data.name);
-    if (data.title !== undefined) updates.title = toStringOrNull(data.title);
-    if (data.phone !== undefined) updates.phone = toStringOrNull(data.phone);
-    if (data.location !== undefined) updates.location = toStringOrNull(data.location);
-    if (data.bio !== undefined) updates.bio = toStringOrNull(data.bio);
+  const updates: Record<string, unknown> = {};
+  if (data.company !== undefined) updates.name = toStringOrNull(data.company);
+  if (data.tagline !== undefined) updates.tagline = toStringOrNull(data.tagline);
+  if (data.website !== undefined) updates.website = toStringOrNull(data.website);
+  if (data.logo_url !== undefined) updates.logo_url = data.logo_url || null;
+  if (data.industry !== undefined) updates.industry = toStringOrNull(data.industry);
+  if (data.size !== undefined) updates.size = toStringOrNull(data.size);
+  if (data.supportEmail !== undefined) updates.support_email = toStringOrNull(data.supportEmail);
+  if (data.address !== undefined) updates.address = toStringOrNull(data.address);
+  if (data.timezone !== undefined) updates.timezone = toStringOrNull(data.timezone);
 
-    const { error } = await supabase
-  .from("organizations")
-  .update(updates)
-  .eq("id", ensured.orgId);
+  const { error } = await supabase
+    .from("organizations")
+    .update(updates)
+    .eq("id", ensured.orgId);
 
-    if (error) return { error: normalizeError(error, "Failed saving profile") };
+  if (error) return { error: normalizeError(error, "Failed saving organization") };
 
-    if (data.name) {
-      await updateProfile({ full_name: String(data.name) }).catch((e) =>
-        console.warn("[settings] updateProfile metadata failed", e)
-      );
-    }
+  setOrgProfile((prev) => ({
+    ...prev,
+    ...updates,
+    company: updates.name ?? prev.company ?? "",
+    name: updates.name ?? prev.name ?? "",
+    supportEmail: updates.support_email ?? prev.supportEmail ?? "",
+  }));
 
-    await loadAll();
-    return {};
-  };
+  await loadAll();
+  return {};
+};
 
   const onUploadAvatar = async (file: File): Promise<{ error?: string }> => {
     const uid = user?.id;
