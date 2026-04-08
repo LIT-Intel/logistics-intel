@@ -404,19 +404,32 @@ export function CompanySignatureSection({
   const logoRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    setForm({
-      company: orgProfile?.company || orgProfile?.name || "",
-      tagline: orgProfile?.tagline || "",
-      website: orgProfile?.website || "",
-      industry: orgProfile?.industry || "",
-      size: orgProfile?.size || "",
-      supportEmail: orgProfile?.supportEmail || "",
-      address: orgProfile?.address || "",
-      timezone: orgProfile?.timezone || "",
-    });
-    setSignature(emailSignature || "");
-    setLogoUrl(orgProfile?.logo_url || "");
-  }, [orgProfile, emailSignature]);
+  setForm({
+    company: orgProfile?.company || orgProfile?.name || "",
+    tagline: orgProfile?.tagline || "",
+    website: orgProfile?.website || "",
+    industry: orgProfile?.industry || "",
+    size: orgProfile?.size || "",
+    supportEmail: orgProfile?.supportEmail || "",
+    address: orgProfile?.address || "",
+    timezone: orgProfile?.timezone || "",
+  });
+  setSignature(emailSignature || "");
+  setLogoUrl(orgProfile?.logo_url || "");
+}, [
+  orgProfile?.id,
+  orgProfile?.name,
+  orgProfile?.company,
+  orgProfile?.tagline,
+  orgProfile?.website,
+  orgProfile?.industry,
+  orgProfile?.size,
+  orgProfile?.supportEmail,
+  orgProfile?.address,
+  orgProfile?.timezone,
+  orgProfile?.logo_url,
+  emailSignature,
+]);
 
   async function handleSaveOrg() {
     setSavingOrg(true);
