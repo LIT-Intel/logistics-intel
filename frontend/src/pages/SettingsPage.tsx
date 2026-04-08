@@ -781,85 +781,126 @@ export default function SettingsPage() {
   };
 
   const onInviteMember = async (email: string, role: string): Promise<{ error?: string }> => {
-    if (!canManageMembers) {
-      return { error: "Only workspace admins can manage access." };
-    }
+  if (!canManageMembers) {
+    return { error: "Only workspace admins can manage access." };
+  }
 
-    const ensured = await ensureOrgContext();
-    if (!ensured.orgId) {
-      return { error: ensured.error ?? "No active organization is linked to this account yet" };
-    }
+  const ensured = await ensureOrgContext();
+  if (!ensured.orgId) {
+    return { error: ensured.error ?? "No active organization is linked to this account yet" };
+  }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedRole = normalizeOrgRole(role, "member");
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedRole = normalizeOrgRole(role, "member");
 
-    if (!isValidEmail(normalizedEmail)) {
-      return { error: "Enter a valid email address." };
-    }
+  if (!isValidEmail(normalizedEmail)) {
+    return { error: "Enter a valid email address." };
+  }
 
-    if (normalizedRole === "owner") {
-      return { error: "Owner assignment is not available from this screen." };
-    }
+  if (normalizedRole === "owner") {
+    return { error: "Owner assignment is not available from this screen." };
+  }
 
-    if (normalizedEmail === (user?.email ?? "").trim().toLowerCase()) {
-      return { error: "You are already part of this workspace." };
-    }
+  if (normalizedEmail === (user?.email ?? "").trim().toLowerCase()) {
+    return { error: "You are already part of this workspace." };
+  }
 
-    const existingMember = orgMembers.find(
-      (member) => (member.email ?? "").trim().toLowerCase() === normalizedEmail
-    );
-    if (existingMember) {
-      return { error: "That user is already an active member of this workspace." };
-    }
+  const existingMember = orgMembers.find(
+    (member) => (member.email ?? "").trim().toLowerCase() === normalizedEmail
+  );
+  if (existingMember) {
+    return { error: "That user is already an active member of this workspace." };
+  }
 
-    const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const token = crypto.randomUUID();
 
-    const { data: existingInviteRow, error: existingInviteError } = await supabase
-      .from("org_invites")
-      .select("id, org_id, email, role, status, token, created_at, expires_at")
-      .eq("org_id", ensured.orgId)
-      .eq("email", normalizedEmail)
-      .maybeSingle();
+  const { data: existingInvite, error: existingInviteError } = await supabase
+    .from("org_invites")
+    .select("id, org_id, email, role, status, token, created_at, expires_at")
+    .eq("org_id", ensured.orgId)
+    .eq("email", normalizedEmail)
+    .maybeSingle();
 
-    if (existingInviteError) {
-      return { error: normalizeError(existingInviteError, "Failed checking existing invite") };
-    }
+  if (existingInviteError) {
+    return { error: normalizeError(existingInviteError, "Failed checking existing invite") };
+  }
 
-    if (existingInviteRow?.status === "pending") {
+  let savedInvite: any = null;
+
+  if (existingInvite?.id) {
+    if (existingInvite.status === "pending") {
       return { error: "A pending invite already exists for that email address." };
     }
 
-    if (existingInviteRow?.id) {
-      const { data, error } = await supabase
-        .from("org_invites")
-        .update({
-          role: normalizedRole,
-          token,
-          status: "pending",
-          invited_by_user_id: user?.id ?? null,
-          expires_at: expiresAt,
-        })
-        .eq("id", existingInviteRow.id)
-        .eq("org_id", ensured.orgId)
-        .select("id, org_id, email, role, status, token, created_at, expires_at")
-        .single();
+    const { data: updatedInvite, error: updateInviteError } = await supabase
+      .from("org_invites")
+      .update({
+        role: normalizedRole,
+        token,
+        status: "pending",
+        invited_by_user_id: user?.id ?? null,
+        expires_at: expiresAt,
+        email_sent_at: null,
+      })
+      .eq("id", existingInvite.id)
+      .eq("org_id", ensured.orgId)
+      .select("id, org_id, email, role, status, token, created_at, expires_at")
+      .single();
 
-      if (error) return { error: normalizeError(error, "Failed refreshing invite") };
-
-      setOrgInvites((prev) => {
-        const filtered = prev.filter((entry) => entry.id !== data.id);
-        return [
-          {
-            ...data,
-            role: normalizeOrgRole(data?.role, normalizedRole),
-          },
-          ...filtered,
-        ];
-      });
-
-      return {};
+    if (updateInviteError) {
+      return { error: normalizeError(updateInviteError, "Failed recreating invite") };
     }
+
+    savedInvite = updatedInvite;
+  } else {
+    const { data: createdInvite, error: createInviteError } = await supabase
+      .from("org_invites")
+      .insert({
+        org_id: ensured.orgId,
+        email: normalizedEmail,
+        role: normalizedRole,
+        token,
+        status: "pending",
+        invited_by_user_id: user?.id ?? null,
+        expires_at: expiresAt,
+      })
+      .select("id, org_id, email, role, status, token, created_at, expires_at")
+      .single();
+
+    if (createInviteError) {
+      return { error: normalizeError(createInviteError, "Failed creating invite") };
+    }
+
+    savedInvite = createdInvite;
+  }
+
+  const { error: sendInviteError } = await supabase.functions.invoke("send-org-invite", {
+    body: {
+      inviteId: savedInvite.id,
+    },
+  });
+
+  setOrgInvites((prev) => {
+    const nextInvite = {
+      ...savedInvite,
+      role: normalizeOrgRole(savedInvite?.role, normalizedRole),
+    };
+
+    const filtered = prev.filter((entry) => entry.id !== savedInvite.id);
+    return [nextInvite, ...filtered];
+  });
+
+  if (sendInviteError) {
+    console.error("[settings] send-org-invite", sendInviteError);
+    return {
+      error:
+        "Invite was created, but the email failed to send. Check your Edge Function logs and Resend configuration.",
+    };
+  }
+
+  return {};
+};
 
     const { data, error } = await supabase
       .from("org_invites")
