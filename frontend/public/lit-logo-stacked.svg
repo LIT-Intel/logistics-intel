@@ -8,7 +8,7 @@
   </defs>
 
   <!-- Icon -->
-  <rect x="40" y="40" width="200" height="200" rx="50" fill="#020617"/>
+  <rect x="40" y="40" width="200" height="200" rx="40" fill="#020617"/>
 
   <g filter="url(#neon-glow)">
     <g transform="translate(40 40) scale(3.125)">
