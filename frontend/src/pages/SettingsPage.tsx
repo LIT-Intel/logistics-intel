@@ -898,7 +898,25 @@ export default function SettingsPage() {
     savedInvite = createdInvite;
   }
 
-  console.log("[LIT Invite] Invite URL:", inviteUrl);
+  const { error: sendInviteError } = await supabase.functions.invoke(
+    "send-org-invite",
+    {
+      body: {
+        inviteId: savedInvite.id,
+        orgId: ensured.orgId,
+        email: normalizedEmail,
+        role: normalizedRole,
+        token,
+        inviteUrl,
+      },
+    }
+  );
+
+  if (sendInviteError) {
+    return {
+      error: normalizeError(sendInviteError, "Failed sending invite email"),
+    };
+  }
 
   const { error: markInviteReadyError } = await supabase
     .from("org_invites")
@@ -921,7 +939,6 @@ export default function SettingsPage() {
 
   return {};
 };
-
   const onRevokeMember = async (memberId: string): Promise<{ error?: string }> => {
     if (!canManageMembers) {
       return { error: "Only workspace admins can manage access." };
