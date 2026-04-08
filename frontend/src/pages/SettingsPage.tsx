@@ -346,7 +346,7 @@ export default function SettingsPage() {
       .select("org_id")
       .eq("user_id", uid)
       .eq("status", "active")
-      .order("created_at", { ascending: true })
+      .order("joined_at", { ascending: true, nullsFirst: false })
       .limit(1)
       .maybeSingle();
 
@@ -406,7 +406,7 @@ export default function SettingsPage() {
 
     let activeWorkspaceName = "Admin Console";
 
-    setProfile({
+    const baseProfileState = {
       name:
         userProfileData?.full_name ||
         baseProfileData?.full_name ||
@@ -425,7 +425,7 @@ export default function SettingsPage() {
       company_name: activeWorkspaceName,
       plan: isAdmin ? "unlimited" : (plan ?? "free_trial"),
       isAdmin,
-    });
+    };
 
     const { data: prefsData, error: prefsError } = await supabase
       .from("user_preferences")
@@ -458,10 +458,10 @@ export default function SettingsPage() {
 
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
-        .select("id, org_id, user_id, role, status, created_at, email, full_name")
+        .select("id, org_id, user_id, role, status, joined_at, email, full_name")
         .eq("org_id", currentOrgId)
         .eq("status", "active")
-        .order("created_at", { ascending: false });
+        .order("joined_at", { ascending: false, nullsFirst: false });
       if (membersError) console.error("[settings] org_members list", membersError);
       setOrgMembers(
         (membersData ?? []).map((member: any) => ({
@@ -495,10 +495,10 @@ export default function SettingsPage() {
       setOrgInvites([]);
     }
 
-    setProfile((prev) => ({
-      ...prev,
+    setProfile({
+      ...baseProfileState,
       company_name: activeWorkspaceName,
-    }));
+    });
 
     const [subResult, plansResult] = await Promise.allSettled([
       currentOrgId
