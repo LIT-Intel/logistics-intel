@@ -812,16 +812,54 @@ export default function SettingsPage() {
       return { error: "That user is already an active member of this workspace." };
     }
 
-    const existingInvite = orgInvites.find(
-      (invite) =>
-        (invite.email ?? "").trim().toLowerCase() === normalizedEmail && invite.status === "pending"
-    );
-    if (existingInvite) {
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: existingInviteRow, error: existingInviteError } = await supabase
+      .from("org_invites")
+      .select("id, org_id, email, role, status, token, created_at, expires_at")
+      .eq("org_id", ensured.orgId)
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (existingInviteError) {
+      return { error: normalizeError(existingInviteError, "Failed checking existing invite") };
+    }
+
+    if (existingInviteRow?.status === "pending") {
       return { error: "A pending invite already exists for that email address." };
     }
 
-    const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (existingInviteRow?.id) {
+      const { data, error } = await supabase
+        .from("org_invites")
+        .update({
+          role: normalizedRole,
+          token,
+          status: "pending",
+          invited_by_user_id: user?.id ?? null,
+          expires_at: expiresAt,
+        })
+        .eq("id", existingInviteRow.id)
+        .eq("org_id", ensured.orgId)
+        .select("id, org_id, email, role, status, token, created_at, expires_at")
+        .single();
+
+      if (error) return { error: normalizeError(error, "Failed refreshing invite") };
+
+      setOrgInvites((prev) => {
+        const filtered = prev.filter((entry) => entry.id !== data.id);
+        return [
+          {
+            ...data,
+            role: normalizeOrgRole(data?.role, normalizedRole),
+          },
+          ...filtered,
+        ];
+      });
+
+      return {};
+    }
 
     const { data, error } = await supabase
       .from("org_invites")
@@ -844,7 +882,7 @@ export default function SettingsPage() {
         ...data,
         role: normalizeOrgRole(data?.role, normalizedRole),
       },
-      ...prev,
+      ...prev.filter((entry) => entry.id !== data.id),
     ]);
 
     return {};
