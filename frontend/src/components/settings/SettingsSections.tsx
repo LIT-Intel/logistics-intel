@@ -796,9 +796,10 @@ export function AccessRolesSection({
               setErr(null);
               setMsg(null);
               const result = await onInvite?.(inviteEmail, inviteRole);
-              if (result?.error) setErr(result.error);
-              else {
-                setMsg("Invite created");
+              if (result?.error) {
+                setErr(result.error);
+              } else {
+                setMsg("Invite sent");
                 setInviteEmail("");
                 setInviteRole("member");
               }
