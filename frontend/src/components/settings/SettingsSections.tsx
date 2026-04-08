@@ -209,15 +209,22 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
   const planLabel = isAdmin ? "Admin" : (initialData?.plan || "Free trial");
 
   useEffect(() => {
-    setForm({
-      name: initialData?.name || "",
-      title: initialData?.title || "",
-      phone: initialData?.phone || "",
-      location: initialData?.location || "",
-      bio: initialData?.bio || "",
-    });
-    setAvatarUrl(initialData?.avatar_url || "");
-  }, [initialData]);
+  setForm({
+    name: initialData?.name || "",
+    title: initialData?.title || "",
+    phone: initialData?.phone || "",
+    location: initialData?.location || "",
+    bio: initialData?.bio || "",
+  });
+  setAvatarUrl(initialData?.avatar_url || "");
+}, [
+  initialData?.name,
+  initialData?.title,
+  initialData?.phone,
+  initialData?.location,
+  initialData?.bio,
+  initialData?.avatar_url,
+]);
 
   async function handleSave() {
     setSaving(true);
