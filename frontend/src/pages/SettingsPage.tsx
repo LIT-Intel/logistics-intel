@@ -1132,7 +1132,7 @@ export default function SettingsPage() {
     rfpsCount: rfpCount,
   };
 
-  const effectiveSubscription = isAdmin ? buildAdminSubscription() : subscription ?? undefined;
+  const effectiveSubscription = subscription ?? undefined;
 
   return (
     <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
