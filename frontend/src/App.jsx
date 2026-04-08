@@ -6,6 +6,7 @@ import ModernLoginPage from "@/components/layout/ModernLoginPage";
 import ModernSignupPage from "@/components/layout/ModernSignupPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
+import AcceptInvitePage from "@/pages/AcceptInvitePage";
 
 const Landing = lazy(() => import("@/pages/LandingPage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
@@ -116,6 +117,7 @@ export default function App() {
         <Route path="/request-demo" element={<Navigate to="/signup" replace />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 
