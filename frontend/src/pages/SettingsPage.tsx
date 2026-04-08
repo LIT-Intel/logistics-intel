@@ -542,15 +542,15 @@ return {};
   if (error) return { error: normalizeError(error, "Failed saving organization") };
 
   setOrgProfile((prev) => ({
-    ...prev,
-    ...updates,
-    company: updates.name ?? prev.company ?? "",
-    name: updates.name ?? prev.name ?? "",
-    supportEmail: updates.support_email ?? prev.supportEmail ?? "",
-  }));
+  ...prev,
+  ...updates,
+  company: updates.name ?? prev.company ?? "",
+  name: updates.name ?? prev.name ?? "",
+  supportEmail: updates.support_email ?? prev.supportEmail ?? "",
+}));
 
-  await loadAll();
-  return {};
+return {};
+    
 };
 
   const onUploadAvatar = async (file: File): Promise<{ error?: string }> => {
