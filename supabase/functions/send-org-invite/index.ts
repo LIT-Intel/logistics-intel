@@ -21,6 +21,22 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+function formatExpiry(dateValue: string | null | undefined) {
+  if (!dateValue) return "soon";
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return dateValue;
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(date);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -101,6 +117,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (inviteError) {
+      console.error("[send-org-invite] invite load failed", inviteError);
       return json({ error: inviteError.message || "Failed loading invite" }, 500);
     }
 
@@ -121,18 +138,36 @@ serve(async (req) => {
       .maybeSingle();
 
     if (membershipError) {
+      console.error("[send-org-invite] membership check failed", membershipError);
       return json({ error: membershipError.message || "Failed checking membership" }, 500);
     }
 
     const inviterEmail = (user.email || "").toLowerCase();
-    const isPlatformAdmin = inviterEmail === "vraymond@sparkfusiondigital.com";
+    const isPlatformAdmin = ["vraymond@sparkfusiondigital.com"].includes(inviterEmail);
 
     const allowedRoles = ["owner", "admin"];
     const membershipRole = String(membership?.role || "").toLowerCase();
     const canManageInvites = isPlatformAdmin || allowedRoles.includes(membershipRole);
 
+    console.log("[send-org-invite] permission-check", {
+      inviterEmail,
+      membershipRole,
+      inviteOrgId: invite.org_id,
+      isPlatformAdmin,
+      canManageInvites,
+    });
+
     if (!canManageInvites) {
-      return json({ error: "You do not have permission to send invites for this workspace" }, 403);
+      console.error("[send-org-invite] permission denied", {
+        inviterEmail,
+        membershipRole,
+        inviteOrgId: invite.org_id,
+      });
+
+      return json(
+        { error: "You do not have permission to send invites for this workspace" },
+        403
+      );
     }
 
     const { data: org, error: orgError } = await adminClient
@@ -141,8 +176,9 @@ serve(async (req) => {
       .eq("id", invite.org_id)
       .maybeSingle();
 
-    if (orgError) {
-      return json({ error: orgError.message || "Failed loading workspace" }, 500);
+    if (orgError || !org) {
+      console.error("[send-org-invite] org lookup failed", orgError);
+      return json({ error: "Organization not found" }, 404);
     }
 
     const inviterName =
@@ -150,37 +186,140 @@ serve(async (req) => {
       inviterEmail ||
       "A workspace admin";
 
-    const workspaceName = String(org?.name || "Your workspace").trim();
+    const workspaceName = String(org?.name || "Logistic Intel").trim();
     const acceptUrl = `${inviteBaseUrl.replace(/\/$/, "")}?token=${encodeURIComponent(invite.token)}`;
+    const formattedExpiry = formatExpiry(invite.expires_at);
+
+    // Update this path only if your public asset path is different.
+    const logoUrl = "https://logisticintel.com/logo_email.png";
 
     const emailHtml = `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0f172a;">
-        <h2 style="margin-bottom: 8px;">You’ve been invited to join ${workspaceName}</h2>
-        <p style="margin: 0 0 16px 0;">
-          ${inviterName} invited you to join <strong>${workspaceName}</strong> on LIT.
-        </p>
-        <p style="margin: 0 0 16px 0;">
-          Role: <strong>${invite.role}</strong>
-        </p>
-        <p style="margin: 0 0 24px 0;">
-          Click the button below to accept your invite.
-        </p>
-        <p style="margin: 0 0 24px 0;">
-          <a
-            href="${acceptUrl}"
-            style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: 600;"
-          >
-            Accept Invite
-          </a>
-        </p>
-        <p style="margin: 0 0 12px 0; color: #475569;">
-          This invite will expire on ${invite.expires_at}.
-        </p>
-        <p style="margin: 0; color: #475569;">
-          If you were not expecting this email, you can ignore it.
-        </p>
-      </div>
-    `;
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>You’ve been invited to ${workspaceName}</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#f4f7fb; font-family:Arial, Helvetica, sans-serif; color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f7fb; margin:0; padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px; background-color:#ffffff; border:1px solid #e2e8f0; border-radius:18px; overflow:hidden; box-shadow:0 12px 40px rgba(15,23,42,0.08);">
+
+            <tr>
+              <td style="background:linear-gradient(180deg,#081225 0%, #0f172a 100%); padding:28px 32px 24px 32px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td valign="middle" style="width:56px;">
+                      <img
+                        src="${logoUrl}"
+                        alt="Logistic Intel"
+                        width="220"
+                        style="display:block; border:0; outline:none; text-decoration:none;"
+                      />
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:36px 32px 12px 32px;">
+                <div style="display:inline-block; font-size:12px; line-height:18px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#1d4ed8; background-color:#dbeafe; padding:6px 10px; border-radius:999px; margin-bottom:18px;">
+                  Private invitation
+                </div>
+
+                <h1 style="margin:0 0 14px 0; font-size:30px; line-height:36px; color:#0f172a; font-weight:700;">
+                  You’ve been invited to join ${workspaceName}
+                </h1>
+
+                <p style="margin:0 0 16px 0; font-size:16px; line-height:27px; color:#334155;">
+                  <strong>${inviterName}</strong> invited you to join <strong>${workspaceName}</strong>.
+                </p>
+
+                <p style="margin:0 0 16px 0; font-size:16px; line-height:27px; color:#334155;">
+                  You’ll get access to freight intelligence, workspace collaboration, and outreach tools built to help your team move faster.
+                </p>
+
+                <div style="margin:0 0 18px 0; display:inline-block; font-size:12px; line-height:18px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#4338ca; background-color:#eef2ff; padding:8px 12px; border-radius:999px;">
+                  ${String(invite.role || "member").toUpperCase()} ACCESS
+                </div>
+
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:10px 0 22px 0;">
+                  <tr>
+                    <td align="center" style="background:linear-gradient(180deg,#5b5cf0 0%, #4f46e5 100%); border-radius:12px;">
+                      <a href="${acceptUrl}" target="_blank" style="display:inline-block; padding:16px 28px; font-size:16px; line-height:20px; font-weight:700; color:#ffffff; text-decoration:none;">
+                        Accept Invite
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+                <div style="margin:0 0 24px 0; padding:16px 18px; background-color:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                  <div style="font-size:13px; line-height:20px; font-weight:700; color:#0f172a; margin-bottom:6px;">
+                    Invitation details
+                  </div>
+                  <div style="font-size:14px; line-height:24px; color:#475569;">
+                    Workspace: <strong>${workspaceName}</strong><br />
+                    Email: <strong>${invite.email}</strong><br />
+                    Expires: <strong>${formattedExpiry}</strong>
+                  </div>
+                </div>
+
+                <p style="margin:0 0 10px 0; font-size:14px; line-height:22px; color:#64748b;">
+                  If the button doesn’t work, copy and paste this link into your browser:
+                </p>
+
+                <p style="margin:0 0 26px 0; font-size:14px; line-height:22px; word-break:break-word;">
+                  <a href="${acceptUrl}" target="_blank" style="color:#2563eb; text-decoration:underline;">
+                    ${acceptUrl}
+                  </a>
+                </p>
+
+                <p style="margin:0; font-size:13px; line-height:22px; color:#94a3b8;">
+                  If this invite reached you by mistake, you can safely ignore this email.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:20px 32px; background-color:#f8fafc; border-top:1px solid #e2e8f0;">
+                <p style="margin:0 0 6px 0; font-size:12px; line-height:18px; color:#475569; font-weight:700;">
+                  Logistic Intel
+                </p>
+                <p style="margin:0; font-size:12px; line-height:18px; color:#94a3b8;">
+                  Trusted access. Smarter freight decisions.
+                </p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+    `.trim();
+
+    const textBody = [
+      `You've been invited to join ${workspaceName}`,
+      ``,
+      `${inviterName} invited you to join ${workspaceName}.`,
+      `Role: ${String(invite.role || "member").toUpperCase()}`,
+      `Email: ${invite.email}`,
+      `Accept Invite: ${acceptUrl}`,
+      `Expires: ${formattedExpiry}`,
+      ``,
+      `If you were not expecting this email, you can ignore it.`,
+    ].join("\n");
+
+    console.log("[send-org-invite] sending email", {
+      to: invite.email,
+      from: inviteFromEmail,
+      workspaceName,
+      logoUrl,
+    });
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -191,15 +330,20 @@ serve(async (req) => {
       body: JSON.stringify({
         from: inviteFromEmail,
         to: [invite.email],
-        subject: `You’ve been invited to join ${workspaceName} on LIT`,
+        subject: `You’ve been invited to join ${workspaceName}`,
         html: emailHtml,
+        text: textBody,
         reply_to: org?.support_email || inviterEmail,
       }),
     });
 
     const resendResult = await resendResponse.json();
 
+    console.log("[send-org-invite] resend response", resendResult);
+
     if (!resendResponse.ok) {
+      console.error("[send-org-invite] resend failed", resendResult);
+
       return json(
         {
           error: resendResult?.message || "Failed sending invite email",
@@ -222,6 +366,8 @@ serve(async (req) => {
       emailId: resendResult?.id ?? null,
     });
   } catch (error) {
+    console.error("[send-org-invite] fatal error", error);
+
     return json(
       {
         error: error instanceof Error ? error.message : "Unexpected error",
