@@ -14,6 +14,9 @@ const PLAN_RANK: Record<string, number> = {
   enterprise: 3,
 };
 
+const ORG_MEMBER_ROLES = ["owner", "admin", "member"] as const;
+
+type OrgMemberRole = (typeof ORG_MEMBER_ROLES)[number];
 type JsonMap = Record<string, any>;
 
 function normalizeError(error: any, fallback: string) {
@@ -23,6 +26,18 @@ function normalizeError(error: any, fallback: string) {
 function toStringOrNull(value: unknown) {
   const next = String(value ?? "").trim();
   return next || null;
+}
+
+function normalizeOrgRole(value: unknown, fallback: OrgMemberRole = "member"): OrgMemberRole {
+  const next = String(value ?? "").trim().toLowerCase();
+  if (ORG_MEMBER_ROLES.includes(next as OrgMemberRole)) {
+    return next as OrgMemberRole;
+  }
+  return fallback;
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
 }
 
 function buildAdminSubscription() {
@@ -133,11 +148,19 @@ export default function SettingsPage() {
     user?.user_metadata?.role === "admin" ||
     user?.user_metadata?.role === "super_admin";
 
-  const isOrgOwner = orgMembers.some(
-    (m) => m.user_id === user?.id && ["owner", "admin"].includes(m.role)
+  const currentMembership = orgMembers.find(
+    (member) => member.user_id === user?.id && member.status === "active"
   );
 
-  const isAdmin = isAdminEmail || isOrgOwner;
+  const currentOrgRole = normalizeOrgRole(
+    currentMembership?.role,
+    isAdminEmail ? "owner" : "member"
+  );
+
+  const isOrgOwner = currentOrgRole === "owner";
+  const isOrgAdmin = currentOrgRole === "admin";
+  const isAdmin = isAdminEmail || isOrgOwner || isOrgAdmin;
+  const canManageMembers = isAdminEmail || isOrgOwner || isOrgAdmin;
 
   const canAccess = useCallback(
     (minPlan: string) =>
@@ -146,66 +169,111 @@ export default function SettingsPage() {
   );
 
   const ensureOrgContext = useCallback(
-  async (explicitOrgName?: string | null): Promise<{ orgId: string | null; error?: string }> => {
-    if (orgId) return { orgId };
+    async (explicitOrgName?: string | null): Promise<{ orgId: string | null; error?: string }> => {
+      if (orgId) return { orgId };
 
-    if (!user?.id) {
-      return { orgId: null, error: "Not authenticated" };
-    }
+      if (!user?.id) {
+        return { orgId: null, error: "Not authenticated" };
+      }
 
-    const fallbackOrgName =
-      profile?.company_name ||
-      user?.user_metadata?.organization_name ||
-      user?.user_metadata?.company_name ||
-      null;
+      const fallbackOrgName =
+        profile?.company_name ||
+        user?.user_metadata?.organization_name ||
+        user?.user_metadata?.company_name ||
+        null;
 
-    const companyName = deriveOrgName({
-      explicitName: explicitOrgName || orgProfile?.company || orgProfile?.name || null,
-      fallbackOrgName,
-      email: user.email ?? null,
-    });
+      const companyName = deriveOrgName({
+        explicitName: explicitOrgName || orgProfile?.company || orgProfile?.name || null,
+        fallbackOrgName,
+        email: user.email ?? null,
+      });
 
-    // 1. Reuse an existing org first
-    const { data: existingMembership, error: membershipError } = await supabase
-      .from("org_members")
-      .select("org_id")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .order("org_id", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      const { data: existingMembership, error: membershipError } = await supabase
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("org_id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-    if (membershipError) {
-      return {
-        orgId: null,
-        error: normalizeError(membershipError, "Failed checking organization membership"),
-      };
-    }
+      if (membershipError) {
+        return {
+          orgId: null,
+          error: normalizeError(membershipError, "Failed checking organization membership"),
+        };
+      }
 
-    if (existingMembership?.org_id) {
-      setOrgId(existingMembership.org_id);
-      return { orgId: existingMembership.org_id };
-    }
+      if (existingMembership?.org_id) {
+        setOrgId(existingMembership.org_id);
+        return { orgId: existingMembership.org_id };
+      }
 
-    // 2. Reuse an existing org owned by this user if it exists
-    const { data: existingOrg, error: existingOrgError } = await supabase
-      .from("organizations")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      const { data: existingOrg, error: existingOrgError } = await supabase
+        .from("organizations")
+        .select("*")
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-    if (existingOrgError) {
-      return {
-        orgId: null,
-        error: normalizeError(existingOrgError, "Failed checking existing organization"),
-      };
-    }
+      if (existingOrgError) {
+        return {
+          orgId: null,
+          error: normalizeError(existingOrgError, "Failed checking existing organization"),
+        };
+      }
 
-    if (existingOrg?.id) {
+      if (existingOrg?.id) {
+        const membershipPayload = {
+          org_id: existingOrg.id,
+          user_id: user.id,
+          email: user.email ?? null,
+          full_name: user?.user_metadata?.full_name || profile?.name || null,
+          role: "owner",
+          status: "active",
+        };
+
+        const { error: membershipUpsertError } = await supabase
+          .from("org_members")
+          .upsert(membershipPayload, { onConflict: "org_id,user_id" });
+
+        if (membershipUpsertError) {
+          return {
+            orgId: null,
+            error: normalizeError(membershipUpsertError, "Failed linking organization membership"),
+          };
+        }
+
+        setOrgId(existingOrg.id);
+        setOrgProfile({
+          ...(existingOrg ?? {}),
+          company: existingOrg.name ?? companyName,
+          name: existingOrg.name ?? companyName,
+          supportEmail: existingOrg.support_email ?? user.email ?? "",
+        });
+
+        return { orgId: existingOrg.id };
+      }
+
+      const { data: createdOrg, error: orgError } = await supabase
+        .from("organizations")
+        .insert({
+          name: companyName,
+          owner_id: user.id,
+          support_email: user.email ?? null,
+          owner_email: user.email ?? null,
+          timezone: "America/New_York",
+        })
+        .select("*")
+        .single();
+
+      if (orgError || !createdOrg?.id) {
+        return { orgId: null, error: normalizeError(orgError, "Failed creating organization") };
+      }
+
       const membershipPayload = {
-        org_id: existingOrg.id,
+        org_id: createdOrg.id,
         user_id: user.id,
         email: user.email ?? null,
         full_name: user?.user_metadata?.full_name || profile?.name || null,
@@ -224,75 +292,27 @@ export default function SettingsPage() {
         };
       }
 
-      setOrgId(existingOrg.id);
+      setOrgId(createdOrg.id);
       setOrgProfile({
-        ...(existingOrg ?? {}),
-        company: existingOrg.name ?? companyName,
-        name: existingOrg.name ?? companyName,
-        supportEmail: existingOrg.support_email ?? user.email ?? "",
+        ...(createdOrg ?? {}),
+        company: createdOrg.name ?? companyName,
+        name: createdOrg.name ?? companyName,
+        supportEmail: createdOrg.support_email ?? user.email ?? "",
       });
 
-      return { orgId: existingOrg.id };
-    }
-
-    // 3. Only create a new org if absolutely none exists
-    const { data: createdOrg, error: orgError } = await supabase
-      .from("organizations")
-      .insert({
-        name: companyName,
-        owner_id: user.id,
-        support_email: user.email ?? null,
-        owner_email: user.email ?? null,
-        timezone: "America/New_York",
-      })
-      .select("*")
-      .single();
-
-    if (orgError || !createdOrg?.id) {
-      return { orgId: null, error: normalizeError(orgError, "Failed creating organization") };
-    }
-
-    const membershipPayload = {
-      org_id: createdOrg.id,
-      user_id: user.id,
-      email: user.email ?? null,
-      full_name: user?.user_metadata?.full_name || profile?.name || null,
-      role: "owner",
-      status: "active",
-    };
-
-    const { error: membershipUpsertError } = await supabase
-      .from("org_members")
-      .upsert(membershipPayload, { onConflict: "org_id,user_id" });
-
-    if (membershipUpsertError) {
-      return {
-        orgId: null,
-        error: normalizeError(membershipUpsertError, "Failed linking organization membership"),
-      };
-    }
-
-    setOrgId(createdOrg.id);
-    setOrgProfile({
-      ...(createdOrg ?? {}),
-      company: createdOrg.name ?? companyName,
-      name: createdOrg.name ?? companyName,
-      supportEmail: createdOrg.support_email ?? user.email ?? "",
-    });
-
-    return { orgId: createdOrg.id };
-  },
-  [
-    orgId,
-    user?.id,
-    user?.email,
-    user?.user_metadata,
-    profile?.company_name,
-    profile?.name,
-    orgProfile?.company,
-    orgProfile?.name,
-  ]
-);
+      return { orgId: createdOrg.id };
+    },
+    [
+      orgId,
+      user?.id,
+      user?.email,
+      user?.user_metadata,
+      profile?.company_name,
+      profile?.name,
+      orgProfile?.company,
+      orgProfile?.name,
+    ]
+  );
 
   const loadAll = useCallback(async () => {
     const uid = user?.id;
@@ -325,6 +345,7 @@ export default function SettingsPage() {
       .from("org_members")
       .select("org_id")
       .eq("user_id", uid)
+      .eq("status", "active")
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -437,20 +458,31 @@ export default function SettingsPage() {
 
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
-        .select("id, user_id, role, status, created_at, email, full_name")
+        .select("id, org_id, user_id, role, status, created_at, email, full_name")
         .eq("org_id", currentOrgId)
+        .eq("status", "active")
         .order("created_at", { ascending: false });
       if (membersError) console.error("[settings] org_members list", membersError);
-      setOrgMembers(membersData ?? []);
+      setOrgMembers(
+        (membersData ?? []).map((member: any) => ({
+          ...member,
+          role: normalizeOrgRole(member.role),
+        }))
+      );
 
       const { data: invitesData, error: invitesError } = await supabase
         .from("org_invites")
-        .select("id, email, role, status, created_at, expires_at")
+        .select("id, org_id, email, role, status, token, created_at, expires_at")
         .eq("org_id", currentOrgId)
         .eq("status", "pending")
         .order("created_at", { ascending: false });
       if (invitesError) console.error("[settings] org_invites", invitesError);
-      setOrgInvites(invitesData ?? []);
+      setOrgInvites(
+        (invitesData ?? []).map((invite: any) => ({
+          ...invite,
+          role: normalizeOrgRole(invite.role),
+        }))
+      );
     } else {
       setOrgProfile({
         id: null,
@@ -749,33 +781,68 @@ export default function SettingsPage() {
   };
 
   const onInviteMember = async (email: string, role: string): Promise<{ error?: string }> => {
+    if (!canManageMembers) {
+      return { error: "Only workspace admins can manage access." };
+    }
+
     const ensured = await ensureOrgContext();
     if (!ensured.orgId) {
       return { error: ensured.error ?? "No active organization is linked to this account yet" };
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedRole = normalizeOrgRole(role, "member");
+
+    if (!isValidEmail(normalizedEmail)) {
+      return { error: "Enter a valid email address." };
+    }
+
+    if (normalizedRole === "owner") {
+      return { error: "Owner assignment is not available from this screen." };
+    }
+
+    if (normalizedEmail === (user?.email ?? "").trim().toLowerCase()) {
+      return { error: "You are already part of this workspace." };
+    }
+
+    const existingMember = orgMembers.find(
+      (member) => (member.email ?? "").trim().toLowerCase() === normalizedEmail
+    );
+    if (existingMember) {
+      return { error: "That user is already an active member of this workspace." };
+    }
+
+    const existingInvite = orgInvites.find(
+      (invite) =>
+        (invite.email ?? "").trim().toLowerCase() === normalizedEmail && invite.status === "pending"
+    );
+    if (existingInvite) {
+      return { error: "A pending invite already exists for that email address." };
+    }
+
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { error } = await supabase.from("org_invites").insert({
-      org_id: ensured.orgId,
-      email: email.trim().toLowerCase(),
-      role,
-      token,
-      status: "pending",
-      expires_at: expiresAt,
-    });
+    const { data, error } = await supabase
+      .from("org_invites")
+      .insert({
+        org_id: ensured.orgId,
+        email: normalizedEmail,
+        role: normalizedRole,
+        token,
+        status: "pending",
+        invited_by_user_id: user?.id ?? null,
+        expires_at: expiresAt,
+      })
+      .select("id, org_id, email, role, status, token, created_at, expires_at")
+      .single();
 
     if (error) return { error: normalizeError(error, "Failed creating invite") };
 
     setOrgInvites((prev) => [
       {
-        id: token,
-        email: email.trim().toLowerCase(),
-        role,
-        status: "pending",
-        created_at: new Date().toISOString(),
-        expires_at: expiresAt,
+        ...data,
+        role: normalizeOrgRole(data?.role, normalizedRole),
       },
       ...prev,
     ]);
@@ -784,26 +851,102 @@ export default function SettingsPage() {
   };
 
   const onRevokeMember = async (memberId: string): Promise<{ error?: string }> => {
-    const { error } = await supabase.from("org_members").delete().eq("id", memberId);
-    if (error) return { error: normalizeError(error, "Failed revoking member") };
+    if (!canManageMembers) {
+      return { error: "Only workspace admins can manage access." };
+    }
 
-    setOrgMembers((prev) => prev.filter((m) => m.id !== memberId));
+    if (!orgId) {
+      return { error: "No active organization is linked to this account yet." };
+    }
+
+    const member = orgMembers.find((entry) => entry.id === memberId);
+    if (!member) {
+      return { error: "Member not found." };
+    }
+
+    if (member.user_id === user?.id) {
+      return { error: "You cannot remove your own access from this screen." };
+    }
+
+    const memberRole = normalizeOrgRole(member.role);
+
+    if (memberRole === "owner") {
+      return { error: "Owner removal is not available from this screen." };
+    }
+
+    const { error } = await supabase
+      .from("org_members")
+      .delete()
+      .eq("id", memberId)
+      .eq("org_id", orgId);
+
+    if (error) return { error: normalizeError(error, "Failed removing member") };
+
+    setOrgMembers((prev) => prev.filter((entry) => entry.id !== memberId));
     return {};
   };
 
   const onUpdateMemberRole = async (memberId: string, role: string): Promise<{ error?: string }> => {
-    const { error } = await supabase.from("org_members").update({ role }).eq("id", memberId);
+    if (!canManageMembers) {
+      return { error: "Only workspace admins can manage access." };
+    }
+
+    if (!orgId) {
+      return { error: "No active organization is linked to this account yet." };
+    }
+
+    const member = orgMembers.find((entry) => entry.id === memberId);
+    if (!member) {
+      return { error: "Member not found." };
+    }
+
+    if (member.user_id === user?.id) {
+      return { error: "You cannot change your own role from this screen." };
+    }
+
+    const nextRole = normalizeOrgRole(role, "member");
+    const currentRole = normalizeOrgRole(member.role);
+
+    if (currentRole === "owner" || nextRole === "owner") {
+      return { error: "Owner role changes are not available from this screen." };
+    }
+
+    if (currentRole === nextRole) {
+      return {};
+    }
+
+    const { error } = await supabase
+      .from("org_members")
+      .update({ role: nextRole })
+      .eq("id", memberId)
+      .eq("org_id", orgId);
+
     if (error) return { error: normalizeError(error, "Failed updating member role") };
 
-    setOrgMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role } : m)));
+    setOrgMembers((prev) =>
+      prev.map((entry) => (entry.id === memberId ? { ...entry, role: nextRole } : entry))
+    );
     return {};
   };
 
   const onRevokeInvite = async (inviteId: string): Promise<{ error?: string }> => {
-    const { error } = await supabase.from("org_invites").delete().eq("id", inviteId);
+    if (!canManageMembers) {
+      return { error: "Only workspace admins can manage access." };
+    }
+
+    if (!orgId) {
+      return { error: "No active organization is linked to this account yet." };
+    }
+
+    const { error } = await supabase
+      .from("org_invites")
+      .update({ status: "revoked" })
+      .eq("id", inviteId)
+      .eq("org_id", orgId);
+
     if (error) return { error: normalizeError(error, "Failed revoking invite") };
 
-    setOrgInvites((prev) => prev.filter((i) => i.id !== inviteId));
+    setOrgInvites((prev) => prev.filter((entry) => entry.id !== inviteId));
     return {};
   };
 
