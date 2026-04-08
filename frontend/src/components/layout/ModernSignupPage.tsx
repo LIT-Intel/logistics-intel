@@ -160,7 +160,7 @@ export default function Signup() {
   async function handleGoogleSignup() {
     try {
       setErr("");
-      await loginWithGoogle();
+      await loginWithGoogle(postAuthInviteUrl);
       navigate(postAuthInviteUrl, { replace: true });
     } catch (e) {
       setErr(e?.message || "Google sign-in failed");
@@ -170,7 +170,7 @@ export default function Signup() {
   async function handleMicrosoftSignup() {
     try {
       setErr("");
-      await loginWithMicrosoft();
+      await loginWithMicrosoft(postAuthInviteUrl);
       navigate(postAuthInviteUrl, { replace: true });
     } catch (e) {
       setErr(e?.message || "Microsoft sign-in failed");
