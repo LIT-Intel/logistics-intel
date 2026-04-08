@@ -124,6 +124,7 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
+        <Route path="/invite" element={<Navigate to="/accept-invite" replace />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 
