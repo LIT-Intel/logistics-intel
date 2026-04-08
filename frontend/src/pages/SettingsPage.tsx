@@ -921,32 +921,6 @@ export default function SettingsPage() {
 
   return {};
 };
-    const { error: sendInviteError } = await supabase.functions.invoke("send-org-invite", {
-      body: {
-        inviteId: savedInvite.id,
-      },
-    });
-
-    setOrgInvites((prev) => {
-      const nextInvite = {
-        ...savedInvite,
-        role: normalizeOrgRole(savedInvite?.role, normalizedRole),
-      };
-
-      const filtered = prev.filter((entry) => entry.id !== savedInvite.id);
-      return [nextInvite, ...filtered];
-    });
-
-    if (sendInviteError) {
-      console.error("[settings] send-org-invite", sendInviteError);
-      return {
-        error:
-          "Invite was created, but the email failed to send. Check your Edge Function logs and Resend configuration.",
-      };
-    }
-
-    return {};
-  };
 
   const onRevokeMember = async (memberId: string): Promise<{ error?: string }> => {
     if (!canManageMembers) {
