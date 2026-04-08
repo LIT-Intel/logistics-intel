@@ -463,6 +463,35 @@ export default function SettingsPage() {
     void loadAll();
   }, [loadAll]);
 
+  const onSaveProfile = async (
+  data: Record<string, unknown>
+): Promise<{ error?: string }> => {
+  const uid = user?.id;
+  if (!uid) return { error: "Not authenticated" };
+
+  const updates: Record<string, unknown> = {};
+  if (data.name !== undefined) updates.full_name = toStringOrNull(data.name);
+  if (data.title !== undefined) updates.title = toStringOrNull(data.title);
+  if (data.phone !== undefined) updates.phone = toStringOrNull(data.phone);
+  if (data.location !== undefined) updates.location = toStringOrNull(data.location);
+  if (data.bio !== undefined) updates.bio = toStringOrNull(data.bio);
+
+  const { error } = await supabase
+    .from("user_profiles")
+    .upsert(updates, { onConflict: "user_id" });
+
+  if (error) return { error: normalizeError(error, "Failed saving profile") };
+
+  if (data.name) {
+    await updateProfile({ full_name: String(data.name) }).catch((e) =>
+      console.warn("[settings] updateProfile metadata failed", e)
+    );
+  }
+
+  await loadAll();
+  return {};
+};
+
   const onSaveOrgProfile = async (
   data: Record<string, unknown>
 ): Promise<{ error?: string }> => {
@@ -474,6 +503,10 @@ export default function SettingsPage() {
   }
 
   const updates: Record<string, unknown> = {};
+  const uid = user?.id;
+  if (!uid) return { error: "Not authenticated" };
+    updates.owner_id = uid;
+    
   if (data.company !== undefined) updates.name = toStringOrNull(data.company);
   if (data.tagline !== undefined) updates.tagline = toStringOrNull(data.tagline);
   if (data.website !== undefined) updates.website = toStringOrNull(data.website);
