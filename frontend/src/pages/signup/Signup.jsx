@@ -1,3 +1,4 @@
+console.log('Rendering LoginPage from src/pages/WhateverFile.tsx')
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
