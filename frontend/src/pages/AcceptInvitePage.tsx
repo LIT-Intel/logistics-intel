@@ -12,8 +12,8 @@ export default function AcceptInvitePage() {
 
   useEffect(() => {
     const run = async () => {
-      const token = searchParams.get("token");
-      const email = (searchParams.get("email") || "").trim().toLowerCase();
+      const token = String(searchParams.get("token") || "").trim();
+      const email = String(searchParams.get("email") || "").trim().toLowerCase();
 
       if (!token) {
         navigate("/login", { replace: true });
@@ -28,74 +28,22 @@ export default function AcceptInvitePage() {
         return;
       }
 
-      const currentEmail = (user.email || "").trim().toLowerCase();
+      setMessage("Accepting invite...");
 
-      const { data: invite, error: inviteError } = await supabase
-        .from("org_invites")
-        .select("id, org_id, email, role, status, expires_at, token")
-        .eq("token", token)
-        .maybeSingle();
+      const { data, error } = await supabase.functions.invoke("accept-workspace-invite", {
+        body: {
+          token,
+          email,
+        },
+      });
 
-      if (inviteError || !invite) {
-        setMessage("Invite not found or no longer valid.");
+      if (error) {
+        setMessage(error.message || "Failed to accept invite.");
         return;
       }
 
-      if (invite.status !== "pending") {
-        setMessage("This invite has already been used.");
-        setTimeout(() => navigate("/app/dashboard", { replace: true }), 1200);
-        return;
-      }
-
-      if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
-        setMessage("This invite has expired.");
-        return;
-      }
-
-      const inviteEmail = (invite.email || "").trim().toLowerCase();
-
-      if (inviteEmail && currentEmail && inviteEmail !== currentEmail) {
-        setMessage("This invite belongs to a different email address.");
-        return;
-      }
-
-      const { data: existingMember, error: existingMemberError } = await supabase
-        .from("org_members")
-        .select("id")
-        .eq("org_id", invite.org_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (existingMemberError) {
-        setMessage(existingMemberError.message || "Failed checking workspace membership.");
-        return;
-      }
-
-      if (!existingMember?.id) {
-        const { error: memberInsertError } = await supabase.from("org_members").insert({
-          org_id: invite.org_id,
-          user_id: user.id,
-          email: user.email ?? invite.email,
-          role: invite.role,
-          status: "active",
-        });
-
-        if (memberInsertError) {
-          setMessage(memberInsertError.message || "Failed adding you to the workspace.");
-          return;
-        }
-      }
-
-      const { error: inviteUpdateError } = await supabase
-        .from("org_invites")
-        .update({
-          status: "accepted",
-          accepted_at: new Date().toISOString(),
-        })
-        .eq("id", invite.id);
-
-      if (inviteUpdateError) {
-        setMessage(inviteUpdateError.message || "Joined workspace, but failed updating invite.");
+      if (data?.error) {
+        setMessage(String(data.error));
         return;
       }
 
