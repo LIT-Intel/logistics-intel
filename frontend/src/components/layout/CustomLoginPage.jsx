@@ -1,79 +1,120 @@
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Zap,
-  Activity,
-  Radar,
-  Workflow,
-  CheckCircle2,
-  Globe,
+  ArrowRight,
+  Building2,
+  CircleDot,
+  Globe2,
+  MapPinned,
+  MessageSquareText,
   Search,
-  BarChart3,
-  BellRing,
-  Target,
+  Sparkles,
+  TrendingUp,
+  Users2,
+  Workflow,
+  X,
 } from "lucide-react";
 import { SignIn } from "@clerk/clerk-react";
 
-const PulsePreview = () => {
+const ProspectingPreview = () => {
+  const prompt =
+    "I'm looking for supply chain or logistics professionals at companies generating $500M+ in revenue.";
+
+  const results = [
+    {
+      name: "Melissa Carter",
+      title: "VP, Global Supply Chain",
+      company: "Avery Industrial Group",
+      meta: "$1.2B revenue • Atlanta, GA",
+      signal: "Import activity up 18%",
+    },
+    {
+      name: "Daniel Kim",
+      title: "Director of Logistics",
+      company: "NorthBridge Consumer Products",
+      meta: "$860M revenue • Chicago, IL",
+      signal: "New lane expansion detected",
+    },
+    {
+      name: "Priya Shah",
+      title: "Head of Transportation",
+      company: "Westlake Foods",
+      meta: "$2.4B revenue • Dallas, TX",
+      signal: "Shipment volume spike in Q2",
+    },
+  ];
+
   return (
-    <div className="relative w-full max-w-2xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_25px_80px_rgba(15,23,42,0.10)]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.10),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.08),transparent_30%)]" />
+    <div className="relative w-full max-w-2xl overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.10)]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.10),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.08),transparent_28%)]" />
 
       <div className="relative border-b border-slate-200 bg-slate-950 px-6 py-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-500/30">
-              <Radar className="h-5 w-5 text-white" />
+              <img
+                src="/pulse-icon-master.svg"
+                alt="Pulse"
+                className="h-5 w-5 object-contain"
+              />
             </div>
             <div>
-              <div className="text-sm font-black uppercase tracking-[0.18em] text-indigo-300">
+              <div className="text-[11px] font-black uppercase tracking-[0.22em] text-indigo-300">
                 Pulse
               </div>
               <div className="text-sm font-semibold text-white">
-                Live freight intelligence monitoring
+                AI prospecting for logistics teams
               </div>
             </div>
           </div>
 
           <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300">
-            Live Sync
+            Live search
           </div>
         </div>
       </div>
 
       <div className="relative p-6">
+        <div className="mb-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4 shadow-inner">
+          <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+            <MessageSquareText className="h-3.5 w-3.5 text-indigo-600" />
+            Prompt
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm font-medium leading-6 text-slate-700 shadow-sm">
+            {prompt}
+          </div>
+        </div>
+
         <div className="mb-5 grid gap-3 sm:grid-cols-3">
           {[
             {
-              label: "Signals Tracked",
-              value: "12,482",
-              icon: Activity,
-              tone: "from-indigo-500/12 to-indigo-500/4 text-indigo-600 border-indigo-200",
+              label: "Matched contacts",
+              value: "148",
+              icon: Users2,
             },
             {
-              label: "Companies Watched",
-              value: "3,204",
-              icon: Target,
-              tone: "from-sky-500/12 to-sky-500/4 text-sky-600 border-sky-200",
+              label: "Qualified accounts",
+              value: "39",
+              icon: Building2,
             },
             {
-              label: "Alert Accuracy",
-              value: "94.2%",
-              icon: BellRing,
-              tone: "from-emerald-500/12 to-emerald-500/4 text-emerald-600 border-emerald-200",
+              label: "Active buying signals",
+              value: "17",
+              icon: TrendingUp,
             },
           ].map((item) => {
             const Icon = item.icon;
             return (
               <div
                 key={item.label}
-                className={`rounded-2xl border bg-gradient-to-br ${item.tone} p-4`}
+                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
               >
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
                     {item.label}
                   </span>
-                  <div className="rounded-xl bg-white/80 p-2">
+                  <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600">
                     <Icon className="h-4 w-4" />
                   </div>
                 </div>
@@ -85,115 +126,101 @@ const PulsePreview = () => {
           })}
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1.2fr,0.8fr]">
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-[0.18em] text-slate-900">
-                  Pulse Activity
-                </h3>
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  Recent signal movement across watched shippers
-                </p>
+        <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                Prospect results
               </div>
-              <div className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 shadow-sm">
-                Last 7 Days
+              <div className="mt-1 text-sm font-medium text-slate-600">
+                Contacts surfaced from supply chain intelligence
               </div>
             </div>
 
-            <div className="flex h-48 items-end gap-2 rounded-2xl bg-white px-4 pb-4 pt-6 shadow-inner">
-              {[42, 58, 48, 76, 62, 88, 72, 94, 68, 84, 73, 97].map((h, i) => (
-                <div key={i} className="flex flex-1 flex-col items-center justify-end gap-2">
-                  <div
-                    className={`w-full rounded-t-xl ${
-                      i === 11
-                        ? "bg-gradient-to-t from-indigo-600 to-sky-400"
-                        : i > 7
-                        ? "bg-gradient-to-t from-slate-800 to-slate-500"
-                        : "bg-gradient-to-t from-slate-300 to-slate-200"
-                    }`}
-                    style={{ height: `${h}%` }}
-                  />
-                </div>
-              ))}
+            <div className="hidden rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 sm:block">
+              ZoomInfo-style view
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="rounded-2xl bg-indigo-100 p-2.5 text-indigo-600">
-                  <Search className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-black uppercase tracking-[0.18em] text-slate-900">
-                    Live Watchlist
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    Monitored accounts with active change signals
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {[
-                  ["Tesla", "Import volume +18.4%", "Upward momentum"],
-                  ["Rivian", "New routing activity", "Lane shift detected"],
-                  ["Porsche", "Shipment pattern spike", "Pulse alert fired"],
-                ].map(([name, metric, note]) => (
-                  <div
-                    key={name}
-                    className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
-                  >
-                    <div>
-                      <div className="text-sm font-bold text-slate-900">{name}</div>
-                      <div className="text-xs font-medium text-slate-500">{metric}</div>
+          <div className="space-y-3">
+            {results.map((item) => (
+              <div
+                key={`${item.name}-${item.company}`}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-indigo-200 hover:bg-white"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-slate-900">
+                      {item.name}
                     </div>
-                    <div className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-indigo-600">
-                      {note}
+                    <div className="mt-0.5 text-sm font-medium text-slate-600">
+                      {item.title}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-500">
+                      {item.company}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 font-medium">
+                        <Building2 className="h-3.5 w-3.5" />
+                        {item.meta}
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 p-5 text-white shadow-sm">
-              <div className="mb-3 flex items-center gap-3">
-                <div className="rounded-2xl bg-white/10 p-2.5 text-sky-300">
-                  <Workflow className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-black uppercase tracking-[0.18em]">
-                    From signal to action
-                  </div>
-                  <div className="text-sm text-slate-300">
-                    Search, monitor, save, and launch outreach from one workspace
+                  <div className="shrink-0 rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-indigo-700">
+                    {item.signal}
                   </div>
                 </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-black uppercase tracking-[0.14em]">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  Search
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  Pulse
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  Outreach
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          {[
+            {
+              icon: Search,
+              title: "Search",
+              text: "Target the right accounts",
+            },
+            {
+              icon: Globe2,
+              title: "Signals",
+              text: "Spot shipment movement",
+            },
+            {
+              icon: Workflow,
+              title: "Act",
+              text: "Move faster on outreach",
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+              >
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm">
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-900">
+                  {item.title}
+                </div>
+                <div className="mt-1 text-sm text-slate-500">{item.text}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 };
 
-export default function ModernLoginPage() {
-  const nav = useNavigate();
+export default function CustomLoginPage({ onClose }) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
   const inviteToken = (searchParams.get("token") || "").trim();
   const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
@@ -213,24 +240,37 @@ export default function ModernLoginPage() {
 
   return (
     <div className="flex min-h-screen bg-white font-sans text-slate-900">
-      <div className="flex w-full flex-col lg:w-1/2">
-        <div className="p-8">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-200">
-              <Zap className="h-6 w-6 text-white fill-current" />
-            </div>
-            <span className="text-xl font-black tracking-tight text-slate-900">
-              Logistic<span className="text-indigo-600">Intel</span>
-            </span>
+      <div className="flex w-full flex-col lg:w-[48%]">
+        <div className="flex items-center justify-between p-6 sm:p-8">
+          <div className="inline-flex items-center rounded-2xl bg-slate-950 px-4 py-3 shadow-lg shadow-slate-200">
+            <img
+              src="/lit-logo-horizontal.svg"
+              alt="Logistic Intel"
+              className="h-7 w-auto object-contain"
+            />
           </div>
+
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center px-8 sm:px-12 lg:px-24">
+        <div className="flex flex-1 items-center justify-center px-8 pb-10 pt-4 sm:px-12 lg:px-20">
           <div className="w-full max-w-md space-y-8">
             <div className="text-center lg:text-left">
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
-                <Radar className="h-3.5 w-3.5" />
-                Pulse Intelligence Active
+                <img
+                  src="/pulse-icon-master.svg"
+                  alt="Pulse"
+                  className="h-3.5 w-3.5 object-contain"
+                />
+                Pulse intelligence active
               </div>
 
               <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
@@ -238,105 +278,77 @@ export default function ModernLoginPage() {
               </h1>
 
               <p className="mt-4 text-lg font-medium leading-relaxed text-slate-500">
-                Track freight signals, monitor shipper movement, and act faster with
-                Pulse, CRM, and live market intelligence in one workspace.
+                Find logistics buyers, track shipper movement, and turn supply
+                chain signals into pipeline.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                {
-                  icon: Radar,
-                  title: "Pulse",
-                  text: "Live shipper monitoring",
-                },
-                {
-                  icon: BarChart3,
-                  title: "Intel",
-                  text: "BOL-based shipment visibility",
-                },
-                {
-                  icon: Workflow,
-                  title: "Outreach",
-                  text: "CRM and campaign workflow",
-                },
-              ].map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div
-                    key={item.title}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                  >
-                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="text-sm font-black uppercase tracking-[0.14em] text-slate-900">
-                      {item.title}
-                    </div>
-                    <div className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
-                      {item.text}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
             <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-              <SignIn
-                routing="path"
-                path="/login"
-                signUpUrl={signupPath}
-                forceRedirectUrl={forceRedirectUrl}
-                appearance={{
-                  elements: {
-                    rootBox: "w-full",
-                    card: "shadow-none border-0 bg-transparent",
-                    header: "hidden",
-                    headerTitle: "hidden",
-                    headerSubtitle: "hidden",
-                    socialButtonsBlockButton:
-                      "rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:shadow-md",
-                    socialButtonsBlockButtonText: "font-bold",
-                    dividerLine: "bg-slate-200",
-                    dividerText:
-                      "text-slate-400 font-black uppercase tracking-widest text-xs",
-                    formButtonPrimary:
-                      "relative w-full overflow-hidden rounded-2xl bg-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700",
-                    formFieldInput:
-                      "w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100",
-                    formFieldLabel:
-                      "text-xs font-black uppercase tracking-widest text-slate-500",
-                    footerActionLink: "font-bold text-indigo-600 underline",
-                    identityPreviewText: "text-slate-700 font-bold",
-                    alertText: "text-sm",
-                    formResendCodeLink: "font-bold text-indigo-600 underline",
-                    otpCodeFieldInput:
-                      "rounded-2xl border border-slate-200 bg-slate-50 text-slate-900 font-bold",
-                  },
-                  variables: {
-                    colorPrimary: "#4f46e5",
-                    colorText: "#0f172a",
-                    colorTextSecondary: "#64748b",
-                    colorBackground: "#ffffff",
-                    colorInputBackground: "#f8fafc",
-                    colorInputText: "#0f172a",
-                    borderRadius: "1rem",
-                  },
-                }}
-              />
+              {clerkPubKey ? (
+                <SignIn
+                  routing="path"
+                  path="/login"
+                  signUpUrl={signupPath}
+                  forceRedirectUrl={forceRedirectUrl}
+                  appearance={{
+                    elements: {
+                      rootBox: "w-full",
+                      card: "shadow-none border-0 bg-transparent",
+                      header: "hidden",
+                      headerTitle: "hidden",
+                      headerSubtitle: "hidden",
+                      socialButtonsBlockButton:
+                        "rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:shadow-md",
+                      socialButtonsBlockButtonText: "font-bold",
+                      dividerLine: "bg-slate-200",
+                      dividerText:
+                        "text-slate-400 font-black uppercase tracking-widest text-xs",
+                      formButtonPrimary:
+                        "relative w-full overflow-hidden rounded-2xl bg-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700",
+                      formFieldInput:
+                        "w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100",
+                      formFieldLabel:
+                        "text-xs font-black uppercase tracking-widest text-slate-500",
+                      footerActionLink: "font-bold text-indigo-600 underline",
+                      identityPreviewText: "text-slate-700 font-bold",
+                      alertText: "text-sm",
+                      formResendCodeLink: "font-bold text-indigo-600 underline",
+                      otpCodeFieldInput:
+                        "rounded-2xl border border-slate-200 bg-slate-50 text-slate-900 font-bold",
+                    },
+                    variables: {
+                      colorPrimary: "#4f46e5",
+                      colorText: "#0f172a",
+                      colorTextSecondary: "#64748b",
+                      colorBackground: "#ffffff",
+                      colorInputBackground: "#f8fafc",
+                      colorInputText: "#0f172a",
+                      borderRadius: "1rem",
+                    },
+                  }}
+                />
+              ) : (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-700">
+                  Clerk is not configured yet. Add{" "}
+                  <span className="font-bold">VITE_CLERK_PUBLISHABLE_KEY</span> in
+                  Vercel to enable the new login flow.
+                </div>
+              )}
             </div>
 
-            <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
-              <div>
-                <div className="text-sm font-black uppercase tracking-[0.16em] text-slate-900">
-                  Built for revenue teams in logistics
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+                  <CircleDot className="h-4 w-4" />
                 </div>
-                <div className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
-                  Search live shipper intelligence, save targets to CRM, and turn
-                  market movement into outreach opportunities faster.
+                <div>
+                  <div className="text-sm font-black uppercase tracking-[0.16em] text-slate-900">
+                    Built for freight and supply chain professionals
+                  </div>
+                  <div className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                    Monitor accounts, surface the right contacts, and move from
+                    intelligence to outreach without leaving the workspace.
+                  </div>
                 </div>
               </div>
             </div>
@@ -344,101 +356,79 @@ export default function ModernLoginPage() {
             <p className="text-center text-xs font-medium text-slate-400">
               New to Logistic Intel?{" "}
               <button
-                onClick={() => nav(signupPath)}
+                onClick={() => navigate(signupPath)}
                 className="font-bold text-indigo-600 underline"
               >
                 Start your free trial
               </button>
             </p>
-
-            <p className="text-center text-xs font-medium text-slate-400">
-              By signing in, you agree to our Terms of Service and Privacy Policy.
-            </p>
           </div>
-        </div>
-
-        <div className="p-8 flex flex-wrap gap-x-8 gap-y-4 justify-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
-          <span>© {new Date().getFullYear()} Logistic Intel LLC</span>
-          <a href="/security" className="hover:text-indigo-500 transition-colors">
-            Security
-          </a>
-          <a href="/status" className="hover:text-indigo-500 transition-colors">
-            Status
-          </a>
-          <a href="/help" className="hover:text-indigo-500 transition-colors">
-            Help Center
-          </a>
         </div>
       </div>
 
-      <div className="hidden w-1/2 lg:flex flex-col relative overflow-hidden bg-slate-50 border-l border-slate-100">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(99,102,241,0.12)_0%,transparent_50%)]" />
-        <div className="absolute top-0 right-0 p-12 opacity-5">
-          <Globe className="h-96 w-96 text-indigo-600" />
+      <div className="hidden w-[52%] lg:flex flex-col relative overflow-hidden bg-slate-50 border-l border-slate-100">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(99,102,241,0.12)_0%,transparent_46%)]" />
+        <div className="absolute top-10 right-10 opacity-[0.06]">
+          <MapPinned className="h-72 w-72 text-indigo-600" />
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center p-12 relative z-10">
-          <div className="mb-12 w-full transform transition-transform duration-500 hover:scale-[1.01]">
+        <div className="flex-1 flex flex-col items-center justify-center px-10 py-12 relative z-10">
+          <div className="mb-10 w-full max-w-2xl">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 shadow-sm">
+              <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+              Prospect faster with Pulse
+            </div>
+
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">
+              Search like a logistics seller.
+            </h2>
+
+            <p className="mt-3 max-w-xl text-base leading-relaxed text-slate-500">
+              Use natural language to surface qualified supply chain contacts,
+              shipment signals, and account movement from one intelligence layer.
+            </p>
+          </div>
+
+          <div className="w-full flex justify-center">
             <PulsePreview />
           </div>
 
-          <div className="w-full max-w-xl space-y-8">
-            <div className="flex gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
-                <Radar className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  Pulse Monitoring
-                </h4>
-                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
-                  Watch real shipment and trade movement across target accounts with
-                  live alerting built for logistics sales teams.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600">
-                <BarChart3 className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  Market Intelligence
-                </h4>
-                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
-                  Turn BOL-backed shipment data into clear buying signals, route
-                  trends, and commercial timing opportunities.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                <Workflow className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  CRM + Outreach
-                </h4>
-                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
-                  Save companies, organize workflows, and launch campaigns from the
-                  same intelligence workspace without switching tools.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-12 bg-white border-t border-slate-100">
-          <p className="mb-6 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-            Trusted by revenue and operations teams
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6 opacity-30 grayscale hover:grayscale-0 transition-all">
-            <span className="text-xl font-black italic tracking-tighter">snowflake</span>
-            <span className="text-xl font-black tracking-tighter">Adobe</span>
-            <span className="text-xl font-black italic tracking-tighter">Gartner</span>
-            <span className="text-xl font-black tracking-tighter">ZOOM</span>
+          <div className="mt-10 grid w-full max-w-2xl gap-4 md:grid-cols-3">
+            {[
+              {
+                icon: Search,
+                title: "Prospecting",
+                text: "Describe the account profile you want and get qualified contacts fast.",
+              },
+              {
+                icon: TrendingUp,
+                title: "Signals",
+                text: "See shipment changes, lane movement, and buying triggers in context.",
+              },
+              {
+                icon: Workflow,
+                title: "Action",
+                text: "Save to CRM and move directly into outreach without tool switching.",
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.title}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                >
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-900">
+                    {item.title}
+                  </div>
+                  <div className="mt-2 text-sm leading-relaxed text-slate-500">
+                    {item.text}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
