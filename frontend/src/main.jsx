@@ -24,31 +24,34 @@ if (typeof window !== "undefined") {
 }
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-
-if (!clerkPubKey) {
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");
-}
-
 const queryClient = new QueryClient();
+
+const appTree = (
+  <BrowserRouter>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </AuthProvider>
+  </BrowserRouter>
+);
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <ClerkProvider
-        publishableKey={clerkPubKey}
-        signInUrl="/login"
-        signUpUrl="/signup"
-        afterSignInUrl="/app/dashboard"
-        afterSignUpUrl="/app/dashboard"
-      >
-        <BrowserRouter>
-          <AuthProvider>
-            <QueryClientProvider client={queryClient}>
-              <App />
-            </QueryClientProvider>
-          </AuthProvider>
-        </BrowserRouter>
-      </ClerkProvider>
+      {clerkPubKey ? (
+        <ClerkProvider
+          publishableKey={clerkPubKey}
+          signInUrl="/login"
+          signUpUrl="/signup"
+          afterSignInUrl="/app/dashboard"
+          afterSignUpUrl="/app/dashboard"
+        >
+          {appTree}
+        </ClerkProvider>
+      ) : (
+        appTree
+      )}
     </ErrorBoundary>
   </React.StrictMode>
 );
