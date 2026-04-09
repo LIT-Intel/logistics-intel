@@ -30,31 +30,11 @@ export default function AcceptInvitePage() {
         return;
       }
 
-      if (!user) {
+      if (!user?.id) {
         const signupParams = new URLSearchParams();
         signupParams.set("token", token);
         if (email) signupParams.set("email", email);
         navigate(`/signup?${signupParams.toString()}`, { replace: true });
-        return;
-      }
-
-      setMessage("Preparing your session...");
-
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        setMessage(sessionError.message || "Failed loading session.");
-        return;
-      }
-
-      if (!session) {
-        setMessage("Waiting for session...");
-        retryTimerRef.current = window.setTimeout(() => {
-          void acceptInvite();
-        }, 500);
         return;
       }
 
@@ -67,6 +47,7 @@ export default function AcceptInvitePage() {
           body: {
             token,
             email,
+            userId: user.id,
           },
         }
       );
@@ -93,7 +74,9 @@ export default function AcceptInvitePage() {
       }, 700);
     };
 
-    void acceptInvite();
+    retryTimerRef.current = window.setTimeout(() => {
+      void acceptInvite();
+    }, 300);
 
     return () => {
       isCancelled = true;
