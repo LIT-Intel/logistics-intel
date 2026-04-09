@@ -12,7 +12,7 @@ import {
   BellRing,
   Target,
 } from "lucide-react";
-import { SignIn } from "@clerk/react";
+import { SignIn } from "@clerk/clerk-react";
 
 const PulsePreview = () => {
   return (
