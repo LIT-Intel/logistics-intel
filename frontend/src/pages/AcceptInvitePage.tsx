@@ -38,40 +38,83 @@ export default function AcceptInvitePage() {
         return;
       }
 
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        setMessage(sessionError.message || "Failed loading session.");
+        return;
+      }
+
+      if (!session?.access_token) {
+        setMessage("Waiting for authenticated session...");
+        retryTimerRef.current = window.setTimeout(() => {
+          void acceptInvite();
+        }, 500);
+        return;
+      }
+
       hasStartedRef.current = true;
-      setMessage("Accepting invite v2...");
+      setMessage("Accepting invite v3...");
 
-      const { data, error } = await supabase.functions.invoke(
-        "accept-workspace-invite",
-        {
-          body: {
-            token,
-            email,
-            userId: user.id,
-          },
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseAnonKey) {
+          throw new Error("Supabase environment variables are missing.");
         }
-      );
 
-      if (isCancelled) return;
+        const response = await fetch(
+          `${supabaseUrl}/functions/v1/accept-workspace-invite`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: supabaseAnonKey,
+            },
+            body: JSON.stringify({
+              token,
+              email,
+              userId: user.id,
+            }),
+          }
+        );
 
-      if (error) {
-        hasStartedRef.current = false;
-        setMessage(error.message || "Failed accepting invite.");
-        return;
-      }
+        const result = await response.json().catch(() => ({}));
 
-      if (!data?.ok) {
-        hasStartedRef.current = false;
-        setMessage(data?.error || "Failed accepting invite.");
-        return;
-      }
+        if (isCancelled) return;
 
-      setMessage("Invite accepted. Redirecting...");
-      window.setTimeout(() => {
-        if (!isCancelled) {
-          navigate("/app/dashboard", { replace: true });
+        if (!response.ok) {
+          hasStartedRef.current = false;
+          setMessage(
+            result?.error ||
+              `Invite acceptance failed with status ${response.status}.`
+          );
+          return;
         }
-      }, 700);
+
+        if (!result?.ok) {
+          hasStartedRef.current = false;
+          setMessage(result?.error || "Failed accepting invite.");
+          return;
+        }
+
+        setMessage("Invite accepted. Redirecting...");
+        window.setTimeout(() => {
+          if (!isCancelled) {
+            navigate("/app/dashboard", { replace: true });
+          }
+        }, 700);
+      } catch (error) {
+        hasStartedRef.current = false;
+        setMessage(
+          error instanceof Error ? error.message : "Failed accepting invite."
+        );
+      }
     };
 
     retryTimerRef.current = window.setTimeout(() => {
