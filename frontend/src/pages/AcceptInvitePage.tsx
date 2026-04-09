@@ -39,7 +39,7 @@ export default function AcceptInvitePage() {
       }
 
       hasStartedRef.current = true;
-      setMessage("Accepting invite...");
+      setMessage("Accepting invite v2...");
 
       const { data, error } = await supabase.functions.invoke(
         "accept-workspace-invite",
