@@ -1,3 +1,6 @@
+<div style={{ background: 'blue', color: 'white', padding: 20, fontSize: 32 }}>
+  SIGNUP FILE TEST MARKER
+</div>
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
