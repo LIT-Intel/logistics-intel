@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
@@ -8,26 +8,25 @@ export default function AcceptInvitePage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
 
+  const hasStartedRef = useRef(false);
+  const retryTimerRef = useRef<number | null>(null);
+
   const [message, setMessage] = useState("Checking invite...");
-  const [hasRun, setHasRun] = useState(false);
 
   useEffect(() => {
-    if (hasRun) return;
+    let isCancelled = false;
 
-    let cancelled = false;
-    let retryTimer: number | null = null;
+    const acceptInvite = async () => {
+      if (hasStartedRef.current) return;
 
-    const run = async () => {
       const token = (searchParams.get("token") || "").trim();
       const email = (searchParams.get("email") || "").trim().toLowerCase();
 
       if (!token) {
-        if (!cancelled) {
-          setMessage("Invite token is missing.");
-          window.setTimeout(() => {
-            if (!cancelled) navigate("/login", { replace: true });
-          }, 1200);
-        }
+        setMessage("Invite token is missing.");
+        window.setTimeout(() => {
+          if (!isCancelled) navigate("/login", { replace: true });
+        }, 1200);
         return;
       }
 
@@ -39,28 +38,28 @@ export default function AcceptInvitePage() {
         return;
       }
 
-      if (!cancelled) {
-        setMessage("Preparing your session...");
-      }
+      setMessage("Preparing your session...");
 
       const {
         data: { session },
+        error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (!session) {
-        if (!cancelled) {
-          setMessage("Waiting for session...");
-          retryTimer = window.setTimeout(() => {
-            void run();
-          }, 500);
-        }
+      if (sessionError) {
+        setMessage(sessionError.message || "Failed loading session.");
         return;
       }
 
-      if (!cancelled) {
-        setHasRun(true);
-        setMessage("Accepting invite...");
+      if (!session) {
+        setMessage("Waiting for session...");
+        retryTimerRef.current = window.setTimeout(() => {
+          void acceptInvite();
+        }, 500);
+        return;
       }
+
+      hasStartedRef.current = true;
+      setMessage("Accepting invite...");
 
       const { data, error } = await supabase.functions.invoke(
         "accept-workspace-invite",
@@ -72,37 +71,37 @@ export default function AcceptInvitePage() {
         }
       );
 
-      if (cancelled) return;
+      if (isCancelled) return;
 
       if (error) {
-        setHasRun(false);
+        hasStartedRef.current = false;
         setMessage(error.message || "Failed accepting invite.");
         return;
       }
 
       if (!data?.ok) {
-        setHasRun(false);
+        hasStartedRef.current = false;
         setMessage(data?.error || "Failed accepting invite.");
         return;
       }
 
       setMessage("Invite accepted. Redirecting...");
       window.setTimeout(() => {
-        if (!cancelled) {
+        if (!isCancelled) {
           navigate("/app/dashboard", { replace: true });
         }
       }, 700);
     };
 
-    void run();
+    void acceptInvite();
 
     return () => {
-      cancelled = true;
-      if (retryTimer) {
-        window.clearTimeout(retryTimer);
+      isCancelled = true;
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
       }
     };
-  }, [hasRun, navigate, searchParams, user]);
+  }, [navigate, searchParams, user]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6">
