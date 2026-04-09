@@ -9,14 +9,18 @@ export default function AcceptInvitePage() {
   const { user } = useAuth();
 
   const [message, setMessage] = useState("Checking invite...");
+  const [hasRun, setHasRun] = useState(false);
 
   useEffect(() => {
+    if (hasRun) return;
+
     const run = async () => {
-      const token = String(searchParams.get("token") || "").trim();
-      const email = String(searchParams.get("email") || "").trim().toLowerCase();
+      const token = (searchParams.get("token") || "").trim();
+      const email = (searchParams.get("email") || "").trim().toLowerCase();
 
       if (!token) {
-        navigate("/login", { replace: true });
+        setMessage("Invite token is missing.");
+        setTimeout(() => navigate("/login", { replace: true }), 1200);
         return;
       }
 
@@ -28,31 +32,37 @@ export default function AcceptInvitePage() {
         return;
       }
 
+      setHasRun(true);
       setMessage("Accepting invite...");
 
-      const { data, error } = await supabase.functions.invoke("accept-workspace-invite", {
-        body: {
-          token,
-          email,
-        },
-      });
+      const { data, error } = await supabase.functions.invoke(
+        "accept-workspace-invite",
+        {
+          body: {
+            token,
+            email,
+          },
+        }
+      );
 
       if (error) {
-        setMessage(error.message || "Failed to accept invite.");
+        setMessage(error.message || "Failed accepting invite.");
         return;
       }
 
-      if (data?.error) {
-        setMessage(String(data.error));
+      if (!data?.ok) {
+        setMessage(data?.error || "Failed accepting invite.");
         return;
       }
 
       setMessage("Invite accepted. Redirecting...");
-      setTimeout(() => navigate("/app/dashboard", { replace: true }), 700);
+      setTimeout(() => {
+        navigate("/app/dashboard", { replace: true });
+      }, 700);
     };
 
     void run();
-  }, [navigate, searchParams, user]);
+  }, [hasRun, navigate, searchParams, user]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6">
