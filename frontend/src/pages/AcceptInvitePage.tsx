@@ -14,13 +14,20 @@ export default function AcceptInvitePage() {
   useEffect(() => {
     if (hasRun) return;
 
+    let cancelled = false;
+    let retryTimer: number | null = null;
+
     const run = async () => {
       const token = (searchParams.get("token") || "").trim();
       const email = (searchParams.get("email") || "").trim().toLowerCase();
 
       if (!token) {
-        setMessage("Invite token is missing.");
-        setTimeout(() => navigate("/login", { replace: true }), 1200);
+        if (!cancelled) {
+          setMessage("Invite token is missing.");
+          window.setTimeout(() => {
+            if (!cancelled) navigate("/login", { replace: true });
+          }, 1200);
+        }
         return;
       }
 
@@ -32,8 +39,28 @@ export default function AcceptInvitePage() {
         return;
       }
 
-      setHasRun(true);
-      setMessage("Accepting invite...");
+      if (!cancelled) {
+        setMessage("Preparing your session...");
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        if (!cancelled) {
+          setMessage("Waiting for session...");
+          retryTimer = window.setTimeout(() => {
+            void run();
+          }, 500);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setHasRun(true);
+        setMessage("Accepting invite...");
+      }
 
       const { data, error } = await supabase.functions.invoke(
         "accept-workspace-invite",
@@ -45,23 +72,36 @@ export default function AcceptInvitePage() {
         }
       );
 
+      if (cancelled) return;
+
       if (error) {
+        setHasRun(false);
         setMessage(error.message || "Failed accepting invite.");
         return;
       }
 
       if (!data?.ok) {
+        setHasRun(false);
         setMessage(data?.error || "Failed accepting invite.");
         return;
       }
 
       setMessage("Invite accepted. Redirecting...");
-      setTimeout(() => {
-        navigate("/app/dashboard", { replace: true });
+      window.setTimeout(() => {
+        if (!cancelled) {
+          navigate("/app/dashboard", { replace: true });
+        }
       }, 700);
     };
 
     void run();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) {
+        window.clearTimeout(retryTimer);
+      }
+    };
   }, [hasRun, navigate, searchParams, user]);
 
   return (
