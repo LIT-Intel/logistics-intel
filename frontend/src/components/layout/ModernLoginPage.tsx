@@ -1,276 +1,446 @@
-import React, { useState } from "react";
+import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/auth/AuthProvider";
-import { User, Lock, Eye, EyeOff } from "lucide-react";
+import {
+  Zap,
+  Activity,
+  Radar,
+  Workflow,
+  ChevronRight,
+  CheckCircle2,
+  Globe,
+  Search,
+  BarChart3,
+  BellRing,
+  Target,
+} from "lucide-react";
+import { SignIn } from "@clerk/clerk-react";
+
+const PulsePreview = () => {
+  return (
+    <div className="relative w-full max-w-2xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_25px_80px_rgba(15,23,42,0.10)]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.10),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.08),transparent_30%)]" />
+
+      <div className="relative border-b border-slate-200 bg-slate-950 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-500/30">
+              <Radar className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <div className="text-sm font-black uppercase tracking-[0.18em] text-indigo-300">
+                Pulse
+              </div>
+              <div className="text-sm font-semibold text-white">
+                Live freight intelligence monitoring
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300">
+            Live Sync
+          </div>
+        </div>
+      </div>
+
+      <div className="relative p-6">
+        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          {[
+            {
+              label: "Signals Tracked",
+              value: "12,482",
+              icon: Activity,
+              tone: "from-indigo-500/12 to-indigo-500/4 text-indigo-600 border-indigo-200",
+            },
+            {
+              label: "Companies Watched",
+              value: "3,204",
+              icon: Target,
+              tone: "from-sky-500/12 to-sky-500/4 text-sky-600 border-sky-200",
+            },
+            {
+              label: "Alert Accuracy",
+              value: "94.2%",
+              icon: BellRing,
+              tone: "from-emerald-500/12 to-emerald-500/4 text-emerald-600 border-emerald-200",
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.label}
+                className={`rounded-2xl border bg-gradient-to-br ${item.tone} p-4`}
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                    {item.label}
+                  </span>
+                  <div className="rounded-xl bg-white/80 p-2">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black tracking-tight text-slate-900">
+                  {item.value}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1.2fr,0.8fr]">
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-[0.18em] text-slate-900">
+                  Pulse Activity
+                </h3>
+                <p className="mt-1 text-sm font-medium text-slate-500">
+                  Recent signal movement across watched shippers
+                </p>
+              </div>
+              <div className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 shadow-sm">
+                Last 7 Days
+              </div>
+            </div>
+
+            <div className="flex h-48 items-end gap-2 rounded-2xl bg-white px-4 pb-4 pt-6 shadow-inner">
+              {[42, 58, 48, 76, 62, 88, 72, 94, 68, 84, 73, 97].map((h, i) => (
+                <div key={i} className="flex flex-1 flex-col items-center justify-end gap-2">
+                  <div
+                    className={`w-full rounded-t-xl ${
+                      i === 11
+                        ? "bg-gradient-to-t from-indigo-600 to-sky-400"
+                        : i > 7
+                        ? "bg-gradient-to-t from-slate-800 to-slate-500"
+                        : "bg-gradient-to-t from-slate-300 to-slate-200"
+                    }`}
+                    style={{ height: `${h}%` }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="rounded-2xl bg-indigo-100 p-2.5 text-indigo-600">
+                  <Search className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-black uppercase tracking-[0.18em] text-slate-900">
+                    Live Watchlist
+                  </div>
+                  <div className="text-sm text-slate-500">
+                    Monitored accounts with active change signals
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  ["Tesla", "Import volume +18.4%", "Upward momentum"],
+                  ["Rivian", "New routing activity", "Lane shift detected"],
+                  ["Porsche", "Shipment pattern spike", "Pulse alert fired"],
+                ].map(([name, metric, note]) => (
+                  <div
+                    key={name}
+                    className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                  >
+                    <div>
+                      <div className="text-sm font-bold text-slate-900">{name}</div>
+                      <div className="text-xs font-medium text-slate-500">{metric}</div>
+                    </div>
+                    <div className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-indigo-600">
+                      {note}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 p-5 text-white shadow-sm">
+              <div className="mb-3 flex items-center gap-3">
+                <div className="rounded-2xl bg-white/10 p-2.5 text-sky-300">
+                  <Workflow className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-black uppercase tracking-[0.18em]">
+                    From signal to action
+                  </div>
+                  <div className="text-sm text-slate-300">
+                    Search, monitor, save, and launch outreach from one workspace
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-black uppercase tracking-[0.14em]">
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                  Search
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                  Pulse
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                  Outreach
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function ModernLoginPage() {
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
-  const { signInWithGoogle, signInWithMicrosoft, signInWithEmailPassword } = useAuth();
-  const [err, setErr] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
-  const [loading, setLoading] = useState(false);
+
   const inviteToken = (searchParams.get("token") || "").trim();
   const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
   const nextParam = (searchParams.get("next") || "").trim();
-  const postAuthPath = inviteToken
-    ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
-        inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
-      }`
-    : nextParam || "/app/dashboard";
+
   const signupPath = inviteToken
     ? `/signup?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
     : "/signup";
 
-  async function handleEmailPassword(e: React.FormEvent) {
-    e?.preventDefault?.();
-    try {
-      setErr("");
-      setLoading(true);
-      await signInWithEmailPassword(email, password);
-      nav(postAuthPath, { replace: true });
-    } catch (e: any) {
-      setErr(e?.message || "Sign-in failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleGoogle() {
-    try {
-      setErr("");
-      await signInWithGoogle(postAuthPath);
-      nav(postAuthPath, { replace: true });
-    } catch (e: any) {
-      setErr(e?.message || "Google sign-in failed");
-    }
-  }
-
-  async function handleMicrosoft() {
-    try {
-      setErr("");
-      await signInWithMicrosoft(postAuthPath);
-      nav(postAuthPath, { replace: true });
-    } catch (e: any) {
-      setErr(e?.message || "Microsoft sign-in failed");
-    }
-  }
+  const forceRedirectUrl = inviteToken
+    ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
+        inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
+      }`
+    : nextParam || "/app/dashboard";
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#1a1f3a] via-[#0f1729] to-[#0a0e1f] flex items-center justify-center px-4 py-12">
-      {/* Background Effects */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
+    <div className="flex min-h-screen bg-white font-sans text-slate-900">
+      <div className="flex w-full flex-col lg:w-1/2">
+        <div className="p-8">
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-200">
+              <Zap className="h-6 w-6 text-white fill-current" />
+            </div>
+            <span className="text-xl font-black tracking-tight text-slate-900">
+              Logistic<span className="text-indigo-600">Intel</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-center px-8 sm:px-12 lg:px-24">
+          <div className="w-full max-w-md space-y-8">
+            <div className="text-center lg:text-left">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
+                <Radar className="h-3.5 w-3.5" />
+                Pulse Intelligence Active
+              </div>
+
+              <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
+                Welcome back.
+              </h1>
+
+              <p className="mt-4 text-lg font-medium leading-relaxed text-slate-500">
+                Track freight signals, monitor shipper movement, and act faster with
+                Pulse, CRM, and live market intelligence in one workspace.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                {
+                  icon: Radar,
+                  title: "Pulse",
+                  text: "Live shipper monitoring",
+                },
+                {
+                  icon: BarChart3,
+                  title: "Intel",
+                  text: "BOL-based shipment visibility",
+                },
+                {
+                  icon: Workflow,
+                  title: "Outreach",
+                  text: "CRM and campaign workflow",
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.title}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="text-sm font-black uppercase tracking-[0.14em] text-slate-900">
+                      {item.title}
+                    </div>
+                    <div className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                      {item.text}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+              <SignIn
+                routing="path"
+                path="/login"
+                signUpUrl={signupPath}
+                forceRedirectUrl={forceRedirectUrl}
+                appearance={{
+                  elements: {
+                    rootBox: "w-full",
+                    card: "shadow-none border-0 bg-transparent",
+                    header: "hidden",
+                    headerTitle: "hidden",
+                    headerSubtitle: "hidden",
+                    socialButtonsBlockButton:
+                      "rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:shadow-md",
+                    socialButtonsBlockButtonText: "font-bold",
+                    dividerLine: "bg-slate-200",
+                    dividerText:
+                      "text-slate-400 font-black uppercase tracking-widest text-xs",
+                    formButtonPrimary:
+                      "relative w-full overflow-hidden rounded-2xl bg-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700",
+                    formFieldInput:
+                      "w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100",
+                    formFieldLabel:
+                      "text-xs font-black uppercase tracking-widest text-slate-500",
+                    footerActionLink: "font-bold text-indigo-600 underline",
+                    identityPreviewText: "text-slate-700 font-bold",
+                    alertText: "text-sm",
+                    formResendCodeLink: "font-bold text-indigo-600 underline",
+                    otpCodeFieldInput:
+                      "rounded-2xl border border-slate-200 bg-slate-50 text-slate-900 font-bold",
+                  },
+                  variables: {
+                    colorPrimary: "#4f46e5",
+                    colorText: "#0f172a",
+                    colorTextSecondary: "#64748b",
+                    colorBackground: "#ffffff",
+                    colorInputBackground: "#f8fafc",
+                    colorInputText: "#0f172a",
+                    borderRadius: "1rem",
+                  },
+                }}
+              />
+            </div>
+
+            <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+                <CheckCircle2 className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-sm font-black uppercase tracking-[0.16em] text-slate-900">
+                  Built for revenue teams in logistics
+                </div>
+                <div className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                  Search live shipper intelligence, save targets to CRM, and turn
+                  market movement into outreach opportunities faster.
+                </div>
+              </div>
+            </div>
+
+            <p className="text-center text-xs font-medium text-slate-400">
+              New to Logistic Intel?{" "}
+              <button
+                onClick={() => nav(signupPath)}
+                className="font-bold text-indigo-600 underline"
+              >
+                Start your free trial
+              </button>
+            </p>
+
+            <p className="text-center text-xs font-medium text-slate-400">
+              By signing in, you agree to our Terms of Service and Privacy Policy.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-8 flex flex-wrap gap-x-8 gap-y-4 justify-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
+          <span>© {new Date().getFullYear()} Logistic Intel LLC</span>
+          <a href="/security" className="hover:text-indigo-500 transition-colors">
+            Security
+          </a>
+          <a href="/status" className="hover:text-indigo-500 transition-colors">
+            Status
+          </a>
+          <a href="/help" className="hover:text-indigo-500 transition-colors">
+            Help Center
+          </a>
+        </div>
       </div>
 
-      {/* Login Container */}
-      <div className="relative z-10 w-full max-w-5xl">
-        {/* Banner */}
-        <div className="mb-8 rounded-2xl bg-gradient-to-r from-slate-800/90 to-slate-900/90 border border-slate-700/50 backdrop-blur-xl p-6 shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-xl">LI</span>
-                </div>
-                <div>
-                  <h2 className="text-white font-semibold text-lg">Looking for freight data?</h2>
-                  <p className="text-slate-300 text-sm">Logistics Intel has 3.2M+ companies with real shipment intelligence</p>
-                </div>
+      <div className="hidden w-1/2 lg:flex flex-col relative overflow-hidden bg-slate-50 border-l border-slate-100">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(99,102,241,0.12)_0%,transparent_50%)]" />
+        <div className="absolute top-0 right-0 p-12 opacity-5">
+          <Globe className="h-96 w-96 text-indigo-600" />
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-12 relative z-10">
+          <div className="mb-12 w-full transform transition-transform duration-500 hover:scale-[1.01]">
+            <PulsePreview />
+          </div>
+
+          <div className="w-full max-w-xl space-y-8">
+            <div className="flex gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                <Radar className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
+                  Pulse Monitoring
+                </h4>
+                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
+                  Watch real shipment and trade movement across target accounts with
+                  live alerting built for logistics sales teams.
+                </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              className="border-white/20 text-white hover:bg-white/10"
-              onClick={() => nav(signupPath)}
-            >
-              Learn more
-            </Button>
+
+            <div className="flex gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
+                  Market Intelligence
+                </h4>
+                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
+                  Turn BOL-backed shipment data into clear buying signals, route
+                  trends, and commercial timing opportunities.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                <Workflow className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
+                  CRM + Outreach
+                </h4>
+                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
+                  Save companies, organize workflows, and launch campaigns from the
+                  same intelligence workspace without switching tools.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Trial Banner */}
-        <div className="mb-4 rounded-xl bg-white/5 border border-white/10 backdrop-blur-xl p-3 text-center shadow-lg">
-          <p className="text-white text-sm flex items-center justify-center gap-2">
-            <span className="text-cyan-400">✨</span>
-            New to Logistics Intel?{" "}
-            <button
-              className="font-semibold text-cyan-400 hover:text-cyan-300 underline"
-              onClick={() => nav(signupPath)}
-            >
-              Start your free trial, now!
-            </button>
+        <div className="p-12 bg-white border-t border-slate-100">
+          <p className="mb-6 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+            Trusted by revenue and operations teams
           </p>
-        </div>
-
-        {/* Login Form */}
-        <div className="rounded-2xl bg-white shadow-2xl overflow-hidden">
-          <div className="p-12">
-            <h1 className="text-4xl font-bold text-slate-900 text-center mb-12">Log In</h1>
-
-            <div className="grid md:grid-cols-[1fr,auto,1fr] gap-8 items-start">
-              {/* Email/Password Login */}
-              <div className="space-y-6">
-                {err && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                    {err}
-                  </div>
-                )}
-
-                <form onSubmit={handleEmailPassword} className="space-y-5">
-                  {/* Username/Email Field */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                      Username <span className="text-slate-400 text-xs">(email)</span>
-                    </label>
-                    <div className="relative">
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@company.com"
-                        className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  {/* Password Field */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full pl-12 pr-12 py-3 rounded-xl border-2 border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                      >
-                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Remember Me & Forgot Password */}
-                  <div className="flex items-center justify-between text-sm">
-                    <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500/20"
-                      />
-                      Remember me
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => nav("/reset-password")}
-                      className="text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-
-                  {/* Submit Button */}
-                  <Button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-semibold py-3 rounded-xl shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {loading ? "Signing in..." : "Log In"}
-                  </Button>
-                </form>
-
-                {/* Sign Up Link */}
-                <div className="text-center text-sm text-slate-600 pt-4">
-                  Don't have an account?{" "}
-                  <button
-                    onClick={() => nav(signupPath)}
-                    className="font-semibold text-blue-600 hover:text-blue-700"
-                  >
-                    Sign Up
-                  </button>
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="hidden md:flex items-center justify-center">
-                <div className="h-full w-px bg-gradient-to-b from-transparent via-slate-200 to-transparent" />
-                <div className="absolute bg-white px-3 py-1.5 rounded-full border border-slate-200 text-xs font-medium text-slate-500">
-                  or
-                </div>
-              </div>
-
-              {/* OAuth Options */}
-              <div className="space-y-4">
-                <p className="text-sm font-medium text-slate-500 text-center mb-6">Continue with</p>
-
-                {/* SSO Button */}
-                <Button
-                  variant="outline"
-                  onClick={handleMicrosoft}
-                  className="w-full justify-start gap-3 py-6 border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 rounded-xl transition-all group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                    <span className="text-blue-600 font-bold text-sm">SSO</span>
-                  </div>
-                  <span className="text-slate-700 font-medium">Single Sign-On (SSO)</span>
-                </Button>
-
-                {/* Google Button */}
-                <Button
-                  variant="outline"
-                  onClick={handleGoogle}
-                  className="w-full justify-start gap-3 py-6 border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 rounded-xl transition-all group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center group-hover:border-blue-300 transition-colors">
-                    <img
-                      src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-                      alt="Google"
-                      className="w-5 h-5"
-                    />
-                  </div>
-                  <span className="text-slate-700 font-medium">Google</span>
-                </Button>
-
-                {/* Office 365 Button */}
-                <Button
-                  variant="outline"
-                  onClick={handleMicrosoft}
-                  className="w-full justify-start gap-3 py-6 border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 rounded-xl transition-all group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center group-hover:border-blue-300 transition-colors">
-                    <img
-                      src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg"
-                      alt="Microsoft"
-                      className="w-5 h-5"
-                    />
-                  </div>
-                  <span className="text-slate-700 font-medium">Office 365</span>
-                </Button>
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6 opacity-30 grayscale hover:grayscale-0 transition-all">
+            <span className="text-xl font-black italic tracking-tighter">snowflake</span>
+            <span className="text-xl font-black tracking-tighter">Adobe</span>
+            <span className="text-xl font-black italic tracking-tighter">Gartner</span>
+            <span className="text-xl font-black tracking-tighter">ZOOM</span>
           </div>
-        </div>
-
-        {/* Footer Note */}
-        <div className="mt-6 text-center text-sm text-slate-400">
-          By signing in, you agree to our Terms of Service and Privacy Policy
         </div>
       </div>
     </div>
