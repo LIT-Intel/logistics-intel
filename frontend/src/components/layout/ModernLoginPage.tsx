@@ -5,7 +5,6 @@ import {
   Activity,
   Radar,
   Workflow,
-  ChevronRight,
   CheckCircle2,
   Globe,
   Search,
