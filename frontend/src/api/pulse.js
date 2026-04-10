@@ -1,10 +1,14 @@
 import { supabase } from '@/lib/supabase';
 
-function ensureArray(value) {
+function toArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeContact(contact, fallbackIndex = 0) {
+function clean(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeContact(contact, index = 0) {
   return {
     id:
       contact?.id ||
@@ -13,52 +17,65 @@ function normalizeContact(contact, fallbackIndex = 0) {
       contact?.linkedin_url ||
       contact?.full_name ||
       contact?.name ||
-      `contact-${fallbackIndex}`,
-    full_name: contact?.full_name || contact?.name || '',
-    name: contact?.name || contact?.full_name || '',
-    title: contact?.title || contact?.job_title || '',
-    department: contact?.department || contact?.job_department || '',
-    email: contact?.email || '',
-    phone: contact?.phone || '',
-    linkedin_url: contact?.linkedin_url || contact?.linkedin_profile || '',
+      `contact-${index}`,
+    full_name: clean(contact?.full_name || contact?.name),
+    name: clean(contact?.name || contact?.full_name),
+    title: clean(contact?.title || contact?.job_title),
+    department: clean(contact?.department || contact?.job_department || contact?.dept),
+    email: clean(contact?.email),
+    phone: clean(contact?.phone),
+    linkedin_url: clean(contact?.linkedin_url || contact?.linkedin_profile || contact?.linkedin),
     enriched: Boolean(contact?.email || contact?.phone),
   };
 }
 
 function normalizeCompanyResult(item, index = 0) {
+  const contacts = toArray(item?.contacts).map(normalizeContact);
+
   return {
     id: item?.id || item?.business_id || item?.domain || item?.name || `company-${index}`,
     type: 'company',
     business_id: item?.business_id || item?.id || '',
-    name: item?.name || 'Unknown Company',
-    domain: item?.domain || '',
-    website: item?.website || '',
-    linkedin_url: item?.linkedin_url || item?.linkedin_profile || '',
-    city: item?.city || item?.city_name || '',
-    state: item?.state || item?.region || '',
-    country: item?.country || item?.country_name || '',
+    name: clean(item?.name) || 'Unknown Company',
+    domain: clean(item?.domain),
+    website: clean(item?.website),
+    linkedin_url: clean(item?.linkedin_url || item?.linkedin_profile),
+    city: clean(item?.city || item?.city_name),
+    state: clean(item?.state || item?.region),
+    country: clean(item?.country || item?.country_name),
     industry:
-      item?.industry ||
-      item?.google_category ||
-      item?.linkedin_category ||
-      item?.naics_description ||
-      '',
+      clean(
+        item?.industry ||
+          item?.google_category ||
+          item?.linkedin_category ||
+          item?.naics_description
+      ) || '—',
     employee_count:
       item?.employee_count ||
       item?.number_of_employees_range ||
       item?.company_size ||
-      '',
+      '—',
     annual_revenue:
       item?.annual_revenue ||
       item?.yearly_revenue_range ||
-      '',
-    summary: item?.summary || item?.business_description || '',
+      '—',
+    summary: clean(item?.summary || item?.business_description),
+    shipments_12m:
+      typeof item?.shipments_12m === 'number'
+        ? item.shipments_12m
+        : typeof item?.shipment_count === 'number'
+          ? item.shipment_count
+          : null,
+    teu_12m:
+      typeof item?.teu_12m === 'number'
+        ? item.teu_12m
+        : null,
+    mode: clean(item?.mode) || '—',
+    last_shipment: clean(item?.last_shipment || item?.most_recent_shipment_date),
+    status: clean(item?.status) || 'Prospect',
     contacts_count:
-      typeof item?.contacts_count === 'number'
-        ? item.contacts_count
-        : ensureArray(item?.contacts).length,
-    contacts: ensureArray(item?.contacts).map(normalizeContact),
-    signals: item?.signals || {},
+      typeof item?.contacts_count === 'number' ? item.contacts_count : contacts.length,
+    contacts,
   };
 }
 
@@ -67,48 +84,52 @@ function normalizePeopleResult(item, index = 0) {
     id: item?.id || item?.prospect_id || item?.email || item?.full_name || `person-${index}`,
     type: 'person',
     prospect_id: item?.prospect_id || item?.id || '',
-    full_name: item?.full_name || item?.name || '',
-    title: item?.title || item?.job_title || '',
-    department: item?.department || item?.job_department || '',
-    seniority: item?.seniority || item?.job_level || '',
-    email: item?.email || '',
-    phone: item?.phone || '',
-    linkedin_url: item?.linkedin_url || item?.linkedin_profile || '',
+    full_name: clean(item?.full_name || item?.name),
+    title: clean(item?.title || item?.job_title),
+    department: clean(item?.department || item?.job_department),
+    seniority: clean(item?.seniority || item?.job_level),
+    email: clean(item?.email),
+    phone: clean(item?.phone),
+    linkedin_url: clean(item?.linkedin_url || item?.linkedin_profile),
     enriched: Boolean(item?.email || item?.phone),
     company: {
       id: item?.company?.id || item?.business_id || '',
       business_id: item?.company?.business_id || item?.business_id || '',
-      name: item?.company?.name || item?.business_name || item?.company_name || '',
-      domain: item?.company?.domain || item?.company_domain || item?.domain || '',
-      website: item?.company?.website || item?.company_website || '',
-      city: item?.company?.city || item?.company_city || item?.city_name || '',
-      state: item?.company?.state || item?.company_region || item?.region || '',
-      country: item?.company?.country || item?.company_country || item?.country_name || '',
-      industry:
-        item?.company?.industry ||
-        item?.company_industry ||
-        item?.naics_description ||
-        '',
+      name: clean(item?.company?.name || item?.business_name || item?.company_name),
+      domain: clean(item?.company?.domain || item?.company_domain || item?.domain),
+      website: clean(item?.company?.website || item?.company_website),
+      city: clean(item?.company?.city || item?.company_city || item?.city_name),
+      state: clean(item?.company?.state || item?.company_region || item?.region),
+      country: clean(item?.company?.country || item?.company_country || item?.country_name),
+      industry: clean(
+        item?.company?.industry || item?.company_industry || item?.naics_description
+      ),
       employee_count:
-        item?.company?.employee_count ||
-        item?.number_of_employees_range ||
-        '',
+        item?.company?.employee_count || item?.number_of_employees_range || '—',
       annual_revenue:
-        item?.company?.annual_revenue ||
-        item?.yearly_revenue_range ||
-        '',
+        item?.company?.annual_revenue || item?.yearly_revenue_range || '—',
+      shipments_12m:
+        typeof item?.company?.shipments_12m === 'number'
+          ? item.company.shipments_12m
+          : null,
+      teu_12m:
+        typeof item?.company?.teu_12m === 'number'
+          ? item.company.teu_12m
+          : null,
+      last_shipment: clean(item?.company?.last_shipment || item?.most_recent_shipment_date),
+      status: clean(item?.company?.status) || 'Prospect',
     },
   };
 }
 
-function normalizeResultsByMode(mode, rawResults) {
-  const results = ensureArray(rawResults);
+function normalizeResults(mode, rawResults) {
+  const rows = toArray(rawResults);
 
   if (mode === 'people') {
-    return results.map(normalizePeopleResult);
+    return rows.map(normalizePeopleResult);
   }
 
-  return results.map(normalizeCompanyResult);
+  return rows.map(normalizeCompanyResult);
 }
 
 export async function searchPulse(payload = {}) {
@@ -123,21 +144,25 @@ export async function searchPulse(payload = {}) {
 
   const raw = data ?? {};
   const mode = raw?.mode || 'companies';
-  const normalizedResults = normalizeResultsByMode(mode === 'hybrid_people_over_company' ? 'companies' : mode, raw?.data?.results);
+  const normalizedResults = normalizeResults(mode, raw?.data?.results);
 
   return {
     ok: raw?.ok ?? true,
     mode,
     query: raw?.query || payload?.query || '',
     meta: {
-      total: raw?.meta?.total ?? normalizedResults.length,
+      total:
+        typeof raw?.meta?.total === 'number'
+          ? raw.meta.total
+          : normalizedResults.length,
       page: raw?.meta?.page ?? 1,
       pageSize: raw?.meta?.pageSize ?? normalizedResults.length,
+      requestedLimit: raw?.meta?.requestedLimit ?? null,
       estimatedMarketSize: raw?.meta?.estimatedMarketSize ?? null,
       provider: raw?.meta?.provider ?? 'explorium',
       partial: Boolean(raw?.meta?.partial),
-      warnings: ensureArray(raw?.meta?.warnings),
-      classificationReasons: ensureArray(raw?.meta?.classificationReasons),
+      warnings: toArray(raw?.meta?.warnings),
+      classificationReasons: toArray(raw?.meta?.classificationReasons),
     },
     data: {
       results: normalizedResults,
