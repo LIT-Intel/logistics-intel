@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Zap,
@@ -12,7 +12,12 @@ import {
   BellRing,
   Target,
 } from "lucide-react";
-import { SignIn } from "@clerk/react";
+import {
+  loginWithGoogle,
+  loginWithMicrosoft,
+  loginWithEmailPassword,
+} from "@/auth/supabaseAuthClient";
+import { useAuth } from "@/auth/AuthProvider";
 
 const PulsePreview = () => {
   return (
@@ -194,6 +199,7 @@ const PulsePreview = () => {
 export default function ModernLoginPage() {
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth?.() || { user: null };
 
   const inviteToken = (searchParams.get("token") || "").trim();
   const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
@@ -205,11 +211,65 @@ export default function ModernLoginPage() {
       }`
     : "/signup";
 
-  const forceRedirectUrl = inviteToken
+  const loginRedirectPath = inviteToken
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
-    : nextParam || "/app/dashboard";
+    : nextParam || "/search";
+
+  const [err, setErr] = useState("");
+  const [email, setEmail] = useState(inviteEmail);
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const welcomeName = useMemo(() => {
+    const nameFromUser = user?.displayName || user?.email?.split("@")[0];
+    try {
+      const cached = JSON.parse(localStorage.getItem("lit:user") || "null");
+      const cachedName = cached?.name || cached?.displayName || cached?.email?.split("@")[0];
+      return nameFromUser || cachedName || null;
+    } catch {
+      return nameFromUser || null;
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user?.id) {
+      nav(loginRedirectPath, { replace: true });
+    }
+  }, [user?.id, loginRedirectPath, nav]);
+
+  async function handleGoogle() {
+    try {
+      setErr("");
+      await loginWithGoogle(loginRedirectPath);
+    } catch (e) {
+      setErr(e?.message || "Google sign-in failed");
+    }
+  }
+
+  async function handleMicrosoft() {
+    try {
+      setErr("");
+      await loginWithMicrosoft(loginRedirectPath);
+    } catch (e) {
+      setErr(e?.message || "Microsoft sign-in failed");
+    }
+  }
+
+  async function handleEmailPassword(e) {
+    e?.preventDefault?.();
+    try {
+      setErr("");
+      setLoading(true);
+      await loginWithEmailPassword(email, password);
+      nav(loginRedirectPath, { replace: true });
+    } catch (e) {
+      setErr(e?.message || "Sign-in failed");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-white font-sans text-slate-900">
@@ -234,7 +294,7 @@ export default function ModernLoginPage() {
               </div>
 
               <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
-                Welcome back.
+                {welcomeName ? `Welcome back, ${welcomeName}.` : "Welcome back."}
               </h1>
 
               <p className="mt-4 text-lg font-medium leading-relaxed text-slate-500">
@@ -245,21 +305,9 @@ export default function ModernLoginPage() {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {[
-                {
-                  icon: Radar,
-                  title: "Pulse",
-                  text: "Live shipper monitoring",
-                },
-                {
-                  icon: BarChart3,
-                  title: "Intel",
-                  text: "BOL-based shipment visibility",
-                },
-                {
-                  icon: Workflow,
-                  title: "Outreach",
-                  text: "CRM and campaign workflow",
-                },
+                { icon: Radar, title: "Pulse", text: "Live shipper monitoring" },
+                { icon: BarChart3, title: "Intel", text: "BOL-based shipment visibility" },
+                { icon: Workflow, title: "Outreach", text: "CRM and campaign workflow" },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
@@ -281,49 +329,88 @@ export default function ModernLoginPage() {
               })}
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
-              <SignIn
-                routing="path"
-                path="/login"
-                signUpUrl={signupPath}
-                forceRedirectUrl={forceRedirectUrl}
-                appearance={{
-                  elements: {
-                    rootBox: "w-full",
-                    card: "shadow-none border-0 bg-transparent",
-                    header: "hidden",
-                    headerTitle: "hidden",
-                    headerSubtitle: "hidden",
-                    socialButtonsBlockButton:
-                      "rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:shadow-md",
-                    socialButtonsBlockButtonText: "font-bold",
-                    dividerLine: "bg-slate-200",
-                    dividerText:
-                      "text-slate-400 font-black uppercase tracking-widest text-xs",
-                    formButtonPrimary:
-                      "relative w-full overflow-hidden rounded-2xl bg-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700",
-                    formFieldInput:
-                      "w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100",
-                    formFieldLabel:
-                      "text-xs font-black uppercase tracking-widest text-slate-500",
-                    footerActionLink: "font-bold text-indigo-600 underline",
-                    identityPreviewText: "text-slate-700 font-bold",
-                    alertText: "text-sm",
-                    formResendCodeLink: "font-bold text-indigo-600 underline",
-                    otpCodeFieldInput:
-                      "rounded-2xl border border-slate-200 bg-slate-50 text-slate-900 font-bold",
-                  },
-                  variables: {
-                    colorPrimary: "#4f46e5",
-                    colorText: "#0f172a",
-                    colorTextSecondary: "#64748b",
-                    colorBackground: "#ffffff",
-                    colorInputBackground: "#f8fafc",
-                    colorInputText: "#0f172a",
-                    borderRadius: "1rem",
-                  },
-                }}
-              />
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+              {err && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {err}
+                </div>
+              )}
+
+              <form onSubmit={handleEmailPassword} className="grid grid-cols-1 gap-4">
+                <label className="space-y-2 text-sm font-medium text-slate-600">
+                  <span>Work email</span>
+                  <input
+                    type="email"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm focus:border-[#3C4EF5] focus:outline-none focus:ring-2 focus:ring-[#3C4EF5]/30"
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm font-medium text-slate-600">
+                  <span>Password</span>
+                  <input
+                    type="password"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm focus:border-[#3C4EF5] focus:outline-none focus:ring-2 focus:ring-[#3C4EF5]/30"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-[#3C4EF5] focus:ring-[#3C4EF5]" />
+                    Remember this device
+                  </label>
+                  <button
+                    type="button"
+                    className="font-medium text-[#3C4EF5] hover:underline"
+                    onClick={() => nav("/reset-password")}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#3C4EF5] via-[#4F46E5] to-[#22D3EE] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-[#3C4EF5]/30 transition focus:outline-none focus:ring-2 focus:ring-[#22D3EE] focus:ring-offset-2 focus:ring-offset-white disabled:opacity-70"
+                >
+                  {loading ? "Signing in…" : "Sign in"}
+                </button>
+              </form>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center gap-3 text-xs uppercase tracking-[0.3em] text-slate-400">
+                  <span className="h-px flex-1 bg-slate-200" />
+                  <span>or continue with</span>
+                  <span className="h-px flex-1 bg-slate-200" />
+                </div>
+
+                <div className="grid gap-3">
+                  <button
+                    onClick={handleGoogle}
+                    type="button"
+                    className="group inline-flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3 text-sm font-medium text-slate-600 hover:border-slate-300"
+                  >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="h-4 w-4" />
+                    <span className="group-hover:text-slate-700">Continue with Google</span>
+                  </button>
+
+                  <button
+                    onClick={handleMicrosoft}
+                    type="button"
+                    className="group inline-flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3 text-sm font-medium text-slate-600 hover:border-slate-300"
+                  >
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" alt="Microsoft" className="h-4 w-4" />
+                    <span className="group-hover:text-slate-700">Continue with Microsoft</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4">
@@ -359,15 +446,9 @@ export default function ModernLoginPage() {
 
         <div className="p-8 flex flex-wrap gap-x-8 gap-y-4 justify-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
           <span>© {new Date().getFullYear()} Logistic Intel LLC</span>
-          <a href="/security" className="hover:text-indigo-500 transition-colors">
-            Security
-          </a>
-          <a href="/status" className="hover:text-indigo-500 transition-colors">
-            Status
-          </a>
-          <a href="/help" className="hover:text-indigo-500 transition-colors">
-            Help Center
-          </a>
+          <a href="/security" className="hover:text-indigo-500 transition-colors">Security</a>
+          <a href="/status" className="hover:text-indigo-500 transition-colors">Status</a>
+          <a href="/help" className="hover:text-indigo-500 transition-colors">Help Center</a>
         </div>
       </div>
 
@@ -388,9 +469,7 @@ export default function ModernLoginPage() {
                 <Radar className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  Pulse Monitoring
-                </h4>
+                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">Pulse Monitoring</h4>
                 <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
                   Watch real shipment and trade movement across target accounts with
                   live alerting built for logistics sales teams.
@@ -403,9 +482,7 @@ export default function ModernLoginPage() {
                 <BarChart3 className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  Market Intelligence
-                </h4>
+                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">Market Intelligence</h4>
                 <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
                   Turn BOL-backed shipment data into clear buying signals, route
                   trends, and commercial timing opportunities.
@@ -418,9 +495,7 @@ export default function ModernLoginPage() {
                 <Workflow className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  CRM + Outreach
-                </h4>
+                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">CRM + Outreach</h4>
                 <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
                   Save companies, organize workflows, and launch campaigns from the
                   same intelligence workspace without switching tools.
