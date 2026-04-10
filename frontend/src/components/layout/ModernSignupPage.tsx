@@ -15,6 +15,7 @@ import {
   loginWithMicrosoft,
   registerWithEmailPassword,
 } from "@/auth/supabaseAuthClient";
+import { useAuth } from "@/auth/AuthProvider";
 
 const AnimatedPreview = () => {
   const [pulse, setPulse] = useState(0);
@@ -100,12 +101,14 @@ const AnimatedPreview = () => {
   );
 };
 
-export default function Signup() {
+export default function ModernSignupPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth?.() || { user: null };
 
   const inviteToken = (searchParams.get("token") || "").trim();
   const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
+  const nextParam = (searchParams.get("next") || "").trim();
   const isInviteFlow = Boolean(inviteToken);
 
   const [fullName, setFullName] = useState("");
@@ -114,6 +117,12 @@ export default function Signup() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
+
+  const postInvitePath = isInviteFlow
+    ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
+        inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
+      }`
+    : nextParam || "/search";
 
   useEffect(() => {
     document.title = isInviteFlow
@@ -127,11 +136,11 @@ export default function Signup() {
     }
   }, [inviteEmail]);
 
-  const postAuthInviteUrl = isInviteFlow
-    ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
-        inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
-      }`
-    : "/app/dashboard";
+  useEffect(() => {
+    if (user?.id) {
+      navigate(postInvitePath, { replace: true });
+    }
+  }, [user?.id, navigate, postInvitePath]);
 
   async function handleEmailSignup(e) {
     e.preventDefault();
@@ -145,7 +154,7 @@ export default function Signup() {
       if (isInviteFlow) {
         setSignupSuccess(true);
         setTimeout(() => {
-          navigate(postAuthInviteUrl, { replace: true });
+          navigate(postInvitePath, { replace: true });
         }, 900);
       } else {
         setSignupSuccess(true);
@@ -160,8 +169,7 @@ export default function Signup() {
   async function handleGoogleSignup() {
     try {
       setErr("");
-      await loginWithGoogle(postAuthInviteUrl);
-      navigate(postAuthInviteUrl, { replace: true });
+      await loginWithGoogle(postInvitePath);
     } catch (e) {
       setErr(e?.message || "Google sign-in failed");
     }
@@ -170,8 +178,7 @@ export default function Signup() {
   async function handleMicrosoftSignup() {
     try {
       setErr("");
-      await loginWithMicrosoft(postAuthInviteUrl);
-      navigate(postAuthInviteUrl, { replace: true });
+      await loginWithMicrosoft(postInvitePath);
     } catch (e) {
       setErr(e?.message || "Microsoft sign-in failed");
     }
@@ -259,6 +266,7 @@ export default function Signup() {
                   <button
                     className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md"
                     onClick={handleGoogleSignup}
+                    type="button"
                   >
                     <img
                       src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
@@ -271,6 +279,7 @@ export default function Signup() {
                   <button
                     className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md"
                     onClick={handleMicrosoftSignup}
+                    type="button"
                   >
                     <img
                       src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg"
