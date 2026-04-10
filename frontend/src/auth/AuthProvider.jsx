@@ -57,43 +57,81 @@ function normalizeUser(u) {
 
 async function fetchPlatformAdminStatus(userId) {
   if (!supabase || !userId) return false;
+
   try {
     const { data, error } = await supabase
       .from('platform_admins')
       .select('user_id')
       .eq('user_id', userId)
       .maybeSingle();
+
     if (error) return false;
-    return data !== null;
+    return Boolean(data);
   } catch {
     return false;
   }
 }
 
 async function fetchPrimaryOrgMembership(userId) {
-  if (!supabase || !userId) return { orgId: null, orgRole: null, plan: null };
-  try {
-    const { data, error } = await supabase
-      .from('org_members')
-      .select('org_id, role, organizations(name), subscriptions(plan_code, status)')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (error || !data) return { orgId: null, orgRole: null, plan: null };
-    const planCode =
-      data.subscriptions?.plan_code ||
-      data.organizations?.subscriptions?.[0]?.plan_code ||
-      'free_trial';
-    return {
-      orgId: data.org_id,
-      orgRole: data.role,
-      plan: planCode,
-    };
-  } catch {
+  if (!supabase || !userId) {
     return { orgId: null, orgRole: null, plan: null };
   }
+
+  const sources = [
+    { table: 'org_members', userKey: 'user_id', orgKey: 'org_id', roleKey: 'role', statusKey: 'status' },
+    { table: 'org_memberships', userKey: 'user_id', orgKey: 'org_id', roleKey: 'role', statusKey: 'status' },
+  ];
+
+  for (const source of sources) {
+    try {
+      let query = supabase
+        .from(source.table)
+        .select(`${source.orgKey}, ${source.roleKey}, ${source.statusKey}`)
+        .eq(source.userKey, userId)
+        .limit(10);
+
+      const { data, error } = await query;
+
+      if (error || !Array.isArray(data) || !data.length) continue;
+
+      const active = data.find((row) => {
+        const status = row?.[source.statusKey];
+        return !status || status === 'active' || status === 'accepted';
+      }) || data[0];
+
+      const orgId = active?.[source.orgKey] ?? null;
+      const orgRole = active?.[source.roleKey] ?? null;
+
+      let plan = null;
+      if (orgId) {
+        try {
+          const { data: subs } = await supabase
+            .from('subscriptions')
+            .select('plan_code, status')
+            .eq('org_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (subs?.status === 'active' || subs?.status === 'trialing' || subs?.plan_code) {
+            plan = subs?.plan_code || null;
+          }
+        } catch {
+          // ignore subscription lookup failures
+        }
+      }
+
+      return {
+        orgId,
+        orgRole,
+        plan,
+      };
+    } catch {
+      // try next membership table
+    }
+  }
+
+  return { orgId: null, orgRole: null, plan: null };
 }
 
 export function AuthProvider({ children }) {
@@ -112,7 +150,6 @@ export function AuthProvider({ children }) {
         setRawUser(normalized);
         setAuthReady(true);
 
-        // Fetch superadmin status and org membership in parallel
         const [isAdmin, membership] = await Promise.all([
           fetchPlatformAdminStatus(u.id),
           fetchPrimaryOrgMembership(u.id),
@@ -165,17 +202,19 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(() => {
     const resolvedPlan = plan || rawUser?.user_metadata?.plan || 'free_trial';
-    // Legacy role: keep 'admin' for ADMIN_EMAILS and owner/admin org roles for backwards compat
-    const legacyRole = isSuperAdmin || orgRole === 'owner' || orgRole === 'admin'
-      ? 'admin'
-      : 'user';
+    const elevatedOrgRole = ['owner', 'admin', 'org_admin', 'super_admin'].includes(
+      String(orgRole || '').toLowerCase()
+    );
+    const legacyRole = isSuperAdmin || elevatedOrgRole ? 'admin' : 'user';
 
     const access = rawUser
       ? {
           isAdmin: isSuperAdmin || legacyRole === 'admin',
           isSuperAdmin,
           canUpgrade: !['unlimited', 'enterprise'].includes(resolvedPlan),
-          canManageBilling: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
+          canManageBilling: isSuperAdmin || elevatedOrgRole,
+          canManageOrg: isSuperAdmin || elevatedOrgRole,
+          canViewAllPages: isSuperAdmin || elevatedOrgRole,
           plan: resolvedPlan,
           role: legacyRole,
           orgRole,
