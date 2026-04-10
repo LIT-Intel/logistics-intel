@@ -7,7 +7,6 @@ import {
   ShieldCheck,
   BarChart3,
   RefreshCw,
-  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
@@ -31,7 +30,8 @@ async function callAdminApi(action, params = {}) {
     },
     body: JSON.stringify({ action, params }),
   });
-  const json = await res.json();
+
+  const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
   return json;
 }
@@ -73,6 +73,7 @@ function StatCard({ label, value, sub, icon: Icon, color = "indigo" }) {
     violet: "bg-violet-50 text-violet-600",
     amber: "bg-amber-50 text-amber-600",
   };
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-start justify-between">
@@ -111,17 +112,19 @@ function OverviewTab() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <div className="py-12 text-center text-slate-400">Loading KPIs…</div>;
   if (error) return <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</div>;
   if (!kpis) return null;
 
-  const totalActive = Object.values(kpis.planBreakdown).reduce((a, b) => a + b, 0);
-  const inviteTotal = Object.values(kpis.inviteFunnel).reduce((a, b) => a + b, 0);
+  const totalActive = Object.values(kpis.planBreakdown || {}).reduce((a, b) => a + b, 0);
+  const inviteTotal = Object.values(kpis.inviteFunnel || {}).reduce((a, b) => a + b, 0);
   const inviteAcceptRate =
     inviteTotal > 0
-      ? Math.round((kpis.inviteFunnel.accepted / inviteTotal) * 100)
+      ? Math.round(((kpis.inviteFunnel?.accepted || 0) / inviteTotal) * 100)
       : 0;
 
   return (
@@ -129,14 +132,14 @@ function OverviewTab() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Users"
-          value={kpis.totalUsers.toLocaleString()}
+          value={(kpis.totalUsers || 0).toLocaleString()}
           sub="unique across all orgs"
           icon={Users}
           color="indigo"
         />
         <StatCard
           label="Organizations"
-          value={kpis.totalOrgs.toLocaleString()}
+          value={(kpis.totalOrgs || 0).toLocaleString()}
           icon={Building2}
           color="emerald"
         />
@@ -149,17 +152,16 @@ function OverviewTab() {
         <StatCard
           label="Invite Accept Rate"
           value={`${inviteAcceptRate}%`}
-          sub={`${kpis.inviteFunnel.accepted} accepted / ${inviteTotal} sent`}
+          sub={`${kpis.inviteFunnel?.accepted || 0} accepted / ${inviteTotal} sent`}
           icon={ShieldCheck}
           color="amber"
         />
       </div>
 
-      {/* Plan breakdown */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-base font-semibold text-slate-900">Plan Breakdown</h3>
         <div className="space-y-3">
-          {Object.entries(kpis.planBreakdown).map(([plan, count]) => {
+          {Object.entries(kpis.planBreakdown || {}).map(([plan, count]) => {
             const pct = totalActive > 0 ? Math.round((count / totalActive) * 100) : 0;
             return (
               <div key={plan} className="flex items-center gap-4">
@@ -178,17 +180,16 @@ function OverviewTab() {
               </div>
             );
           })}
-          {Object.keys(kpis.planBreakdown).length === 0 && (
+          {Object.keys(kpis.planBreakdown || {}).length === 0 && (
             <p className="text-sm text-slate-400">No active subscriptions yet.</p>
           )}
         </div>
       </div>
 
-      {/* Invite funnel */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-base font-semibold text-slate-900">Invite Funnel</h3>
         <div className="grid grid-cols-3 gap-4 text-center">
-          {Object.entries(kpis.inviteFunnel).map(([status, count]) => (
+          {Object.entries(kpis.inviteFunnel || {}).map(([status, count]) => (
             <div key={status} className="rounded-xl bg-slate-50 p-4">
               <p className="text-2xl font-bold text-slate-900">{count}</p>
               <p className="mt-1 text-xs font-medium capitalize text-slate-500">{status}</p>
@@ -221,7 +222,9 @@ function UsersTab() {
     }
   }, [page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div className="space-y-4">
@@ -325,7 +328,9 @@ function OrgsTab() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function changePlan(orgId, plan) {
     setUpdatingPlan(orgId);
@@ -566,7 +571,9 @@ function BillingTab() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function changePlan(orgId, plan) {
     setUpdatingPlan(orgId);
@@ -660,32 +667,32 @@ const TABS = [
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const { isSuperAdmin, loading } = useAuth();
+  const { isSuperAdmin, isOrgAdmin, canAccessAdmin, orgRole, loading } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
-    if (!loading && !isSuperAdmin) {
+    if (!loading && !canAccessAdmin) {
       navigate("/app/dashboard", { replace: true });
     }
-  }, [isSuperAdmin, loading, navigate]);
+  }, [canAccessAdmin, loading, navigate]);
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600" />
+        <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-indigo-600" />
       </div>
     );
   }
 
-  if (!isSuperAdmin) return null;
+  if (!canAccessAdmin) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 px-6 py-8">
       <div className="mx-auto max-w-7xl">
-        {/* Header */}
         <div className="mb-8">
           <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold uppercase tracking-widest text-indigo-600">
-            <ShieldCheck className="h-3.5 w-3.5" /> Superadmin
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {isSuperAdmin ? "Superadmin" : isOrgAdmin ? `${orgRole || "admin"} access` : "Admin"}
           </div>
           <h1 className="mt-2 text-3xl font-bold text-slate-900">Admin Control Center</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -693,12 +700,12 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        {/* Tabs */}
         <div className="mb-6 border-b border-slate-200">
           <nav className="-mb-px flex gap-6 overflow-x-auto">
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
+
               return (
                 <button
                   key={tab.id}
@@ -718,7 +725,6 @@ export default function AdminDashboard() {
           </nav>
         </div>
 
-        {/* Tab content */}
         <div>
           {activeTab === "overview" && <OverviewTab />}
           {activeTab === "users" && <UsersTab />}
