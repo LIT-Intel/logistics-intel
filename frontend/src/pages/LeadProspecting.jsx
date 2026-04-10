@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { searchLeads } from '@/api/functions';
-import { PulseIcon } from '@/components/shared/AppIcons';
 
 const PULSE_API_CONFIGURED = Boolean(import.meta.env.VITE_VIBE_API_KEY);
 
@@ -38,6 +37,33 @@ function normalizeContact(contact) {
     linkedin: contact?.linkedin || contact?.linkedin_url || '',
     email_verified: contact?.email_verified || contact?.verified || false,
   };
+}
+
+function PulseLogo({ className = '', glowing = false }) {
+  return (
+    <div
+      className={[
+        'relative flex items-center justify-center rounded-2xl',
+        glowing ? 'bg-slate-950/95 ring-1 ring-cyan-400/20' : 'bg-slate-900 ring-1 ring-slate-200/10',
+        className,
+      ].join(' ')}
+    >
+      {glowing && (
+        <>
+          <div className="absolute inset-0 rounded-2xl bg-cyan-400/20 blur-xl animate-pulse" />
+          <div className="absolute inset-0 rounded-2xl border border-cyan-300/30" />
+        </>
+      )}
+      <img
+        src="/lit-icon-master.svg"
+        alt="Pulse"
+        className={[
+          'relative z-10 object-contain',
+          glowing ? 'drop-shadow-[0_0_18px_rgba(34,211,238,0.65)] animate-pulse' : '',
+        ].join(' ')}
+      />
+    </div>
+  );
 }
 
 export default function LeadProspecting() {
@@ -197,7 +223,7 @@ export default function LeadProspecting() {
   const estimatedCredits = searchResults.length > 0 ? searchResults.length * 5 : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-[10px]">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Lead intelligence</p>
         <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -238,9 +264,7 @@ export default function LeadProspecting() {
         <div className="lit-dashboard-card-body space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 ring-1 ring-slate-200/10">
-                <PulseIcon className="h-7 w-7 text-cyan-300 pulse-orbit" />
-              </div>
+              <PulseLogo className="h-12 w-12 p-2.5" glowing />
               <div>
                 <div className="text-sm font-semibold text-slate-900">Pulse Workspace</div>
                 <div className="text-sm text-slate-500">Natural language or structured search · Powered by Explorium</div>
@@ -283,7 +307,11 @@ export default function LeadProspecting() {
               >
                 {isSearching ? (
                   <>
-                    <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                    <img
+                      src="/lit-icon-master.svg"
+                      alt="Pulse"
+                      className="h-4 w-4 animate-pulse drop-shadow-[0_0_12px_rgba(34,211,238,0.75)]"
+                    />
                     Searching...
                   </>
                 ) : (
@@ -373,7 +401,11 @@ export default function LeadProspecting() {
               >
                 {isSearching ? (
                   <>
-                    <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                    <img
+                      src="/lit-icon-master.svg"
+                      alt="Pulse"
+                      className="h-4 w-4 animate-pulse drop-shadow-[0_0_12px_rgba(34,211,238,0.75)]"
+                    />
                     Searching...
                   </>
                 ) : (
@@ -388,13 +420,23 @@ export default function LeadProspecting() {
         </div>
       </div>
 
-      {!searchPerformed ? (
+      {isSearching ? (
+        <div className="lit-dashboard-card overflow-hidden">
+          <div className="lit-dashboard-card-body">
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <PulseLogo className="h-20 w-20 p-4" glowing />
+              <h3 className="mt-5 text-xl font-semibold text-slate-900">Sit tight while we check the pulse of your request</h3>
+              <p className="mt-2 max-w-md text-sm text-slate-500">
+                We’re scanning the live data source, refining the query, and preparing the best matches for you.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : !searchPerformed ? (
         <div className="lit-dashboard-card">
           <div className="lit-dashboard-card-body">
             <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-                <PulseIcon className="h-7 w-7 text-[var(--pulse-brand)] pulse-breathe" />
-              </div>
+              <PulseLogo className="h-14 w-14 p-3" glowing />
               <h3 className="mt-4 text-lg font-semibold text-slate-800">Ready to find your next customers</h3>
               <p className="mt-2 max-w-sm text-sm text-slate-500">
                 Try natural language: “Find logistics companies in Chicago with 50–500 employees”
@@ -452,7 +494,11 @@ export default function LeadProspecting() {
               >
                 {isImporting ? (
                   <>
-                    <PulseIcon className="h-4 w-4 text-cyan-300 pulse-spin" />
+                    <img
+                      src="/lit-icon-master.svg"
+                      alt="Pulse"
+                      className="h-4 w-4 animate-pulse drop-shadow-[0_0_12px_rgba(34,211,238,0.75)]"
+                    />
                     Importing...
                   </>
                 ) : (
