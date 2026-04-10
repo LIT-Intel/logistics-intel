@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Zap,
   Mail,
   ChevronRight,
   CheckCircle2,
@@ -220,13 +219,8 @@ export default function Signup() {
     <div className="flex min-h-screen bg-white font-sans text-slate-900">
       <div className="flex w-full flex-col lg:w-1/2">
         <div className="p-8">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-200">
-              <Zap className="h-6 w-6 text-white fill-current" />
-            </div>
-            <span className="text-xl font-black tracking-tight text-slate-900">
-              Logistics<span className="text-indigo-600">Intel</span>
-            </span>
+          <div className="flex items-center">
+            <img src="/logo_horizontal.png" alt="Logistics Intel" className="h-8 w-auto" />
           </div>
         </div>
 

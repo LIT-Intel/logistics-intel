@@ -6,12 +6,8 @@ import {
   registerWithEmailPassword,
   listenToAuth,
   logout as logoutClient,
+  supabase,
 } from './supabaseAuthClient';
-
-// Admin emails — keep in sync with billing-checkout normalizePlanCode admin check.
-const ADMIN_EMAILS = new Set([
-  'vraymond@sparkfusiondigital.com',
-]);
 
 const AuthCtx = createContext({
   user: null,
@@ -21,6 +17,9 @@ const AuthCtx = createContext({
   role: null,
   plan: null,
   access: null,
+  isSuperAdmin: false,
+  orgRole: null,
+  orgId: null,
   signInWithGoogle: async () => {},
   signInWithMicrosoft: async () => {},
   signInWithEmailPassword: async () => {},
@@ -46,35 +45,90 @@ function getDisplayName(u) {
 function normalizeUser(u) {
   if (!u) return null;
 
-  const email = (u.email || '').toLowerCase();
   const meta = u.user_metadata || {};
-  const isAdmin = ADMIN_EMAILS.has(email);
-  const role = isAdmin ? 'admin' : (meta.role || 'user');
-  const plan = isAdmin ? 'unlimited' : (meta.plan || 'free_trial');
 
   return {
     ...u,
-    role,
-    plan,
     stripe_customer_id: meta.stripe_customer_id || null,
     subscription_status: meta.subscription_status || null,
     displayName: getDisplayName(u),
   };
 }
 
+async function fetchPlatformAdminStatus(userId) {
+  if (!supabase || !userId) return false;
+  try {
+    const { data, error } = await supabase
+      .from('platform_admins')
+      .select('user_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) return false;
+    return data !== null;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchPrimaryOrgMembership(userId) {
+  if (!supabase || !userId) return { orgId: null, orgRole: null, plan: null };
+  try {
+    const { data, error } = await supabase
+      .from('org_members')
+      .select('org_id, role, organizations(name), subscriptions(plan_code, status)')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return { orgId: null, orgRole: null, plan: null };
+    const planCode =
+      data.subscriptions?.plan_code ||
+      data.organizations?.subscriptions?.[0]?.plan_code ||
+      'free_trial';
+    return {
+      orgId: data.org_id,
+      orgRole: data.role,
+      plan: planCode,
+    };
+  } catch {
+    return { orgId: null, orgRole: null, plan: null };
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [rawUser, setRawUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [orgRole, setOrgRole] = useState(null);
+  const [orgId, setOrgId] = useState(null);
+  const [plan, setPlan] = useState(null);
 
   useEffect(() => {
-    const unsub = listenToAuth((u) => {
+    const unsub = listenToAuth(async (u) => {
       if (u) {
-        setUser(normalizeUser(u));
+        const normalized = normalizeUser(u);
+        setRawUser(normalized);
         setAuthReady(true);
+
+        // Fetch superadmin status and org membership in parallel
+        const [isAdmin, membership] = await Promise.all([
+          fetchPlatformAdminStatus(u.id),
+          fetchPrimaryOrgMembership(u.id),
+        ]);
+
+        setIsSuperAdmin(isAdmin);
+        setOrgId(membership.orgId);
+        setOrgRole(membership.orgRole);
+        setPlan(isAdmin ? 'unlimited' : (membership.plan || 'free_trial'));
       } else {
-        setUser(null);
+        setRawUser(null);
         setAuthReady(false);
+        setIsSuperAdmin(false);
+        setOrgId(null);
+        setOrgRole(null);
+        setPlan(null);
       }
       setLoading(false);
     });
@@ -87,8 +141,12 @@ export function AuthProvider({ children }) {
   const handleLogout = async () => {
     try {
       setLoading(true);
-      setUser(null);
+      setRawUser(null);
       setAuthReady(false);
+      setIsSuperAdmin(false);
+      setOrgId(null);
+      setOrgRole(null);
+      setPlan(null);
 
       try {
         if (typeof window !== 'undefined') {
@@ -106,34 +164,43 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(() => {
-    const role = user?.role ?? null;
-    const plan = user?.plan ?? null;
+    const resolvedPlan = plan || rawUser?.user_metadata?.plan || 'free_trial';
+    // Legacy role: keep 'admin' for ADMIN_EMAILS and owner/admin org roles for backwards compat
+    const legacyRole = isSuperAdmin || orgRole === 'owner' || orgRole === 'admin'
+      ? 'admin'
+      : 'user';
 
-    const access = user
+    const access = rawUser
       ? {
-          isAdmin: role === 'admin',
-          canUpgrade: !['unlimited', 'enterprise'].includes(plan || ''),
-          canManageBilling: role === 'admin',
-          plan,
-          role,
+          isAdmin: isSuperAdmin || legacyRole === 'admin',
+          isSuperAdmin,
+          canUpgrade: !['unlimited', 'enterprise'].includes(resolvedPlan),
+          canManageBilling: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
+          plan: resolvedPlan,
+          role: legacyRole,
+          orgRole,
+          orgId,
         }
       : null;
 
     return {
-      user,
+      user: rawUser,
       loading,
       authReady,
-      role,
-      plan,
+      role: legacyRole,
+      plan: resolvedPlan,
       access,
+      isSuperAdmin,
+      orgRole,
+      orgId,
       signInWithGoogle,
       signInWithMicrosoft,
       signInWithEmailPassword,
       registerWithEmailPassword,
       logout: handleLogout,
-      fullName: user?.displayName || null,
+      fullName: rawUser?.displayName || null,
     };
-  }, [user, loading, authReady]);
+  }, [rawUser, loading, authReady, isSuperAdmin, orgRole, orgId, plan]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

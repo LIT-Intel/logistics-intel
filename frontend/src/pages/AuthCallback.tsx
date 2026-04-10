@@ -14,19 +14,30 @@ export default function AuthCallback() {
 
     const handleCallback = async () => {
       try {
-        const { data, error } = await auth.auth.getSession();
+        const searchParams = new URLSearchParams(window.location.search);
+        const code = searchParams.get('code');
+        const nextParam = searchParams.get('next');
+        const destination = nextParam || '/app/dashboard';
 
-        if (error) {
-          throw error;
+        // Handle PKCE email confirmation code exchange
+        if (code) {
+          const { error: exchangeError } = await auth.auth.exchangeCodeForSession(
+            window.location.href
+          );
+          if (exchangeError) throw exchangeError;
         }
 
+        // Confirm session exists after exchange (or if already set via implicit flow)
+        const { data, error: sessionError } = await auth.auth.getSession();
+        if (sessionError) throw sessionError;
+
         if (data.session) {
-          navigate('/app/dashboard', { replace: true });
+          navigate(destination, { replace: true });
         } else {
           navigate('/login', { replace: true });
         }
       } catch (err: any) {
-        console.error('OAuth callback error:', err);
+        console.error('[AuthCallback] error:', err);
         setError(err?.message || 'Authentication failed');
         setTimeout(() => {
           navigate('/login', { replace: true });

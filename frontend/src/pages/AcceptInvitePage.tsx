@@ -9,6 +9,7 @@ export default function AcceptInvitePage() {
   const { user } = useAuth();
 
   const hasStartedRef = useRef(false);
+  const retryCountRef = useRef(0);
   const retryTimerRef = useRef<number | null>(null);
 
   const [message, setMessage] = useState("Checking invite...");
@@ -30,7 +31,20 @@ export default function AcceptInvitePage() {
         return;
       }
 
+      // If user context not populated yet, check if a session exists before bouncing to signup
       if (!user?.id) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user) {
+          // Session exists but context hasn't propagated — wait up to ~3s then retry
+          if (retryCountRef.current < 10) {
+            retryCountRef.current += 1;
+            retryTimerRef.current = window.setTimeout(() => {
+              void acceptInvite();
+            }, 300);
+            return;
+          }
+        }
+        // No session at all — send to signup
         const signupParams = new URLSearchParams();
         signupParams.set("token", token);
         if (email) signupParams.set("email", email);
@@ -57,7 +71,7 @@ export default function AcceptInvitePage() {
       }
 
       hasStartedRef.current = true;
-      setMessage("Accepting invite v3...");
+      setMessage("Accepting invite...");
 
       try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -102,6 +116,23 @@ export default function AcceptInvitePage() {
           setMessage(result?.error || "Failed accepting invite.");
           return;
         }
+
+        // Ensure a profiles row exists for this user (safe no-op if already present)
+        await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: user.id,
+              email: user.email,
+              full_name:
+                user.user_metadata?.full_name ||
+                user.user_metadata?.display_name ||
+                null,
+            },
+            { onConflict: "id", ignoreDuplicates: true }
+          )
+          .select("id")
+          .maybeSingle();
 
         setMessage("Invite accepted. Redirecting...");
         window.setTimeout(() => {
