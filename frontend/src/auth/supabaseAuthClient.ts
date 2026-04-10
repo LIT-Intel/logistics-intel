@@ -1,8 +1,5 @@
-// Supabase Auth Client - Replaces Firebase Auth
-import { createClient, AuthError, Session, User } from '@supabase/supabase-js';
-
-console.log("SUPABASE URL:", import.meta.env.VITE_SUPABASE_URL);
-console.log("SUPABASE KEY EXISTS:", !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+// Supabase Auth Client — Single browser-side instance
+import { createClient, Session, User } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -43,24 +40,25 @@ export async function signInWithEmailPassword(email: string, password: string) {
   if (!auth) throw new Error('Auth not configured');
   if (!email || !password) throw new Error('Email and password required');
 
-  const { data, error } = await auth.auth.signInWithPassword({
-    email,
-    password,
-  });
-
+  const { data, error } = await auth.auth.signInWithPassword({ email, password });
   if (error) throw error;
   return data.user;
 }
 
 // Email/Password Registration
+// Returns the full data object so callers can check data.session:
+//   - data.session !== null  → email confirmation disabled; user is immediately signed in
+//   - data.session === null  → confirmation email sent; user must click the link
 export async function registerWithEmailPassword({
   fullName,
   email,
-  password
+  password,
+  emailRedirectTo,
 }: {
   fullName?: string;
   email: string;
   password: string;
+  emailRedirectTo?: string;
 }) {
   if (!auth) throw new Error('Auth not configured');
   if (!email || !password) throw new Error('Email and password required');
@@ -73,21 +71,8 @@ export async function registerWithEmailPassword({
         full_name: fullName || '',
         display_name: fullName || email.split('@')[0],
       },
-    },
-  });
-
-  if (error) throw error;
-  return data.user;
-}
-
-// Google OAuth Sign In
-export async function signInWithGoogle() {
-  if (!auth) throw new Error('Auth not configured');
-
-  const { data, error } = await auth.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: `${window.location.origin}/app/dashboard`,
+      emailRedirectTo:
+        emailRedirectTo || `${window.location.origin}/auth/callback`,
     },
   });
 
@@ -95,14 +80,35 @@ export async function signInWithGoogle() {
   return data;
 }
 
-// Microsoft OAuth Sign In
-export async function signInWithMicrosoft() {
+// Google OAuth Sign In
+export async function signInWithGoogle(redirectPath = '/app/dashboard') {
   if (!auth) throw new Error('Auth not configured');
+
+  const dest = redirectPath.startsWith('/')
+    ? `${window.location.origin}${redirectPath}`
+    : redirectPath;
+
+  const { data, error } = await auth.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: dest },
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+// Microsoft OAuth Sign In
+export async function signInWithMicrosoft(redirectPath = '/app/dashboard') {
+  if (!auth) throw new Error('Auth not configured');
+
+  const dest = redirectPath.startsWith('/')
+    ? `${window.location.origin}${redirectPath}`
+    : redirectPath;
 
   const { data, error } = await auth.auth.signInWithOAuth({
     provider: 'azure',
     options: {
-      redirectTo: `${window.location.origin}/app/dashboard`,
+      redirectTo: dest,
       scopes: 'email profile openid',
     },
   });
@@ -114,16 +120,15 @@ export async function signInWithMicrosoft() {
 // Listen to Auth State Changes
 export function listenToAuth(callback: (user: User | null) => void) {
   if (!auth) {
-    // Degrade gracefully: no auth → treat as signed out
     const t = setTimeout(() => callback(null), 0);
     return () => clearTimeout(t);
   }
 
-  const { data: { subscription } } = auth.auth.onAuthStateChange(
-    (_event: string, session: Session | null) => {
-      callback(session?.user ?? null);
-    }
-  );
+  const {
+    data: { subscription },
+  } = auth.auth.onAuthStateChange((_event: string, session: Session | null) => {
+    callback(session?.user ?? null);
+  });
 
   return () => subscription.unsubscribe();
 }
@@ -131,37 +136,29 @@ export function listenToAuth(callback: (user: User | null) => void) {
 // Get Current User
 export async function getCurrentUser() {
   if (!auth) return null;
-
   const { data: { user }, error } = await auth.auth.getUser();
-
   if (error) {
     console.error('[LIT Auth] Error getting current user:', error);
     return null;
   }
-
   return user;
 }
 
 // Get Current Session
 export async function getCurrentSession() {
   if (!auth) return null;
-
   const { data: { session }, error } = await auth.auth.getSession();
-
   if (error) {
     console.error('[LIT Auth] Error getting session:', error);
     return null;
   }
-
   return session;
 }
 
 // Sign Out
 export async function logout() {
   if (!auth) return;
-
   const { error } = await auth.auth.signOut();
-
   if (error) {
     console.error('[LIT Auth] Error signing out:', error);
     throw error;
@@ -171,37 +168,27 @@ export async function logout() {
 // Password Reset Request
 export async function resetPassword(email: string) {
   if (!auth) throw new Error('Auth not configured');
-
   const { error } = await auth.auth.resetPasswordForEmail(email, {
     redirectTo: `${window.location.origin}/reset-password`,
   });
-
   if (error) throw error;
 }
 
 // Update Password
 export async function updatePassword(newPassword: string) {
   if (!auth) throw new Error('Auth not configured');
-
-  const { error } = await auth.auth.updateUser({
-    password: newPassword,
-  });
-
+  const { error } = await auth.auth.updateUser({ password: newPassword });
   if (error) throw error;
 }
 
-// Update User Profile
+// Update User Profile metadata
 export async function updateProfile(updates: {
   full_name?: string;
   display_name?: string;
   avatar_url?: string;
 }) {
   if (!auth) throw new Error('Auth not configured');
-
-  const { error } = await auth.auth.updateUser({
-    data: updates,
-  });
-
+  const { error } = await auth.auth.updateUser({ data: updates });
   if (error) throw error;
 }
 

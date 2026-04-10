@@ -1,6 +1,3 @@
-<div style={{ background: 'blue', color: 'white', padding: 20, fontSize: 32 }}>
-  SIGNUP FILE TEST MARKER
-</div>
 import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -18,6 +15,7 @@ import {
   loginWithMicrosoft,
   registerWithEmailPassword,
 } from "@/auth/supabaseAuthClient";
+import { useAuth } from "@/auth/AuthProvider";
 
 const AnimatedPreview = () => {
   const [pulse, setPulse] = useState(0);
@@ -63,8 +61,8 @@ const AnimatedPreview = () => {
             {[40, 70, 45, 90, 65, 80, 50, 85].map((h, i) => (
               <div
                 key={i}
-                className="flex-1 bg-indigo-500/20 rounded-t-sm transition-all duration-1000"
-                style={{ height: `${pulse === 0 ? h : Math.random() * 80 + 20}%` }}
+                className="flex-1 bg-indigo-500/20 rounded-t-sm"
+                style={{ height: `${pulse === 0 ? h : Math.min(h + (i % 3) * 10, 95)}%` }}
               />
             ))}
           </div>
@@ -106,6 +104,7 @@ const AnimatedPreview = () => {
 export default function Signup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user, loading: authLoading } = useAuth();
 
   const inviteToken = (searchParams.get("token") || "").trim();
   const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
@@ -117,6 +116,7 @@ export default function Signup() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
+  const [emailConfirmRequired, setEmailConfirmRequired] = useState(false);
 
   useEffect(() => {
     document.title = isInviteFlow
@@ -125,35 +125,65 @@ export default function Signup() {
   }, [isInviteFlow]);
 
   useEffect(() => {
-    if (inviteEmail) {
-      setEmail(inviteEmail);
-    }
+    if (inviteEmail) setEmail(inviteEmail);
   }, [inviteEmail]);
 
-  const postAuthInviteUrl = isInviteFlow
+  // Redirect already-authenticated users
+  useEffect(() => {
+    if (!authLoading && user) {
+      if (isInviteFlow) {
+        navigate(
+          `/accept-invite?token=${encodeURIComponent(inviteToken)}${
+            inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
+          }`,
+          { replace: true }
+        );
+      } else {
+        navigate("/app/dashboard", { replace: true });
+      }
+    }
+  }, [user, authLoading, isInviteFlow, inviteToken, inviteEmail, navigate]);
+
+  // The post-auth destination for invite flows
+  const acceptInviteUrl = isInviteFlow
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
     : "/app/dashboard";
 
-  async function handleEmailSignup(e) {
+  // For OAuth / email confirmation redirects: route through /auth/callback
+  // so it can exchange the code and then navigate to acceptInviteUrl
+  const callbackUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
+    acceptInviteUrl
+  )}`;
+
+  async function handleEmailSignup(e: React.FormEvent) {
     e.preventDefault();
-
+    setErr("");
+    setLoading(true);
     try {
-      setErr("");
-      setLoading(true);
+      const data = await registerWithEmailPassword({
+        fullName,
+        email,
+        password,
+        emailRedirectTo: callbackUrl,
+      });
 
-      await registerWithEmailPassword({ fullName, email, password });
+      setSignupSuccess(true);
 
-      if (isInviteFlow) {
-        setSignupSuccess(true);
-        setTimeout(() => {
-          navigate(postAuthInviteUrl, { replace: true });
-        }, 900);
+      if (data.session) {
+        // Email confirmation disabled — user is immediately signed in
+        if (isInviteFlow) {
+          setTimeout(() => navigate(acceptInviteUrl, { replace: true }), 800);
+        } else {
+          // Non-invite: go to dashboard (AuthProvider will pick up the session)
+          setTimeout(() => navigate("/app/dashboard", { replace: true }), 800);
+        }
       } else {
-        setSignupSuccess(true);
+        // Email confirmation required — show "check email" message
+        setEmailConfirmRequired(true);
       }
-    } catch (e) {
+    } catch (e: any) {
       setErr(e?.message || "Sign-up failed");
     } finally {
       setLoading(false);
@@ -161,21 +191,27 @@ export default function Signup() {
   }
 
   async function handleGoogleSignup() {
+    setErr("");
     try {
-      setErr("");
-      await loginWithGoogle();
-      navigate(postAuthInviteUrl, { replace: true });
-    } catch (e) {
+      // For invite flow: route OAuth callback through /auth/callback?next=acceptInviteUrl
+      // For regular: default /app/dashboard
+      const redirectPath = isInviteFlow
+        ? `/auth/callback?next=${encodeURIComponent(acceptInviteUrl)}`
+        : "/app/dashboard";
+      await loginWithGoogle(redirectPath);
+    } catch (e: any) {
       setErr(e?.message || "Google sign-in failed");
     }
   }
 
   async function handleMicrosoftSignup() {
+    setErr("");
     try {
-      setErr("");
-      await loginWithMicrosoft();
-      navigate(postAuthInviteUrl, { replace: true });
-    } catch (e) {
+      const redirectPath = isInviteFlow
+        ? `/auth/callback?next=${encodeURIComponent(acceptInviteUrl)}`
+        : "/app/dashboard";
+      await loginWithMicrosoft(redirectPath);
+    } catch (e: any) {
       setErr(e?.message || "Microsoft sign-in failed");
     }
   }
@@ -196,38 +232,44 @@ export default function Signup() {
 
         <div className="flex flex-1 flex-col items-center justify-center px-8 sm:px-12 lg:px-24">
           <div className="w-full max-w-md space-y-8">
+            {/* Success state */}
             {signupSuccess && (
               <div className="flex flex-col items-center gap-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
                   <CheckCircle2 className="h-8 w-8 text-emerald-600" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-slate-900">
-                    {isInviteFlow ? "Account created. Finishing invite..." : "Account created!"}
-                  </h2>
-                  <p className="mt-3 text-sm font-medium text-slate-600">
-                    {isInviteFlow ? (
-                      <>
-                        Your account was created for{" "}
-                        <span className="font-bold text-slate-900">{email}</span>.
-                        We’re taking you back to the invite flow now.
-                      </>
-                    ) : (
-                      <>
-                        We sent a verification link to{" "}
-                        <span className="font-bold text-slate-900">{email}</span>.
-                        Click it to activate your account, then sign in.
-                      </>
-                    )}
-                  </p>
-                  {!isInviteFlow && (
-                    <p className="mt-2 text-xs text-slate-400">
-                      Don&apos;t see it? Check your spam folder.
-                    </p>
+                  {emailConfirmRequired ? (
+                    <>
+                      <h2 className="text-2xl font-black text-slate-900">
+                        Check your inbox
+                      </h2>
+                      <p className="mt-3 text-sm font-medium text-slate-600">
+                        We sent a confirmation link to{" "}
+                        <span className="font-bold text-slate-900">{email}</span>.{" "}
+                        {isInviteFlow
+                          ? "After confirming, you'll be taken directly to your workspace invite."
+                          : "Click it to activate your account, then sign in."}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-400">
+                        Don&apos;t see it? Check your spam folder.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="text-2xl font-black text-slate-900">
+                        {isInviteFlow ? "Account created!" : "Account created!"}
+                      </h2>
+                      <p className="mt-3 text-sm font-medium text-slate-600">
+                        {isInviteFlow
+                          ? "Taking you to your workspace now..."
+                          : "You're in. Taking you to the dashboard..."}
+                      </p>
+                    </>
                   )}
                 </div>
 
-                {!isInviteFlow && (
+                {emailConfirmRequired && !isInviteFlow && (
                   <button
                     onClick={() => navigate("/login")}
                     className="flex items-center gap-2 rounded-full bg-slate-900 px-8 py-3 text-sm font-bold text-white hover:bg-slate-800 transition-colors"
@@ -238,6 +280,7 @@ export default function Signup() {
               </div>
             )}
 
+            {/* Registration form */}
             {!signupSuccess && (
               <>
                 <div className="text-center lg:text-left">
@@ -286,7 +329,7 @@ export default function Signup() {
 
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-slate-200"></span>
+                    <span className="w-full border-t border-slate-200" />
                   </div>
                   <div className="relative flex justify-center text-xs font-black uppercase">
                     <span className="bg-white px-4 text-slate-400 tracking-widest">
@@ -295,7 +338,11 @@ export default function Signup() {
                   </div>
                 </div>
 
-                {err && <p className="text-red-600 text-sm">{err}</p>}
+                {err && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                    {err}
+                  </div>
+                )}
 
                 <form onSubmit={handleEmailSignup} className="space-y-4">
                   <div className="space-y-2">
@@ -324,7 +371,7 @@ export default function Signup() {
                         type="email"
                         required
                         placeholder="you@company.com"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 disabled:opacity-60"
                         value={email}
                         disabled={Boolean(inviteEmail)}
                         onChange={(e) => setEmail(e.target.value)}
@@ -339,7 +386,8 @@ export default function Signup() {
                     <input
                       type="password"
                       required
-                      placeholder="Create a password"
+                      minLength={8}
+                      placeholder="Create a password (min. 8 characters)"
                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-4 pr-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -349,7 +397,7 @@ export default function Signup() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="relative w-full overflow-hidden rounded-2xl bg-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700 active:scale-98 disabled:opacity-70 flex items-center justify-center gap-2"
+                    className="relative w-full overflow-hidden rounded-2xl bg-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
                   >
                     {loading ? (
                       <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -399,18 +447,13 @@ export default function Signup() {
 
         <div className="p-8 flex flex-wrap gap-x-8 gap-y-4 justify-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
           <span>© {new Date().getFullYear()} Logistics Intel LLC</span>
-          <a href="/security" className="hover:text-indigo-500 transition-colors">
-            Security
-          </a>
-          <a href="/status" className="hover:text-indigo-500 transition-colors">
-            Status
-          </a>
-          <a href="/help" className="hover:text-indigo-500 transition-colors">
-            Help Center
-          </a>
+          <a href="/security" className="hover:text-indigo-500 transition-colors">Security</a>
+          <a href="/status" className="hover:text-indigo-500 transition-colors">Status</a>
+          <a href="/help" className="hover:text-indigo-500 transition-colors">Help Center</a>
         </div>
       </div>
 
+      {/* Right panel */}
       <div className="hidden w-1/2 lg:flex flex-col relative overflow-hidden bg-slate-50 border-l border-slate-100">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(99,102,241,0.1)_0%,transparent_50%)]" />
         <div className="absolute top-0 right-0 p-12 opacity-5">
