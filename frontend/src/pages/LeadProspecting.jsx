@@ -2,38 +2,27 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUp,
+  Bookmark,
   Building2,
   Download,
   ExternalLink,
+  Eye,
   Mail,
   Phone,
-  Search,
   Sparkles,
   UserRound,
-  Users,
-  Eye,
-  Bookmark,
+  X,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Company, Contact } from '@/api/entities';
 import { useAuth } from '@/auth/AuthProvider';
 import { searchPulse } from '@/api/pulse';
-
-const BRAND = {
-  navy: 'bg-[#17233C]',
-  navyText: 'text-[#17233C]',
-  navyBorder: 'border-[#17233C]',
-  blue: 'bg-[#4C6FFF]',
-  blueText: 'text-[#4C6FFF]',
-  blueBorder: 'border-[#4C6FFF]',
-  lightBlueBg: 'bg-[#EEF3FF]',
-};
+import { supabase } from '@/lib/supabase';
 
 const TYPEWRITER_EXAMPLES = [
   'Find logistics companies in Georgia with over $1B in revenue',
+  'Find 2 directors of supply chain at Apple',
   'Find 5 VPs of Sales at freight forwarders in Atlanta',
   'Show importers in Texas with 200 to 1000 employees',
-  'Find procurement directors at manufacturers in Tennessee',
   'Build a list of 3PLs in Chicago and the operations leaders at each one',
 ];
 
@@ -138,18 +127,10 @@ function ModeToggle({ value, onChange }) {
 function StatusPill({ status }) {
   const value = (status || '').toLowerCase();
 
-  if (value.includes('recent') || value.includes('high')) {
+  if (value.includes('high') || value.includes('active')) {
     return (
       <span className='inline-flex rounded-md border border-green-200 bg-green-50 px-2 py-1 text-xs font-semibold text-green-700'>
-        High
-      </span>
-    );
-  }
-
-  if (value.includes('medium')) {
-    return (
-      <span className='inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700'>
-        Medium
+        Active
       </span>
     );
   }
@@ -158,19 +139,6 @@ function StatusPill({ status }) {
     <span className='inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600'>
       Prospect
     </span>
-  );
-}
-
-function MetricBar({ value }) {
-  const pct = typeof value === 'number' && value > 0 ? Math.min(100, value) : 0;
-
-  return (
-    <div className='h-3 w-16 rounded bg-slate-100'>
-      <div
-        className='h-3 rounded bg-[#4C6FFF]'
-        style={{ width: `${pct}%` }}
-      />
-    </div>
   );
 }
 
@@ -303,21 +271,157 @@ function DesktopHero({
   );
 }
 
+function MobileSearchOnly({
+  query,
+  setQuery,
+  uiMode,
+  setUiMode,
+  onSearch,
+  isSearching,
+}) {
+  const showTypewriter = !query.trim();
+
+  return (
+    <section className='rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:hidden'>
+      <div className='mb-3 flex items-center gap-3'>
+        <PulseLogo className='h-10 w-10 p-2' />
+        <div>
+          <div className='text-sm font-semibold text-[#17233C]'>Pulse</div>
+          <div className='text-xs text-slate-500'>AI lead intelligence</div>
+        </div>
+      </div>
+
+      <div className='mb-3'>
+        <ModeToggle value={uiMode} onChange={setUiMode} />
+      </div>
+
+      <div className='relative rounded-2xl border border-slate-200 bg-[#FAFBFF] p-4'>
+        <div className='relative min-h-[84px]'>
+          <textarea
+            rows={3}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className='relative z-10 w-full resize-none border-0 bg-transparent p-0 text-sm text-slate-950 placeholder-transparent focus:outline-none focus:ring-0'
+          />
+          <TypewriterPlaceholder active={showTypewriter} />
+        </div>
+
+        <div className='mt-3 flex justify-end border-t border-slate-200 pt-3'>
+          <button
+            type='button'
+            onClick={onSearch}
+            disabled={isSearching || !query.trim()}
+            className='inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#17233C] text-white transition hover:bg-[#1D2C4A] disabled:cursor-not-allowed disabled:opacity-50'
+          >
+            {isSearching ? <Sparkles className='h-4 w-4 animate-pulse' /> : <ArrowUp className='h-4 w-4' />}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ContactDetailDrawer({ contact, open, onClose, onEnrich, isEnriching }) {
+  if (!open || !contact) return null;
+
+  return (
+    <div className='fixed inset-0 z-50 flex justify-end bg-slate-950/30'>
+      <button
+        type='button'
+        className='absolute inset-0 cursor-default'
+        onClick={onClose}
+        aria-label='Close'
+      />
+      <div className='relative h-full w-full max-w-xl overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-2xl'>
+        <div className='flex items-start justify-between gap-4'>
+          <div>
+            <h3 className='text-xl font-semibold text-[#17233C]'>
+              {contact.full_name || 'Unknown Contact'}
+            </h3>
+            <p className='mt-1 text-sm text-slate-500'>
+              {[contact.title, contact.company?.name].filter(Boolean).join(' • ') || 'Contact'}
+            </p>
+          </div>
+
+          <button
+            type='button'
+            onClick={onClose}
+            className='rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-[#17233C]'
+          >
+            <X className='h-4 w-4' />
+          </button>
+        </div>
+
+        <div className='mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4'>
+          <div>
+            <div className='text-xs font-semibold uppercase tracking-[0.14em] text-slate-400'>Company</div>
+            <div className='mt-1 text-sm font-medium text-[#17233C]'>{contact.company?.name || '—'}</div>
+          </div>
+
+          <div>
+            <div className='text-xs font-semibold uppercase tracking-[0.14em] text-slate-400'>Location</div>
+            <div className='mt-1 text-sm text-slate-700'>
+              {[contact.company?.city, contact.company?.state, contact.company?.country].filter(Boolean).join(', ') || '—'}
+            </div>
+          </div>
+
+          <div>
+            <div className='text-xs font-semibold uppercase tracking-[0.14em] text-slate-400'>Email</div>
+            <div className='mt-1 text-sm text-slate-700'>{contact.email || 'Not enriched yet'}</div>
+          </div>
+
+          <div>
+            <div className='text-xs font-semibold uppercase tracking-[0.14em] text-slate-400'>Phone</div>
+            <div className='mt-1 text-sm text-slate-700'>{contact.phone || 'Not enriched yet'}</div>
+          </div>
+
+          <div>
+            <div className='text-xs font-semibold uppercase tracking-[0.14em] text-slate-400'>LinkedIn</div>
+            <div className='mt-1 text-sm text-slate-700'>
+              {contact.linkedin_url ? (
+                <a
+                  href={contact.linkedin_url}
+                  target='_blank'
+                  rel='noreferrer'
+                  className='text-[#4C6FFF] hover:underline'
+                >
+                  {contact.linkedin_url}
+                </a>
+              ) : 'Not available'}
+            </div>
+          </div>
+        </div>
+
+        <div className='mt-6 flex gap-3'>
+          <button
+            type='button'
+            onClick={() => onEnrich(contact)}
+            disabled={isEnriching}
+            className='inline-flex items-center gap-2 rounded-full bg-[#17233C] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1D2C4A] disabled:opacity-50'
+          >
+            {isEnriching ? <Sparkles className='h-4 w-4 animate-pulse' /> : <Mail className='h-4 w-4' />}
+            Enrich Contact
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CompanyResultsTable({ rows, selectedIds, onToggleSelect, onOpenSearch, onSaveCompany }) {
   return (
     <div className='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm'>
       <div className='overflow-x-auto'>
-        <table className='w-full min-w-[1100px]'>
+        <table className='w-full min-w-[980px]'>
           <thead className='border-b border-slate-200 bg-slate-50'>
             <tr className='text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500'>
               <th className='px-4 py-4'></th>
               <th className='px-4 py-4'>Company</th>
+              <th className='px-4 py-4'>Domain</th>
               <th className='px-4 py-4'>Location</th>
               <th className='px-4 py-4'>Industry</th>
-              <th className='px-4 py-4'>Shipments (12m)</th>
-              <th className='px-4 py-4'>TEU</th>
-              <th className='px-4 py-4'>Mode</th>
-              <th className='px-4 py-4'>Last Shipment</th>
+              <th className='px-4 py-4'>Employees</th>
+              <th className='px-4 py-4'>Revenue</th>
               <th className='px-4 py-4'>Status</th>
               <th className='px-4 py-4'>Actions</th>
             </tr>
@@ -341,10 +445,24 @@ function CompanyResultsTable({ rows, selectedIds, onToggleSelect, onOpenSearch, 
                     <div>
                       <div className='font-semibold text-[#17233C]'>{company.name}</div>
                       <div className='text-sm text-slate-500'>
-                        {company.domain || 'No domain'}
+                        {company.industry || '—'}
                       </div>
                     </div>
                   </div>
+                </td>
+
+                <td className='px-4 py-4 align-top text-sm text-slate-700'>
+                  {company.domain ? (
+                    <a
+                      href={company.domain.startsWith('http') ? company.domain : `https://${company.domain}`}
+                      target='_blank'
+                      rel='noreferrer'
+                      className='inline-flex items-center gap-1 text-[#4C6FFF] hover:underline'
+                    >
+                      {company.domain}
+                      <ExternalLink className='h-3 w-3' />
+                    </a>
+                  ) : '—'}
                 </td>
 
                 <td className='px-4 py-4 align-top text-sm text-slate-700'>
@@ -355,20 +473,12 @@ function CompanyResultsTable({ rows, selectedIds, onToggleSelect, onOpenSearch, 
                   {company.industry || '—'}
                 </td>
 
-                <td className='px-4 py-4 align-top text-sm font-semibold text-[#17233C]'>
-                  {typeof company.shipments_12m === 'number' ? company.shipments_12m.toLocaleString() : '—'}
-                </td>
-
-                <td className='px-4 py-4 align-top'>
-                  <MetricBar value={company.teu_12m} />
+                <td className='px-4 py-4 align-top text-sm text-slate-700'>
+                  {company.employee_count || '—'}
                 </td>
 
                 <td className='px-4 py-4 align-top text-sm text-slate-700'>
-                  {company.mode || '—'}
-                </td>
-
-                <td className='px-4 py-4 align-top text-sm text-slate-700'>
-                  {company.last_shipment || '—'}
+                  {company.annual_revenue || '—'}
                 </td>
 
                 <td className='px-4 py-4 align-top'>
@@ -411,6 +521,7 @@ function PeopleResultsTable({
   onToggleSelect,
   onSaveContact,
   onOpenCompanySearch,
+  onViewContact,
 }) {
   return (
     <div className='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm'>
@@ -440,19 +551,23 @@ function PeopleResultsTable({
                 </td>
 
                 <td className='px-4 py-4 align-top'>
-                  <div className='flex items-start gap-3'>
+                  <button
+                    type='button'
+                    onClick={() => onViewContact(person)}
+                    className='flex items-start gap-3 text-left'
+                  >
                     <div className='flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100'>
                       <UserRound className='h-4 w-4 text-slate-500' />
                     </div>
                     <div>
-                      <div className='font-semibold text-[#17233C]'>
+                      <div className='font-semibold text-[#17233C] hover:text-[#4C6FFF]'>
                         {person.full_name || 'Unknown Contact'}
                       </div>
                       <div className='text-sm text-slate-500'>
                         {person.department || person.seniority || 'Contact'}
                       </div>
                     </div>
-                  </div>
+                  </button>
                 </td>
 
                 <td className='px-4 py-4 align-top text-sm text-slate-700'>
@@ -522,56 +637,6 @@ function PeopleResultsTable({
   );
 }
 
-function MobileSearchOnly({
-  query,
-  setQuery,
-  uiMode,
-  setUiMode,
-  onSearch,
-  isSearching,
-}) {
-  const showTypewriter = !query.trim();
-
-  return (
-    <section className='rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:hidden'>
-      <div className='mb-3 flex items-center gap-3'>
-        <PulseLogo className='h-10 w-10 p-2' />
-        <div>
-          <div className='text-sm font-semibold text-[#17233C]'>Pulse</div>
-          <div className='text-xs text-slate-500'>AI lead intelligence</div>
-        </div>
-      </div>
-
-      <div className='mb-3'>
-        <ModeToggle value={uiMode} onChange={setUiMode} />
-      </div>
-
-      <div className='relative rounded-2xl border border-slate-200 bg-[#FAFBFF] p-4'>
-        <div className='relative min-h-[84px]'>
-          <textarea
-            rows={3}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className='relative z-10 w-full resize-none border-0 bg-transparent p-0 text-sm text-slate-950 placeholder-transparent focus:outline-none focus:ring-0'
-          />
-          <TypewriterPlaceholder active={showTypewriter} />
-        </div>
-
-        <div className='mt-3 flex justify-end border-t border-slate-200 pt-3'>
-          <button
-            type='button'
-            onClick={onSearch}
-            disabled={isSearching || !query.trim()}
-            className='inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#17233C] text-white transition hover:bg-[#1D2C4A] disabled:cursor-not-allowed disabled:opacity-50'
-          >
-            {isSearching ? <Sparkles className='h-4 w-4 animate-pulse' /> : <ArrowUp className='h-4 w-4' />}
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export default function LeadProspecting() {
   const { user } = useAuth();
 
@@ -582,10 +647,12 @@ export default function LeadProspecting() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [meta, setMeta] = useState(null);
   const [apiStatus, setApiStatus] = useState('unknown');
+  const [activeContact, setActiveContact] = useState(null);
 
   const isPeopleMode = resultMode === 'people';
   const isCompanyMode =
@@ -662,24 +729,39 @@ export default function LeadProspecting() {
     );
   }
 
+  async function upsertCompanyFromResult(company) {
+    const payload = {
+      source: 'pulse',
+      source_company_key: company.business_id || company.id || company.domain || company.name,
+      name: company.name || 'Unknown Company',
+      domain: company.domain || null,
+      website: company.website || null,
+      address_line1: null,
+      city: company.city || null,
+      state: company.state || null,
+      country_code: company.country || null,
+      shipments_12m: null,
+      teu_12m: null,
+      fcl_shipments_12m: null,
+      lcl_shipments_12m: null,
+      most_recent_shipment_date: null,
+      top_route_12m: null,
+      recent_route: null,
+    };
+
+    const { data, error } = await supabase
+      .from('lit_companies')
+      .upsert(payload, { onConflict: 'source_company_key' })
+      .select('id, source_company_key, name')
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
   async function handleSaveCompany(company) {
     try {
-      await Company.create({
-        name: company.name || 'Unknown Company',
-        domain: company.domain || '',
-        hq_city: company.city || '',
-        hq_country: company.country || '',
-        industry: company.industry || '',
-        employee_count: company.employee_count || '',
-        annual_revenue: company.annual_revenue || '',
-        enrichment_status: 'enriched',
-        enrichment_data: {
-          source: 'pulse',
-          imported_date: new Date().toISOString(),
-          imported_by: user?.id ?? null,
-          raw: company,
-        },
-      });
+      await upsertCompanyFromResult(company);
     } catch (error) {
       console.error('[Pulse] save company failed:', error);
       setErrorMessage(error?.message || 'Failed to save company.');
@@ -688,37 +770,64 @@ export default function LeadProspecting() {
 
   async function handleSaveContact(person) {
     try {
-      const company = await Company.create({
-        name: person.company?.name || 'Unknown Company',
-        domain: person.company?.domain || '',
-        hq_city: person.company?.city || '',
-        hq_country: person.company?.country || '',
-        industry: person.company?.industry || '',
-        employee_count: person.company?.employee_count || '',
-        annual_revenue: person.company?.annual_revenue || '',
-        enrichment_status: 'enriched',
-        enrichment_data: {
-          source: 'pulse',
-          imported_date: new Date().toISOString(),
-          imported_by: user?.id ?? null,
-          rawCompany: person.company,
-        },
-      });
+      const companyRow = await upsertCompanyFromResult(person.company);
 
-      await Contact.create({
-        company_id: company.id,
-        full_name: person.full_name || '',
-        title: person.title || '',
-        dept: person.department || '',
-        email: person.email || '',
-        phone: person.phone || '',
-        linkedin: person.linkedin_url || '',
-        source: 'pulse',
-        verified: Boolean(person.email || person.phone),
-      });
+      const { error } = await supabase
+        .from('lit_contacts')
+        .insert({
+          company_id: companyRow.id,
+          full_name: person.full_name || null,
+          title: person.title || null,
+          dept: person.department || null,
+          email: person.email || null,
+          phone: person.phone || null,
+          linkedin: person.linkedin_url || null,
+          source: 'pulse',
+          verified: Boolean(person.email || person.phone),
+        });
+
+      if (error) throw error;
     } catch (error) {
       console.error('[Pulse] save contact failed:', error);
       setErrorMessage(error?.message || 'Failed to save contact.');
+    }
+  }
+
+  async function enrichContact(contact) {
+    if (!contact?.prospect_id) return;
+
+    setIsEnriching(true);
+    setErrorMessage('');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('searchLeads', {
+        body: {
+          action: 'enrich_contact',
+          prospect_id: contact.prospect_id,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const enrichment = data?.data?.contact || {};
+
+      const updated = {
+        ...contact,
+        email: enrichment?.email || contact.email,
+        phone: enrichment?.phone || contact.phone,
+        linkedin_url: enrichment?.linkedin_url || contact.linkedin_url,
+      };
+
+      setActiveContact(updated);
+      setResults((prev) =>
+        prev.map((item) => (item.id === contact.id ? updated : item))
+      );
+    } catch (error) {
+      console.error('[Pulse] enrich contact failed:', error);
+      setErrorMessage(error?.message || 'Failed to enrich contact.');
+    } finally {
+      setIsEnriching(false);
     }
   }
 
@@ -791,11 +900,7 @@ export default function LeadProspecting() {
         />
       )}
 
-      {statusPill ? (
-        <div className='flex justify-end'>
-          {statusPill}
-        </div>
-      ) : null}
+      {statusPill ? <div className='flex justify-end'>{statusPill}</div> : null}
 
       {errorMessage ? (
         <div className='flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700'>
@@ -821,7 +926,7 @@ export default function LeadProspecting() {
               <div className='mt-1 text-sm text-slate-500'>
                 Mode: {resultMode || 'unknown'}
                 {meta?.requestedLimit ? ` • Limit ${meta.requestedLimit}` : ''}
-                {meta?.estimatedMarketSize ? ` • Market size ${meta.estimatedMarketSize}` : ''}
+                {meta?.matchedCompanyName ? ` • Match ${meta.matchedCompanyName}` : ''}
               </div>
             </div>
 
@@ -843,6 +948,7 @@ export default function LeadProspecting() {
               onToggleSelect={toggleSelected}
               onSaveContact={handleSaveContact}
               onOpenCompanySearch={openInSearch}
+              onViewContact={setActiveContact}
             />
           ) : isCompanyMode ? (
             <CompanyResultsTable
@@ -859,6 +965,14 @@ export default function LeadProspecting() {
           )}
         </section>
       ) : null}
+
+      <ContactDetailDrawer
+        contact={activeContact}
+        open={Boolean(activeContact)}
+        onClose={() => setActiveContact(null)}
+        onEnrich={enrichContact}
+        isEnriching={isEnriching}
+      />
     </div>
   );
 }
