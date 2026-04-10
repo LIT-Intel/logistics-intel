@@ -2,12 +2,11 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Mail,
-  ChevronRight,
+  Lock,
+  User,
+  Rocket,
   CheckCircle2,
-  ShieldCheck,
-  Box,
-  Search,
-  Globe,
+  Check,
 } from "lucide-react";
 import {
   loginWithGoogle,
@@ -16,97 +15,232 @@ import {
 } from "@/auth/supabaseAuthClient";
 import { useAuth } from "@/auth/AuthProvider";
 
-const AnimatedPreview = () => {
-  const [pulse, setPulse] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setPulse((prev) => (prev + 1) % 4);
-    }, 2000);
-    return () => clearInterval(timer);
-  }, []);
-
+function BackgroundPattern() {
   return (
-    <div className="relative w-full max-w-lg aspect-[4/3] bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-white/10 ring-8 ring-white/5 scale-90 sm:scale-100">
-      <div className="h-10 bg-white/5 border-b border-white/10 flex items-center px-4 gap-2">
-        <div className="flex gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-red-500/50" />
-          <div className="w-2 h-2 rounded-full bg-amber-500/50" />
-          <div className="w-2 h-2 rounded-full bg-emerald-500/50" />
-        </div>
-        <div className="mx-auto bg-white/10 rounded-full h-4 w-1/2 flex items-center px-3">
-          <Search className="h-2 w-2 text-white/30 mr-2" />
-          <div className="h-1.5 w-12 bg-white/20 rounded" />
-        </div>
-      </div>
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_26%),radial-gradient(circle_at_top_right,rgba(99,102,241,0.12),transparent_24%),linear-gradient(180deg,#f7fbff_0%,#eef4ff_100%)]" />
+      <svg
+        className="absolute -right-24 top-8 h-[70vh] w-[48vw] opacity-65"
+        viewBox="0 0 566 721"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          <linearGradient id="litWaveSignup" x1="566" y1="120" x2="120" y2="680" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#ff2a6d" />
+            <stop offset="0.45" stopColor="#8b5cf6" />
+            <stop offset="1" stopColor="#22d3ee" />
+          </linearGradient>
+        </defs>
+        {Array.from({ length: 16 }).map((_, i) => (
+          <path
+            key={i}
+            d={`M560 ${170 + i * 16}C455 ${175 + i * 9} 320 ${250 + i * 15} 220 ${390 + i * 18}C140 ${500 + i * 14} 90 ${620 + i * 10} 40 ${705 - i * 8}`}
+            stroke="url(#litWaveSignup)"
+            strokeOpacity={0.6 - i * 0.026}
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+        ))}
+      </svg>
+      <div className="absolute inset-y-0 right-0 w-[42vw] bg-[radial-gradient(circle_at_center,rgba(236,72,153,0.06),transparent_54%)]" />
+      <div className="absolute left-10 top-28 h-48 w-48 rounded-full bg-cyan-300/10 blur-3xl" />
+      <div className="absolute bottom-10 left-1/3 h-56 w-56 rounded-full bg-indigo-300/10 blur-3xl" />
+    </div>
+  );
+}
 
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-3 gap-3">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className={`h-16 rounded-xl bg-white/5 border border-white/10 p-3 transition-all duration-700 ${
-                pulse === i ? "border-indigo-500/50 bg-indigo-500/5" : ""
-              }`}
-            >
-              <div className="h-2 w-8 bg-white/10 rounded mb-2" />
-              <div className="h-3 w-12 bg-indigo-400/40 rounded" />
-            </div>
-          ))}
-        </div>
-
-        <div className="h-32 rounded-2xl bg-white/5 border border-white/10 p-4 relative overflow-hidden">
-          <div className="flex items-end justify-between gap-1 h-full pt-4">
-            {[40, 70, 45, 90, 65, 80, 50, 85].map((h, i) => (
-              <div
-                key={i}
-                className="flex-1 bg-indigo-500/20 rounded-t-sm"
-                style={{ height: `${pulse === 0 ? h : Math.min(h + (i % 3) * 10, 95)}%` }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          {[1, 2].map((i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center">
-                  <Box className="h-4 w-4 text-indigo-400" />
-                </div>
-                <div className="space-y-1.5">
-                  <div className="h-2 w-24 bg-white/20 rounded" />
-                  <div className="h-1.5 w-16 bg-white/10 rounded" />
-                </div>
-              </div>
-              <div className="h-2 w-12 bg-emerald-500/20 rounded" />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/10 backdrop-blur-md px-4 py-2 rounded-full border border-white/20 shadow-xl pointer-events-none">
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
-          <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">
-            Live Intelligence Sync
-          </span>
-        </div>
+function Header() {
+  return (
+    <div className="mb-6 flex items-center justify-between">
+      <img
+        src="/lit-logo-horizontal%20(1).svg"
+        alt="Logistics Intel"
+        className="h-10 w-auto sm:h-11"
+      />
+      <div className="text-sm font-medium text-slate-600">
+        Already have an account?{" "}
+        <a
+          href="/login"
+          className="inline-flex rounded-full bg-white/85 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200 transition hover:bg-white hover:text-cyan-700"
+        >
+          Log In
+        </a>
       </div>
     </div>
   );
-};
+}
 
-export default function Signup() {
+function Banner() {
+  return (
+    <div className="mx-auto mb-4 w-full max-w-[980px] rounded-2xl border border-slate-200 bg-[linear-gradient(90deg,rgba(15,23,42,0.94)_0%,rgba(30,41,59,0.92)_100%)] px-5 py-4 shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="group relative flex h-12 w-12 items-center justify-center rounded-2xl bg-[#031235] ring-1 ring-cyan-300/20 transition duration-300 hover:shadow-[0_0_24px_rgba(34,211,238,0.35)] hover:ring-cyan-300/50">
+            <img
+              src="/lit-icon-master.svg"
+              alt="Logistics Intel icon"
+              className="h-7 w-7 object-contain"
+            />
+          </div>
+          <div>
+            <div className="text-lg font-semibold text-white">Start your free trial</div>
+            <div className="text-sm text-slate-300">
+              Create your account and start using live shipment intelligence, company insights, and outreach workflows.
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="hidden rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 md:inline-flex"
+        >
+          View features
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TrialBar() {
+  return (
+    <div className="mx-auto mb-4 w-full max-w-[980px] rounded-2xl border border-slate-200 bg-white/85 px-5 py-3 text-center shadow-sm backdrop-blur-sm">
+      <span className="text-sm text-slate-600">
+        ✨ New to Logistics Intel?{" "}
+        <span className="font-semibold text-cyan-600">
+          Get access to live shipment intelligence faster
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function LeftPanel({ inviteMode = false }: { inviteMode?: boolean }) {
+  const items = inviteMode
+    ? [
+        "Accept your workspace invitation securely",
+        "Join the correct organization automatically",
+        "Access the tools and pages assigned to your plan",
+      ]
+    : [
+        "Start with your free trial and explore live intel",
+        "Search shippers, save targets, and monitor opportunities",
+        "Access only the pages and workflows included in your plan",
+      ];
+
+  return (
+    <div className="bg-white px-8 py-9 sm:px-10">
+      <div className="mb-6">
+        <img
+          src="/lit-logo-horizontal%20(1).svg"
+          alt="Logistics Intel"
+          className="mb-6 h-8 w-auto"
+        />
+        <h1 className="text-[50px] font-semibold leading-[1.01] tracking-[-0.05em] text-slate-900">
+          {inviteMode ? "Join your workspace" : "Start free trial"}
+        </h1>
+        <p className="mt-4 max-w-sm text-[15px] leading-7 text-slate-500">
+          {inviteMode
+            ? "Create your account and finish joining your Logistics Intel workspace."
+            : "Create your account to access freight intelligence, CRM workflows, and market visibility tools."}
+        </p>
+      </div>
+
+      <div className="group rounded-[28px] border border-slate-200 bg-slate-50 p-5 transition duration-300 hover:border-cyan-300/70 hover:shadow-[0_0_30px_rgba(34,211,238,0.16)]">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600 ring-1 ring-cyan-100">
+            <Rocket className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-slate-900">
+              {inviteMode ? "Workspace access" : "Why sign up"}
+            </div>
+            <div className="text-xs text-slate-500">
+              {inviteMode ? "Join your team and unlock your workspace" : "Start using live data from day one"}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div key={item} className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <Check className="h-3.5 w-3.5" />
+              </div>
+              <div className="text-sm leading-6 text-slate-600">{item}</div>
+            </div>
+          ))}
+        </div>
+
+        {!inviteMode && (
+          <div className="mt-6 rounded-2xl border border-dashed border-cyan-200 bg-white px-4 py-4">
+            <div className="text-sm font-semibold text-slate-900">Free trial includes</div>
+            <div className="mt-2 text-sm leading-6 text-slate-600">
+              Account access, company search visibility, and a guided path into the features your plan unlocks first.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CenterDivider() {
+  return (
+    <div className="relative hidden items-center justify-center bg-white lg:flex">
+      <div className="h-[340px] w-px bg-slate-200" />
+      <div className="absolute rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+        or
+      </div>
+    </div>
+  );
+}
+
+function SocialButtons({
+  onGoogle,
+  onMicrosoft,
+}: {
+  onGoogle: () => void;
+  onMicrosoft: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={onGoogle}
+        className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+      >
+        <img
+          src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+          alt="Google"
+          className="h-5 w-5"
+        />
+        Google
+      </button>
+
+      <button
+        type="button"
+        onClick={onMicrosoft}
+        className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+      >
+        <img
+          src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg"
+          alt="Office 365"
+          className="h-5 w-5"
+        />
+        Office 365
+      </button>
+    </div>
+  );
+}
+
+export default function ModernSignupPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth?.() || { user: null };
 
   const inviteToken = (searchParams.get("token") || "").trim();
   const inviteEmail = (searchParams.get("email") || "").trim().toLowerCase();
+  const nextParam = (searchParams.get("next") || "").trim();
   const isInviteFlow = Boolean(inviteToken);
 
   const [fullName, setFullName] = useState("");
@@ -115,72 +249,39 @@ export default function Signup() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
-  const [emailConfirmRequired, setEmailConfirmRequired] = useState(false);
 
-  useEffect(() => {
-    document.title = isInviteFlow
-      ? "Accept invite — Logistics Intel"
-      : "Create an account — Logistics Intel";
-  }, [isInviteFlow]);
-
-  useEffect(() => {
-    if (inviteEmail) setEmail(inviteEmail);
-  }, [inviteEmail]);
-
-  // Redirect already-authenticated users
-  useEffect(() => {
-    if (!authLoading && user) {
-      if (isInviteFlow) {
-        navigate(
-          `/accept-invite?token=${encodeURIComponent(inviteToken)}${
-            inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
-          }`,
-          { replace: true }
-        );
-      } else {
-        navigate("/app/dashboard", { replace: true });
-      }
-    }
-  }, [user, authLoading, isInviteFlow, inviteToken, inviteEmail, navigate]);
-
-  // The post-auth destination for invite flows
-  const acceptInviteUrl = isInviteFlow
+  const postInvitePath = isInviteFlow
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
-    : "/app/dashboard";
+    : nextParam || "/search";
 
-  // For OAuth / email confirmation redirects: route through /auth/callback
-  // so it can exchange the code and then navigate to acceptInviteUrl
-  const callbackUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
-    acceptInviteUrl
-  )}`;
+  useEffect(() => {
+    if (inviteEmail) {
+      setEmail(inviteEmail);
+    }
+  }, [inviteEmail]);
+
+  useEffect(() => {
+    if (user?.id) {
+      navigate(postInvitePath, { replace: true });
+    }
+  }, [user?.id, navigate, postInvitePath]);
 
   async function handleEmailSignup(e: React.FormEvent) {
     e.preventDefault();
-    setErr("");
-    setLoading(true);
     try {
-      const data = await registerWithEmailPassword({
-        fullName,
-        email,
-        password,
-        emailRedirectTo: callbackUrl,
-      });
+      setErr("");
+      setLoading(true);
+      await registerWithEmailPassword({ fullName, email, password });
 
-      setSignupSuccess(true);
-
-      if (data.session) {
-        // Email confirmation disabled — user is immediately signed in
-        if (isInviteFlow) {
-          setTimeout(() => navigate(acceptInviteUrl, { replace: true }), 800);
-        } else {
-          // Non-invite: go to dashboard (AuthProvider will pick up the session)
-          setTimeout(() => navigate("/app/dashboard", { replace: true }), 800);
-        }
+      if (isInviteFlow) {
+        setSignupSuccess(true);
+        setTimeout(() => {
+          navigate(postInvitePath, { replace: true });
+        }, 900);
       } else {
-        // Email confirmation required — show "check email" message
-        setEmailConfirmRequired(true);
+        setSignupSuccess(true);
       }
     } catch (e: any) {
       setErr(e?.message || "Sign-up failed");
@@ -190,221 +291,159 @@ export default function Signup() {
   }
 
   async function handleGoogleSignup() {
-    setErr("");
     try {
-      // For invite flow: route OAuth callback through /auth/callback?next=acceptInviteUrl
-      // For regular: default /app/dashboard
-      const redirectPath = isInviteFlow
-        ? `/auth/callback?next=${encodeURIComponent(acceptInviteUrl)}`
-        : "/app/dashboard";
-      await loginWithGoogle(redirectPath);
+      setErr("");
+      await loginWithGoogle(postInvitePath);
     } catch (e: any) {
       setErr(e?.message || "Google sign-in failed");
     }
   }
 
   async function handleMicrosoftSignup() {
-    setErr("");
     try {
-      const redirectPath = isInviteFlow
-        ? `/auth/callback?next=${encodeURIComponent(acceptInviteUrl)}`
-        : "/app/dashboard";
-      await loginWithMicrosoft(redirectPath);
+      setErr("");
+      await loginWithMicrosoft(postInvitePath);
     } catch (e: any) {
       setErr(e?.message || "Microsoft sign-in failed");
     }
   }
 
   return (
-    <div className="flex min-h-screen bg-white font-sans text-slate-900">
-      <div className="flex w-full flex-col lg:w-1/2">
-        <div className="p-8">
-          <div className="flex items-center">
-            <img src="/logo_horizontal.png" alt="Logistics Intel" className="h-8 w-auto" />
-          </div>
-        </div>
+    <div className="relative min-h-screen overflow-hidden text-slate-900">
+      <BackgroundPattern />
 
-        <div className="flex flex-1 flex-col items-center justify-center px-8 sm:px-12 lg:px-24">
-          <div className="w-full max-w-md space-y-8">
-            {/* Success state */}
-            {signupSuccess && (
-              <div className="flex flex-col items-center gap-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
-                  <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                </div>
-                <div>
-                  {emailConfirmRequired ? (
-                    <>
-                      <h2 className="text-2xl font-black text-slate-900">
-                        Check your inbox
-                      </h2>
-                      <p className="mt-3 text-sm font-medium text-slate-600">
-                        We sent a confirmation link to{" "}
-                        <span className="font-bold text-slate-900">{email}</span>.{" "}
-                        {isInviteFlow
-                          ? "After confirming, you'll be taken directly to your workspace invite."
-                          : "Click it to activate your account, then sign in."}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-400">
-                        Don&apos;t see it? Check your spam folder.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <h2 className="text-2xl font-black text-slate-900">
-                        {isInviteFlow ? "Account created!" : "Account created!"}
-                      </h2>
-                      <p className="mt-3 text-sm font-medium text-slate-600">
-                        {isInviteFlow
-                          ? "Taking you to your workspace now..."
-                          : "You're in. Taking you to the dashboard..."}
-                      </p>
-                    </>
-                  )}
-                </div>
+      <div className="relative mx-auto flex min-h-screen max-w-[1440px] flex-col px-4 py-6 sm:px-6 lg:px-8">
+        <Header />
+        <Banner />
+        <TrialBar />
 
-                {emailConfirmRequired && !isInviteFlow && (
+        <div className="mx-auto grid w-full max-w-[980px] overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.12)] lg:grid-cols-[0.98fr_auto_1fr]">
+          <LeftPanel inviteMode={isInviteFlow} />
+          <CenterDivider />
+
+          <div className="bg-white px-8 py-9 sm:px-10">
+            <div className="mb-6 lg:text-center">
+              <div className="text-sm font-medium text-slate-500">
+                Create your account
+              </div>
+            </div>
+
+            {signupSuccess ? (
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                  <CheckCircle2 className="h-7 w-7" />
+                </div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  {isInviteFlow ? "Account created. Finishing invite..." : "Account created!"}
+                </h2>
+                <p className="mt-3 text-sm text-slate-600">
+                  {isInviteFlow
+                    ? "Your account is ready. We’re taking you back to your workspace invitation now."
+                    : "We sent a verification link to your email. Confirm it, then sign in."}
+                </p>
+
+                {!isInviteFlow && (
                   <button
+                    type="button"
                     onClick={() => navigate("/login")}
-                    className="flex items-center gap-2 rounded-full bg-slate-900 px-8 py-3 text-sm font-bold text-white hover:bg-slate-800 transition-colors"
+                    className="mt-6 rounded-2xl bg-[#ef2b22] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#dd241b]"
                   >
-                    Go to sign in <ChevronRight className="h-4 w-4" />
+                    Go to Log In
                   </button>
                 )}
               </div>
-            )}
-
-            {/* Registration form */}
-            {!signupSuccess && (
+            ) : (
               <>
-                <div className="text-center lg:text-left">
-                  {isInviteFlow && (
-                    <div className="mb-4 inline-flex rounded-full bg-indigo-50 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-indigo-600">
-                      Workspace invitation
-                    </div>
-                  )}
-
-                  <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
-                    {isInviteFlow ? "Join your workspace" : "Ready to optimize?"}
-                  </h1>
-
-                  <p className="mt-4 text-lg font-medium text-slate-500">
-                    {isInviteFlow
-                      ? "Create your account to accept your Logistics Intel workspace invite."
-                      : "Join thousands of logistics professionals using shipment intelligence to win."}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md"
-                    onClick={handleGoogleSignup}
-                  >
-                    <img
-                      src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-                      alt="Google"
-                      className="h-4 w-4"
-                    />
-                    Google
-                  </button>
-
-                  <button
-                    className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-3 px-4 text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md"
-                    onClick={handleMicrosoftSignup}
-                  >
-                    <img
-                      src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg"
-                      alt="Office 365"
-                      className="h-4 w-4"
-                    />
-                    Office 365
-                  </button>
-                </div>
-
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-slate-200" />
-                  </div>
-                  <div className="relative flex justify-center text-xs font-black uppercase">
-                    <span className="bg-white px-4 text-slate-400 tracking-widest">
-                      or continue with email
-                    </span>
-                  </div>
-                </div>
-
                 {err && (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                     {err}
                   </div>
                 )}
 
                 <form onSubmit={handleEmailSignup} className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">
-                      Full Name
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Full name
                     </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Your full name"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-4 pr-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                    />
+                    <div className="relative">
+                      <User className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-12 py-4 text-base text-slate-900 outline-none transition focus:border-cyan-400 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                        placeholder="Your full name"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">
-                      Work Email
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Work email
                     </label>
-                    <div className="relative group">
-                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors">
-                        <Mail className="h-5 w-5" />
-                      </div>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                       <input
                         type="email"
                         required
-                        placeholder="you@company.com"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 disabled:opacity-60"
-                        value={email}
                         disabled={Boolean(inviteEmail)}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-12 py-4 text-base text-slate-900 outline-none transition focus:border-cyan-400 focus:bg-white focus:ring-4 focus:ring-cyan-100 disabled:opacity-80"
+                        placeholder="you@company.com"
+                        value={email}
                         onChange={(e) => setEmail(e.target.value)}
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-500">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
                       Password
                     </label>
-                    <input
-                      type="password"
-                      required
-                      minLength={8}
-                      placeholder="Create a password (min. 8 characters)"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-4 pr-4 text-sm font-bold transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="password"
+                        required
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-12 py-4 text-base text-slate-900 outline-none transition focus:border-cyan-400 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                        placeholder="Create a password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
+                    </div>
                   </div>
 
                   <button
                     type="submit"
                     disabled={loading}
-                    className="relative w-full overflow-hidden rounded-2xl bg-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
+                    className="w-full rounded-2xl bg-[#ef2b22] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#dd241b] disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {loading ? (
-                      <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        {isInviteFlow ? "Create Account & Join" : "Get Free Access"}
-                        <ChevronRight className="h-4 w-4" />
-                      </>
-                    )}
+                    {loading
+                      ? "Creating account..."
+                      : isInviteFlow
+                      ? "Create Account & Join"
+                      : "Start Free Trial"}
                   </button>
                 </form>
 
-                <p className="text-center text-xs font-medium text-slate-400">
+                <div className="my-6 block lg:hidden">
+                  <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-slate-400">
+                    <span className="h-px flex-1 bg-slate-200" />
+                    <span>or continue with</span>
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  <div className="hidden lg:block">
+                    <div className="mb-4 text-sm font-medium text-slate-500">
+                      Continue with
+                    </div>
+                  </div>
+                  <SocialButtons onGoogle={handleGoogleSignup} onMicrosoft={handleMicrosoftSignup} />
+                </div>
+
+                <div className="mt-8 text-center text-sm text-slate-500">
                   Already have an account?{" "}
                   <button
                     type="button"
@@ -417,89 +456,26 @@ export default function Signup() {
                           : "/login"
                       )
                     }
-                    className="font-bold text-indigo-600 underline"
+                    className="font-semibold text-indigo-600 hover:underline"
                   >
-                    Sign in
+                    Log In
                   </button>
-                </p>
-
-                <p className="text-center text-xs font-medium text-slate-400">
-                  By signing up, you agree to our{" "}
-                  <a href="/terms" className="font-bold text-indigo-600 underline">
-                    Terms of Service
-                  </a>{" "}
-                  and{" "}
-                  <a href="/privacy" className="font-bold text-indigo-600 underline">
-                    Privacy Policy
-                  </a>
-                  .
-                </p>
+                </div>
               </>
             )}
           </div>
         </div>
 
-        <div className="p-8 flex flex-wrap gap-x-8 gap-y-4 justify-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
-          <span>© {new Date().getFullYear()} Logistics Intel LLC</span>
-          <a href="/security" className="hover:text-indigo-500 transition-colors">Security</a>
-          <a href="/status" className="hover:text-indigo-500 transition-colors">Status</a>
-          <a href="/help" className="hover:text-indigo-500 transition-colors">Help Center</a>
-        </div>
-      </div>
-
-      {/* Right panel */}
-      <div className="hidden w-1/2 lg:flex flex-col relative overflow-hidden bg-slate-50 border-l border-slate-100">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(99,102,241,0.1)_0%,transparent_50%)]" />
-        <div className="absolute top-0 right-0 p-12 opacity-5">
-          <Globe className="h-96 w-96 text-indigo-600" />
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center p-12 relative z-10">
-          <div className="mb-12 transform hover:scale-105 transition-transform duration-500">
-            <AnimatedPreview />
-          </div>
-
-          <div className="w-full max-w-md space-y-8">
-            <div className="flex gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
-                <CheckCircle2 className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  Millions of shipments
-                </h4>
-                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
-                  Verified shipment intelligence from real BOL data, not just scraped profiles.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-black uppercase tracking-widest text-slate-900">
-                  Enterprise Ready
-                </h4>
-                <p className="mt-1 text-sm text-slate-500 leading-relaxed font-medium">
-                  SSO, SOC2 compliance, and role-based access for global logistics teams.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-12 bg-white border-t border-slate-100">
-          <p className="mb-6 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-            Trusted by Global Operations at
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6 opacity-30 grayscale hover:grayscale-0 transition-all">
-            <span className="text-xl font-black italic tracking-tighter">snowflake</span>
-            <span className="text-xl font-black tracking-tighter">Adobe</span>
-            <span className="text-xl font-black italic tracking-tighter">Gartner</span>
-            <span className="text-xl font-black tracking-tighter">ZOOM</span>
-          </div>
+        <div className="mt-8 text-center text-xs text-slate-500">
+          By continuing, you agree to Logistics Intel&apos;s{" "}
+          <a href="/terms" className="font-medium text-slate-700 hover:text-cyan-600">
+            Terms & Conditions
+          </a>{" "}
+          and{" "}
+          <a href="/privacy" className="font-medium text-slate-700 hover:text-cyan-600">
+            Privacy Policy
+          </a>
+          .
         </div>
       </div>
     </div>
