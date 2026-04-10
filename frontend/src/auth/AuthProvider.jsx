@@ -18,6 +18,8 @@ const AuthCtx = createContext({
   plan: null,
   access: null,
   isSuperAdmin: false,
+  isOrgAdmin: false,
+  canAccessAdmin: false,
   orgRole: null,
   orgId: null,
   signInWithGoogle: async () => {},
@@ -55,6 +57,11 @@ function normalizeUser(u) {
   };
 }
 
+/**
+ * Platform admin is optional.
+ * If the table does not exist, we should NOT break auth or admin access.
+ * We simply treat platform superadmin as false and rely on org membership.
+ */
 async function fetchPlatformAdminStatus(userId) {
   if (!supabase || !userId) return false;
 
@@ -65,9 +72,15 @@ async function fetchPlatformAdminStatus(userId) {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) return false;
-    return Boolean(data);
-  } catch {
+    if (error) {
+      // Table missing or inaccessible: safely fall back to false
+      console.warn('[AuthProvider] platform_admins lookup unavailable:', error.message);
+      return false;
+    }
+
+    return data !== null;
+  } catch (error) {
+    console.warn('[AuthProvider] platform_admins lookup failed:', error);
     return false;
   }
 }
@@ -77,61 +90,40 @@ async function fetchPrimaryOrgMembership(userId) {
     return { orgId: null, orgRole: null, plan: null };
   }
 
-  const sources = [
-    { table: 'org_members', userKey: 'user_id', orgKey: 'org_id', roleKey: 'role', statusKey: 'status' },
-    { table: 'org_memberships', userKey: 'user_id', orgKey: 'org_id', roleKey: 'role', statusKey: 'status' },
-  ];
+  try {
+    const { data, error } = await supabase
+      .from('org_members')
+      .select(`
+        org_id,
+        role,
+        status,
+        email,
+        full_name
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('joined_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  for (const source of sources) {
-    try {
-      let query = supabase
-        .from(source.table)
-        .select(`${source.orgKey}, ${source.roleKey}, ${source.statusKey}`)
-        .eq(source.userKey, userId)
-        .limit(10);
-
-      const { data, error } = await query;
-
-      if (error || !Array.isArray(data) || !data.length) continue;
-
-      const active = data.find((row) => {
-        const status = row?.[source.statusKey];
-        return !status || status === 'active' || status === 'accepted';
-      }) || data[0];
-
-      const orgId = active?.[source.orgKey] ?? null;
-      const orgRole = active?.[source.roleKey] ?? null;
-
-      let plan = null;
-      if (orgId) {
-        try {
-          const { data: subs } = await supabase
-            .from('subscriptions')
-            .select('plan_code, status')
-            .eq('org_id', orgId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (subs?.status === 'active' || subs?.status === 'trialing' || subs?.plan_code) {
-            plan = subs?.plan_code || null;
-          }
-        } catch {
-          // ignore subscription lookup failures
-        }
+    if (error || !data) {
+      if (error) {
+        console.warn('[AuthProvider] org_members lookup failed:', error.message);
       }
-
-      return {
-        orgId,
-        orgRole,
-        plan,
-      };
-    } catch {
-      // try next membership table
+      return { orgId: null, orgRole: null, plan: null };
     }
-  }
 
-  return { orgId: null, orgRole: null, plan: null };
+    // Keep this simple and resilient for now.
+    // If you later restore subscriptions join logic, add it back here safely.
+    return {
+      orgId: data.org_id,
+      orgRole: data.role,
+      plan: null,
+    };
+  } catch (error) {
+    console.warn('[AuthProvider] org membership lookup exception:', error);
+    return { orgId: null, orgRole: null, plan: null };
+  }
 }
 
 export function AuthProvider({ children }) {
@@ -150,15 +142,15 @@ export function AuthProvider({ children }) {
         setRawUser(normalized);
         setAuthReady(true);
 
-        const [isAdmin, membership] = await Promise.all([
+        const [platformAdmin, membership] = await Promise.all([
           fetchPlatformAdminStatus(u.id),
           fetchPrimaryOrgMembership(u.id),
         ]);
 
-        setIsSuperAdmin(isAdmin);
+        setIsSuperAdmin(Boolean(platformAdmin));
         setOrgId(membership.orgId);
         setOrgRole(membership.orgRole);
-        setPlan(isAdmin ? 'unlimited' : (membership.plan || 'free_trial'));
+        setPlan(membership.plan || normalized?.user_metadata?.plan || 'free_trial');
       } else {
         setRawUser(null);
         setAuthReady(false);
@@ -167,6 +159,7 @@ export function AuthProvider({ children }) {
         setOrgRole(null);
         setPlan(null);
       }
+
       setLoading(false);
     });
 
@@ -202,19 +195,22 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(() => {
     const resolvedPlan = plan || rawUser?.user_metadata?.plan || 'free_trial';
-    const elevatedOrgRole = ['owner', 'admin', 'org_admin', 'super_admin'].includes(
-      String(orgRole || '').toLowerCase()
-    );
-    const legacyRole = isSuperAdmin || elevatedOrgRole ? 'admin' : 'user';
+    const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
+    const canAccessAdmin = Boolean(isSuperAdmin || isOrgAdmin);
+
+    // Backwards compatibility for older parts of the app
+    const legacyRole = canAccessAdmin ? 'admin' : 'user';
 
     const access = rawUser
       ? {
-          isAdmin: isSuperAdmin || legacyRole === 'admin',
+          isAdmin: canAccessAdmin,
           isSuperAdmin,
+          isOrgAdmin,
+          canAccessAdmin,
           canUpgrade: !['unlimited', 'enterprise'].includes(resolvedPlan),
-          canManageBilling: isSuperAdmin || elevatedOrgRole,
-          canManageOrg: isSuperAdmin || elevatedOrgRole,
-          canViewAllPages: isSuperAdmin || elevatedOrgRole,
+          canManageBilling: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
+          canManageMembers: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
+          canManageWorkspace: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
           plan: resolvedPlan,
           role: legacyRole,
           orgRole,
@@ -230,6 +226,8 @@ export function AuthProvider({ children }) {
       plan: resolvedPlan,
       access,
       isSuperAdmin,
+      isOrgAdmin,
+      canAccessAdmin,
       orgRole,
       orgId,
       signInWithGoogle,
