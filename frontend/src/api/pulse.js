@@ -60,18 +60,6 @@ function normalizeCompanyResult(item, index = 0) {
       item?.yearly_revenue_range ||
       '—',
     summary: clean(item?.summary || item?.business_description),
-    shipments_12m:
-      typeof item?.shipments_12m === 'number'
-        ? item.shipments_12m
-        : typeof item?.shipment_count === 'number'
-          ? item.shipment_count
-          : null,
-    teu_12m:
-      typeof item?.teu_12m === 'number'
-        ? item.teu_12m
-        : null,
-    mode: clean(item?.mode) || '—',
-    last_shipment: clean(item?.last_shipment || item?.most_recent_shipment_date),
     status: clean(item?.status) || 'Prospect',
     contacts_count:
       typeof item?.contacts_count === 'number' ? item.contacts_count : contacts.length,
@@ -108,15 +96,6 @@ function normalizePeopleResult(item, index = 0) {
         item?.company?.employee_count || item?.number_of_employees_range || '—',
       annual_revenue:
         item?.company?.annual_revenue || item?.yearly_revenue_range || '—',
-      shipments_12m:
-        typeof item?.company?.shipments_12m === 'number'
-          ? item.company.shipments_12m
-          : null,
-      teu_12m:
-        typeof item?.company?.teu_12m === 'number'
-          ? item.company.teu_12m
-          : null,
-      last_shipment: clean(item?.company?.last_shipment || item?.most_recent_shipment_date),
       status: clean(item?.company?.status) || 'Prospect',
     },
   };
@@ -163,6 +142,7 @@ export async function searchPulse(payload = {}) {
       partial: Boolean(raw?.meta?.partial),
       warnings: toArray(raw?.meta?.warnings),
       classificationReasons: toArray(raw?.meta?.classificationReasons),
+      matchedCompanyName: raw?.meta?.matchedCompanyName ?? null,
     },
     data: {
       results: normalizedResults,
