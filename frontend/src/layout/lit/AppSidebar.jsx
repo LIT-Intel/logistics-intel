@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import {
   LayoutDashboard,
   Search,
@@ -133,9 +134,9 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                   (item.href !== "/" && currentPath.startsWith(item.href));
 
                 return (
-                  <a
+                  <Link
                     key={item.label}
-                    href={item.locked ? "/app/billing" : item.href}
+                    to={item.locked ? "/app/billing" : item.href}
                     title={item.label}
                     className={[
                       "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
@@ -163,7 +164,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                         )}
                       </span>
                     )}
-                  </a>
+                  </Link>
                 );
               })}
             </nav>
