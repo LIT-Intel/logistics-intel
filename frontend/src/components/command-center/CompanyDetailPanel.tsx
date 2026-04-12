@@ -61,13 +61,38 @@ type NormalizedShipment = {
   source: any;
   raw: any;
   id: string;
+  masterBol: string;
+  houseBol: string;
+  importerName: string;
+  importerId: string;
+  consigneeName: string;
+  consigneeAddress: string;
+  shipper: string;
+  shipperAddress: string;
+  carrierCode: string;
+  carrier: string;
+  forwarderCode: string;
+  forwarderName: string;
+  notifyParty: string;
+  portOfUnladingId: string;
+  portOfUnlading: string;
+  portOfLadingId: string;
+  portOfLading: string;
   date: string | null;
   year: number | null;
   monthIndex: number | null;
   teu: number;
+  weightKg: string;
+  grossWeight: string;
+  volume: string;
   spend: number | null;
   loadType: "FCL" | "LCL" | "UNKNOWN";
-  carrier: string;
+  vessel: string;
+  voyageNumber: string;
+  containerNumbers: string;
+  containerTypes: string;
+  cargoDescription: string;
+  marksAndNumbers: string;
   origin: string;
   destination: string;
   route: string;
@@ -426,16 +451,408 @@ const extractHsCode = (shipment: any) =>
     ),
   );
 
+const extractMasterBol = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["master_bol_number"],
+          ["masterBolNumber"],
+          ["master_bill_of_lading"],
+          ["bill_of_lading"],
+          ["bol_number"],
+          ["number"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractHouseBol = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["house_bol_number"],
+          ["houseBolNumber"],
+          ["house_bill_of_lading"],
+          ["house_bol"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractImporterId = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["importer_id"],
+          ["importerId"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractImporterName = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["importer_name"],
+          ["importerName"],
+          ["company_name"],
+          ["companyName"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractConsigneeName = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["consignee_name"],
+          ["consigneeName"],
+          ["Consignee_Name"],
+          ["notify_party_name"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractConsigneeAddress = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["consignee_address"],
+          ["consigneeAddress"],
+          ["Consignee_Address"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractShipperName = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["shipper"],
+          ["shipper_name"],
+          ["shipperName"],
+          ["supplier_name"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractShipperAddress = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["shipper_address"],
+          ["shipperAddress"],
+          ["supplier_address"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractCarrierCode = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["carrier_code"],
+          ["carrierCode"],
+          ["carrier_scac"],
+          ["Carrier_Code"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractForwarderCode = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["forwarder_scac_code"],
+          ["forwarderScacCode"],
+          ["forwarder_code"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractForwarderName = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["forwarder_name"],
+          ["forwarderName"],
+          ["forwarder"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractNotifyParty = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["notify_party"],
+          ["notifyParty"],
+          ["notify_party_name"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractPortOfUnladingId = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["port_of_unlading_id"],
+          ["portOfUnladingId"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractPortOfUnlading = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["port_of_unlading_name"],
+          ["portOfUnladingName"],
+          ["port_of_unlading"],
+          ["destination_port"],
+          ["destination_port_name"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractPortOfLadingId = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["port_of_lading_id"],
+          ["portOfLadingId"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractPortOfLading = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["port_of_lading_name"],
+          ["portOfLadingName"],
+          ["port_of_lading"],
+          ["origin_port"],
+          ["origin_port_name"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractWeightKg = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["weight_kg"],
+          ["weightKg"],
+          ["weight"],
+          ["gross_weight_kg"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractGrossWeight = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["gross_weight"],
+          ["grossWeight"],
+          ["Gross_Weight"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractVolume = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["volume"],
+          ["cbm"],
+          ["volume_cbm"],
+          ["cubic_meters"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractVessel = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["vessel"],
+          ["vessel_name"],
+          ["vesselName"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractVoyageNumber = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["voyage_number"],
+          ["voyageNumber"],
+          ["voyage"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractContainerNumbers = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["container_numbers"],
+          ["containerNumbers"],
+          ["containers"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractContainerTypes = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["container_types"],
+          ["containerTypes"],
+          ["container_type_descriptions"],
+          ["containerTypeDescriptions"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractCargoDescription = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["cargo_description"],
+          ["cargoDescription"],
+          ["Product_Description"],
+          ["description"],
+          ["product_description"],
+        ),
+        "",
+      ),
+    ),
+  );
+
+const extractMarksAndNumbers = (shipment: any) =>
+  cleanDisplayText(
+    String(
+      pickFirst(
+        getShipmentValue(
+          shipment,
+          ["marks_and_numbers"],
+          ["marksAndNumbers"],
+        ),
+        "",
+      ),
+    ),
+  );
+
 const normalizeShipment = (shipment: any, index: number): NormalizedShipment => {
   const date = extractDate(shipment);
   const parsedDate = date ? new Date(date) : null;
   const year = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.getFullYear() : null;
   const monthIndex =
     parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.getMonth() : null;
+
+  const origin = extractOrigin(shipment) || extractPortOfLading(shipment) || "—";
+  const destination = extractDestination(shipment) || extractPortOfUnlading(shipment) || "—";
+
   const route = buildRouteLabel(
     pickFirst(
       getShipmentValue(shipment, ["route"], ["lane"], ["trade_lane"]),
-      deriveRouteFromShipment(shipment),
+      origin !== "—" || destination !== "—" ? `${origin} → ${destination}` : null,
     ) as string | null,
   );
 
@@ -448,15 +865,40 @@ const normalizeShipment = (shipment: any, index: number): NormalizedShipment => 
         `shipment-${index}`,
       ),
     ),
+    masterBol: extractMasterBol(shipment) || "—",
+    houseBol: extractHouseBol(shipment) || "—",
+    importerName: extractImporterName(shipment) || "—",
+    importerId: extractImporterId(shipment) || "—",
+    consigneeName: extractConsigneeName(shipment) || "—",
+    consigneeAddress: extractConsigneeAddress(shipment) || "—",
+    shipper: extractShipperName(shipment) || "—",
+    shipperAddress: extractShipperAddress(shipment) || "—",
+    carrierCode: extractCarrierCode(shipment) || "—",
+    carrier: extractCarrier(shipment) || "—",
+    forwarderCode: extractForwarderCode(shipment) || "—",
+    forwarderName: extractForwarderName(shipment) || "—",
+    notifyParty: extractNotifyParty(shipment) || "—",
+    portOfUnladingId: extractPortOfUnladingId(shipment) || "—",
+    portOfUnlading: extractPortOfUnlading(shipment) || destination || "—",
+    portOfLadingId: extractPortOfLadingId(shipment) || "—",
+    portOfLading: extractPortOfLading(shipment) || origin || "—",
     date: typeof date === "string" ? date : null,
     year,
     monthIndex,
     teu: extractTeu(shipment),
+    weightKg: extractWeightKg(shipment) || "—",
+    grossWeight: extractGrossWeight(shipment) || "—",
+    volume: extractVolume(shipment) || "—",
     spend: extractSpend(shipment),
     loadType: extractLoadType(shipment),
-    carrier: extractCarrier(shipment) || "—",
-    origin: extractOrigin(shipment) || "—",
-    destination: extractDestination(shipment) || "—",
+    vessel: extractVessel(shipment) || "—",
+    voyageNumber: extractVoyageNumber(shipment) || "—",
+    containerNumbers: extractContainerNumbers(shipment) || "—",
+    containerTypes: extractContainerTypes(shipment) || "—",
+    cargoDescription: extractCargoDescription(shipment) || "—",
+    marksAndNumbers: extractMarksAndNumbers(shipment) || "—",
+    origin,
+    destination,
     route,
     product: extractProduct(shipment) || "—",
     hsCode: extractHsCode(shipment) || "—",
@@ -1022,21 +1464,46 @@ const buildDetailModel = (
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
   const productRows = hsRows.map((row) => ({ product: row.description, hsCode: row.hsCode, volumeShare: `${row.count}` }));
-  const shipmentTableRows = [...filteredShipments]
+    const shipmentTableRows = [...filteredShipments]
     .sort((a, b) => {
       const da = a.date ? new Date(a.date).getTime() : 0;
       const db = b.date ? new Date(b.date).getTime() : 0;
       return db - da;
     })
-    .slice(0, 25)
+    .slice(0, 100)
     .map((shipment) => ({
-      Date: formatDate(shipment.date),
-      'BOL ID': shipment.id || '—',
-      TEU: formatNumber(shipment.teu, 1),
-      Carrier: shipment.carrier || '—',
-      Route: buildRouteLabel(shipment.route),
-      Product: shipment.product || '—',
-      'HS Code': shipment.hsCode || '—',
+      "Arrival Date": formatDate(shipment.date),
+      "Master BOL": shipment.masterBol,
+      "House BOL": shipment.houseBol,
+      "Importer ID": shipment.importerId,
+      "Importer Name": shipment.importerName,
+      "Consignee Name": shipment.consigneeName,
+      "Consignee Address": shipment.consigneeAddress,
+      "Shipper": shipment.shipper,
+      "Shipper Address": shipment.shipperAddress,
+      "Carrier Code": shipment.carrierCode,
+      "Carrier Name": shipment.carrier,
+      "Forwarder Code": shipment.forwarderCode,
+      "Forwarder Name": shipment.forwarderName,
+      "Notify Party": shipment.notifyParty,
+      "Port Of Unlading ID": shipment.portOfUnladingId,
+      "Port Of Unlading": shipment.portOfUnlading,
+      "Port Of Lading ID": shipment.portOfLadingId,
+      "Port Of Lading": shipment.portOfLading,
+      "Is LCL": shipment.loadType === "LCL" ? "Yes" : shipment.loadType === "FCL" ? "No" : "—",
+      "Vessel": shipment.vessel,
+      "Voyage Number": shipment.voyageNumber,
+      "Container Numbers": shipment.containerNumbers,
+      "Container Types": shipment.containerTypes,
+      "TEU": formatNumber(shipment.teu, 1),
+      "Weight (kg)": shipment.weightKg,
+      "Gross Weight": shipment.grossWeight,
+      "Volume": shipment.volume,
+      "Cargo Description": shipment.cargoDescription,
+      "Marks & Numbers": shipment.marksAndNumbers,
+      "Route": buildRouteLabel(shipment.route),
+      "Product": shipment.product,
+      "HS Code": shipment.hsCode,
     }));
   const pivotRows = Array.from({ length: 12 }, (_, monthIndex) => {
     const point = monthlyBuckets[monthIndex];
@@ -1583,14 +2050,47 @@ export default function CompanyDetailPanel({
                 </div>
               </TabsContent>
               <TabsContent value="history" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <DataTable
-                    title="Verified shipment ledger"
-                    columns={['Date', 'BOL ID', 'TEU', 'Carrier', 'Route', 'Product', 'HS Code']}
-                    rows={detail.shipmentTableRows}
-                  />
-                </div>
-              </TabsContent>
+  <div className="grid gap-4">
+    <DataTable
+      title="Verified shipment ledger"
+      columns={[
+        "Arrival Date",
+        "Master BOL",
+        "House BOL",
+        "Importer ID",
+        "Importer Name",
+        "Consignee Name",
+        "Consignee Address",
+        "Shipper",
+        "Shipper Address",
+        "Carrier Code",
+        "Carrier Name",
+        "Forwarder Code",
+        "Forwarder Name",
+        "Notify Party",
+        "Port Of Unlading ID",
+        "Port Of Unlading",
+        "Port Of Lading ID",
+        "Port Of Lading",
+        "Is LCL",
+        "Vessel",
+        "Voyage Number",
+        "Container Numbers",
+        "Container Types",
+        "TEU",
+        "Weight (kg)",
+        "Gross Weight",
+        "Volume",
+        "Cargo Description",
+        "Marks & Numbers",
+        "Route",
+        "Product",
+        "HS Code",
+      ]}
+      rows={detail.shipmentTableRows}
+    />
+  </div>
+</TabsContent>
               <TabsContent value="credit" className="space-y-4">
                 {/* Placeholder for future financial integration. A watermark is shown until APIs are connected. */}
                 <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm flex items-center justify-center min-h-[200px]">
