@@ -2899,10 +2899,14 @@ export async function getSavedCompanies(signal?: AbortSignal) {
   stage: item.stage,
 }));
 
-    console.log('getSavedCompanies result', {
+    console.log("getSavedCompanies result", {
   count: rows.length,
   user_id: user.user.id,
   sample: rows[0] || null,
+  company_id: rows[0]?.company?.company_id ?? null,
+  company_name: rows[0]?.company?.name ?? null,
+  raw_company: rows[0]?.company ?? null,
+  raw_row: rows[0] ?? null,
 });
 
     return { rows };
