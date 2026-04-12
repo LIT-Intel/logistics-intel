@@ -5,8 +5,6 @@ import { updateProfile } from "@/auth/supabaseAuthClient";
 import { UploadFile } from "@/api/integrations";
 import SettingsLayout from "@/components/settings/SettingsLayout";
 
-const ADMIN_EMAILS = ["vraymond@sparkfusiondigital.com"];
-
 const PLAN_RANK: Record<string, number> = {
   free_trial: 0,
   standard: 1,
@@ -121,7 +119,7 @@ async function uploadAsset(params: {
 }
 
 export default function SettingsPage() {
-  const { user, plan } = useAuth();
+  const { user, plan, isSuperAdmin } = useAuth();
 
   const [profile, setProfile] = useState<JsonMap>({});
   const [orgProfile, setOrgProfile] = useState<JsonMap>({});
@@ -143,10 +141,7 @@ export default function SettingsPage() {
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
 
-  const isAdminEmail =
-    ADMIN_EMAILS.includes((user?.email ?? "").toLowerCase()) ||
-    user?.user_metadata?.role === "admin" ||
-    user?.user_metadata?.role === "super_admin";
+  const isAdminEmail = isSuperAdmin;
 
   const currentMembership = orgMembers.find(
     (member) => member.user_id === user?.id && member.status === "active"
@@ -495,7 +490,6 @@ export default function SettingsPage() {
       setOrgInvites([]);
     }
 
-
     const [subResult, plansResult] = await Promise.allSettled([
       currentOrgId
         ? supabase
@@ -777,185 +771,185 @@ export default function SettingsPage() {
   };
 
   const onInviteMember = async (
-  email: string,
-  role: string
-): Promise<{ error?: string }> => {
-  if (!canManageMembers) {
-    return { error: "Only workspace admins can manage access." };
-  }
-
-  const ensured = await ensureOrgContext();
-  if (!ensured.orgId) {
-    return {
-      error:
-        ensured.error ?? "No active organization is linked to this account yet",
-    };
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const normalizedRole = normalizeOrgRole(role, "member");
-
-  if (!isValidEmail(normalizedEmail)) {
-    return { error: "Enter a valid email address." };
-  }
-
-  if (normalizedRole === "owner") {
-    return { error: "Owner assignment is not available from this screen." };
-  }
-
-  if (normalizedEmail === (user?.email ?? "").trim().toLowerCase()) {
-    return { error: "You are already part of this workspace." };
-  }
-
-  const existingMember = orgMembers.find(
-    (member) => (member.email ?? "").trim().toLowerCase() === normalizedEmail
-  );
-  if (existingMember) {
-    return { error: "That user is already an active member of this workspace." };
-  }
-
-  const expiresAt = new Date(
-    Date.now() + 7 * 24 * 60 * 60 * 1000
-  ).toISOString();
-  const token = crypto.randomUUID();
-
-  const inviteUrl = `${window.location.origin}/accept-invite?token=${encodeURIComponent(
-    token
-  )}&email=${encodeURIComponent(normalizedEmail)}`;
-
-  const { data: existingInvite, error: existingInviteError } = await supabase
-    .from("org_invites")
-    .select(
-      "id, org_id, email, role, status, token, created_at, expires_at, email_sent_at"
-    )
-    .eq("org_id", ensured.orgId)
-    .eq("email", normalizedEmail)
-    .maybeSingle();
-
-  if (existingInviteError) {
-    return {
-      error: normalizeError(
-        existingInviteError,
-        "Failed checking existing invite"
-      ),
-    };
-  }
-
-  let savedInvite: any = null;
-
-  if (existingInvite?.id) {
-    if (existingInvite.status === "pending") {
-      return { error: "A pending invite already exists for that email address." };
+    email: string,
+    role: string
+  ): Promise<{ error?: string }> => {
+    if (!canManageMembers) {
+      return { error: "Only workspace admins can manage access." };
     }
 
-    const { data: updatedInvite, error: updateInviteError } = await supabase
+    const ensured = await ensureOrgContext();
+    if (!ensured.orgId) {
+      return {
+        error:
+          ensured.error ?? "No active organization is linked to this account yet",
+      };
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedRole = normalizeOrgRole(role, "member");
+
+    if (!isValidEmail(normalizedEmail)) {
+      return { error: "Enter a valid email address." };
+    }
+
+    if (normalizedRole === "owner") {
+      return { error: "Owner assignment is not available from this screen." };
+    }
+
+    if (normalizedEmail === (user?.email ?? "").trim().toLowerCase()) {
+      return { error: "You are already part of this workspace." };
+    }
+
+    const existingMember = orgMembers.find(
+      (member) => (member.email ?? "").trim().toLowerCase() === normalizedEmail
+    );
+    if (existingMember) {
+      return { error: "That user is already an active member of this workspace." };
+    }
+
+    const expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const token = crypto.randomUUID();
+
+    const inviteUrl = `${window.location.origin}/accept-invite?token=${encodeURIComponent(
+      token
+    )}&email=${encodeURIComponent(normalizedEmail)}`;
+
+    const { data: existingInvite, error: existingInviteError } = await supabase
       .from("org_invites")
-      .update({
-        role: normalizedRole,
-        token,
-        status: "pending",
-        invited_by_user_id: user?.id ?? null,
-        expires_at: expiresAt,
-        email_sent_at: null,
-      })
-      .eq("id", existingInvite.id)
+      .select(
+        "id, org_id, email, role, status, token, created_at, expires_at, email_sent_at"
+      )
       .eq("org_id", ensured.orgId)
-      .select(
-        "id, org_id, email, role, status, token, created_at, expires_at, email_sent_at"
-      )
-      .single();
+      .eq("email", normalizedEmail)
+      .maybeSingle();
 
-    if (updateInviteError) {
+    if (existingInviteError) {
       return {
-        error: normalizeError(updateInviteError, "Failed recreating invite"),
+        error: normalizeError(
+          existingInviteError,
+          "Failed checking existing invite"
+        ),
       };
     }
 
-    savedInvite = updatedInvite;
-  } else {
-    const { data: createdInvite, error: createInviteError } = await supabase
-      .from("org_invites")
-      .insert({
-        org_id: ensured.orgId,
-        email: normalizedEmail,
-        role: normalizedRole,
-        token,
-        status: "pending",
-        invited_by_user_id: user?.id ?? null,
-        expires_at: expiresAt,
-      })
-      .select(
-        "id, org_id, email, role, status, token, created_at, expires_at, email_sent_at"
-      )
-      .single();
+    let savedInvite: any = null;
 
-    if (createInviteError) {
+    if (existingInvite?.id) {
+      if (existingInvite.status === "pending") {
+        return { error: "A pending invite already exists for that email address." };
+      }
+
+      const { data: updatedInvite, error: updateInviteError } = await supabase
+        .from("org_invites")
+        .update({
+          role: normalizedRole,
+          token,
+          status: "pending",
+          invited_by_user_id: user?.id ?? null,
+          expires_at: expiresAt,
+          email_sent_at: null,
+        })
+        .eq("id", existingInvite.id)
+        .eq("org_id", ensured.orgId)
+        .select(
+          "id, org_id, email, role, status, token, created_at, expires_at, email_sent_at"
+        )
+        .single();
+
+      if (updateInviteError) {
+        return {
+          error: normalizeError(updateInviteError, "Failed recreating invite"),
+        };
+      }
+
+      savedInvite = updatedInvite;
+    } else {
+      const { data: createdInvite, error: createInviteError } = await supabase
+        .from("org_invites")
+        .insert({
+          org_id: ensured.orgId,
+          email: normalizedEmail,
+          role: normalizedRole,
+          token,
+          status: "pending",
+          invited_by_user_id: user?.id ?? null,
+          expires_at: expiresAt,
+        })
+        .select(
+          "id, org_id, email, role, status, token, created_at, expires_at, email_sent_at"
+        )
+        .single();
+
+      if (createInviteError) {
+        return {
+          error: normalizeError(createInviteError, "Failed creating invite"),
+        };
+      }
+
+      savedInvite = createdInvite;
+    }
+
+    const { error: sendInviteError } = await supabase.functions.invoke(
+      "send-org-invite",
+      {
+        body: {
+          inviteId: savedInvite.id,
+          orgId: ensured.orgId,
+          email: normalizedEmail,
+          role: normalizedRole,
+          token,
+          inviteUrl,
+        },
+      }
+    );
+
+    if (sendInviteError) {
       return {
-        error: normalizeError(createInviteError, "Failed creating invite"),
+        error: normalizeError(sendInviteError, "Failed sending invite email"),
       };
     }
-
-    savedInvite = createdInvite;
-  }
-
-  const { error: sendInviteError } = await supabase.functions.invoke(
-    "send-org-invite",
-    {
-      body: {
-        inviteId: savedInvite.id,
-        orgId: ensured.orgId,
-        email: normalizedEmail,
-        role: normalizedRole,
-        token,
-        inviteUrl,
-      },
-    }
-  );
-
-  if (sendInviteError) {
-    return {
-      error: normalizeError(sendInviteError, "Failed sending invite email"),
-    };
-  }
 
     const sentAt = new Date().toISOString();
 
-  const { error: markInviteReadyError } = await supabase
-    .from("org_invites")
-    .update({
-      email_sent_at: sentAt,
-    })
-    .eq("id", savedInvite.id)
-    .eq("org_id", ensured.orgId);
+    const { error: markInviteReadyError } = await supabase
+      .from("org_invites")
+      .update({
+        email_sent_at: sentAt,
+      })
+      .eq("id", savedInvite.id)
+      .eq("org_id", ensured.orgId);
 
-  if (markInviteReadyError) {
-    return {
-      error: normalizeError(
-        markInviteReadyError,
-        "Invite was created but failed to finalize"
+    if (markInviteReadyError) {
+      return {
+        error: normalizeError(
+          markInviteReadyError,
+          "Invite was created but failed to finalize"
+        ),
+      };
+    }
+
+    setOrgInvites((prev) => [
+      {
+        id: savedInvite.id,
+        email: normalizedEmail,
+        role: normalizedRole,
+        status: "pending",
+        created_at: savedInvite.created_at ?? sentAt,
+        expires_at: savedInvite.expires_at ?? expiresAt,
+      },
+      ...prev.filter(
+        (invite) => (invite.email ?? "").trim().toLowerCase() !== normalizedEmail
       ),
-    };
-  }
+    ]);
 
-  setOrgInvites((prev) => [
-    {
-      id: savedInvite.id,
-      email: normalizedEmail,
-      role: normalizedRole,
-      status: "pending",
-      created_at: savedInvite.created_at ?? sentAt,
-      expires_at: savedInvite.expires_at ?? expiresAt,
-    },
-    ...prev.filter(
-      (invite) => (invite.email ?? "").trim().toLowerCase() !== normalizedEmail
-    ),
-  ]);
+    void loadAll();
 
-  void loadAll();
+    return {};
+  };
 
-  return {};
-};
-  
   const onRevokeMember = async (memberId: string): Promise<{ error?: string }> => {
     if (!canManageMembers) {
       return { error: "Only workspace admins can manage access." };
