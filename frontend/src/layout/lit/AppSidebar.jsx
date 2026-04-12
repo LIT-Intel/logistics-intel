@@ -15,6 +15,7 @@ import {
   Bug,
   Lock,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
 
