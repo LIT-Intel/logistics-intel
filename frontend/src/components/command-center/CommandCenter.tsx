@@ -245,157 +245,82 @@ export default function CommandCenter() {
   };
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[32px] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-xl md:p-7 xl:p-8">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(129,140,248,0.22),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,0.14),transparent_28%)]" />
-        <div className="relative flex flex-col gap-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-200">
-                <BookOpenText className="h-3.5 w-3.5" />
-                Command Center
-              </div>
-              <h1 className="mt-4 text-2xl font-semibold tracking-tight text-white md:text-4xl">
-                Buyer intelligence built from your saved company dataset
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
-                This is the default saved-companies list view. Click any account to open a dedicated
-                company intelligence page with KPIs, charts, shipment data, trade lanes, locations,
-                products, and full tabbed detail.
-              </p>
-            </div>
-
-            <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[360px]">
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                  Saved accounts
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-white">
-                  {formatNumber(summaryMetrics.totalCompanies)}
-                </div>
-                <div className="mt-1 text-xs text-slate-300">
-                  Companies already in your CRM intelligence layer
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                  Visible shipments
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-white">
-                  {formatNumber(summaryMetrics.totalShipments)}
-                </div>
-                <div className="mt-1 text-xs text-slate-300">
-                  Aggregated from current saved-company KPI payloads
-                </div>
-              </div>
-            </div>
+    <div className="flex flex-col gap-4">
+      {/* Compact page header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <BookOpenText className="h-3 w-3" />
+            Command Center
           </div>
+          <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">
+            Saved companies
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Click any row to open the full company intelligence page.
+          </p>
+        </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <Ship className="h-3.5 w-3.5 text-cyan-300" />
-                Total TEU
-              </div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formatNumber(summaryMetrics.totalTeu, 1)}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <TrendingUp className="h-3.5 w-3.5 text-violet-300" />
-                Market spend
-              </div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formatCurrency(summaryMetrics.totalSpend)}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <Package className="h-3.5 w-3.5 text-emerald-300" />
-                Active shippers
-              </div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formatNumber(summaryMetrics.activeAccounts)}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-                Featured account
-              </div>
-              <div className="mt-2 truncate text-xl font-semibold text-white">
-                {featuredCompanyName}
-              </div>
-            </div>
+        {/* Compact KPI strip */}
+        <div className="flex shrink-0 flex-wrap gap-2 sm:flex-nowrap">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+            <Ship className="h-3.5 w-3.5 text-cyan-500" />
+            <span className="font-semibold text-slate-900">{formatNumber(summaryMetrics.totalCompanies)}</span>
+            <span className="text-slate-500">saved</span>
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            {FILTER_TABS.map((tab) => {
-              const active = activeFilter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveFilter(tab.id)}
-                  className={[
-                    "inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold transition",
-                    active
-                      ? "bg-white text-slate-950 shadow-sm"
-                      : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10",
-                  ].join(" ")}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+            <Package className="h-3.5 w-3.5 text-indigo-500" />
+            <span className="font-semibold text-slate-900">{formatNumber(summaryMetrics.totalShipments)}</span>
+            <span className="text-slate-500">shipments</span>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+            <span className="font-semibold text-slate-900">{formatNumber(summaryMetrics.activeAccounts)}</span>
+            <span className="text-slate-500">active</span>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section className="rounded-[32px] border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Saved company pipeline
-              </div>
-              <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950 md:text-2xl">
-                Search-style list view for your CRM intelligence
-              </h2>
-              <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                Each saved row surfaces the most important commercial signals before the user opens
-                the full company page.
-              </p>
-            </div>
-
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600">
-              <Filter className="h-3.5 w-3.5" />
-              {formatNumber(filteredRows.length)} shown
-            </div>
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search saved companies, routes, domains, or markets"
-                className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white"
-              />
-            </div>
-
-            <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              <Clock3 className="h-4 w-4" />
-              Click a row to open the company page
-            </div>
-          </div>
+      {/* Filters + search */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex flex-wrap gap-1.5">
+          {FILTER_TABS.map((tab) => {
+            const active = activeFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveFilter(tab.id)}
+                className={[
+                  "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                  active
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                ].join(" ")}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
+
+        <div className="relative flex-1 sm:min-w-[260px]">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search companies, routes, domains…"
+            className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300"
+          />
+        </div>
+
+        <div className="hidden items-center gap-1.5 text-xs text-slate-400 sm:flex">
+          <Filter className="h-3.5 w-3.5" />
+          {formatNumber(filteredRows.length)} shown
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
 
         <div className="mt-5 overflow-hidden rounded-[28px] border border-slate-200 bg-white">
           <div className="hidden border-b border-slate-200 bg-slate-50/80 px-5 py-3 xl:grid xl:grid-cols-[minmax(0,2.1fr)_110px_110px_140px_150px] xl:gap-4">
@@ -572,7 +497,7 @@ export default function CommandCenter() {
             )}
           </div>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
