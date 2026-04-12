@@ -3191,6 +3191,7 @@ export async function saveIyCompanyToCrm(opts: {
     (opts.shipper as any)?.source_company_key ??
     "";
   const companyKey = ensureCompanyKey(rawId);
+
   if (!companyKey) {
     throw new Error("saveIyCompanyToCrm requires a valid company key");
   }
@@ -3204,7 +3205,88 @@ export async function saveIyCompanyToCrm(opts: {
     });
   }
 
-  return saveCompanyDirectToSupabase(opts);
+  const fclShipments = getFclShipments12m(opts.profile);
+  const lclShipments = getLclShipments12m(opts.profile);
+  const estSpend =
+    opts.profile?.routeKpis?.estSpendUsd12m ??
+    opts.profile?.estSpendUsd12m ??
+    null;
+
+  const payload = {
+    company_id: companyKey,
+    source_company_key: companyKey,
+    source: opts.source ?? "importyeti",
+    provider: opts.provider ?? "importyeti",
+    stage: opts.stage ?? "prospect",
+    company: {
+      key: companyKey,
+      company_id: companyKey,
+      title: opts.shipper.title || opts.shipper.name || "Unknown",
+      name: opts.shipper.name || opts.shipper.title || "Unknown",
+      domain: opts.profile?.domain ?? opts.shipper.domain ?? null,
+      website: opts.profile?.website ?? opts.shipper.website ?? null,
+      phone:
+        opts.profile?.phoneNumber ??
+        opts.profile?.phone ??
+        opts.shipper.phone ??
+        null,
+      address: opts.profile?.address ?? opts.shipper.address ?? null,
+      city: opts.shipper.city ?? null,
+      state: opts.shipper.state ?? null,
+      countryCode: opts.profile?.countryCode ?? opts.shipper.countryCode ?? null,
+      totalShipments:
+        opts.profile?.routeKpis?.shipmentsLast12m ??
+        opts.shipper.shipmentsLast12m ??
+        opts.shipper.totalShipments ??
+        0,
+      shipmentsLast12m:
+        opts.profile?.routeKpis?.shipmentsLast12m ??
+        opts.shipper.shipmentsLast12m ??
+        opts.shipper.totalShipments ??
+        0,
+      teusLast12m:
+        opts.profile?.routeKpis?.teuLast12m ??
+        opts.shipper.teusLast12m ??
+        null,
+      estSpendLast12m: estSpend,
+      fclShipments12m: fclShipments,
+      lclShipments12m: lclShipments,
+      mostRecentShipment:
+        opts.profile?.lastShipmentDate ??
+        opts.shipper.lastShipmentDate ??
+        opts.shipper.mostRecentShipment ??
+        null,
+      lastShipmentDate:
+        opts.profile?.lastShipmentDate ??
+        opts.shipper.lastShipmentDate ??
+        opts.shipper.mostRecentShipment ??
+        null,
+      primaryRoute:
+        opts.profile?.routeKpis?.topRouteLast12m ??
+        opts.shipper.primaryRoute ??
+        opts.shipper.primaryRouteSummary ??
+        null,
+      recentRoute:
+        opts.profile?.routeKpis?.mostRecentRoute ??
+        null,
+      topSuppliers: opts.shipper.topSuppliers ?? opts.profile?.topSuppliers ?? [],
+    },
+    profile: opts.profile ?? null,
+  };
+
+  console.log("saveIyCompanyToCrm invoking save-company", payload);
+
+  const { data, error } = await supabase.functions.invoke("save-company", {
+    body: payload,
+  });
+
+  if (error) {
+    console.error("save-company invoke error:", error);
+    throw new Error(error.message || "save-company invocation failed");
+  }
+
+  console.log("save-company invoke success:", data);
+  return data;
 }
 
 export async function saveCompanyToCommandCenter(opts: {
