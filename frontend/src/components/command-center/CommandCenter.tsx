@@ -145,7 +145,7 @@ export default function CommandCenter() {
     setSavedError(null);
 
     Promise.resolve()
-      .then(() => listSavedCompanies("prospect"))
+      .then(() => listSavedCompanies())
       .then((response: any) => {
         const rows = Array.isArray(response?.rows) ? response.rows : [];
         setSavedCompanies(rows);
