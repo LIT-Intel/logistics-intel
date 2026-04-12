@@ -3038,31 +3038,35 @@ export async function saveCompanyToCrm(
 }
 
 
-async function saveCompanyDirectToSupabase(opts: {
+export async function saveIyCompanyToCrm(opts: {
   shipper: IyShipperHit;
   profile: IyCompanyProfile | null;
   stage?: string;
   provider?: string;
   source?: string;
 }) {
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  const user = authData?.user;
-
-  if (authError || !user?.id) {
-    throw new Error("Authentication required to save company");
-  }
-
   const rawId =
     opts.shipper.key ??
     opts.shipper.companyId ??
     (opts.shipper as any)?.company_key ??
     (opts.shipper as any)?.source_company_key ??
     "";
-
   const companyKey = ensureCompanyKey(rawId);
   if (!companyKey) {
-    throw new Error("saveCompanyDirectToSupabase requires a valid company key");
+    throw new Error("saveIyCompanyToCrm requires a valid company key");
   }
+
+  if (isDevMode()) {
+    return devSaveCompany({
+      company_id: companyKey,
+      company: opts.shipper,
+      stage: opts.stage ?? "prospect",
+      provider: opts.provider ?? "importyeti",
+    });
+  }
+
+  return saveCompanyDirectToSupabase(opts);
+}
 
   const fclShipments = getFclShipments12m(opts.profile);
   const lclShipments = getLclShipments12m(opts.profile);
