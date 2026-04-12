@@ -157,10 +157,15 @@ export default function CommandCenter() {
       .finally(() => setSavedLoading(false));
   }, []);
 
-  const listRows = useMemo(
-    () => savedCompanies.map(buildListRow).filter((row) => row.key),
-    [savedCompanies]
-  );
+  const listRows = useMemo(() => {
+  const mapped = savedCompanies.map(buildListRow);
+  console.log("CommandCenter mapped rows", {
+    savedCompanies,
+    mapped,
+    kept: mapped.filter((row) => row.key),
+  });
+  return mapped.filter((row) => row.key);
+}, [savedCompanies]);
 
   const filteredRows = useMemo(() => {
     const lower = searchTerm.trim().toLowerCase();
