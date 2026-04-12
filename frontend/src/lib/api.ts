@@ -2863,26 +2863,47 @@ export async function getSavedCompanies(signal?: AbortSignal) {
       .order('last_viewed_at', { ascending: false });
 
     if (error) {
-      console.error('getSavedCompanies error:', error);
-      return { rows: [] };
-    }
+  console.error('getSavedCompanies error:', {
+    message: error.message,
+    details: error.details,
+    hint: error.hint,
+    code: error.code,
+  });
+  return { rows: [] };
+}
 
     const rows = (data || []).map((item: any) => ({
-      company: {
-        company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
-        name: item.lit_companies?.name || 'Unknown Company',
-        domain: item.lit_companies?.domain,
-        address: item.lit_companies?.address_line1 || `${item.lit_companies?.city || ''}, ${item.lit_companies?.state || ''}`.trim(),
-        country_code: item.lit_companies?.country_code,
-        kpis: {
-          shipments_12m: item.lit_companies?.shipments_12m || 0,
-          last_activity: item.lit_companies?.most_recent_shipment_date,
-        },
-      },
-      shipments: [],
-      saved_at: item.created_at,
-      stage: item.stage,
-    }));
+  company: {
+    company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
+    name: item.lit_companies?.name || 'Unknown Company',
+    domain: item.lit_companies?.domain || null,
+    website: item.lit_companies?.website || null,
+    address:
+      item.lit_companies?.address_line1 ||
+      [item.lit_companies?.city, item.lit_companies?.state].filter(Boolean).join(', ') ||
+      null,
+    country_code: item.lit_companies?.country_code || null,
+    kpis: {
+      shipments_12m: item.lit_companies?.shipments_12m || 0,
+      teu_12m: item.lit_companies?.teu_12m ?? null,
+      fcl_shipments_12m: item.lit_companies?.fcl_shipments_12m ?? null,
+      lcl_shipments_12m: item.lit_companies?.lcl_shipments_12m ?? null,
+      est_spend_12m: null,
+      last_activity: item.lit_companies?.most_recent_shipment_date || null,
+      top_route_12m: item.lit_companies?.top_route_12m || null,
+      recent_route: item.lit_companies?.recent_route || null,
+    },
+  },
+  shipments: [],
+  saved_at: item.created_at,
+  stage: item.stage,
+}));
+
+    console.log('getSavedCompanies result', {
+  count: rows.length,
+  user_id: user.user.id,
+  sample: rows[0] || null,
+});
 
     return { rows };
   } catch (error) {
