@@ -26,29 +26,34 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('Missing authorization header');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error(JSON.stringify({ fn: 'save-company', requestId, error: 'Missing authorization header' }));
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Authorization header is required', code: 'UNAUTHORIZED' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
-      throw new Error('Unauthorized');
+      console.error(JSON.stringify({ fn: 'save-company', requestId, error: 'Unauthorized', detail: userError?.message }));
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     const body: SaveCompanyRequest = await req.json();
     const { company_id, source_company_key, company_data, stage = 'prospect' } = body;
 
-    console.log('save-company request', {
-      requestId,
-      userId: user.id,
-      company_id: company_id ?? null,
-      source_company_key: source_company_key ?? null,
-      stage,
-    });
+    console.log(JSON.stringify({ fn: 'save-company', requestId, user_id: user.id, company_id: company_id ?? null, source_company_key: source_company_key ?? null, stage, ts: new Date().toISOString() }));
 
     if (!company_id && !source_company_key) {
-      throw new Error('Either company_id or source_company_key is required');
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Either company_id or source_company_key is required', code: 'INVALID_INPUT' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     let companyRecord;
@@ -113,7 +118,10 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!companyRecord) {
-      throw new Error('Company not found and no data provided to create it');
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Company not found and no data provided to create it', code: 'COMPANY_NOT_FOUND' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     const now = new Date().toISOString();
