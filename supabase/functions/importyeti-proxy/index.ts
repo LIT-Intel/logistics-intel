@@ -168,20 +168,13 @@ function estimateBolSpendUsd(bol: any): number {
  * shipping route string (containing an arrow or dash) as authoritative.
  */
 function buildRouteLabel(bol: any): string | null {
-  // helper that normalizes a value to a string or null
   const maybeString = (value: any): string | null => normalizeString(value);
 
-  // If ImportYeti already provides a formatted route (e.g. "Shanghai → LA"),
-  // trust it.  We treat both the unicode arrow and ASCII arrows/dashes as
-  // indicators that this string contains a full route.
   const preformatted = maybeString(bol?.shipping_route);
   if (preformatted && /→|->|—|-/u.test(preformatted)) {
     return preformatted;
   }
 
-  // Determine origin.  These fields are ordered from most specific to
-  // more generic.  We intentionally include city/state/country variants and
-  // nested objects, because ImportYeti's schema is not always consistent.
   const origin =
     maybeString(bol?.origin_port) ??
     maybeString(bol?.supplier_address_loc) ??
@@ -196,13 +189,11 @@ function buildRouteLabel(bol: any): string | null {
     maybeString(bol?.Country) ??
     maybeString(bol?.country_code) ??
     maybeString(bol?.shipper_address_loc) ??
-    // nested origin object
     maybeString(bol?.origin?.label) ??
     maybeString(bol?.origin?.city) ??
     maybeString(bol?.origin?.state) ??
     maybeString(bol?.origin?.country);
 
-  // Determine destination.  Same strategy as origin.
   const dest =
     maybeString(bol?.destination_port) ??
     maybeString(bol?.company_address_loc) ??
@@ -217,13 +208,11 @@ function buildRouteLabel(bol: any): string | null {
     maybeString(bol?.entry_port) ??
     maybeString(bol?.Consignee_Address) ??
     maybeString(bol?.consignee_address_loc) ??
-    // nested destination object
     maybeString(bol?.destination?.label) ??
     maybeString(bol?.destination?.city) ??
     maybeString(bol?.destination?.state) ??
     maybeString(bol?.destination?.country);
 
-  // Compose route string
   if (origin && dest) return `${origin} → ${dest}`;
   if (origin) return origin;
   if (dest) return dest;
@@ -716,10 +705,6 @@ function buildSnapshotFromCompanyData(
     }
   }
 
-  // Build top routes using recent BOLs when available.  If no recent
-  // Build top routes using recent BOLs when available.
-  // If recent BOL routes are missing or resolve only to Unknown → Unknown,
-  // fall back to aggregated top-route data provided by ImportYeti.
   const isUsableRouteLabel = (value: unknown): value is string =>
     typeof value === "string" && value.trim().length > 0 && value.trim() !== "Unknown → Unknown";
 
@@ -738,9 +723,6 @@ function buildSnapshotFromCompanyData(
           : [];
     const fallback: TopRoute[] = [];
     for (const entry of aggregated) {
-      // Attempt to use the ImportYeti-provided route string. If it is missing or unusable,
-      // rebuild it using our buildRouteLabel helper. Skip any entries that still
-      // fail to produce a usable route after normalization.
       let route: string | null = normalizeString(entry?.route);
       if (!isUsableRouteLabel(route)) {
         route = buildRouteLabel(entry);
@@ -1025,13 +1007,13 @@ function buildCompanyProfileFromSnapshot(
   };
 }
 
-async function handleCompanyBolsAction(supabase: any, companyId: string) {
+async function handleCompanyBolsAction(supabase: any, companyId: string, requestId: string) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("📋 COMPANY BOLS REQUEST:", companyId);
+  console.log("📋 COMPANY BOLS REQUEST:", { requestId, companyId });
 
   const env = buildEnvConfig();
   if (!env.isValid) {
-    return jsonResponse({ ok: false, error: "ImportYeti API key not configured" }, 500);
+    return jsonResponse({ ok: false, error: "ImportYeti API key not configured", code: "IY_API_KEY_MISSING" }, 500);
   }
 
   const normalizedCompanyKey = normalizeCompanyKey(companyId);
@@ -1083,11 +1065,12 @@ async function handleCompanyBolsAction(supabase: any, companyId: string) {
       total: upstream.rows.length,
     });
   } catch (error: any) {
-    console.error("❌ companyBols failed:", error);
+    console.error("❌ companyBols failed:", { requestId, error: error?.message || error });
     return jsonResponse(
       {
         ok: false,
         error: error?.message || "companyBols failed",
+        code: "COMPANY_BOLS_FAILED",
       },
       500,
     );
@@ -1098,21 +1081,22 @@ async function handleSearchAction(
   q: string,
   page: number = 1,
   pageSize: number = 25,
+  requestId: string = crypto.randomUUID(),
 ) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("🔍 SEARCH REQUEST:", { q, page, pageSize });
+  console.log("🔍 SEARCH REQUEST:", { requestId, q, page, pageSize });
 
   const env = buildEnvConfig();
   if (!env.isValid) {
     return jsonResponse(
-      { ok: false, error: "ImportYeti API key not configured" },
+      { ok: false, error: "ImportYeti API key not configured", code: "IY_API_KEY_MISSING" },
       500,
     );
   }
 
   if (!q || typeof q !== "string" || q.trim().length === 0) {
     return jsonResponse(
-      { ok: false, error: "Query (q) is required and must be non-empty" },
+      { ok: false, error: "Query (q) is required and must be non-empty", code: "MISSING_QUERY" },
       400,
     );
   }
@@ -1150,6 +1134,7 @@ async function handleSearchAction(
       rawPayload?.total ?? rawPayload?.pagination?.total ?? results.length;
 
     console.log("📊 Search result:", {
+      requestId,
       results_count: results.length,
       total,
       page: validatedPage,
@@ -1166,22 +1151,22 @@ async function handleSearchAction(
       total,
     });
   } catch (error: any) {
-    console.error("❌ Search handler error:", error);
+    console.error("❌ Search handler error:", { requestId, error: error?.message || error });
     return jsonResponse(
-      { ok: false, error: error?.message || "Search failed" },
+      { ok: false, error: error?.message || "Search failed", code: "SEARCH_FAILED" },
       500,
     );
   }
 }
 
-async function handleCompanyProfileAction(supabase: any, companyId: string) {
+async function handleCompanyProfileAction(supabase: any, companyId: string, requestId: string) {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("📦 COMPANY PROFILE REQUEST:", companyId);
+  console.log("📦 COMPANY PROFILE REQUEST:", { requestId, companyId });
 
   const env = buildEnvConfig();
   if (!env.isValid) {
     return jsonResponse(
-      { ok: false, error: "ImportYeti API key not configured" },
+      { ok: false, error: "ImportYeti API key not configured", code: "IY_API_KEY_MISSING" },
       500,
     );
   }
@@ -1191,7 +1176,7 @@ async function handleCompanyProfileAction(supabase: any, companyId: string) {
 
   const cached = await getCachedSnapshot(supabase, normalizedCompanyKey);
   if (cached?.data && cached.ageDays < SNAPSHOT_TTL_DAYS) {
-    console.log("✅ Using cached snapshot");
+    console.log("✅ Using cached snapshot", { requestId });
 
     const cachedProfile = buildCompanyProfileFromSnapshot(
       cached.data.parsed_summary,
@@ -1225,6 +1210,7 @@ async function handleCompanyProfileAction(supabase: any, companyId: string) {
     );
 
     console.log("📊 Parsed profile:", {
+      requestId,
       shipmentsLast12m: companyProfile.routeKpis?.shipmentsLast12m,
       teuLast12m: companyProfile.routeKpis?.teuLast12m,
       estSpendUsd12m: companyProfile.routeKpis?.estSpendUsd12m,
@@ -1243,9 +1229,13 @@ async function handleCompanyProfileAction(supabase: any, companyId: string) {
     });
 
     if (snapshotError) {
-      console.error("❌ Snapshot save error:", snapshotError);
+      console.error("❌ Snapshot save error:", { requestId, error: snapshotError });
     } else {
-      console.log("✅ Snapshot saved");
+      console.log("✅ Snapshot saved", {
+        requestId,
+        company_id: normalizedCompanyKey,
+        idempotent_key: normalizedCompanyKey,
+      });
     }
 
     const indexError = await safeUpsertIndex(supabase, {
@@ -1260,9 +1250,9 @@ async function handleCompanyProfileAction(supabase: any, companyId: string) {
     });
 
     if (indexError) {
-      console.error("❌ Index update error:", indexError);
+      console.error("❌ Index update error:", { requestId, error: indexError });
     } else {
-      console.log("✅ Search index updated");
+      console.log("✅ Search index updated", { requestId });
     }
 
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -1276,11 +1266,12 @@ async function handleCompanyProfileAction(supabase: any, companyId: string) {
       fetched_at: now,
     });
   } catch (error: any) {
-    console.error("❌ Company profile failed:", error);
+    console.error("❌ Company profile failed:", { requestId, error: error?.message || error });
     return jsonResponse(
       {
         ok: false,
         error: error?.message || "Company profile failed",
+        code: "COMPANY_PROFILE_FAILED",
       },
       500,
     );
@@ -1292,18 +1283,46 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !supabaseKey) {
       return jsonResponse(
-        { ok: false, error: "Supabase environment not configured" },
+        { ok: false, error: "Supabase environment not configured", code: "SUPABASE_ENV_MISSING" },
         500,
       );
     }
 
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return jsonResponse(
+        { ok: false, error: "Missing authorization", code: "UNAUTHORIZED" },
+        401,
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "").trim();
+    if (!token) {
+      return jsonResponse(
+        { ok: false, error: "Missing authorization", code: "UNAUTHORIZED" },
+        401,
+      );
+    }
+
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    try {
+      await supabase.auth.getUser(token);
+    } catch (authError: any) {
+      console.error("❌ Auth validation failed:", { requestId, error: authError?.message || authError });
+      return jsonResponse(
+        { ok: false, error: "Invalid authorization token", code: "UNAUTHORIZED" },
+        401,
+      );
+    }
 
     let body: any = {};
     try {
@@ -1313,40 +1332,48 @@ Deno.serve(async (req: Request) => {
     }
 
     const { action, company_id, companyKey, q, page, pageSize } = body ?? {};
-
-    if (action === "search") {
-      return await handleSearchAction(q, page, pageSize);
-    }
-
     const requestedCompanyId = company_id || companyKey;
+    const resolvedAction = action ?? (requestedCompanyId ? "companyProfile" : undefined);
+
+    console.log("➡️ importyeti-proxy request:", {
+      requestId,
+      method: req.method,
+      action: resolvedAction,
+      company_id: requestedCompanyId ?? null,
+      q: typeof q === "string" ? q : null,
+    });
+
+    if (resolvedAction === "search") {
+      return await handleSearchAction(q, page, pageSize, requestId);
+    }
 
     if (!requestedCompanyId) {
       return jsonResponse(
-        { ok: false, error: "company_id is required" },
+        { ok: false, error: "company_id is required", code: "MISSING_COMPANY_ID" },
         400,
       );
     }
 
-    if (action === "companyBols") {
-      return await handleCompanyBolsAction(supabase, requestedCompanyId);
+    if (resolvedAction === "companyBols") {
+      return await handleCompanyBolsAction(supabase, requestedCompanyId, requestId);
     }
 
     if (
-      action === "company" ||
-      action === "companyProfile" ||
-      action === "companySnapshot"
+      resolvedAction === "company" ||
+      resolvedAction === "companyProfile" ||
+      resolvedAction === "companySnapshot"
     ) {
-      return await handleCompanyProfileAction(supabase, requestedCompanyId);
+      return await handleCompanyProfileAction(supabase, requestedCompanyId, requestId);
     }
 
     return jsonResponse(
-      { ok: false, error: `Unknown action: ${action}` },
+      { ok: false, error: `Unknown action: ${resolvedAction}`, code: "UNKNOWN_ACTION" },
       400,
     );
   } catch (error: any) {
-    console.error("❌ Fatal error:", error);
+    console.error("❌ Fatal error:", { requestId, error: error?.message || error });
     return jsonResponse(
-      { ok: false, error: error?.message || "Internal server error" },
+      { ok: false, error: error?.message || "Internal server error", code: "INTERNAL_ERROR" },
       500,
     );
   }
