@@ -170,27 +170,33 @@ export default function App() {
         <Route
           path="/app/companies"
           element={
-            <LITPage>
-              <Companies />
-            </LITPage>
+            <RequireAuth>
+              <LITPage>
+                <Companies />
+              </LITPage>
+            </RequireAuth>
           }
         />
 
         <Route
           path="/app/command-center"
           element={
-            <LITPage>
-              <CommandCenterPage />
-            </LITPage>
+            <RequireAuth>
+              <LITPage>
+                <CommandCenterPage />
+              </LITPage>
+            </RequireAuth>
           }
         />
 
         <Route
           path="/command-center"
           element={
-            <LITPage>
-              <CommandCenterPage />
-            </LITPage>
+            <RequireAuth>
+              <LITPage>
+                <CommandCenterPage />
+              </LITPage>
+            </RequireAuth>
           }
         />
 
