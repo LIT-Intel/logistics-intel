@@ -18,6 +18,8 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -36,6 +38,14 @@ Deno.serve(async (req: Request) => {
 
     const body: SaveCompanyRequest = await req.json();
     const { company_id, source_company_key, company_data, stage = 'prospect' } = body;
+
+    console.log('save-company request', {
+      requestId,
+      userId: user.id,
+      company_id: company_id ?? null,
+      source_company_key: source_company_key ?? null,
+      stage,
+    });
 
     if (!company_id && !source_company_key) {
       throw new Error('Either company_id or source_company_key is required');
@@ -106,14 +116,16 @@ Deno.serve(async (req: Request) => {
       throw new Error('Company not found and no data provided to create it');
     }
 
+    const now = new Date().toISOString();
+
     const { data: savedCompany, error: saveError } = await supabase
       .from('lit_saved_companies')
       .upsert({
         user_id: user.id,
         company_id: companyRecord.id,
         stage,
-        last_activity_at: new Date().toISOString(),
-        last_viewed_at: new Date().toISOString(),
+        last_activity_at: now,
+        last_viewed_at: now,
       }, {
         onConflict: 'user_id,company_id',
       })
@@ -122,7 +134,6 @@ Deno.serve(async (req: Request) => {
 
     if (saveError) throw saveError;
 
-    // Create activity event for company save
     await supabase
       .from('lit_activity_events')
       .insert({
@@ -137,7 +148,12 @@ Deno.serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
+        ok: true,
         success: true,
+        data: {
+          company: companyRecord,
+          saved: savedCompany,
+        },
         company: companyRecord,
         saved: savedCompany,
       }),
@@ -148,6 +164,7 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error: any) {
     console.error('Save company error:', {
+      requestId,
       message: error.message,
       details: error.details,
       hint: error.hint,
@@ -157,13 +174,15 @@ Deno.serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
+        ok: false,
         error: error.message || 'Internal server error',
+        message: error.message || 'Internal server error',
         details: error.details || null,
         hint: error.hint || null,
         code: error.code || null,
       }),
       {
-        status: error.code === '23505' ? 409 : 500, // 409 for duplicate key
+        status: error.code === '23505' ? 409 : 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
