@@ -170,13 +170,11 @@ function resolveApiBase() {
   let candidate: string | null = null;
 
   try {
-    // Prefer Vite/Next public envs at build/runtime
     if (typeof import.meta !== "undefined") {
       const metaEnv = (import.meta as any)?.env;
       candidate = read(metaEnv?.VITE_API_BASE) ?? read(metaEnv?.NEXT_PUBLIC_API_BASE);
     }
   } catch {
-    // ignore import.meta access issues
   }
 
   if (!candidate && typeof process !== "undefined" && process.env) {
@@ -190,7 +188,6 @@ function resolveApiBase() {
   return candidate || "/api/lit";
 }
 
-// Always call via Vercel proxy from the browser to avoid CORS
 export const API_BASE = resolveApiBase();
 
 const SEARCH_GATEWAY_BASE = API_BASE;
@@ -209,7 +206,6 @@ export function coerceNumber(value: unknown): number | null {
   return null;
 }
 
-// Frontend API key for calling the API Gateway
 const LIT_GATEWAY_KEY =
   (typeof import.meta !== "undefined" &&
     ((import.meta as any).env?.VITE_LIT_GATEWAY_KEY ||
@@ -377,7 +373,6 @@ export interface IyCompanyProfile {
   monthly_shipments?: Array<Record<string, any>> | null;
   monthly_volumes?: Record<string, any> | null;
   recent_bols?: Array<Record<string, any>> | null;
-  // Legacy/raw passthrough fields for compatibility with older UI
   time_series?: Record<string, any>;
   containers_load?: Array<Record<string, any>>;
   top_routes?: Array<Record<string, any>>;
@@ -659,11 +654,9 @@ export async function getFilterOptions(
   }, signal);
 }
 
-// Back-compat names expected by some pages
 export const searchCompaniesProxyCompat = searchCompaniesProxy;
 export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
 
-// Gateway base (env override â default)
 const GW = "/api/lit";
 
 async function j<T>(p: Promise<Response>): Promise<T> {
@@ -675,7 +668,6 @@ async function j<T>(p: Promise<Response>): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-// Widgets compatibility endpoints
 export async function calcTariff(input: {
   hsCode?: string;
   origin?: string;
@@ -705,7 +697,6 @@ export async function generateQuote(input: {
   return res.json();
 }
 
-// Typed helpers for unified search and shipments
 export type CompanySearchItem = {
   company_id: string | null;
   company_name: string;
@@ -728,7 +719,6 @@ export type ShipmentRow = {
   weight_kg: string | number | null;
 };
 
-// Company item + KPI extractor tolerant to snake/camel
 export type CompanyItem = {
   company_id: string | null;
   company_name: string;
@@ -764,7 +754,6 @@ export function kpiFrom(item: CompanyItem) {
   return { shipments12m, lastActivity, originsTop, destsTop, carriersTop };
 }
 
-// Legacy-compatible wrapper that accepts arrays or CSV
 export async function postSearchCompanies(payload: any) {
   const res = await fetch(`${SEARCH_GATEWAY_BASE}/public/searchCompanies`, {
     method: "POST",
@@ -782,7 +771,7 @@ export async function postSearchCompanies(payload: any) {
     const t = await res.text().catch(() => "");
     throw new Error(`postSearchCompanies failed: ${res.status} ${t}`);
   }
-  return res.json(); // { items, total }
+  return res.json();
 }
 
 function normalizeCompanyHit(entry: any): CompanyHit {
@@ -1180,14 +1169,10 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
 }
 
 function resolveIySearchArray(raw: any): any[] {
-  // Edge function returns { ok: true, rows: [...] }
   if (Array.isArray(raw?.rows)) return raw.rows;
-  // ImportYeti API returns { data: [...] }
   if (Array.isArray(raw?.data)) return raw.data;
-  // Fallback to other common shapes
   if (Array.isArray(raw?.results)) return raw.results;
   if (Array.isArray(raw?.items)) return raw.items;
-  // Direct array
   if (Array.isArray(raw)) return raw;
   return [];
 }
@@ -1219,18 +1204,15 @@ function coerceIySearchResponse(
   raw: any,
   fallback: { q: string; page: number; pageSize: number },
 ): IySearchResponse {
-  // Handle edge function response shape: { ok: true, rows: [...], page, pageSize, total }
   const items = resolveIySearchArray(raw);
   const rows = items.map(normalizeIyShipperHit);
 
-  // Resolve total from various possible locations
   const totalCandidate =
     raw?.total ?? raw?.meta?.total ?? raw?.data?.total ?? rows.length;
   const total = Number.isFinite(Number(totalCandidate))
     ? Number(totalCandidate)
     : rows.length;
 
-  // Build metadata
   const meta = buildIySearchMeta(raw?.meta ?? {}, fallback);
 
   return {
@@ -1385,30 +1367,6 @@ export async function fetchCompanySnapshot(
       console.warn("[fetchCompanySnapshot] No snapshot data");
       return null;
     }
-
-    console.log("ââââââââââ RAW PAYLOAD INSPECTION ââââââââââ");
-    console.log("[RAW PAYLOAD] Full structure:", responseData.raw);
-    console.log("[RAW PAYLOAD] Top-level keys:", Object.keys(responseData.raw || {}));
-
-    if (responseData.raw?.data) {
-      console.log("[RAW PAYLOAD] Data keys:", Object.keys(responseData.raw.data));
-      console.log("[RAW PAYLOAD] Total shipments:", responseData.raw.data.total_shipments);
-      console.log("[RAW PAYLOAD] Recent BOLs count:", responseData.raw.data.recent_bols?.length);
-      console.log("[RAW PAYLOAD] Sample BOL:", responseData.raw.data.recent_bols?.[0]);
-      console.log("[RAW PAYLOAD] AVG TEU per month:", responseData.raw.data.avg_teu_per_month);
-      console.log("[RAW PAYLOAD] Total shipping cost:", responseData.raw.data.total_shipping_cost);
-      console.log("[RAW PAYLOAD] Company info:", {
-        name: responseData.raw.data.name,
-        title: responseData.raw.data.title,
-        website: responseData.raw.data.website,
-        phone: responseData.raw.data.phone,
-        country: responseData.raw.data.country,
-        address: responseData.raw.data.address_plain
-      });
-    } else {
-      console.log("[RAW PAYLOAD] Direct keys (no nested data):", Object.keys(responseData.raw || {}));
-    }
-    console.log("ââââââââââââââââââââââââââââââââââââââââââ");
 
     return {
       ok: responseData.ok,
@@ -1807,12 +1765,12 @@ function buildRouteLabel(entry: any): string | null {
     routeValueToText(entry?.routeLabel) ??
     routeValueToText(entry?.route_label);
 
-  if (explicitRoute && explicitRoute.includes("â")) return explicitRoute;
+  if (explicitRoute && explicitRoute.includes("→")) return explicitRoute;
 
   const origin = buildRouteSide(entry, "origin");
   const destination = buildRouteSide(entry, "destination");
 
-  if (origin && destination) return `${origin} â ${destination}`;
+  if (origin && destination) return `${origin} → ${destination}`;
   if (explicitRoute) return explicitRoute;
   return null;
 }
@@ -1838,7 +1796,7 @@ function normalizeTopRoutes(raw: any): IyRouteTopRoute[] {
         ) ?? null;
       if (!route && shipments == null) return null;
       return {
-        route: route || "Unknown â Unknown",
+        route: route || "Unknown → Unknown",
         shipments,
         teu: coerceNumber(entry?.teu ?? entry?.teu_12m) ?? null,
         fclShipments:
@@ -2057,11 +2015,6 @@ function normalizeCompanyProfile(
   };
 }
 
-/**
- * Phase 2.1: Public export for normalizing ImportYeti snapshot data into IyCompanyProfile.
- * Accepts raw snapshot data and ensures all KPI fields are properly populated.
- * Returns normalized profile with routeKpis, timeSeries, containers, and all other fields.
- */
 export function normalizeIyCompanyProfile(
   rawSnapshot: any,
   companyKey?: string,
@@ -2121,12 +2074,10 @@ export function normalizeIyCompanyProfile(
     company_id: companyId,
     key: companyId,
 
-    // Preserve ALL-TIME totals for summary/header cards
     total_shipments: totalShipmentsAllTime,
     containers_count: totalShipmentsAllTime,
     total_teu: totalTeuAllTime,
 
-    // Keep 12m KPI values separate
     shipments_12m: shipmentsLast12m,
     shipments_last_12m: shipmentsLast12m,
     teu_12m: teuLast12m,
@@ -2349,7 +2300,6 @@ export function deriveContactFromBol(bol: IyBolDetail): IyCompanyContact {
         domain = next || undefined;
       }
     } catch {
-      // ignore parse errors
     }
   }
 
@@ -2458,7 +2408,7 @@ function buildRouteFromShipment(row: ShipmentLite): string | null {
     row.origin_port || row.origin_country_code || row.shipper_name || null;
   const destination =
     row.destination_port || row.dest_country_code || row.consignee_name || null;
-  if (origin && destination) return `${origin} â ${destination}`;
+  if (origin && destination) return `${origin} → ${destination}`;
   if (origin) return origin;
   if (destination) return destination;
   return null;
@@ -2754,7 +2704,6 @@ export async function getCompanyShipments(
   return response.json();
 }
 
-// New helpers per patch: getCompanyDetails, getCompanyShipments (unified signature)
 export async function getCompanyDetails(params: {
   company_id?: string;
   fallback_name?: string;
@@ -2794,7 +2743,6 @@ export async function getCompanyShipmentsUnified(params: {
   };
 }
 
-// Fast KPI endpoint (proxy-first, fallback to Gateway)
 export async function getCompanyKpis(
   params: { company_id?: string; company_name?: string },
   signal?: AbortSignal,
@@ -2815,7 +2763,6 @@ export async function getCompanyKpis(
       throw new Error(String(r.status));
     return await r.json();
   } catch {
-    // Fallback to Gateway
     const base = getGatewayBase();
     const u = `${base}/public/getCompanyKpis?${qp.toString()}`;
     const g = await fetch(u, {
@@ -2828,16 +2775,17 @@ export async function getCompanyKpis(
   }
 }
 
-// Saved companies list (for future UI)
 export async function getSavedCompanies(signal?: AbortSignal) {
   try {
-    const { data: user } = await supabase.auth.getUser();
-    if (!user?.user) {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user) {
       return { rows: [] };
     }
 
+    const userId = authData.user.id;
+
     const { data, error } = await supabase
-      .from('lit_saved_companies')
+      .from("lit_saved_companies")
       .select(`
         *,
         lit_companies (
@@ -2852,6 +2800,7 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           country_code,
           shipments_12m,
           teu_12m,
+          est_spend_12m,
           fcl_shipments_12m,
           lcl_shipments_12m,
           most_recent_shipment_date,
@@ -2859,59 +2808,55 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           recent_route
         )
       `)
-      .eq('user_id', user.user.id)
-      .order('last_viewed_at', { ascending: false });
+      .eq("user_id", userId)
+      .order("last_viewed_at", { ascending: false });
 
     if (error) {
-  console.error('getSavedCompanies error:', {
-    message: error.message,
-    details: error.details,
-    hint: error.hint,
-    code: error.code,
-  });
-  return { rows: [] };
-}
+      console.error("getSavedCompanies error:", error);
+      return { rows: [] };
+    }
 
-    const rows = (data || []).map((item: any) => ({
-  company: {
-    company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
-    name: item.lit_companies?.name || 'Unknown Company',
-    domain: item.lit_companies?.domain || null,
-    website: item.lit_companies?.website || null,
-    address:
-      item.lit_companies?.address_line1 ||
-      [item.lit_companies?.city, item.lit_companies?.state].filter(Boolean).join(', ') ||
-      null,
-    country_code: item.lit_companies?.country_code || null,
-    kpis: {
-      shipments_12m: item.lit_companies?.shipments_12m || 0,
-      teu_12m: item.lit_companies?.teu_12m ?? null,
-      fcl_shipments_12m: item.lit_companies?.fcl_shipments_12m ?? null,
-      lcl_shipments_12m: item.lit_companies?.lcl_shipments_12m ?? null,
-      est_spend_12m: null,
-      last_activity: item.lit_companies?.most_recent_shipment_date || null,
-      top_route_12m: item.lit_companies?.top_route_12m || null,
-      recent_route: item.lit_companies?.recent_route || null,
-    },
-  },
-  shipments: [],
-  saved_at: item.created_at,
-  stage: item.stage,
-}));
+    const rows = (data || [])
+      .map((item: any) => {
+        const company = item.lit_companies;
+        if (!company) return null;
 
-    console.log("getSavedCompanies result", {
-  count: rows.length,
-  user_id: user.user.id,
-  sample: rows[0] || null,
-  company_id: rows[0]?.company?.company_id ?? null,
-  company_name: rows[0]?.company?.name ?? null,
-  raw_company: rows[0]?.company ?? null,
-  raw_row: rows[0] ?? null,
-});
+        const addressParts = [
+          company.address_line1,
+          company.city,
+          company.state,
+        ].filter(Boolean);
+
+        return {
+          company: {
+            company_id: company.source_company_key,
+            internal_company_id: company.id,
+            name: company.name || "Unknown Company",
+            domain: company.domain,
+            website: company.website,
+            address: addressParts.length ? addressParts.join(", ") : null,
+            country_code: company.country_code,
+            kpis: {
+              shipments_12m: company.shipments_12m || 0,
+              teu_12m: company.teu_12m ?? null,
+              est_spend_12m: (company as any).est_spend_12m ?? null,
+              fcl_shipments_12m: company.fcl_shipments_12m ?? null,
+              lcl_shipments_12m: company.lcl_shipments_12m ?? null,
+              last_activity: company.most_recent_shipment_date ?? null,
+              top_route_12m: company.top_route_12m ?? null,
+              recent_route: company.recent_route ?? null,
+            },
+          },
+          shipments: [],
+          saved_at: item.created_at,
+          stage: item.stage,
+        };
+      })
+      .filter(Boolean);
 
     return { rows };
   } catch (error) {
-    console.error('getSavedCompanies error:', error);
+    console.error("getSavedCompanies error:", error);
     return { rows: [] };
   }
 }
@@ -3003,69 +2948,13 @@ export async function saveCompanyToCrm(
     });
   }
 
-  const res = await fetch(
-    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: "prospect",
-        provider: "importyeti",
-        payload: company,
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    let errorBody: any = null;
-    try {
-      errorBody = await res.json();
-    } catch {
-      // swallow parse error
-    }
-    if (typeof window !== "undefined") {
-      console.warn("[LIT] saveCompanyToCrm failed", {
-        status: res.status,
-        statusText: res.statusText,
-        errorBody,
-      });
-    }
-    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
-  }
-
-  return res.json();
-}
-
-
-export async function saveIyCompanyToCrm(opts: {
-  shipper: IyShipperHit;
-  profile: IyCompanyProfile | null;
-  stage?: string;
-  provider?: string;
-  source?: string;
-}) {
-  const rawId =
-    opts.shipper.key ??
-    opts.shipper.companyId ??
-    (opts.shipper as any)?.company_key ??
-    (opts.shipper as any)?.source_company_key ??
-    "";
-  const companyKey = ensureCompanyKey(rawId);
-  if (!companyKey) {
-    throw new Error("saveIyCompanyToCrm requires a valid company key");
-  }
-
-  if (isDevMode()) {
-    return devSaveCompany({
-      company_id: companyKey,
-      company: opts.shipper,
-      stage: opts.stage ?? "prospect",
-      provider: opts.provider ?? "importyeti",
-    });
-  }
-
-  return saveCompanyDirectToSupabase(opts);
+  return saveCompanyDirectToSupabase({
+    shipper: normalizeIyShipperHit(company),
+    profile: null,
+    stage: "prospect",
+    provider: "importyeti",
+    source: "importyeti",
+  });
 }
 
 async function saveCompanyDirectToSupabase(opts: {
@@ -3075,9 +2964,12 @@ async function saveCompanyDirectToSupabase(opts: {
   provider?: string;
   source?: string;
 }) {
-  const { data: authData } = await supabase.auth.getUser();
+  const { data: authData, error: authError } = await supabase.auth.getUser();
   const user = authData?.user;
-  if (!user) throw new Error("Not authenticated");
+
+  if (authError || !user?.id) {
+    throw new Error("Authentication required to save company");
+  }
 
   const rawId =
     opts.shipper.key ??
@@ -3085,45 +2977,94 @@ async function saveCompanyDirectToSupabase(opts: {
     (opts.shipper as any)?.company_key ??
     (opts.shipper as any)?.source_company_key ??
     "";
-  const companyKey = ensureCompanyKey(rawId);
-  if (!companyKey) throw new Error("saveCompanyDirectToSupabase requires a valid company key");
+  const sourceCompanyKey = ensureCompanyKey(rawId);
 
-  const fclShipments = getFclShipments12m(opts.profile);
-  const lclShipments = getLclShipments12m(opts.profile);
-  const estSpend =
+  if (!sourceCompanyKey) {
+    throw new Error("saveCompanyDirectToSupabase requires a valid source company key");
+  }
+
+  const companyName =
+    opts.profile?.title ??
+    opts.profile?.name ??
+    opts.shipper.title ??
+    opts.shipper.name ??
+    "Unknown";
+
+  const domain =
+    opts.profile?.domain ??
+    opts.shipper.domain ??
+    null;
+
+  const website =
+    opts.profile?.website ??
+    opts.shipper.website ??
+    null;
+
+  const addressLine1 =
+    opts.profile?.address ??
+    opts.shipper.address ??
+    null;
+
+  const countryCode =
+    opts.profile?.countryCode ??
+    opts.shipper.countryCode ??
+    null;
+
+  const shipments12m =
+    opts.profile?.routeKpis?.shipmentsLast12m ??
+    opts.shipper.shipmentsLast12m ??
+    opts.shipper.totalShipments ??
+    0;
+
+  const teu12m =
+    opts.profile?.routeKpis?.teuLast12m ??
+    opts.shipper.teusLast12m ??
+    null;
+
+  const estSpend12m =
     opts.profile?.routeKpis?.estSpendUsd12m ??
     opts.profile?.estSpendUsd12m ??
+    opts.shipper.estSpendLast12m ??
     null;
-  const topRoute = opts.profile?.routeKpis?.topRouteLast12m ?? null;
-  const recentRoute = opts.profile?.routeKpis?.mostRecentRoute ?? null;
+
+  const fclShipments12m = getFclShipments12m(opts.profile);
+  const lclShipments12m = getLclShipments12m(opts.profile);
+
+  const mostRecentShipmentDate =
+    opts.profile?.lastShipmentDate ??
+    opts.shipper.lastShipmentDate ??
+    opts.shipper.mostRecentShipment ??
+    null;
+
+  const topRoute12m =
+    opts.profile?.routeKpis?.topRouteLast12m ??
+    opts.shipper.primaryRouteSummary ??
+    opts.shipper.primaryRoute ??
+    null;
+
+  const recentRoute =
+    opts.profile?.routeKpis?.mostRecentRoute ??
+    opts.shipper.primaryRoute ??
+    opts.shipper.primaryRouteSummary ??
+    null;
 
   const companyRow = {
     source: opts.source ?? "importyeti",
-    source_company_key: companyKey,
-    name: opts.shipper.title || opts.shipper.name || "Unknown",
-    domain: opts.profile?.domain ?? opts.shipper.domain ?? null,
-    website: opts.profile?.website ?? opts.shipper.website ?? null,
-    address_line1: opts.profile?.address ?? opts.shipper.address ?? null,
+    source_company_key: sourceCompanyKey,
+    name: companyName,
+    domain,
+    website,
+    address_line1: addressLine1,
     city: opts.shipper.city ?? null,
     state: opts.shipper.state ?? null,
-    country_code: opts.profile?.countryCode ?? opts.shipper.countryCode ?? null,
-    shipments_12m:
-      opts.profile?.routeKpis?.shipmentsLast12m ??
-      opts.shipper.shipmentsLast12m ??
-      opts.shipper.totalShipments ??
-      0,
-    teu_12m:
-      opts.profile?.routeKpis?.teuLast12m ??
-      opts.shipper.teusLast12m ??
-      null,
-    fcl_shipments_12m: fclShipments,
-    lcl_shipments_12m: lclShipments,
-    most_recent_shipment_date:
-      opts.profile?.lastShipmentDate ??
-      opts.shipper.lastShipmentDate ??
-      opts.shipper.mostRecentShipment ??
-      null,
-    top_route_12m: topRoute,
+    country_code: countryCode,
+    shipments_12m: shipments12m,
+    teu_12m: teu12m,
+    est_spend_12m: estSpend12m,
+    fcl_shipments_12m: fclShipments12m,
+    lcl_shipments_12m: lclShipments12m,
+    most_recent_shipment_date: mostRecentShipmentDate,
+    top_route_12m: topRoute12m,
     recent_route: recentRoute,
   };
 
@@ -3140,11 +3081,13 @@ async function saveCompanyDirectToSupabase(opts: {
     throw new Error(companyError?.message || "Failed to upsert lit_companies");
   }
 
+  const internalCompanyId = upsertedCompany.id;
+
   const { data: existingSave, error: existingError } = await supabase
     .from("lit_saved_companies")
     .select("id")
     .eq("user_id", user.id)
-    .eq("company_id", upsertedCompany.id)
+    .eq("company_id", internalCompanyId)
     .maybeSingle();
 
   if (existingError) {
@@ -3154,7 +3097,7 @@ async function saveCompanyDirectToSupabase(opts: {
 
   const savePayload = {
     user_id: user.id,
-    company_id: upsertedCompany.id,
+    company_id: internalCompanyId,
     stage: opts.stage ?? "prospect",
     status: "active",
     last_viewed_at: new Date().toISOString(),
@@ -3196,9 +3139,43 @@ async function saveCompanyDirectToSupabase(opts: {
 
   return {
     success: true,
-    company: upsertedCompany,
+    company: {
+      id: internalCompanyId,
+      source_company_key: upsertedCompany.source_company_key,
+      name: upsertedCompany.name,
+    },
     saved: savedRow,
   };
+}
+
+export async function saveIyCompanyToCrm(opts: {
+  shipper: IyShipperHit;
+  profile: IyCompanyProfile | null;
+  stage?: string;
+  provider?: string;
+  source?: string;
+}) {
+  const rawId =
+    opts.shipper.key ??
+    opts.shipper.companyId ??
+    (opts.shipper as any)?.company_key ??
+    (opts.shipper as any)?.source_company_key ??
+    "";
+  const companyKey = ensureCompanyKey(rawId);
+  if (!companyKey) {
+    throw new Error("saveIyCompanyToCrm requires a valid company key");
+  }
+
+  if (isDevMode()) {
+    return devSaveCompany({
+      company_id: companyKey,
+      company: opts.shipper,
+      stage: opts.stage ?? "prospect",
+      provider: opts.provider ?? "importyeti",
+    });
+  }
+
+  return saveCompanyDirectToSupabase(opts);
 }
 
 export async function saveCompanyToCommandCenter(opts: {
@@ -3278,7 +3255,6 @@ export async function recallCompany(payload: {
   company_id: string;
   questions?: string[];
 }) {
-  // Prefer POST; if 405, fallback to GET with query params
   const res = await fetch(`${GW}/ai/recall`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -3524,8 +3500,6 @@ export async function createRfpWorkspace(body: {
   return res.json();
 }
 
-
-
 export async function sendCampaignEmail(campaignEmailId: string) {
   if (!campaignEmailId || typeof campaignEmailId !== "string") {
     throw new Error("sendCampaignEmail requires a valid campaignEmailId");
@@ -3583,7 +3557,6 @@ export const api = {
   generateRfp,
   createRfpWorkspace,
 
-  // Generic HTTP methods for hooks/components
   async get(path: string) {
     const url = withGatewayKey(`${API_BASE}${path}`);
     const res = await fetch(url, {
@@ -3715,7 +3688,7 @@ export async function listContactsLushia(
 
 /**
  * Get company BOLs (shipments) from ImportYeti via Edge Function
- * Used in: Command Center â Shipments Tab
+ * Used in: Command Center → Shipments Tab
  */
 export async function getCompanyBols(sourceCompanyKey: string, options?: {
   start_date?: string;
@@ -3755,7 +3728,7 @@ export async function getCompanyBols(sourceCompanyKey: string, options?: {
 
 /**
  * Generate AI-powered company brief using Gemini
- * Used in: Command Center â Pre-Call Briefing
+ * Used in: Command Center → Pre-Call Briefing
  */
 export async function generateCompanyBrief(companyId: string) {
   const { data, error } = await supabase.functions.invoke("gemini-brief", {
@@ -3772,7 +3745,7 @@ export async function generateCompanyBrief(companyId: string) {
 
 /**
  * Search for contacts using Lusha enrichment
- * Used in: Command Center â Contacts Tab
+ * Used in: Command Center → Contacts Tab
  */
 export async function searchContacts(filters: {
   company?: string;
