@@ -18,8 +18,8 @@ export type FeatureKey =
 export type UsageLimitKey =
   | "searches_per_month"
   | "company_views_per_month"
-  | "enrichment_credits_per_month"
   | "command_center_saves_per_month"
+  | "enrichment_credits_per_month"
   | "pulse_runs_per_month";
 
 export type SeatRules = {
@@ -44,36 +44,37 @@ export type PlanConfig = {
 
 export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   free_trial: {
-  code: "free_trial",
-  label: "Free Trial",
-  priceMonthly: 0,
-  billingInterval: "monthly",
-  seatRules: {
-    min: 1,
-    max: 1,
-    default: 1,
+    code: "free_trial",
+    label: "Free Trial",
+    priceMonthly: 0,
+    billingInterval: "monthly",
+    seatRules: {
+      min: 1,
+      max: 1,
+      default: 1,
+    },
+    features: {
+      dashboard: true,
+      search: true,
+      command_center: true,
+      company_page: false,
+      campaign_builder: false,
+      pulse: false,
+      enrichment: false,
+      billing_admin: false,
+      seat_management: false,
+      credit_rating_ready: false,
+      contact_intel_ready: false,
+    },
+    limits: {
+      searches_per_month: 10,
+      company_views_per_month: 0,
+      command_center_saves_per_month: 10,
+      enrichment_credits_per_month: 0,
+      pulse_runs_per_month: 0,
+    },
   },
-  features: {
-    dashboard: true,
-    search: true,
-    command_center: true,
-    company_page: false,
-    campaign_builder: false,
-    pulse: false,
-    enrichment: false,
-    billing_admin: false,
-    seat_management: false,
-    credit_rating_ready: false,
-    contact_intel_ready: false,
-  },
-  limits: {
-    searches_per_month: 10,
-    company_views_per_month: 0,
-    command_center_saves_per_month: 10,
-    enrichment_credits_per_month: 0,
-    pulse_runs_per_month: 0,
-  },
-},
+
   starter: {
     code: "starter",
     label: "Starter",
@@ -100,6 +101,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
     limits: {
       searches_per_month: 300,
       company_views_per_month: 100,
+      command_center_saves_per_month: 100,
       enrichment_credits_per_month: 0,
       pulse_runs_per_month: 0,
     },
@@ -131,6 +133,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
     limits: {
       searches_per_month: 2000,
       company_views_per_month: 500,
+      command_center_saves_per_month: 500,
       enrichment_credits_per_month: 200,
       pulse_runs_per_month: 50,
     },
@@ -162,6 +165,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
     limits: {
       searches_per_month: null,
       company_views_per_month: null,
+      command_center_saves_per_month: null,
       enrichment_credits_per_month: null,
       pulse_runs_per_month: null,
     },
@@ -171,7 +175,12 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
 export const DEFAULT_PLAN: PlanCode = "starter";
 
 export function isPlanCode(value?: string | null): value is PlanCode {
-  return value === "starter" || value === "growth" || value === "enterprise";
+  return (
+    value === "free_trial" ||
+    value === "starter" ||
+    value === "growth" ||
+    value === "enterprise"
+  );
 }
 
 export function getPlanLimits(plan?: string | null): PlanConfig {
