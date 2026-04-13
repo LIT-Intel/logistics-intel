@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Mail, Send, Inbox, Archive, Plus, Search, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { checkFeatureAccess, checkUsageLimit, getPlanLimits } from '@/components/utils/planLimits';
+import { checkFeatureAccess, checkUsageLimit, getPlanLimits } from '@/lib/planLimits';
 import LockedFeature from '../components/common/LockedFeature';
 import UpgradePrompt from '../components/common/UpgradePrompt';
 
