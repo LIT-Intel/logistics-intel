@@ -94,7 +94,6 @@ function monthName(monthIndex: number): string {
   return new Date(2000, monthIndex, 1).toLocaleString("en-US", { month: "short" });
 }
 
-
 function getBolDate(bol?: IyRecentBol | null): Date | null {
   const rawDate =
     bol?.date ||
@@ -161,8 +160,6 @@ function getEntryHsCode(bol?: IyRecentBol | null): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-
-
 function resolveApiBase() {
   const read = (value: unknown) =>
     typeof value === "string" && value.trim().length ? value.trim() : null;
@@ -175,6 +172,7 @@ function resolveApiBase() {
       candidate = read(metaEnv?.VITE_API_BASE) ?? read(metaEnv?.NEXT_PUBLIC_API_BASE);
     }
   } catch {
+    // ignore import.meta access issues
   }
 
   if (!candidate && typeof process !== "undefined" && process.env) {
@@ -654,9 +652,11 @@ export async function getFilterOptions(
   }, signal);
 }
 
+// Back-compat names expected by some pages
 export const searchCompaniesProxyCompat = searchCompaniesProxy;
 export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
 
+// Gateway base (env override → default)
 const GW = "/api/lit";
 
 async function j<T>(p: Promise<Response>): Promise<T> {
@@ -668,6 +668,7 @@ async function j<T>(p: Promise<Response>): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+// Widgets compatibility endpoints
 export async function calcTariff(input: {
   hsCode?: string;
   origin?: string;
@@ -697,6 +698,7 @@ export async function generateQuote(input: {
   return res.json();
 }
 
+// Typed helpers for unified search and shipments
 export type CompanySearchItem = {
   company_id: string | null;
   company_name: string;
@@ -719,6 +721,7 @@ export type ShipmentRow = {
   weight_kg: string | number | null;
 };
 
+// Company item + KPI extractor tolerant to snake/camel
 export type CompanyItem = {
   company_id: string | null;
   company_name: string;
@@ -872,7 +875,6 @@ function normalizeCompanyHit(entry: any): CompanyHit {
     top_customers: topCustomers.length ? topCustomers : null,
   };
 }
-
 export async function searchCompanies(
   input: CompanySearchInput = {},
   signal?: AbortSignal,
@@ -1206,15 +1208,12 @@ function coerceIySearchResponse(
 ): IySearchResponse {
   const items = resolveIySearchArray(raw);
   const rows = items.map(normalizeIyShipperHit);
-
   const totalCandidate =
     raw?.total ?? raw?.meta?.total ?? raw?.data?.total ?? rows.length;
   const total = Number.isFinite(Number(totalCandidate))
     ? Number(totalCandidate)
     : rows.length;
-
   const meta = buildIySearchMeta(raw?.meta ?? {}, fallback);
-
   return {
     ok: Boolean(raw?.ok ?? true),
     results: rows,
@@ -1338,8 +1337,6 @@ export async function fetchCompanySnapshot(
     return null;
   }
 
-  console.log("[fetchCompanySnapshot] Fetching snapshot for:", companySlug);
-
   try {
     const { data: responseData, error } = await supabase.functions.invoke(
       "importyeti-proxy",
@@ -1356,15 +1353,7 @@ export async function fetchCompanySnapshot(
       throw new Error(`Snapshot fetch failed: ${error.message || "Unknown error"}`);
     }
 
-    console.log("[fetchCompanySnapshot] Response:", {
-      ok: responseData?.ok,
-      source: responseData?.source,
-      hasSnapshot: !!responseData?.snapshot,
-      hasRaw: !!responseData?.raw
-    });
-
     if (!responseData || !responseData.ok || !responseData.snapshot) {
-      console.warn("[fetchCompanySnapshot] No snapshot data");
       return null;
     }
 
@@ -2073,11 +2062,9 @@ export function normalizeIyCompanyProfile(
         : undefined),
     company_id: companyId,
     key: companyId,
-
     total_shipments: totalShipmentsAllTime,
     containers_count: totalShipmentsAllTime,
     total_teu: totalTeuAllTime,
-
     shipments_12m: shipmentsLast12m,
     shipments_last_12m: shipmentsLast12m,
     teu_12m: teuLast12m,
@@ -2088,7 +2075,6 @@ export function normalizeIyCompanyProfile(
       snapshot?.spend_coverage_pct ??
       null,
     last_shipment_date: snapshot?.last_shipment_date,
-
     routeKpis: snapshot?.routeKpis ?? snapshot?.route_kpis_12m ?? {
       shipmentsLast12m,
       teuLast12m,
@@ -2118,8 +2104,6 @@ export function normalizeIyCompanyProfile(
 
 export async function getIyCompanyProfile({
   companyKey,
-  query,
-  userGoal,
 }: {
   companyKey: string;
   query?: string;
@@ -2300,6 +2284,7 @@ export function deriveContactFromBol(bol: IyBolDetail): IyCompanyContact {
         domain = next || undefined;
       }
     } catch {
+      // ignore parse errors
     }
   }
 
@@ -2552,7 +2537,6 @@ export async function getSavedCompanyDetail(
   };
 }
 
-
 function deriveYearRouteHints(points: IyTimeSeriesPoint[]): {
   topRouteLast12m: string | null;
   mostRecentRoute: string | null;
@@ -2625,7 +2609,6 @@ export function buildYearScopedProfile(
     timeSeries: scopedSeries,
   };
 }
-
 
 export async function listSavedCompanies(
   stage = "prospect",
@@ -2775,21 +2758,33 @@ export async function getCompanyKpis(
   }
 }
 
+/**
+ * Saved companies read path.
+ * company.company_id remains source_company_key for profile hydration.
+ * company_uuid is the internal UUID from lit_saved_companies.company_id.
+ */
 export async function getSavedCompanies(signal?: AbortSignal) {
   try {
     const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData?.user) {
+    const user = authData?.user;
+
+    if (authError || !user?.id) {
       return { rows: [] };
     }
-
-    const userId = authData.user.id;
 
     const { data, error } = await supabase
       .from("lit_saved_companies")
       .select(`
-        *,
+        id,
+        company_id,
+        stage,
+        status,
+        created_at,
+        updated_at,
+        last_viewed_at,
         lit_companies (
           id,
+          source,
           source_company_key,
           name,
           domain,
@@ -2800,7 +2795,6 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           country_code,
           shipments_12m,
           teu_12m,
-          est_spend_12m,
           fcl_shipments_12m,
           lcl_shipments_12m,
           most_recent_shipment_date,
@@ -2808,7 +2802,7 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           recent_route
         )
       `)
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .order("last_viewed_at", { ascending: false });
 
     if (error) {
@@ -2817,98 +2811,51 @@ export async function getSavedCompanies(signal?: AbortSignal) {
     }
 
     const rows = (data || [])
+      .filter((item: any) => item?.lit_companies?.id)
       .map((item: any) => {
-        const company = item.lit_companies;
-        if (!company) return null;
-
+        const companyRow = item.lit_companies;
         const addressParts = [
-          company.address_line1,
-          company.city,
-          company.state,
+          companyRow?.address_line1,
+          [companyRow?.city, companyRow?.state].filter(Boolean).join(", "),
         ].filter(Boolean);
 
         return {
           company: {
-            company_id: company.source_company_key,
-            internal_company_id: company.id,
-            name: company.name || "Unknown Company",
-            domain: company.domain,
-            website: company.website,
+            company_id: companyRow?.source_company_key || null,
+            internal_company_uuid: companyRow?.id || null,
+            source: companyRow?.source || "importyeti",
+            name: companyRow?.name || "Unknown Company",
+            domain: companyRow?.domain || null,
+            website: companyRow?.website || null,
             address: addressParts.length ? addressParts.join(", ") : null,
-            country_code: company.country_code,
+            country_code: companyRow?.country_code || null,
             kpis: {
-              shipments_12m: company.shipments_12m || 0,
-              teu_12m: company.teu_12m ?? null,
-              est_spend_12m: (company as any).est_spend_12m ?? null,
-              fcl_shipments_12m: company.fcl_shipments_12m ?? null,
-              lcl_shipments_12m: company.lcl_shipments_12m ?? null,
-              last_activity: company.most_recent_shipment_date ?? null,
-              top_route_12m: company.top_route_12m ?? null,
-              recent_route: company.recent_route ?? null,
+              shipments_12m: companyRow?.shipments_12m ?? 0,
+              teu_12m: companyRow?.teu_12m ?? null,
+              est_spend_12m: null,
+              fcl_shipments_12m: companyRow?.fcl_shipments_12m ?? null,
+              lcl_shipments_12m: companyRow?.lcl_shipments_12m ?? null,
+              last_activity: companyRow?.most_recent_shipment_date ?? null,
+              top_route_12m: companyRow?.top_route_12m ?? null,
+              recent_route: companyRow?.recent_route ?? null,
             },
           },
+          saved_company_id: item.id,
+          company_uuid: item.company_id,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          last_viewed_at: item.last_viewed_at,
+          stage: item.stage ?? "prospect",
+          status: item.status ?? "active",
           shipments: [],
-          saved_at: item.created_at,
-          stage: item.stage,
         };
-      })
-      .filter(Boolean);
+      });
 
     return { rows };
   } catch (error) {
     console.error("getSavedCompanies error:", error);
     return { rows: [] };
   }
-}
-
-// --- Filters singleton cache with 10m TTL ---
-let _filtersCache: { data: any; expires: number } | null = null;
-let _filtersInflight: Promise<any> | null = null;
-
-function readFiltersLocal(): { data: any; expires: number } | null {
-  try {
-    if (typeof window === "undefined") return null;
-    const raw = window.localStorage.getItem("lit.filters");
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (!obj?.data || !obj?.expires) return null;
-    if (Date.now() > obj.expires) return null;
-    return obj;
-  } catch {
-    return null;
-  }
-}
-
-function writeFiltersLocal(data: any) {
-  try {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      "lit.filters",
-      JSON.stringify({ data, expires: Date.now() + 10 * 60 * 1000 }),
-    );
-  } catch {}
-}
-
-export async function getFilterOptionsOnce(
-  fetcher: (signal?: AbortSignal) => Promise<any>,
-  signal?: AbortSignal,
-) {
-  if (_filtersCache && Date.now() < _filtersCache.expires)
-    return _filtersCache.data;
-  const local = readFiltersLocal();
-  if (local) {
-    _filtersCache = local;
-    return local.data;
-  }
-  if (_filtersInflight) return _filtersInflight;
-  _filtersInflight = (async () => {
-    const data = await fetcher(signal);
-    _filtersCache = { data, expires: Date.now() + 10 * 60 * 1000 };
-    writeFiltersLocal(data);
-    _filtersInflight = null;
-    return data;
-  })();
-  return _filtersInflight;
 }
 
 type SaveCompanyToCrmInput =
@@ -2948,8 +2895,67 @@ export async function saveCompanyToCrm(
     });
   }
 
+  const normalizedShipper: IyShipperHit = {
+    key: companyId,
+    companyId,
+    companyKey: companyId,
+    name:
+      (company as any)?.name ||
+      (company as any)?.title ||
+      (company as any)?.company_name ||
+      "Unknown Company",
+    title:
+      (company as any)?.title ||
+      (company as any)?.name ||
+      (company as any)?.company_name ||
+      "Unknown Company",
+    domain: (company as any)?.domain ?? deriveDomainCandidate((company as any)?.website) ?? null,
+    website: (company as any)?.website ?? null,
+    phone: (company as any)?.phone ?? null,
+    address: (company as any)?.address ?? null,
+    city: (company as any)?.city ?? null,
+    state: (company as any)?.state ?? null,
+    postalCode: (company as any)?.postalCode ?? (company as any)?.postal_code ?? null,
+    country: (company as any)?.country ?? null,
+    countryCode: (company as any)?.countryCode ?? (company as any)?.country_code ?? null,
+    totalShipments: coerceNumber((company as any)?.totalShipments),
+    shipmentsLast12m:
+      coerceNumber((company as any)?.shipmentsLast12m) ??
+      coerceNumber((company as any)?.shipments_12m),
+    teusLast12m:
+      coerceNumber((company as any)?.teusLast12m) ??
+      coerceNumber((company as any)?.teu_12m),
+    estSpendLast12m:
+      coerceNumber((company as any)?.estSpendLast12m) ??
+      coerceNumber((company as any)?.est_spend_12m),
+    mostRecentShipment:
+      (company as any)?.mostRecentShipment ??
+      (company as any)?.lastShipmentDate ??
+      (company as any)?.most_recent_shipment ??
+      null,
+    primaryRouteSummary:
+      (company as any)?.primaryRouteSummary ??
+      (company as any)?.top_route_12m ??
+      null,
+    primaryRoute:
+      (company as any)?.primaryRoute ??
+      (company as any)?.recent_route ??
+      null,
+    lastShipmentDate:
+      (company as any)?.lastShipmentDate ??
+      (company as any)?.mostRecentShipment ??
+      (company as any)?.most_recent_shipment ??
+      null,
+    topSuppliers:
+      Array.isArray((company as any)?.topSuppliers)
+        ? (company as any)?.topSuppliers
+        : Array.isArray((company as any)?.top_suppliers)
+          ? (company as any)?.top_suppliers
+          : null,
+  };
+
   return saveCompanyDirectToSupabase({
-    shipper: normalizeIyShipperHit(company),
+    shipper: normalizedShipper,
     profile: null,
     stage: "prospect",
     provider: "importyeti",
@@ -2977,94 +2983,50 @@ async function saveCompanyDirectToSupabase(opts: {
     (opts.shipper as any)?.company_key ??
     (opts.shipper as any)?.source_company_key ??
     "";
-  const sourceCompanyKey = ensureCompanyKey(rawId);
 
+  const sourceCompanyKey = ensureCompanyKey(rawId);
   if (!sourceCompanyKey) {
-    throw new Error("saveCompanyDirectToSupabase requires a valid source company key");
+    throw new Error("saveCompanyDirectToSupabase requires a valid company key");
   }
 
-  const companyName =
-    opts.profile?.title ??
-    opts.profile?.name ??
-    opts.shipper.title ??
-    opts.shipper.name ??
-    "Unknown";
-
-  const domain =
-    opts.profile?.domain ??
-    opts.shipper.domain ??
-    null;
-
-  const website =
-    opts.profile?.website ??
-    opts.shipper.website ??
-    null;
-
-  const addressLine1 =
-    opts.profile?.address ??
-    opts.shipper.address ??
-    null;
-
-  const countryCode =
-    opts.profile?.countryCode ??
-    opts.shipper.countryCode ??
-    null;
-
-  const shipments12m =
-    opts.profile?.routeKpis?.shipmentsLast12m ??
-    opts.shipper.shipmentsLast12m ??
-    opts.shipper.totalShipments ??
-    0;
-
-  const teu12m =
-    opts.profile?.routeKpis?.teuLast12m ??
-    opts.shipper.teusLast12m ??
-    null;
-
-  const estSpend12m =
-    opts.profile?.routeKpis?.estSpendUsd12m ??
-    opts.profile?.estSpendUsd12m ??
-    opts.shipper.estSpendLast12m ??
-    null;
-
-  const fclShipments12m = getFclShipments12m(opts.profile);
-  const lclShipments12m = getLclShipments12m(opts.profile);
-
-  const mostRecentShipmentDate =
-    opts.profile?.lastShipmentDate ??
-    opts.shipper.lastShipmentDate ??
-    opts.shipper.mostRecentShipment ??
-    null;
-
-  const topRoute12m =
+  const fclShipments = getFclShipments12m(opts.profile);
+  const lclShipments = getLclShipments12m(opts.profile);
+  const topRoute =
     opts.profile?.routeKpis?.topRouteLast12m ??
     opts.shipper.primaryRouteSummary ??
-    opts.shipper.primaryRoute ??
     null;
-
   const recentRoute =
     opts.profile?.routeKpis?.mostRecentRoute ??
     opts.shipper.primaryRoute ??
-    opts.shipper.primaryRouteSummary ??
     null;
 
   const companyRow = {
     source: opts.source ?? "importyeti",
     source_company_key: sourceCompanyKey,
-    name: companyName,
-    domain,
-    website,
-    address_line1: addressLine1,
+    name: opts.shipper.title || opts.shipper.name || "Unknown",
+    domain: opts.profile?.domain ?? opts.shipper.domain ?? null,
+    website: opts.profile?.website ?? opts.shipper.website ?? null,
+    address_line1: opts.profile?.address ?? opts.shipper.address ?? null,
     city: opts.shipper.city ?? null,
     state: opts.shipper.state ?? null,
-    country_code: countryCode,
-    shipments_12m: shipments12m,
-    teu_12m: teu12m,
-    est_spend_12m: estSpend12m,
-    fcl_shipments_12m: fclShipments12m,
-    lcl_shipments_12m: lclShipments12m,
-    most_recent_shipment_date: mostRecentShipmentDate,
-    top_route_12m: topRoute12m,
+    country_code: opts.profile?.countryCode ?? opts.shipper.countryCode ?? null,
+    shipments_12m:
+      opts.profile?.routeKpis?.shipmentsLast12m ??
+      opts.shipper.shipmentsLast12m ??
+      opts.shipper.totalShipments ??
+      0,
+    teu_12m:
+      opts.profile?.routeKpis?.teuLast12m ??
+      opts.shipper.teusLast12m ??
+      null,
+    fcl_shipments_12m: fclShipments,
+    lcl_shipments_12m: lclShipments,
+    most_recent_shipment_date:
+      opts.profile?.lastShipmentDate ??
+      opts.shipper.lastShipmentDate ??
+      opts.shipper.mostRecentShipment ??
+      null,
+    top_route_12m: topRoute,
     recent_route: recentRoute,
   };
 
@@ -3081,13 +3043,13 @@ async function saveCompanyDirectToSupabase(opts: {
     throw new Error(companyError?.message || "Failed to upsert lit_companies");
   }
 
-  const internalCompanyId = upsertedCompany.id;
+  const internalCompanyUuid = upsertedCompany.id;
 
   const { data: existingSave, error: existingError } = await supabase
     .from("lit_saved_companies")
     .select("id")
     .eq("user_id", user.id)
-    .eq("company_id", internalCompanyId)
+    .eq("company_id", internalCompanyUuid)
     .maybeSingle();
 
   if (existingError) {
@@ -3097,7 +3059,7 @@ async function saveCompanyDirectToSupabase(opts: {
 
   const savePayload = {
     user_id: user.id,
-    company_id: internalCompanyId,
+    company_id: internalCompanyUuid,
     stage: opts.stage ?? "prospect",
     status: "active",
     last_viewed_at: new Date().toISOString(),
@@ -3140,7 +3102,7 @@ async function saveCompanyDirectToSupabase(opts: {
   return {
     success: true,
     company: {
-      id: internalCompanyId,
+      id: internalCompanyUuid,
       source_company_key: upsertedCompany.source_company_key,
       name: upsertedCompany.name,
     },
@@ -3686,10 +3648,6 @@ export async function listContactsLushia(
     : ({ error: await res.text(), status: res.status } as any);
 }
 
-/**
- * Get company BOLs (shipments) from ImportYeti via Edge Function
- * Used in: Command Center → Shipments Tab
- */
 export async function getCompanyBols(sourceCompanyKey: string, options?: {
   start_date?: string;
   end_date?: string;
@@ -3726,10 +3684,6 @@ export async function getCompanyBols(sourceCompanyKey: string, options?: {
   return await res.json();
 }
 
-/**
- * Generate AI-powered company brief using Gemini
- * Used in: Command Center → Pre-Call Briefing
- */
 export async function generateCompanyBrief(companyId: string) {
   const { data, error } = await supabase.functions.invoke("gemini-brief", {
     body: { company_id: companyId },
@@ -3743,10 +3697,6 @@ export async function generateCompanyBrief(companyId: string) {
   return data;
 }
 
-/**
- * Search for contacts using Lusha enrichment
- * Used in: Command Center → Contacts Tab
- */
 export async function searchContacts(filters: {
   company?: string;
   title?: string;
@@ -3765,6 +3715,7 @@ export async function searchContacts(filters: {
 
   return data;
 }
+
 export function getOldestShipmentDate(profile?: IyCompanyProfile | null): string | null {
   const dates: Date[] = [];
   if (Array.isArray(profile?.recentBols)) {
