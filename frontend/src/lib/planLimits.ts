@@ -1,6 +1,5 @@
 export type PlanCode = "free_trial" | "starter" | "growth" | "enterprise";
-
-export type BillingInterval = "monthly";
+export type BillingInterval = "monthly" | "yearly";
 
 export type FeatureKey =
   | "dashboard"
@@ -29,14 +28,18 @@ export type SeatRules = {
 };
 
 export type PlanUsageLimits = Record<UsageLimitKey, number | null>;
-
 export type PlanFeatures = Record<FeatureKey, boolean>;
+
+export type PlanPricing = {
+  monthly: number | null;
+  yearly: number | null;
+  perSeat: boolean;
+};
 
 export type PlanConfig = {
   code: PlanCode;
   label: string;
-  priceMonthly: number;
-  billingInterval: BillingInterval;
+  pricing: PlanPricing;
   seatRules: SeatRules;
   features: PlanFeatures;
   limits: PlanUsageLimits;
@@ -46,8 +49,11 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   free_trial: {
     code: "free_trial",
     label: "Free Trial",
-    priceMonthly: 0,
-    billingInterval: "monthly",
+    pricing: {
+      monthly: 0,
+      yearly: 0,
+      perSeat: false,
+    },
     seatRules: {
       min: 1,
       max: 1,
@@ -78,8 +84,11 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   starter: {
     code: "starter",
     label: "Starter",
-    priceMonthly: 99,
-    billingInterval: "monthly",
+    pricing: {
+      monthly: 99,
+      yearly: 999,
+      perSeat: false,
+    },
     seatRules: {
       min: 1,
       max: 1,
@@ -99,9 +108,9 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       contact_intel_ready: false,
     },
     limits: {
-      searches_per_month: 300,
-      company_views_per_month: 100,
-      command_center_saves_per_month: 100,
+      searches_per_month: 100,
+      company_views_per_month: 50,
+      command_center_saves_per_month: 50,
       enrichment_credits_per_month: 0,
       pulse_runs_per_month: 0,
     },
@@ -110,11 +119,14 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   growth: {
     code: "growth",
     label: "Growth",
-    priceMonthly: 129,
-    billingInterval: "monthly",
+    pricing: {
+      monthly: 129,
+      yearly: 1290,
+      perSeat: true,
+    },
     seatRules: {
       min: 3,
-      max: 5,
+      max: 7,
       default: 3,
     },
     features: {
@@ -131,10 +143,10 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
       contact_intel_ready: true,
     },
     limits: {
-      searches_per_month: 2000,
-      company_views_per_month: 500,
-      command_center_saves_per_month: 500,
-      enrichment_credits_per_month: 200,
+      searches_per_month: 500,
+      company_views_per_month: 200,
+      command_center_saves_per_month: 200,
+      enrichment_credits_per_month: 100,
       pulse_runs_per_month: 50,
     },
   },
@@ -142,12 +154,15 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
   enterprise: {
     code: "enterprise",
     label: "Enterprise",
-    priceMonthly: 199,
-    billingInterval: "monthly",
+    pricing: {
+      monthly: null,
+      yearly: null,
+      perSeat: true,
+    },
     seatRules: {
-      min: 10,
+      min: 6,
       max: null,
-      default: 10,
+      default: 6,
     },
     features: {
       dashboard: true,
@@ -173,6 +188,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
 };
 
 export const DEFAULT_PLAN: PlanCode = "starter";
+export const DEFAULT_BILLING_INTERVAL: BillingInterval = "monthly";
 
 export function isPlanCode(value?: string | null): value is PlanCode {
   return (
@@ -181,6 +197,10 @@ export function isPlanCode(value?: string | null): value is PlanCode {
     value === "growth" ||
     value === "enterprise"
   );
+}
+
+export function isBillingInterval(value?: string | null): value is BillingInterval {
+  return value === "monthly" || value === "yearly";
 }
 
 export function getPlanLimits(plan?: string | null): PlanConfig {
@@ -260,6 +280,28 @@ export function normalizeSeatCount(
   if (max !== null && parsedSeats > max) return max;
 
   return parsedSeats;
+}
+
+export function getPriceForInterval(
+  plan: string | null | undefined,
+  interval: BillingInterval
+): number | null {
+  return getPlanConfig(plan).pricing[interval];
+}
+
+export function getTotalPrice(
+  plan: string | null | undefined,
+  interval: BillingInterval,
+  seats?: number | null
+): number | null {
+  const config = getPlanConfig(plan);
+  const basePrice = config.pricing[interval];
+
+  if (basePrice === null) return null;
+  if (!config.pricing.perSeat) return basePrice;
+
+  const normalizedSeats = normalizeSeatCount(plan, seats);
+  return basePrice * normalizedSeats;
 }
 
 export function hasUsageLimit(
