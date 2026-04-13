@@ -309,7 +309,10 @@ const extractSpend = (shipment: any) => {
   );
   if (explicitSpend > 0) return explicitSpend;
   const teu = extractTeu(shipment);
-  return teu > 0 ? teu * 1100 : null;
+  if (teu <= 0) return null;
+  // FCL rate: $1,850/TEU; LCL rate: $850/TEU
+  const isLcl = extractLoadType(shipment) === "LCL";
+  return teu * (isLcl ? 850 : 1850);
 };
 
 const extractLoadType = (shipment: any): "FCL" | "LCL" | "UNKNOWN" => {
@@ -377,6 +380,8 @@ const extractOrigin = (shipment: any) =>
   normalizeLocation(
     getShipmentValue(
       shipment,
+      ["supplier_address_loc"],
+      ["supplier_address_country"],
       ["origin_port"],
       ["origin_country"],
       ["origin_country_name"],
@@ -393,6 +398,8 @@ const extractDestination = (shipment: any) =>
   normalizeLocation(
     getShipmentValue(
       shipment,
+      ["company_address_loc"],
+      ["company_address_country"],
       ["destination_port"],
       ["destination_country"],
       ["destination_country_name"],
@@ -1398,8 +1405,7 @@ const buildDetailModel = (
   });
   const hsRows = [...hsMap.entries()]
     .map(([hsCode, stats]) => ({ hsCode, description: stats.description || '—', count: stats.count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 12);
+    .sort((a, b) => b.count - a.count);
   const productRows = hsRows.map((row) => ({ product: row.description, hsCode: row.hsCode, volumeShare: `${row.count}` }));
     const shipmentTableRows = [...filteredShipments]
     .sort((a, b) => {
@@ -1407,7 +1413,6 @@ const buildDetailModel = (
       const db = b.date ? new Date(b.date).getTime() : 0;
       return db - da;
     })
-    .slice(0, 100)
     .map((shipment) => ({
       "Arrival Date": formatDate(shipment.date),
       "Master BOL": shipment.masterBol,
@@ -1587,6 +1592,11 @@ export default function CompanyDetailPanel({
         : fallbackModel.destinations,
     };
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
+
+  // Pagination state for tabs
+  const [suppliersPage, setSuppliersPage] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [productsPage, setProductsPage] = useState(0);
 
   // Lusha integration: fetch contacts and similar companies when the record changes
   const [lushaContacts, setLushaContacts] = useState<any[]>([]);
@@ -1789,10 +1799,10 @@ export default function CompanyDetailPanel({
               Credit Rating
             </TabsTrigger>
             <TabsTrigger
-              value="similar"
+              value="suppliers"
               className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
             >
-              Similar Companies
+              Suppliers
             </TabsTrigger>
             <TabsTrigger
               value="contacts"
@@ -1848,23 +1858,62 @@ export default function CompanyDetailPanel({
                   accent="rose"
                 />
               </div>
-              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                <SmallMetric
-                  label="Avg TEU / shipment"
-                  value={formatNumber(detail.avgTeuPerShipment, 2)}
-                  icon={TrendingUp}
-                />
-                <SmallMetric
-                  label="Oldest shipment"
-                  value={formatDate(detail.oldestShipmentDate)}
-                  icon={CalendarClock}
-                />
-                <SmallMetric
-                  label="Latest shipment"
-                  value={formatDate(detail.latestShipmentDate)}
-                  icon={CalendarClock}
-                />
-              </div>
+              {(() => {
+                const avgTeu = (rawProfile as any)?.avg_teu_per_month;
+                const teu12m = avgTeu?.["12m"] ?? avgTeu?.["12m_avg"] ?? null;
+                const teu12_24m = avgTeu?.["12_24m"] ?? null;
+                const trendPct = teu12m != null && teu12_24m != null && teu12_24m > 0
+                  ? ((teu12m - teu12_24m) / teu12_24m) * 100
+                  : null;
+                const trendArrow = trendPct == null ? null : trendPct > 5 ? '↑' : trendPct < -5 ? '↓' : '→';
+                const trendColor = trendPct == null ? 'text-slate-600' : trendPct > 5 ? 'text-emerald-600' : trendPct < -5 ? 'text-rose-600' : 'text-amber-600';
+                const suppliersRawCount = safeArray((rawProfile as any)?.suppliers_table).length;
+                const diversityScore = suppliersRawCount === 0 ? null : suppliersRawCount <= 2 ? 1 : suppliersRawCount <= 5 ? 2 : suppliersRawCount <= 10 ? 3 : suppliersRawCount <= 20 ? 4 : 5;
+                return (
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                    <SmallMetric
+                      label="Avg TEU / shipment"
+                      value={formatNumber(detail.avgTeuPerShipment, 2)}
+                      icon={TrendingUp}
+                    />
+                    <SmallMetric
+                      label="Oldest shipment"
+                      value={formatDate(detail.oldestShipmentDate)}
+                      icon={CalendarClock}
+                    />
+                    <SmallMetric
+                      label="Latest shipment"
+                      value={formatDate(detail.latestShipmentDate)}
+                      icon={CalendarClock}
+                    />
+                    {trendArrow && (
+                      <SmallMetric
+                        label="Volume trend (YoY)"
+                        value={
+                          <span className={trendColor}>
+                            {trendArrow} {Math.abs(trendPct!).toFixed(1)}%
+                          </span>
+                        }
+                        icon={TrendingUp}
+                      />
+                    )}
+                    {diversityScore != null && (
+                      <SmallMetric
+                        label="Supplier diversity"
+                        value={
+                          <span>
+                            {diversityScore}/5{' '}
+                            <span className="text-sm font-normal text-slate-500">
+                              ({suppliersRawCount} suppliers)
+                            </span>
+                          </span>
+                        }
+                        icon={Boxes}
+                      />
+                    )}
+                  </div>
+                );
+              })()}
               <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Peak seasonality index</div>
                 <p className="mb-4 text-xs text-slate-500">
@@ -1881,41 +1930,85 @@ export default function CompanyDetailPanel({
               <CommandCenterInsights insights={strategicInsights} />
             </div>
           </TabsContent>
-              <TabsContent value="similar" className="space-y-4">
-                <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-4">
-                    <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Similar Companies</div>
-                    <p className="mt-1 text-xs text-slate-500">Companies that operate in comparable industries or routes.</p>
-                  </div>
-                  {lushaSimilarCompanies.length === 0 ? (
-                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                      No similar companies found. Integration results will appear here once available.
-                    </div>
-                  ) : (
-                    <ul className="divide-y divide-slate-200">
-                      {lushaSimilarCompanies.map((comp: any, index: number) => (
-                        <li key={index} className="py-3 flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-950">{String(comp.name || comp.companyName || comp.company_name || 'Unknown Company')}</div>
-                            {comp.industry && (
-                              <div className="text-xs text-slate-500 mt-0.5">{String(comp.industry)}</div>
-                            )}
-                          </div>
-                          {comp.website && (
-                            <a
-                              href={String(comp.website).startsWith('http') ? String(comp.website) : `https://${String(comp.website)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs font-semibold text-indigo-600 hover:underline"
+              <TabsContent value="suppliers" className="space-y-4">
+                {(() => {
+                  const suppliersRaw: any[] = safeArray((rawProfile as any)?.suppliers_table);
+                  const PAGE_SIZE = 25;
+                  const suppliersPageCount = Math.ceil(suppliersRaw.length / PAGE_SIZE);
+                  const suppliersSlice = suppliersRaw.slice(suppliersPage * PAGE_SIZE, (suppliersPage + 1) * PAGE_SIZE);
+                  return (
+                    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Supplier Intelligence</div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {suppliersRaw.length > 0
+                              ? `${suppliersRaw.length} verified suppliers across all shipment history`
+                              : 'Supplier data sourced from verified bill-of-lading records'}
+                          </p>
+                        </div>
+                        {suppliersPageCount > 1 && (
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <span>{suppliersPage * PAGE_SIZE + 1}–{Math.min((suppliersPage + 1) * PAGE_SIZE, suppliersRaw.length)} of {suppliersRaw.length}</span>
+                            <button
+                              disabled={suppliersPage === 0}
+                              onClick={() => setSuppliersPage((p) => Math.max(0, p - 1))}
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
                             >
-                              Visit
-                            </a>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                              Prev
+                            </button>
+                            <button
+                              disabled={suppliersPage >= suppliersPageCount - 1}
+                              onClick={() => setSuppliersPage((p) => Math.min(suppliersPageCount - 1, p + 1))}
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {suppliersRaw.length === 0 ? (
+                        <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                          No supplier data available. Supplier intelligence is populated from verified BOL records.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-left text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                                <th className="px-3 py-3 font-semibold">Supplier</th>
+                                <th className="px-3 py-3 font-semibold">Country</th>
+                                <th className="px-3 py-3 font-semibold text-right">12m Shpmt</th>
+                                <th className="px-3 py-3 font-semibold text-right">Total TEU</th>
+                                <th className="px-3 py-3 font-semibold">Recent</th>
+                                <th className="px-3 py-3 font-semibold">Tenure</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {suppliersSlice.map((sup: any, idx: number) => (
+                                <tr key={idx} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
+                                  <td className="px-3 py-3 align-top">
+                                    <div className="font-semibold text-slate-900 text-sm truncate max-w-[220px]">
+                                      {sup.supplier_name || '—'}
+                                    </div>
+                                    {sup.supplier_address && (
+                                      <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[220px]">{sup.supplier_address}</div>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 align-top text-slate-600 text-sm">{sup.country || sup.supplier_address_country || '—'}</td>
+                                  <td className="px-3 py-3 align-top text-right font-semibold text-indigo-600 text-sm">{formatNumber(sup.shipments_12m)}</td>
+                                  <td className="px-3 py-3 align-top text-right text-slate-700 text-sm">{formatNumber(sup.total_teus, 1)}</td>
+                                  <td className="px-3 py-3 align-top text-slate-500 text-xs">{sup.most_recent_shipment ? formatDate(sup.most_recent_shipment) : '—'}</td>
+                                  <td className="px-3 py-3 align-top text-slate-500 text-xs">{sup.business_length || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </TabsContent>
               <TabsContent value="lanes" className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -1952,69 +2045,124 @@ export default function CompanyDetailPanel({
                 </div>
               </TabsContent>
               <TabsContent value="products" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <MetricList
-                      title="Product mix (HS codes)"
-                      items={detail.hsRows.map((row) => ({
-                        label: row.hsCode,
-                        value: formatNumber(row.count),
-                        meta: row.description,
-                      }))}
-                    />
-                    <MetricList
-                      title="Top products"
-                      items={detail.productRows.map((row) => ({
-                        label: String(row.product),
-                        value: row.volumeShare,
-                        meta: `HS ${row.hsCode}`,
-                      }))}
-                    />
-                  </div>
-                </div>
+                {(() => {
+                  const PROD_PAGE = 25;
+                  const totalProducts = detail.hsRows.length;
+                  const prodPageCount = Math.ceil(totalProducts / PROD_PAGE);
+                  const hsSlice = detail.hsRows.slice(productsPage * PROD_PAGE, (productsPage + 1) * PROD_PAGE);
+                  const prodSlice = detail.productRows.slice(productsPage * PROD_PAGE, (productsPage + 1) * PROD_PAGE);
+                  return (
+                    <div className="space-y-3">
+                      {prodPageCount > 1 && (
+                        <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
+                          <span>{productsPage * PROD_PAGE + 1}–{Math.min((productsPage + 1) * PROD_PAGE, totalProducts)} of {totalProducts}</span>
+                          <button
+                            disabled={productsPage === 0}
+                            onClick={() => setProductsPage((p) => Math.max(0, p - 1))}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            disabled={productsPage >= prodPageCount - 1}
+                            onClick={() => setProductsPage((p) => Math.min(prodPageCount - 1, p + 1))}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      )}
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <MetricList
+                          title={`Product mix — HS codes (${totalProducts})`}
+                          items={hsSlice.map((row) => ({
+                            label: row.hsCode,
+                            value: formatNumber(row.count),
+                            meta: row.description,
+                          }))}
+                        />
+                        <MetricList
+                          title="Top products"
+                          items={prodSlice.map((row) => ({
+                            label: String(row.product),
+                            value: row.volumeShare,
+                            meta: `HS ${row.hsCode}`,
+                          }))}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
               </TabsContent>
               <TabsContent value="history" className="space-y-4">
-  <div className="grid gap-4">
-    <DataTable
-      title="Verified shipment ledger"
-      columns={[
-        "Arrival Date",
-        "Master BOL",
-        "House BOL",
-        "Importer ID",
-        "Importer Name",
-        "Consignee Name",
-        "Consignee Address",
-        "Shipper",
-        "Shipper Address",
-        "Carrier Code",
-        "Carrier Name",
-        "Forwarder Code",
-        "Forwarder Name",
-        "Notify Party",
-        "Port Of Unlading ID",
-        "Port Of Unlading",
-        "Port Of Lading ID",
-        "Port Of Lading",
-        "Is LCL",
-        "Vessel",
-        "Voyage Number",
-        "Container Numbers",
-        "Container Types",
-        "TEU",
-        "Weight (kg)",
-        "Gross Weight",
-        "Volume",
-        "Cargo Description",
-        "Marks & Numbers",
-        "Route",
-        "Product",
-        "HS Code",
-      ]}
-      rows={detail.shipmentTableRows}
-    />
-  </div>
-</TabsContent>
+                {(() => {
+                  const HIST_PAGE = 25;
+                  const totalRows = detail.shipmentTableRows.length;
+                  const histPageCount = Math.ceil(totalRows / HIST_PAGE);
+                  const histSlice = detail.shipmentTableRows.slice(historyPage * HIST_PAGE, (historyPage + 1) * HIST_PAGE);
+                  return (
+                    <div className="space-y-3">
+                      {histPageCount > 1 && (
+                        <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
+                          <span>{historyPage * HIST_PAGE + 1}–{Math.min((historyPage + 1) * HIST_PAGE, totalRows)} of {totalRows} shipments</span>
+                          <button
+                            disabled={historyPage === 0}
+                            onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            disabled={historyPage >= histPageCount - 1}
+                            onClick={() => setHistoryPage((p) => Math.min(histPageCount - 1, p + 1))}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      )}
+                      <DataTable
+                        title={`Verified shipment ledger — ${totalRows} records`}
+                        columns={[
+                          "Arrival Date",
+                          "Master BOL",
+                          "House BOL",
+                          "Importer ID",
+                          "Importer Name",
+                          "Consignee Name",
+                          "Consignee Address",
+                          "Shipper",
+                          "Shipper Address",
+                          "Carrier Code",
+                          "Carrier Name",
+                          "Forwarder Code",
+                          "Forwarder Name",
+                          "Notify Party",
+                          "Port Of Unlading ID",
+                          "Port Of Unlading",
+                          "Port Of Lading ID",
+                          "Port Of Lading",
+                          "Is LCL",
+                          "Vessel",
+                          "Voyage Number",
+                          "Container Numbers",
+                          "Container Types",
+                          "TEU",
+                          "Weight (kg)",
+                          "Gross Weight",
+                          "Volume",
+                          "Cargo Description",
+                          "Marks & Numbers",
+                          "Route",
+                          "Product",
+                          "HS Code",
+                        ]}
+                        rows={histSlice}
+                      />
+                    </div>
+                  );
+                })()}
+              </TabsContent>
               <TabsContent value="credit" className="space-y-4">
                 {/* Placeholder for future financial integration. A watermark is shown until APIs are connected. */}
                 <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm flex items-center justify-center min-h-[200px]">

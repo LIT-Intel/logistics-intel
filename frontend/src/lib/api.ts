@@ -1519,6 +1519,15 @@ function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
     if (typeof value !== "string" || !value.trim()) return null;
     const trimmed = value.trim();
     if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
+    // Handle DD/MM/YYYY format used as dict keys in ImportYeti time_series
+    const ddmmyyyy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyy) {
+      const [, dd, mm, yyyy] = ddmmyyyy;
+      const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+      if (!Number.isNaN(d.getTime())) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      }
+    }
     const parsed = new Date(trimmed);
     if (!Number.isNaN(parsed.getTime())) {
       return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
@@ -1655,6 +1664,8 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
               : null;
       const dateObj = parseBolDateValue(dateRaw);
       const origin =
+        routeValueToText(entry?.supplier_address_loc) ??
+        routeValueToText(entry?.supplier_address_country) ??
         routeValueToText(entry?.origin) ??
         routeValueToText(entry?.origin_port) ??
         routeValueToText(entry?.shipper_country) ??
@@ -1662,6 +1673,8 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
         routeValueToText(entry?.origin_country) ??
         null;
       const destination =
+        routeValueToText(entry?.company_address_loc) ??
+        routeValueToText(entry?.company_address_country) ??
         routeValueToText(entry?.destination) ??
         routeValueToText(entry?.destination_port) ??
         routeValueToText(entry?.company_country) ??
@@ -1669,7 +1682,7 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
         null;
       const route =
         buildRouteLabel({
-          route: entry?.route,
+          route: entry?.shipping_route ?? entry?.route,
           origin,
           destination,
           origin_country: origin,
@@ -1704,10 +1717,12 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
           coerceNumber(entry?.est_spend_usd) ??
           null,
         supplier:
+          routeValueToText(entry?.Shipper_Name) ??
           routeValueToText(entry?.supplier) ??
           routeValueToText(entry?.supplier_name) ??
           null,
         supplierCountry:
+          routeValueToText(entry?.supplier_address_country) ??
           routeValueToText(entry?.supplier_country) ??
           routeValueToText(entry?.shipper_country) ??
           null,
@@ -1716,6 +1731,7 @@ function normalizeRecentBols(raw: any): IyRecentBol[] {
           routeValueToText(entry?.company_name) ??
           null,
         companyCountry:
+          routeValueToText(entry?.company_address_country) ??
           routeValueToText(entry?.company_country) ??
           routeValueToText(entry?.destination_country) ??
           null,
@@ -2064,6 +2080,7 @@ function normalizeCompanyProfile(
       coerceNumber(
         profileData.est_spend_usd ??
           profileData.est_spend ??
+          profileData.total_shipping_cost ??
           profileData.totalShippingCost,
       ) ?? null,
     totalShipments:
@@ -2081,6 +2098,9 @@ function normalizeCompanyProfile(
     top_routes: profileData.top_routes,
     most_recent_route: profileData.most_recent_route,
     suppliers_sample: profileData.suppliers_sample,
+    suppliers_table: Array.isArray(profileData.suppliers_table) ? profileData.suppliers_table : undefined,
+    avg_teu_per_month: profileData.avg_teu_per_month ?? null,
+    total_shipping_cost: coerceNumber(profileData.total_shipping_cost) ?? null,
   };
 }
 
