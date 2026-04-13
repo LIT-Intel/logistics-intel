@@ -12,7 +12,6 @@ import {
   ArrowUpRight,
   BookOpenText,
   Building2,
-  Clock3,
   Filter,
   Globe,
   Loader2,
@@ -20,11 +19,18 @@ import {
   Package,
   Search,
   Ship,
-  Sparkles,
   TrendingUp,
 } from "lucide-react";
 
 type FilterTab = "all" | "high_value" | "active" | "recent";
+
+type SavedCompaniesResponse =
+  | CommandCenterRecord[]
+  | {
+      rows?: CommandCenterRecord[];
+    }
+  | null
+  | undefined;
 
 type ListRow = {
   record: CommandCenterRecord;
@@ -53,11 +59,27 @@ const FILTER_TABS: Array<{ id: FilterTab; label: string }> = [
   { id: "recent", label: "Recent activity" },
 ];
 
+function normalizeSavedCompaniesResponse(
+  input: SavedCompaniesResponse,
+): CommandCenterRecord[] {
+  if (Array.isArray(input)) {
+    return input;
+  }
+
+  if (input && Array.isArray(input.rows)) {
+    return input.rows;
+  }
+
+  return [];
+}
+
 function recordKey(record: CommandCenterRecord) {
   return (
     record.company?.company_id ||
+    (record as any)?.company?.source_company_key ||
     record.company?.name ||
     (record as any)?.company?.company_name ||
+    (record as any)?.saved_company_id ||
     ""
   );
 }
@@ -107,10 +129,15 @@ function buildListRow(record: CommandCenterRecord): ListRow {
   const company = record.company || ({} as any);
   const kpis = (company as any)?.kpis || {};
 
+  const sourceCompanyKey =
+    company?.company_id ||
+    (company as any)?.source_company_key ||
+    null;
+
   return {
     record,
     key: recordKey(record),
-    companyId: company?.company_id || null,
+    companyId: sourceCompanyKey,
     companyName: company?.name || (company as any)?.company_name || "Company",
     stage: String((record as any)?.stage || "prospect"),
     address: company?.address || null,
@@ -141,31 +168,57 @@ export default function CommandCenter() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
 
   useEffect(() => {
-    setSavedLoading(true);
-    setSavedError(null);
+    let isMounted = true;
 
-    Promise.resolve()
-      .then(() => listSavedCompanies())
-      .then((response: any) => {
-        const rows = Array.isArray(response?.rows) ? response.rows : [];
+    async function loadSavedCompanies() {
+      setSavedLoading(true);
+      setSavedError(null);
+
+      try {
+        const response = (await listSavedCompanies()) as SavedCompaniesResponse;
+        const rows = normalizeSavedCompaniesResponse(response);
+
+        if (!isMounted) return;
+
+        console.log("CommandCenter listSavedCompanies response", {
+          raw: response,
+          normalizedRows: rows,
+          count: rows.length,
+        });
+
         setSavedCompanies(rows);
-      })
-      .catch((error: any) => {
+      } catch (error: any) {
+        if (!isMounted) return;
+
+        console.error("CommandCenter loadSavedCompanies error", error);
         setSavedError(error?.message ?? "Failed to load saved companies");
         setSavedCompanies([]);
-      })
-      .finally(() => setSavedLoading(false));
+      } finally {
+        if (isMounted) {
+          setSavedLoading(false);
+        }
+      }
+    }
+
+    loadSavedCompanies();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const listRows = useMemo(() => {
-  const mapped = savedCompanies.map(buildListRow);
-  console.log("CommandCenter mapped rows", {
-    savedCompanies,
-    mapped,
-    kept: mapped.filter((row) => row.key),
-  });
-  return mapped.filter((row) => row.key);
-}, [savedCompanies]);
+    const mapped = savedCompanies.map(buildListRow);
+    const kept = mapped.filter((row) => row.key);
+
+    console.log("CommandCenter mapped rows", {
+      savedCompanies,
+      mapped,
+      kept,
+    });
+
+    return kept;
+  }, [savedCompanies]);
 
   const filteredRows = useMemo(() => {
     const lower = searchTerm.trim().toLowerCase();
@@ -218,13 +271,11 @@ export default function CommandCenter() {
     };
   }, [listRows]);
 
-  const featuredCompanyName = filteredRows[0]?.companyName || "No company selected";
-
   const handleOpenCompany = (row: ListRow) => {
     if (!row.companyId) {
       toast({
         title: "Company unavailable",
-        description: "This saved record does not have a company id yet.",
+        description: "This saved record does not have a source company key yet.",
         variant: "destructive",
       });
       return;
@@ -237,16 +288,17 @@ export default function CommandCenter() {
           company_id: row.companyId,
           source_company_key: row.companyId,
           name: row.companyName,
-        })
+        }),
       );
-    } catch {}
+    } catch {
+      // ignore localStorage failures
+    }
 
     navigate(`/app/companies/${row.companyId}`);
   };
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Compact page header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -261,27 +313,31 @@ export default function CommandCenter() {
           </p>
         </div>
 
-        {/* Compact KPI strip */}
         <div className="flex shrink-0 flex-wrap gap-2 sm:flex-nowrap">
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
             <Ship className="h-3.5 w-3.5 text-cyan-500" />
-            <span className="font-semibold text-slate-900">{formatNumber(summaryMetrics.totalCompanies)}</span>
+            <span className="font-semibold text-slate-900">
+              {formatNumber(summaryMetrics.totalCompanies)}
+            </span>
             <span className="text-slate-500">saved</span>
           </div>
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
             <Package className="h-3.5 w-3.5 text-indigo-500" />
-            <span className="font-semibold text-slate-900">{formatNumber(summaryMetrics.totalShipments)}</span>
+            <span className="font-semibold text-slate-900">
+              {formatNumber(summaryMetrics.totalShipments)}
+            </span>
             <span className="text-slate-500">shipments</span>
           </div>
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
             <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-            <span className="font-semibold text-slate-900">{formatNumber(summaryMetrics.activeAccounts)}</span>
+            <span className="font-semibold text-slate-900">
+              {formatNumber(summaryMetrics.activeAccounts)}
+            </span>
             <span className="text-slate-500">active</span>
           </div>
         </div>
       </div>
 
-      {/* Filters + search */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex flex-wrap gap-1.5">
           {FILTER_TABS.map((tab) => {
@@ -321,7 +377,6 @@ export default function CommandCenter() {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-
         <div className="mt-5 overflow-hidden rounded-[28px] border border-slate-200 bg-white">
           <div className="hidden border-b border-slate-200 bg-slate-50/80 px-5 py-3 xl:grid xl:grid-cols-[minmax(0,2.1fr)_110px_110px_140px_150px] xl:gap-4">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
