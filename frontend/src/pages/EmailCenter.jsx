@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Mail, Send, Inbox, Archive, Plus, Search, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { checkFeatureAccess, checkUsageLimit, getPlanLimits } from '@/lib/planLimits';
+import { canAccessFeature, hasRemainingUsage, getPlanLimits } from '@/lib/planLimits';
 import LockedFeature from '../components/common/LockedFeature';
 import UpgradePrompt from '../components/common/UpgradePrompt';
 
@@ -30,13 +30,13 @@ export default function EmailCenter() {
     // Use auth user from AuthProvider
     useEffect(() => {
         if (authUser) {
-            // Adapt authUser to the shape expected by checkFeatureAccess
+            // Adapt authUser to the shape expected by canAccessFeature
             setUser({ ...authUser, plan: authUser.user_metadata?.plan || 'free_trial' });
         }
     }, [authUser]);
 
     useEffect(() => {
-        if (user && checkFeatureAccess(user, 'campaigns')) {
+        if (user && canAccessFeature(user, 'campaigns')) {
             loadEmails();
         } else if (user) {
             setIsLoading(false);
@@ -49,7 +49,7 @@ export default function EmailCenter() {
         const urlParams = new URLSearchParams(window.location.search);
         const companyId = urlParams.get('company_id');
         
-        if (companyId && companyId !== 'undefined' && user && checkFeatureAccess(user, 'campaigns')) {
+        if (companyId && companyId !== 'undefined' && user && canAccessFeature(user, 'campaigns')) {
             // Pre-fill composer with company information
             loadCompanyForOutreach(companyId);
         }
@@ -172,7 +172,7 @@ export default function EmailCenter() {
     return (
         <>
             <LockedFeature
-                isLocked={!checkFeatureAccess(user, 'campaigns')}
+                isLocked={!canAccessFeature(user, 'campaigns')}
                 onUpgradeClick={() => setShowUpgradePrompt(true)}
                 title="Email Center & Automation"
                 description="Upgrade to the Growth plan to unlock direct email outreach and campaign automation."
@@ -183,7 +183,7 @@ export default function EmailCenter() {
                             <div>
                                 <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">Email Center</h1>
                                 <p className="text-gray-600 mt-2 text-sm md:text-base">Manage your outreach and track email performance.</p>
-                                 {user && checkFeatureAccess(user, 'campaigns') && (
+                                 {user && canAccessFeature(user, 'campaigns') && (
                                     <div className="flex items-center gap-4 mt-2">
                                         <Badge className="bg-green-100 text-green-800">
                                             {getPlanLimits(user.plan).name} Plan
