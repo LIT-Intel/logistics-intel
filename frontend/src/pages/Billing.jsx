@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { createStripePortalSession } from '@/api/functions';
-import { getPlanLimits } from '@/components/utils/planLimits';
+import { getPlanLimits } from '@/lib/planLimits';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import LitPageHeader from '../components/ui/LitPageHeader';
