@@ -16,7 +16,7 @@ import {
   Bug,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
-import { checkFeatureAccess } from "@/lib/planLimits";
+import { checkFeatureAccess } from "import { canAccessFeature } from "@/lib/planLimits";
 import { logout } from "@/auth/supabaseAuthClient";
 
 function SideLink({ to, icon: Icon, label }) {
@@ -71,7 +71,10 @@ export default function AppShell({ currentPageName, children }) {
       user.email === "vraymond@sparkfusiondigital.com" ||
       user.email === "support@logisticintel.com")
   );
-  const canViewPro = isAdmin || checkFeatureAccess(user?.plan, "pro");
+  const canViewPro =
+  isAdmin ||
+  canAccessFeature(user?.plan, "campaign_builder") ||
+  canAccessFeature(user?.plan, "billing_admin");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
