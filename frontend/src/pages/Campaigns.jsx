@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import CampaignCreator from '../components/campaigns/CampaignCreator';
-import { checkFeatureAccess } from '@/lib/planLimits';
+import { canAccessFeature } from '@/lib/planLimits';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from '@/auth/AuthProvider';
 import { api, sendCampaignEmail } from '@/lib/api';
@@ -62,7 +62,7 @@ export default function CampaignsPage() {
       try {
         const userData = user || null;
 
-        if (userData && !checkFeatureAccess(userData, 'campaigns')) {
+        if (userData && !canAccessFeature(userData, 'campaigns')) {
           console.log('CampaignsPage: User does not have campaigns access');
           setHasAccess(false);
           setIsLoading(false);
