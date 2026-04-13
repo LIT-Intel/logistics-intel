@@ -2625,14 +2625,40 @@ export async function listSavedCompanies(
           row.company_data?.countryCode ||
           row.company_data?.country_code ||
           null,
+        domain: row.company_data?.domain || null,
+        website: row.company_data?.website || null,
         kpis: {
           shipments_12m:
             row.company_data?.shipmentsLast12m ||
             row.company_data?.totalShipments ||
             0,
+          teu_12m:
+            row.company_data?.teusLast12m ??
+            row.company_data?.teu_12m ??
+            null,
+          est_spend_12m:
+            row.company_data?.estSpendLast12m ??
+            row.company_data?.est_spend_12m ??
+            null,
+          fcl_shipments_12m:
+            row.company_data?.fclShipments12m ??
+            row.company_data?.fcl_shipments_12m ??
+            null,
+          lcl_shipments_12m:
+            row.company_data?.lclShipments12m ??
+            row.company_data?.lcl_shipments_12m ??
+            null,
           last_activity:
             row.company_data?.lastShipmentDate ||
             row.company_data?.mostRecentShipment ||
+            null,
+          top_route_12m:
+            row.company_data?.topRouteLast12m ??
+            row.company_data?.top_route_12m ??
+            null,
+          recent_route:
+            row.company_data?.mostRecentRoute ??
+            row.company_data?.recent_route ??
             null,
         },
         extras: {
@@ -2640,6 +2666,8 @@ export async function listSavedCompanies(
         },
       },
       created_at: row.created_at,
+      stage: row.stage ?? "prospect",
+      status: row.status ?? "active",
     }));
   }
 
@@ -2647,121 +2675,13 @@ export async function listSavedCompanies(
   return Array.isArray(fallback?.rows) ? fallback.rows : [];
 }
 
-export function buildSearchParams(raw: Record<string, any>) {
-  const cleaned: Record<string, any> = {};
-  for (const [key, value] of Object.entries(raw || {})) {
-    if (value === undefined || value === null) continue;
-    if (typeof value === "string" && value.trim() === "") continue;
-    cleaned[key] = value;
-  }
-  return cleaned;
-}
-
-export async function getCompanyShipments(
-  company_id: string,
-  opts?: { limit?: number; offset?: number },
-) {
-  const limitCandidate = Number(opts?.limit);
-  const offsetCandidate = Number(opts?.offset);
-  const limit = Math.max(
-    1,
-    Math.min(100, Number.isFinite(limitCandidate) ? limitCandidate : 25),
-  );
-  const offset = Math.max(
-    0,
-    Number.isFinite(offsetCandidate) ? offsetCandidate : 0,
-  );
-
-  const params = new URLSearchParams({
-    company_id,
-    limit: String(limit),
-    offset: String(offset),
-  });
-
-  const response = await fetch(
-    `${API_BASE}/public/getCompanyShipments?${params.toString()}`,
-  );
-  if (!response.ok) {
-    throw new Error(`shipments ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getCompanyDetails(params: {
-  company_id?: string;
-  fallback_name?: string;
-}) {
-  const q = new URLSearchParams();
-  if (params.company_id) q.set("company_id", params.company_id);
-  const url = `/api/lit/public/getCompanyDetails?${q.toString()}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`getCompanyDetails ${r.status}`);
-  return r.json();
-}
-
-export async function getCompanyShipmentsUnified(params: {
-  company_id?: string;
-  company_name?: string;
-  origin?: string;
-  dest?: string;
-  hs?: string;
-  limit?: number;
-  offset?: number;
-}) {
-  const q = new URLSearchParams();
-  if (params.company_id) q.set("company_id", params.company_id);
-  if (params.company_name) q.set("company_name", params.company_name);
-  if (params.origin) q.set("origin", params.origin);
-  if (params.dest) q.set("dest", params.dest);
-  if (params.hs) q.set("hs", params.hs);
-  q.set("limit", String(params.limit ?? 50));
-  q.set("offset", String(params.offset ?? 0));
-  const url = `/api/lit/public/getCompanyShipments?${q.toString()}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`getCompanyShipments ${r.status}`);
-  const data = await r.json();
-  return {
-    rows: Array.isArray((data as any)?.rows) ? (data as any).rows : [],
-    total: Number((data as any)?.meta?.total ?? (data as any)?.total ?? 0),
-  };
-}
-
-export async function getCompanyKpis(
-  params: { company_id?: string; company_name?: string },
-  signal?: AbortSignal,
-) {
-  const qp = new URLSearchParams();
-  if (params.company_id) qp.set("company_id", params.company_id);
-  if (!params.company_id && params.company_name)
-    qp.set("company_name", params.company_name);
-  const url = `/api/lit/public/getCompanyKpis?${qp.toString()}`;
-  try {
-    const r = await fetch(url, {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal,
-    });
-    const ct = r.headers.get("content-type") || "";
-    if (!r.ok || !ct.includes("application/json"))
-      throw new Error(String(r.status));
-    return await r.json();
-  } catch {
-    const base = getGatewayBase();
-    const u = `${base}/public/getCompanyKpis?${qp.toString()}`;
-    const g = await fetch(u, {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal,
-    });
-    if (!g.ok) return null;
-    return await g.json().catch(() => null);
-  }
-}
-
 /**
  * Saved companies read path.
- * company.company_id remains source_company_key for profile hydration.
- * company_uuid is the internal UUID from lit_saved_companies.company_id.
+ * IMPORTANT:
+ * - lit_saved_companies.company_id = internal UUID
+ * - lit_companies.source_company_key = external provider key
+ * - Command Center rows must still expose company.company_id as source_company_key
+ *   so Company page hydration can fetch provider snapshot/profile correctly
  */
 export async function getSavedCompanies(signal?: AbortSignal) {
   try {
@@ -2797,6 +2717,7 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           teu_12m,
           fcl_shipments_12m,
           lcl_shipments_12m,
+          est_spend_12m,
           most_recent_shipment_date,
           top_route_12m,
           recent_route
@@ -2832,7 +2753,7 @@ export async function getSavedCompanies(signal?: AbortSignal) {
             kpis: {
               shipments_12m: companyRow?.shipments_12m ?? 0,
               teu_12m: companyRow?.teu_12m ?? null,
-              est_spend_12m: null,
+              est_spend_12m: companyRow?.est_spend_12m ?? null,
               fcl_shipments_12m: companyRow?.fcl_shipments_12m ?? null,
               lcl_shipments_12m: companyRow?.lcl_shipments_12m ?? null,
               last_activity: companyRow?.most_recent_shipment_date ?? null,
@@ -2878,6 +2799,7 @@ export async function saveCompanyToCrm(
     (company as any)?.title ||
     "";
   const companyId = ensureCompanyKey(rawId);
+
   if (!companyId) {
     console.warn("[LIT] saveCompanyToCrm called with invalid company payload:", {
       company,
@@ -2989,12 +2911,31 @@ async function saveCompanyDirectToSupabase(opts: {
     throw new Error("saveCompanyDirectToSupabase requires a valid company key");
   }
 
+  const shipments12m =
+    opts.profile?.routeKpis?.shipmentsLast12m ??
+    opts.shipper.shipmentsLast12m ??
+    opts.shipper.totalShipments ??
+    0;
+
+  const teu12m =
+    opts.profile?.routeKpis?.teuLast12m ??
+    opts.shipper.teusLast12m ??
+    null;
+
+  const estSpend12m =
+    opts.profile?.routeKpis?.estSpendUsd12m ??
+    opts.profile?.estSpendUsd12m ??
+    opts.shipper.estSpendLast12m ??
+    null;
+
   const fclShipments = getFclShipments12m(opts.profile);
   const lclShipments = getLclShipments12m(opts.profile);
+
   const topRoute =
     opts.profile?.routeKpis?.topRouteLast12m ??
     opts.shipper.primaryRouteSummary ??
     null;
+
   const recentRoute =
     opts.profile?.routeKpis?.mostRecentRoute ??
     opts.shipper.primaryRoute ??
@@ -3010,15 +2951,9 @@ async function saveCompanyDirectToSupabase(opts: {
     city: opts.shipper.city ?? null,
     state: opts.shipper.state ?? null,
     country_code: opts.profile?.countryCode ?? opts.shipper.countryCode ?? null,
-    shipments_12m:
-      opts.profile?.routeKpis?.shipmentsLast12m ??
-      opts.shipper.shipmentsLast12m ??
-      opts.shipper.totalShipments ??
-      0,
-    teu_12m:
-      opts.profile?.routeKpis?.teuLast12m ??
-      opts.shipper.teusLast12m ??
-      null,
+    shipments_12m: shipments12m,
+    teu_12m: teu12m,
+    est_spend_12m: estSpend12m,
     fcl_shipments_12m: fclShipments,
     lcl_shipments_12m: lclShipments,
     most_recent_shipment_date:
@@ -3123,6 +3058,7 @@ export async function saveIyCompanyToCrm(opts: {
     (opts.shipper as any)?.company_key ??
     (opts.shipper as any)?.source_company_key ??
     "";
+
   const companyKey = ensureCompanyKey(rawId);
   if (!companyKey) {
     throw new Error("saveIyCompanyToCrm requires a valid company key");
@@ -3137,7 +3073,100 @@ export async function saveIyCompanyToCrm(opts: {
     });
   }
 
-  return saveCompanyDirectToSupabase(opts);
+  return saveCompanyDirectToSupabase({
+    ...opts,
+    shipper: {
+      ...opts.shipper,
+      key: companyKey,
+      companyId: companyKey,
+      companyKey,
+    },
+  });
+}
+
+/**
+ * Resolve a source company key from either:
+ * - direct source key: company/tesla
+ * - normalized slug: tesla
+ * - internal saved-company UUID
+ *
+ * Company page hydration must ultimately use source_company_key.
+ */
+async function resolveSourceCompanyKey(input: string): Promise<string | null> {
+  const trimmed = String(input || "").trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("company/")) {
+    return ensureCompanyKey(trimmed);
+  }
+
+  const uuidLike =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      trimmed,
+    );
+
+  if (!uuidLike) {
+    return ensureCompanyKey(trimmed);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("lit_companies")
+      .select("source_company_key")
+      .eq("id", trimmed)
+      .maybeSingle();
+
+    if (error) {
+      console.error("resolveSourceCompanyKey lit_companies lookup error:", error);
+      return null;
+    }
+
+    return data?.source_company_key
+      ? ensureCompanyKey(data.source_company_key)
+      : null;
+  } catch (error) {
+    console.error("resolveSourceCompanyKey fatal error:", error);
+    return null;
+  }
+}
+
+/**
+ * Hydrate saved company detail using source_company_key.
+ * This must work whether the caller passes:
+ * - source company key
+ * - normalized slug
+ * - internal UUID
+ */
+export async function getSavedCompanyDetail(
+  companyKey: string,
+  signal?: AbortSignal,
+): Promise<{ profile: IyCompanyProfile; routeKpis: IyRouteKpis | null }> {
+  const resolvedSourceCompanyKey = await resolveSourceCompanyKey(companyKey);
+
+  if (!resolvedSourceCompanyKey) {
+    throw new Error("getSavedCompanyDetail requires a valid company key");
+  }
+
+  const [profileResult, routeKpis] = await Promise.all([
+    getIyCompanyProfile({ companyKey: resolvedSourceCompanyKey }),
+    getIyRouteKpisForCompany({ companyKey: resolvedSourceCompanyKey }, signal),
+  ]);
+
+  const finalRouteKpis = routeKpis ?? profileResult.companyProfile?.routeKpis ?? null;
+
+  return {
+    profile: {
+      ...profileResult.companyProfile,
+      key: resolvedSourceCompanyKey,
+      companyId: resolvedSourceCompanyKey,
+      routeKpis: finalRouteKpis,
+      estSpendUsd12m:
+        profileResult.companyProfile?.estSpendUsd12m ??
+        finalRouteKpis?.estSpendUsd12m ??
+        null,
+    },
+    routeKpis: finalRouteKpis,
+  };
 }
 
 export async function saveCompanyToCommandCenter(opts: {
