@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import CampaignCreator from '../components/campaigns/CampaignCreator';
-import { checkFeatureAccess } from '@/components/utils/planLimits';
+import { checkFeatureAccess } from '@/lib/planLimits';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from '@/auth/AuthProvider';
 import { api, sendCampaignEmail } from '@/lib/api';
