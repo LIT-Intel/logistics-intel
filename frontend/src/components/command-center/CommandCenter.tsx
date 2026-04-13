@@ -20,6 +20,8 @@ import {
   Search,
   Ship,
   TrendingUp,
+  Route,
+  Boxes,
 } from "lucide-react";
 
 type FilterTab = "all" | "high_value" | "active" | "recent";
@@ -179,18 +181,9 @@ export default function CommandCenter() {
         const rows = normalizeSavedCompaniesResponse(response);
 
         if (!isMounted) return;
-
-        console.log("CommandCenter listSavedCompanies response", {
-          raw: response,
-          normalizedRows: rows,
-          count: rows.length,
-        });
-
         setSavedCompanies(rows);
       } catch (error: any) {
         if (!isMounted) return;
-
-        console.error("CommandCenter loadSavedCompanies error", error);
         setSavedError(error?.message ?? "Failed to load saved companies");
         setSavedCompanies([]);
       } finally {
@@ -208,16 +201,7 @@ export default function CommandCenter() {
   }, []);
 
   const listRows = useMemo(() => {
-    const mapped = savedCompanies.map(buildListRow);
-    const kept = mapped.filter((row) => row.key);
-
-    console.log("CommandCenter mapped rows", {
-      savedCompanies,
-      mapped,
-      kept,
-    });
-
-    return kept;
+    return savedCompanies.map(buildListRow).filter((row) => row.key);
   }, [savedCompanies]);
 
   const filteredRows = useMemo(() => {
@@ -258,15 +242,11 @@ export default function CommandCenter() {
   const summaryMetrics = useMemo(() => {
     const totalCompanies = listRows.length;
     const totalShipments = listRows.reduce((sum, row) => sum + (row.shipments12m || 0), 0);
-    const totalTeu = listRows.reduce((sum, row) => sum + (row.teu12m || 0), 0);
-    const totalSpend = listRows.reduce((sum, row) => sum + (row.estSpend12m || 0), 0);
     const activeAccounts = listRows.filter((row) => (row.shipments12m || 0) > 0).length;
 
     return {
       totalCompanies,
       totalShipments,
-      totalTeu,
-      totalSpend,
       activeAccounts,
     };
   }, [listRows]);
@@ -294,7 +274,7 @@ export default function CommandCenter() {
       // ignore localStorage failures
     }
 
-    navigate(`/app/companies/${row.companyId}`);
+    navigate(`/app/companies/${encodeURIComponent(row.companyId)}`);
   };
 
   return (
@@ -428,7 +408,7 @@ export default function CommandCenter() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.18, delay: index * 0.015 }}
                     onClick={() => handleOpenCompany(row)}
-                    className="block w-full border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50/90 last:border-b-0 md:px-5"
+                    className="group block w-full border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50/90 last:border-b-0 md:px-5"
                   >
                     <div className="grid gap-4 xl:grid-cols-[minmax(0,2.1fr)_110px_110px_140px_150px] xl:items-center">
                       <div className="min-w-0">
@@ -482,20 +462,22 @@ export default function CommandCenter() {
                             </div>
 
                             <div className="mt-3 grid gap-2 md:grid-cols-2">
-                              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 group-hover:border-indigo-200 group-hover:bg-indigo-50/70 group-hover:shadow-sm">
+                                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 group-hover:text-indigo-700">
+                                  <Route className="h-3.5 w-3.5" />
                                   Top lane
                                 </div>
-                                <div className="mt-1 truncate text-sm font-medium text-slate-900">
+                                <div className="mt-1 truncate text-sm font-medium text-slate-900 group-hover:text-indigo-950">
                                   {row.topRoute12m || row.recentRoute || "—"}
                                 </div>
                               </div>
 
-                              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 group-hover:border-indigo-200 group-hover:bg-indigo-50/70 group-hover:shadow-sm">
+                                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 group-hover:text-indigo-700">
+                                  <Boxes className="h-3.5 w-3.5" />
                                   Structure
                                 </div>
-                                <div className="mt-1 text-sm font-medium text-slate-900">
+                                <div className="mt-1 text-sm font-medium text-slate-900 group-hover:text-indigo-950">
                                   FCL {formatNumber(row.fclShipments12m)} · LCL {formatNumber(row.lclShipments12m)}
                                 </div>
                               </div>
@@ -541,7 +523,7 @@ export default function CommandCenter() {
                           </div>
                         </div>
 
-                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition group-hover:border-indigo-200 group-hover:bg-indigo-50 group-hover:text-indigo-700">
                           <ArrowUpRight className="h-4 w-4" />
                         </span>
                       </div>
