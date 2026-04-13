@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
-  ArrowUpRight,
   Building2,
   CalendarClock,
   Globe,
@@ -58,13 +57,21 @@ export default function Company() {
   const navigate = useNavigate();
   const { id } = useParams();
 
+  const decodedRouteId = useMemo(() => {
+    try {
+      return id ? decodeURIComponent(id) : null;
+    } catch {
+      return id || null;
+    }
+  }, [id]);
+
   const [profile, setProfile] = useState(null);
   const [routeKpis, setRouteKpis] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  const companyId = id || getStoredSelectedCompany()?.company_id || null;
+  const companyId = decodedRouteId || getStoredSelectedCompany()?.company_id || null;
 
   useEffect(() => {
     if (!companyId) {
