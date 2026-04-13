@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Lock, Crown, Zap, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { PLAN_LIMITS } from 'components/utils/planLimits';
+import { PLAN_LIMITS } from '@/lib/planLimits';
 
 export default function UpgradePrompt({ 
   isOpen, 
