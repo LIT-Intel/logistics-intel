@@ -656,6 +656,86 @@ export async function getFilterOptions(
 export const searchCompaniesProxyCompat = searchCompaniesProxy;
 export const getCompanyShipmentsProxyCompat = getCompanyShipmentsProxy;
 
+/**
+ * Named export expected by CompanyDetailModal and other callers.
+ * Delegates to getCompanyShipmentsProxy and normalises the response to
+ * { ok, rows, total } so consumers can safely read `result.rows`.
+ */
+export async function getCompanyShipments(
+  company_id: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<{ ok: boolean; rows: any[]; total: number }> {
+  const data = await getCompanyShipmentsProxy({
+    company_id,
+    limit: opts?.limit,
+    offset: opts?.offset,
+  });
+  const rows = Array.isArray((data as any)?.rows)
+    ? (data as any).rows
+    : Array.isArray(data)
+      ? data
+      : [];
+  const total = Number(
+    (data as any)?.meta?.total ?? (data as any)?.total ?? rows.length,
+  );
+  return { ok: true, rows, total };
+}
+
+/**
+ * Named export expected by CompanyDetailModal.
+ * Derives KPI values from the company profile + routeKpis already fetched
+ * by getSavedCompanyDetail — avoids a separate heavy endpoint call.
+ */
+export async function getCompanyKpis(
+  params: { company_id?: string; company_name?: string },
+  signal?: AbortSignal,
+): Promise<{
+  total_shipments_12m: number | null;
+  total_teus_12m: number | null;
+  teus_12m: number | null;
+  total_teus: number | null;
+  growth_rate: number | null;
+  top_route_12m: string | null;
+  recent_route: string | null;
+  est_spend_12m: number | null;
+  volumeSeries: Array<{ month: string; total: number; fcl: number; lcl: number }>;
+} | null> {
+  const key = params.company_id || params.company_name;
+  if (!key) return null;
+  try {
+    const { profile, routeKpis } = await getSavedCompanyDetail(key, signal);
+    const kpis = routeKpis ?? profile?.routeKpis ?? null;
+    const shipments = kpis?.shipmentsLast12m ?? profile?.totalShipments ?? null;
+    const teu = kpis?.teuLast12m ?? profile?.teuLast12m ?? null;
+    const spend = kpis?.estSpendUsd12m ?? profile?.estSpendUsd12m ?? null;
+    const topRoute = kpis?.topRouteLast12m ?? null;
+    const recentRoute = kpis?.mostRecentRoute ?? null;
+    const volumeSeries = Array.isArray((profile as any)?.timeSeries)
+      ? (profile as any).timeSeries
+          .filter((p: any) => p?.month || p?.period)
+          .map((p: any) => ({
+            month: String(p.month || p.period || ""),
+            total: Number(p.total ?? p.shipments ?? 0),
+            fcl: Number(p.fcl ?? 0),
+            lcl: Number(p.lcl ?? 0),
+          }))
+      : [];
+    return {
+      total_shipments_12m: shipments != null ? Number(shipments) : null,
+      total_teus_12m: teu != null ? Number(teu) : null,
+      teus_12m: teu != null ? Number(teu) : null,
+      total_teus: teu != null ? Number(teu) : null,
+      growth_rate: null,
+      top_route_12m: topRoute,
+      recent_route: recentRoute,
+      est_spend_12m: spend != null ? Number(spend) : null,
+      volumeSeries,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Gateway base (env override → default)
 const GW = "/api/lit";
 
