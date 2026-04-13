@@ -2517,26 +2517,6 @@ export async function getIyRouteKpisForCompany(
 
 export const getIyRouteKpis = getIyRouteKpisForCompany;
 
-export async function getSavedCompanyDetail(
-  companyKey: string,
-  signal?: AbortSignal,
-): Promise<{ profile: IyCompanyProfile; routeKpis: IyRouteKpis | null }> {
-  const normalizedKey = ensureCompanyKey(companyKey);
-  if (!normalizedKey) {
-    throw new Error("getSavedCompanyDetail requires a valid company key");
-  }
-
-  const [profileResult, routeKpis] = await Promise.all([
-    getIyCompanyProfile({ companyKey: normalizedKey }),
-    getIyRouteKpisForCompany({ companyKey: normalizedKey }, signal),
-  ]);
-
-  return {
-    profile: profileResult.companyProfile,
-    routeKpis,
-  };
-}
-
 function deriveYearRouteHints(points: IyTimeSeriesPoint[]): {
   topRouteLast12m: string | null;
   mostRecentRoute: string | null;
