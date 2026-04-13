@@ -16,7 +16,7 @@ import {
   Bug,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
-import { checkFeatureAccess } from "import { canAccessFeature } from "@/lib/planLimits";
+import { checkFeatureAccess } from "@/auth/AuthProvider";
 import { logout } from "@/auth/supabaseAuthClient";
 
 function SideLink({ to, icon: Icon, label }) {
