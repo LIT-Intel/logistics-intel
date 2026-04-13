@@ -10,7 +10,6 @@ import {
   TrendingUp,
   MapPin,
   Truck,
-  Sparkles,
 } from "lucide-react";
 import {
   buildCommandCenterDetailModel,
@@ -177,7 +176,11 @@ const cleanDisplayText = (value?: string | null) => (isMeaningfulText(value) ? n
 
 const buildRouteLabel = (value?: string | null) => {
   const cleaned = cleanDisplayText(value);
-  return cleaned || "—";
+  if (!cleaned) return "—";
+  if (cleaned.includes("→") && !cleaned.startsWith("Import")) {
+    return `Import (${cleaned})`;
+  }
+  return cleaned;
 };
 
 const toNumber = (value: unknown): number => {
@@ -375,7 +378,6 @@ const extractOrigin = (shipment: any) =>
     getShipmentValue(
       shipment,
       ["origin_port"],
-      ["origin"],
       ["origin_country"],
       ["origin_country_name"],
       ["origin_location"],
@@ -384,8 +386,6 @@ const extractOrigin = (shipment: any) =>
       ["place_of_receipt"],
       ["pol"],
       ["port_of_loading"],
-      ["shipper_country"],
-      ["supplier_country"],
     ),
   );
 
@@ -394,7 +394,6 @@ const extractDestination = (shipment: any) =>
     getShipmentValue(
       shipment,
       ["destination_port"],
-      ["destination"],
       ["destination_country"],
       ["destination_country_name"],
       ["destination_location"],
@@ -403,7 +402,6 @@ const extractDestination = (shipment: any) =>
       ["place_of_delivery"],
       ["pod"],
       ["port_of_discharge"],
-      ["company_country"],
     ),
   );
 
@@ -846,8 +844,8 @@ const normalizeShipment = (shipment: any, index: number): NormalizedShipment => 
   const monthIndex =
     parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.getMonth() : null;
 
-  const origin = extractOrigin(shipment) || extractPortOfLading(shipment) || "—";
-  const destination = extractDestination(shipment) || extractPortOfUnlading(shipment) || "—";
+  const origin = extractPortOfLading(shipment) || extractOrigin(shipment) || "—";
+  const destination = extractPortOfUnlading(shipment) || extractDestination(shipment) || "—";
 
   const route = buildRouteLabel(
     pickFirst(
@@ -1170,63 +1168,6 @@ const DataTable = ({
   </div>
 );
 
-const AiRail = ({
-  insights,
-  shipments,
-  teu,
-  topRouteLabel,
-}: {
-  insights: Array<{ title: string; body: string; tone?: "default" | "warning" | "highlight" }>;
-  shipments: number | null;
-  teu: number | null;
-  topRouteLabel: string;
-}) => {
-  const aiCards = [
-    {
-      title: "Growth alert",
-      body:
-        shipments && teu
-          ? `Volume profile shows ${formatNumber(shipments)} shipments and ${formatNumber(teu, 1)} TEUs in scope. Good candidate for mode optimization and seasonal rate capture.`
-          : "Waiting for richer shipment history to surface growth signals.",
-    },
-    {
-      title: "Sourcing risk",
-      body:
-        topRouteLabel && topRouteLabel !== "—"
-          ? `Primary lane is ${topRouteLabel}. Validate backup carrier and alternate origin routing before quoting.`
-          : "Route mix not fully available yet. Lane concentration risk will appear here.",
-    },
-    {
-      title: "Strategic recommendation",
-      body:
-        insights[0]?.body ||
-        "Use the account brief to frame DSV value around capacity planning, lane resiliency, and shipment visibility.",
-    },
-  ];
-
-  return (
-    <aside className="space-y-4 w-full lg:sticky lg:top-4">
-      <div className="rounded-[28px] border border-slate-800 bg-slate-950 p-5 text-white shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-300">AI Intelligence</div>
-          <Sparkles className="h-4 w-4 text-indigo-300" />
-        </div>
-
-        <div className="space-y-4">
-          {aiCards.map((card) => (
-            <div key={card.title} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300">
-                {card.title}
-              </div>
-              <p className="mt-2 text-sm leading-6 text-slate-100">{card.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-      {/* Quick actions removed intentionally */}
-    </aside>
-  );
-};
 
 const buildDetailModel = (
   normalizedShipments: NormalizedShipment[],
@@ -1359,11 +1300,7 @@ const buildDetailModel = (
 
   const shipments = seriesShipments > 0 ? seriesShipments : shipmentCount > 0 ? shipmentCount : fallbackShipments;
   const teu = seriesTeu > 0 ? seriesTeu : shipmentTeu > 0 ? shipmentTeu : fallbackTeu;
-  // Market spend is now computed as shipment count times an average container price (~$4,500).
-  // If shipments is available, multiply by 4500; otherwise fall back to existing estimates.
-  const spend = shipments > 0
-    ? shipments * 4500
-    : seriesSpend > 0
+  const spend = seriesSpend > 0
     ? seriesSpend
     : fallbackSpend > 0
     ? fallbackSpend
@@ -1591,16 +1528,9 @@ export default function CompanyDetailPanel({
       Number((scopedProfile as any)?.marketSpend ?? 0),
       Number(fallbackModel.spend ?? 0),
     ].filter((value) => Number.isFinite(value) && value > 0);
-    // Recalculate market spend based on shipment count and a fixed average container price.  
-    // The business requirement is that market spend equals the shipment count multiplied by
-    // an average container cost of USD 4,500. This overrides any estimates returned by
-    // ImportYeti or the API. If there are no shipments, fall back to the largest estimate.
-    let resolvedSpend: number | null;
-    if (resolvedShipments && resolvedShipments > 0) {
-      resolvedSpend = resolvedShipments * 4500;
-    } else {
-      resolvedSpend = resolvedSpendCandidates.length ? Math.max(...resolvedSpendCandidates) : null;
-    }
+    const resolvedSpend: number | null = resolvedSpendCandidates.length > 0
+      ? Math.max(...resolvedSpendCandidates)
+      : null;
     const resolvedFcl = Math.max(Number(baseModel?.fclShipments ?? 0), Number((scopedProfile as any)?.containers?.fclShipments12m ?? 0), Number(fallbackModel.fclShipments ?? 0));
     const resolvedLcl = Math.max(Number(baseModel?.lclShipments ?? 0), Number((scopedProfile as any)?.containers?.lclShipments12m ?? 0), Number(fallbackModel.lclShipments ?? 0));
     const latestDate = baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? scopedProfile?.lastShipmentDate ?? null;
@@ -1820,143 +1750,137 @@ export default function CompanyDetailPanel({
             </button>
           </div>
         </div>
-        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="space-y-4 min-w-0">
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-              <KpiCard
-                label="Market spend"
-                value={formatCurrency(detail.spend)}
-                icon={DollarSign}
-                subLabel={`${effectiveSelectedYear ?? 'Selected year'} estimate`}
-                accent="indigo"
-              />
-              <KpiCard
-                label="Shipments"
-                value={formatNumber(detail.shipments)}
-                icon={Package}
-                subLabel={`${effectiveSelectedYear ?? 'Selected year'} visible activity`}
-                accent="violet"
-              />
-              <KpiCard
-                label="Total TEUs"
-                value={formatNumber(detail.teu, 1)}
-                icon={Ship}
-                subLabel="Selected-year volume"
-                accent="cyan"
-              />
-              <KpiCard
-                label="FCL shipments"
-                value={formatNumber(detail.fclShipments)}
-                icon={Boxes}
-                subLabel="Selected year"
-                accent="emerald"
-              />
-              <KpiCard
-                label="LCL shipments"
-                value={formatNumber(detail.lclShipments)}
-                icon={Truck}
-                subLabel="Selected year"
-                accent="amber"
-              />
-              <KpiCard
-                label="Avg shipments / month"
-                value={formatNumber(detail.avgShipmentsPerMonth, 1)}
-                icon={CalendarClock}
-                subLabel="Selected year"
-                accent="rose"
-              />
-            </div>
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              <SmallMetric
-                label="Avg TEU / shipment"
-                value={formatNumber(detail.avgTeuPerShipment, 2)}
-                icon={TrendingUp}
-              />
-              <SmallMetric
-                label="Oldest shipment"
-                value={formatDate(detail.oldestShipmentDate)}
-                icon={CalendarClock}
-              />
-              <SmallMetric
-                label="Latest shipment"
-                value={formatDate(detail.latestShipmentDate)}
-                icon={CalendarClock}
-              />
-            </div>
-            <Tabs defaultValue="overview" className="space-y-5">
-            {/* Tab bar: allow wrapping instead of overflowing horizontally */}
-            <TabsList
-              // Override default height/overflow from the tabs primitive and allow wrapping.
-              className="flex flex-wrap items-stretch w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-3 shadow-sm h-auto min-h-[44px] overflow-visible"
+        <Tabs defaultValue="overview" className="space-y-4">
+          <TabsList className="flex flex-wrap items-stretch w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-3 shadow-sm h-auto min-h-[44px] overflow-visible">
+            <TabsTrigger
+              value="overview"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
             >
-                {/* Each tab trigger highlights with the same gradient as the logo when active */}
-                <TabsTrigger
-                  value="overview"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Overview
-                </TabsTrigger>
-                <TabsTrigger
-                  value="lanes"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Trade Lanes
-                </TabsTrigger>
-                <TabsTrigger
-                  value="locations"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Locations
-                </TabsTrigger>
-                <TabsTrigger
-                  value="products"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Products
-                </TabsTrigger>
-                <TabsTrigger
-                  value="history"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Shipment History
-                </TabsTrigger>
-                <TabsTrigger
-                  value="credit"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Credit Rating
-                </TabsTrigger>
-                <TabsTrigger
-                  value="similar"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Similar Companies
-                </TabsTrigger>
-                <TabsTrigger
-                  value="contacts"
-                  className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
-                >
-                  Contact Intel
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="overview" className="space-y-4">
-                <div className="space-y-4 min-w-0">
-                  <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Peak seasonality index</div>
-                    <p className="mb-4 text-xs text-slate-500">
-                      Monthly shipment profile for Jan–Dec of {effectiveSelectedYear ?? 'the selected year'}.
-                    </p>
-                    <div className="min-h-[340px]">
-                      <CompanyActivityChart data={detail.monthlySeries} />
-                    </div>
-                    <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      <span className="font-semibold text-indigo-600">Observation:</span>{' '}
-                      Selected-year trends now reconcile with the same dataset powering shipments, lanes, products, and pivot views.
-                    </div>
-                  </div>
-                  <CommandCenterInsights insights={strategicInsights} />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="lanes"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            >
+              Trade Lanes
+            </TabsTrigger>
+            <TabsTrigger
+              value="locations"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            >
+              Locations
+            </TabsTrigger>
+            <TabsTrigger
+              value="products"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            >
+              Products
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            >
+              Shipment History
+            </TabsTrigger>
+            <TabsTrigger
+              value="credit"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            >
+              Credit Rating
+            </TabsTrigger>
+            <TabsTrigger
+              value="similar"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            >
+              Similar Companies
+            </TabsTrigger>
+            <TabsTrigger
+              value="contacts"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            >
+              Contact Intel
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-4">
+            <div className="space-y-4">
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                <KpiCard
+                  label="Market spend"
+                  value={formatCurrency(detail.spend)}
+                  icon={DollarSign}
+                  subLabel={`${effectiveSelectedYear ?? 'Selected year'} estimate`}
+                  accent="indigo"
+                />
+                <KpiCard
+                  label="Shipments"
+                  value={formatNumber(detail.shipments)}
+                  icon={Package}
+                  subLabel={`${effectiveSelectedYear ?? 'Selected year'} visible activity`}
+                  accent="violet"
+                />
+                <KpiCard
+                  label="Total TEUs"
+                  value={formatNumber(detail.teu, 1)}
+                  icon={Ship}
+                  subLabel="Selected-year volume"
+                  accent="cyan"
+                />
+                <KpiCard
+                  label="FCL shipments"
+                  value={formatNumber(detail.fclShipments)}
+                  icon={Boxes}
+                  subLabel="Selected year"
+                  accent="emerald"
+                />
+                <KpiCard
+                  label="LCL shipments"
+                  value={formatNumber(detail.lclShipments)}
+                  icon={Truck}
+                  subLabel="Selected year"
+                  accent="amber"
+                />
+                <KpiCard
+                  label="Avg shipments / month"
+                  value={formatNumber(detail.avgShipmentsPerMonth, 1)}
+                  icon={CalendarClock}
+                  subLabel="Selected year"
+                  accent="rose"
+                />
+              </div>
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                <SmallMetric
+                  label="Avg TEU / shipment"
+                  value={formatNumber(detail.avgTeuPerShipment, 2)}
+                  icon={TrendingUp}
+                />
+                <SmallMetric
+                  label="Oldest shipment"
+                  value={formatDate(detail.oldestShipmentDate)}
+                  icon={CalendarClock}
+                />
+                <SmallMetric
+                  label="Latest shipment"
+                  value={formatDate(detail.latestShipmentDate)}
+                  icon={CalendarClock}
+                />
+              </div>
+              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">Peak seasonality index</div>
+                <p className="mb-4 text-xs text-slate-500">
+                  Monthly shipment profile for Jan–Dec of {effectiveSelectedYear ?? 'the selected year'}.
+                </p>
+                <div className="min-h-[340px]">
+                  <CompanyActivityChart data={detail.monthlySeries} />
                 </div>
-              </TabsContent>
+                <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <span className="font-semibold text-indigo-600">Observation:</span>{' '}
+                  Selected-year trends now reconcile with the same dataset powering shipments, lanes, products, and pivot views.
+                </div>
+              </div>
+              <CommandCenterInsights insights={strategicInsights} />
+            </div>
+          </TabsContent>
               <TabsContent value="similar" className="space-y-4">
                 <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="mb-4">
@@ -2257,25 +2181,7 @@ export default function CompanyDetailPanel({
                   )}
                 </div>
               </TabsContent>
-            </Tabs>
-          </div>
-          <div className="hidden 2xl:block">
-            <AiRail
-              insights={strategicInsights}
-              shipments={detail.shipments}
-              teu={detail.teu}
-              topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-            />
-          </div>
-        </div>
-        <div className="space-y-4 2xl:hidden">
-          <AiRail
-            insights={strategicInsights}
-            shipments={detail.shipments}
-            teu={detail.teu}
-            topRouteLabel={buildRouteLabel(detail.topRouteLabel)}
-          />
-        </div>
+        </Tabs>
       </div>
     </section>
   );
