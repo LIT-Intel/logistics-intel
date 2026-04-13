@@ -3,22 +3,22 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { createStripeCheckout, createStripePortalSession } from '@/api/functions';
 import { supabase } from '@/lib/supabase';
-import {
-  getPlanConfig,
-  getPlanLimits,
-  type PlanCode,
-  type PlanConfig,
-} from '@/lib/planLimits';
+import { getPlanConfig, type PlanCode, type PlanConfig } from '@/lib/planLimits';
 import {
   CheckCircle2,
   Zap,
   Building2,
+  Search,
+  Eye,
   Mail,
-  FileText,
+  CreditCard,
   ExternalLink,
   AlertCircle,
-  CreditCard,
   TrendingUp,
+  Users,
+  Shield,
+  Crown,
+  BarChart3,
 } from 'lucide-react';
 
 function normalizePlanCode(plan?: string | null): PlanCode {
@@ -38,13 +38,9 @@ type DisplayPlanCard = {
   price: string;
   period: string;
   description: string;
-  stats: {
-    companies: string;
-    emails: string;
-    rfps: string;
-    seats: string;
-  };
-  features: { label: string; included: boolean }[];
+  seats: string;
+  highlights: string[];
+  limitsLine: string;
   highlight?: boolean;
 };
 
@@ -75,20 +71,14 @@ function buildPlanCards(): DisplayPlanCard[] {
       name: freeTrial.label,
       price: formatPrice('free_trial', freeTrial),
       period: formatPeriod('free_trial'),
-      description: 'Get started with limited access and no credit card required.',
-      stats: {
-        companies: formatLimit(freeTrial.limits.command_center_saves_per_month),
-        emails: '0',
-        rfps: '0',
-        seats: '1',
-      },
-      features: [
-        { label: '10 searches', included: true },
-        { label: '10 Command Center saves', included: true },
-        { label: 'Dashboard access', included: true },
-        { label: 'Search access', included: true },
-        { label: 'Campaign Builder', included: false },
-        { label: 'Pulse', included: false },
+      description: 'Starter access to explore the platform without a credit card.',
+      seats: '1 seat',
+      limitsLine: '10 searches • 10 saves',
+      highlights: [
+        'Dashboard access',
+        'Search access',
+        '10 Command Center saves',
+        'No Campaign Builder or Pulse',
       ],
     },
     {
@@ -96,20 +86,14 @@ function buildPlanCards(): DisplayPlanCard[] {
       name: starter.label,
       price: formatPrice('starter', starter),
       period: formatPeriod('starter'),
-      description: 'For individual operators who need core freight intelligence and CRM.',
-      stats: {
-        companies: formatLimit(starter.limits.command_center_saves_per_month),
-        emails: '0',
-        rfps: '0',
-        seats: '1',
-      },
-      features: [
-        { label: '300 searches / month', included: true },
-        { label: '100 company views / month', included: true },
-        { label: 'Command Center access', included: true },
-        { label: 'Company Intelligence page', included: true },
-        { label: 'Campaign Builder', included: false },
-        { label: 'Pulse', included: false },
+      description: 'Core freight intelligence and CRM for individual operators.',
+      seats: '1 seat',
+      limitsLine: '300 searches • 100 company views',
+      highlights: [
+        'Command Center',
+        'Company Intelligence page',
+        '100 saves',
+        'No Campaign Builder or Pulse',
       ],
     },
     {
@@ -117,20 +101,14 @@ function buildPlanCards(): DisplayPlanCard[] {
       name: growth.label,
       price: formatPrice('growth', growth),
       period: formatPeriod('growth'),
-      description: 'For teams running outbound, enrichment, and prospecting workflows.',
-      stats: {
-        companies: formatLimit(growth.limits.command_center_saves_per_month),
-        emails: formatLimit(growth.limits.pulse_runs_per_month),
-        rfps: '0',
-        seats: '3–5',
-      },
-      features: [
-        { label: '2,000 searches / month', included: true },
-        { label: '500 company views / month', included: true },
-        { label: '200 enrichment credits / month', included: true },
-        { label: '50 Pulse runs / month', included: true },
-        { label: 'Campaign Builder', included: true },
-        { label: '3 to 5 team seats', included: true },
+      description: 'Outbound, enrichment, and prospecting workflows for active teams.',
+      seats: '3–5 seats',
+      limitsLine: '2,000 searches • 500 company views • 50 Pulse runs',
+      highlights: [
+        'Campaign Builder',
+        'Pulse',
+        '200 enrichment credits',
+        '500 saves',
       ],
       highlight: true,
     },
@@ -139,26 +117,60 @@ function buildPlanCards(): DisplayPlanCard[] {
       name: enterprise.label,
       price: formatPrice('enterprise', enterprise),
       period: formatPeriod('enterprise'),
-      description: 'For larger teams needing scale, admin control, and future API readiness.',
-      stats: {
-        companies: 'Unlimited',
-        emails: 'Unlimited',
-        rfps: 'Unlimited',
-        seats: '10+',
-      },
-      features: [
-        { label: 'Everything in Growth', included: true },
-        { label: 'Advanced admin controls', included: true },
-        { label: 'Priority support', included: true },
-        { label: 'API-ready foundation', included: true },
-        { label: 'Custom usage limits', included: true },
-        { label: '10+ team seats', included: true },
+      description: 'Advanced admin control, scale, and API-readiness for larger teams.',
+      seats: '10+ seats',
+      limitsLine: 'Custom limits • soft-cap ready',
+      highlights: [
+        'Everything in Growth',
+        'Advanced admin controls',
+        'Priority support',
+        'Custom usage limits',
       ],
     },
   ];
 }
 
-export default function BillingNew() {
+function usagePct(used: number, max: number | null) {
+  if (max === null || max === 0) return 0;
+  return Math.min(Math.round((used / max) * 100), 100);
+}
+
+function ProgressMetric({
+  icon: Icon,
+  label,
+  current,
+  max,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  current: number;
+  max: number | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">
+            <Icon className="h-4 w-4 text-slate-700" />
+          </div>
+          <span className="truncate text-sm font-medium text-slate-700">{label}</span>
+        </div>
+        <span className="text-xs font-semibold text-slate-900">
+          {max === null ? 'Unlimited' : `${current} / ${max}`}
+        </span>
+      </div>
+
+      <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-slate-900 transition-all"
+          style={{ width: `${usagePct(current, max)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+export default function Billing() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -201,7 +213,7 @@ export default function BillingNew() {
 
       if (data) setSubscription(data);
     } catch {
-      // Fallback to auth metadata if subscription row is not available yet
+      // fallback to auth metadata
     }
   }
 
@@ -272,7 +284,8 @@ export default function BillingNew() {
   const subscriptionStatus =
     subscription?.status ||
     (user as any).subscription_status ||
-    (user as any).user_metadata?.subscription_status;
+    (user as any).user_metadata?.subscription_status ||
+    'incomplete';
 
   const isActive = subscriptionStatus === 'active';
 
@@ -281,184 +294,233 @@ export default function BillingNew() {
     (user as any).stripe_customer_id ||
     (user as any).user_metadata?.stripe_customer_id;
 
-  const companiesUsed =
-    (user as any).monthly_companies_viewed ||
+  const searchesUsed = (user as any).monthly_searches || 0;
+  const companyViewsUsed = (user as any).monthly_companies_viewed || 0;
+  const savesUsed =
     (user as any).monthly_command_center_saves ||
+    (user as any).monthly_saved_companies ||
+    0;
+  const pulseUsed =
+    (user as any).monthly_pulse_runs ||
+    (user as any).monthly_emails_sent ||
     0;
 
-  const emailsUsed = (user as any).monthly_emails_sent || 0;
-  const rfpsUsed = (user as any).monthly_rfps_generated || 0;
+  const renewalDate = subscription?.current_period_end
+    ? new Date(subscription.current_period_end).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null;
 
-  const companyLimit = currentPlan.limits.command_center_saves_per_month;
-  const emailLimit = currentPlan.limits.pulse_runs_per_month;
-  const rfpLimit: number | null = null;
+  const seatPolicy =
+    currentPlanCode === 'free_trial'
+      ? '1 seat'
+      : currentPlanCode === 'starter'
+      ? '1 seat'
+      : currentPlanCode === 'growth'
+      ? '3 to 5 seats'
+      : '10+ seats';
 
-  function usagePct(used: number, max: number | null) {
-    if (max === null || max === 0) return 0;
-    return Math.min(Math.round((used / max) * 100), 100);
-  }
-
-  function periodEnd() {
-    if (!subscription?.current_period_end) return null;
-
-    return new Date(subscription.current_period_end).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  }
+  const assignedSeats =
+    subscription?.seats ||
+    (user as any).seat_count ||
+    (user as any).team_seat_count ||
+    currentPlan.seatRules.default;
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 min-h-screen">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div>
-          <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-7xl p-4 md:p-6 xl:p-8">
+        <div className="mb-6 md:mb-8">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
             Account
           </span>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">Billing & Plans</h1>
+          <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
+                Billing & Plans
+              </h1>
+              <p className="mt-1 text-sm text-slate-600 md:text-base">
+                Manage your subscription, usage, seats, and billing settings.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {stripeCustomerId && (
+                <button
+                  onClick={handlePortal}
+                  disabled={isRedirecting}
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:opacity-50"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {isRedirecting ? 'Opening…' : 'Manage in Stripe'}
+                </button>
+              )}
+
+              {currentPlanCode === 'enterprise' && (
+                <a
+                  href="mailto:support@logisticintel.com?subject=Enterprise Inquiry"
+                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
+                >
+                  Contact Sales
+                </a>
+              )}
+            </div>
+          </div>
         </div>
 
         {checkoutSuccess && (
-          <div className="flex items-start gap-4 rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
-            <CheckCircle2 className="h-6 w-6 text-emerald-600 flex-shrink-0 mt-0.5" />
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-600" />
             <div>
-              <p className="font-semibold text-emerald-900">You&apos;re all set!</p>
-              <p className="text-sm text-emerald-700 mt-0.5">
-                Your subscription is being activated. This may take a moment to reflect.
-                {isActive ? ' Your plan is now active.' : ' Refreshing status…'}
+              <p className="font-medium text-emerald-900">Subscription update received</p>
+              <p className="mt-0.5 text-sm text-emerald-700">
+                Your billing status is refreshing now.
               </p>
             </div>
           </div>
         )}
 
         {err && (
-          <div className="flex items-start gap-3 rounded-3xl border border-red-200 bg-red-50 p-4">
-            <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-700">{err}</p>
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+            <div>
+              <p className="font-medium text-red-900">Billing action failed</p>
+              <p className="mt-0.5 text-sm text-red-700">{err}</p>
+            </div>
           </div>
         )}
 
-        <div className="rounded-3xl bg-slate-900 p-6 text-white shadow-lg">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
-                <Zap className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-semibold">{currentPlan.label} Plan</span>
-                  {subscriptionStatus && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="xl:col-span-2 rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-5 text-white shadow-sm md:p-6">
+            <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+                  {currentPlanCode === 'enterprise' ? (
+                    <Crown className="h-6 w-6 text-white" />
+                  ) : (
+                    <Zap className="h-6 w-6 text-white" />
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-semibold">{currentPlan.label} Plan</h2>
                     <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                         isActive
-                          ? 'bg-green-500/20 text-green-300 border-green-500/30'
-                          : subscriptionStatus === 'past_due'
-                          ? 'bg-red-500/20 text-red-300 border-red-500/30'
-                          : 'bg-white/10 text-white/70 border-white/10'
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-white/10 text-white/70'
                       }`}
                     >
                       {subscriptionStatus}
                     </span>
-                  )}
+                  </div>
+
+                  <p className="mt-1 text-sm text-slate-300">
+                    {currentPlanCode === 'free_trial'
+                      ? 'Free trial access'
+                      : currentPlanCode === 'enterprise'
+                      ? 'Custom enterprise pricing'
+                      : `$${currentPlan.priceMonthly}/month`}
+                    {renewalDate ? ` · Renews ${renewalDate}` : ''}
+                  </p>
+
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Seat Policy
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-white">{seatPolicy}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Seats Assigned
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-white">{assignedSeats}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Access Level
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-white">
+                        {currentPlanCode === 'enterprise'
+                          ? 'Advanced admin'
+                          : currentPlanCode === 'growth'
+                          ? 'Team plan'
+                          : 'Individual'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  {currentPlanCode === 'free_trial'
-                    ? 'Free trial access'
-                    : currentPlanCode === 'enterprise'
-                    ? 'Custom pricing'
-                    : `$${currentPlan.priceMonthly}/month`}
-                  {periodEnd() ? ` · Renews ${periodEnd()}` : ''}
-                </p>
               </div>
-            </div>
 
-            <div className="flex gap-2">
-              {stripeCustomerId && (
+              {!stripeCustomerId && currentPlanCode !== 'enterprise' && (
                 <button
-                  onClick={handlePortal}
-                  disabled={isRedirecting}
-                  className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {isRedirecting ? 'Opening…' : 'Manage in Stripe'}
-                </button>
-              )}
-
-              {currentPlanCode === 'free_trial' && (
-                <button
-                  onClick={() => handleUpgrade('starter')}
+                  onClick={() =>
+                    handleUpgrade(currentPlanCode === 'free_trial' ? 'starter' : 'growth')
+                  }
                   disabled={!!upgradeLoading}
-                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100 disabled:opacity-50 md:w-auto"
                 >
-                  Upgrade Plan
+                  {upgradeLoading ? 'Processing…' : 'Upgrade Plan'}
                 </button>
               )}
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-6 border-t border-white/10 pt-5">
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                  <Building2 className="h-3 w-3" /> Command Center
-                </span>
-                <span className="text-xs font-medium text-white">
-                  {companyLimit === null ? '∞' : `${companiesUsed} / ${companyLimit}`}
-                </span>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100">
+                <BarChart3 className="h-5 w-5 text-slate-700" />
               </div>
-              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-indigo-400 transition-all"
-                  style={{ width: `${usagePct(companiesUsed, companyLimit)}%` }}
-                />
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Usage Snapshot</div>
+                <div className="text-sm text-slate-500">Current billing period usage</div>
               </div>
             </div>
 
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                  <Mail className="h-3 w-3" /> Pulse / Outreach
-                </span>
-                <span className="text-xs font-medium text-white">
-                  {emailLimit === null ? '∞' : `${emailsUsed} / ${emailLimit}`}
-                </span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-green-400 transition-all"
-                  style={{ width: `${usagePct(emailsUsed, emailLimit)}%` }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                  <FileText className="h-3 w-3" /> RFP / Quote
-                </span>
-                <span className="text-xs font-medium text-white">
-                  {rfpLimit === null ? 'Unlimited' : `${rfpsUsed} / ${rfpLimit}`}
-                </span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-amber-400 transition-all"
-                  style={{ width: `${usagePct(rfpsUsed, rfpLimit)}%` }}
-                />
-              </div>
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <ProgressMetric
+                icon={Search}
+                label="Searches"
+                current={searchesUsed}
+                max={currentPlan.limits.searches_per_month}
+              />
+              <ProgressMetric
+                icon={Eye}
+                label="Company Views"
+                current={companyViewsUsed}
+                max={currentPlan.limits.company_views_per_month}
+              />
+              <ProgressMetric
+                icon={Building2}
+                label="Command Center Saves"
+                current={savesUsed}
+                max={currentPlan.limits.command_center_saves_per_month}
+              />
+              <ProgressMetric
+                icon={Mail}
+                label="Pulse / Outreach"
+                current={pulseUsed}
+                max={currentPlan.limits.pulse_runs_per_month}
+              />
             </div>
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
-          <div className="mb-6">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="mb-5">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
               Plans
             </span>
-            <h2 className="mt-2 text-lg font-semibold text-slate-900">Choose your plan</h2>
+            <h2 className="mt-2 text-lg font-semibold text-slate-950">Compare plans</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Choose the right access level for your team and workflow.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
             {planCards.map((plan) => {
               const isCurrent = plan.code === currentPlanCode;
               const currentIndex = planCards.findIndex((p) => p.code === currentPlanCode);
@@ -470,139 +532,109 @@ export default function BillingNew() {
               return (
                 <div
                   key={plan.code}
-                  className={`relative flex flex-col rounded-2xl border p-5 transition-all ${
+                  className={`relative flex h-full flex-col rounded-3xl border p-5 transition ${
                     isCurrent
-                      ? 'border-2 border-slate-900 shadow-lg'
-                      : plan.highlight
-                      ? 'border-slate-200 shadow-sm'
-                      : 'border-slate-200'
+                      ? 'border-slate-900 ring-1 ring-slate-900/10'
+                      : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
                   {isCurrent && (
-                    <div className="absolute -top-px right-4 bg-slate-900 text-white text-[10px] font-bold uppercase tracking-wide px-3 py-1 rounded-b-lg">
+                    <div className="absolute right-4 top-0 -translate-y-1/2 rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white">
                       Current
                     </div>
                   )}
 
-                  <div className="mb-4">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       {plan.name}
-                    </span>
-                    <div className="mt-2 flex items-baseline gap-1">
-                      <span className="text-3xl font-bold text-slate-900">{plan.price}</span>
-                      <span className="text-sm text-slate-400">{plan.period}</span>
                     </div>
-                    <p className="mt-1.5 text-xs text-slate-500">{plan.description}</p>
+                    <div className="mt-3 flex items-end gap-1">
+                      <span className="text-4xl font-bold tracking-tight text-slate-950">
+                        {plan.price}
+                      </span>
+                      <span className="mb-1 text-sm text-slate-500">{plan.period}</span>
+                    </div>
+                    <p className="mt-3 min-h-[48px] text-sm leading-6 text-slate-600">
+                      {plan.description}
+                    </p>
+
+                    <div className="mt-4 rounded-2xl bg-slate-50 p-3">
+                      <div className="text-sm font-medium text-slate-900">{plan.seats}</div>
+                      <div className="mt-1 text-sm text-slate-600">{plan.limitsLine}</div>
+                    </div>
                   </div>
 
-                  <div className="mb-4 space-y-1 text-xs text-slate-500">
-                    <div>Command Center: {plan.stats.companies}</div>
-                    <div>Outreach / Pulse: {plan.stats.emails}</div>
-                    <div>RFP / Quotes: {plan.stats.rfps}</div>
-                    <div>Seats: {plan.stats.seats}</div>
-                  </div>
-
-                  <ul className="flex-1 space-y-2 mb-5">
-                    {plan.features.map((f, i) => (
-                      <li key={i} className="flex items-center gap-2 text-xs">
-                        {f.included ? (
-                          <svg
-                            className="h-3.5 w-3.5 flex-shrink-0 text-green-500"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        ) : (
-                          <svg
-                            className="h-3.5 w-3.5 flex-shrink-0 text-slate-300"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        )}
-                        <span className={f.included ? 'text-slate-700' : 'text-slate-400'}>
-                          {f.label}
-                        </span>
+                  <ul className="mt-5 flex-1 space-y-3">
+                    {plan.highlights.map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-slate-700">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-500" />
+                        <span>{item}</span>
                       </li>
                     ))}
                   </ul>
 
-                  <button
-                    onClick={() => {
-                      if (isCurrent && stripeCustomerId) {
-                        handlePortal();
-                        return;
+                  <div className="mt-6">
+                    <button
+                      onClick={() => {
+                        if (isCurrent && stripeCustomerId) {
+                          handlePortal();
+                          return;
+                        }
+
+                        if (isCurrent) return;
+
+                        if (isDowngrade && stripeCustomerId) {
+                          handlePortal();
+                          return;
+                        }
+
+                        handleUpgrade(plan.code);
+                      }}
+                      disabled={
+                        isLoadingThis ||
+                        isRedirecting ||
+                        (isCurrent && !stripeCustomerId && currentPlanCode !== 'free_trial')
                       }
-
-                      if (isCurrent) return;
-
-                      if (isDowngrade && stripeCustomerId) {
-                        handlePortal();
-                        return;
-                      }
-
-                      handleUpgrade(plan.code);
-                    }}
-                    disabled={
-                      isLoadingThis ||
-                      isRedirecting ||
-                      (isCurrent && !stripeCustomerId && currentPlanCode !== 'free_trial')
-                    }
-                    className={`w-full rounded-full py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
-                      isCurrent
-                        ? 'bg-slate-900 text-white hover:bg-slate-800'
+                      className={`inline-flex w-full items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
+                        isCurrent || isUpgrade
+                          ? 'bg-slate-900 text-white hover:bg-slate-800'
+                          : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {isLoadingThis
+                        ? 'Processing…'
+                        : isCurrent
+                        ? stripeCustomerId
+                          ? 'Manage Plan'
+                          : 'Current Plan'
+                        : plan.code === 'enterprise'
+                        ? 'Upgrade to Enterprise'
                         : isUpgrade
-                        ? 'bg-slate-900 text-white hover:bg-slate-800'
-                        : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {isLoadingThis ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                        Processing…
-                      </span>
-                    ) : isCurrent ? (
-                      stripeCustomerId ? 'Manage Plan' : 'Current Plan'
-                    ) : plan.code === 'enterprise' ? (
-                      'Upgrade to Enterprise'
-                    ) : isUpgrade ? (
-                      `Upgrade to ${plan.name}`
-                    ) : (
-                      'Downgrade'
-                    )}
-                  </button>
+                        ? `Upgrade to ${plan.name}`
+                        : 'Downgrade'}
+                    </button>
+                  </div>
                 </div>
               );
             })}
           </div>
-
-          <p className="mt-4 text-center text-xs text-slate-400">
-            Need enterprise pricing?{' '}
-            <a href="mailto:support@logisticintel.com" className="text-slate-700 underline">
-              Contact sales
-            </a>
-          </p>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
-            <div className="mb-5 flex items-center justify-between">
+        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
               <div>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
                   Payment
                 </span>
-                <h3 className="mt-2 text-base font-semibold text-slate-900">Payment Method</h3>
+                <h3 className="mt-2 text-lg font-semibold text-slate-950">Payment Method</h3>
               </div>
+
               {stripeCustomerId && (
                 <button
                   onClick={handlePortal}
                   disabled={isRedirecting}
-                  className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                 >
                   Update
                 </button>
@@ -611,59 +643,104 @@ export default function BillingNew() {
 
             {stripeCustomerId ? (
               <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex h-9 w-14 flex-shrink-0 items-center justify-center rounded-lg bg-slate-900">
-                  <CreditCard className="h-4 w-4 text-white" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900">
+                  <CreditCard className="h-5 w-5 text-white" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-slate-900">Payment method on file</p>
-                  <p className="text-xs text-slate-500">Manage details in Stripe portal</p>
+                  <p className="text-sm text-slate-500">Manage details in Stripe billing portal</p>
                 </div>
-                <span className="text-xs font-medium text-green-700 bg-green-100 px-2.5 py-0.5 rounded-full">
+                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
                   Active
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                <CreditCard className="h-5 w-5 text-slate-300" />
-                No payment method on file. Upgrade a plan to add one.
+              <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                No payment method on file yet. Upgrade a paid plan to add one.
               </div>
             )}
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
-            <div className="mb-5 flex items-center justify-between">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
               <div>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
                   History
                 </span>
-                <h3 className="mt-2 text-base font-semibold text-slate-900">Billing History</h3>
+                <h3 className="mt-2 text-lg font-semibold text-slate-950">Billing History</h3>
               </div>
+
               {stripeCustomerId && (
                 <button
                   onClick={handlePortal}
                   disabled={isRedirecting}
-                  className="flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                 >
-                  <ExternalLink className="h-3 w-3" />
-                  Open Stripe Portal
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open Portal
                 </button>
               )}
             </div>
 
             {stripeCustomerId ? (
-              <p className="text-sm text-slate-500">
-                Full invoice history and downloadable PDFs are available in your{' '}
-                <button onClick={handlePortal} className="text-slate-900 underline hover:no-underline">
-                  Stripe billing portal
-                </button>
-                .
+              <p className="text-sm leading-6 text-slate-600">
+                Full invoice history and downloadable PDFs are available in your Stripe billing
+                portal.
               </p>
             ) : (
-              <div className="flex flex-col items-center gap-2 py-6 text-center">
-                <TrendingUp className="h-8 w-8 text-slate-200" />
-                <p className="text-sm text-slate-400">No billing history yet.</p>
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center">
+                <TrendingUp className="h-8 w-8 text-slate-300" />
+                <p className="mt-3 text-sm text-slate-500">No billing history available yet.</p>
               </div>
             )}
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+            <div className="mb-5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                Seats
+              </span>
+              <h3 className="mt-2 text-lg font-semibold text-slate-950">Seat Management</h3>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm">
+                  {currentPlanCode === 'enterprise' ? (
+                    <Shield className="h-5 w-5 text-slate-700" />
+                  ) : (
+                    <Users className="h-5 w-5 text-slate-700" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900">Current seat policy</p>
+                  <p className="mt-1 text-sm text-slate-600">{seatPolicy}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Included</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-950">
+                    {currentPlanCode === 'growth'
+                      ? '3–5'
+                      : currentPlanCode === 'enterprise'
+                      ? '10+'
+                      : '1'}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Assigned</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-950">{assignedSeats}</div>
+                </div>
+              </div>
+
+              <p className="text-sm leading-6 text-slate-600">
+                Org admins can manage seats and billing visibility according to the active plan.
+                Seat expansion beyond plan rules should route through billing or sales.
+              </p>
+            </div>
           </div>
         </div>
       </div>
