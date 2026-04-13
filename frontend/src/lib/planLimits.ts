@@ -1,4 +1,4 @@
-export type PlanCode = "starter" | "growth" | "enterprise";
+export type PlanCode = "free_trial" | "starter" | "growth" | "enterprise";
 
 export type BillingInterval = "monthly";
 
@@ -19,6 +19,7 @@ export type UsageLimitKey =
   | "searches_per_month"
   | "company_views_per_month"
   | "enrichment_credits_per_month"
+  | "command_center_saves_per_month"
   | "pulse_runs_per_month";
 
 export type SeatRules = {
@@ -42,6 +43,37 @@ export type PlanConfig = {
 };
 
 export const PLAN_LIMITS: Record<PlanCode, PlanConfig> = {
+  free_trial: {
+  code: "free_trial",
+  label: "Free Trial",
+  priceMonthly: 0,
+  billingInterval: "monthly",
+  seatRules: {
+    min: 1,
+    max: 1,
+    default: 1,
+  },
+  features: {
+    dashboard: true,
+    search: true,
+    command_center: true,
+    company_page: false,
+    campaign_builder: false,
+    pulse: false,
+    enrichment: false,
+    billing_admin: false,
+    seat_management: false,
+    credit_rating_ready: false,
+    contact_intel_ready: false,
+  },
+  limits: {
+    searches_per_month: 10,
+    company_views_per_month: 0,
+    command_center_saves_per_month: 10,
+    enrichment_credits_per_month: 0,
+    pulse_runs_per_month: 0,
+  },
+},
   starter: {
     code: "starter",
     label: "Starter",
