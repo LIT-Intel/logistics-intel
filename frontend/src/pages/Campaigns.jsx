@@ -62,7 +62,8 @@ export default function CampaignsPage() {
       try {
         const userData = user || null;
 
-        if (userData && !canAccessFeature(userData, 'campaigns')) {
+        const userPlan = user?.plan || user?.user_metadata?.plan || 'free_trial';
+  	  if (!canAccessFeature(userPlan, 'campaign_builder')) {
           console.log('CampaignsPage: User does not have campaigns access');
           setHasAccess(false);
           setIsLoading(false);
@@ -166,7 +167,7 @@ export default function CampaignsPage() {
   }
 
   if (!hasAccess && !isLoading) {
-    return <AccessFallback plan={user?.user_metadata?.plan} />;
+    return <AccessFallback plan={user?.plan || user?.user_metadata?.plan || 'free_trial'} />;
   }
 
   if (isCreating || editingCampaign) {
