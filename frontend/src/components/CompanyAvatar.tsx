@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type CompanyAvatarProps = {
   name: string;
@@ -75,7 +75,6 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
             ].join(" ")}
             loading="lazy"
             decoding="async"
-            referrerPolicy="no-referrer"
             onLoad={() => setImageLoaded(true)}
             onError={() => {
               setImageError(true);
