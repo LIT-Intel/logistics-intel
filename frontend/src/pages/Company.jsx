@@ -344,33 +344,16 @@ export default function Company() {
         <div className="relative flex flex-col gap-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 items-start gap-4">
-              {console.log("company avatar debug", {
-  activeProfileDomain: activeProfile?.domain,
-  activeProfileWebsite: activeProfile?.website,
-  shellCompanyDomain: shellCompany?.domain,
-  shellCompanyWebsite: shellCompany?.website,
-  companyDomain,
-  companyWebsite,
-  resolvedLogoUrl: getCompanyLogoUrl(
-    activeProfile?.domain ||
-      activeProfile?.website ||
-      shellCompany?.domain ||
-      shellCompany?.website ||
-      companyDomain ||
-      companyWebsite ||
-      undefined
-  ),
-})}
               <CompanyAvatar
   name={companyName}
   logoUrl={
     getCompanyLogoUrl(
-      activeProfile?.domain ||
+      companyDomain ||
+        companyWebsite ||
+        activeProfile?.domain ||
         activeProfile?.website ||
         shellCompany?.domain ||
         shellCompany?.website ||
-        companyDomain ||
-        companyWebsite ||
         undefined
     ) || undefined
   }
