@@ -7,13 +7,26 @@ import React, {
   useState,
 } from 'react';
 import { supabase } from '@/lib/supabase';
-import {
-  getAccessState,
-  normalizePlan,
-  normalizeRole,
-} from '@/lib/accessControl';
 
 const AuthContext = createContext(undefined);
+
+function normalizePlan(plan) {
+  const p = String(plan || '').toLowerCase().trim();
+
+  if (!p || p === 'free' || p === 'free_trial') return 'free_trial';
+  if (p === 'starter') return 'starter';
+  if (p === 'growth' || p === 'growth_plus') return 'growth';
+  if (p.startsWith('enterprise')) return 'enterprise';
+
+  return 'free_trial';
+}
+
+function normalizeLegacyRole(role, orgRole, isSuperAdmin) {
+  if (isSuperAdmin) return 'super_admin';
+  if (orgRole === 'owner' || orgRole === 'admin') return 'admin';
+  if (role === 'super_admin' || role === 'admin') return role;
+  return 'user';
+}
 
 async function fetchProfile(userId) {
   if (!userId) return null;
@@ -32,13 +45,88 @@ async function fetchProfile(userId) {
       `
     )
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw error;
   }
 
   return data;
+}
+
+async function fetchPlatformAdminStatus(userId) {
+  if (!userId) return false;
+
+  try {
+    const { data, error } = await supabase
+      .from('platform_admins')
+      .select('user_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[components/AuthProvider] platform_admins lookup unavailable:', error.message);
+      return false;
+    }
+
+    return data !== null;
+  } catch (error) {
+    console.warn('[components/AuthProvider] platform_admins lookup failed:', error);
+    return false;
+  }
+}
+
+async function fetchPrimaryOrgMembership(userId) {
+  if (!userId) {
+    return {
+      orgId: null,
+      orgRole: null,
+      membershipStatus: null,
+    };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('org_members')
+      .select(
+        `
+          org_id,
+          role,
+          status
+        `
+      )
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('joined_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      if (error) {
+        console.warn('[components/AuthProvider] org_members lookup failed:', error.message);
+      }
+
+      return {
+        orgId: null,
+        orgRole: null,
+        membershipStatus: null,
+      };
+    }
+
+    return {
+      orgId: data.org_id,
+      orgRole: data.role,
+      membershipStatus: data.status,
+    };
+  } catch (error) {
+    console.warn('[components/AuthProvider] org membership lookup exception:', error);
+
+    return {
+      orgId: null,
+      orgRole: null,
+      membershipStatus: null,
+    };
+  }
 }
 
 function buildUsageFromProfile(profile) {
@@ -61,44 +149,80 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+
   const [role, setRole] = useState('user');
   const [plan, setPlan] = useState('free_trial');
+
+  const [orgId, setOrgId] = useState(null);
+  const [orgRole, setOrgRole] = useState(null);
+  const [membershipStatus, setMembershipStatus] = useState(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
   const [authReady, setAuthReady] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [authError, setAuthError] = useState(null);
 
-  const refreshProfile = useCallback(async (explicitUserId) => {
-    const targetUserId = explicitUserId ?? user?.id;
+  const refreshProfile = useCallback(
+    async (explicitUserId) => {
+      const targetUserId = explicitUserId ?? user?.id;
 
-    if (!targetUserId) {
-      setProfile(null);
-      setRole('user');
-      setPlan('free_trial');
-      return null;
-    }
+      if (!targetUserId) {
+        setProfile(null);
+        setRole('user');
+        setPlan('free_trial');
+        setOrgId(null);
+        setOrgRole(null);
+        setMembershipStatus(null);
+        setIsSuperAdmin(false);
+        return null;
+      }
 
-    setLoadingProfile(true);
-    setAuthError(null);
+      setLoadingProfile(true);
+      setAuthError(null);
 
-    try {
-      const profileData = await fetchProfile(targetUserId);
+      try {
+        const [profileData, platformAdmin, membership] = await Promise.all([
+          fetchProfile(targetUserId),
+          fetchPlatformAdminStatus(targetUserId),
+          fetchPrimaryOrgMembership(targetUserId),
+        ]);
 
-      setProfile(profileData);
-      setRole(normalizeRole(profileData?.role));
-      setPlan(normalizePlan(profileData?.plan));
+        const resolvedOrgRole = membership?.orgRole || null;
+        const resolvedPlan = normalizePlan(profileData?.plan);
+        const resolvedRole = normalizeLegacyRole(
+          profileData?.role,
+          resolvedOrgRole,
+          Boolean(platformAdmin)
+        );
 
-      return profileData;
-    } catch (error) {
-      console.error('[AuthProvider] Failed to load profile:', error);
-      setAuthError(error);
-      setProfile(null);
-      setRole('user');
-      setPlan('free_trial');
-      return null;
-    } finally {
-      setLoadingProfile(false);
-    }
-  }, [user?.id]);
+        setProfile(profileData);
+        setRole(resolvedRole);
+        setPlan(resolvedPlan);
+        setOrgId(membership?.orgId || null);
+        setOrgRole(resolvedOrgRole);
+        setMembershipStatus(membership?.membershipStatus || null);
+        setIsSuperAdmin(Boolean(platformAdmin));
+
+        return profileData;
+      } catch (error) {
+        console.error('[components/AuthProvider] Failed to load profile/admin context:', error);
+
+        setAuthError(error);
+        setProfile(null);
+        setRole('user');
+        setPlan('free_trial');
+        setOrgId(null);
+        setOrgRole(null);
+        setMembershipStatus(null);
+        setIsSuperAdmin(false);
+
+        return null;
+      } finally {
+        setLoadingProfile(false);
+      }
+    },
+    [user?.id]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -107,9 +231,7 @@ export function AuthProvider({ children }) {
       try {
         const { data, error } = await supabase.auth.getSession();
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
         const currentSession = data?.session ?? null;
         const currentUser = currentSession?.user ?? null;
@@ -125,16 +247,26 @@ export function AuthProvider({ children }) {
           setProfile(null);
           setRole('user');
           setPlan('free_trial');
+          setOrgId(null);
+          setOrgRole(null);
+          setMembershipStatus(null);
+          setIsSuperAdmin(false);
         }
       } catch (error) {
-        console.error('[AuthProvider] Failed to initialize auth:', error);
+        console.error('[components/AuthProvider] Failed to initialize auth:', error);
+
         if (!isMounted) return;
+
         setAuthError(error);
         setSession(null);
         setUser(null);
         setProfile(null);
         setRole('user');
         setPlan('free_trial');
+        setOrgId(null);
+        setOrgRole(null);
+        setMembershipStatus(null);
+        setIsSuperAdmin(false);
       } finally {
         if (isMounted) {
           setAuthReady(true);
@@ -158,6 +290,10 @@ export function AuthProvider({ children }) {
         setProfile(null);
         setRole('user');
         setPlan('free_trial');
+        setOrgId(null);
+        setOrgRole(null);
+        setMembershipStatus(null);
+        setIsSuperAdmin(false);
       }
 
       setAuthReady(true);
@@ -173,7 +309,7 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      console.error('[AuthProvider] Sign out failed:', error);
+      console.error('[components/AuthProvider] Sign out failed:', error);
       throw error;
     }
 
@@ -182,19 +318,40 @@ export function AuthProvider({ children }) {
     setProfile(null);
     setRole('user');
     setPlan('free_trial');
+    setOrgId(null);
+    setOrgRole(null);
+    setMembershipStatus(null);
+    setIsSuperAdmin(false);
   }, []);
 
   const usage = useMemo(() => buildUsageFromProfile(profile), [profile]);
 
   const access = useMemo(() => {
-    return getAccessState({
-      role,
+    const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
+    const canAccessAdmin = Boolean(isSuperAdmin || isOrgAdmin);
+
+    return {
+      isAdmin: canAccessAdmin,
+      isSuperAdmin,
+      isOrgAdmin,
+      canAccessAdmin,
+      canUpgrade: !['enterprise'].includes(plan),
+      canManageBilling: isSuperAdmin || isOrgAdmin,
+      canManageMembers: isSuperAdmin || isOrgAdmin,
+      canManageWorkspace: isSuperAdmin || isOrgAdmin,
       plan,
+      role,
+      orgRole,
+      orgId,
+      membershipStatus,
       usage,
-    });
-  }, [role, plan, usage]);
+    };
+  }, [isSuperAdmin, orgRole, plan, role, orgId, membershipStatus, usage]);
 
   const value = useMemo(() => {
+    const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
+    const canAccessAdmin = Boolean(isSuperAdmin || isOrgAdmin);
+
     return {
       user,
       session,
@@ -209,6 +366,13 @@ export function AuthProvider({ children }) {
       setProfile,
       signOut,
       isAuthenticated: Boolean(user),
+
+      isSuperAdmin,
+      isOrgAdmin,
+      canAccessAdmin,
+      orgRole,
+      orgId,
+      membershipStatus,
     };
   }, [
     user,
@@ -222,6 +386,10 @@ export function AuthProvider({ children }) {
     authError,
     refreshProfile,
     signOut,
+    isSuperAdmin,
+    orgRole,
+    orgId,
+    membershipStatus,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
