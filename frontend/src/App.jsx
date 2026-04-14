@@ -50,6 +50,15 @@ function RequireAuth({ children }) {
   return children;
 }
 
+function RequireAdmin({ children }) {
+  const { user, loading, canAccessAdmin } = useAuth();
+  if (DEMO_MODE) return children;
+  if (loading) return null;
+  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  if (!canAccessAdmin) return <Navigate to="/app/dashboard" replace />;
+  return children;
+}
+
 function RequireSuperAdmin({ children }) {
   const { user, loading, isSuperAdmin } = useAuth();
   if (DEMO_MODE) return children;
@@ -269,11 +278,11 @@ export default function App() {
         <Route
           path="/app/admin/settings"
           element={
-            <RequireSuperAdmin>
+            <RequireAdmin>
               <LITPage>
                 <AdminSettings />
               </LITPage>
-            </RequireSuperAdmin>
+            </RequireAdmin>
           }
         />
 
@@ -324,11 +333,11 @@ export default function App() {
         <Route
           path="/app/admin"
           element={
-            <RequireSuperAdmin>
+            <RequireAdmin>
               <LITPage>
                 <AdminDashboard />
               </LITPage>
-            </RequireSuperAdmin>
+            </RequireAdmin>
           }
         />
 
@@ -346,11 +355,11 @@ export default function App() {
         <Route
           path="/app/cms"
           element={
-            <RequireSuperAdmin>
+            <RequireAdmin>
               <LITPage>
                 <CMSManager />
               </LITPage>
-            </RequireSuperAdmin>
+            </RequireAdmin>
           }
         />
 
@@ -368,11 +377,11 @@ export default function App() {
         <Route
           path="/app/agent"
           element={
-            <RequireSuperAdmin>
+            <RequireAdmin>
               <LITPage>
                 <AdminAgent />
               </LITPage>
-            </RequireSuperAdmin>
+            </RequireAdmin>
           }
         />
 
