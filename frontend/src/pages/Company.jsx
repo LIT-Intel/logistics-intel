@@ -44,6 +44,27 @@ function formatDate(value) {
   });
 }
 
+/** Deterministic spend estimate: FCL $1,850/TEU + LCL $850/TEU.
+ *  When FCL/LCL ratio is unknown, assume 85% FCL. */
+function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
+  const total = Number(teu);
+  if (!total || total <= 0) return null;
+  if (fclTeu != null && lclTeu != null) {
+    return Math.round(Number(fclTeu) * 1850 + Number(lclTeu) * 850);
+  }
+  const inferredFcl = total * 0.85;
+  const inferredLcl = total * 0.15;
+  return Math.round(inferredFcl * 1850 + inferredLcl * 850);
+}
+
+/** Cap a date string so it is never in the future (returns null if future). */
+function capDateAtToday(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed <= new Date() ? value : null;
+}
+
 function getStoredSelectedCompany() {
   try {
     const raw = localStorage.getItem("lit:selectedCompany");
@@ -147,19 +168,28 @@ export default function Company() {
     ).sort((a, b) => b - a);
   }, [profile]);
 
-  const headerKpis = {
-    shipments: activeRouteKpis?.shipmentsLast12m ?? activeProfile?.totalShipments ?? null,
-    teu: activeRouteKpis?.teuLast12m ?? activeProfile?.teuLast12m ?? null,
-    spend:
+  const headerKpis = (() => {
+    const teu = activeRouteKpis?.teuLast12m ?? activeProfile?.teuLast12m ?? null;
+    const explicitSpend =
       activeRouteKpis?.estSpendUsd12m ??
       activeProfile?.estSpendUsd12m ??
       activeProfile?.marketSpend ??
-      null,
-    latestShipment:
-      activeProfile?.lastShipmentDate || activeProfile?.last_shipment_date || null,
-    topRoute: activeRouteKpis?.topRouteLast12m || null,
-    recentRoute: activeRouteKpis?.mostRecentRoute || null,
-  };
+      null;
+    const spend =
+      explicitSpend != null && Number(explicitSpend) > 0
+        ? Number(explicitSpend)
+        : estimateMarketSpend(teu);
+    const rawLatest =
+      activeProfile?.lastShipmentDate || activeProfile?.last_shipment_date || null;
+    return {
+      shipments: activeRouteKpis?.shipmentsLast12m ?? activeProfile?.totalShipments ?? null,
+      teu,
+      spend,
+      latestShipment: capDateAtToday(rawLatest),
+      topRoute: activeRouteKpis?.topRouteLast12m || null,
+      recentRoute: activeRouteKpis?.mostRecentRoute || null,
+    };
+  })();
 
   const headerRecord = useMemo(() => {
     if (!companyId) return null;
@@ -334,7 +364,7 @@ export default function Company() {
             <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
                 <TrendingUp className="h-3.5 w-3.5 text-violet-300" />
-                Market spend
+                Est. Market Spend
               </div>
               <div className="mt-2 text-xl font-semibold text-white">
                 {formatCurrency(headerKpis.spend)}

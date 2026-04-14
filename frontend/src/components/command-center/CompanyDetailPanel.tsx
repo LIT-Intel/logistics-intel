@@ -26,6 +26,19 @@ import CommandCenterInsights from "./CommandCenterInsights";
 // Supabase client to invoke edge functions for contact enrichment and lookalikes
 import { supabase } from "@/lib/supabase";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartTooltip,
+  ResponsiveContainer as RechartContainer,
+  Legend,
+} from "recharts";
+
+const CHART_COLORS = [
+  "#6366f1", "#06b6d4", "#10b981", "#f59e0b",
+  "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6",
+];
 
 type CompanyDetailPanelProps = {
   record: CommandCenterRecord | null;
@@ -1548,13 +1561,16 @@ export default function CompanyDetailPanel({
           lcl: Number(point.lcl || 0),
         }))
       : fallbackModel.monthlySeries;
+    // Cap to today's month when viewing the current calendar year to prevent future-month bars
+    const todayMonthCap = activeYear === new Date().getFullYear() ? new Date().getMonth() : null;
+    const effectiveMonthCap = latestMonthCap != null ? latestMonthCap : todayMonthCap;
     const monthlySeries = monthlySeriesBase
       .map((point: any) => ({
         period: point.period,
         fcl: Number(point.fcl || 0),
         lcl: Number(point.lcl || 0),
       }))
-      .slice(0, latestMonthCap != null ? latestMonthCap + 1 : monthlySeriesBase.length);
+      .slice(0, effectiveMonthCap != null ? effectiveMonthCap + 1 : monthlySeriesBase.length);
     const topRoutes = Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
       ? baseModel.tradeLanes.map((lane: any) => ({
           lane: lane.label,
@@ -1597,6 +1613,7 @@ export default function CompanyDetailPanel({
   const [suppliersPage, setSuppliersPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
+  const [selectedLane, setSelectedLane] = useState<string | null>(null);
 
   // Lusha integration: fetch contacts and similar companies when the record changes
   const [lushaContacts, setLushaContacts] = useState<any[]>([]);
@@ -1710,56 +1727,7 @@ export default function CompanyDetailPanel({
           {error}
         </div>
       ) : null}
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            <CompanyAvatar
-              name={profile?.title || record?.company?.name || 'Company'}
-              logoUrl={getCompanyLogoUrl(profile?.domain || (record as any)?.company?.domain) ?? undefined}
-              size="lg"
-            />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
-                  {profile?.title || record?.company?.name || 'Company'}
-                </h2>
-                <span className="rounded-full bg-indigo-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
-                  {statusLabel}
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <InfoChip icon={MapPin} label={profile?.address || record?.company?.address || 'Address unavailable'} />
-                {(profile?.website || (record as any)?.company?.website) && (
-                  <InfoChip
-                    icon={Globe}
-                    label={(profile?.website || (record as any)?.company?.website || '').replace(/^https?:\/\//, '')}
-                  />
-                )}
-                {(profile?.phoneNumber || (record as any)?.company?.phone) && (
-                  <InfoChip
-                    icon={Phone}
-                    label={profile?.phoneNumber || (record as any)?.company?.phone}
-                  />
-                )}
-                {profile?.countryCode ? <InfoChip icon={Globe} label={profile.countryCode} /> : null}
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2 self-start">
-            <button
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              onClick={() => onExportPDF && onExportPDF()}
-            >
-              Export PDF
-            </button>
-            <button
-              className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-900"
-              onClick={() => onGenerateBrief && onGenerateBrief()}
-            >
-              Generate brief
-            </button>
-          </div>
-        </div>
+      <div>
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList className="flex flex-wrap items-stretch w-full gap-2 rounded-[26px] border border-slate-200 bg-white p-3 shadow-sm h-auto min-h-[44px] overflow-visible">
             <TabsTrigger
@@ -1775,10 +1743,10 @@ export default function CompanyDetailPanel({
               Trade Lanes
             </TabsTrigger>
             <TabsTrigger
-              value="locations"
+              value="equipment"
               className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm min-h-[36px] data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
             >
-              Locations
+              Equipment
             </TabsTrigger>
             <TabsTrigger
               value="products"
@@ -1814,50 +1782,6 @@ export default function CompanyDetailPanel({
 
           <TabsContent value="overview" className="space-y-4">
             <div className="space-y-4">
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-                <KpiCard
-                  label="Market spend"
-                  value={formatCurrency(detail.spend)}
-                  icon={DollarSign}
-                  subLabel={`${effectiveSelectedYear ?? 'Selected year'} estimate`}
-                  accent="indigo"
-                />
-                <KpiCard
-                  label="Shipments"
-                  value={formatNumber(detail.shipments)}
-                  icon={Package}
-                  subLabel={`${effectiveSelectedYear ?? 'Selected year'} visible activity`}
-                  accent="violet"
-                />
-                <KpiCard
-                  label="Total TEUs"
-                  value={formatNumber(detail.teu, 1)}
-                  icon={Ship}
-                  subLabel="Selected-year volume"
-                  accent="cyan"
-                />
-                <KpiCard
-                  label="FCL shipments"
-                  value={formatNumber(detail.fclShipments)}
-                  icon={Boxes}
-                  subLabel="Selected year"
-                  accent="emerald"
-                />
-                <KpiCard
-                  label="LCL shipments"
-                  value={formatNumber(detail.lclShipments)}
-                  icon={Truck}
-                  subLabel="Selected year"
-                  accent="amber"
-                />
-                <KpiCard
-                  label="Avg shipments / month"
-                  value={formatNumber(detail.avgShipmentsPerMonth, 1)}
-                  icon={CalendarClock}
-                  subLabel="Selected year"
-                  accent="rose"
-                />
-              </div>
               {(() => {
                 const avgTeu = (rawProfile as any)?.avg_teu_per_month;
                 const teu12m = avgTeu?.["12m"] ?? avgTeu?.["12m_avg"] ?? null;
@@ -2011,38 +1935,233 @@ export default function CompanyDetailPanel({
                 })()}
               </TabsContent>
               <TabsContent value="lanes" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <MetricList
-                    title="Trade lanes"
-                    items={detail.topRoutes.map((route) => ({
-                      label: String(route.lane),
-                      value: formatNumber(route.shipments),
-                      meta: `TEU ${formatNumber(route.teu, 1)} • Spend ${formatCurrency(route.spend)}`,
-                    }))}
-                  />
-                </div>
-              </TabsContent>
-              <TabsContent value="locations" className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <MetricList
-                      title="Origins"
-                      items={detail.origins.map((item) => ({
-                        label: item.label,
-                        value: formatNumber(item.count),
-                        meta: 'Origin',
-                      }))}
-                    />
-                    <MetricList
-                      title="Destinations"
-                      items={detail.destinations.map((item) => ({
-                        label: item.label,
-                        value: formatNumber(item.count),
-                        meta: 'Destination',
-                      }))}
-                    />
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+                  {/* Left: ranked lane table */}
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                      Trade Lane Ranking
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                            <th className="px-3 py-2 font-semibold">#</th>
+                            <th className="px-3 py-2 font-semibold">Lane</th>
+                            <th className="px-3 py-2 font-semibold text-right">Shipments</th>
+                            <th className="px-3 py-2 font-semibold text-right">TEU</th>
+                            <th className="px-3 py-2 font-semibold text-right">Est. Spend</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detail.topRoutes.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
+                                No trade lane data available yet.
+                              </td>
+                            </tr>
+                          ) : (
+                            detail.topRoutes.map((route, i) => (
+                              <tr
+                                key={i}
+                                onClick={() => setSelectedLane(selectedLane === route.lane ? null : route.lane)}
+                                className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
+                                  selectedLane === route.lane ? "bg-indigo-50" : "hover:bg-slate-50/70"
+                                }`}
+                              >
+                                <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
+                                <td className="px-3 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                                      style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                                    />
+                                    <span className="max-w-[220px] truncate font-semibold text-slate-900">
+                                      {route.lane}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-right font-semibold text-indigo-600">
+                                  {formatNumber(route.shipments)}
+                                </td>
+                                <td className="px-3 py-3 text-right text-slate-700">
+                                  {formatNumber(route.teu, 1)}
+                                </td>
+                                <td className="px-3 py-3 text-right text-slate-700">
+                                  {formatCurrency(route.spend)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Right: interactive pie chart */}
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                      TEU Distribution
+                    </div>
+                    <p className="mb-4 text-xs text-slate-500">Click a slice or row to highlight.</p>
+                    {detail.topRoutes.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+                        No chart data yet.
+                      </div>
+                    ) : (
+                      <div className="h-64">
+                        <RechartContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={detail.topRoutes.slice(0, 8).map((r) => ({
+                                name: r.lane,
+                                value: r.teu > 0 ? r.teu : r.shipments,
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius="42%"
+                              outerRadius="68%"
+                              paddingAngle={2}
+                              dataKey="value"
+                              onClick={(entry: any) =>
+                                setSelectedLane(selectedLane === entry.name ? null : entry.name)
+                              }
+                            >
+                              {detail.topRoutes.slice(0, 8).map((r, index) => (
+                                <Cell
+                                  key={index}
+                                  fill={CHART_COLORS[index % CHART_COLORS.length]}
+                                  opacity={!selectedLane || selectedLane === r.lane ? 1 : 0.35}
+                                  style={{ cursor: "pointer" }}
+                                />
+                              ))}
+                            </Pie>
+                            <RechartTooltip
+                              formatter={(value: number, name: string) => [
+                                formatNumber(value, 1),
+                                name.length > 35 ? name.slice(0, 35) + "…" : name,
+                              ]}
+                            />
+                          </PieChart>
+                        </RechartContainer>
+                      </div>
+                    )}
+                    {selectedLane && (
+                      <div className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                        <span className="font-semibold">Selected:</span> {selectedLane}
+                      </div>
+                    )}
                   </div>
                 </div>
+              </TabsContent>
+              <TabsContent value="equipment" className="space-y-4">
+                {(() => {
+                  const containersLoad = safeArray(
+                    (rawProfile as any)?.containersLoad || (rawProfile as any)?.containers_load,
+                  );
+                  const containerTypes = safeArray(
+                    (rawProfile as any)?.container_types || (rawProfile as any)?.containerTypes,
+                  );
+                  const fclItem = containersLoad.find(
+                    (item: any) => String(item?.load_type || "").toUpperCase() === "FCL",
+                  );
+                  const lclItem = containersLoad.find(
+                    (item: any) => String(item?.load_type || "").toUpperCase() === "LCL",
+                  );
+                  const fclShipments = toNumber(fclItem?.shipments ?? detail.fclShipments ?? 0);
+                  const lclShipments = toNumber(lclItem?.shipments ?? detail.lclShipments ?? 0);
+                  const fclTeu = toNumber(fclItem?.teu ?? 0);
+                  const lclTeu = toNumber(lclItem?.teu ?? 0);
+                  const loadDonut = [
+                    { name: "FCL", value: fclShipments },
+                    { name: "LCL", value: lclShipments },
+                  ].filter((d) => d.value > 0);
+                  const ctData = containerTypes
+                    .slice(0, 7)
+                    .map((ct: any) => ({
+                      name: ct.container_type || ct.type || ct.name || "Unknown",
+                      value: toNumber(ct.count || ct.shipments || 0),
+                    }))
+                    .filter((d: any) => d.value > 0);
+                  return (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                          Load Type Split
+                        </div>
+                        {loadDonut.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+                            No equipment data available yet.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="h-52">
+                              <RechartContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie data={loadDonut} cx="50%" cy="50%" innerRadius="44%" outerRadius="68%" paddingAngle={3} dataKey="value">
+                                    <Cell fill="#6366f1" />
+                                    <Cell fill="#06b6d4" />
+                                  </Pie>
+                                  <RechartTooltip formatter={(v: number) => formatNumber(v)} />
+                                  <Legend />
+                                </PieChart>
+                              </RechartContainer>
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+                                <div className="text-[11px] font-semibold uppercase tracking-widest text-indigo-500">FCL</div>
+                                <div className="mt-1 font-semibold text-slate-900">
+                                  {formatNumber(fclShipments)} shpmt{fclTeu > 0 ? ` · ${formatNumber(fclTeu, 1)} TEU` : ""}
+                                </div>
+                              </div>
+                              <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 px-3 py-2">
+                                <div className="text-[11px] font-semibold uppercase tracking-widest text-cyan-600">LCL</div>
+                                <div className="mt-1 font-semibold text-slate-900">
+                                  {formatNumber(lclShipments)} shpmt{lclTeu > 0 ? ` · ${formatNumber(lclTeu, 1)} TEU` : ""}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                          Container Type Mix
+                        </div>
+                        {ctData.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+                            Container type data unavailable.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="h-52">
+                              <RechartContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie data={ctData} cx="50%" cy="50%" innerRadius="44%" outerRadius="68%" paddingAngle={2} dataKey="value">
+                                    {ctData.map((_: any, i: number) => (
+                                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                                    ))}
+                                  </Pie>
+                                  <RechartTooltip formatter={(v: number) => formatNumber(v)} />
+                                </PieChart>
+                              </RechartContainer>
+                            </div>
+                            <div className="mt-3 space-y-1">
+                              {ctData.map((ct: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-1.5 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                                    <span className="font-medium text-slate-700">{ct.name}</span>
+                                  </div>
+                                  <span className="font-semibold text-indigo-600">{formatNumber(ct.value)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </TabsContent>
               <TabsContent value="products" className="space-y-4">
                 {(() => {
