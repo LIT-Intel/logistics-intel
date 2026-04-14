@@ -344,48 +344,22 @@ export default function Company() {
         <div className="relative flex flex-col gap-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 items-start gap-4">
-              <div className="mb-2 max-w-[420px] truncate rounded-lg bg-white/10 px-2 py-1 text-[10px] text-white/70">
-  {getCompanyLogoUrl(
-    companyDomain ||
-      companyWebsite ||
-      activeProfile?.domain ||
-      activeProfile?.website ||
-      shellCompany?.domain ||
-      shellCompany?.website ||
-      undefined
-  ) || "NO_LOGO_URL"}
-</div>
-              {(() => {
-  const heroLogoUrl =
-    getCompanyLogoUrl(
-      companyDomain ||
-        companyWebsite ||
-        activeProfile?.domain ||
-        activeProfile?.website ||
-        shellCompany?.domain ||
-        shellCompany?.website ||
-        undefined
-    ) || null;
-
-  return heroLogoUrl ? (
-    <div className="relative inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <img
-        src={heroLogoUrl}
-        alt={`${companyName} logo`}
-        className="h-full w-full object-contain p-1"
-      />
-    </div>
-  ) : (
-    <div className="relative inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-500 to-purple-600 text-lg font-semibold text-white shadow-sm">
-      {companyName
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase() ?? "")
-        .join("")}
-    </div>
-  );
-})()}
+              <CompanyAvatar
+                name={companyName}
+                logoUrl={
+                  getCompanyLogoUrl(
+                    companyDomain ||
+                      companyWebsite ||
+                      activeProfile?.domain ||
+                      activeProfile?.website ||
+                      shellCompany?.domain ||
+                      shellCompany?.website ||
+                      undefined
+                  ) || undefined
+                }
+                size="lg"
+                className="shrink-0"
+              />
 
               <div className="min-w-0">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-200">
