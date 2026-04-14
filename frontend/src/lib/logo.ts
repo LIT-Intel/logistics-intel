@@ -54,13 +54,11 @@ export function extractDomain(value?: string | null): string | null {
 export function getCompanyLogoUrl(source?: string | null): string | null {
   const domain = extractDomain(source);
   if (!domain) return null;
+  if (!LOGO_DEV_TOKEN) return null;
 
   const params = new URLSearchParams();
   params.set("size", "160");
-
-  if (LOGO_DEV_TOKEN) {
-    params.set("token", LOGO_DEV_TOKEN);
-  }
+  params.set("token", LOGO_DEV_TOKEN);
 
   return `${LOGO_DEV_BASE}/${domain}?${params.toString()}`;
 }
