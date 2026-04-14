@@ -428,8 +428,12 @@ export default function ModernLoginPage() {
             Privacy Policy
           </a>
           .
-        </div>
-      </div>
-    </div>
-  );
-}
+{" "}
+<a
+  href="https://logo.dev"
+  target="_blank"
+  rel="noopener"
+  className="ml-1 font-medium text-slate-700 hover:text-cyan-600"
+>
+  Logos provided by Logo.dev
+</a>
