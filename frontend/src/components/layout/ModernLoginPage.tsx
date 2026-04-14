@@ -437,3 +437,6 @@ export default function ModernLoginPage() {
 >
   Logos provided by Logo.dev
 </a>
+</div>
+</div>
+</div>
