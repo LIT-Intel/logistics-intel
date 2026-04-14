@@ -440,3 +440,5 @@ export default function ModernLoginPage() {
 </div>
 </div>
 </div>
+);
+}
