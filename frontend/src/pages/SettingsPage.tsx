@@ -7,7 +7,7 @@ import SettingsLayout from "@/components/settings/SettingsLayout";
 
 const PLAN_RANK: Record<string, number> = {
   free_trial: 0,
-  standard: 1,
+  starter: 1,
   growth: 2,
   enterprise: 3,
 };
@@ -26,6 +26,22 @@ function toStringOrNull(value: unknown) {
   return next || null;
 }
 
+function normalizePlan(value: unknown) {
+  const next = String(value ?? "").trim().toLowerCase();
+
+  if (!next) return "free_trial";
+  if (next === "free") return "free_trial";
+  if (next === "standard") return "starter";
+  if (next === "pro") return "growth";
+  if (next === "unlimited") return "enterprise";
+
+  if (["free_trial", "starter", "growth", "enterprise"].includes(next)) {
+    return next;
+  }
+
+  return "free_trial";
+}
+
 function normalizeOrgRole(value: unknown, fallback: OrgMemberRole = "member"): OrgMemberRole {
   const next = String(value ?? "").trim().toLowerCase();
   if (ORG_MEMBER_ROLES.includes(next as OrgMemberRole)) {
@@ -36,17 +52,6 @@ function normalizeOrgRole(value: unknown, fallback: OrgMemberRole = "member"): O
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
-}
-
-function buildAdminSubscription() {
-  return {
-    plan_code: "unlimited",
-    status: "active",
-    cancel_at_period_end: false,
-    seat_limit: null,
-    current_period_end: null,
-    is_admin_override: true,
-  };
 }
 
 function deriveOrgName(params: {
@@ -157,10 +162,12 @@ export default function SettingsPage() {
   const isAdmin = isAdminEmail || isOrgOwner || isOrgAdmin;
   const canManageMembers = isAdminEmail || isOrgOwner || isOrgAdmin;
 
+  const effectivePlan = normalizePlan(plan ?? "free_trial");
+
   const canAccess = useCallback(
     (minPlan: string) =>
-      isAdmin || (PLAN_RANK[plan ?? "free_trial"] ?? 0) >= (PLAN_RANK[minPlan] ?? 0),
-    [isAdmin, plan]
+      isAdmin || (PLAN_RANK[effectivePlan] ?? 0) >= (PLAN_RANK[normalizePlan(minPlan)] ?? 0),
+    [isAdmin, effectivePlan]
   );
 
   const ensureOrgContext = useCallback(
@@ -418,7 +425,7 @@ export default function SettingsPage() {
         "",
       email: user?.email || "",
       company_name: activeWorkspaceName,
-      plan: isAdmin ? "unlimited" : (plan ?? "free_trial"),
+      plan: effectivePlan,
       isAdmin,
     });
 
@@ -491,35 +498,41 @@ export default function SettingsPage() {
     }
 
     const [subResult, plansResult] = await Promise.allSettled([
-      currentOrgId
-        ? supabase
-            .from("subscriptions")
-            .select("*")
-            .eq("org_id", currentOrgId)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle()
-        : supabase
-            .from("subscriptions")
-            .select("*")
-            .eq("user_id", uid)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
+      supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
       supabase.from("plans").select("*").order("price_monthly", { ascending: true }),
     ]);
 
     if (plansResult.status === "fulfilled") {
       if (plansResult.value.error) console.error("[settings] plans", plansResult.value.error);
       const rawPlans = plansResult.value.data ?? [];
-      setPlans(rawPlans.map((p: any) => ({ ...p, plan_code: p.plan_code ?? p.code })));
+      setPlans(
+        rawPlans.map((p: any) => ({
+          ...p,
+          plan_code: normalizePlan(p.plan_code ?? p.code),
+          code: normalizePlan(p.code ?? p.plan_code),
+        }))
+      );
     }
 
-    if (isAdmin) {
-      setSubscription(buildAdminSubscription());
-    } else if (subResult.status === "fulfilled") {
-      if (subResult.value.error) console.error("[settings] subscriptions", subResult.value.error);
-      setSubscription(subResult.value.data ?? null);
+    if (subResult.status === "fulfilled") {
+      if (subResult.value.error) {
+        console.error("[settings] subscriptions", subResult.value.error);
+      }
+      const row = subResult.value.data ?? null;
+      setSubscription(
+        row
+          ? {
+              ...row,
+              plan_code: normalizePlan(row.plan_code),
+            }
+          : null
+      );
     } else {
       setSubscription(null);
     }
@@ -560,7 +573,7 @@ export default function SettingsPage() {
     if (savedRes.status === "fulfilled") setSavedCount(savedRes.value.count ?? 0);
     if (campRes.status === "fulfilled") setCampaignCount(campRes.value.count ?? 0);
     if (rfpRes.status === "fulfilled") setRfpCount(rfpRes.value.count ?? 0);
-  }, [user?.id, user?.email, user?.user_metadata, plan, isAdmin, isAdminEmail, ensureOrgContext]);
+  }, [user?.id, user?.email, user?.user_metadata, effectivePlan, isAdmin, isAdminEmail, ensureOrgContext]);
 
   useEffect(() => {
     void loadAll();
