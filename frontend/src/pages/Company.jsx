@@ -344,6 +344,17 @@ export default function Company() {
         <div className="relative flex flex-col gap-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 items-start gap-4">
+              <div className="mb-2 max-w-[420px] truncate rounded-lg bg-white/10 px-2 py-1 text-[10px] text-white/70">
+  {getCompanyLogoUrl(
+    companyDomain ||
+      companyWebsite ||
+      activeProfile?.domain ||
+      activeProfile?.website ||
+      shellCompany?.domain ||
+      shellCompany?.website ||
+      undefined
+  ) || "NO_LOGO_URL"}
+</div>
               <CompanyAvatar
   name={companyName}
   logoUrl={
