@@ -355,9 +355,8 @@ export default function Company() {
       undefined
   ) || "NO_LOGO_URL"}
 </div>
-              <CompanyAvatar
-  name={companyName}
-  logoUrl={
+              {(() => {
+  const heroLogoUrl =
     getCompanyLogoUrl(
       companyDomain ||
         companyWebsite ||
@@ -366,11 +365,27 @@ export default function Company() {
         shellCompany?.domain ||
         shellCompany?.website ||
         undefined
-    ) || undefined
-  }
-  size="lg"
-  className="shrink-0"
-/>
+    ) || null;
+
+  return heroLogoUrl ? (
+    <div className="relative inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <img
+        src={heroLogoUrl}
+        alt={`${companyName} logo`}
+        className="h-full w-full object-contain p-1"
+      />
+    </div>
+  ) : (
+    <div className="relative inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-500 to-purple-600 text-lg font-semibold text-white shadow-sm">
+      {companyName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("")}
+    </div>
+  );
+})()}
 
               <div className="min-w-0">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-200">
