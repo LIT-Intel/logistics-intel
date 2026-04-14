@@ -9,6 +9,11 @@ import {
   supabase,
 } from './supabaseAuthClient';
 
+const SUPER_ADMIN_EMAILS = new Set([
+  'vraymond@sparkfusiondigital.com',
+  'support@logisticintel.com',
+]);
+
 const AuthCtx = createContext({
   user: null,
   loading: true,
@@ -44,6 +49,22 @@ function getDisplayName(u) {
   );
 }
 
+function normalizePlan(rawPlan) {
+  const value = String(rawPlan || '').trim().toLowerCase();
+
+  if (!value) return 'free_trial';
+  if (value === 'free') return 'free_trial';
+  if (value === 'standard') return 'starter';
+  if (value === 'pro') return 'growth';
+  if (value === 'unlimited') return 'enterprise';
+
+  if (['free_trial', 'starter', 'growth', 'enterprise'].includes(value)) {
+    return value;
+  }
+
+  return 'free_trial';
+}
+
 function normalizeUser(u) {
   if (!u) return null;
 
@@ -55,34 +76,6 @@ function normalizeUser(u) {
     subscription_status: meta.subscription_status || null,
     displayName: getDisplayName(u),
   };
-}
-
-/**
- * Platform admin is optional.
- * If the table does not exist, we should NOT break auth or admin access.
- * We simply treat platform superadmin as false and rely on org membership.
- */
-async function fetchPlatformAdminStatus(userId) {
-  if (!supabase || !userId) return false;
-
-  try {
-    const { data, error } = await supabase
-      .from('platform_admins')
-      .select('user_id')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) {
-      // Table missing or inaccessible: safely fall back to false
-      console.warn('[AuthProvider] platform_admins lookup unavailable:', error.message);
-      return false;
-    }
-
-    return data !== null;
-  } catch (error) {
-    console.warn('[AuthProvider] platform_admins lookup failed:', error);
-    return false;
-  }
 }
 
 async function fetchPrimaryOrgMembership(userId) {
@@ -113,8 +106,6 @@ async function fetchPrimaryOrgMembership(userId) {
       return { orgId: null, orgRole: null, plan: null };
     }
 
-    // Keep this simple and resilient for now.
-    // If you later restore subscriptions join logic, add it back here safely.
     return {
       orgId: data.org_id,
       orgRole: data.role,
@@ -139,18 +130,22 @@ export function AuthProvider({ children }) {
     const unsub = listenToAuth(async (u) => {
       if (u) {
         const normalized = normalizeUser(u);
+        const email = String(normalized?.email || '').trim().toLowerCase();
+        const superAdminByEmail = SUPER_ADMIN_EMAILS.has(email);
+
         setRawUser(normalized);
         setAuthReady(true);
 
-        const [platformAdmin, membership] = await Promise.all([
-          fetchPlatformAdminStatus(u.id),
-          fetchPrimaryOrgMembership(u.id),
-        ]);
+        const membership = await fetchPrimaryOrgMembership(u.id);
 
-        setIsSuperAdmin(Boolean(platformAdmin));
+        setIsSuperAdmin(superAdminByEmail);
         setOrgId(membership.orgId);
         setOrgRole(membership.orgRole);
-        setPlan(membership.plan || normalized?.user_metadata?.plan || 'free_trial');
+
+        const resolvedPlan = normalizePlan(
+          membership.plan || normalized?.user_metadata?.plan || 'free_trial'
+        );
+        setPlan(resolvedPlan);
       } else {
         setRawUser(null);
         setAuthReady(false);
@@ -194,11 +189,10 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(() => {
-    const resolvedPlan = plan || rawUser?.user_metadata?.plan || 'free_trial';
+    const resolvedPlan = normalizePlan(plan || rawUser?.user_metadata?.plan || 'free_trial');
     const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
     const canAccessAdmin = Boolean(isSuperAdmin || isOrgAdmin);
 
-    // Backwards compatibility for older parts of the app
     const legacyRole = canAccessAdmin ? 'admin' : 'user';
 
     const access = rawUser
@@ -207,7 +201,7 @@ export function AuthProvider({ children }) {
           isSuperAdmin,
           isOrgAdmin,
           canAccessAdmin,
-          canUpgrade: !['unlimited', 'enterprise'].includes(resolvedPlan),
+          canUpgrade: !['enterprise'].includes(resolvedPlan),
           canManageBilling: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
           canManageMembers: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
           canManageWorkspace: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
