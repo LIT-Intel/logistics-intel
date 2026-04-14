@@ -94,6 +94,21 @@ function getInitials(name, email) {
   return source.slice(0, 2).toUpperCase();
 }
 
+function LogoDevAttribution({ className = "" }) {
+  return (
+    <div className={className}>
+      <a
+        href="https://www.logo.dev"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
+      >
+        Logos by Logo.dev
+      </a>
+    </div>
+  );
+}
+
 export default function AppShell({ currentPageName, children }) {
   const {
     user,
@@ -244,6 +259,12 @@ export default function AppShell({ currentPageName, children }) {
               </nav>
             </>
           )}
+
+          {!collapsed && (
+            <div className="mt-auto px-4 pb-4">
+              <LogoDevAttribution className="pt-3 border-t border-white/10 text-center" />
+            </div>
+          )}
         </aside>
 
         <main className="flex-1 min-w-0 flex flex-col">
@@ -329,7 +350,7 @@ export default function AppShell({ currentPageName, children }) {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <div className="absolute top-0 left-0 h-full w-72 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl p-4 text-white">
+          <div className="absolute top-0 left-0 h-full w-72 bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 shadow-2xl p-4 text-white flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <span className="font-semibold">Menu</span>
               <button
@@ -366,6 +387,10 @@ export default function AppShell({ currentPageName, children }) {
                 </>
               )}
             </nav>
+
+            <div className="mt-auto pt-4">
+              <LogoDevAttribution className="pt-3 border-t border-white/10 text-center" />
+            </div>
           </div>
         </div>
       )}
