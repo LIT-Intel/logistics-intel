@@ -44,8 +44,6 @@ function formatDate(value) {
   });
 }
 
-/** Deterministic spend estimate: FCL $1,850/TEU + LCL $850/TEU.
- *  When FCL/LCL ratio is unknown, assume 85% FCL. */
 function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
   const total = Number(teu);
   if (!total || total <= 0) return null;
@@ -57,7 +55,6 @@ function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
   return Math.round(inferredFcl * 1850 + inferredLcl * 850);
 }
 
-/** Cap a date string so it is never in the future (returns null if future). */
 function capDateAtToday(value) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -74,6 +71,48 @@ function getStoredSelectedCompany() {
   }
 }
 
+function buildShellCompany(companyId, stored) {
+  if (!companyId && !stored) return null;
+
+  return {
+    companyId: companyId || stored?.company_id || stored?.source_company_key || null,
+    name: stored?.name || stored?.title || "Company",
+    address: stored?.address || null,
+    countryCode: stored?.country_code || stored?.countryCode || null,
+    domain: stored?.domain || null,
+    website: stored?.website || null,
+    phone: stored?.phone || null,
+    kpis: {
+      shipments: stored?.kpis?.shipments_12m ?? stored?.shipments_12m ?? null,
+      teu: stored?.kpis?.teu_12m ?? stored?.teu_12m ?? null,
+      spend: stored?.kpis?.est_spend_12m ?? stored?.est_spend_12m ?? null,
+      latestShipment: stored?.kpis?.last_activity ?? stored?.last_activity ?? null,
+      topRoute: stored?.kpis?.top_route_12m ?? stored?.top_route_12m ?? null,
+      recentRoute: stored?.kpis?.recent_route ?? stored?.recent_route ?? null,
+    },
+  };
+}
+
+function HeroKpiCard({ icon: Icon, label, value, tone = "default" }) {
+  const toneMap = {
+    default: "text-slate-300",
+    emerald: "text-emerald-300",
+    cyan: "text-cyan-300",
+    violet: "text-violet-300",
+    amber: "text-amber-300",
+  };
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+        <Icon className={`h-3.5 w-3.5 ${toneMap[tone] || toneMap.default}`} />
+        {label}
+      </div>
+      <div className="mt-2 text-xl font-semibold text-white">{value}</div>
+    </div>
+  );
+}
+
 export default function Company() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -86,13 +125,19 @@ export default function Company() {
     }
   }, [id]);
 
+  const storedSelectedCompany = useMemo(() => getStoredSelectedCompany(), []);
+  const companyId = decodedRouteId || storedSelectedCompany?.company_id || null;
+
   const [profile, setProfile] = useState(null);
   const [routeKpis, setRouteKpis] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  const companyId = decodedRouteId || getStoredSelectedCompany()?.company_id || null;
+  const shellCompany = useMemo(
+    () => buildShellCompany(companyId, storedSelectedCompany),
+    [companyId, storedSelectedCompany],
+  );
 
   useEffect(() => {
     if (!companyId) {
@@ -108,6 +153,7 @@ export default function Company() {
     getSavedCompanyDetail(companyId)
       .then(({ profile: nextProfile, routeKpis: nextRouteKpis }) => {
         if (cancelled) return;
+
         setProfile(nextProfile || null);
         setRouteKpis(nextRouteKpis || null);
 
@@ -149,14 +195,34 @@ export default function Company() {
   const companyName =
     activeProfile?.title ||
     activeProfile?.name ||
-    getStoredSelectedCompany()?.name ||
+    shellCompany?.name ||
     "Company";
 
-  const companyDomain = activeProfile?.domain || null;
-  const companyWebsite = activeProfile?.website || null;
-  const companyAddress = activeProfile?.address || null;
-  const companyCountryCode = activeProfile?.countryCode || null;
-  const companyPhone = activeProfile?.phoneNumber || activeProfile?.phone || null;
+  const companyDomain =
+    activeProfile?.domain ||
+    shellCompany?.domain ||
+    null;
+
+  const companyWebsite =
+    activeProfile?.website ||
+    shellCompany?.website ||
+    null;
+
+  const companyAddress =
+    activeProfile?.address ||
+    shellCompany?.address ||
+    null;
+
+  const companyCountryCode =
+    activeProfile?.countryCode ||
+    shellCompany?.countryCode ||
+    null;
+
+  const companyPhone =
+    activeProfile?.phoneNumber ||
+    activeProfile?.phone ||
+    shellCompany?.phone ||
+    null;
 
   const years = useMemo(() => {
     return Array.from(
@@ -168,28 +234,50 @@ export default function Company() {
     ).sort((a, b) => b - a);
   }, [profile]);
 
-  const headerKpis = (() => {
-    const teu = activeRouteKpis?.teuLast12m ?? activeProfile?.teuLast12m ?? null;
+  const headerKpis = useMemo(() => {
+    const teu =
+      activeRouteKpis?.teuLast12m ??
+      activeProfile?.teuLast12m ??
+      shellCompany?.kpis?.teu ??
+      null;
+
     const explicitSpend =
       activeRouteKpis?.estSpendUsd12m ??
       activeProfile?.estSpendUsd12m ??
       activeProfile?.marketSpend ??
+      shellCompany?.kpis?.spend ??
       null;
+
     const spend =
       explicitSpend != null && Number(explicitSpend) > 0
         ? Number(explicitSpend)
         : estimateMarketSpend(teu);
+
     const rawLatest =
-      activeProfile?.lastShipmentDate || activeProfile?.last_shipment_date || null;
+      activeProfile?.lastShipmentDate ||
+      activeProfile?.last_shipment_date ||
+      shellCompany?.kpis?.latestShipment ||
+      null;
+
     return {
-      shipments: activeRouteKpis?.shipmentsLast12m ?? activeProfile?.totalShipments ?? null,
+      shipments:
+        activeRouteKpis?.shipmentsLast12m ??
+        activeProfile?.totalShipments ??
+        shellCompany?.kpis?.shipments ??
+        null,
       teu,
       spend,
       latestShipment: capDateAtToday(rawLatest),
-      topRoute: activeRouteKpis?.topRouteLast12m || null,
-      recentRoute: activeRouteKpis?.mostRecentRoute || null,
+      topRoute:
+        activeRouteKpis?.topRouteLast12m ||
+        shellCompany?.kpis?.topRoute ||
+        null,
+      recentRoute:
+        activeRouteKpis?.mostRecentRoute ||
+        shellCompany?.kpis?.recentRoute ||
+        null,
     };
-  })();
+  }, [activeProfile, activeRouteKpis, shellCompany]);
 
   const headerRecord = useMemo(() => {
     if (!companyId) return null;
@@ -228,17 +316,6 @@ export default function Company() {
     headerKpis.topRoute,
     headerKpis.recentRoute,
   ]);
-
-  if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading company intelligence…
-        </div>
-      </div>
-    );
-  }
 
   if (error || !companyId) {
     return (
@@ -336,50 +413,40 @@ export default function Company() {
                     ))}
                   </select>
                 </div>
+              ) : loading ? (
+                <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading
+                </div>
               ) : null}
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <Package className="h-3.5 w-3.5 text-emerald-300" />
-                Shipments
-              </div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formatNumber(headerKpis.shipments)}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <Ship className="h-3.5 w-3.5 text-cyan-300" />
-                TEU
-              </div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formatNumber(headerKpis.teu, 1)}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <TrendingUp className="h-3.5 w-3.5 text-violet-300" />
-                Est. Market Spend
-              </div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formatCurrency(headerKpis.spend)}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-                Latest shipment
-              </div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formatDate(headerKpis.latestShipment)}
-              </div>
-            </div>
+            <HeroKpiCard
+              icon={Package}
+              label="Shipments"
+              value={formatNumber(headerKpis.shipments)}
+              tone="emerald"
+            />
+            <HeroKpiCard
+              icon={Ship}
+              label="TEU"
+              value={formatNumber(headerKpis.teu, 1)}
+              tone="cyan"
+            />
+            <HeroKpiCard
+              icon={TrendingUp}
+              label="Est. Market Spend"
+              value={formatCurrency(headerKpis.spend)}
+              tone="violet"
+            />
+            <HeroKpiCard
+              icon={Sparkles}
+              label="Latest shipment"
+              value={formatDate(headerKpis.latestShipment)}
+              tone="amber"
+            />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -388,7 +455,7 @@ export default function Company() {
                 Top route
               </div>
               <div className="mt-2 truncate text-base font-semibold text-white">
-                {headerKpis.topRoute || "—"}
+                {headerKpis.topRoute || (loading ? "Loading route…" : "—")}
               </div>
             </div>
 
@@ -397,10 +464,19 @@ export default function Company() {
                 Recent route
               </div>
               <div className="mt-2 truncate text-base font-semibold text-white">
-                {headerKpis.recentRoute || "—"}
+                {headerKpis.recentRoute || (loading ? "Loading route…" : "—")}
               </div>
             </div>
           </div>
+
+          {loading ? (
+            <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 backdrop-blur-sm">
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading company intelligence…
+              </span>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -408,7 +484,7 @@ export default function Company() {
         record={headerRecord}
         profile={activeProfile}
         routeKpis={activeRouteKpis}
-        loading={false}
+        loading={loading}
         error={null}
         selectedYear={selectedYear}
         onGenerateBrief={() => {}}
