@@ -345,21 +345,21 @@ export default function Company() {
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 items-start gap-4">
               <CompanyAvatar
-                name={companyName}
-                logoUrl={
-                  getCompanyLogoUrl(
-                    companyDomain ||
-                      companyWebsite ||
-                      activeProfile?.domain ||
-                      activeProfile?.website ||
-                      shellCompany?.domain ||
-                      shellCompany?.website ||
-                      undefined
-                  ) || undefined
-                }
-                size="lg"
-                className="shrink-0"
-              />
+  name={companyName}
+  logoUrl={
+    getCompanyLogoUrl(
+      companyDomain ||
+        companyWebsite ||
+        activeProfile?.domain ||
+        activeProfile?.website ||
+        shellCompany?.domain ||
+        shellCompany?.website ||
+        undefined
+    ) || undefined
+  }
+  size="lg"
+  className="shrink-0"
+/>
 
               <div className="min-w-0">
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-200">
