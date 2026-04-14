@@ -11,8 +11,6 @@ import {
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
 async function callAdminApi(action, params = {}) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
@@ -38,30 +36,67 @@ async function callAdminApi(action, params = {}) {
 
 const PLAN_LABELS = {
   free_trial: "Free Trial",
-  standard: "Standard",
+  starter: "Starter",
   growth: "Growth",
-  pro: "Pro",
   enterprise: "Enterprise",
-  unlimited: "Unlimited",
 };
 
 const PLAN_COLORS = {
   free_trial: "bg-slate-100 text-slate-600",
-  standard: "bg-blue-50 text-blue-700",
+  starter: "bg-blue-50 text-blue-700",
   growth: "bg-indigo-50 text-indigo-700",
-  pro: "bg-violet-50 text-violet-700",
   enterprise: "bg-emerald-50 text-emerald-700",
-  unlimited: "bg-amber-50 text-amber-700",
 };
 
+const PLAN_OPTIONS = [
+  { value: "free_trial", label: "Free Trial" },
+  { value: "starter", label: "Starter" },
+  { value: "growth", label: "Growth" },
+  { value: "enterprise", label: "Enterprise" },
+];
+
+const STATUS_COLORS = {
+  active: "bg-emerald-50 text-emerald-700",
+  incomplete: "bg-amber-50 text-amber-700",
+  trialing: "bg-blue-50 text-blue-700",
+  past_due: "bg-orange-50 text-orange-700",
+  canceled: "bg-rose-50 text-rose-700",
+  unpaid: "bg-rose-50 text-rose-700",
+};
+
+function normalizePlan(plan) {
+  const p = String(plan || "").toLowerCase().trim();
+
+  if (!p || p === "free" || p === "free_trial") return "free_trial";
+  if (p === "starter" || p === "standard") return "starter";
+  if (p === "growth" || p === "growth_plus" || p === "pro") return "growth";
+  if (p.startsWith("enterprise") || p === "unlimited") return "enterprise";
+
+  return "free_trial";
+}
+
 function Badge({ plan }) {
+  const normalizedPlan = normalizePlan(plan);
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-        PLAN_COLORS[plan] || "bg-slate-100 text-slate-600"
+        PLAN_COLORS[normalizedPlan] || "bg-slate-100 text-slate-600"
       }`}
     >
-      {PLAN_LABELS[plan] || plan}
+      {PLAN_LABELS[normalizedPlan] || normalizedPlan}
+    </span>
+  );
+}
+
+function StatusBadge({ status }) {
+  const normalizedStatus = String(status || "—").toLowerCase();
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+        STATUS_COLORS[normalizedStatus] || "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {status || "—"}
     </span>
   );
 }
@@ -91,8 +126,6 @@ function StatCard({ label, value, sub, icon: Icon, color = "indigo" }) {
     </div>
   );
 }
-
-// ── Tabs ──────────────────────────────────────────────────────────────────────
 
 function OverviewTab() {
   const [kpis, setKpis] = useState(null);
@@ -250,6 +283,7 @@ function UsersTab() {
                 <th className="px-4 py-3 font-semibold text-slate-600">Organization</th>
                 <th className="px-4 py-3 font-semibold text-slate-600">Role</th>
                 <th className="px-4 py-3 font-semibold text-slate-600">Plan</th>
+                <th className="px-4 py-3 font-semibold text-slate-600">Status</th>
                 <th className="px-4 py-3 font-semibold text-slate-600">Joined</th>
               </tr>
             </thead>
@@ -267,6 +301,9 @@ function UsersTab() {
                   <td className="px-4 py-3">
                     <Badge plan={u.plan} />
                   </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={u.subscriptionStatus} />
+                  </td>
                   <td className="px-4 py-3 text-slate-400">
                     {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
                   </td>
@@ -274,7 +311,7 @@ function UsersTab() {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
                     No users found.
                   </td>
                 </tr>
@@ -320,7 +357,7 @@ function OrgsTab() {
     setError(null);
     try {
       const res = await callAdminApi("get_orgs");
-      setOrgs(res.orgs || []);
+      setOrgs((res.orgs || []).map((org) => ({ ...org, plan: normalizePlan(org.plan) })));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -335,9 +372,20 @@ function OrgsTab() {
   async function changePlan(orgId, plan) {
     setUpdatingPlan(orgId);
     try {
-      await callAdminApi("update_org_plan", { orgId, plan });
+      const normalizedPlan = normalizePlan(plan);
+      const result = await callAdminApi("update_org_plan", { orgId, plan: normalizedPlan });
+
       setOrgs((prev) =>
-        prev.map((o) => (o.id === orgId ? { ...o, plan } : o))
+        prev.map((o) =>
+          o.id === orgId
+            ? {
+                ...o,
+                plan: normalizedPlan,
+                subscriptionStatus: o.subscriptionStatus || "active",
+                anchorUserId: result?.anchorUserId || o.anchorUserId,
+              }
+            : o
+        )
       );
     } catch (e) {
       alert(e.message);
@@ -371,29 +419,21 @@ function OrgsTab() {
                 <Badge plan={org.plan} />
               </td>
               <td className="px-4 py-3">
-                <span
-                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    org.subscriptionStatus === "active"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {org.subscriptionStatus || "—"}
-                </span>
+                <StatusBadge status={org.subscriptionStatus} />
               </td>
               <td className="px-4 py-3 text-slate-400">
                 {org.createdAt ? new Date(org.createdAt).toLocaleDateString() : "—"}
               </td>
               <td className="px-4 py-3">
                 <select
-                  value={org.plan}
+                  value={normalizePlan(org.plan)}
                   disabled={updatingPlan === org.id}
                   onChange={(e) => changePlan(org.id, e.target.value)}
                   className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none"
                 >
-                  {Object.entries(PLAN_LABELS).map(([val, label]) => (
-                    <option key={val} value={val}>
-                      {label}
+                  {PLAN_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
@@ -563,7 +603,7 @@ function BillingTab() {
     setError(null);
     try {
       const res = await callAdminApi("get_orgs");
-      setOrgs(res.orgs || []);
+      setOrgs((res.orgs || []).map((org) => ({ ...org, plan: normalizePlan(org.plan) })));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -578,8 +618,21 @@ function BillingTab() {
   async function changePlan(orgId, plan) {
     setUpdatingPlan(orgId);
     try {
-      await callAdminApi("update_org_plan", { orgId, plan });
-      setOrgs((prev) => prev.map((o) => (o.id === orgId ? { ...o, plan } : o)));
+      const normalizedPlan = normalizePlan(plan);
+      const result = await callAdminApi("update_org_plan", { orgId, plan: normalizedPlan });
+
+      setOrgs((prev) =>
+        prev.map((o) =>
+          o.id === orgId
+            ? {
+                ...o,
+                plan: normalizedPlan,
+                subscriptionStatus: o.subscriptionStatus || "active",
+                anchorUserId: result?.anchorUserId || o.anchorUserId,
+              }
+            : o
+        )
+      );
     } catch (e) {
       alert(e.message);
     } finally {
@@ -614,27 +667,19 @@ function BillingTab() {
                   <Badge plan={org.plan} />
                 </td>
                 <td className="px-4 py-3">
-                  <span
-                    className={`capitalize text-xs font-semibold ${
-                      org.subscriptionStatus === "active"
-                        ? "text-emerald-600"
-                        : "text-slate-400"
-                    }`}
-                  >
-                    {org.subscriptionStatus || "—"}
-                  </span>
+                  <StatusBadge status={org.subscriptionStatus} />
                 </td>
                 <td className="px-4 py-3 text-slate-600">{org.memberCount}</td>
                 <td className="px-4 py-3">
                   <select
-                    value={org.plan}
+                    value={normalizePlan(org.plan)}
                     disabled={updatingPlan === org.id}
                     onChange={(e) => changePlan(org.id, e.target.value)}
                     className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:outline-none"
                   >
-                    {Object.entries(PLAN_LABELS).map(([val, label]) => (
-                      <option key={val} value={val}>
-                        {label}
+                    {PLAN_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
                       </option>
                     ))}
                   </select>
@@ -654,8 +699,6 @@ function BillingTab() {
     </div>
   );
 }
-
-// ── Main Component ────────────────────────────────────────────────────────────
 
 const TABS = [
   { id: "overview", label: "Overview", icon: BarChart3 },
