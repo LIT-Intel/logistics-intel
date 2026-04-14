@@ -14,23 +14,31 @@ import {
   Database,
   Bug,
   Lock,
+  Users,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
 import { useAuth } from "@/auth/AuthProvider";
-
-const PLAN_ORDER = ["free_trial", "standard", "growth", "pro", "enterprise", "unlimited"];
-
-function planAtLeast(userPlan, required) {
-  return PLAN_ORDER.indexOf(userPlan) >= PLAN_ORDER.indexOf(required);
-}
+import { canAccessFeature } from "@/lib/planLimits";
 
 const iconClass = "h-[18px] w-[18px] shrink-0";
 
 const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const currentPath =
     typeof window !== "undefined" ? window.location.pathname : "";
-  const { isSuperAdmin, plan: userPlan } = useAuth();
+
+  const {
+    plan: userPlan,
+    isSuperAdmin,
+    isOrgAdmin,
+    canAccessAdmin,
+  } = useAuth();
+
   const plan = userPlan || "free_trial";
+
+  const canUseCampaigns = canAccessFeature(plan, "campaign_builder");
+  const canUsePulse = canAccessFeature(plan, "pulse");
+  const canUseRfp = true;
+  const showAdminSection = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
 
   const sections = [
     {
@@ -43,9 +51,11 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           label: "Campaigns",
           href: "/app/campaigns",
           icon: Megaphone,
-          locked: !planAtLeast(plan, "pro"),
+          locked: !canUseCampaigns,
         },
-        { label: "Pulse", href: "/app/prospecting", icon: PulseIcon },
+        ...(canUsePulse
+          ? [{ label: "Pulse", href: "/app/prospecting", icon: PulseIcon }]
+          : []),
       ],
     },
     {
@@ -55,7 +65,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           label: "RFP Studio",
           href: "/app/rfp",
           icon: Blocks,
-          locked: !planAtLeast(plan, "pro"),
+          locked: !canUseRfp,
         },
         { label: "Widgets", href: "/app/widgets", icon: Blocks },
       ],
@@ -68,7 +78,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
         { label: "Affiliate", href: "/app/affiliate", icon: Shield },
       ],
     },
-    ...(isSuperAdmin
+    ...(showAdminSection
       ? [
           {
             title: "Admin",
@@ -76,6 +86,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
               { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
               { label: "CMS", href: "/app/cms", icon: Database },
               { label: "Debug Agent", href: "/app/agent", icon: Bug },
+              { label: "Team", href: "/app/settings?tab=team", icon: Users },
             ],
           },
         ]
