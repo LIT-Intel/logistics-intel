@@ -6,11 +6,12 @@ import {
   registerWithEmailPassword,
   listenToAuth,
   logout as logoutClient,
+  supabase,
 } from './supabaseAuthClient';
 
-// Admin emails — keep in sync with billing-checkout normalizePlanCode admin check.
-const ADMIN_EMAILS = new Set([
+const SUPER_ADMIN_EMAILS = new Set([
   'vraymond@sparkfusiondigital.com',
+  'support@logisticintel.com',
 ]);
 
 const AuthCtx = createContext({
@@ -21,6 +22,11 @@ const AuthCtx = createContext({
   role: null,
   plan: null,
   access: null,
+  isSuperAdmin: false,
+  isOrgAdmin: false,
+  canAccessAdmin: false,
+  orgRole: null,
+  orgId: null,
   signInWithGoogle: async () => {},
   signInWithMicrosoft: async () => {},
   signInWithEmailPassword: async () => {},
@@ -43,39 +49,112 @@ function getDisplayName(u) {
   );
 }
 
+function normalizePlan(rawPlan) {
+  const value = String(rawPlan || '').trim().toLowerCase();
+
+  if (!value) return 'free_trial';
+  if (value === 'free') return 'free_trial';
+  if (value === 'standard') return 'starter';
+  if (value === 'pro') return 'growth';
+  if (value === 'unlimited') return 'enterprise';
+
+  if (['free_trial', 'starter', 'growth', 'enterprise'].includes(value)) {
+    return value;
+  }
+
+  return 'free_trial';
+}
+
 function normalizeUser(u) {
   if (!u) return null;
 
-  const email = (u.email || '').toLowerCase();
   const meta = u.user_metadata || {};
-  const isAdmin = ADMIN_EMAILS.has(email);
-  const role = isAdmin ? 'admin' : (meta.role || 'user');
-  const plan = isAdmin ? 'unlimited' : (meta.plan || 'free_trial');
 
   return {
     ...u,
-    role,
-    plan,
     stripe_customer_id: meta.stripe_customer_id || null,
     subscription_status: meta.subscription_status || null,
     displayName: getDisplayName(u),
   };
 }
 
+async function fetchPrimaryOrgMembership(userId) {
+  if (!supabase || !userId) {
+    return { orgId: null, orgRole: null, plan: null };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('org_members')
+      .select(`
+        org_id,
+        role,
+        status,
+        email,
+        full_name
+      `)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('joined_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      if (error) {
+        console.warn('[AuthProvider] org_members lookup failed:', error.message);
+      }
+      return { orgId: null, orgRole: null, plan: null };
+    }
+
+    return {
+      orgId: data.org_id,
+      orgRole: data.role,
+      plan: null,
+    };
+  } catch (error) {
+    console.warn('[AuthProvider] org membership lookup exception:', error);
+    return { orgId: null, orgRole: null, plan: null };
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [rawUser, setRawUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [orgRole, setOrgRole] = useState(null);
+  const [orgId, setOrgId] = useState(null);
+  const [plan, setPlan] = useState(null);
 
   useEffect(() => {
-    const unsub = listenToAuth((u) => {
+    const unsub = listenToAuth(async (u) => {
       if (u) {
-        setUser(normalizeUser(u));
+        const normalized = normalizeUser(u);
+        const email = String(normalized?.email || '').trim().toLowerCase();
+        const superAdminByEmail = SUPER_ADMIN_EMAILS.has(email);
+
+        setRawUser(normalized);
         setAuthReady(true);
+
+        const membership = await fetchPrimaryOrgMembership(u.id);
+
+        setIsSuperAdmin(superAdminByEmail);
+        setOrgId(membership.orgId);
+        setOrgRole(membership.orgRole);
+
+        const resolvedPlan = normalizePlan(
+          membership.plan || normalized?.user_metadata?.plan || 'free_trial'
+        );
+        setPlan(resolvedPlan);
       } else {
-        setUser(null);
+        setRawUser(null);
         setAuthReady(false);
+        setIsSuperAdmin(false);
+        setOrgId(null);
+        setOrgRole(null);
+        setPlan(null);
       }
+
       setLoading(false);
     });
 
@@ -87,8 +166,12 @@ export function AuthProvider({ children }) {
   const handleLogout = async () => {
     try {
       setLoading(true);
-      setUser(null);
+      setRawUser(null);
       setAuthReady(false);
+      setIsSuperAdmin(false);
+      setOrgId(null);
+      setOrgRole(null);
+      setPlan(null);
 
       try {
         if (typeof window !== 'undefined') {
@@ -106,34 +189,49 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(() => {
-    const role = user?.role ?? null;
-    const plan = user?.plan ?? null;
+    const resolvedPlan = normalizePlan(plan || rawUser?.user_metadata?.plan || 'free_trial');
+    const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
+    const canAccessAdmin = Boolean(isSuperAdmin || isOrgAdmin);
 
-    const access = user
+    const legacyRole = canAccessAdmin ? 'admin' : 'user';
+
+    const access = rawUser
       ? {
-          isAdmin: role === 'admin',
-          canUpgrade: !['unlimited', 'enterprise'].includes(plan || ''),
-          canManageBilling: role === 'admin',
-          plan,
-          role,
+          isAdmin: canAccessAdmin,
+          isSuperAdmin,
+          isOrgAdmin,
+          canAccessAdmin,
+          canUpgrade: !['enterprise'].includes(resolvedPlan),
+          canManageBilling: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
+          canManageMembers: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
+          canManageWorkspace: isSuperAdmin || orgRole === 'owner' || orgRole === 'admin',
+          plan: resolvedPlan,
+          role: legacyRole,
+          orgRole,
+          orgId,
         }
       : null;
 
     return {
-      user,
+      user: rawUser,
       loading,
       authReady,
-      role,
-      plan,
+      role: legacyRole,
+      plan: resolvedPlan,
       access,
+      isSuperAdmin,
+      isOrgAdmin,
+      canAccessAdmin,
+      orgRole,
+      orgId,
       signInWithGoogle,
       signInWithMicrosoft,
       signInWithEmailPassword,
       registerWithEmailPassword,
       logout: handleLogout,
-      fullName: user?.displayName || null,
+      fullName: rawUser?.displayName || null,
     };
-  }, [user, loading, authReady]);
+  }, [rawUser, loading, authReady, isSuperAdmin, orgRole, orgId, plan]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
