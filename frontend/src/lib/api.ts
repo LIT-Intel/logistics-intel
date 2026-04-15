@@ -3878,11 +3878,11 @@ export function buildCommandCenterDetailModel(
     : [];
  
   const latestShipmentDate =
-    scopedBols
-      .map((bol) => getBolDate(bol))
-      .filter((value): value is Date => Boolean(value))
-      .sort((a, b) => b.getTime() - a.getTime())[0]
-      ?.toISOString() ?? null;
+  scopedBols
+    .map((bol) => getBolDate(bol))
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0]
+    ?.toISOString() ?? null;
   const monthMap = new Map<number, CommandCenterActivityPoint>();
   for (let i = 0; i < 12; i += 1) {
     monthMap.set(i, {
@@ -4047,7 +4047,12 @@ export function buildCommandCenterDetailModel(
     profile?.lastShipmentDate ??
     null;
 
-  const oldestShipmentDate = getOldestShipmentDate(profile);
+  const oldestShipmentDate =
+  scopedBols
+    .map((bol) => getBolDate(bol))
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => a.getTime() - b.getTime())[0]
+    ?.toISOString() ?? null;
   const fclShipments =
     activitySeries.reduce((sum, point) => sum + point.fcl, 0) ||
     getFclShipments12m(profile) ||
