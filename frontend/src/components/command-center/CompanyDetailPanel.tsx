@@ -2026,6 +2026,7 @@ export default function CompanyDetailPanel({
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
+  const activeLane = selectedLane || detail.topRoutes[0]?.lane || null;
 
   const [lushaContacts, setLushaContacts] = useState<any[]>([]);
   const [lushaSimilarCompanies, setLushaSimilarCompanies] = useState<any[]>([]);
@@ -2201,7 +2202,7 @@ export default function CompanyDetailPanel({
   );
 
   return (
-    <section className="w-full rounded-[28px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+    <section className="w-full rounded-[30px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -2287,7 +2288,7 @@ export default function CompanyDetailPanel({
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                 Peak seasonality index
               </div>
@@ -2303,7 +2304,7 @@ export default function CompanyDetailPanel({
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -2366,7 +2367,7 @@ export default function CompanyDetailPanel({
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -2406,7 +2407,9 @@ export default function CompanyDetailPanel({
                             key={i}
                             onClick={() => setSelectedLane(selectedLane === route.lane ? null : route.lane)}
                             className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
-                              selectedLane === route.lane ? "bg-indigo-50" : "hover:bg-slate-50/70"
+                              route.lane === activeLane
+  ? "bg-indigo-50 ring-1 ring-indigo-200"
+  : "hover:bg-slate-50/70"
                             }`}
                           >
                             <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
@@ -2414,7 +2417,12 @@ export default function CompanyDetailPanel({
                               <div className="flex items-center gap-2">
                                 <span
                                   className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                                  style={{
+  backgroundColor:
+    route.lane === activeLane
+      ? TEU_BAR_PRIMARY
+      : CHART_COLORS[i % CHART_COLORS.length],
+}}
                                 />
                                 <span className="max-w-[260px] truncate font-semibold text-slate-900">
                                   {route.lane}
@@ -2464,7 +2472,11 @@ export default function CompanyDetailPanel({
                             {detail.topRoutes.slice(0, 6).map((_, index) => (
                               <Cell
                                 key={`teu-cell-${index}`}
-                                fill={index === 0 ? TEU_BAR_PRIMARY : TEU_BAR_SECONDARY}
+                                fill={
+  detail.topRoutes.slice(0, 6)[index]?.lane === activeLane
+    ? TEU_BAR_PRIMARY
+    : TEU_BAR_SECONDARY
+}
                               />
                             ))}
                           </Bar>
@@ -2476,7 +2488,7 @@ export default function CompanyDetailPanel({
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                   Equipment intelligence
@@ -2567,7 +2579,7 @@ export default function CompanyDetailPanel({
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,.9fr)]">
             <CommandCenterInsights insights={strategicInsights} />
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -2638,7 +2650,7 @@ export default function CompanyDetailPanel({
         </TabsContent>
 
         <TabsContent value="suppliers" className="space-y-4">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -2838,7 +2850,7 @@ export default function CompanyDetailPanel({
         </TabsContent>
 
         <TabsContent value="credit" className="space-y-4">
-          <div className="flex min-h-[200px] items-center justify-center rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex min-h-[200px] items-center justify-center rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="relative w-full text-center">
               <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center opacity-10">
                 <span className="text-6xl font-extrabold uppercase tracking-widest">Credit Rating</span>
@@ -2855,7 +2867,7 @@ export default function CompanyDetailPanel({
         </TabsContent>
 
         <TabsContent value="contacts" className="space-y-4">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
