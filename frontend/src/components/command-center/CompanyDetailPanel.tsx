@@ -2256,7 +2256,7 @@ export default function CompanyDetailPanel({
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
             <SmallMetric
               label="Avg TEU / shipment"
               value={formatNumber(detail.avgTeuPerShipment, 2)}
@@ -2287,8 +2287,8 @@ export default function CompanyDetailPanel({
             />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
-            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
+            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                 Peak seasonality index
               </div>
@@ -2304,7 +2304,7 @@ export default function CompanyDetailPanel({
               </div>
             </div>
 
-            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -2366,8 +2366,8 @@ export default function CompanyDetailPanel({
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
-            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
+            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -2488,7 +2488,7 @@ export default function CompanyDetailPanel({
               </div>
             </div>
 
-            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                   Equipment intelligence
@@ -2579,7 +2579,7 @@ export default function CompanyDetailPanel({
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,.9fr)]">
             <CommandCenterInsights insights={strategicInsights} />
 
-            <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
