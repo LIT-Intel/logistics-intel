@@ -1,100 +1,50 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthProvider';
-import { assertFeatureAccess } from '../../lib/accessControl';
+import { canAccessFeature } from '@/lib/planLimits';
 
 export default function ProtectedRoute({
   children,
   requireAuth = true,
-  allowedRoles = [],
+  requireAdmin = false,
   feature = null,
-  fallbackPath = '/login',
-  upgradePath = '/settings?tab=billing',
-  loadingFallback = null,
-  unauthorizedFallback = null,
+  redirectTo = '/login',
+  fallback = null,
 }) {
   const location = useLocation();
-  const { user, authReady, role, plan, access } = useAuth();
+  const {
+    user,
+    authReady,
+    loadingProfile,
+    canAccessAdmin,
+    plan,
+  } = useAuth();
 
-  if (!authReady) {
-    return loadingFallback ?? (
-      <div className="flex min-h-[40vh] items-center justify-center px-6">
-        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="text-sm font-medium text-slate-900">Loading access…</div>
-          <p className="mt-2 text-sm text-slate-500">
-            Checking your session and permissions.
-          </p>
+  if (!authReady || loadingProfile) {
+    return (
+      fallback || (
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
         </div>
-      </div>
+      )
     );
   }
 
   if (requireAuth && !user) {
-    return (
-      <Navigate
-        to={fallbackPath}
-        replace
-        state={{ from: location.pathname + location.search }}
-      />
-    );
+    return <Navigate to={redirectTo} replace state={{ from: location }} />;
   }
 
-  if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
-    if (unauthorizedFallback) return unauthorizedFallback;
-
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center px-6">
-        <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-          <div className="text-sm font-semibold text-amber-900">Access denied</div>
-          <p className="mt-2 text-sm text-amber-800">
-            Your role does not have permission to view this page.
-          </p>
-        </div>
-      </div>
-    );
+  if (requireAdmin && !canAccessAdmin) {
+    return <Navigate to="/app/dashboard" replace />;
   }
 
   if (feature) {
-    const featureCheck = assertFeatureAccess(
-      {
-        role,
-        plan,
-        usage: access?.usage ?? {},
-      },
-      feature
-    );
+    const allowed = canAccessFeature(plan, feature);
 
-    if (!featureCheck.allowed) {
-      if (unauthorizedFallback) return unauthorizedFallback;
-
-      const isUpgradeIssue =
-        featureCheck.reason?.includes('not available on the') ||
-        featureCheck.reason?.includes('limit reached');
-
-      if (isUpgradeIssue) {
-        return (
-          <Navigate
-            to={upgradePath}
-            replace
-            state={{
-              from: location.pathname + location.search,
-              deniedFeature: feature,
-              deniedReason: featureCheck.reason,
-            }}
-          />
-        );
-      }
-
-      return (
-        <div className="flex min-h-[40vh] items-center justify-center px-6">
-          <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-            <div className="text-sm font-semibold text-amber-900">Access restricted</div>
-            <p className="mt-2 text-sm text-amber-800">{featureCheck.reason}</p>
-          </div>
-        </div>
-      );
+    if (!allowed) {
+      return <Navigate to="/app/billing" replace />;
     }
   }
 
-  return <>{children}</>;
+  return children;
 }

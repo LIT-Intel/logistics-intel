@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type CompanyAvatarProps = {
   name: string;
@@ -24,7 +24,10 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
 }) => {
   const initials = getInitials(name || "LIT");
   const [imageError, setImageError] = useState(false);
-  const showLogo = Boolean(logoUrl) && !imageError;
+
+  useEffect(() => {
+    setImageError(false);
+  }, [logoUrl]);
 
   const sizeClasses =
     size === "sm"
@@ -33,27 +36,40 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
       ? "h-14 w-14 text-lg"
       : "h-10 w-10 text-sm";
 
+  if (!logoUrl || imageError) {
+    return (
+      <div
+        className={[
+          "inline-flex items-center justify-center overflow-hidden rounded-2xl",
+          "border border-slate-200 shadow-sm",
+          "bg-gradient-to-br from-indigo-500 to-purple-600",
+          "text-white font-semibold",
+          sizeClasses,
+          className,
+        ].join(" ")}
+      >
+        {initials}
+      </div>
+    );
+  }
+
   return (
     <div
       className={[
-        "inline-flex items-center justify-center rounded-2xl overflow-hidden",
-        showLogo ? "bg-white" : "bg-gradient-to-br from-indigo-500 to-purple-600",
-        "text-white font-semibold",
+        "inline-flex items-center justify-center overflow-hidden rounded-2xl",
+        "border border-slate-200 shadow-sm bg-white",
         sizeClasses,
         className,
       ].join(" ")}
     >
-      {showLogo ? (
-        <img
-          src={logoUrl!}
-          alt={`${name} logo`}
-          className="h-full w-full object-contain p-1"
-          loading="lazy"
-          onError={() => setImageError(true)}
-        />
-      ) : (
-        initials
-      )}
+      <img
+        src={logoUrl}
+        alt={`${name} logo`}
+        className="h-full w-full object-contain p-1"
+        loading="eager"
+        decoding="sync"
+        onError={() => setImageError(true)}
+      />
     </div>
   );
 };

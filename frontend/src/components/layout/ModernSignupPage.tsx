@@ -25,6 +25,7 @@ function AuthShell({
 }) {
   const isLogin = mode === "login";
 
+function Header() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(79,70,229,0.12),transparent_30%),linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] text-slate-900">
       <div className="relative mx-auto flex min-h-screen max-w-[1440px] flex-col px-4 py-6 sm:px-6 lg:px-8">
@@ -126,6 +127,29 @@ function AuthFeatureColumn({ inviteMode = false }: { inviteMode?: boolean }) {
             className="h-9 w-auto"
           />
         </div>
+        <button
+          type="button"
+          className="hidden rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 md:inline-flex"
+        >
+          View features
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TrialBar() {
+  return (
+    <div className="mx-auto mb-4 w-full max-w-[980px] rounded-2xl border border-slate-200 bg-white/85 px-5 py-3 text-center shadow-sm backdrop-blur-sm">
+      <span className="text-sm text-slate-600">
+        ✨ New to Logistics Intel?{" "}
+        <span className="font-semibold text-cyan-600">
+          Get access to live shipment intelligence faster
+        </span>
+      </span>
+    </div>
+  );
+}
 
         <h1 className="text-[44px] font-semibold leading-[1.02] tracking-[-0.04em] text-slate-900">
           {inviteMode ? "Join your workspace" : "Sign Up"}
@@ -274,7 +298,6 @@ export default function ModernSignupPage() {
 
   async function handleEmailSignup(e: React.FormEvent) {
     e.preventDefault();
-
     try {
       setErr("");
       setLoading(true);

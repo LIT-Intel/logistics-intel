@@ -29,7 +29,6 @@ const CMSManager = lazy(() => import("@/pages/CMSManager"));
 const Diagnostic = lazy(() => import("@/pages/Diagnostic"));
 const AdminAgent = lazy(() => import("@/pages/AdminAgent"));
 const SearchPanel = lazy(() => import("@/pages/SearchPanel"));
-const Signup = lazy(() => import("@/pages/signup/Signup"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
 const Widgets = lazy(() => import("@/pages/Widgets"));
 const Company = lazy(() => import("@/pages/Company"));
@@ -48,6 +47,24 @@ function RequireAuth({ children }) {
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  return children;
+}
+
+function RequireAdmin({ children }) {
+  const { user, loading, canAccessAdmin } = useAuth();
+  if (DEMO_MODE) return children;
+  if (loading) return null;
+  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  if (!canAccessAdmin) return <Navigate to="/app/dashboard" replace />;
+  return children;
+}
+
+function RequireSuperAdmin({ children }) {
+  const { user, loading, isSuperAdmin } = useAuth();
+  if (DEMO_MODE) return children;
+  if (loading) return null;
+  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  if (!isSuperAdmin) return <Navigate to="/app/dashboard" replace />;
   return children;
 }
 
@@ -162,27 +179,33 @@ export default function App() {
         <Route
           path="/app/companies"
           element={
-            <LITPage>
-              <Companies />
-            </LITPage>
+            <RequireAuth>
+              <LITPage>
+                <Companies />
+              </LITPage>
+            </RequireAuth>
           }
         />
 
         <Route
           path="/app/command-center"
           element={
-            <LITPage>
-              <CommandCenterPage />
-            </LITPage>
+            <RequireAuth>
+              <LITPage>
+                <CommandCenterPage />
+              </LITPage>
+            </RequireAuth>
           }
         />
 
         <Route
           path="/command-center"
           element={
-            <LITPage>
-              <CommandCenterPage />
-            </LITPage>
+            <RequireAuth>
+              <LITPage>
+                <CommandCenterPage />
+              </LITPage>
+            </RequireAuth>
           }
         />
 
@@ -255,11 +278,11 @@ export default function App() {
         <Route
           path="/app/admin/settings"
           element={
-            <RequireAuth>
+            <RequireAdmin>
               <LITPage>
                 <AdminSettings />
               </LITPage>
-            </RequireAuth>
+            </RequireAdmin>
           }
         />
 
@@ -310,11 +333,11 @@ export default function App() {
         <Route
           path="/app/admin"
           element={
-            <RequireAuth>
+            <RequireAdmin>
               <LITPage>
                 <AdminDashboard />
               </LITPage>
-            </RequireAuth>
+            </RequireAdmin>
           }
         />
 
@@ -332,11 +355,11 @@ export default function App() {
         <Route
           path="/app/cms"
           element={
-            <RequireAuth>
+            <RequireAdmin>
               <LITPage>
                 <CMSManager />
               </LITPage>
-            </RequireAuth>
+            </RequireAdmin>
           }
         />
 
@@ -354,11 +377,11 @@ export default function App() {
         <Route
           path="/app/agent"
           element={
-            <RequireAuth>
+            <RequireAdmin>
               <LITPage>
                 <AdminAgent />
               </LITPage>
-            </RequireAuth>
+            </RequireAdmin>
           }
         />
 

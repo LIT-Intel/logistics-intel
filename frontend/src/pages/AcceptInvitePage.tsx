@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/auth/AuthProvider";
@@ -8,19 +8,43 @@ export default function AcceptInvitePage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
 
+  const hasStartedRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<number | null>(null);
+
   const [message, setMessage] = useState("Checking invite...");
 
   useEffect(() => {
-    const run = async () => {
-      const token = searchParams.get("token");
+    let isCancelled = false;
+
+    const acceptInvite = async () => {
+      if (hasStartedRef.current) return;
+
+      const token = (searchParams.get("token") || "").trim();
       const email = (searchParams.get("email") || "").trim().toLowerCase();
 
       if (!token) {
-        navigate("/login", { replace: true });
+        setMessage("Invite token is missing.");
+        window.setTimeout(() => {
+          if (!isCancelled) navigate("/login", { replace: true });
+        }, 1200);
         return;
       }
 
-      if (!user) {
+      // If user context not populated yet, check if a session exists before bouncing to signup
+      if (!user?.id) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user) {
+          // Session exists but context hasn't propagated — wait up to ~3s then retry
+          if (retryCountRef.current < 10) {
+            retryCountRef.current += 1;
+            retryTimerRef.current = window.setTimeout(() => {
+              void acceptInvite();
+            }, 300);
+            return;
+          }
+        }
+        // No session at all — send to signup
         const signupParams = new URLSearchParams();
         signupParams.set("token", token);
         if (email) signupParams.set("email", email);
@@ -28,82 +52,112 @@ export default function AcceptInvitePage() {
         return;
       }
 
-      const currentEmail = (user.email || "").trim().toLowerCase();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-      const { data: invite, error: inviteError } = await supabase
-        .from("org_invites")
-        .select("id, org_id, email, role, status, expires_at, token")
-        .eq("token", token)
-        .maybeSingle();
-
-      if (inviteError || !invite) {
-        setMessage("Invite not found or no longer valid.");
+      if (sessionError) {
+        setMessage(sessionError.message || "Failed loading session.");
         return;
       }
 
-      if (invite.status !== "pending") {
-        setMessage("This invite has already been used.");
-        setTimeout(() => navigate("/app/dashboard", { replace: true }), 1200);
+      if (!session?.access_token) {
+        setMessage("Waiting for authenticated session...");
+        retryTimerRef.current = window.setTimeout(() => {
+          void acceptInvite();
+        }, 500);
         return;
       }
 
-      if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
-        setMessage("This invite has expired.");
-        return;
-      }
+      hasStartedRef.current = true;
+      setMessage("Accepting invite...");
 
-      const inviteEmail = (invite.email || "").trim().toLowerCase();
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      if (inviteEmail && currentEmail && inviteEmail !== currentEmail) {
-        setMessage("This invite belongs to a different email address.");
-        return;
-      }
+        if (!supabaseUrl || !supabaseAnonKey) {
+          throw new Error("Supabase environment variables are missing.");
+        }
 
-      const { data: existingMember, error: existingMemberError } = await supabase
-        .from("org_members")
-        .select("id")
-        .eq("org_id", invite.org_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
+        const response = await fetch(
+          `${supabaseUrl}/functions/v1/accept-workspace-invite`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: supabaseAnonKey,
+            },
+            body: JSON.stringify({
+              token,
+              email,
+              userId: user.id,
+            }),
+          }
+        );
 
-      if (existingMemberError) {
-        setMessage(existingMemberError.message || "Failed checking workspace membership.");
-        return;
-      }
+        const result = await response.json().catch(() => ({}));
 
-      if (!existingMember?.id) {
-        const { error: memberInsertError } = await supabase.from("org_members").insert({
-          org_id: invite.org_id,
-          user_id: user.id,
-          email: user.email ?? invite.email,
-          role: invite.role,
-          status: "active",
-        });
+        if (isCancelled) return;
 
-        if (memberInsertError) {
-          setMessage(memberInsertError.message || "Failed adding you to the workspace.");
+        if (!response.ok) {
+          hasStartedRef.current = false;
+          setMessage(
+            result?.error ||
+              `Invite acceptance failed with status ${response.status}.`
+          );
           return;
         }
+
+        if (!result?.ok) {
+          hasStartedRef.current = false;
+          setMessage(result?.error || "Failed accepting invite.");
+          return;
+        }
+
+        // Ensure a profiles row exists for this user (safe no-op if already present)
+        await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: user.id,
+              email: user.email,
+              full_name:
+                user.user_metadata?.full_name ||
+                user.user_metadata?.display_name ||
+                null,
+            },
+            { onConflict: "id", ignoreDuplicates: true }
+          )
+          .select("id")
+          .maybeSingle();
+
+        setMessage("Invite accepted. Redirecting...");
+        window.setTimeout(() => {
+          if (!isCancelled) {
+            navigate("/app/dashboard", { replace: true });
+          }
+        }, 700);
+      } catch (error) {
+        hasStartedRef.current = false;
+        setMessage(
+          error instanceof Error ? error.message : "Failed accepting invite."
+        );
       }
-
-      const { error: inviteUpdateError } = await supabase
-        .from("org_invites")
-        .update({
-          status: "accepted",
-          accepted_at: new Date().toISOString(),
-        })
-        .eq("id", invite.id);
-
-      if (inviteUpdateError) {
-        setMessage(inviteUpdateError.message || "Joined workspace, but failed updating invite.");
-        return;
-      }
-
-      setMessage("Invite accepted. Redirecting...");
-      setTimeout(() => navigate("/app/dashboard", { replace: true }), 700);
     };
 
-    void run();
+    retryTimerRef.current = window.setTimeout(() => {
+      void acceptInvite();
+    }, 300);
+
+    return () => {
+      isCancelled = true;
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+      }
+    };
   }, [navigate, searchParams, user]);
 
   return (

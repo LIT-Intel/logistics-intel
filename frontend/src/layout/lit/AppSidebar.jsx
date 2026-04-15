@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import {
   LayoutDashboard,
   Search,
@@ -12,50 +13,85 @@ import {
   Shield,
   Database,
   Bug,
+  Lock,
+  Users,
 } from "lucide-react";
 import { LitAppIcon, PulseIcon } from "@/components/shared/AppIcons";
-
-const sections = [
-  {
-    title: "Menu",
-    items: [
-      { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
-      { label: "Search", href: "/app/search", icon: Search },
-      { label: "Command Center", href: "/app/command-center", icon: Briefcase },
-      { label: "Campaigns", href: "/app/campaigns", icon: Megaphone },
-      { label: "Pulse", href: "/app/prospecting", icon: PulseIcon },
-    ],
-  },
-  {
-    title: "Tools",
-    items: [
-      { label: "RFP Studio", href: "/app/rfp", icon: Blocks },
-      { label: "Widgets", href: "/app/widgets", icon: Blocks },
-    ],
-  },
-  {
-    title: "Account",
-    items: [
-      { label: "Settings", href: "/app/settings", icon: Settings },
-      { label: "Billing", href: "/app/billing", icon: CreditCard },
-      { label: "Affiliate", href: "/app/affiliate", icon: Shield },
-    ],
-  },
-  {
-    title: "Admin",
-    items: [
-      { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
-      { label: "CMS", href: "/app/cms", icon: Database },
-      { label: "Debug Agent", href: "/app/agent", icon: Bug },
-    ],
-  },
-];
+import { useAuth } from "@/auth/AuthProvider";
+import { canAccessFeature } from "@/lib/planLimits";
 
 const iconClass = "h-[18px] w-[18px] shrink-0";
 
 const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const currentPath =
     typeof window !== "undefined" ? window.location.pathname : "";
+
+  const {
+    plan: userPlan,
+    isSuperAdmin,
+    isOrgAdmin,
+    canAccessAdmin,
+  } = useAuth();
+
+  const plan = userPlan || "free_trial";
+
+  const canUseCampaigns = canAccessFeature(plan, "campaign_builder");
+  const canUsePulse = canAccessFeature(plan, "pulse");
+  const canUseRfp = true;
+  const showAdminSection = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
+
+  const sections = [
+    {
+      title: "Menu",
+      items: [
+        { label: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
+        { label: "Search", href: "/app/search", icon: Search },
+        { label: "Command Center", href: "/app/command-center", icon: Briefcase },
+        {
+          label: "Campaigns",
+          href: "/app/campaigns",
+          icon: Megaphone,
+          locked: !canUseCampaigns,
+        },
+        ...(canUsePulse
+          ? [{ label: "Pulse", href: "/app/prospecting", icon: PulseIcon }]
+          : []),
+      ],
+    },
+    {
+      title: "Tools",
+      items: [
+        {
+          label: "RFP Studio",
+          href: "/app/rfp",
+          icon: Blocks,
+          locked: !canUseRfp,
+        },
+        { label: "Widgets", href: "/app/widgets", icon: Blocks },
+      ],
+    },
+    {
+      title: "Account",
+      items: [
+        { label: "Settings", href: "/app/settings", icon: Settings },
+        { label: "Billing", href: "/app/billing", icon: CreditCard },
+        { label: "Affiliate", href: "/app/affiliate", icon: Shield },
+      ],
+    },
+    ...(showAdminSection
+      ? [
+          {
+            title: "Admin",
+            items: [
+              { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
+              { label: "CMS", href: "/app/cms", icon: Database },
+              { label: "Debug Agent", href: "/app/agent", icon: Bug },
+              { label: "Team", href: "/app/settings?tab=team", icon: Users },
+            ],
+          },
+        ]
+      : []),
+  ];
 
   return (
     <aside
@@ -109,14 +145,16 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                   (item.href !== "/" && currentPath.startsWith(item.href));
 
                 return (
-                  <a
+                  <Link
                     key={item.label}
-                    href={item.href}
+                    to={item.locked ? "/app/billing" : item.href}
                     title={item.label}
                     className={[
                       "flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
-                      isActive
+                      isActive && !item.locked
                         ? "bg-white/10 text-white font-semibold"
+                        : item.locked
+                        ? "text-slate-500 hover:bg-white/5 hover:text-slate-300"
                         : "text-slate-200 hover:bg-white/5 hover:text-white",
                     ].join(" ")}
                   >
@@ -129,8 +167,15 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
                           : ""
                       }`}
                     />
-                    {sidebarOpen && <span className="truncate">{item.label}</span>}
-                  </a>
+                    {sidebarOpen && (
+                      <span className="flex flex-1 items-center gap-2 truncate">
+                        <span className="truncate">{item.label}</span>
+                        {item.locked && (
+                          <Lock className="ml-auto h-3 w-3 shrink-0 text-slate-500" />
+                        )}
+                      </span>
+                    )}
+                  </Link>
                 );
               })}
             </nav>

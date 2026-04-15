@@ -1,14 +1,12 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Mail, Send, Inbox, Archive, Plus, Search, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { checkFeatureAccess, checkUsageLimit, getPlanLimits } from '@/components/utils/planLimits';
+import { canAccessFeature, hasRemainingUsage, getPlanLimits } from '@/lib/planLimits';
 import LockedFeature from '../components/common/LockedFeature';
 import UpgradePrompt from '../components/common/UpgradePrompt';
 
@@ -17,289 +15,322 @@ import EmailThreadView from '../components/email/EmailThreadView';
 import { sendEmail as sendEmailFunction } from '@/api/functions';
 
 export default function EmailCenter() {
-    const { user: authUser } = useAuth();
-    const [emails, setEmails] = useState([]);
-    const [selectedEmail, setSelectedEmail] = useState(null);
-    const [showComposer, setShowComposer] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('inbox');
-    const [user, setUser] = useState(null);
-    const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
-    const [prefilledEmailData, setPrefilledEmailData] = useState(null);
+  const { user: authUser } = useAuth();
+  const [emails, setEmails] = useState([]);
+  const [selectedEmail, setSelectedEmail] = useState(null);
+  const [showComposer, setShowComposer] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('inbox');
+  const [user, setUser] = useState(null);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+  const [prefilledEmailData, setPrefilledEmailData] = useState(null);
 
-    // Use auth user from AuthProvider
-    useEffect(() => {
-        if (authUser) {
-            // Adapt authUser to the shape expected by checkFeatureAccess
-            setUser({ ...authUser, plan: authUser.user_metadata?.plan || 'free_trial' });
-        }
-    }, [authUser]);
+  useEffect(() => {
+    if (authUser) {
+      setUser({
+        ...authUser,
+        plan: authUser.user_metadata?.plan || authUser.plan || 'free_trial',
+      });
+    }
+  }, [authUser]);
 
-    useEffect(() => {
-        if (user && checkFeatureAccess(user, 'campaigns')) {
-            loadEmails();
-        } else if (user) {
-            setIsLoading(false);
-        }
-    }, [user]);
+  useEffect(() => {
+    if (user && canAccessFeature(user?.plan, 'campaign_builder')) {
+      loadEmails();
+    } else if (user) {
+      setIsLoading(false);
+    }
+  }, [user]);
 
-    // New useEffect for company_id in URL params
-    useEffect(() => {
-        // Check for company_id in URL params (from Start Outreach button)
-        const urlParams = new URLSearchParams(window.location.search);
-        const companyId = urlParams.get('company_id');
-        
-        if (companyId && companyId !== 'undefined' && user && checkFeatureAccess(user, 'campaigns')) {
-            // Pre-fill composer with company information
-            loadCompanyForOutreach(companyId);
-        }
-    }, [user]); // Depend on user to ensure it's loaded before checking feature access
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const companyId = urlParams.get('company_id');
 
-    const loadEmails = async () => {
-        setIsLoading(true);
-        try {
-            // Legacy entity API removed — emails load from connected inbox integrations
-            setEmails([]);
-        } catch (error) {
-            console.error('Failed to load emails:', error);
-        }
-        setIsLoading(false);
-    };
+    if (
+      companyId &&
+      companyId !== 'undefined' &&
+      user &&
+      canAccessFeature(user?.plan, 'campaign_builder')
+    ) {
+      loadCompanyForOutreach(companyId);
+    }
+  }, [user]);
 
-    const loadCompanyForOutreach = async (companyId) => {
-        try {
-            // Pre-fill with company ID; EmailComposer will handle lookup
-            setPrefilledEmailData({
-                to: '',
-                subject: `Outreach`,
-                company_id: companyId,
-            });
-            setShowComposer(true);
-        } catch (error) {
-            console.error('Failed to load company for outreach:', error);
-        }
-    };
+  const loadEmails = async () => {
+    setIsLoading(true);
+    try {
+      // Legacy entity API removed — emails load from connected inbox integrations
+      setEmails([]);
+    } catch (error) {
+      console.error('Failed to load emails:', error);
+    }
+    setIsLoading(false);
+  };
 
-    const handleSendEmail = async (emailData) => {
-        if (!checkUsageLimit(user, 'emails')) {
-            setShowUpgradePrompt(true);
-            return;
-        }
-        try {
-            // Call the backend function to send the email
-            const { data: sendResult, error: sendError } = await sendEmailFunction({
-                to: emailData.to,
-                subject: emailData.subject,
-                body_html: emailData.body_html
-            });
+  const loadCompanyForOutreach = async (companyId) => {
+    try {
+      setPrefilledEmailData({
+        to: '',
+        subject: 'Outreach',
+        company_id: companyId,
+      });
+      setShowComposer(true);
+    } catch (error) {
+      console.error('Failed to load company for outreach:', error);
+    }
+  };
 
-            if (sendError) {
-                console.error('Failed to send email:', sendError.data.error);
-                alert(`Failed to send email: ${sendError.data.error}`);
-                return;
-            }
-
-            // Track email sent in local state
-            setUser(prevUser => ({...prevUser, monthly_emails_sent: (prevUser?.monthly_emails_sent || 0) + 1}));
-
-            setShowComposer(false);
-            setPrefilledEmailData(null); // Clear prefill data after sending
-            await loadEmails(); // Reload sent folder if implemented
-        } catch (error) {
-            console.error('Failed to send email:', error);
-            alert('An unexpected error occurred while sending the email.');
-        }
-    };
-    
-    const handleComposeClick = () => {
-        if (!checkUsageLimit(user, 'emails')) {
-            setShowUpgradePrompt(true);
-            return;
-        }
-        setPrefilledEmailData(null); // Clear any previous prefill data for a fresh compose
-        setShowComposer(true);
-    };
-
-    const getStatusColor = (status) => {
-        const colors = {
-            sent: 'bg-blue-100 text-blue-800',
-            delivered: 'bg-green-100 text-green-800',
-            opened: 'bg-purple-100 text-purple-800',
-            replied: 'bg-yellow-100 text-yellow-800',
-            bounced: 'bg-red-100 text-red-800',
-        };
-        return colors[status] || colors.sent;
-    };
-
-    if (showComposer) {
-        return (
-            <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
-                <div className="max-w-4xl mx-auto">
-                    <div className="bg-white rounded-lg shadow-lg p-6">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                                <Send className="w-6 h-6 text-blue-600" />
-                                Compose Email
-                            </h2>
-                            <Button
-                                variant="outline"
-                                onClick={() => {
-                                    setShowComposer(false);
-                                    setPrefilledEmailData(null); // Clear prefill data on close
-                                }}
-                                className="text-gray-600 hover:text-gray-800"
-                            >
-                                <X className="w-4 h-4 mr-2" />
-                                Back to Email Center
-                            </Button>
-                        </div>
-
-                        <EmailComposer 
-                            onSend={handleSendEmail}
-                            onClose={() => {
-                                setShowComposer(false);
-                                setPrefilledEmailData(null); // Clear prefill data on close
-                            }}
-                            isInline={true}
-                            initialData={prefilledEmailData}
-                        />
-                    </div>
-                </div>
-            </div>
-        );
+  const handleSendEmail = async (emailData) => {
+    if (
+      !hasRemainingUsage(
+        user?.plan,
+        'pulse_runs_per_month',
+        user?.monthly_emails_sent || 0
+      )
+    ) {
+      setShowUpgradePrompt(true);
+      return;
     }
 
+    try {
+      const { data: sendResult, error: sendError } = await sendEmailFunction({
+        to: emailData.to,
+        subject: emailData.subject,
+        body_html: emailData.body_html,
+      });
+
+      if (sendError) {
+        console.error('Failed to send email:', sendError.data?.error || sendError);
+        alert(`Failed to send email: ${sendError.data?.error || 'Unknown error'}`);
+        return;
+      }
+
+      setUser((prevUser) => ({
+        ...prevUser,
+        monthly_emails_sent: (prevUser?.monthly_emails_sent || 0) + 1,
+      }));
+
+      setShowComposer(false);
+      setPrefilledEmailData(null);
+      await loadEmails();
+    } catch (error) {
+      console.error('Failed to send email:', error);
+      alert('An unexpected error occurred while sending the email.');
+    }
+  };
+
+  const handleComposeClick = () => {
+    if (
+      !hasRemainingUsage(
+        user?.plan,
+        'pulse_runs_per_month',
+        user?.monthly_emails_sent || 0
+      )
+    ) {
+      setShowUpgradePrompt(true);
+      return;
+    }
+
+    setPrefilledEmailData(null);
+    setShowComposer(true);
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      sent: 'bg-blue-100 text-blue-800',
+      delivered: 'bg-green-100 text-green-800',
+      opened: 'bg-purple-100 text-purple-800',
+      replied: 'bg-yellow-100 text-yellow-800',
+      bounced: 'bg-red-100 text-red-800',
+    };
+    return colors[status] || colors.sent;
+  };
+
+  if (showComposer) {
     return (
-        <>
-            <LockedFeature
-                isLocked={!checkFeatureAccess(user, 'campaigns')}
-                onUpgradeClick={() => setShowUpgradePrompt(true)}
-                title="Email Center & Automation"
-                description="Upgrade to the Growth plan to unlock direct email outreach and campaign automation."
-            >
-                <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
-                    <div className="max-w-7xl mx-auto">
-                        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
-                            <div>
-                                <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">Email Center</h1>
-                                <p className="text-gray-600 mt-2 text-sm md:text-base">Manage your outreach and track email performance.</p>
-                                 {user && checkFeatureAccess(user, 'campaigns') && (
-                                    <div className="flex items-center gap-4 mt-2">
-                                        <Badge className="bg-green-100 text-green-800">
-                                            {getPlanLimits(user.plan).name} Plan
-                                        </Badge>
-                                        <span className="text-xs text-gray-500">
-                                            {user.monthly_emails_sent || 0} / {getPlanLimits(user.plan).max_emails} emails this month
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-                            <Button 
-                                onClick={handleComposeClick}
-                                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg w-full sm:w-auto"
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Compose Email
-                            </Button>
-                        </div>
+      <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                <Send className="w-6 h-6 text-blue-600" />
+                Compose Email
+              </h2>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowComposer(false);
+                  setPrefilledEmailData(null);
+                }}
+                className="text-gray-600 hover:text-gray-800"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Back to Email Center
+              </Button>
+            </div>
 
-                        <div className="grid lg:grid-cols-4 gap-6 md:gap-8">
-                            {/* Sidebar */}
-                            <div className="lg:col-span-1">
-                                <Card className="bg-white/80 backdrop-blur-sm shadow-lg border-none">
-                                    <CardHeader>
-                                        <CardTitle>Folders</CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="space-y-2">
-                                            {[
-                                                { id: 'inbox', label: 'Inbox', icon: Inbox, count: emails.length },
-                                                { id: 'sent', label: 'Sent', icon: Send, count: 0 },
-                                                { id: 'archived', label: 'Archived', icon: Archive, count: 0 }
-                                            ].map(folder => (
-                                                <button
-                                                    key={folder.id}
-                                                    onClick={() => setActiveTab(folder.id)}
-                                                    className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
-                                                        activeTab === folder.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <folder.icon className="w-4 h-4" />
-                                                        <span>{folder.label}</span>
-                                                    </div>
-                                                    <Badge variant="secondary">{folder.count}</Badge>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </div>
-
-                            {/* Email List */}
-                            <div className="lg:col-span-3">
-                                <Card className="bg-white/80 backdrop-blur-sm shadow-lg border-none">
-                                    <CardHeader>
-                                        <div className="flex items-center justify-between">
-                                            <CardTitle>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</CardTitle>
-                                            <div className="relative w-full max-w-xs">
-                                                <Input placeholder="Search emails..." className="pl-10 bg-gray-50 border-0" />
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                            </div>
-                                        </div>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-                                            {isLoading ? (
-                                                <p className="text-center py-4 text-gray-500">Loading emails...</p>
-                                            ) : emails.length > 0 ? emails.map(email => (
-                                                <div 
-                                                    key={email.id}
-                                                    onClick={() => setSelectedEmail(email)}
-                                                    className="p-4 border border-transparent rounded-lg hover:bg-gray-50 hover:border-gray-200 cursor-pointer transition-colors"
-                                                >
-                                                    <div className="flex items-start justify-between mb-2">
-                                                        <p className="font-medium text-gray-900">{email.subject}</p>
-                                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                                            <Badge className={getStatusColor(email.status)}>{email.status}</Badge>
-                                                            <span className="text-xs text-gray-500 w-16 text-right">
-                                                                {format(new Date(email.created_date), 'MMM dd')}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-sm text-gray-600 truncate">
-                                                        Contact ID: {email.contact_id}
-                                                    </p>
-                                                </div>
-                                            )) : (
-                                                <div className="text-center py-12 text-gray-500">
-                                                    <Mail className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                                                    <h3 className="font-semibold text-lg">Your {activeTab} is empty</h3>
-                                                    <p className="text-sm">New emails will appear here.</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </LockedFeature>
-
-            <UpgradePrompt 
-                isOpen={showUpgradePrompt}
-                onClose={() => setShowUpgradePrompt(false)}
-                feature="campaigns"
-                currentPlan={user?.plan}
+            <EmailComposer
+              onSend={handleSendEmail}
+              onClose={() => {
+                setShowComposer(false);
+                setPrefilledEmailData(null);
+              }}
+              isInline={true}
+              initialData={prefilledEmailData}
             />
-            
-            {selectedEmail && (
-                <EmailThreadView 
-                    email={selectedEmail}
-                    onClose={() => setSelectedEmail(null)}
-                />
-            )}
-        </>
+          </div>
+        </div>
+      </div>
     );
+  }
+
+  const currentPlan = getPlanLimits(user?.plan);
+  const emailUsageLimit = currentPlan.limits.pulse_runs_per_month;
+
+  return (
+    <>
+      <LockedFeature
+        isLocked={!canAccessFeature(user?.plan, 'campaign_builder')}
+        onUpgradeClick={() => setShowUpgradePrompt(true)}
+        title="Email Center & Automation"
+        description="Upgrade to the Growth plan to unlock direct email outreach and campaign automation."
+      >
+        <div className="p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 lg:mb-8 gap-4">
+              <div>
+                <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900">
+                  Email Center
+                </h1>
+                <p className="text-gray-600 mt-2 text-sm md:text-base">
+                  Manage your outreach and track email performance.
+                </p>
+
+                {user && canAccessFeature(user?.plan, 'campaign_builder') && (
+                  <div className="flex items-center gap-4 mt-2">
+                    <Badge className="bg-green-100 text-green-800">
+                      {currentPlan.label} Plan
+                    </Badge>
+                    <span className="text-xs text-gray-500">
+                      {user?.monthly_emails_sent || 0} /{' '}
+                      {emailUsageLimit ?? 'Unlimited'} emails this month
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <Button
+                onClick={handleComposeClick}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg w-full sm:w-auto"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Compose Email
+              </Button>
+            </div>
+
+            <div className="grid lg:grid-cols-4 gap-6 md:gap-8">
+              <div className="lg:col-span-1">
+                <Card className="bg-white/80 backdrop-blur-sm shadow-lg border-none">
+                  <CardHeader>
+                    <CardTitle>Folders</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {[
+                        { id: 'inbox', label: 'Inbox', icon: Inbox, count: emails.length },
+                        { id: 'sent', label: 'Sent', icon: Send, count: 0 },
+                        { id: 'archived', label: 'Archived', icon: Archive, count: 0 },
+                      ].map((folder) => (
+                        <button
+                          key={folder.id}
+                          onClick={() => setActiveTab(folder.id)}
+                          className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
+                            activeTab === folder.id
+                              ? 'bg-blue-50 text-blue-700 font-semibold'
+                              : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <folder.icon className="w-4 h-4" />
+                            <span>{folder.label}</span>
+                          </div>
+                          <Badge variant="secondary">{folder.count}</Badge>
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="lg:col-span-3">
+                <Card className="bg-white/80 backdrop-blur-sm shadow-lg border-none">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>
+                        {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                      </CardTitle>
+                      <div className="relative w-full max-w-xs">
+                        <Input
+                          placeholder="Search emails..."
+                          className="pl-10 bg-gray-50 border-0"
+                        />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
+                      {isLoading ? (
+                        <p className="text-center py-4 text-gray-500">Loading emails...</p>
+                      ) : emails.length > 0 ? (
+                        emails.map((email) => (
+                          <div
+                            key={email.id}
+                            onClick={() => setSelectedEmail(email)}
+                            className="p-4 border border-transparent rounded-lg hover:bg-gray-50 hover:border-gray-200 cursor-pointer transition-colors"
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <p className="font-medium text-gray-900">{email.subject}</p>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <Badge className={getStatusColor(email.status)}>
+                                  {email.status}
+                                </Badge>
+                                <span className="text-xs text-gray-500 w-16 text-right">
+                                  {format(new Date(email.created_date), 'MMM dd')}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-600 truncate">
+                              Contact ID: {email.contact_id}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-12 text-gray-500">
+                          <Mail className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                          <h3 className="font-semibold text-lg">Your {activeTab} is empty</h3>
+                          <p className="text-sm">New emails will appear here.</p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        </div>
+      </LockedFeature>
+
+      <UpgradePrompt
+        isOpen={showUpgradePrompt}
+        onClose={() => setShowUpgradePrompt(false)}
+        feature="campaigns"
+        currentPlan={user?.plan}
+      />
+
+      {selectedEmail && (
+        <EmailThreadView email={selectedEmail} onClose={() => setSelectedEmail(null)} />
+      )}
+    </>
+  );
 }

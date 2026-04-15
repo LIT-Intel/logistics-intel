@@ -1,14 +1,14 @@
-import React, { useEffect } from "react";
-import CustomLoginPage from "@/components/layout/CustomLoginPage";
+import { SignIn } from "@clerk/clerk-react";
 
-export default function Login() {
-  // render the modal as a full page
-  useEffect(() => {
-    document.title = "Log in — Logistic Intel";
-  }, []);
+export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-[#F6F8FB] flex items-center justify-center p-4">
-      <CustomLoginPage onClose={() => (window.location.href = "/")} />
+    <div className="flex min-h-screen items-center justify-center bg-slate-950">
+      <SignIn
+        routing="path"
+        path="/login"
+        signUpUrl="/signup"
+        redirectUrl="/app/dashboard"
+      />
     </div>
   );
 }

@@ -2236,6 +2236,7 @@ export async function searchShippers(
   signal?: AbortSignal,
 ): Promise<IySearchResponse> {
   const q = typeof params.q === "string" ? params.q.trim() : "";
+    console.log("[api.ts] searchShippers called", { params });
   const page = Math.max(
     1,
     Number.isFinite(Number(params.page)) ? Number(params.page) : 1,
@@ -2261,17 +2262,33 @@ export async function searchShippers(
     return devSearchShippers({ q, page, pageSize });
   }
 
-  const { data, error } = await supabase.functions.invoke(
-    "importyeti-proxy",
+  console.log("[api.ts] searchShippers about to invoke importyeti-proxy", { q, page, pageSize });
+    console.log("[api.ts] searchShippers about to invoke importyeti-proxy", { q, page, pageSize });
+
+  const headers = await getAuthHeaders();
+  console.log("[api.ts] searchShippers got auth headers");
+
+  const res = await fetch(
+    `${SUPABASE_URL}/functions/v1/importyeti-proxy`,
     {
-      body: {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
         action: "search",
         q,
         page,
-        pageSize
-      },
+        pageSize,
+      }),
+      signal,
     }
   );
+
+  console.log("[api.ts] searchShippers fetch status", res.status);
+
+  const data = await res.json().catch(() => null);
+  const error = !res.ok
+    ? { message: data?.error || `HTTP ${res.status}` }
+    : null;
 
   if (error) {
     console.error("ImportYeti search error:", error);

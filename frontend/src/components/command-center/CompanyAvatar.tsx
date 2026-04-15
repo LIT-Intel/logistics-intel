@@ -1,16 +1,37 @@
-import * as React from 'react';
-import { Building2 } from 'lucide-react';
-export default function CompanyAvatar({ name = '', domain, src, size=56 }: {name:string; domain?:string; src?:string; size?:number}){
-  const letter = (name||'?').trim().charAt(0).toUpperCase();
+import React from "react";
+import { CompanyAvatar as SharedCompanyAvatar } from "@/components/CompanyAvatar";
+import { getCompanyLogoUrl } from "@/lib/logo";
+
+type CompanyAvatarProps = {
+  name: string;
+  domain?: string;
+  src?: string;
+  size?: number;
+  className?: string;
+};
+
+function mapSize(size?: number): "sm" | "md" | "lg" {
+  if (!size) return "lg";
+  if (size <= 36) return "sm";
+  if (size <= 48) return "md";
+  return "lg";
+}
+
+export default function CompanyAvatar({
+  name = "",
+  domain,
+  src,
+  size = 56,
+  className = "",
+}: CompanyAvatarProps) {
+  const logoUrl = src || getCompanyLogoUrl(domain || undefined) || undefined;
+
   return (
-    <div style={{width:size,height:size}} className="relative grid place-items-center rounded-xl bg-[var(--lit-panel-2)] ring-1 ring-[var(--lit-border)] overflow-hidden">
-      {src ? (<img alt={name} src={src} className="w-full h-full object-cover" />) : (
-        <div className="grid place-items-center text-[var(--lit-primary-light)]">
-          <Building2 className="opacity-80" size={Math.max(22,Math.round(size*0.42))} />
-          <span className="sr-only">{letter}</span>
-        </div>
-      )}
-      <div className="absolute inset-0 pointer-events-none" style={{background:'var(--lit-grad-sheen)'}}/>
-    </div>
+    <SharedCompanyAvatar
+      name={name}
+      size={mapSize(size)}
+      className={className}
+      logoUrl={logoUrl}
+    />
   );
 }

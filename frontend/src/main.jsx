@@ -12,26 +12,24 @@ import "./styles/tokens.css";
 if (typeof window !== "undefined") {
   const { pathname, hash, search } = window.location;
   if (!pathname || pathname === "/") {
-    const target = new URL(window.location.href);
-    target.pathname = "/search";
-    window.location.replace(`${target.pathname}${target.search}${hash}`);
+    window.location.replace(`/app/dashboard${search}${hash}`);
   } else if (pathname.endsWith("/index.html")) {
-    const target = new URL(window.location.href);
-    target.pathname = "/search";
-    window.location.replace(`${target.pathname}${search}${hash}`);
+    window.location.replace(`/app/dashboard${search}${hash}`);
   }
 }
 
 const queryClient = new QueryClient();
 
 createRoot(document.getElementById("root")).render(
-  <ErrorBoundary>
-    <BrowserRouter>
-      <AuthProvider>
-        <QueryClientProvider client={queryClient}>
-          <App />
-        </QueryClientProvider>
-      </AuthProvider>
-    </BrowserRouter>
-  </ErrorBoundary>
+  <React.StrictMode>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <QueryClientProvider client={queryClient}>
+            <App />
+          </QueryClientProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
+  </React.StrictMode>
 );

@@ -18,7 +18,7 @@ export default function AppLayout({ children }) {
           setSidebarOpen={setSidebarOpen}
         />
 
-        <main className="flex-1 overflow-x-hidden">
+        <main className="flex-1 overflow-x-hidden px-[10px] py-4">
           {children}
         </main>
       </div>

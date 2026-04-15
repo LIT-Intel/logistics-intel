@@ -185,7 +185,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
   }, [kpis]);
 
   const displayGrowth = useMemo(() => {
-    const raw = kpis.growthRate != null ? Number(kpis.growthRate) : (company?.growth_rate != null ? Number(company.growth_rate) : null);
+    const raw = kpis?.growthRate != null ? Number(kpis.growthRate) : (company?.growth_rate != null ? Number(company.growth_rate) : null);
     if (raw == null || Number.isNaN(raw)) return '—';
     const pct = Math.abs(raw) <= 1 ? raw * 100 : raw;
     const rounded = Math.round(pct);

@@ -5,11 +5,9 @@ import { updateProfile } from "@/auth/supabaseAuthClient";
 import { UploadFile } from "@/api/integrations";
 import SettingsLayout from "@/components/settings/SettingsLayout";
 
-const ADMIN_EMAILS = ["vraymond@sparkfusiondigital.com"];
-
 const PLAN_RANK: Record<string, number> = {
   free_trial: 0,
-  standard: 1,
+  starter: 1,
   growth: 2,
   enterprise: 3,
 };
@@ -49,10 +47,7 @@ export default function SettingsPage() {
   const [campaignCount, setCampaignCount] = useState(0);
   const [rfpCount, setRfpCount] = useState(0);
 
-  const isAdminEmail =
-    ADMIN_EMAILS.includes((user?.email ?? "").toLowerCase()) ||
-    user?.user_metadata?.role === "admin" ||
-    user?.user_metadata?.role === "super_admin";
+  const isAdminEmail = isSuperAdmin;
 
   const currentMembership = orgMembers.find(
     (member) => member.user_id === user?.id && member.status === "active"
@@ -67,6 +62,8 @@ export default function SettingsPage() {
   const isOrgAdmin = currentOrgRole === "admin";
   const isAdmin = isAdminEmail || isOrgOwner || isOrgAdmin;
   const canManageMembers = isAdminEmail || isOrgOwner || isOrgAdmin;
+
+  const effectivePlan = normalizePlan(plan ?? "free_trial");
 
   const canAccess = useCallback(
     (minPlan: string) =>

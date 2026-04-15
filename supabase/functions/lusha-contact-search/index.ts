@@ -43,7 +43,16 @@ Deno.serve(async (req: Request) => {
 
     let contacts: any[] = [];
 
-    if (lushaApiKey && company_id) {
+    // Require a real Lusha API key — mock data is not permitted in production.
+    if (!lushaApiKey) {
+      console.error(JSON.stringify({ fn: 'lusha-contact-search', error: 'LUSHA_API_KEY not configured' }));
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Lusha API key not configured', code: 'LUSHA_NOT_CONFIGURED' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (company_id) {
       const { data: company } = await supabase
         .from('lit_companies')
         .select('*')
@@ -51,62 +60,10 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (company) {
+        // TODO: call Lusha prospecting API with company domain/name and filters
+        // For now, return empty until Lusha API wiring is complete
         contacts = [];
       }
-    } else {
-      const mockContacts = [
-        {
-          full_name: 'Sarah Johnson',
-          first_name: 'Sarah',
-          last_name: 'Johnson',
-          title: 'VP of Logistics',
-          department: 'Operations',
-          seniority: 'VP',
-          email: 'sarah.johnson@company.com',
-          phone: '+1-555-0101',
-          linkedin_url: 'https://linkedin.com/in/sarahjohnson',
-          city: 'Los Angeles',
-          state: 'CA',
-          country_code: 'US',
-        },
-        {
-          full_name: 'Michael Chen',
-          first_name: 'Michael',
-          last_name: 'Chen',
-          title: 'Director of Supply Chain',
-          department: 'Supply Chain',
-          seniority: 'Director',
-          email: 'michael.chen@company.com',
-          phone: '+1-555-0102',
-          linkedin_url: 'https://linkedin.com/in/michaelchen',
-          city: 'Los Angeles',
-          state: 'CA',
-          country_code: 'US',
-        },
-        {
-          full_name: 'Emily Rodriguez',
-          first_name: 'Emily',
-          last_name: 'Rodriguez',
-          title: 'Procurement Manager',
-          department: 'Procurement',
-          seniority: 'Manager',
-          email: 'emily.rodriguez@company.com',
-          phone: '+1-555-0103',
-          linkedin_url: 'https://linkedin.com/in/emilyrodriguez',
-          city: 'Los Angeles',
-          state: 'CA',
-          country_code: 'US',
-        },
-      ];
-
-      contacts = mockContacts.filter((contact) => {
-        if (department && !contact.department.toLowerCase().includes(department.toLowerCase())) return false;
-        if (title && !contact.title.toLowerCase().includes(title.toLowerCase())) return false;
-        if (seniority && contact.seniority !== seniority) return false;
-        if (city && contact.city !== city) return false;
-        if (state && contact.state !== state) return false;
-        return true;
-      });
     }
 
     const savedContacts: any[] = [];
@@ -163,10 +120,9 @@ Deno.serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
-        success: true,
+        ok: true,
         contacts: savedContacts,
         count: savedContacts.length,
-        mock: !lushaApiKey,
       }),
       {
         status: 200,
@@ -174,9 +130,9 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error: any) {
-    console.error('Contact search error:', error);
+    console.error(JSON.stringify({ fn: 'lusha-contact-search', error: error.message }));
     return new Response(
-      JSON.stringify({ error: error.message || 'Internal server error' }),
+      JSON.stringify({ ok: false, error: error.message || 'Internal server error', code: 'INTERNAL_ERROR' }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

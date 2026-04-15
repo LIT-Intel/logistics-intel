@@ -124,7 +124,11 @@ export default function SavedCompaniesPanel({
               record.shipments?.[0]?.date ||
               null;
             const recentRoute = buildRouteLabel(record.shipments?.[0]);
-            const logoUrl = getCompanyLogoUrl(record.company?.domain);
+            const logoUrl = getCompanyLogoUrl(
+  record.company?.domain ||
+  record.company?.website ||
+  null
+);;
 
             return (
               <motion.li

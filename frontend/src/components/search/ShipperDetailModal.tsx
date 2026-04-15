@@ -1,1255 +1,1064 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
-  ResponsiveContainer,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
+  Search as SearchIcon,
+  Building2,
+  MapPin,
+  TrendingUp,
+  Package,
+  Ship,
+  Plane,
+  X,
+  BookmarkPlus,
+  Bookmark,
+  Eye,
+  Grid3x3,
+  List,
+  Loader2,
+  Users,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
   Tooltip,
-  Legend,
-  Bar,
-} from "recharts";
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { motion } from "framer-motion";
+import { useAuth } from "@/auth/AuthProvider";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/components/ui/use-toast";
 import {
-  BookmarkIcon,
-  BookmarkSlashIcon,
-  CubeIcon,
-  CurrencyDollarIcon,
-  GlobeAltIcon,
-  PhoneIcon,
-  Squares2X2Icon,
-  SquaresPlusIcon,
-  TruckIcon,
-  ClockIcon,
-  XMarkIcon,
-  ChartPieIcon,
-  CalendarDaysIcon,
-} from "@heroicons/react/24/solid";
+  fetchCompanySnapshot,
+  normalizeIyCompanyProfile,
+  saveCompanyToCommandCenter,
+  type IyCompanyProfile,
+} from "@/lib/api";
+import { searchShippers } from "@/lib/supabaseApi";
+import {
+  parseImportYetiDate,
+  formatUserFriendlyDate,
+  getDateBadgeInfo,
+} from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
-import {
-  type IyShipperHit,
-  type IyCompanyProfile,
-  type IyRouteKpis,
-  getFclShipments12m,
-  getLclShipments12m,
-} from "@/lib/api";
+import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 
-const numberFormatter = new Intl.NumberFormat("en-US");
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+function getCountryFlag(countryCode?: string): string {
+  if (!countryCode || countryCode.length !== 2) return "";
+  return String.fromCodePoint(
+    ...countryCode.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0)),
+  );
+}
 
-const formatNumber = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  return numberFormatter.format(value);
+type SearchCompany = {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  country: string;
+  country_code: string;
+  address: string;
+  website: string;
+  industry: string;
+  shipments: number;
+  shipments_12m: number;
+  teu_estimate?: number;
+  mode?: string;
+  last_shipment: string;
+  status: "Active" | "Inactive";
+  frequency: "High" | "Medium" | "Low";
+  trend: "up" | "flat" | "down";
+  top_origins: string[];
+  top_destinations: string[];
+  top_suppliers: string[];
+  gemini_summary: string;
+  risk_flags: string[];
+  importyeti_key?: string;
+  enrichment_status?: "pending" | "partial" | "complete";
+  enriched_at?: string;
+  top_container_length?: string;
+  top_container_count?: number;
+  fcl_percent?: number;
+  lcl_percent?: number;
+  latest_year?: number;
+  latest_year_shipments?: number;
+  latest_year_teu?: number;
 };
 
-const formatCurrency = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  return currencyFormatter.format(value);
-};
+export default function SearchPage() {
+  const { user, authReady } = useAuth();
+  const { toast } = useToast();
 
-const formatDateLabel = (value: string | null | undefined) => {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  });
-};
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<SearchCompany[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<SearchCompany | null>(null);
+  const [rawData, setRawData] = useState<any>(null);
+  const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
 
-const normalizeWebsite = (value?: string | null) => {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-};
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
-const monthLabel = (value: string) => {
-  if (!value) return "";
-  const isoMatch = value.match(/^(\d{4})-(\d{2})/);
-  if (isoMatch) {
-    const date = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, 1);
-    return date.toLocaleDateString(undefined, { month: "short" });
-  }
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleDateString(undefined, { month: "short" });
-  }
-  return value;
-};
+  useEffect(() => {
+    const loadSavedCompanies = async () => {
+      if (!user) return;
 
-function extractYearFromMonth(value: unknown): number | null {
-  if (!value) return null;
-  const text = String(value).trim();
-  if (!text) return null;
-  const match = text.match(/^(\d{4})-(\d{2})$/);
-  if (match) return Number(match[1]);
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.getFullYear();
-}
+      try {
+        const { data, error } = await supabase
+          .from("lit_saved_companies")
+          .select("company_id, lit_companies!inner(source_company_key)")
+          .eq("user_id", user.id);
 
-function normalizeMonthBucket(value: unknown): string | null {
-  if (!value) return null;
-  const text = String(value).trim();
-  if (!text) return null;
-  const direct = text.match(/^(\d{4})-(\d{2})$/);
-  if (direct) return `${direct[1]}-${direct[2]}`;
-  const parsed = new Date(text);
-  if (!Number.isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
-  }
-  return null;
-}
+        if (error) throw error;
 
-function parseBolDateFlexible(value: unknown): Date | null {
-  if (!value) return null;
-  const text = String(value).trim();
-  if (!text) return null;
-  const ddmmyyyy = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (ddmmyyyy) {
-    const day = Number(ddmmyyyy[1]);
-    const month = Number(ddmmyyyy[2]);
-    const year = Number(ddmmyyyy[3]);
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function buildAuthoritativeMonthlySeries(profile: any): any[] {
-  const sources = [
-    (profile as any)?.monthlyShipments,
-    (profile as any)?.monthly_shipments,
-    (profile as any)?.monthly_volumes,
-    (profile as any)?.time_series,
-    profile?.timeSeries,
-  ];
-
-  for (const source of sources) {
-    if (!source) continue;
-
-    if (Array.isArray(source)) {
-      const rows = source
-        .map((point: any) => {
-          const month = normalizeMonthBucket(point?.month ?? point?.period ?? point?.date ?? point?.label);
-          if (!month) return null;
-          const shipments = coerceNumber(point?.shipments) ?? 0;
-          const fcl = coerceNumber(point?.fclShipments ?? point?.fcl_shipments ?? point?.fcl ?? point?.fcl_count) ?? 0;
-          const lcl = coerceNumber(point?.lclShipments ?? point?.lcl_shipments ?? point?.lcl ?? point?.lcl_count) ?? 0;
-          const teu = coerceNumber(point?.teu ?? point?.total_teu ?? point?.teuVolume) ?? 0;
-          const estSpendUsd =
-            coerceNumber(point?.estSpendUsd ?? point?.est_spend_usd ?? point?.shipping_cost ?? point?.est_spend) ?? 0;
-          return {
-            month,
-            shipments: shipments > 0 ? shipments : fcl + lcl,
-            fclShipments: fcl,
-            lclShipments: lcl,
-            teu,
-            estSpendUsd,
-          };
-        })
-        .filter(Boolean)
-        .sort((a: any, b: any) => a.month.localeCompare(b.month));
-      if (rows.length > 0) return rows;
-    }
-
-    if (typeof source === "object") {
-      const rows = Object.entries(source)
-        .map(([key, value]: [string, any]) => {
-          const month = normalizeMonthBucket(key);
-          if (!month || !value || typeof value !== "object") return null;
-          const shipments = coerceNumber(value?.shipments) ?? 0;
-          const fcl = coerceNumber(value?.fclShipments ?? value?.fcl_shipments ?? value?.fcl ?? value?.fcl_count) ?? 0;
-          const lcl = coerceNumber(value?.lclShipments ?? value?.lcl_shipments ?? value?.lcl ?? value?.lcl_count) ?? 0;
-          const teu = coerceNumber(value?.teu ?? value?.total_teu ?? value?.teuVolume) ?? 0;
-          const estSpendUsd =
-            coerceNumber(value?.estSpendUsd ?? value?.est_spend_usd ?? value?.shipping_cost ?? value?.est_spend) ?? 0;
-          return {
-            month,
-            shipments: shipments > 0 ? shipments : fcl + lcl,
-            fclShipments: fcl,
-            lclShipments: lcl,
-            teu,
-            estSpendUsd,
-          };
-        })
-        .filter(Boolean)
-        .sort((a: any, b: any) => a.month.localeCompare(b.month));
-      if (rows.length > 0) return rows;
-    }
-  }
-
-  return [];
-}
-
-
-function coerceNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const cleaned = value.replace(/,/g, "").trim();
-    if (!cleaned) return null;
-    const parsed = Number(cleaned);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
-function cleanSupplierName(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const cleaned = value.replace(/\s+/g, " ").trim();
-  if (!cleaned) return null;
-  const lowered = cleaned.toLowerCase();
-  if (
-    lowered === "missing in source document" ||
-    lowered.includes("missing in source document") ||
-    lowered === "missing" ||
-    lowered === "n/a" ||
-    lowered === "na" ||
-    lowered === "null" ||
-    lowered === "none" ||
-    lowered === "unknown" ||
-    lowered === "-" ||
-    lowered === "--"
-  ) {
-    return null;
-  }
-  return cleaned;
-}
-
-function normalizeEnrichmentList(value: unknown): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => {
-        if (typeof entry === "string") return entry.trim();
-        if (entry && typeof entry === "object") {
-          if ("text" in entry && typeof (entry as any).text === "string") {
-            return ((entry as any).text as string).trim();
-          }
-          if ("value" in entry && typeof (entry as any).value === "string") {
-            return ((entry as any).value as string).trim();
-          }
-          if ("description" in entry && typeof (entry as any).description === "string") {
-            return ((entry as any).description as string).trim();
-          }
-          if ("title" in entry && typeof (entry as any).title === "string") {
-            const title = ((entry as any).title as string).trim();
-            const desc =
-              typeof (entry as any).description === "string"
-                ? (entry as any).description.trim()
-                : "";
-            return desc ? `${title} – ${desc}` : title;
-          }
+        if (data) {
+          const keys = data
+            .map((item: any) => item.lit_companies?.source_company_key)
+            .filter(Boolean);
+          setSavedCompanyIds(keys);
         }
-        return "";
-      })
-      .filter((item) => item.length > 0)
-      .filter((item) => item.toLowerCase().indexOf('missing in source document') === -1);
-  }
-  if (typeof value === "string") {
-    return value
-      // Split the string on one or more newline characters
-      .split(/\n+/)
-      // Remove leading bullet markers like "* " or "- " from each line
-      .map((line) => line.replace(/^[*-]\s*/, "").trim())
-      // Filter out any empty lines
-      .filter((line) => line.length > 0)
-      // Remove any lines that contain the placeholder text
-      .filter((line) => line.toLowerCase().indexOf('missing in source document') === -1);
-  }
-  return [];
-}
+      } catch (error) {
+        console.error("[Search] Failed to load saved companies:", error);
+      }
+    };
 
-function pickEnrichmentSummary(value: unknown): string | null {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length ? trimmed : null;
-  }
-  if (!value || typeof value !== "object") return null;
-  const candidates = [
-    (value as any).summary,
-    (value as any).overview,
-    (value as any).description,
-    (value as any).narrative,
-    (value as any).highlights,
-    (value as any).ai_summary,
-    (value as any)?.ai?.summary,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string") {
-      const trimmed = candidate.trim();
-      if (trimmed) return trimmed;
-    }
-  }
-  return null;
-}
+    loadSavedCompanies();
 
-const ChartTooltip: React.FC<any> = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  const data = payload.reduce(
-    (acc: Record<string, number>, item: any) => ({
-      ...acc,
-      [item.name]: item.value ?? 0,
-    }),
-    {},
-  );
-  return (
-    <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-50 shadow-xl">
-      <p className="font-semibold">Month: {label}</p>
-      <p>FCL: {formatNumber(data.FCL ?? 0)}</p>
-      <p>LCL: {formatNumber(data.LCL ?? 0)}</p>
-    </div>
-  );
-};
+    if (!user) return;
 
-// Use a more saturated palette for KPI tiles inspired by the bar chart gradient.
-// Each entry defines a border and background color that pair nicely with the
-// overall LIT colour system.
-const ACCENT_MAP: Record<string, string> = {
-  indigo: 'border-[#DDD6FE] bg-[#F3E8FF]',
-  blue: 'border-[#BFDBFE] bg-[#DBEAFE]',
-  emerald: 'border-[#BBF7D0] bg-[#DCFCE7]',
-  'indigo-strong': 'border-[#C7D2FE] bg-[#E0E7FF]',
-  green: 'border-[#BBF7D0] bg-[#DCFCE7]',
-  slate: 'border-[#E2E8F0] bg-[#F8FAFC]',
-  purple: 'border-[#D8B4FE] bg-[#F5E8FF]',
-};
-
-const ICON_CONTAINER_CLASS =
-  "mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/5 text-slate-600";
-
-interface KpiTileProps {
-  label: string;
-  value: React.ReactNode;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  accent: keyof typeof ACCENT_MAP;
-}
-
-const KpiTile: React.FC<KpiTileProps> = ({ label, value, icon: Icon, accent }) => (
-  <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 ${ACCENT_MAP[accent]}`}> 
-    <div className={ICON_CONTAINER_CLASS}>
-      <Icon className="h-3.5 w-3.5" />
-    </div>
-    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-      {label}
-    </p>
-    <p className="text-xl font-semibold text-slate-900 md:text-2xl">{value}</p>
-  </div>
-);
-
-export type ShipperDetailModalProps = {
-  isOpen: boolean;
-  shipper: IyShipperHit | null;
-  loadingProfile: boolean;
-  profile: IyCompanyProfile | null;
-  routeKpis?: IyRouteKpis | null;
-  enrichment: any | null;
-  error: string | null;
-  onClose: () => void;
-  onSaveToCommandCenter: (opts: { shipper: IyShipperHit; profile: IyCompanyProfile | null }) => void;
-  saveLoading: boolean;
-  isSaved?: boolean;
-  year?: number | null;
-};
-
-export default function ShipperDetailModal({
-  isOpen,
-  shipper,
-  loadingProfile,
-  profile,
-  routeKpis = null,
-  enrichment,
-  error,
-  onClose,
-  onSaveToCommandCenter,
-  saveLoading,
-  isSaved = false,
-  year = null,
-}: ShipperDetailModalProps) {
-  if (!isOpen || !shipper) return null;
-
-  const normalizedWebsite = React.useMemo(() => {
-    const profileWebsite =
-      profile?.website || (profile?.domain ? `https://${profile.domain}` : null);
-    const hitWebsite = shipper.website || (shipper.domain ? `https://${shipper.domain}` : null);
-    return normalizeWebsite(profileWebsite ?? hitWebsite ?? null);
-  }, [profile?.website, profile?.domain, shipper.website, shipper.domain]);
-
-  const normalizedPhone =
-    profile?.phoneNumber ??
-    profile?.phone ??
-    shipper.phone ??
-    ((shipper as any)?.contact?.phone ?? null);
-
-  const companyId =
-    profile?.key ??
-    profile?.companyId ??
-    shipper.key ??
-    shipper.companyId ??
-    "";
-  const domain = profile?.domain ?? shipper.domain ?? shipper.website ?? null;
-  const logoUrl = domain ? getCompanyLogoUrl(domain) : undefined;
-
-  const resolvedRouteKpis = routeKpis ?? profile?.routeKpis ?? null;
-  const shipments12m =
-    coerceNumber(resolvedRouteKpis?.shipmentsLast12m) ??
-    coerceNumber(profile?.totalShipments) ??
-    coerceNumber(shipper.totalShipments) ??
-    coerceNumber(shipper.shipmentsLast12m);
-  const teu12m =
-    coerceNumber(resolvedRouteKpis?.teuLast12m) ??
-    coerceNumber(shipper.teusLast12m);
-  const estSpend12m =
-    coerceNumber(resolvedRouteKpis?.estSpendUsd12m) ??
-    coerceNumber(profile?.estSpendUsd12m) ??
-    coerceNumber(shipper.estSpendLast12m);
-  const fclShipments12m = getFclShipments12m(profile);
-  const lclShipments12m = getLclShipments12m(profile);
-  // Calculate container mix ratio based on FCL and LCL shipment counts.
-  const containerMix = React.useMemo(() => {
-    const fcl = typeof fclShipments12m === 'number' ? fclShipments12m : 0;
-    const lcl = typeof lclShipments12m === 'number' ? lclShipments12m : 0;
-    const total = fcl + lcl;
-    if (total === 0) return null;
-    const fclPct = Math.round((fcl / total) * 100);
-    const lclPct = 100 - fclPct;
-    return `${fclPct}% FCL / ${lclPct}% LCL`;
-  }, [fclShipments12m, lclShipments12m]);
-
-  const baselineLastShipmentDate =
-    profile?.lastShipmentDate ??
-    shipper.lastShipmentDate ??
-    shipper.mostRecentShipment ??
-    null;
-
-  const [selectedYear, setSelectedYear] = React.useState<number | null>(year ?? null);
-
-  /* Determine the list of top lanes to display along with the primary and most recent route.
-     We prioritize lanes provided in resolvedRouteKpis.topRoutesLast12m when they contain
-     non‑placeholder route strings. If those lanes are missing or only contain
-     "Unknown → Unknown" routes, we fall back to aggregated top routes available on
-     the profile (top_routes or topRoutes). When falling back we build lane labels
-     from origin/destination fields such as origin_city, origin_country, supplier_address_loc,
-     company_address_loc, etc. This ensures that the Top lanes list always shows the
-     best available route labels rather than Unknown values.
-   */
-
-  // extract and sort primary lanes from resolvedRouteKpis.topRoutesLast12m,
-  // filtering out any routes that contain "unknown" in a case-insensitive manner.
-  let primaryTopRoutes: { route: string; shipments?: number | null }[] = [];
-  if (Array.isArray(resolvedRouteKpis?.topRoutesLast12m)) {
-    primaryTopRoutes = (resolvedRouteKpis.topRoutesLast12m as any[])
-      .filter((entry: any) => {
-        if (!entry || typeof entry.route !== "string") return false;
-        // treat any route containing the word "unknown" (any separator) as invalid
-        return entry.route.toLowerCase().indexOf("unknown") === -1;
-      })
-      .sort(
-        (a: any, b: any) =>
-          (coerceNumber(b?.shipments) ?? 0) - (coerceNumber(a?.shipments) ?? 0),
+    const channel = supabase
+      .channel("public:lit_saved_companies")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lit_saved_companies",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          loadSavedCompanies();
+        },
       )
-      .slice(0, 5);
-  }
+      .subscribe();
 
-  // build aggregated lanes from profile.top_routes or profile.topRoutes
-  let aggregatedTopRoutes: { route: string; shipments?: number | null }[] = [];
-  const rawAgg: any[] =
-    (profile as any)?.top_routes ?? (profile as any)?.topRoutes ?? [];
-  if (Array.isArray(rawAgg)) {
-    aggregatedTopRoutes = rawAgg
-      .map((entry: any) => {
-        if (!entry) return null;
-        // attempt to use provided route string when available
-        let route: string | null =
-          entry.route ?? entry.route_name ?? entry.route_string ?? null;
-        // if no route, construct from origin/destination fields
-        if (!route) {
-          const origin =
-            entry.origin ||
-            entry.origin_port ||
-            entry.origin_city ||
-            entry.origin_state ||
-            entry.origin_country ||
-            entry.supplier_address_loc ||
-            entry.supplier_address_location ||
-            entry.supplier_address_country ||
-            null;
-          const dest =
-            entry.destination ||
-            entry.dest_port ||
-            entry.destination_city ||
-            entry.destination_state ||
-            entry.destination_country ||
-            entry.company_address_loc ||
-            entry.company_address_location ||
-            entry.company_address_country ||
-            null;
-          if (origin || dest) {
-            const originLabel = origin ?? "Unknown";
-            const destLabel = dest ?? "Unknown";
-            route = `${originLabel} → ${destLabel}`;
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSnapshot = async () => {
+      if (!selectedCompany || !selectedCompany.importyeti_key) {
+        setRawData(null);
+        setNormalizedProfile(null);
+        return;
+      }
+
+      setLoadingSnapshot(true);
+
+      try {
+        const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
+
+        if (!cancelled) {
+          if (result && result.snapshot) {
+            setRawData(result.raw);
+            const profile = normalizeIyCompanyProfile(result, selectedCompany.importyeti_key);
+            setNormalizedProfile(profile);
+          } else {
+            setRawData(null);
+            setNormalizedProfile(null);
           }
         }
-        if (!route) return null;
-        // discard any constructed route that contains "unknown"
-        if (route.toLowerCase().indexOf("unknown") !== -1) return null;
-        const shipments =
-          coerceNumber((entry as any)?.shipments) ??
-          coerceNumber((entry as any)?.count) ??
-          coerceNumber((entry as any)?.shipments_12m) ??
-          null;
-        return { route, shipments };
-      })
-      .filter(
-        (v): v is { route: string; shipments?: number | null } => Boolean(v),
-      );
-    // sort aggregated lanes by shipments descending and cap to 5
-    aggregatedTopRoutes.sort(
-      (a, b) => (b.shipments ?? 0) - (a.shipments ?? 0),
-    );
-    aggregatedTopRoutes = aggregatedTopRoutes.slice(0, 5);
-  }
+      } catch (error) {
+        console.error("[Search] Failed to load snapshot:", error);
+        if (!cancelled) {
+          setRawData(null);
+          setNormalizedProfile(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSnapshot(false);
+        }
+      }
+    };
 
-  // choose which list of lanes to display: prefer primary if available,
-  // otherwise fall back to aggregated list
-  const displayTopRoutes =
-    primaryTopRoutes.length > 0 ? primaryTopRoutes : aggregatedTopRoutes;
+    loadSnapshot();
 
-  const yearScopedTopRoutes = React.useMemo(() => {
-    if (!selectedYear || !Array.isArray((profile as any)?.recent_bols)) {
-      return displayTopRoutes;
-    }
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompany]);
 
-    const routeStats = new Map<string, { route: string; shipments: number; mostRecentTs: number }>();
-    for (const bol of ((profile as any).recent_bols as any[])) {
-      const parsedDate = parseBolDateFlexible(
-        bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? null,
-      );
-      if (!parsedDate || parsedDate.getUTCFullYear() !== selectedYear) continue;
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-      const route =
-        typeof bol?.shipping_route === "string" && bol.shipping_route.trim()
-          ? bol.shipping_route.trim()
-          : (() => {
-              const origin =
-                bol?.supplier_address_loc ??
-                bol?.supplier_address_location ??
-                bol?.supplier_address_country ??
-                bol?.origin_port ??
-                bol?.origin_city ??
-                bol?.origin_country ??
-                null;
-              const dest =
-                bol?.company_address_loc ??
-                bol?.company_address_location ??
-                bol?.company_address_country ??
-                bol?.destination_port ??
-                bol?.destination_city ??
-                bol?.destination_country ??
-                null;
-              return origin || dest ? `${origin ?? "Unknown"} → ${dest ?? "Unknown"}` : null;
-            })();
+    const query = searchQuery.trim();
 
-      if (!route || route.toLowerCase().includes('unknown')) continue;
-
-      const current = routeStats.get(route) ?? { route, shipments: 0, mostRecentTs: 0 };
-      current.shipments += 1;
-      current.mostRecentTs = Math.max(current.mostRecentTs, parsedDate.getTime());
-      routeStats.set(route, current);
-    }
-
-    const rows = Array.from(routeStats.values())
-      .sort((a, b) => b.shipments - a.shipments || b.mostRecentTs - a.mostRecentTs)
-      .slice(0, 5)
-      .map((row) => ({ route: row.route, shipments: row.shipments }));
-
-    return rows.length > 0 ? rows : displayTopRoutes;
-  }, [selectedYear, profile, displayTopRoutes]);
-
-  // derive top and most recent routes from available KPI fields or year-filtered recent_bols.
-  const topRoutes = yearScopedTopRoutes;
-  const topRouteLast12m =
-    topRoutes[0]?.route ??
-    (typeof resolvedRouteKpis?.topRouteLast12m === 'string' && !selectedYear
-      ? resolvedRouteKpis.topRouteLast12m
-      : null) ??
-    shipper.primaryRouteSummary ??
-    shipper.primaryRoute ??
-    null;
-  const mostRecentRoute = React.useMemo(() => {
-    if (selectedYear && Array.isArray((profile as any)?.recent_bols)) {
-      const rows = ((profile as any).recent_bols as any[])
-        .map((bol) => {
-          const parsedDate = parseBolDateFlexible(
-            bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? null,
-          );
-          if (!parsedDate || parsedDate.getUTCFullYear() !== selectedYear) return null;
-          const route =
-            typeof bol?.shipping_route === 'string' && bol.shipping_route.trim()
-              ? bol.shipping_route.trim()
-              : (() => {
-                  const origin = bol?.supplier_address_loc ?? bol?.supplier_address_location ?? bol?.supplier_address_country ?? bol?.origin_port ?? bol?.origin_city ?? bol?.origin_country ?? null;
-                  const dest = bol?.company_address_loc ?? bol?.company_address_location ?? bol?.company_address_country ?? bol?.destination_port ?? bol?.destination_city ?? bol?.destination_country ?? null;
-                  return origin || dest ? `${origin ?? 'Unknown'} → ${dest ?? 'Unknown'}` : null;
-                })();
-          if (!route || route.toLowerCase().includes('unknown')) return null;
-          return { route, ts: parsedDate.getTime() };
-        })
-        .filter(Boolean) as Array<{ route: string; ts: number }>;
-      rows.sort((a, b) => b.ts - a.ts);
-      if (rows[0]?.route) return rows[0].route;
-    }
-    return (
-      (typeof resolvedRouteKpis?.mostRecentRoute === 'string' && !selectedYear
-        ? resolvedRouteKpis.mostRecentRoute
-        : null) ??
-      topRoutes[0]?.route ??
-      shipper.primaryRouteSummary ??
-      shipper.primaryRoute ??
-      null
-    );
-  }, [selectedYear, profile, resolvedRouteKpis?.mostRecentRoute, topRoutes, shipper.primaryRouteSummary, shipper.primaryRoute]);
-
-  const authoritativeMonthlySeries = React.useMemo(
-    () => buildAuthoritativeMonthlySeries(profile),
-    [profile],
-  );
-
-  const availableYears = React.useMemo(() => {
-    const years = Array.from(
-      new Set(
-        authoritativeMonthlySeries
-          .map((point: any) => extractYearFromMonth(point.month))
-          .filter((value: any): value is number => typeof value === "number"),
-      ),
-    ).sort((a, b) => b - a);
-    return years;
-  }, [authoritativeMonthlySeries]);
-
-  React.useEffect(() => {
-    if (year && availableYears.includes(year)) {
-      setSelectedYear(year);
-      return;
-    }
-    if (availableYears.length > 0) {
-      setSelectedYear((current) => {
-        if (current && availableYears.includes(current)) return current;
-        return availableYears[0];
+    if (!query || query.length < 2) {
+      toast({
+        title: "Search query required",
+        description: "Please enter at least 2 characters to search",
+        variant: "destructive",
       });
       return;
     }
-    setSelectedYear(null);
-  }, [year, availableYears]);
 
-  const filteredTimeSeries = React.useMemo(() => {
-    if (!Array.isArray(authoritativeMonthlySeries)) return [] as any[];
-    if (!selectedYear) return authoritativeMonthlySeries.slice(-12);
-    return authoritativeMonthlySeries.filter((point: any) => {
-      return extractYearFromMonth(point.month) === selectedYear;
-    });
-  }, [authoritativeMonthlySeries, selectedYear]);
-
-  const shipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      const shipments = coerceNumber(point.shipments);
-      if (shipments != null && shipments > 0) return sum + shipments;
-      const fcl = coerceNumber(point.fclShipments) ?? 0;
-      const lcl = coerceNumber(point.lclShipments) ?? 0;
-      return sum + fcl + lcl;
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const fclShipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      const fcl = coerceNumber(point.fclShipments) ?? 0;
-      return sum + fcl;
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const lclShipmentsYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      const lcl = coerceNumber(point.lclShipments) ?? 0;
-      return sum + lcl;
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const teuYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return sum + (coerceNumber(point.teu) ?? 0);
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const estSpendYear = React.useMemo(() => {
-    return (filteredTimeSeries as any[]).reduce((sum: number, point: any) => {
-      return sum + (coerceNumber(point.estSpendUsd) ?? 0);
-    }, 0);
-  }, [filteredTimeSeries]);
-
-  const containerMixYear = React.useMemo(() => {
-    const total = fclShipmentsYear + lclShipmentsYear;
-    if (total === 0) return null;
-    const fclPct = Math.round((fclShipmentsYear / total) * 100);
-    const lclPct = 100 - fclPct;
-    return `${fclPct}% FCL / ${lclPct}% LCL`;
-  }, [fclShipmentsYear, lclShipmentsYear]);
-
-  // Compute shipments for top/most recent routes to display counts in KPI cards
-  const topRouteShipments = topRoutes.find((lane) => lane.route === topRouteLast12m)?.shipments ?? null;
-  const mostRecentRouteShipments = topRoutes.find((lane) => lane.route === mostRecentRoute)?.shipments ?? null;
-
-  // Create dynamic headings for route cards
-  const topRouteHeading = selectedYear ? `Top route (${selectedYear})` : 'Top route (last 12m)';
-  const mostRecentHeading = selectedYear ? `Most recent route (${selectedYear})` : 'Most recent route';
-
-  // Prepare chart data for the monthly FCL/LCL shipments chart
-  const chartData = React.useMemo(() =>
-    Array.isArray(filteredTimeSeries)
-      ? (filteredTimeSeries as any[]).slice(-12).map((point: any) => {
-          const shipments = coerceNumber(point.shipments) ?? 0;
-          const fcl = coerceNumber(point.fclShipments) ?? 0;
-          const lcl = coerceNumber(point.lclShipments) ?? 0;
-          const showShipmentAsFcl = fcl === 0 && lcl === 0 && shipments > 0;
-          return {
-            monthLabel: monthLabel(point.month),
-            fcl: showShipmentAsFcl ? shipments : fcl,
-            lcl,
-          };
-        })
-      : []
-  , [filteredTimeSeries]);
-
-  const activeTeu = selectedYear ? teuYear : teu12m;
-  const activeSpend = selectedYear
-    ? (estSpendYear > 0
-        ? estSpendYear
-        : (coerceNumber((profile as any)?.estSpendUsd12m) ??
-           coerceNumber((profile as any)?.estSpendUsd) ??
-           estSpend12m))
-    : estSpend12m;
-
-  const computedLastShipmentDate =
-    (Array.isArray((profile as any)?.recent_bols) && selectedYear
-      ? (() => {
-          const rows = ((profile as any).recent_bols as any[])
-            .map((bol) => {
-              const rawDate = bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? null;
-              if (!rawDate) return null;
-              let parsed: Date | null = null;
-              const ddmmyyyy = String(rawDate).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-              if (ddmmyyyy) {
-                parsed = new Date(`${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}T00:00:00`);
-              } else {
-                parsed = new Date(String(rawDate));
-              }
-              if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() !== selectedYear) return null;
-              return parsed;
-            })
-            .filter(Boolean) as Date[];
-          rows.sort((a, b) => b.getTime() - a.getTime());
-          return rows[0] ? rows[0].toISOString().slice(0, 10) : null;
-        })()
-      : null) ??
-    (profile as any)?.last_shipment_date ??
-    profile?.lastShipmentDate ??
-    shipper.lastShipmentDate ??
-    shipper.mostRecentShipment ??
-    null;
-
-  const supplierList = React.useMemo(() => {
-    const list = profile?.topSuppliers ?? shipper.topSuppliers ?? [];
-    if (!Array.isArray(list)) return [];
-    const unique = new Map<string, string>();
-    for (const entry of list) {
-      const rawName =
-        typeof entry === "string"
-          ? entry
-          : entry?.name ?? entry?.supplier_name ?? entry?.company ?? entry?.title ?? "";
-      const cleaned = cleanSupplierName(rawName);
-      if (!cleaned) continue;
-      const key = cleaned.toLowerCase();
-      if (!unique.has(key)) unique.set(key, cleaned);
+    if (!authReady) {
+      toast({
+        title: "Authentication required",
+        description: "Please wait for authentication to complete",
+        variant: "destructive",
+      });
+      return;
     }
-    return Array.from(unique.values()).slice(0, 6);
-  }, [profile?.topSuppliers, shipper.topSuppliers]);
 
-  const enrichmentSummary = React.useMemo(
-    () => pickEnrichmentSummary(enrichment),
-    [enrichment],
-  );
-  const enrichmentOpportunities = React.useMemo(
-    () =>
-      normalizeEnrichmentList(
-        enrichment?.opportunities ??
-          enrichment?.opportunityInsights ??
-          enrichment?.opportunity_insights ??
-          enrichment?.ai?.opportunities ??
-          enrichment?.opportunityBullets,
-      ),
-    [enrichment],
-  );
-  const enrichmentRisks = React.useMemo(
-    () =>
-      normalizeEnrichmentList(
-        enrichment?.risks ??
-          enrichment?.riskInsights ??
-          enrichment?.risk_insights ??
-          enrichment?.watchouts ??
-          enrichment?.ai?.risks,
-      ),
-    [enrichment],
-  );
-  const enrichmentTalkingPoints = React.useMemo(
-    () =>
-      normalizeEnrichmentList(
-        enrichment?.talkingPoints ??
-          enrichment?.recommendedTalkingPoints ??
-          enrichment?.recommended_actions ??
-          enrichment?.actions ??
-          enrichment?.ai?.talkingPoints,
-      ),
-    [enrichment],
-  );
-  const enrichmentExtraSections = React.useMemo(() => {
-    if (!Array.isArray(enrichment?.sections)) return [];
-    return enrichment.sections
-      .map((section: any) => {
-        const label =
-          typeof section?.title === "string"
-            ? section.title
-            : typeof section?.label === "string"
-              ? section.label
-              : null;
-        const items = normalizeEnrichmentList(
-          section?.items ??
-            section?.bullets ??
-            section?.points ??
-            section?.content,
-        );
-        if (!label || items.length === 0) return null;
-        return { label, items };
-      })
-      .filter(
-        (entry): entry is { label: string; items: string[] } => Boolean(entry),
-      );
-  }, [enrichment]);
+    setSearching(true);
+    setHasSearched(true);
 
-  const hasEnrichmentContent = Boolean(
-    enrichmentSummary ||
-    enrichmentOpportunities.length ||
-    enrichmentRisks.length ||
-    enrichmentTalkingPoints.length ||
-    enrichmentExtraSections.length,
-  );
+    try {
+      // Keep the current backend contract stable: string query, page 1, page size 25.
+      const response = await searchShippers(query, 1, 25);
 
-  const showEnrichmentBanner = !enrichment && !loadingProfile;
+      if (response?.ok && Array.isArray(response?.results)) {
+        const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
+          const parsedAddress = result.address || "";
+          const cityMatch = parsedAddress.match(/^([^,]+)/);
+          const parsedDate = parseImportYetiDate(
+            result.mostRecentShipment ||
+              result.last_shipment_date ||
+              result.lastShipmentDate,
+          );
 
-  const kpiItems: KpiTileProps[] = [
-    {
-      label: selectedYear ? `Total shipments (${selectedYear})` : 'Total shipments',
-      value: formatNumber(selectedYear ? shipmentsYear : shipments12m),
-      icon: TruckIcon,
-      accent: 'slate',
-    },
-    {
-      label: selectedYear ? `FCL shipments (${selectedYear})` : 'FCL shipments',
-      value: formatNumber(selectedYear ? fclShipmentsYear : fclShipments12m),
-      icon: SquaresPlusIcon,
-      accent: 'purple',
-    },
-    {
-      label: selectedYear ? `LCL shipments (${selectedYear})` : 'LCL shipments',
-      value: formatNumber(selectedYear ? lclShipmentsYear : lclShipments12m),
-      icon: Squares2X2Icon,
-      accent: 'indigo',
-    },
-    {
-      label: selectedYear ? `TEU volume (${selectedYear})` : 'TEU volume',
-      value: formatNumber(activeTeu),
-      icon: CubeIcon,
-      accent: 'blue',
-    },
-    {
-      label: selectedYear ? `Market spend est. (${selectedYear})` : 'Market spend est.',
-      value: formatCurrency(activeSpend),
-      icon: CurrencyDollarIcon,
-      accent: 'emerald',
-    },
-  ];
+          const totalShipments =
+            Number(result.totalShipments ?? result.total_shipments ?? 0) || 0;
 
-  const handleSaveClick = () => {
-    if (!shipper || saveLoading) return;
-    onSaveToCommandCenter({ shipper, profile: profile ?? null });
+          const fclPercent =
+            typeof result.fcl_shipments_perc === "number"
+              ? result.fcl_shipments_perc
+              : typeof result.fcl_percent === "number"
+                ? result.fcl_percent
+                : undefined;
+
+          const lclPercent =
+            typeof result.lcl_shipments_perc === "number"
+              ? result.lcl_shipments_perc
+              : typeof result.lcl_percent === "number"
+                ? result.lcl_percent
+                : undefined;
+
+          return {
+            id: result.key || result.company_id || `iy-${Date.now()}-${idx}`,
+            name: result.title || result.name || result.company_name || "Unknown Company",
+            city: result.city || (cityMatch ? cityMatch[1] : "Unknown"),
+            state: result.state || "",
+            country: result.country || "United States",
+            country_code: result.countryCode || result.country_code || "US",
+            address: result.address || result.city || "",
+            website: result.website || "",
+            industry: "Import / Export",
+            shipments: totalShipments,
+            shipments_12m:
+              Number(result.latest_year_shipments ?? result.shipments_12m ?? totalShipments) || 0,
+            teu_estimate:
+              result.latest_year_teu != null
+                ? Number(result.latest_year_teu)
+                : result.totalTEU != null
+                  ? Number(result.totalTEU)
+                  : undefined,
+            mode: undefined,
+            last_shipment:
+              parsedDate || new Date().toISOString().split("T")[0],
+            status: totalShipments > 0 ? "Active" : "Inactive",
+            frequency:
+              totalShipments > 10000
+                ? "High"
+                : totalShipments > 1000
+                  ? "Medium"
+                  : "Low",
+            trend: "flat",
+            top_origins: [],
+            top_destinations: [],
+            top_suppliers: Array.isArray(result.topSuppliers) ? result.topSuppliers : [],
+            gemini_summary: `${result.title || result.company_name || "Company"} trade intelligence preview`,
+            risk_flags: [],
+            importyeti_key: result.key || (result.company_id ? `company/${result.company_id}` : undefined),
+            enrichment_status: "pending",
+            top_container_length: result.top_container_length,
+            top_container_count:
+              result.top_container_count != null ? Number(result.top_container_count) : undefined,
+            fcl_percent: fclPercent,
+            lcl_percent: lclPercent,
+            latest_year:
+              result.latest_year != null ? Number(result.latest_year) : undefined,
+            latest_year_shipments:
+              result.latest_year_shipments != null
+                ? Number(result.latest_year_shipments)
+                : undefined,
+            latest_year_teu:
+              result.latest_year_teu != null ? Number(result.latest_year_teu) : undefined,
+          };
+        });
+
+        setResults(mappedResults);
+
+        if (user?.id) {
+          supabase.from("search_queries").insert({
+            user_id: user.id,
+            query,
+            results_count: mappedResults.length,
+          }).then(() => {});
+        }
+
+        if (mappedResults.length === 0) {
+          toast({
+            title: "No results found",
+            description: `No companies found matching "${query}"`,
+          });
+        }
+      } else {
+        throw new Error(response?.error || "Search failed");
+      }
+    } catch (error: any) {
+      console.error("Search error:", error);
+      toast({
+        title: "Search failed",
+        description: error.message || "Unable to search companies. Please try again.",
+        variant: "destructive",
+      });
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
   };
 
+  const handleClear = () => {
+    setSearchQuery("");
+    setResults([]);
+    setHasSearched(false);
+  };
+
+  const saveToCommandCenter = async (company: SearchCompany) => {
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to save companies",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const companyKey = company.importyeti_key || company.id;
+    if (!companyKey) {
+      toast({
+        title: "Save failed",
+        description: "This company is missing a valid company key.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const shipper = {
+        key: companyKey,
+        companyId: companyKey,
+        title: company.name,
+        name: company.name,
+        domain: company.website || undefined,
+        website: company.website || undefined,
+        phone: (normalizedProfile as any)?.phoneNumber || (normalizedProfile as any)?.phone || undefined,
+        address: company.address || undefined,
+        city: company.city || undefined,
+        state: company.state || undefined,
+        countryCode: company.country_code || undefined,
+        totalShipments:
+          normalizedProfile?.routeKpis?.shipmentsLast12m ??
+          company.shipments_12m ??
+          company.shipments ??
+          0,
+        teusLast12m:
+          normalizedProfile?.routeKpis?.teuLast12m ??
+          company.teu_estimate ??
+          null,
+        mostRecentShipment:
+          normalizedProfile?.lastShipmentDate ??
+          company.last_shipment ??
+          null,
+        lastShipmentDate:
+          normalizedProfile?.lastShipmentDate ??
+          company.last_shipment ??
+          null,
+        primaryRoute:
+          normalizedProfile?.routeKpis?.topRouteLast12m ??
+          null,
+        topSuppliers: company.top_suppliers ?? [],
+      };
+
+      await saveCompanyToCommandCenter({
+        shipper,
+        profile: normalizedProfile,
+        stage: "prospect",
+        source: "importyeti",
+      });
+
+      toast({
+        title: "Company saved",
+        description: `${company.name} has been saved to your Command Center`,
+      });
+
+      setSavedCompanyIds((prev) =>
+        prev.includes(companyKey) ? prev : [...prev, companyKey],
+      );
+
+      setSelectedCompany(null);
+    } catch (error: any) {
+      console.error("[saveToCommandCenter] Fatal error:", error);
+      toast({
+        title: "Save failed",
+        description: error?.message || "Could not save company. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getModeIcon = (mode: string) => {
+    if (mode === "Ocean") return <Ship className="h-4 w-4" />;
+    if (mode === "Air") return <Plane className="h-4 w-4" />;
+    return <Package className="h-4 w-4" />;
+  };
+
+  const getFrequencyColor = (frequency: string) => {
+    if (frequency === "High") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (frequency === "Medium") return "bg-amber-50 text-amber-700 border-amber-200";
+    return "bg-slate-50 text-slate-700 border-slate-200";
+  };
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-slate-900 mb-2">Initializing...</h2>
+          <p className="text-slate-600">
+            Please wait while we prepare your search experience
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/60 px-4 py-6">
-      <div className="relative mt-6 mb-6 flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4 md:px-8">
-          <div className="flex items-start gap-4">
-            <CompanyAvatar name={shipper.title} logoUrl={logoUrl} size="lg" />
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-                  {profile?.title || shipper.title || shipper.name || "Company"}
-                </h2>
-                {isSaved && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                    Saved
-                  </span>
-                )}
-              </div>
-              {companyId && (
-                <p className="text-xs text-slate-500">{companyId}</p>
-              )}
-              <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                {normalizedWebsite && (
-                  <a
-                    href={normalizedWebsite}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
-                  >
-                    <GlobeAltIcon className="h-4 w-4" />
-                    <span className="truncate max-w-[180px]">
-                      {normalizedWebsite.replace(/^https?:\/\//i, "")}
-                    </span>
-                  </a>
-                )}
-                {normalizedPhone && (
-                  <a
-                    href={`tel:${normalizedPhone}`}
-                    className="inline-flex items-center gap-1"
-                  >
-                    <PhoneIcon className="h-4 w-4" />
-                    <span>{normalizedPhone}</span>
-                  </a>
-                )}
-              </div>
-              {showEnrichmentBanner && (
-                <p className="text-xs text-amber-600">
-                  AI enrichment not available for this company yet.
-                </p>
-              )}
+    <div className="min-h-screen bg-slate-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <motion.div
+          initial={{ opacity: 0, y: -16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                Company Search
+              </h1>
+              <p className="mt-1 text-sm text-slate-600 sm:text-base">
+                Search real import and export companies, then preview trade intelligence before saving to Command Center.
+              </p>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {availableYears.length > 0 && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
-                <CalendarDaysIcon className="h-4 w-4 text-slate-500" />
+
+            <div className="flex items-center gap-2 self-start lg:self-auto">
+              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    viewMode === "grid"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Grid3x3 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    viewMode === "list"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Year
                 </span>
                 <select
-                  value={selectedYear ?? ""}
-                  onChange={(e) => setSelectedYear(e.target.value ? Number(e.target.value) : null)}
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
                   className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
                 >
-                  {availableYears.map((optionYear) => (
-                    <option key={optionYear} value={optionYear}>
-                      {optionYear}
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
                     </option>
                   ))}
                 </select>
               </div>
-            )}
-            <button
-              type="button"
-              onClick={handleSaveClick}
-              disabled={saveLoading}
-              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                isSaved
-                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  : "bg-indigo-600 text-white hover:bg-indigo-500"
-              } disabled:cursor-not-allowed disabled:opacity-60`}
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.form
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          onSubmit={handleSearch}
+          className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
+        >
+          <div className="flex flex-col gap-3 md:flex-row">
+            <div className="relative flex-1">
+              <SearchIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search company name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-12 rounded-xl border-slate-300 pl-12 pr-12 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:h-14 sm:text-base"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              size="lg"
+              className="h-12 rounded-xl bg-indigo-600 px-6 text-sm font-semibold hover:bg-indigo-500 sm:h-14 sm:px-8 sm:text-base"
+              disabled={!authReady || searchQuery.length < 2 || searching}
             >
-              {isSaved ? (
-                <BookmarkSlashIcon className="h-4 w-4" />
+              {searching ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Searching...
+                </>
+              ) : !authReady ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Authenticating...
+                </>
               ) : (
-                <BookmarkIcon className="h-4 w-4" />
+                "Search"
               )}
-              <span>
-                {isSaved
-                  ? "Saved to Command Center"
-                  : saveLoading
-                  ? "Saving…"
-                  : "Save to Command Center"}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-100"
+            </Button>
+          </div>
+        </motion.form>
+
+        {hasSearched && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
             >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="max-h-[calc(100vh-8rem)] overflow-y-auto px-6 py-6 md:px-8">
-          {(loadingProfile || error) && (
-            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              {loadingProfile && <div>Loading company profile…</div>}
-              {error && !loadingProfile && (
-                <div className="text-rose-600">{error}</div>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-            {kpiItems.map((item) => (
-              <KpiTile key={item.label} {...item} />
-            ))}
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {topRouteHeading}
+              <p className="text-sm text-slate-600">
+                {searching ? (
+                  "Searching..."
+                ) : (
+                  <>
+                    Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
+                  </>
+                )}
               </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {topRouteLast12m || "Not available yet"}
-              </p>
-              {topRouteShipments != null && topRouteLast12m && (
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {formatNumber(topRouteShipments)} shipments
-                </p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {mostRecentHeading}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                {mostRecentRoute || "Not available yet"}
-              </p>
-              {mostRecentRouteShipments != null && mostRecentRoute && (
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {formatNumber(mostRecentRouteShipments)} shipments
-                </p>
-              )}
-            </div>
-          </div>
 
-          <div className="mt-6 grid gap-6 md:grid-cols-3">
-            <div className="space-y-4 md:col-span-2">
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 md:px-6 md:py-5">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      Shipment velocity
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Monthly shipments split between FCL and LCL services                    </p>
-                  </div>
-                  {loadingProfile && (
-                    <p className="text-xs text-slate-400">Loading trend…</p>
-                  )}
+              <div className="flex items-center gap-2 md:hidden">
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("grid")}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      viewMode === "grid"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Grid3x3 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("list")}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      viewMode === "list"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
                 </div>
-                {chartData.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    No lane-level trend data available yet for this shipper.
-                  </p>
-                ) : (
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer>
-                      <BarChart
-                        data={chartData}
-                        margin={{ top: 8, right: 12, left: 0, bottom: 8 }}
-                        barSize={12}
-                      >
-                        <defs>
-                          <linearGradient id="fclGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#6C4DFF" stopOpacity={1} />
-                            <stop offset="100%" stopColor="#4C8DFF" stopOpacity={0.9} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis
-                          dataKey="monthLabel"
-                          tick={{ fontSize: 10, fill: "#64748b" }}
-                          tickLine={false}
-                        />
-                        <YAxis tick={{ fontSize: 10, fill: "#64748b" }} allowDecimals={false} />
-                        <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(15,23,42,0.04)" }} />
-                        <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" align="right" />
-                        <Bar
-                          dataKey="fcl"
-                          name="FCL"
-                          fill="url(#fclGradient)"
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Bar
-                          dataKey="lcl"
-                          name="LCL"
-                          fill="#22c55e"
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
               </div>
+            </motion.div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Trade corridor analysis ({selectedYear ? selectedYear : 'last 12m'})
-                </p>
-                {topRoutes.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Lane-level shipment data is not available for this company yet.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-                    {topRoutes.map((lane, idx) => (
-                      <li key={`${lane.route}-${idx}`} className="flex items-center justify-between gap-2">
-                        <span className="truncate">{lane.route}</span>
-                        <span className="text-[11px] text-slate-500">
-                          {formatNumber(lane.shipments ?? null)} shipments
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {enrichment && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    AI insights
-                  </p>
-                  {hasEnrichmentContent ? (
-                    <>
-                      {enrichmentSummary && (
-                        <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
-                          {enrichmentSummary}
-                        </p>
-                      )}
-                      {enrichmentOpportunities.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Opportunities
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentOpportunities.map((item, idx) => (
-                              <li key={`opp-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentRisks.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Risks
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentRisks.map((item, idx) => (
-                              <li key={`risk-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-rose-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentTalkingPoints.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Recommended talking points
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                            {enrichmentTalkingPoints.map((item, idx) => (
-                              <li key={`talk-${idx}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                <span className="leading-snug">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {enrichmentExtraSections.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {enrichmentExtraSections.map((section, idx) => (
-                            <div key={`section-${idx}`}>
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                {section.label}
-                              </p>
-                              <ul className="mt-1 space-y-1 text-xs text-slate-700">
-                                {section.items.map((item, idy) => (
-                                  <li key={`section-${idx}-item-${idy}`} className="flex items-start gap-2">
-                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                    <span className="leading-snug">{item}</span>
-                                  </li>
-                                ))}
-                              </ul>
+            {viewMode !== "list" ? (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {results.map((company, index) => (
+                  <motion.div
+                    key={company.id}
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.04 + index * 0.03 }}
+                  >
+                    <Card className="group h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-indigo-300 hover:shadow-md">
+                      <CardHeader className="space-y-4 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <CompanyAvatar
+                              name={company.name}
+                              logoUrl={getCompanyLogoUrl(company.website)}
+                              size="md"
+                              className="shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-start gap-2">
+                                <CardTitle className="truncate text-base font-semibold text-slate-900 transition group-hover:text-indigo-600">
+                                  {company.name}
+                                </CardTitle>
+                                <span className="text-lg">{getCountryFlag(company.country_code)}</span>
+                              </div>
+                              <div className="mt-1 flex items-center gap-1 text-sm text-slate-600">
+                                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">
+                                  {company.city}
+                                  {company.state ? `, ${company.state}` : ""}
+                                </span>
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">
-                      AI enrichment is not available for this company yet.
-                    </p>
-                  )}
-                </div>
-              )}
+                          </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {selectedYear ? `Container mix (${selectedYear})` : 'Container mix'}
-                </p>
-                <div className="mt-3">
-                  <KpiTile
-                    label={selectedYear ? `Container mix (${selectedYear})` : 'Container mix'}
-                    value={selectedYear ? (containerMixYear ?? '—') : (containerMix ?? '—')}
-                    icon={ChartPieIcon}
-                    accent="indigo-strong"
-                  />
+                          <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
+                            {company.frequency}
+                          </Badge>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary" className="rounded-full">
+                            Search Preview
+                          </Badge>
+                          {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
+                            <Badge className="rounded-full bg-indigo-600 text-white hover:bg-indigo-600">
+                              Saved
+                            </Badge>
+                          )}
+                        </div>
+                      </CardHeader>
+
+                      <CardContent className="space-y-4 p-4 pt-0">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Total shipments
+                            </div>
+                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                              {company.shipments.toLocaleString()}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Latest year TEU
+                            </div>
+                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                              {company.teu_estimate != null ? company.teu_estimate.toLocaleString() : "—"}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Top container
+                            </div>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {company.top_container_length || "—"}
+                            </p>
+                            {company.top_container_count != null && (
+                              <p className="text-xs text-slate-500">
+                                {company.top_container_count.toLocaleString()} units
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              FCL / LCL
+                            </div>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {company.fcl_percent != null && company.lcl_percent != null
+                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
+                                : "—"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
+                          {company.mode && (
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-600">Mode</span>
+                              <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                                {getModeIcon(company.mode)}
+                                {company.mode}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Latest year</span>
+                            <span className="font-medium text-slate-900">
+                              {company.latest_year ?? "—"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Year shipments</span>
+                            <span className="font-medium text-slate-900">
+                              {company.latest_year_shipments != null
+                                ? company.latest_year_shipments.toLocaleString()
+                                : "—"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Last shipment</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium text-slate-900">
+                                {formatUserFriendlyDate(company.last_shipment)}
+                              </span>
+                              {(() => {
+                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                                if (!badgeInfo) return null;
+                                return (
+                                  <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${
+                                      badgeInfo.color === "green"
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                        : badgeInfo.color === "yellow"
+                                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                                          : "bg-slate-100 text-slate-600"
+                                    }`}
+                                  >
+                                    {badgeInfo.label}
+                                  </Badge>
+                                );
+                              })()}
+                            </div>
+                          </div>
+
+                          <div className="flex items-start justify-between gap-3 text-sm">
+                            <span className="text-slate-600">Suppliers</span>
+                            {company.top_suppliers.length > 0 ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="flex items-center gap-1 text-right">
+                                      <Users className="mt-0.5 h-3.5 w-3.5 text-slate-500" />
+                                      <span className="max-w-[160px] truncate font-medium text-slate-900">
+                                        {company.top_suppliers[0]}
+                                      </span>
+                                      {company.top_suppliers.length > 1 && (
+                                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                                          +{company.top_suppliers.length - 1}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <p className="mb-1 text-xs font-semibold">Suppliers</p>
+                                    <ul className="space-y-0.5">
+                                      {company.top_suppliers.map((supplier, idx) => (
+                                        <li key={idx} className="text-xs">
+                                          • {supplier}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <span className="text-xs text-slate-400">No data</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="h-10 flex-1 rounded-xl bg-slate-900 text-sm font-semibold hover:bg-slate-800"
+                            onClick={() => setSelectedCompany(company)}
+                          >
+                            <Eye className="mr-1.5 h-4 w-4" />
+                            View Details
+                          </Button>
+
+                          <Button
+                            variant={
+                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
+                                ? "secondary"
+                                : "outline"
+                            }
+                            size="sm"
+                            onClick={() => saveToCommandCenter(company)}
+                            disabled={
+                              saving ||
+                              (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
+                            }
+                            className={`h-10 rounded-xl px-3 ${
+                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
+                                ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                                : ""
+                            }`}
+                          >
+                            {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
+                              <Bookmark className="h-4 w-4 fill-current" />
+                            ) : (
+                              <BookmarkPlus className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[880px]">
+                    <thead className="border-b border-slate-200 bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Company
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Location
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Total Shipments
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Top Container
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          FCL / LCL
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Last Shipment
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100">
+                      {results.map((company, index) => (
+                        <motion.tr
+                          key={company.id}
+                          initial={{ opacity: 0, x: -14 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.02 }}
+                          className="transition hover:bg-slate-50"
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <CompanyAvatar
+                                name={company.name}
+                                logoUrl={getCompanyLogoUrl(company.website)}
+                                size="md"
+                              />
+                              <div>
+                                <div className="font-semibold text-slate-900">{company.name}</div>
+                                <div className="text-xs text-slate-500">Search Preview</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-slate-900">
+                              {company.city}
+                              {company.state ? `, ${company.state}` : ""}
+                            </div>
+                            <div className="text-xs text-slate-500">{company.country_code}</div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-semibold text-slate-900">
+                              {company.shipments.toLocaleString()}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-medium text-slate-900">
+                              {company.top_container_length || "—"}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {company.top_container_count != null
+                                ? `${company.top_container_count.toLocaleString()} units`
+                                : "No detail"}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-medium text-slate-900">
+                              {company.fcl_percent != null && company.lcl_percent != null
+                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
+                                : "—"}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-1.5">
+                              <div className="text-sm text-slate-900">
+                                {formatUserFriendlyDate(company.last_shipment)}
+                              </div>
+                              {(() => {
+                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                                if (!badgeInfo) return null;
+                                return (
+                                  <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${
+                                      badgeInfo.color === "green"
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                        : badgeInfo.color === "yellow"
+                                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                                          : "bg-slate-100 text-slate-600"
+                                    }`}
+                                  >
+                                    {badgeInfo.label}
+                                  </Badge>
+                                );
+                              })()}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedCompany(company)}
+                                className="rounded-xl"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => saveToCommandCenter(company)}
+                                disabled={
+                                  saving ||
+                                  (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
+                                }
+                                className={`rounded-xl ${
+                                  company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
+                                    ? "text-indigo-600"
+                                    : ""
+                                }`}
+                              >
+                                {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
+                                  <Bookmark className="h-4 w-4 fill-current" />
+                                ) : (
+                                  <BookmarkPlus className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            )}
 
-              {computedLastShipmentDate && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Shipment activity
-                  </p>
-                  <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                    <ClockIcon className="h-4 w-4 text-slate-400" />
-                    <span>Last shipment: {formatDateLabel(computedLastShipmentDate)}</span>
-                  </div>
+            {!searching && results.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="rounded-2xl border border-slate-200 bg-white py-16 text-center shadow-sm"
+              >
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+                  <SearchIcon className="h-8 w-8 text-slate-400" />
                 </div>
-              )}
+                <h3 className="text-lg font-semibold text-slate-900">No companies found</h3>
+                <p className="mt-1 text-slate-600">Try adjusting your search query</p>
+              </motion.div>
+            )}
+          </>
+        )}
 
-              {supplierList.length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Key partners
-                  </p>
-                  <ul className="mt-2 space-y-1.5">
-                    {supplierList.map((supplier, idx) => (
-                      <li key={`supplier-${idx}`} className="flex items-start gap-2 text-xs text-slate-700">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                        <span className="leading-snug">{supplier}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+        {!hasSearched && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-2xl border border-slate-200 bg-white py-20 text-center shadow-sm"
+          >
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-indigo-50">
+              <SearchIcon className="h-10 w-10 text-indigo-600" />
             </div>
-          </div>
-        </div>
+            <h3 className="text-xl font-semibold text-slate-900">Start Your Search</h3>
+            <p className="mx-auto mt-2 max-w-md text-slate-600">
+              Enter a company name to discover trade intelligence and preview KPI insights before saving to Command Center.
+            </p>
+          </motion.div>
+        )}
+
+        {selectedCompany && (
+          <ShipperDetailModal
+            year={selectedYear}
+            isOpen={true}
+            shipper={selectedCompany as any}
+            loadingProfile={loadingSnapshot}
+            profile={normalizedProfile}
+            routeKpis={normalizedProfile?.routeKpis ?? null}
+            enrichment={null}
+            error={null}
+            onClose={() => setSelectedCompany(null)}
+            onSaveToCommandCenter={() => {
+              if (selectedCompany) {
+                saveToCommandCenter(selectedCompany);
+              }
+            }}
+            saveLoading={saving}
+            isSaved={Boolean(
+              selectedCompany?.importyeti_key &&
+              savedCompanyIds.includes(selectedCompany.importyeti_key),
+            )}
+          />
+        )}
       </div>
     </div>
   );

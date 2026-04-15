@@ -84,11 +84,8 @@ export const phantombusterLinkedIn = httpCall('/functions/phantombusterLinkedIn'
   message: 'Disabled',
 });
 
-const rawSearchLeads = httpCall('/functions/searchLeads', {
-  ok: true,
-  results: [],
-  total: 0,
-});
+const rawSearchLeads = async (payload = {}) =>
+  invokeSupabaseFunction('searchLeads', payload);
 
 export const searchLeads = async (payload = {}) => {
   const response = await rawSearchLeads(payload);
