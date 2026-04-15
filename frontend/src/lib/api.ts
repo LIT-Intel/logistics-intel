@@ -2236,6 +2236,7 @@ export async function searchShippers(
   signal?: AbortSignal,
 ): Promise<IySearchResponse> {
   const q = typeof params.q === "string" ? params.q.trim() : "";
+    console.log("[api.ts] searchShippers called", { params });
   const page = Math.max(
     1,
     Number.isFinite(Number(params.page)) ? Number(params.page) : 1,
@@ -2261,6 +2262,7 @@ export async function searchShippers(
     return devSearchShippers({ q, page, pageSize });
   }
 
+  console.log("[api.ts] searchShippers about to invoke importyeti-proxy", { q, page, pageSize });
   const { data, error } = await supabase.functions.invoke(
     "importyeti-proxy",
     {
