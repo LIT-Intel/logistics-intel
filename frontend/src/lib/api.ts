@@ -2632,82 +2632,133 @@ export function buildYearScopedProfile(
   year: number,
 ): IyCompanyProfile | null {
   if (!profile) return null;
+
   const scopedSeries = Array.isArray(profile.timeSeries)
     ? profile.timeSeries.filter((point) => Number(point?.year) === Number(year))
     : [];
 
-  const scopedBols = Array.isArray(profile?.recentBols)
-  ? profile.recentBols.filter((bol) => {
-      const dt = getBolDate(bol);
-      return dt ? dt.getFullYear() === Number(year) : false;
-    })
-  : [];
-  
-  if (!scopedSeries.length) {
+  const scopedBols = Array.isArray(profile.recentBols)
+    ? profile.recentBols.filter((bol) => {
+        const dt = getBolDate(bol);
+        return dt ? dt.getFullYear() === Number(year) : false;
+      })
+    : [];
+
+  if (!scopedSeries.length && !scopedBols.length) {
     return {
-  ...profile,
-  estSpendUsd12m: estSpend,
-  totalShipments: shipments,
-  lastShipmentDate:
+      ...profile,
+      routeKpis: {
+        shipmentsLast12m: 0,
+        teuLast12m: 0,
+        estSpendUsd12m: 0,
+        topRouteLast12m: null,
+        mostRecentRoute: null,
+        sampleSize: 0,
+        topRoutesLast12m: [],
+      },
+      containers: {
+        fclShipments12m: 0,
+        lclShipments12m: 0,
+      },
+      estSpendUsd12m: 0,
+      totalShipments: 0,
+      lastShipmentDate: null,
+      timeSeries: [],
+      recentBols: [],
+    };
+  }
+
+  const shipmentsFromSeries = scopedSeries.reduce(
+    (sum, point) => sum + (Number(point?.shipments) || 0),
+    0,
+  );
+  const teuFromSeries = scopedSeries.reduce(
+    (sum, point) => sum + (Number(point?.teu) || 0),
+    0,
+  );
+  const estSpendFromSeries = scopedSeries.reduce(
+    (sum, point) => sum + (Number(point?.estSpendUsd) || 0),
+    0,
+  );
+  const fclFromSeries = scopedSeries.reduce(
+    (sum, point) => sum + (Number(point?.fclShipments) || 0),
+    0,
+  );
+  const lclFromSeries = scopedSeries.reduce(
+    (sum, point) => sum + (Number(point?.lclShipments) || 0),
+    0,
+  );
+
+  const shipmentsFromBols = scopedBols.length;
+  const teuFromBols = scopedBols.reduce(
+    (sum, bol) => sum + (coerceNumber(bol?.teu) ?? 0),
+    0,
+  );
+  const estSpendFromBols = scopedBols.reduce(
+    (sum, bol) => sum + getEntrySpend(bol),
+    0,
+  );
+  const fclFromBols = scopedBols.filter((bol) => bol?.lcl !== true).length;
+  const lclFromBols = scopedBols.filter((bol) => bol?.lcl === true).length;
+
+  const shipments = shipmentsFromSeries || shipmentsFromBols;
+  const teu = teuFromSeries || teuFromBols;
+  const estSpend = estSpendFromSeries || estSpendFromBols;
+  const fcl = fclFromSeries || fclFromBols;
+  const lcl = lclFromSeries || lclFromBols;
+
+  const latestBolDate =
     scopedBols
       .map((bol) => getBolDate(bol))
       .filter((value): value is Date => Boolean(value))
       .sort((a, b) => b.getTime() - a.getTime())[0]
-      ?.toISOString() ??
-    mostRecentPoint?.lastShipmentDate ??
-    null,
-  routeKpis: {
-    shipmentsLast12m: shipments,
-    teuLast12m: teu,
-    estSpendUsd12m: estSpend,
-    topRouteLast12m:
-      routeHints.topRouteLast12m ?? profile.routeKpis?.topRouteLast12m ?? null,
-    mostRecentRoute:
-      routeHints.mostRecentRoute ?? profile.routeKpis?.mostRecentRoute ?? null,
-    sampleSize: scopedBols.length,
-    topRoutesLast12m: profile.routeKpis?.topRoutesLast12m ?? [],
-  },
-  containers: {
-    fclShipments12m: fcl,
-    lclShipments12m: lcl,
-  },
-  timeSeries: scopedSeries,
-  recentBols: scopedBols,
-};
-  }
+      ?.toISOString() ?? null;
 
-  const shipments = scopedSeries.reduce((sum, point) => sum + (Number(point?.shipments) || 0), 0);
-  const teu = scopedSeries.reduce((sum, point) => sum + (Number(point?.teu) || 0), 0);
-  const estSpend = scopedSeries.reduce((sum, point) => sum + (Number(point?.estSpendUsd) || 0), 0);
-  const fcl = scopedSeries.reduce((sum, point) => sum + (Number(point?.fclShipments) || 0), 0);
-  const lcl = scopedSeries.reduce((sum, point) => sum + (Number(point?.lclShipments) || 0), 0);
-  const mostRecentPoint = [...scopedSeries]
-    .filter((point) => point?.lastShipmentDate)
-    .sort((a, b) => String(b.lastShipmentDate).localeCompare(String(a.lastShipmentDate)))[0] ?? null;
-  const routeHints = deriveYearRouteHints(scopedSeries);
+  const routeKpisFromBols =
+    scopedBols.length > 0
+      ? computeIyRouteKpisFromShipments(
+          scopedBols.map((bol) => ({
+            bol: bol?.bolNumber ?? null,
+            date: bol?.date ?? null,
+            teu: bol?.teu ?? null,
+            origin_port: bol?.origin ?? null,
+            destination_port: bol?.destination ?? null,
+            origin_country_code: null,
+            dest_country_code: null,
+            shipper_name: bol?.supplier ?? null,
+            consignee_name: bol?.company ?? null,
+          })) as any[],
+        )
+      : null;
 
   return {
     ...profile,
     estSpendUsd12m: estSpend,
     totalShipments: shipments,
-    lastShipmentDate: mostRecentPoint?.lastShipmentDate ?? profile.lastShipmentDate ?? null,
+    lastShipmentDate: latestBolDate,
     routeKpis: {
-      shipmentsLast12m: shipments,
-      teuLast12m: teu,
+      shipmentsLast12m: routeKpisFromBols?.shipmentsLast12m ?? shipments,
+      teuLast12m: routeKpisFromBols?.teuLast12m ?? teu,
       estSpendUsd12m: estSpend,
-      topRouteLast12m: routeHints.topRouteLast12m ?? profile.routeKpis?.topRouteLast12m ?? null,
-      mostRecentRoute: routeHints.mostRecentRoute ?? profile.routeKpis?.mostRecentRoute ?? null,
-      sampleSize: shipments,
-      topRoutesLast12m: profile.routeKpis?.topRoutesLast12m ?? [],
+      topRouteLast12m:
+        routeKpisFromBols?.topRouteLast12m ??
+        profile.routeKpis?.topRouteLast12m ??
+        null,
+      mostRecentRoute:
+        routeKpisFromBols?.mostRecentRoute ??
+        profile.routeKpis?.mostRecentRoute ??
+        null,
+      sampleSize: scopedBols.length,
+      topRoutesLast12m: routeKpisFromBols?.topRoutesLast12m ?? [],
     },
     containers: {
       fclShipments12m: fcl,
       lclShipments12m: lcl,
     },
     timeSeries: scopedSeries,
+    recentBols: scopedBols,
   };
 }
-
 export async function listSavedCompanies(
   stage = "prospect",
 ): Promise<CommandCenterRecord[]> {
@@ -4036,13 +4087,11 @@ export function buildCommandCenterDetailModel(
   }));
 
   const latestShipmentDate =
-    scopedBols
-      .map((bol) => getBolDate(bol))
-      .filter((value): value is Date => Boolean(value))
-      .sort((a, b) => b.getTime() - a.getTime())[0]
-      ?.toISOString() ??
-    profile?.lastShipmentDate ??
-    null;
+  scopedBols
+    .map((bol) => getBolDate(bol))
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => b.getTime() - a.getTime())[0]
+    ?.toISOString() ?? null;
 
   const oldestShipmentDate =
   scopedBols
