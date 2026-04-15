@@ -17,6 +17,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 export async function searchShippers(query: string, page = 1, pageSize = 25) {
   const headers = await getAuthHeaders();
+  console.log("[supabaseApi.searchShippers] called", { query, page, pageSize });
 
   const response = await fetch(`${API_BASE}/importyeti/searchShippers`, {
     method: "POST",
