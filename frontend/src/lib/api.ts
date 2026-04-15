@@ -3869,14 +3869,7 @@ export function buildCommandCenterDetailModel(
     ? profile!.timeSeries.filter((point) => (fallbackYear ? Number(point?.year) === fallbackYear : true))
     : [];
 
-  const scopedBols = Array.isArray(profile?.recentBols)
-    ? profile!.recentBols.filter((bol) => {
-        if (!fallbackYear) return true;
-        const dt = getBolDate(bol);
-        return dt ? dt.getFullYear() === fallbackYear : false;
-      })
-    : [];
- 
+  const scopedBols = Array.isArray(profile?.recentBols) ? profile.recentBols : [];
   const monthMap = new Map<number, CommandCenterActivityPoint>();
   for (let i = 0; i < 12; i += 1) {
     monthMap.set(i, {
