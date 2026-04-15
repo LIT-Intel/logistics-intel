@@ -3877,12 +3877,6 @@ export function buildCommandCenterDetailModel(
       })
     : [];
  
-  const latestShipmentDate =
-  scopedBols
-    .map((bol) => getBolDate(bol))
-    .filter((value): value is Date => Boolean(value))
-    .sort((a, b) => b.getTime() - a.getTime())[0]
-    ?.toISOString() ?? null;
   const monthMap = new Map<number, CommandCenterActivityPoint>();
   for (let i = 0; i < 12; i += 1) {
     monthMap.set(i, {
