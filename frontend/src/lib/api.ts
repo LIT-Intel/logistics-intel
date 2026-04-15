@@ -2637,10 +2637,9 @@ export function buildYearScopedProfile(
     : [];
 
   const scopedBols = Array.isArray(profile?.recentBols)
-  ? profile!.recentBols.filter((bol) => {
-      if (!fallbackYear) return true;
+  ? profile.recentBols.filter((bol) => {
       const dt = getBolDate(bol);
-      return dt ? dt.getFullYear() === fallbackYear : false;
+      return dt ? dt.getFullYear() === Number(year) : false;
     })
   : [];
   
