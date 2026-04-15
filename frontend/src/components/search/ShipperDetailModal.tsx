@@ -1,50 +1,116 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  Search as SearchIcon,
+  X,
   Building2,
   MapPin,
-  TrendingUp,
-  Package,
-  Ship,
-  Plane,
-  X,
-  BookmarkPlus,
+  Globe,
+  Phone,
   Bookmark,
-  Eye,
-  Grid3x3,
-  List,
+  BookmarkPlus,
   Loader2,
+  Package,
+  TrendingUp,
+  Route,
+  Truck,
+  Calendar,
   Users,
+  BarChart3,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { motion } from "framer-motion";
-import { useAuth } from "@/auth/AuthProvider";
-import { supabase } from "@/lib/supabase";
-import { useToast } from "@/components/ui/use-toast";
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import {
-  fetchCompanySnapshot,
-  normalizeIyCompanyProfile,
-  saveCompanyToCommandCenter,
-  type IyCompanyProfile,
-} from "@/lib/api";
-import { searchShippers } from "@/lib/supabaseApi";
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
-  parseImportYetiDate,
-  formatUserFriendlyDate,
-  getDateBadgeInfo,
-} from "@/lib/dateUtils";
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+} from "recharts";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
-import ShipperDetailModal from "@/components/search/ShipperDetailModal";
+import {
+  type IyCompanyProfile,
+  type IyRouteKpis,
+  getFclShipments12m,
+  getLclShipments12m,
+} from "@/lib/api";
+import { formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
+
+type ShipperLike = {
+  id?: string;
+  key?: string;
+  companyId?: string;
+  company_id?: string;
+  importyeti_key?: string;
+  name?: string;
+  title?: string;
+  website?: string;
+  domain?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  country_code?: string;
+  countryCode?: string;
+  shipments?: number;
+  shipments_12m?: number;
+  totalShipments?: number;
+  teu_estimate?: number;
+  top_suppliers?: string[];
+  topSuppliers?: string[];
+  last_shipment?: string;
+  lastShipmentDate?: string;
+  mostRecentShipment?: string;
+};
+
+type Props = {
+  year?: number;
+  isOpen: boolean;
+  shipper: ShipperLike | null;
+  loadingProfile?: boolean;
+  profile?: IyCompanyProfile | null;
+  routeKpis?: IyRouteKpis | null;
+  enrichment?: any | null;
+  error?: string | null;
+  onClose: () => void;
+  onSaveToCommandCenter: (args: {
+    shipper: ShipperLike | null;
+    profile: IyCompanyProfile | null | undefined;
+  }) => void;
+  saveLoading?: boolean;
+  isSaved?: boolean;
+};
+
+function formatNumber(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return Number(value).toLocaleString();
+}
+
+function formatCurrency(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  const num = Number(value);
+  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`;
+  if (num >= 1_000) return `$${(num / 1_000).toFixed(0)}K`;
+  return `$${num.toLocaleString()}`;
+}
 
 function getCountryFlag(countryCode?: string): string {
   if (!countryCode || countryCode.length !== 2) return "";
@@ -53,1013 +119,541 @@ function getCountryFlag(countryCode?: string): string {
   );
 }
 
-type SearchCompany = {
-  id: string;
-  name: string;
-  city: string;
-  state: string;
-  country: string;
-  country_code: string;
-  address: string;
-  website: string;
-  industry: string;
-  shipments: number;
-  shipments_12m: number;
-  teu_estimate?: number;
-  mode?: string;
-  last_shipment: string;
-  status: "Active" | "Inactive";
-  frequency: "High" | "Medium" | "Low";
-  trend: "up" | "flat" | "down";
-  top_origins: string[];
-  top_destinations: string[];
-  top_suppliers: string[];
-  gemini_summary: string;
-  risk_flags: string[];
-  importyeti_key?: string;
-  enrichment_status?: "pending" | "partial" | "complete";
-  enriched_at?: string;
-  top_container_length?: string;
-  top_container_count?: number;
-  fcl_percent?: number;
-  lcl_percent?: number;
-  latest_year?: number;
-  latest_year_shipments?: number;
-  latest_year_teu?: number;
-};
+function buildMonthlyChartData(profile?: IyCompanyProfile | null, selectedYear?: number) {
+  const points = Array.isArray(profile?.timeSeries) ? profile!.timeSeries : [];
+  const filtered = selectedYear
+    ? points.filter((p) => Number(p?.year) === Number(selectedYear))
+    : points;
 
-export default function SearchPage() {
-  const { user, authReady } = useAuth();
-  const { toast } = useToast();
+  return filtered
+    .map((point) => ({
+      month: typeof point.month === "string" && point.month.includes("-")
+        ? point.month.slice(5, 7)
+        : point.month,
+      shipments: Number(point.shipments ?? 0),
+      teu: Number(point.teu ?? 0),
+      fcl: Number(point.fclShipments ?? 0),
+      lcl: Number(point.lclShipments ?? 0),
+      estSpendUsd: Number(point.estSpendUsd ?? 0),
+    }))
+    .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+}
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [results, setResults] = useState<SearchCompany[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<SearchCompany | null>(null);
-  const [rawData, setRawData] = useState<any>(null);
-  const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
-  const [hasSearched, setHasSearched] = useState(false);
+function normalizeTopSuppliers(shipper: ShipperLike | null, profile?: IyCompanyProfile | null): string[] {
+  const fromProfile = Array.isArray(profile?.topSuppliers) ? profile!.topSuppliers! : [];
+  const fromShipper =
+    (Array.isArray(shipper?.top_suppliers) ? shipper?.top_suppliers : []) ??
+    (Array.isArray(shipper?.topSuppliers) ? shipper?.topSuppliers : []) ??
+    [];
 
-  const currentYear = new Date().getFullYear();
-  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  return [...new Set([...fromProfile, ...fromShipper].filter(Boolean))].slice(0, 12);
+}
 
-  useEffect(() => {
-    const loadSavedCompanies = async () => {
-      if (!user) return;
+export default function ShipperDetailModal({
+  year,
+  isOpen,
+  shipper,
+  loadingProfile = false,
+  profile,
+  routeKpis,
+  enrichment,
+  error,
+  onClose,
+  onSaveToCommandCenter,
+  saveLoading = false,
+  isSaved = false,
+}: Props) {
+  const [activeTab, setActiveTab] = useState("overview");
 
-      try {
-        const { data, error } = await supabase
-          .from("lit_saved_companies")
-          .select("company_id, lit_companies!inner(source_company_key)")
-          .eq("user_id", user.id);
+  const companyName =
+    profile?.title ||
+    profile?.name ||
+    shipper?.title ||
+    shipper?.name ||
+    "Unknown Company";
 
-        if (error) throw error;
+  const website =
+    profile?.website ||
+    shipper?.website ||
+    (profile?.domain ? `https://${profile.domain}` : null);
 
-        if (data) {
-          const keys = data
-            .map((item: any) => item.lit_companies?.source_company_key)
-            .filter(Boolean);
-          setSavedCompanyIds(keys);
-        }
-      } catch (error) {
-        console.error("[Search] Failed to load saved companies:", error);
-      }
-    };
+  const phone =
+    profile?.phoneNumber ||
+    profile?.phone ||
+    shipper?.phone ||
+    null;
 
-    loadSavedCompanies();
+  const address =
+    profile?.address ||
+    shipper?.address ||
+    [shipper?.city, shipper?.state].filter(Boolean).join(", ") ||
+    "—";
 
-    if (!user) return;
+  const countryCode =
+    profile?.countryCode ||
+    shipper?.countryCode ||
+    shipper?.country_code ||
+    null;
 
-    const channel = supabase
-      .channel("public:lit_saved_companies")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "lit_saved_companies",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          loadSavedCompanies();
-        },
-      )
-      .subscribe();
+  const shipments12m =
+    routeKpis?.shipmentsLast12m ??
+    profile?.routeKpis?.shipmentsLast12m ??
+    shipper?.shipments_12m ??
+    shipper?.totalShipments ??
+    shipper?.shipments ??
+    null;
 
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [user]);
+  const teu12m =
+    routeKpis?.teuLast12m ??
+    profile?.routeKpis?.teuLast12m ??
+    shipper?.teu_estimate ??
+    null;
 
-  useEffect(() => {
-    let cancelled = false;
+  const estSpend12m =
+    routeKpis?.estSpendUsd12m ??
+    profile?.routeKpis?.estSpendUsd12m ??
+    profile?.estSpendUsd12m ??
+    null;
 
-    const loadSnapshot = async () => {
-      if (!selectedCompany || !selectedCompany.importyeti_key) {
-        setRawData(null);
-        setNormalizedProfile(null);
-        return;
-      }
+  const topRoute =
+    routeKpis?.topRouteLast12m ??
+    profile?.routeKpis?.topRouteLast12m ??
+    null;
 
-      setLoadingSnapshot(true);
+  const recentRoute =
+    routeKpis?.mostRecentRoute ??
+    profile?.routeKpis?.mostRecentRoute ??
+    null;
 
-      try {
-        const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
+  const lastShipmentDate =
+    profile?.lastShipmentDate ||
+    shipper?.lastShipmentDate ||
+    shipper?.mostRecentShipment ||
+    shipper?.last_shipment ||
+    null;
 
-        if (!cancelled) {
-          if (result && result.snapshot) {
-            setRawData(result.raw);
-            const profile = normalizeIyCompanyProfile(result, selectedCompany.importyeti_key);
-            setNormalizedProfile(profile);
-          } else {
-            setRawData(null);
-            setNormalizedProfile(null);
-          }
-        }
-      } catch (error) {
-        console.error("[Search] Failed to load snapshot:", error);
-        if (!cancelled) {
-          setRawData(null);
-          setNormalizedProfile(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingSnapshot(false);
-        }
-      }
-    };
+  const fclShipments = getFclShipments12m(profile) ?? null;
+  const lclShipments = getLclShipments12m(profile) ?? null;
 
-    loadSnapshot();
+  const monthlyChartData = useMemo(
+    () => buildMonthlyChartData(profile, year),
+    [profile, year],
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCompany]);
+  const topRoutes = useMemo(
+    () => (profile?.routeKpis?.topRoutesLast12m || routeKpis?.topRoutesLast12m || []).slice(0, 8),
+    [profile, routeKpis],
+  );
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const recentBols = useMemo(
+    () => (Array.isArray(profile?.recentBols) ? profile!.recentBols.slice(0, 12) : []),
+    [profile],
+  );
 
-    const query = searchQuery.trim();
+  const topSuppliers = useMemo(
+    () => normalizeTopSuppliers(shipper, profile),
+    [shipper, profile],
+  );
 
-    if (!query || query.length < 2) {
-      toast({
-        title: "Search query required",
-        description: "Please enter at least 2 characters to search",
-        variant: "destructive",
-      });
-      return;
-    }
+  const dateBadge = getDateBadgeInfo(lastShipmentDate || undefined);
 
-    if (!authReady) {
-      toast({
-        title: "Authentication required",
-        description: "Please wait for authentication to complete",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setSearching(true);
-    setHasSearched(true);
-
-    try {
-      // Keep the current backend contract stable: string query, page 1, page size 25.
-      const response = await searchShippers(query, 1, 25);
-
-      if (response?.ok && Array.isArray(response?.results)) {
-        const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
-          const parsedAddress = result.address || "";
-          const cityMatch = parsedAddress.match(/^([^,]+)/);
-          const parsedDate = parseImportYetiDate(
-            result.mostRecentShipment ||
-              result.last_shipment_date ||
-              result.lastShipmentDate,
-          );
-
-          const totalShipments =
-            Number(result.totalShipments ?? result.total_shipments ?? 0) || 0;
-
-          const fclPercent =
-            typeof result.fcl_shipments_perc === "number"
-              ? result.fcl_shipments_perc
-              : typeof result.fcl_percent === "number"
-                ? result.fcl_percent
-                : undefined;
-
-          const lclPercent =
-            typeof result.lcl_shipments_perc === "number"
-              ? result.lcl_shipments_perc
-              : typeof result.lcl_percent === "number"
-                ? result.lcl_percent
-                : undefined;
-
-          return {
-            id: result.key || result.company_id || `iy-${Date.now()}-${idx}`,
-            name: result.title || result.name || result.company_name || "Unknown Company",
-            city: result.city || (cityMatch ? cityMatch[1] : "Unknown"),
-            state: result.state || "",
-            country: result.country || "United States",
-            country_code: result.countryCode || result.country_code || "US",
-            address: result.address || result.city || "",
-            website: result.website || "",
-            industry: "Import / Export",
-            shipments: totalShipments,
-            shipments_12m:
-              Number(result.latest_year_shipments ?? result.shipments_12m ?? totalShipments) || 0,
-            teu_estimate:
-              result.latest_year_teu != null
-                ? Number(result.latest_year_teu)
-                : result.totalTEU != null
-                  ? Number(result.totalTEU)
-                  : undefined,
-            mode: undefined,
-            last_shipment:
-              parsedDate || new Date().toISOString().split("T")[0],
-            status: totalShipments > 0 ? "Active" : "Inactive",
-            frequency:
-              totalShipments > 10000
-                ? "High"
-                : totalShipments > 1000
-                  ? "Medium"
-                  : "Low",
-            trend: "flat",
-            top_origins: [],
-            top_destinations: [],
-            top_suppliers: Array.isArray(result.topSuppliers) ? result.topSuppliers : [],
-            gemini_summary: `${result.title || result.company_name || "Company"} trade intelligence preview`,
-            risk_flags: [],
-            importyeti_key: result.key || (result.company_id ? `company/${result.company_id}` : undefined),
-            enrichment_status: "pending",
-            top_container_length: result.top_container_length,
-            top_container_count:
-              result.top_container_count != null ? Number(result.top_container_count) : undefined,
-            fcl_percent: fclPercent,
-            lcl_percent: lclPercent,
-            latest_year:
-              result.latest_year != null ? Number(result.latest_year) : undefined,
-            latest_year_shipments:
-              result.latest_year_shipments != null
-                ? Number(result.latest_year_shipments)
-                : undefined,
-            latest_year_teu:
-              result.latest_year_teu != null ? Number(result.latest_year_teu) : undefined,
-          };
-        });
-
-        setResults(mappedResults);
-
-        if (user?.id) {
-          supabase.from("search_queries").insert({
-            user_id: user.id,
-            query,
-            results_count: mappedResults.length,
-          }).then(() => {});
-        }
-
-        if (mappedResults.length === 0) {
-          toast({
-            title: "No results found",
-            description: `No companies found matching "${query}"`,
-          });
-        }
-      } else {
-        throw new Error(response?.error || "Search failed");
-      }
-    } catch (error: any) {
-      console.error("Search error:", error);
-      toast({
-        title: "Search failed",
-        description: error.message || "Unable to search companies. Please try again.",
-        variant: "destructive",
-      });
-      setResults([]);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleClear = () => {
-    setSearchQuery("");
-    setResults([]);
-    setHasSearched(false);
-  };
-
-  const saveToCommandCenter = async (company: SearchCompany) => {
-    if (!user) {
-      toast({
-        title: "Authentication required",
-        description: "Please log in to save companies",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const companyKey = company.importyeti_key || company.id;
-    if (!companyKey) {
-      toast({
-        title: "Save failed",
-        description: "This company is missing a valid company key.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const shipper = {
-        key: companyKey,
-        companyId: companyKey,
-        title: company.name,
-        name: company.name,
-        domain: company.website || undefined,
-        website: company.website || undefined,
-        phone: (normalizedProfile as any)?.phoneNumber || (normalizedProfile as any)?.phone || undefined,
-        address: company.address || undefined,
-        city: company.city || undefined,
-        state: company.state || undefined,
-        countryCode: company.country_code || undefined,
-        totalShipments:
-          normalizedProfile?.routeKpis?.shipmentsLast12m ??
-          company.shipments_12m ??
-          company.shipments ??
-          0,
-        teusLast12m:
-          normalizedProfile?.routeKpis?.teuLast12m ??
-          company.teu_estimate ??
-          null,
-        mostRecentShipment:
-          normalizedProfile?.lastShipmentDate ??
-          company.last_shipment ??
-          null,
-        lastShipmentDate:
-          normalizedProfile?.lastShipmentDate ??
-          company.last_shipment ??
-          null,
-        primaryRoute:
-          normalizedProfile?.routeKpis?.topRouteLast12m ??
-          null,
-        topSuppliers: company.top_suppliers ?? [],
-      };
-
-      await saveCompanyToCommandCenter({
-        shipper,
-        profile: normalizedProfile,
-        stage: "prospect",
-        source: "importyeti",
-      });
-
-      toast({
-        title: "Company saved",
-        description: `${company.name} has been saved to your Command Center`,
-      });
-
-      setSavedCompanyIds((prev) =>
-        prev.includes(companyKey) ? prev : [...prev, companyKey],
-      );
-
-      setSelectedCompany(null);
-    } catch (error: any) {
-      console.error("[saveToCommandCenter] Fatal error:", error);
-      toast({
-        title: "Save failed",
-        description: error?.message || "Could not save company. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const getModeIcon = (mode: string) => {
-    if (mode === "Ocean") return <Ship className="h-4 w-4" />;
-    if (mode === "Air") return <Plane className="h-4 w-4" />;
-    return <Package className="h-4 w-4" />;
-  };
-
-  const getFrequencyColor = (frequency: string) => {
-    if (frequency === "High") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    if (frequency === "Medium") return "bg-amber-50 text-amber-700 border-amber-200";
-    return "bg-slate-50 text-slate-700 border-slate-200";
-  };
-
-  if (!authReady) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">Initializing...</h2>
-          <p className="text-slate-600">
-            Please wait while we prepare your search experience
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const showProfileSkeleton = loadingProfile && !profile;
 
   return (
-    <div className="min-h-screen bg-slate-50 px-3 py-4 sm:px-6 sm:py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <motion.div
-          initial={{ opacity: 0, y: -16 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6"
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                Company Search
-              </h1>
-              <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                Search real import and export companies, then preview trade intelligence before saving to Command Center.
-              </p>
-            </div>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-[95vw] w-[1200px] p-0 overflow-hidden border-slate-200">
+        <div className="flex h-[85vh] flex-col bg-slate-50">
+          <div className="border-b border-slate-200 bg-white px-6 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-4">
+                <CompanyAvatar
+                  name={companyName}
+                  logoUrl={getCompanyLogoUrl(website || shipper?.website)}
+                  size="lg"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="truncate text-2xl font-semibold text-slate-900">
+                      {companyName}
+                    </h2>
+                    {countryCode ? (
+                      <span className="text-xl">{getCountryFlag(countryCode)}</span>
+                    ) : null}
+                    {isSaved ? (
+                      <Badge className="bg-blue-600 text-white hover:bg-blue-600">Saved</Badge>
+                    ) : null}
+                  </div>
 
-            <div className="flex items-center gap-2 self-start lg:self-auto">
-              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("grid")}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    viewMode === "grid"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Grid3x3 className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("list")}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    viewMode === "list"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="h-4 w-4" />
+                      <span>{address}</span>
+                    </div>
 
-              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Year
-                </span>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
-                >
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        </motion.div>
+                    {website ? (
+                      <a
+                        href={website.startsWith("http") ? website : `https://${website}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 hover:text-slate-900"
+                      >
+                        <Globe className="h-4 w-4" />
+                        <span className="truncate max-w-[260px]">
+                          {website.replace(/^https?:\/\//, "")}
+                        </span>
+                      </a>
+                    ) : null}
 
-        <motion.form
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          onSubmit={handleSearch}
-          className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
-        >
-          <div className="flex flex-col gap-3 md:flex-row">
-            <div className="relative flex-1">
-              <SearchIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              <Input
-                type="text"
-                placeholder="Search company name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-12 rounded-xl border-slate-300 pl-12 pr-12 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:h-14 sm:text-base"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              size="lg"
-              className="h-12 rounded-xl bg-indigo-600 px-6 text-sm font-semibold hover:bg-indigo-500 sm:h-14 sm:px-8 sm:text-base"
-              disabled={!authReady || searchQuery.length < 2 || searching}
-            >
-              {searching ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Searching...
-                </>
-              ) : !authReady ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Authenticating...
-                </>
-              ) : (
-                "Search"
-              )}
-            </Button>
-          </div>
-        </motion.form>
-
-        {hasSearched && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-            >
-              <p className="text-sm text-slate-600">
-                {searching ? (
-                  "Searching..."
-                ) : (
-                  <>
-                    Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
-                  </>
-                )}
-              </p>
-
-              <div className="flex items-center gap-2 md:hidden">
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("grid")}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      viewMode === "grid"
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <Grid3x3 className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("list")}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      viewMode === "list"
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <List className="h-4 w-4" />
-                  </button>
+                    {phone ? (
+                      <div className="flex items-center gap-1.5">
+                        <Phone className="h-4 w-4" />
+                        <span>{phone}</span>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </motion.div>
 
-            {viewMode !== "list" ? (
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                {results.map((company, index) => (
-                  <motion.div
-                    key={company.id}
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.04 + index * 0.03 }}
-                  >
-                    <Card className="group h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-indigo-300 hover:shadow-md">
-                      <CardHeader className="space-y-4 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-start gap-3">
-                            <CompanyAvatar
-                              name={company.name}
-                              logoUrl={getCompanyLogoUrl(company.website)}
-                              size="md"
-                              className="shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-start gap-2">
-                                <CardTitle className="truncate text-base font-semibold text-slate-900 transition group-hover:text-indigo-600">
-                                  {company.name}
-                                </CardTitle>
-                                <span className="text-lg">{getCountryFlag(company.country_code)}</span>
-                              </div>
-                              <div className="mt-1 flex items-center gap-1 text-sm text-slate-600">
-                                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">
-                                  {company.city}
-                                  {company.state ? `, ${company.state}` : ""}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={isSaved ? "secondary" : "default"}
+                  onClick={() => onSaveToCommandCenter({ shipper, profile })}
+                  disabled={saveLoading || isSaved}
+                  className={isSaved ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : ""}
+                >
+                  {saveLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : isSaved ? (
+                    <Bookmark className="mr-2 h-4 w-4 fill-current" />
+                  ) : (
+                    <BookmarkPlus className="mr-2 h-4 w-4" />
+                  )}
+                  {isSaved ? "Saved to Command Center" : "Save to Command Center"}
+                </Button>
 
-                          <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
-                            {company.frequency}
-                          </Badge>
+                <Button variant="ghost" size="icon" onClick={onClose}>
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            {error ? (
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="py-6 text-sm text-red-700">
+                  {error}
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {showProfileSkeleton ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Card key={i}>
+                      <CardContent className="p-5">
+                        <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
+                        <div className="mt-3 h-8 w-32 animate-pulse rounded bg-slate-200" />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="h-[320px] animate-pulse rounded bg-slate-200" />
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
+                <TabsList className="grid w-full grid-cols-3 max-w-[520px]">
+                  <TabsTrigger value="overview">Overview</TabsTrigger>
+                  <TabsTrigger value="routes">Routes</TabsTrigger>
+                  <TabsTrigger value="shipments">Shipments</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="overview" className="space-y-5">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <Card>
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <Package className="h-4 w-4" />
+                          Shipments 12m
                         </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="secondary" className="rounded-full">
-                            Search Preview
-                          </Badge>
-                          {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
-                            <Badge className="rounded-full bg-indigo-600 text-white hover:bg-indigo-600">
-                              Saved
-                            </Badge>
-                          )}
-                        </div>
-                      </CardHeader>
-
-                      <CardContent className="space-y-4 p-4 pt-0">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Total shipments
-                            </div>
-                            <p className="mt-1 text-lg font-semibold text-slate-900">
-                              {company.shipments.toLocaleString()}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Latest year TEU
-                            </div>
-                            <p className="mt-1 text-lg font-semibold text-slate-900">
-                              {company.teu_estimate != null ? company.teu_estimate.toLocaleString() : "—"}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Top container
-                            </div>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {company.top_container_length || "—"}
-                            </p>
-                            {company.top_container_count != null && (
-                              <p className="text-xs text-slate-500">
-                                {company.top_container_count.toLocaleString()} units
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              FCL / LCL
-                            </div>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {company.fcl_percent != null && company.lcl_percent != null
-                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
-                                : "—"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
-                          {company.mode && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-600">Mode</span>
-                              <div className="flex items-center gap-1.5 font-medium text-slate-900">
-                                {getModeIcon(company.mode)}
-                                {company.mode}
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Latest year</span>
-                            <span className="font-medium text-slate-900">
-                              {company.latest_year ?? "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Year shipments</span>
-                            <span className="font-medium text-slate-900">
-                              {company.latest_year_shipments != null
-                                ? company.latest_year_shipments.toLocaleString()
-                                : "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Last shipment</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-medium text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment)}
-                              </span>
-                              {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (!badgeInfo) return null;
-                                return (
-                                  <Badge
-                                    variant="secondary"
-                                    className={`text-xs ${
-                                      badgeInfo.color === "green"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : badgeInfo.color === "yellow"
-                                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                                          : "bg-slate-100 text-slate-600"
-                                    }`}
-                                  >
-                                    {badgeInfo.label}
-                                  </Badge>
-                                );
-                              })()}
-                            </div>
-                          </div>
-
-                          <div className="flex items-start justify-between gap-3 text-sm">
-                            <span className="text-slate-600">Suppliers</span>
-                            {company.top_suppliers.length > 0 ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 text-right">
-                                      <Users className="mt-0.5 h-3.5 w-3.5 text-slate-500" />
-                                      <span className="max-w-[160px] truncate font-medium text-slate-900">
-                                        {company.top_suppliers[0]}
-                                      </span>
-                                      {company.top_suppliers.length > 1 && (
-                                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                                          +{company.top_suppliers.length - 1}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs">
-                                    <p className="mb-1 text-xs font-semibold">Suppliers</p>
-                                    <ul className="space-y-0.5">
-                                      {company.top_suppliers.map((supplier, idx) => (
-                                        <li key={idx} className="text-xs">
-                                          • {supplier}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            ) : (
-                              <span className="text-xs text-slate-400">No data</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="h-10 flex-1 rounded-xl bg-slate-900 text-sm font-semibold hover:bg-slate-800"
-                            onClick={() => setSelectedCompany(company)}
-                          >
-                            <Eye className="mr-1.5 h-4 w-4" />
-                            View Details
-                          </Button>
-
-                          <Button
-                            variant={
-                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                ? "secondary"
-                                : "outline"
-                            }
-                            size="sm"
-                            onClick={() => saveToCommandCenter(company)}
-                            disabled={
-                              saving ||
-                              (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
-                            }
-                            className={`h-10 rounded-xl px-3 ${
-                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                                : ""
-                            }`}
-                          >
-                            {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
-                              <Bookmark className="h-4 w-4 fill-current" />
-                            ) : (
-                              <BookmarkPlus className="h-4 w-4" />
-                            )}
-                          </Button>
+                        <div className="mt-2 text-3xl font-semibold text-slate-900">
+                          {formatNumber(shipments12m)}
                         </div>
                       </CardContent>
                     </Card>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[880px]">
-                    <thead className="border-b border-slate-200 bg-slate-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Company
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Location
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Total Shipments
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Top Container
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+
+                    <Card>
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <TrendingUp className="h-4 w-4" />
+                          TEU 12m
+                        </div>
+                        <div className="mt-2 text-3xl font-semibold text-slate-900">
+                          {formatNumber(teu12m)}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <Truck className="h-4 w-4" />
                           FCL / LCL
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">
+                          {formatNumber(fclShipments)} / {formatNumber(lclShipments)}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <Calendar className="h-4 w-4" />
                           Last Shipment
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
+                        </div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">
+                          {formatUserFriendlyDate(lastShipmentDate || undefined)}
+                        </div>
+                        {dateBadge ? (
+                          <div className="mt-2">
+                            <Badge
+                              variant="secondary"
+                              className={
+                                dateBadge.color === "green"
+                                  ? "bg-green-50 text-green-700 border-green-200"
+                                  : dateBadge.color === "yellow"
+                                  ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                                  : "bg-slate-100 text-slate-600"
+                              }
+                            >
+                              {dateBadge.label}
+                            </Badge>
+                          </div>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  </div>
 
-                    <tbody className="divide-y divide-slate-100">
-                      {results.map((company, index) => (
-                        <motion.tr
-                          key={company.id}
-                          initial={{ opacity: 0, x: -14 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: index * 0.02 }}
-                          className="transition hover:bg-slate-50"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <CompanyAvatar
-                                name={company.name}
-                                logoUrl={getCompanyLogoUrl(company.website)}
-                                size="md"
-                              />
-                              <div>
-                                <div className="font-semibold text-slate-900">{company.name}</div>
-                                <div className="text-xs text-slate-500">Search Preview</div>
-                              </div>
-                            </div>
-                          </td>
+                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                    <Card className="xl:col-span-2">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <BarChart3 className="h-4 w-4" />
+                          Monthly activity
+                          {year ? <span className="text-slate-400">• {year}</span> : null}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {monthlyChartData.length > 0 ? (
+                          <div className="h-[320px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={monthlyChartData}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="month" />
+                                <YAxis />
+                                <RechartsTooltip />
+                                <Bar dataKey="shipments" radius={[6, 6, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        ) : (
+                          <div className="flex h-[320px] items-center justify-center text-sm text-slate-500">
+                            No monthly activity available for this company yet.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
 
-                          <td className="px-6 py-4">
-                            <div className="text-sm text-slate-900">
-                              {company.city}
-                              {company.state ? `, ${company.state}` : ""}
-                            </div>
-                            <div className="text-xs text-slate-500">{company.country_code}</div>
-                          </td>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Snapshot</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4 text-sm">
+                        <div>
+                          <div className="text-slate-500">Estimated spend 12m</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">
+                            {formatCurrency(estSpend12m)}
+                          </div>
+                        </div>
 
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-semibold text-slate-900">
-                              {company.shipments.toLocaleString()}
-                            </div>
-                          </td>
+                        <div>
+                          <div className="text-slate-500">Top route</div>
+                          <div className="mt-1 font-medium text-slate-900">
+                            {topRoute || "—"}
+                          </div>
+                        </div>
 
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-slate-900">
-                              {company.top_container_length || "—"}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {company.top_container_count != null
-                                ? `${company.top_container_count.toLocaleString()} units`
-                                : "No detail"}
-                            </div>
-                          </td>
+                        <div>
+                          <div className="text-slate-500">Most recent route</div>
+                          <div className="mt-1 font-medium text-slate-900">
+                            {recentRoute || "—"}
+                          </div>
+                        </div>
 
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-slate-900">
-                              {company.fcl_percent != null && company.lcl_percent != null
-                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
-                                : "—"}
-                            </div>
-                          </td>
+                        <div>
+                          <div className="text-slate-500">Suppliers</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {topSuppliers.length ? (
+                              topSuppliers.slice(0, 6).map((supplier) => (
+                                <Badge key={supplier} variant="secondary">
+                                  {supplier}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-slate-400">No supplier data</span>
+                            )}
+                          </div>
+                        </div>
 
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-1.5">
-                              <div className="text-sm text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment)}
-                              </div>
-                              {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (!badgeInfo) return null;
-                                return (
-                                  <Badge
-                                    variant="secondary"
-                                    className={`text-xs ${
-                                      badgeInfo.color === "green"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : badgeInfo.color === "yellow"
-                                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                                          : "bg-slate-100 text-slate-600"
-                                    }`}
-                                  >
-                                    {badgeInfo.label}
-                                  </Badge>
-                                );
-                              })()}
+                        {enrichment ? (
+                          <div>
+                            <div className="text-slate-500">Enrichment</div>
+                            <div className="mt-1 text-slate-900">
+                              Available
                             </div>
-                          </td>
+                          </div>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
 
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setSelectedCompany(company)}
-                                className="rounded-xl"
+                <TabsContent value="routes" className="space-y-5">
+                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                    <Card className="xl:col-span-2">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Route className="h-4 w-4" />
+                          Top routes
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {topRoutes.length ? (
+                          <div className="space-y-3">
+                            {topRoutes.map((routeItem, idx) => (
+                              <div
+                                key={`${routeItem.route}-${idx}`}
+                                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
                               >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => saveToCommandCenter(company)}
-                                disabled={
-                                  saving ||
-                                  (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
-                                }
-                                className={`rounded-xl ${
-                                  company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                    ? "text-indigo-600"
-                                    : ""
-                                }`}
-                              >
-                                {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
-                                  <Bookmark className="h-4 w-4 fill-current" />
-                                ) : (
-                                  <BookmarkPlus className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </td>
-                        </motion.tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium text-slate-900">
+                                    {routeItem.route}
+                                  </div>
+                                </div>
+                                <div className="ml-4 flex items-center gap-4 text-sm text-slate-600">
+                                  <span>{formatNumber(routeItem.shipments)} shipments</span>
+                                  <span>{formatNumber(routeItem.teu)} TEU</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-slate-500">
+                            No route data available yet.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
 
-            {!searching && results.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="rounded-2xl border border-slate-200 bg-white py-16 text-center shadow-sm"
-              >
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
-                  <SearchIcon className="h-8 w-8 text-slate-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900">No companies found</h3>
-                <p className="mt-1 text-slate-600">Try adjusting your search query</p>
-              </motion.div>
-            )}
-          </>
-        )}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Route KPIs</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4 text-sm">
+                        <div>
+                          <div className="text-slate-500">Top route 12m</div>
+                          <div className="mt-1 font-medium text-slate-900">
+                            {topRoute || "—"}
+                          </div>
+                        </div>
 
-        {!hasSearched && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="rounded-2xl border border-slate-200 bg-white py-20 text-center shadow-sm"
-          >
-            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-indigo-50">
-              <SearchIcon className="h-10 w-10 text-indigo-600" />
-            </div>
-            <h3 className="text-xl font-semibold text-slate-900">Start Your Search</h3>
-            <p className="mx-auto mt-2 max-w-md text-slate-600">
-              Enter a company name to discover trade intelligence and preview KPI insights before saving to Command Center.
-            </p>
-          </motion.div>
-        )}
+                        <div>
+                          <div className="text-slate-500">Most recent route</div>
+                          <div className="mt-1 font-medium text-slate-900">
+                            {recentRoute || "—"}
+                          </div>
+                        </div>
 
-        {selectedCompany && (
-          <ShipperDetailModal
-            year={selectedYear}
-            isOpen={true}
-            shipper={selectedCompany as any}
-            loadingProfile={loadingSnapshot}
-            profile={normalizedProfile}
-            routeKpis={normalizedProfile?.routeKpis ?? null}
-            enrichment={null}
-            error={null}
-            onClose={() => setSelectedCompany(null)}
-            onSaveToCommandCenter={() => {
-              if (selectedCompany) {
-                saveToCommandCenter(selectedCompany);
-              }
-            }}
-            saveLoading={saving}
-            isSaved={Boolean(
-              selectedCompany?.importyeti_key &&
-              savedCompanyIds.includes(selectedCompany.importyeti_key),
+                        <div>
+                          <div className="text-slate-500">Sample size</div>
+                          <div className="mt-1 font-medium text-slate-900">
+                            {formatNumber(
+                              routeKpis?.sampleSize ?? profile?.routeKpis?.sampleSize ?? null,
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="shipments" className="space-y-5">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Users className="h-4 w-4" />
+                        Recent shipment records
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {recentBols.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[760px] text-sm">
+                            <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="py-3 pr-4">Date</th>
+                                <th className="py-3 pr-4">BOL</th>
+                                <th className="py-3 pr-4">Route</th>
+                                <th className="py-3 pr-4">Origin</th>
+                                <th className="py-3 pr-4">Destination</th>
+                                <th className="py-3 pr-4">TEU</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {recentBols.map((bol, idx) => (
+                                <tr key={`${bol.bolNumber || "bol"}-${idx}`} className="border-b border-slate-100">
+                                  <td className="py-3 pr-4 text-slate-700">
+                                    {formatUserFriendlyDate(bol.date || undefined)}
+                                  </td>
+                                  <td className="py-3 pr-4 font-medium text-slate-900">
+                                    {bol.bolNumber || "—"}
+                                  </td>
+                                  <td className="py-3 pr-4 text-slate-700">
+                                    {bol.route || "—"}
+                                  </td>
+                                  <td className="py-3 pr-4 text-slate-700">
+                                    {bol.origin || "—"}
+                                  </td>
+                                  <td className="py-3 pr-4 text-slate-700">
+                                    {bol.destination || "—"}
+                                  </td>
+                                  <td className="py-3 pr-4 text-slate-700">
+                                    {formatNumber(bol.teu)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-500">
+                          No shipment rows available in the current profile payload.
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             )}
-          />
-        )}
-      </div>
-    </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
