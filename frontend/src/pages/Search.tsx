@@ -229,6 +229,7 @@ export default function SearchPage() {
 
     try {
       // Keep the current backend contract stable: string query, page 1, page size 25.
+      console.log("[SearchPage] calling searchShippers", { query, page: 1, pageSize: 25 });
       const response = await searchShippers(query, 1, 25);
 
       if (response?.ok && Array.isArray(response?.results)) {
