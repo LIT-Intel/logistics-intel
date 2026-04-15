@@ -2287,7 +2287,7 @@ export default function CompanyDetailPanel({
             />
           </div>
 
-          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
+          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                 Peak seasonality index
@@ -2366,7 +2366,7 @@ export default function CompanyDetailPanel({
             </div>
           </div>
 
-          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
+          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
@@ -2458,9 +2458,10 @@ export default function CompanyDetailPanel({
                       <RechartContainer width="100%" height="100%">
                         <BarChart
                           data={detail.topRoutes.slice(0, 6).map((route) => ({
-                            name: route.lane.length > 24 ? `${route.lane.slice(0, 24)}…` : route.lane,
-                            teu: route.teu,
-                          }))}
+  lane: route.lane,
+  name: route.lane.length > 24 ? `${route.lane.slice(0, 24)}…` : route.lane,
+  teu: route.teu,
+}))}
                           layout="vertical"
                           margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
                         >
@@ -2468,7 +2469,11 @@ export default function CompanyDetailPanel({
                           <XAxis type="number" tick={{ fontSize: 11 }} />
                           <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
                           <RechartTooltip />
-                                                    <Bar dataKey="teu" radius={[0, 6, 6, 0]}>
+                                                    <Bar
+  dataKey="teu"
+  radius={[0, 6, 6, 0]}
+  onClick={(data: any) => setSelectedLane(data?.lane || null)}
+>
                             {detail.topRoutes.slice(0, 6).map((_, index) => (
                               <Cell
                                 key={`teu-cell-${index}`}
