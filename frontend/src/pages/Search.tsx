@@ -494,7 +494,8 @@ const currentYear = new Date().getFullYear();
     try {
       // Call real ImportYeti API via backend
       console.log('[SearchPage] about to call searchShippers');
-      const response = await searchShippers(query, 1, 25);
+            const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
+            console.log('[SearchPage] searchShippers response', response);
       if (response?.ok && response?.results) {
         const mappedResults = (response.results || []).map((result: any) => {
           const parsedAddress = result.address || '';
