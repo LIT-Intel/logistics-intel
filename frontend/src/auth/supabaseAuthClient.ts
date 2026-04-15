@@ -81,7 +81,7 @@ export async function registerWithEmailPassword({
 }
 
 // Google OAuth Sign In
-export async function signInWithGoogle(redirectPath = '/app/dashboard') {
+export async function signInWithGoogle(redirectPath = "/app/dashboard") {
   if (!auth) throw new Error('Auth not configured');
 
   const dest = redirectPath.startsWith('/')
@@ -90,7 +90,9 @@ export async function signInWithGoogle(redirectPath = '/app/dashboard') {
 
   const { data, error } = await auth.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: dest },
+    options: {
+      redirectTo: `${window.location.origin}${redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}`}`,
+    },
   });
 
   if (error) throw error;
@@ -98,7 +100,7 @@ export async function signInWithGoogle(redirectPath = '/app/dashboard') {
 }
 
 // Microsoft OAuth Sign In
-export async function signInWithMicrosoft(redirectPath = '/app/dashboard') {
+export async function signInWithMicrosoft(redirectPath = "/app/dashboard") {
   if (!auth) throw new Error('Auth not configured');
 
   const dest = redirectPath.startsWith('/')
@@ -108,7 +110,7 @@ export async function signInWithMicrosoft(redirectPath = '/app/dashboard') {
   const { data, error } = await auth.auth.signInWithOAuth({
     provider: 'azure',
     options: {
-      redirectTo: dest,
+      redirectTo: `${window.location.origin}${redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}`}`,
       scopes: 'email profile openid',
     },
   });
