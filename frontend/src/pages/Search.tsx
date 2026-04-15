@@ -471,6 +471,7 @@ const currentYear = new Date().getFullYear();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[SearchPage] handleSearch fired', { searchQuery });
     const query = searchQuery.trim();
     if (!query || query.length < 2) {
       toast({
@@ -492,6 +493,7 @@ const currentYear = new Date().getFullYear();
     setHasSearched(true);
     try {
       // Call real ImportYeti API via backend
+      console.log('[SearchPage] about to call searchShippers');
       const response = await searchShippers(query, 1, 25);
       if (response?.ok && response?.results) {
         const mappedResults = (response.results || []).map((result: any) => {
