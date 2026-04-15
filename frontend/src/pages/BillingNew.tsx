@@ -90,7 +90,7 @@ function MetricCard({
 
       <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
         <div
-          className={`h-full rounded-full ${accentClass.replace('bg-', 'bg-')} transition-all duration-300`}
+          className={`h-full rounded-full ${accentClass} transition-all duration-300`}
           style={{ width: `${pct}%` }}
         />
       </div>
