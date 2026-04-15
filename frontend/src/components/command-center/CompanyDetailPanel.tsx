@@ -55,6 +55,9 @@ const CHART_COLORS = [
   "#14b8a6",
 ];
 
+const TEU_BAR_PRIMARY = "#6366f1";
+const TEU_BAR_SECONDARY = "#cbd5e1";
+
 type CompanyDetailPanelProps = {
   record: CommandCenterRecord | null;
   profile: IyCompanyProfile | null;
@@ -1816,13 +1819,25 @@ const buildDetailModel = (
     TEU: "—",
   }));
 
-  const topRouteLabel = topRoutes[0]?.lane || buildRouteLabel(rawRouteKpis?.topRouteLast12m) || "—";
+    const topRouteLabel =
+    topRoutes[0]?.lane ||
+    buildRouteLabel(rawRouteKpis?.topRouteLast12m) ||
+    buildRouteLabel(rawProfile?.topRouteLast12m) ||
+    buildRouteLabel(rawProfile?.top_route) ||
+    buildRouteLabel(rawProfile?.kpis?.top_route_12m) ||
+    "—";
+
   const recentRouteLabel =
     [...filteredShipments].sort((a, b) => {
       const da = a.date ? new Date(a.date).getTime() : 0;
       const db = b.date ? new Date(b.date).getTime() : 0;
       return db - da;
-    })[0]?.route || buildRouteLabel(rawRouteKpis?.mostRecentRoute) || "—";
+    })[0]?.route ||
+    buildRouteLabel(rawRouteKpis?.mostRecentRoute) ||
+    buildRouteLabel(rawProfile?.mostRecentRoute) ||
+    buildRouteLabel(rawProfile?.recent_route) ||
+    buildRouteLabel(rawProfile?.kpis?.recent_route) ||
+    "—";
 
   return {
     years: [],
@@ -2186,7 +2201,7 @@ export default function CompanyDetailPanel({
   );
 
   return (
-    <section className="w-full rounded-[28px] border border-slate-200 bg-slate-50 p-2 shadow-sm md:p-3 lg:p-4">
+    <section className="w-full rounded-[28px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -2445,7 +2460,14 @@ export default function CompanyDetailPanel({
                           <XAxis type="number" tick={{ fontSize: 11 }} />
                           <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
                           <RechartTooltip />
-                          <Bar dataKey="teu" radius={[0, 6, 6, 0]} />
+                                                    <Bar dataKey="teu" radius={[0, 6, 6, 0]}>
+                            {detail.topRoutes.slice(0, 6).map((_, index) => (
+                              <Cell
+                                key={`teu-cell-${index}`}
+                                fill={index === 0 ? TEU_BAR_PRIMARY : TEU_BAR_SECONDARY}
+                              />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </RechartContainer>
                     </div>
