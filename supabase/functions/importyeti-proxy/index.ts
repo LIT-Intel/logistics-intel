@@ -139,7 +139,7 @@ function estimateBolTeu(bol: any): number {
     normalizeNumber(bol?.container_teu) ??
     normalizeNumber(bol?.containers_count) ??
     normalizeNumber(bol?.container_count) ??
-    (bol?.lcl === true ? 0 : 0)
+    0
   );
 }
 
@@ -153,20 +153,6 @@ function estimateBolSpendUsd(bol: any): number {
   );
 }
 
-/**
- * Attempt to construct a human–readable shipping route from a BOL record.
- *
- * ImportYeti payloads have evolved over time, exposing origin/destination
- * information under a variety of field names and nested objects.  The
- * original implementation of `buildRouteLabel` only checked a handful
- * of fields (e.g. `origin_port`, `supplier_address_loc`, `country_code`),
- * which led to many routes being returned as `Unknown → Unknown` when
- * ImportYeti introduced new fields like `origin_city`, `destination_country`,
- * or nested `origin` / `destination` objects.  This updated
- * implementation aggressively searches for a usable origin and destination
- * across a broad set of candidate fields.  It also treats a pre‑formatted
- * shipping route string (containing an arrow or dash) as authoritative.
- */
 function buildRouteLabel(bol: any): string | null {
   const maybeString = (value: any): string | null => normalizeString(value);
 
@@ -1078,6 +1064,7 @@ async function handleCompanyBolsAction(supabase: any, companyId: string, request
 }
 
 async function handleSearchAction(
+  supabase: any,
   q: string,
   page: number = 1,
   pageSize: number = 25,
@@ -1101,12 +1088,17 @@ async function handleSearchAction(
     );
   }
 
-  try {
-    const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
-const validatedPageSize = 25;
+  const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
+  const validatedPageSize = Math.max(
+    1,
+    Math.min(25, Number.isFinite(pageSize) ? Number(pageSize) : 25),
+  );
+  const offset = (validatedPage - 1) * validatedPageSize;
+  const searchTerm = q.trim();
 
-const url = new URL(env.searchUrl);
-url.searchParams.set("name", q.trim());
+  try {
+    const url = new URL(env.searchUrl);
+    url.searchParams.set("name", searchTerm);
 
     const iyUrl = url.toString();
 
@@ -1124,12 +1116,16 @@ url.searchParams.set("name", q.trim());
           ? rawPayload
           : [];
 
-    const total =
-      rawPayload?.total ?? rawPayload?.pagination?.total ?? results.length;
+    const slicedResults = results.slice(offset, offset + validatedPageSize);
 
-    console.log("📊 Search result:", {
+    const total =
+      rawPayload?.total ??
+      rawPayload?.pagination?.total ??
+      results.length;
+
+    console.log("📊 Upstream search result:", {
       requestId,
-      results_count: results.length,
+      results_count: slicedResults.length,
       total,
       page: validatedPage,
       pageSize: validatedPageSize,
@@ -1139,17 +1135,78 @@ url.searchParams.set("name", q.trim());
 
     return jsonResponse({
       ok: true,
-      results,
+      source: "importyeti",
+      results: slicedResults,
       page: validatedPage,
       pageSize: validatedPageSize,
       total,
     });
   } catch (error: any) {
-    console.error("❌ Search handler error:", { requestId, error: error?.message || error });
-    return jsonResponse(
-      { ok: false, error: error?.message || "Search failed", code: "SEARCH_FAILED" },
-      500,
-    );
+    console.error("❌ Upstream search failed, falling back to local index:", {
+      requestId,
+      error: error?.message || error,
+    });
+
+    const likeQuery = `%${searchTerm}%`;
+
+    const { data: localRows, error: localError } = await supabase
+      .from(INDEX_TABLE)
+      .select("*")
+      .or(`company_name.ilike.${likeQuery},company_id.ilike.${likeQuery},city.ilike.${likeQuery}`)
+      .order("total_shipments", { ascending: false })
+      .range(offset, offset + validatedPageSize - 1);
+
+    if (localError) {
+      console.error("❌ Local index search failed:", {
+        requestId,
+        error: localError.message,
+      });
+
+      return jsonResponse(
+        {
+          ok: false,
+          error: error?.message || "Search failed",
+          code: "SEARCH_FAILED",
+        },
+        500,
+      );
+    }
+
+    const mappedResults = (localRows || []).map((row: any) => ({
+      key: `company/${row.company_id}`,
+      title: row.company_name,
+      name: row.company_name,
+      address: row.city,
+      country: row.country,
+      countryCode: row.country,
+      totalShipments: row.total_shipments,
+      totalTEU: row.total_teu,
+      mostRecentShipment: row.last_shipment_date,
+    }));
+
+    const { count } = await supabase
+      .from(INDEX_TABLE)
+      .select("*", { count: "exact", head: true })
+      .or(`company_name.ilike.${likeQuery},company_id.ilike.${likeQuery},city.ilike.${likeQuery}`);
+
+    console.log("📊 Local fallback search result:", {
+      requestId,
+      results_count: mappedResults.length,
+      total: count ?? mappedResults.length,
+      page: validatedPage,
+      pageSize: validatedPageSize,
+    });
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    return jsonResponse({
+      ok: true,
+      source: "local_index",
+      results: mappedResults,
+      page: validatedPage,
+      pageSize: validatedPageSize,
+      total: count ?? mappedResults.length,
+    });
   }
 }
 
@@ -1298,7 +1355,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const token = authHeader.replace("Bearer ", "").trim();
+    const token = authHeader.replace("Bearer ").trim();
     if (!token) {
       return jsonResponse(
         { ok: false, error: "Missing authorization", code: "UNAUTHORIZED" },
@@ -1338,7 +1395,7 @@ Deno.serve(async (req: Request) => {
     });
 
     if (resolvedAction === "search") {
-      return await handleSearchAction(q, page, pageSize, requestId);
+      return await handleSearchAction(supabase, q, page, pageSize, requestId);
     }
 
     if (!requestedCompanyId) {
