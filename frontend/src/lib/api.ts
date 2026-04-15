@@ -2636,6 +2636,14 @@ export function buildYearScopedProfile(
     ? profile.timeSeries.filter((point) => Number(point?.year) === Number(year))
     : [];
 
+  const scopedBols = Array.isArray(profile?.recentBols)
+  ? profile!.recentBols.filter((bol) => {
+      if (!fallbackYear) return true;
+      const dt = getBolDate(bol);
+      return dt ? dt.getFullYear() === fallbackYear : false;
+    })
+  : [];
+  
   if (!scopedSeries.length) {
     return {
       ...profile,
@@ -3868,7 +3876,13 @@ export function buildCommandCenterDetailModel(
         return dt ? dt.getFullYear() === fallbackYear : false;
       })
     : [];
-
+ 
+  const latestShipmentDate =
+    scopedBols
+      .map((bol) => getBolDate(bol))
+      .filter((value): value is Date => Boolean(value))
+      .sort((a, b) => b.getTime() - a.getTime())[0]
+      ?.toISOString() ?? null;
   const monthMap = new Map<number, CommandCenterActivityPoint>();
   for (let i = 0; i < 12; i += 1) {
     monthMap.set(i, {
