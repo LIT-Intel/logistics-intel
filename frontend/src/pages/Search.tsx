@@ -492,7 +492,7 @@ const currentYear = new Date().getFullYear();
     setHasSearched(true);
     try {
       // Call real ImportYeti API via backend
-      const response = await searchShippers({ q: query, page: 1, pageSize: 50 });
+      const response = await searchShippers(query, 1, 25);
       if (response?.ok && response?.results) {
         const mappedResults = (response.results || []).map((result: any) => {
           const parsedAddress = result.address || '';
