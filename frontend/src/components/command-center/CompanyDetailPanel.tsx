@@ -2295,7 +2295,7 @@ export default function CompanyDetailPanel({
               <p className="mb-4 text-xs text-slate-500">
                 Monthly shipment profile for actual active months in {effectiveSelectedYear ?? "the selected year"}.
               </p>
-              <div className="min-h-[320px]">
+              <div className="flex-1 min-h-[320px]">
                 <CompanyActivityChart data={detail.monthlySeries} />
               </div>
               <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -2359,7 +2359,7 @@ export default function CompanyDetailPanel({
                   </div>
                 </div>
               ) : (
-                <div className="mt-5 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                <div className="mt-5 flex flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
                   No high-confidence Freightos benchmark match found from current route intelligence.
                 </div>
               )}
