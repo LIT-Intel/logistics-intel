@@ -1103,16 +1103,10 @@ async function handleSearchAction(
 
   try {
     const validatedPage = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
-    const validatedPageSize = Math.max(
-      1,
-      Math.min(100, Number.isFinite(pageSize) ? Number(pageSize) : 25),
-    );
-    const offset = (validatedPage - 1) * validatedPageSize;
+const validatedPageSize = 25;
 
-    const url = new URL(env.searchUrl);
-    url.searchParams.set("name", q.trim());
-    url.searchParams.set("page_size", String(validatedPageSize));
-    url.searchParams.set("offset", String(offset));
+const url = new URL(env.searchUrl);
+url.searchParams.set("name", q.trim());
 
     const iyUrl = url.toString();
 
