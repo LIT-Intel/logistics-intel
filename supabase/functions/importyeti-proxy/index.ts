@@ -1099,6 +1099,8 @@ async function handleSearchAction(
   try {
     const url = new URL(env.searchUrl);
     url.searchParams.set("name", searchTerm);
+    url.searchParams.set("page_size", String(validatedPageSize));
+    url.searchParams.set("offset", String(offset));
 
     const iyUrl = url.toString();
 
