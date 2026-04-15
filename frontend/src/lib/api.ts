@@ -2645,24 +2645,35 @@ export function buildYearScopedProfile(
   
   if (!scopedSeries.length) {
     return {
-      ...profile,
-      routeKpis: {
-        shipmentsLast12m: 0,
-        teuLast12m: 0,
-        estSpendUsd12m: 0,
-        topRouteLast12m: profile.routeKpis?.topRouteLast12m ?? null,
-        mostRecentRoute: profile.routeKpis?.mostRecentRoute ?? null,
-        sampleSize: 0,
-        topRoutesLast12m: [],
-      },
-      containers: {
-        fclShipments12m: 0,
-        lclShipments12m: 0,
-      },
-      estSpendUsd12m: 0,
-      totalShipments: 0,
-      timeSeries: [],
-    };
+  ...profile,
+  estSpendUsd12m: estSpend,
+  totalShipments: shipments,
+  lastShipmentDate:
+    scopedBols
+      .map((bol) => getBolDate(bol))
+      .filter((value): value is Date => Boolean(value))
+      .sort((a, b) => b.getTime() - a.getTime())[0]
+      ?.toISOString() ??
+    mostRecentPoint?.lastShipmentDate ??
+    null,
+  routeKpis: {
+    shipmentsLast12m: shipments,
+    teuLast12m: teu,
+    estSpendUsd12m: estSpend,
+    topRouteLast12m:
+      routeHints.topRouteLast12m ?? profile.routeKpis?.topRouteLast12m ?? null,
+    mostRecentRoute:
+      routeHints.mostRecentRoute ?? profile.routeKpis?.mostRecentRoute ?? null,
+    sampleSize: scopedBols.length,
+    topRoutesLast12m: profile.routeKpis?.topRoutesLast12m ?? [],
+  },
+  containers: {
+    fclShipments12m: fcl,
+    lclShipments12m: lcl,
+  },
+  timeSeries: scopedSeries,
+  recentBols: scopedBols,
+};
   }
 
   const shipments = scopedSeries.reduce((sum, point) => sum + (Number(point?.shipments) || 0), 0);
