@@ -1408,9 +1408,17 @@ function coerceIySearchResponse(
 }
   
 export async function iyCompanyBols(
-  params: { company_id: string; limit?: number; offset?: number; start_date?: string; end_date?: string },
+  params: {
+    company_id: string;
+    limit?: number;
+    offset?: number;
+    start_date?: string;
+    end_date?: string;
+  },
   signal?: AbortSignal,
-): Promise<{ ok: boolean; data: any; rows: any[]; total: number }> {
+) {
+
+  }
   const companySlug = normalizeCompanyIdToSlug(params.company_id);
   if (!companySlug) {
     throw new Error("iyCompanyBols requires company_id");
