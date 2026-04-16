@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
-import { Building2, Mail, FileText, Search, ExternalLink } from "lucide-react";
+import { Building2, Mail, FileText, Search, ExternalLink, Users2 } from "lucide-react";
 import { getSavedCompanies, getCrmCampaigns } from "@/lib/api";
 import { getLitCampaigns } from "@/lib/litCampaigns";
 import { supabase } from "@/lib/supabase";
@@ -107,7 +107,7 @@ export default function Dashboard() {
       <div className="px-4 sm:px-6 py-6 space-y-6">
         <DashboardHeader userName={displayName} />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
           <EnhancedKpiCard
             icon={Building2}
             label="Saved Companies"
@@ -128,13 +128,12 @@ export default function Dashboard() {
             delay={0.1}
           />
           <EnhancedKpiCard
-            icon={FileText}
-            label="Open RFPs"
-            value={rfpCount}
-            trend={rfpCount > 0 ? "+2 this week" : undefined}
-            trendUp={rfpCount > 0}
-            href="/app/rfp-studio"
-            subtitle={rfpCount > 0 ? "Ready to send" : "Generate your first RFP"}
+            icon={Users2}
+            label="Saved Contacts"
+            value={contacts?.length || 0}
+            trend={contacts && contacts.length > 0 ? `${contacts.length} total` : undefined}
+            href="/app/search"
+            subtitle={contacts && contacts.length > 0 ? `${contacts.length} enriched contacts` : "Save contacts from search"}
             delay={0.2}
           />
           <EnhancedKpiCard
