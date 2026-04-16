@@ -1,53 +1,29 @@
-// This file is a modified version of the original Search.tsx page.
-// It removes the large inline modal implementation and instead
-// uses the ShipperDetailModal component provided under
-// `frontend/src/components/search/ShipperDetailModal.tsx`.  The rest of
-// the search page logic (search handling, result listing, saving to
-// Command Center, etc.) remains unchanged.  The modal is opened
-// whenever `selectedCompany` is truthy and passes along the
-// normalized profile and KPI data to the modal for display.  The
-// `onSaveToCommandCenter` callback wraps the existing save helper
-// function.
-
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Search as SearchIcon,
-  Building2,
   MapPin,
-  TrendingUp,
   Package,
   Ship,
   Plane,
-  Calendar,
-  Globe,
   X,
   BookmarkPlus,
   Bookmark,
   Eye,
-  ArrowUpRight,
   Grid3x3,
   List,
   Loader2,
   Users,
-  DollarSign,
-  ExternalLink,
-  Phone,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 import { useAuth } from "@/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
@@ -57,34 +33,25 @@ import {
   fetchCompanySnapshot,
   normalizeIyCompanyProfile,
   saveCompanyToCommandCenter,
-  type CompanySnapshot,
   type IyCompanyProfile,
 } from "@/lib/api";
-import { parseImportYetiDate, formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
+import {
+  parseImportYetiDate,
+  formatUserFriendlyDate,
+  getDateBadgeInfo,
+} from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
-// Import the new modal component.
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 
 function getCountryFlag(countryCode?: string): string {
-  if (!countryCode || countryCode.length !== 2) return '';
+  if (!countryCode || countryCode.length !== 2) return "";
   return String.fromCodePoint(
-    ...countryCode.toUpperCase().split('').map((c) => 127397 + c.charCodeAt(0)),
+    ...countryCode.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0)),
   );
 }
 
-function formatCurrency(value: number | null | undefined): string {
-  if (!value) return '$0';
-  if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
-  }
-  if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
-  }
-  return `$${value}`;
-}
-
-interface MockCompany {
+type SearchCompany = {
   id: string;
   name: string;
   city: string;
@@ -97,290 +64,129 @@ interface MockCompany {
   shipments: number;
   shipments_12m: number;
   teu_estimate?: number;
-  revenue_range?: string;
   mode?: string;
   last_shipment: string;
-  status: 'Active' | 'Inactive';
-  frequency: 'High' | 'Medium' | 'Low';
-  trend: 'up' | 'flat' | 'down';
+  status: "Active" | "Inactive";
+  frequency: "High" | "Medium" | "Low";
+  trend: "up" | "flat" | "down";
   top_origins: string[];
   top_destinations: string[];
   top_suppliers: string[];
   gemini_summary: string;
   risk_flags: string[];
   importyeti_key?: string;
-  enrichment_status?: 'pending' | 'partial' | 'complete';
-  enriched_at?: string;
-}
-
-// Mock companies for local search results when ImportYeti returns no data.
-const MOCK_COMPANIES: MockCompany[] = [
-  {
-    id: 'mock-1',
-    name: 'Acme Logistics International',
-    city: 'Los Angeles',
-    state: 'CA',
-    country: 'United States',
-    country_code: 'US',
-    address: '1234 Harbor Blvd, Los Angeles, CA 90001',
-    website: 'acmelogistics.com',
-    industry: 'Import/Export',
-    shipments: 2456,
-    shipments_12m: 1234,
-    teu_estimate: 3456,
-    revenue_range: '$2M - $5M',
-    mode: 'Ocean',
-    last_shipment: '2024-01-10',
-    status: 'Active',
-    frequency: 'High',
-    trend: 'up',
-    top_origins: ['Shanghai, China', 'Shenzhen, China', 'Hong Kong'],
-    top_destinations: ['Los Angeles', 'Long Beach', 'Oakland'],
-    top_suppliers: ['Shenzhen Electronics Co', 'Shanghai Manufacturer Ltd', 'Hong Kong Trading'],
-    gemini_summary:
-      'High-frequency ocean importer with consistent Asia-US lanes, specializing in consumer electronics and industrial equipment. Strong track record with major Chinese manufacturers.',
-    risk_flags: [],
-  },
-  {
-    id: 'mock-2',
-    name: 'Global Trade Partners LLC',
-    city: 'New York',
-    state: 'NY',
-    country: 'United States',
-    country_code: 'US',
-    address: '789 Trade Center, New York, NY 10013',
-    website: 'globaltradepartners.com',
-    industry: 'Wholesale Trade',
-    shipments: 1523,
-    shipments_12m: 856,
-    teu_estimate: 1842,
-    revenue_range: '$1M - $2M',
-    mode: 'Air',
-    last_shipment: '2024-01-08',
-    status: 'Active',
-    frequency: 'Medium',
-    trend: 'flat',
-    top_origins: ['Frankfurt, Germany', 'London, UK', 'Amsterdam, Netherlands'],
-    top_destinations: ['JFK Airport', 'Newark', 'Boston'],
-    top_suppliers: ['Deutsche Logistics GmbH', 'UK Export Partners', 'Amsterdam Trade Co'],
-    gemini_summary:
-      'Mid-size air freight operator focused on European imports. Diversified supplier base with seasonal peaks in Q4. Reliable payment history.',
-    risk_flags: ['Seasonal dependency'],
-  },
-  {
-    id: 'mock-3',
-    name: 'Pacific Shipping Company',
-    city: 'Seattle',
-    state: 'WA',
-    country: 'United States',
-    country_code: 'US',
-    address: '4567 Port Ave, Seattle, WA 98101',
-    website: 'pacificshipping.com',
-    industry: 'Maritime Transport',
-    shipments: 4892,
-    shipments_12m: 2341,
-    teu_estimate: 7234,
-    revenue_range: '$5M - $10M',
-    mode: 'Ocean',
-    last_shipment: '2024-01-12',
-    status: 'Active',
-    frequency: 'High',
-    trend: 'up',
-    top_origins: ['Busan, South Korea', 'Tokyo, Japan', 'Yokohama, Japan'],
-    top_destinations: ['Seattle', 'Tacoma', 'Portland'],
-    top_suppliers: ['Busan Auto Parts', 'Tokyo Machinery Corp', 'Korea Trading Group'],
-    gemini_summary:
-      'Major Pacific Northwest importer with strong Japan and Korea connections. Focus on automotive parts and machinery. Excellent credit rating.',
-    risk_flags: [],
-  },
-  {
-    id: 'mock-4',
-    name: 'Express Freight Services Inc',
-    city: 'Chicago',
-    state: 'IL',
-    country: 'United States',
-    country_code: 'US',
-    address: '321 Airport Rd, Chicago, IL 60666',
-    website: 'expressfreight.com',
-    industry: 'Air Freight',
-    shipments: 892,
-    shipments_12m: 567,
-    teu_estimate: 234,
-    revenue_range: '$500K - $1M',
-    mode: 'Air',
-    last_shipment: '2024-01-05',
-    status: 'Active',
-    frequency: 'Low',
-    trend: 'down',
-    top_origins: ['Mexico City, Mexico', 'Guadalajara, Mexico', 'Monterrey, Mexico'],
-    top_destinations: ['Chicago O\'Hare', 'Indianapolis', 'Milwaukee'],
-    top_suppliers: ['Mexico City Export Co', 'Guadalajara Freight', 'Monterrey Logistics'],
-    gemini_summary:
-      'Small air freight operation serving Mexican suppliers. Volume has declined 15% YoY. Single-origin dependency presents risk.',
-    risk_flags: ['Volume decline', 'Single-origin dependency'],
-  },
-  {
-    id: 'mock-5',
-    name: 'TransAtlantic Import Corp',
-    city: 'Miami',
-    state: 'FL',
-    country: 'United States',
-    country_code: 'US',
-    address: '999 Commerce Blvd, Miami, FL 33132',
-    website: 'transatlanticimport.com',
-    industry: 'Distribution',
-    shipments: 1678,
-    shipments_12m: 1089,
-    teu_estimate: 2341,
-    revenue_range: '$2M - $5M',
-    mode: 'Ocean',
-    last_shipment: '2024-01-11',
-    status: 'Active',
-    frequency: 'Medium',
-    trend: 'up',
-    top_origins: ['Hamburg, Germany', 'Rotterdam, Netherlands', 'Antwerp, Belgium'],
-    top_destinations: ['Miami', 'Port Everglades', 'Jacksonville'],
-    top_suppliers: ['Hamburg Luxury Goods', 'Rotterdam Trading', 'Antwerp Auto Parts'],
-    gemini_summary:
-      'Established European importer with focus on luxury goods and automotive parts. Growing 20% YoY with strong fundamentals.',
-    risk_flags: [],
-  },
-  {
-    id: 'mock-6',
-    name: 'West Coast Distribution Hub',
-    city: 'San Francisco',
-    state: 'CA',
-    country: 'United States',
-    country_code: 'US',
-    address: '555 Bay Street, San Francisco, CA 94102',
-    website: 'westcoasthub.com',
-    industry: 'Warehousing',
-    shipments: 3234,
-    shipments_12m: 1876,
-    teu_estimate: 4567,
-    revenue_range: '$5M - $10M',
-    mode: 'Ocean',
-    last_shipment: '2024-01-09',
-    status: 'Active',
-    frequency: 'High',
-    trend: 'up',
-    top_origins: ['Shanghai, China', 'Ningbo, China', 'Qingdao, China'],
-    top_destinations: ['Oakland', 'San Francisco', 'Richmond'],
-    top_suppliers: ['Shanghai Industrial Co', 'Ningbo Manufacturers', 'Qingdao Trading Group', 'Zhejiang Export Corp'],
-    gemini_summary:
-      'Large-scale distribution center handling diverse product categories. Strong relationships with multiple Chinese manufacturers. Expansion planned for 2024.',
-    risk_flags: [],
-  },
-];
+  enrichment_status?: "pending" | "partial" | "complete";
+  top_container_length?: string;
+  top_container_count?: number;
+  fcl_percent?: number;
+  lcl_percent?: number;
+  latest_year?: number;
+  latest_year_shipments?: number;
+  latest_year_teu?: number;
+};
 
 export default function SearchPage() {
-  const { user, authReady, access } = useAuth();
-  console.log("ACCESS:", access);
+  const { user, authReady } = useAuth();
   const { toast } = useToast();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [results, setResults] = useState<MockCompany[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<MockCompany | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<SearchCompany[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<SearchCompany | null>(null);
   const [rawData, setRawData] = useState<any>(null);
   const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-const currentYear = new Date().getFullYear();
+
+  const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  const years = useMemo(
+    () => Array.from({ length: 5 }, (_, i) => currentYear - i),
+    [currentYear],
+  );
 
   useEffect(() => {
     const loadSavedCompanies = async () => {
       if (!user) return;
 
-      console.log('[Search] Loading saved companies for user:', user.id);
       try {
         const { data, error } = await supabase
-          .from('lit_saved_companies')
-          .select('company_id, lit_companies!inner(source_company_key)')
-          .eq('user_id', user.id);
+          .from("lit_saved_companies")
+          .select("company_id, lit_companies!inner(source_company_key)")
+          .eq("user_id", user.id);
+
         if (error) throw error;
+
         if (data) {
           const keys = data
             .map((item: any) => item.lit_companies?.source_company_key)
             .filter(Boolean);
-          console.log('[Search] Loaded saved company keys:', keys);
+
           setSavedCompanyIds(keys);
         }
       } catch (error) {
-        console.error('[Search] Failed to load saved companies:', error);
+        console.error("[Search] Failed to load saved companies:", error);
       }
     };
+
     loadSavedCompanies();
+
     if (!user) return;
-    console.log('[Search] Setting up real-time listener for saved companies');
+
     const channel = supabase
-      .channel('public:lit_saved_companies')
+      .channel("public:lit_saved_companies")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'lit_saved_companies',
+          event: "*",
+          schema: "public",
+          table: "lit_saved_companies",
           filter: `user_id=eq.${user.id}`,
         },
-        (payload) => {
-          console.log('[Search] Saved companies real-time update:', payload);
-          if (
-            payload.eventType === 'INSERT' ||
-            payload.eventType === 'UPDATE' ||
-            payload.eventType === 'DELETE'
-          ) {
-            loadSavedCompanies();
-          }
+        () => {
+          loadSavedCompanies();
         },
       )
-      .subscribe((status) => {
-        console.log('[Search] Subscription status:', status);
-      });
+      .subscribe();
+
     return () => {
-      console.log('[Search] Cleaning up real-time listener');
       channel.unsubscribe();
     };
   }, [user]);
 
   useEffect(() => {
     let cancelled = false;
+
     const loadSnapshot = async () => {
       if (!selectedCompany || !selectedCompany.importyeti_key) {
         setRawData(null);
         setNormalizedProfile(null);
         return;
       }
+
       setLoadingSnapshot(true);
-      console.log('[Search] Loading snapshot for:', selectedCompany.importyeti_key);
+
       try {
         const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
+
         if (!cancelled) {
           if (result && result.snapshot) {
-            console.log('[Search] Snapshot received - normalizing for UI');
             setRawData(result.raw);
-            const profile = normalizeIyCompanyProfile(result, selectedCompany.importyeti_key);
+            const profile = normalizeIyCompanyProfile(
+              result,
+              selectedCompany.importyeti_key,
+            );
             setNormalizedProfile(profile);
-            console.log('[Search] Normalized profile:', {
-              hasRouteKpis: !!profile.routeKpis,
-              hasContainers: !!profile.containers,
-              timeSeriesLength: profile.timeSeries?.length,
-              shipmentsLast12m: profile.routeKpis?.shipmentsLast12m,
-              fclShipments: profile.containers?.fclShipments12m,
-              lclShipments: profile.containers?.lclShipments12m,
-            });
           } else {
-            console.warn('[Search] No snapshot data returned');
             setRawData(null);
             setNormalizedProfile(null);
           }
         }
       } catch (error) {
-        console.error('[Search] Failed to load snapshot:', error);
+        console.error("[Search] Failed to load snapshot:", error);
         if (!cancelled) {
           setRawData(null);
           setNormalizedProfile(null);
@@ -391,196 +197,170 @@ const currentYear = new Date().getFullYear();
         }
       }
     };
+
     loadSnapshot();
+
     return () => {
       cancelled = true;
     };
   }, [selectedCompany]);
 
-  const computeKPIsFromRaw = () => {
-    if (!rawData?.snapshot) {
-      return {
-        totalTEU: 0,
-        fclCount: 0,
-        lclCount: 0,
-        estSpend: 0,
-        totalShipments: 0,
-        lastShipmentDate: null,
-      };
-    }
-    const snapshot = rawData.snapshot;
-    return {
-      totalTEU: snapshot.total_teu || 0,
-      fclCount: snapshot.fcl_count || 0,
-      lclCount: snapshot.lcl_count || 0,
-      estSpend: snapshot.est_spend || 0,
-      totalShipments: snapshot.total_shipments || 0,
-      lastShipmentDate: snapshot.last_shipment_date || null,
-    };
-  };
-
-  const computeMonthlyVolumes = () => {
-    if (!rawData) {
-      console.warn('[computeMonthlyVolumes] No rawData available');
-      return {};
-    }
-    const snapshot = rawData.snapshot;
-    const data = rawData.data || {};
-    if (snapshot?.monthly_volumes && Object.keys(snapshot.monthly_volumes).length > 0) {
-      return snapshot.monthly_volumes;
-    }
-    if (!Array.isArray(data.recent_bols) || data.recent_bols.length === 0) {
-      console.warn('[computeMonthlyVolumes] No BOL data available for aggregation');
-      return {};
-    }
-    const computed: Record<string, { fcl: number; lcl: number }> = {};
-    (data.recent_bols || []).forEach((bol: any) => {
-      if (!bol.date_formatted) return;
-      const parts = bol.date_formatted.split('/');
-      if (parts.length !== 3) return;
-      const [day, month, year] = parts;
-      const monthKey = `${year}-${month.padStart(2, '0')}`;
-      if (!computed[monthKey]) {
-        computed[monthKey] = { fcl: 0, lcl: 0 };
-      }
-      if (bol.lcl === true) {
-        computed[monthKey].lcl++;
-      } else if (bol.lcl === false) {
-        computed[monthKey].fcl++;
-      }
-    });
-    if (Object.keys(computed).length > 0) {
-      console.log('[computeMonthlyVolumes] Computed from BOL data:', Object.keys(computed).length, 'months');
-      return computed;
-    }
-    console.warn('[computeMonthlyVolumes] No monthly_volumes data available');
-    return {};
-  };
-
-  const computeTradeRoutes = () => {
-    if (!rawData?.snapshot?.top_ports) {
-      return { origins: [], destinations: [] };
-    }
-    const topPorts = rawData.snapshot.top_ports || [];
-    return { origins: topPorts.slice(0, 5), destinations: [] };
-  };
-
-  const kpis = computeKPIsFromRaw();
-  const monthlyVolumes = computeMonthlyVolumes();
-  const tradeRoutes = computeTradeRoutes();
-
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[SearchPage] handleSearch fired', { searchQuery });
+
     const query = searchQuery.trim();
+
     if (!query || query.length < 2) {
       toast({
-        title: 'Search query required',
-        description: 'Please enter at least 2 characters to search',
-        variant: 'destructive',
+        title: "Search query required",
+        description: "Please enter at least 2 characters to search",
+        variant: "destructive",
       });
       return;
     }
+
     if (!authReady) {
       toast({
-        title: 'Authentication required',
-        description: 'Please wait for authentication to complete',
-        variant: 'destructive',
+        title: "Authentication required",
+        description: "Please wait for authentication to complete",
+        variant: "destructive",
       });
       return;
     }
+
     setSearching(true);
     setHasSearched(true);
+
     try {
-      // Call real ImportYeti API via backend
-      console.log('[SearchPage] about to call searchShippers');
-            const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
-            console.log('[SearchPage] searchShippers response', response);
-      if (response?.ok && response?.results) {
-        const mappedResults = (response.results || []).map((result: any) => {
-          const parsedAddress = result.address || '';
+      const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
+
+      if (response?.ok && Array.isArray(response?.results)) {
+        const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
+          const parsedAddress = result.address || "";
           const cityMatch = parsedAddress.match(/^([^,]+)/);
-          const parsedDate = parseImportYetiDate(result.mostRecentShipment);
+          const parsedDate = parseImportYetiDate(
+            result.mostRecentShipment ||
+              result.last_shipment_date ||
+              result.lastShipmentDate,
+          );
+
+          const totalShipments =
+            Number(result.totalShipments ?? result.total_shipments ?? 0) || 0;
+
+          const fclPercent =
+            typeof result.fcl_shipments_perc === "number"
+              ? result.fcl_shipments_perc
+              : typeof result.fcl_percent === "number"
+                ? result.fcl_percent
+                : undefined;
+
+          const lclPercent =
+            typeof result.lcl_shipments_perc === "number"
+              ? result.lcl_shipments_perc
+              : typeof result.lcl_percent === "number"
+                ? result.lcl_percent
+                : undefined;
+
           return {
-            id: result.key || `iy-${Date.now()}-${Math.random()}`,
-            name: result.title || 'Unknown Company',
-            city: result.city || (cityMatch ? cityMatch[1] : 'Unknown'),
-            state: result.state || '',
-            country: result.country || 'United States',
-            country_code: result.countryCode || 'US',
-            address: result.address || '',
-            website: result.website || '',
-            industry: 'Import/Export',
-            shipments: result.totalShipments || 0,
-            shipments_12m: result.totalShipments || 0,
-            teu_estimate: undefined,
-            revenue_range: undefined,
+            id: result.key || result.company_id || `iy-${Date.now()}-${idx}`,
+            name: result.title || result.name || result.company_name || "Unknown Company",
+            city: result.city || (cityMatch ? cityMatch[1] : "Unknown"),
+            state: result.state || "",
+            country: result.country || "United States",
+            country_code: result.countryCode || result.country_code || "US",
+            address: result.address || result.city || "",
+            website: result.website || "",
+            industry: "Import / Export",
+            shipments: totalShipments,
+            shipments_12m:
+              Number(result.latest_year_shipments ?? result.shipments_12m ?? totalShipments) || 0,
+            teu_estimate:
+              result.latest_year_teu != null
+                ? Number(result.latest_year_teu)
+                : result.totalTEU != null
+                  ? Number(result.totalTEU)
+                  : undefined,
             mode: undefined,
-            last_shipment: parsedDate || new Date().toISOString().split('T')[0],
-            status: (result.totalShipments || 0) > 0 ? 'Active' : 'Inactive',
+            last_shipment:
+              parsedDate || new Date().toISOString().split("T")[0],
+            status: totalShipments > 0 ? "Active" : "Inactive",
             frequency:
-              (result.totalShipments || 0) > 1000
-                ? 'High'
-                : (result.totalShipments || 0) > 100
-                ? 'Medium'
-                : 'Low',
-            trend: 'flat',
+              totalShipments > 10000
+                ? "High"
+                : totalShipments > 1000
+                  ? "Medium"
+                  : "Low",
+            trend: "flat",
             top_origins: [],
             top_destinations: [],
             top_suppliers: Array.isArray(result.topSuppliers) ? result.topSuppliers : [],
-            gemini_summary: `${result.title || 'Company'} - Import/Export business`,
+            gemini_summary: `${result.title || result.company_name || "Company"} trade intelligence preview`,
             risk_flags: [],
-            importyeti_key: result.key,
-            enrichment_status: 'pending',
-          } as MockCompany;
+            importyeti_key: result.key || (result.company_id ? `company/${result.company_id}` : undefined),
+            enrichment_status: "pending",
+            top_container_length: result.top_container_length,
+            top_container_count:
+              result.top_container_count != null ? Number(result.top_container_count) : undefined,
+            fcl_percent: fclPercent,
+            lcl_percent: lclPercent,
+            latest_year:
+              result.latest_year != null ? Number(result.latest_year) : undefined,
+            latest_year_shipments:
+              result.latest_year_shipments != null
+                ? Number(result.latest_year_shipments)
+                : undefined,
+            latest_year_teu:
+              result.latest_year_teu != null ? Number(result.latest_year_teu) : undefined,
+          };
         });
+
         setResults(mappedResults);
-        // Track search usage in search_queries table
+
         if (user?.id) {
-          supabase.from('search_queries').insert({
-            user_id: user.id,
-            query: query.trim(),
-            results_count: mappedResults.length,
-          }).then(() => {});
+          supabase
+            .from("search_queries")
+            .insert({
+              user_id: user.id,
+              query,
+              results_count: mappedResults.length,
+            })
+            .then(() => {});
         }
+
         if (mappedResults.length === 0) {
           toast({
-            title: 'No results found',
+            title: "No results found",
             description: `No companies found matching "${query}"`,
           });
         }
       } else {
-        throw new Error('Search failed');
+        throw new Error(response?.meta ? "Search returned invalid payload" : "Search failed");
       }
     } catch (error: any) {
-      console.error('Search error:', error);
+      console.error("Search error:", error);
       toast({
-        title: 'Search failed',
-        description: error.message || 'Unable to search companies. Please try again.',
-        variant: 'destructive',
+        title: "Search failed",
+        description: error.message || "Unable to search companies. Please try again.",
+        variant: "destructive",
       });
-      if (setResults) {
-        setResults([]);
-      }
+      setResults([]);
     } finally {
       setSearching(false);
     }
   };
 
   const handleClear = () => {
-    setSearchQuery('');
+    setSearchQuery("");
     setResults([]);
     setHasSearched(false);
   };
 
-  const saveToCommandCenter = async (company: MockCompany) => {
-    console.log('[saveToCommandCenter] Starting save for:', company.name, 'Key:', company.importyeti_key);
+  const saveToCommandCenter = async (company: SearchCompany) => {
     if (!user) {
-      console.warn('[saveToCommandCenter] No authenticated user');
       toast({
-        title: 'Authentication required',
-        description: 'Please log in to save companies',
-        variant: 'destructive',
+        title: "Authentication required",
+        description: "Please log in to save companies",
+        variant: "destructive",
       });
       return;
     }
@@ -588,14 +368,15 @@ const currentYear = new Date().getFullYear();
     const companyKey = company.importyeti_key || company.id;
     if (!companyKey) {
       toast({
-        title: 'Save failed',
-        description: 'This company is missing a valid company key.',
-        variant: 'destructive',
+        title: "Save failed",
+        description: "This company is missing a valid company key.",
+        variant: "destructive",
       });
       return;
     }
 
     setSaving(true);
+
     try {
       const shipper = {
         key: companyKey,
@@ -632,40 +413,29 @@ const currentYear = new Date().getFullYear();
         topSuppliers: company.top_suppliers ?? [],
       };
 
-      console.log('[saveToCommandCenter] Sending normalized save payload:', {
-        company_name: shipper.title,
-        company_key: shipper.key,
-      });
-
-      const responseData = await saveCompanyToCommandCenter({
+      await saveCompanyToCommandCenter({
         shipper,
         profile: normalizedProfile,
-        stage: 'prospect',
-        source: 'importyeti',
+        stage: "prospect",
+        source: "importyeti",
       });
 
-      console.log('[saveToCommandCenter] Save successful:', responseData);
-
       toast({
-        title: 'Company saved',
+        title: "Company saved",
         description: `${company.name} has been saved to your Command Center`,
       });
 
-      setSavedCompanyIds((prev) => (
-        prev.includes(companyKey) ? prev : [...prev, companyKey]
-      ));
+      setSavedCompanyIds((prev) =>
+        prev.includes(companyKey) ? prev : [...prev, companyKey],
+      );
 
       setSelectedCompany(null);
     } catch (error: any) {
-      console.error('[saveToCommandCenter] Fatal error:', {
-        message: error?.message,
-        stack: error?.stack,
-        company: company.name,
-      });
+      console.error("[saveToCommandCenter] Fatal error:", error);
       toast({
-        title: 'Save failed',
-        description: error?.message || 'Could not save company. Please try again.',
-        variant: 'destructive',
+        title: "Save failed",
+        description: error?.message || "Could not save company. Please try again.",
+        variant: "destructive",
       });
     } finally {
       setSaving(false);
@@ -673,98 +443,144 @@ const currentYear = new Date().getFullYear();
   };
 
   const getModeIcon = (mode: string) => {
-    if (mode === 'Ocean') return <Ship className="h-4 w-4" />;
-    if (mode === 'Air') return <Plane className="h-4 w-4" />;
+    if (mode === "Ocean") return <Ship className="h-4 w-4" />;
+    if (mode === "Air") return <Plane className="h-4 w-4" />;
     return <Package className="h-4 w-4" />;
   };
 
-  const getTrendColor = (trend: string) => {
-    if (trend === 'up') return 'text-green-600';
-    if (trend === 'down') return 'text-red-600';
-    return 'text-slate-600';
-  };
-
   const getFrequencyColor = (frequency: string) => {
-    if (frequency === 'High') return 'bg-green-50 text-green-700 border-green-200';
-    if (frequency === 'Medium') return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-    return 'bg-slate-50 text-slate-700 border-slate-200';
+    if (frequency === "High") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (frequency === "Medium") return "bg-amber-50 text-amber-700 border-amber-200";
+    return "bg-slate-50 text-slate-700 border-slate-200";
   };
 
-  // Block rendering until auth is ready
   if (!authReady) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
+          <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-slate-900 mb-2">Initializing...</h2>
-          <p className="text-slate-600">Please wait while we prepare your search experience</p>
+          <p className="text-slate-600">
+            Please wait while we prepare your search experience
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 p-3 sm:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-7xl space-y-6">
         <motion.div
-          initial={{ opacity: 0, y: -20 }}
+          initial={{ opacity: 0, y: -16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between"
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6"
         >
-          <div>
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-slate-900">Company Search</h1>
-            <p className="text-xs sm:text-sm md:text-base text-slate-600 mt-1">
-              Search real import/export companies via ImportYeti
-            </p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                Company Search
+              </h1>
+              <p className="mt-1 text-sm text-slate-600 sm:text-base">
+                Search real import and export companies, then preview trade intelligence before saving to Command Center.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 self-start lg:self-auto">
+              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    viewMode === "grid"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Grid3x3 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    viewMode === "list"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Year
+                </span>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </motion.div>
 
         <motion.form
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.05 }}
           onSubmit={handleSearch}
-          className="flex flex-col md:flex-row gap-2 md:gap-3"
+          className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
         >
-          <div className="flex-1 relative">
-            <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-            <Input
-              type="text"
-              placeholder="Search company name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 pr-12 h-12 md:h-14 text-sm md:text-base border-slate-300 focus:border-blue-500 focus:ring-blue-500"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={handleClear}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            )}
+          <div className="flex flex-col gap-3 md:flex-row">
+            <div className="relative flex-1">
+              <SearchIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search company name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-12 rounded-xl border-slate-300 pl-12 pr-12 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:h-14 sm:text-base"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              size="lg"
+              className="h-12 rounded-xl bg-indigo-600 px-6 text-sm font-semibold hover:bg-indigo-500 sm:h-14 sm:px-8 sm:text-base"
+              disabled={!authReady || searchQuery.length < 2 || searching}
+            >
+              {searching ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Searching...
+                </>
+              ) : !authReady ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Authenticating...
+                </>
+              ) : (
+                "Search"
+              )}
+            </Button>
           </div>
-          <Button
-            type="submit"
-            size="lg"
-            className="w-full md:w-auto px-6 md:px-8 h-12 md:h-14 bg-blue-600 hover:bg-blue-700 text-sm md:text-base"
-            disabled={!authReady || searchQuery.length < 2 || searching}
-          >
-            {searching ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Searching...
-              </>
-            ) : !authReady ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Authenticating...
-              </>
-            ) : (
-              'Search'
-            )}
-          </Button>
         </motion.form>
 
         {hasSearched && (
@@ -772,179 +588,219 @@ const currentYear = new Date().getFullYear();
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-2"
+              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
             >
-              <p className="text-xs sm:text-sm text-slate-600">
-                {searching ? 'Searching...' : (
+              <p className="text-sm text-slate-600">
+                {searching ? (
+                  "Searching..."
+                ) : (
                   <>
                     Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
                   </>
                 )}
               </p>
-              <div className="hidden md:flex items-center gap-4">
-                {/* Year filter */}
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-slate-500">Year:</span>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="border border-slate-200 rounded px-2 py-1 text-xs bg-white focus:outline-none"
-                  >
-                    {years.map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-                {/* View mode toggle */}
-                <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">View:</span>
-                <div className="flex rounded-lg border border-slate-200 bg-white p-1">
+
+              <div className="flex items-center gap-2 md:hidden">
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
                   <button
                     type="button"
-                    onClick={() => setViewMode('grid')}
-                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                      viewMode === 'grid'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-600 hover:text-slate-900'
+                    onClick={() => setViewMode("grid")}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      viewMode === "grid"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     <Grid3x3 className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => setViewMode('list')}
-                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                      viewMode === 'list'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-600 hover:text-slate-900'
+                    onClick={() => setViewMode("list")}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      viewMode === "list"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     <List className="h-4 w-4" />
                   </button>
                 </div>
               </div>
-              </div>
             </motion.div>
 
-            {viewMode !== 'list' ? (
-              <div className="grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {viewMode !== "list" ? (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
                 {results.map((company, index) => (
                   <motion.div
                     key={company.id}
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 18 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 + index * 0.05 }}
+                    transition={{ delay: 0.04 + index * 0.03 }}
                   >
-                    <Card className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-300 transition-all duration-300 overflow-hidden h-full">
-                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                      {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
-                        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div className="flex items-center gap-1.5 bg-blue-600 text-white px-2.5 py-1.5 rounded-lg shadow-md border border-blue-500">
-                                  <Bookmark className="h-4 w-4 fill-current" />
-                                  <span className="text-xs font-semibold">Saved</span>
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="text-xs">This company is saved to your Command Center</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      )}
-                      <CardHeader className="pb-3 md:pb-4 p-3 md:p-4">
-                        <div className="flex items-start justify-between gap-2 md:gap-3">
-                          <div className="flex items-start gap-2 md:gap-3 flex-1 min-w-0">
+                    <Card className="group h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-indigo-300 hover:shadow-md">
+                      <CardHeader className="space-y-4 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-start gap-3">
                             <CompanyAvatar
                               name={company.name}
                               logoUrl={getCompanyLogoUrl(company.website)}
                               size="md"
-                              className="flex-shrink-0"
+                              className="shrink-0"
                             />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start gap-1">
-                                <CardTitle className="text-sm md:text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
+                            <div className="min-w-0">
+                              <div className="flex items-start gap-2">
+                                <CardTitle className="truncate text-base font-semibold text-slate-900 transition group-hover:text-indigo-600">
                                   {company.name}
                                 </CardTitle>
-                                <span className="text-lg md:text-xl">{getCountryFlag(company.country_code)}</span>
+                                <span className="text-lg">{getCountryFlag(company.country_code)}</span>
                               </div>
-                              <div className="flex items-center gap-1 text-xs md:text-sm text-slate-600 mt-1">
-                                <MapPin className="h-3 w-3 flex-shrink-0" />
+                              <div className="mt-1 flex items-center gap-1 text-sm text-slate-600">
+                                <MapPin className="h-3.5 w-3.5 shrink-0" />
                                 <span className="truncate">
-                                  {company.city}, {company.state}
+                                  {company.city}
+                                  {company.state ? `, ${company.state}` : ""}
                                 </span>
                               </div>
                             </div>
                           </div>
-                          <Badge variant="outline" className={`${getFrequencyColor(company.frequency)} text-xs`}>
+
+                          <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
                             {company.frequency}
                           </Badge>
                         </div>
-                        <Badge variant="secondary" className="mt-2 w-fit text-xs">
-                          {company.industry}
-                        </Badge>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary" className="rounded-full">
+                            Search Preview
+                          </Badge>
+                          {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
+                            <Badge className="rounded-full bg-indigo-600 text-white hover:bg-indigo-600">
+                              Saved
+                            </Badge>
+                          )}
+                        </div>
                       </CardHeader>
-                      <CardContent className="space-y-3 md:space-y-4 p-3 md:p-4">
-                        <div className="grid grid-cols-2 gap-3 md:gap-4">
-                          <div>
-                            <div className="flex items-center gap-1 text-xs text-slate-500 mb-1">
-                              <Package className="h-3 w-3" />
-                              <span>Shipments (12m)</span>
+
+                      <CardContent className="space-y-4 p-4 pt-0">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Total shipments
                             </div>
-                            <p className="text-lg md:text-xl font-bold text-slate-900">
-                              {company.shipments_12m.toLocaleString()}
+                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                              {company.shipments.toLocaleString()}
                             </p>
                           </div>
-                          <div>
-                            <div className="flex items-center gap-1 text-xs text-slate-500 mb-1">
-                              <TrendingUp className="h-3 w-3" />
-                              <span>Est. TEU</span>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Latest year TEU
                             </div>
-                            {company.teu_estimate !== undefined ? (
-                              <p className="text-lg md:text-xl font-bold text-slate-900">
-                                {company.teu_estimate === 0 ? '< 100' : company.teu_estimate.toLocaleString()}
+                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                              {company.teu_estimate != null ? company.teu_estimate.toLocaleString() : "—"}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Top container
+                            </div>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {company.top_container_length || "—"}
+                            </p>
+                            {company.top_container_count != null && (
+                              <p className="text-xs text-slate-500">
+                                {company.top_container_count.toLocaleString()} units
                               </p>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <div className="h-6 w-20 bg-slate-200 animate-pulse rounded"></div>
-                                <span className="text-xs text-slate-400">Loading</span>
-                              </div>
                             )}
                           </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              FCL / LCL
+                            </div>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {company.fcl_percent != null && company.lcl_percent != null
+                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
+                                : "—"}
+                            </p>
+                          </div>
                         </div>
-                        <div className="pt-2 md:pt-3 border-t border-slate-100 space-y-2">
+
+                        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
                           {company.mode && (
-                            <div className="flex items-center justify-between text-xs md:text-sm">
+                            <div className="flex items-center justify-between text-sm">
                               <span className="text-slate-600">Mode</span>
-                              <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                              <div className="flex items-center gap-1.5 font-medium text-slate-900">
                                 {getModeIcon(company.mode)}
                                 {company.mode}
                               </div>
                             </div>
                           )}
-                          <div className="flex items-center justify-between text-xs md:text-sm">
+
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Latest year</span>
+                            <span className="font-medium text-slate-900">
+                              {company.latest_year ?? "—"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Year shipments</span>
+                            <span className="font-medium text-slate-900">
+                              {company.latest_year_shipments != null
+                                ? company.latest_year_shipments.toLocaleString()
+                                : "—"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Last shipment</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium text-slate-900">
+                                {formatUserFriendlyDate(company.last_shipment)}
+                              </span>
+                              {(() => {
+                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                                if (!badgeInfo) return null;
+                                return (
+                                  <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${
+                                      badgeInfo.color === "green"
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                        : badgeInfo.color === "yellow"
+                                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                                          : "bg-slate-100 text-slate-600"
+                                    }`}
+                                  >
+                                    {badgeInfo.label}
+                                  </Badge>
+                                );
+                              })()}
+                            </div>
+                          </div>
+
+                          <div className="flex items-start justify-between gap-3 text-sm">
                             <span className="text-slate-600">Suppliers</span>
                             {company.top_suppliers.length > 0 ? (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1">
-                                      <Users className="h-3 w-3 text-slate-500" />
-                                      <span className="font-semibold text-slate-900 text-xs truncate">
-                                        {company.top_suppliers.slice(0, 1).map((s) => s.split(' ')[0]).join(', ')}
+                                    <div className="flex items-center gap-1 text-right">
+                                      <Users className="mt-0.5 h-3.5 w-3.5 text-slate-500" />
+                                      <span className="max-w-[160px] truncate font-medium text-slate-900">
+                                        {company.top_suppliers[0]}
                                       </span>
                                       {company.top_suppliers.length > 1 && (
-                                        <Badge variant="secondary" className="text-xs py-0 px-1">
+                                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                                           +{company.top_suppliers.length - 1}
                                         </Badge>
                                       )}
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent className="max-w-xs">
-                                    <p className="font-semibold mb-1 text-xs">Suppliers:</p>
+                                    <p className="mb-1 text-xs font-semibold">Suppliers</p>
                                     <ul className="space-y-0.5">
                                       {company.top_suppliers.map((supplier, idx) => (
                                         <li key={idx} className="text-xs">
@@ -959,54 +815,35 @@ const currentYear = new Date().getFullYear();
                               <span className="text-xs text-slate-400">No data</span>
                             )}
                           </div>
-                          <div className="flex items-center justify-between text-xs md:text-sm">
-                            <span className="text-slate-600">Last Shipment</span>
-                            <div className="flex items-center gap-1">
-                              <span className="font-semibold text-slate-900 text-xs">
-                                {formatUserFriendlyDate(company.last_shipment)}
-                              </span>
-                              {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (badgeInfo) {
-                                  return (
-                                    <Badge
-                                      variant="secondary"
-                                      className={`text-xs py-0 px-1.5 ${
-                                        badgeInfo.color === 'green'
-                                          ? 'bg-green-50 text-green-700 border-green-200'
-                                          : badgeInfo.color === 'yellow'
-                                          ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                          : 'bg-slate-100 text-slate-600'
-                                      }`}
-                                    >
-                                      {badgeInfo.label}
-                                    </Badge>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </div>
-                          </div>
                         </div>
-                        <div className="pt-3 md:pt-4 flex gap-2">
+
+                        <div className="flex gap-2 pt-1">
                           <Button
                             variant="default"
                             size="sm"
-                            className="flex-1 bg-slate-900 hover:bg-slate-800 text-xs md:text-sm h-9 md:h-10"
+                            className="h-10 flex-1 rounded-xl bg-slate-900 text-sm font-semibold hover:bg-slate-800"
                             onClick={() => setSelectedCompany(company)}
                           >
-                            <Eye className="h-3 md:h-4 w-3 md:w-4 mr-1" />
-                            Details
+                            <Eye className="mr-1.5 h-4 w-4" />
+                            View Details
                           </Button>
+
                           <Button
-                            variant={company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? 'secondary' : 'outline'}
+                            variant={
+                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
+                                ? "secondary"
+                                : "outline"
+                            }
                             size="sm"
                             onClick={() => saveToCommandCenter(company)}
-                            disabled={saving || (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))}
-                            className={`h-9 md:h-10 px-2 md:px-3 ${
+                            disabled={
+                              saving ||
+                              (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
+                            }
+                            className={`h-10 rounded-xl px-3 ${
                               company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                                : ''
+                                ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                                : ""
                             }`}
                           >
                             {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
@@ -1021,106 +858,125 @@ const currentYear = new Date().getFullYear();
                   </motion.div>
                 ))}
               </div>
-            ) : viewMode === 'list' ? (
-              <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                  <table className="w-full min-w-[880px]">
+                    <thead className="border-b border-slate-200 bg-slate-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Company</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Location</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Shipments (12m)</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">TEU</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Mode</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Last Shipment</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Actions</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Company
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Location
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Total Shipments
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Top Container
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          FCL / LCL
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Last Shipment
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Actions
+                        </th>
                       </tr>
                     </thead>
+
                     <tbody className="divide-y divide-slate-100">
                       {results.map((company, index) => (
                         <motion.tr
                           key={company.id}
-                          initial={{ opacity: 0, x: -20 }}
+                          initial={{ opacity: 0, x: -14 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: index * 0.02 }}
-                          className="hover:bg-slate-50 transition-colors"
+                          className="transition hover:bg-slate-50"
                         >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
-                                <Building2 className="h-5 w-5" />
-                              </div>
+                              <CompanyAvatar
+                                name={company.name}
+                                logoUrl={getCompanyLogoUrl(company.website)}
+                                size="md"
+                              />
                               <div>
                                 <div className="font-semibold text-slate-900">{company.name}</div>
-                                <div className="text-xs text-slate-500">{company.industry}</div>
+                                <div className="text-xs text-slate-500">Search Preview</div>
                               </div>
                             </div>
                           </td>
+
                           <td className="px-6 py-4">
-                            <div className="text-sm text-slate-900">{company.city}, {company.state}</div>
+                            <div className="text-sm text-slate-900">
+                              {company.city}
+                              {company.state ? `, ${company.state}` : ""}
+                            </div>
                             <div className="text-xs text-slate-500">{company.country_code}</div>
                           </td>
+
                           <td className="px-6 py-4">
-                            <div className="text-sm font-semibold text-slate-900">{company.shipments_12m.toLocaleString()}</div>
+                            <div className="text-sm font-semibold text-slate-900">
+                              {company.shipments.toLocaleString()}
+                            </div>
                           </td>
+
                           <td className="px-6 py-4">
-                            {company.teu_estimate !== undefined ? (
-                              <div className="text-sm font-semibold text-slate-900">
-                                {company.teu_estimate === 0 ? '< 100' : company.teu_estimate.toLocaleString()}
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <div className="h-4 w-16 bg-slate-200 animate-pulse rounded"></div>
-                              </div>
-                            )}
+                            <div className="text-sm font-medium text-slate-900">
+                              {company.top_container_length || "—"}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {company.top_container_count != null
+                                ? `${company.top_container_count.toLocaleString()} units`
+                                : "No detail"}
+                            </div>
                           </td>
+
                           <td className="px-6 py-4">
-                            {company.mode ? (
-                              <div className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
-                                {getModeIcon(company.mode)}
-                                {company.mode}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-slate-400">—</span>
-                            )}
+                            <div className="text-sm font-medium text-slate-900">
+                              {company.fcl_percent != null && company.lcl_percent != null
+                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
+                                : "—"}
+                            </div>
                           </td>
+
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-1.5">
-                              <div className="text-sm text-slate-900">{formatUserFriendlyDate(company.last_shipment)}</div>
+                              <div className="text-sm text-slate-900">
+                                {formatUserFriendlyDate(company.last_shipment)}
+                              </div>
                               {(() => {
                                 const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (badgeInfo) {
-                                  return (
-                                    <Badge
-                                      variant="secondary"
-                                      className={`text-xs py-0 px-1.5 ${
-                                        badgeInfo.color === 'green'
-                                          ? 'bg-green-50 text-green-700 border-green-200'
-                                          : badgeInfo.color === 'yellow'
-                                          ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                          : 'bg-slate-100 text-slate-600'
-                                      }`}
-                                    >
-                                      {badgeInfo.label}
-                                    </Badge>
-                                  );
-                                }
-                                return null;
+                                if (!badgeInfo) return null;
+                                return (
+                                  <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${
+                                      badgeInfo.color === "green"
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                        : badgeInfo.color === "yellow"
+                                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                                          : "bg-slate-100 text-slate-600"
+                                    }`}
+                                  >
+                                    {badgeInfo.label}
+                                  </Badge>
+                                );
                               })()}
                             </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
-                              {company.frequency}
-                            </Badge>
-                          </td>
+
                           <td className="px-6 py-4">
                             <div className="flex items-center justify-end gap-2">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setSelectedCompany(company)}
+                                className="rounded-xl"
                               >
                                 <Eye className="h-4 w-4" />
                               </Button>
@@ -1128,12 +984,15 @@ const currentYear = new Date().getFullYear();
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => saveToCommandCenter(company)}
-                                disabled={saving || (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))}
-                                className={
-                                  company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                    ? 'text-blue-600'
-                                    : ''
+                                disabled={
+                                  saving ||
+                                  (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
                                 }
+                                className={`rounded-xl ${
+                                  company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
+                                    ? "text-indigo-600"
+                                    : ""
+                                }`}
                               >
                                 {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
                                   <Bookmark className="h-4 w-4 fill-current" />
@@ -1149,19 +1008,19 @@ const currentYear = new Date().getFullYear();
                   </table>
                 </div>
               </div>
-            ) : null}
+            )}
 
             {!searching && results.length === 0 && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-16"
+                className="rounded-2xl border border-slate-200 bg-white py-16 text-center shadow-sm"
               >
-                <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
                   <SearchIcon className="h-8 w-8 text-slate-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">No companies found</h3>
-                <p className="text-slate-600">Try adjusting your search query</p>
+                <h3 className="text-lg font-semibold text-slate-900">No companies found</h3>
+                <p className="mt-1 text-slate-600">Try adjusting your search query</p>
               </motion.div>
             )}
           </>
@@ -1171,19 +1030,18 @@ const currentYear = new Date().getFullYear();
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-center py-20"
+            className="rounded-2xl border border-slate-200 bg-white py-20 text-center shadow-sm"
           >
-            <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-6">
-              <SearchIcon className="h-10 w-10 text-blue-600" />
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-indigo-50">
+              <SearchIcon className="h-10 w-10 text-indigo-600" />
             </div>
-            <h3 className="text-xl font-semibold text-slate-900 mb-2">Start Your Search</h3>
-            <p className="text-slate-600 max-w-md mx-auto">
-              Enter a company name, city, or industry to discover import/export companies
+            <h3 className="text-xl font-semibold text-slate-900">Start Your Search</h3>
+            <p className="mx-auto mt-2 max-w-md text-slate-600">
+              Enter a company name to discover trade intelligence and preview KPI insights before saving to Command Center.
             </p>
           </motion.div>
         )}
 
-        {/* Modal placement: Use ShipperDetailModal rather than inline modal code. */}
         {selectedCompany && (
           <ShipperDetailModal
             year={selectedYear}
@@ -1196,8 +1054,6 @@ const currentYear = new Date().getFullYear();
             error={null}
             onClose={() => setSelectedCompany(null)}
             onSaveToCommandCenter={({ shipper, profile }) => {
-              // We ignore the passed shipper/profile because we already
-              // have selectedCompany and normalizedProfile bound in this component.
               if (selectedCompany) {
                 saveToCommandCenter(selectedCompany);
               }
@@ -1205,7 +1061,7 @@ const currentYear = new Date().getFullYear();
             saveLoading={saving}
             isSaved={Boolean(
               selectedCompany?.importyeti_key &&
-              savedCompanyIds.includes(selectedCompany.importyeti_key),
+                savedCompanyIds.includes(selectedCompany.importyeti_key),
             )}
           />
         )}
