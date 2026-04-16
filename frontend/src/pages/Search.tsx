@@ -629,7 +629,7 @@ export default function SearchPage() {
             </motion.div>
 
             {viewMode !== "list" ? (
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
                 {results.map((company, index) => (
                   <motion.div
                     key={company.id}
@@ -821,7 +821,7 @@ export default function SearchPage() {
                           <Button
                             variant="default"
                             size="sm"
-                            className="h-10 flex-1 rounded-xl bg-slate-900 text-sm font-semibold hover:bg-slate-800"
+                            className="h-10 flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-sm font-semibold text-white shadow-sm hover:from-blue-700 hover:to-indigo-700"
                             onClick={() => setSelectedCompany(company)}
                           >
                             <Eye className="mr-1.5 h-4 w-4" />

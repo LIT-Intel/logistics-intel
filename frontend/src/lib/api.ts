@@ -406,6 +406,34 @@ export interface IyCompanyProfile {
   lcl_shipments_all_time?: number | null;
   fcl_shipments_perc?: number | null;
   lcl_shipments_perc?: number | null;
+  // Freightos benchmark rate for company's active lane
+  freightosRate?: {
+    code: string;
+    lane: string;
+    ratePerTeu: number;
+    currency?: string;
+    mode?: string;
+    equipment?: string;
+  } | null;
+  // Monthly activity series for charts and trend analysis
+  monthlyActivity?: Array<{
+    date: string;
+    month: string;
+    year: number;
+    shipments: number;
+    teu: number;
+    fcl: number;
+    lcl: number;
+  }> | null;
+  // 12-month TEU volume (convenience field, may duplicate latestYearTeu)
+  teu12m?: number | null;
+  // Top 3-5 routes for quick reference
+  topRoutes?: Array<{
+    route: string;
+    shipments: number;
+    teu: number;
+    percentage: number;
+  }> | null;
 }
 export function getFclShipments12m(
   profile?: IyCompanyProfile | null,
