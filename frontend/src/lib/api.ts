@@ -1407,18 +1407,6 @@ function coerceIySearchResponse(
   };
 }
   
-async function postIySearchShippers(
-  body: { q: string; page: number; pageSize: number },
-  signal?: AbortSignal,
-) {
-  return fetchJson<any>(`/api/importyeti/searchShippers`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-}
-
 export async function iyCompanyBols(
   params: { company_id: string; limit?: number; offset?: number; start_date?: string; end_date?: string },
   signal?: AbortSignal,
