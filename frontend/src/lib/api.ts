@@ -1384,7 +1384,7 @@ function buildIySearchMeta(
 function coerceIySearchResponse(
   raw: any,
   fallback: { q: string; page: number; pageSize: number },
-): IySearchResponse {
+) {
   // Handle edge function response shape: { ok: true, rows: [...], page, pageSize, total }
   const items = resolveIySearchArray(raw);
   const rows = items.map(normalizeIyShipperHit);
