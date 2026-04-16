@@ -34,11 +34,12 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   } = useAuth();
 
   const plan = userPlan || "free_trial";
+  const isAdmin = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
 
-  const canUseCampaigns = canAccessFeature(plan, "campaign_builder");
-  const canUsePulse = canAccessFeature(plan, "pulse");
+  const canUseCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
+  const canUsePulse = isAdmin || canAccessFeature(plan, "pulse");
   const canUseRfp = true;
-  const showAdminSection = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
+  const showAdminSection = isAdmin;
 
   const sections = [
     {
