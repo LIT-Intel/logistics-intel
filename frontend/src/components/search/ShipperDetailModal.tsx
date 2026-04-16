@@ -1,59 +1,40 @@
 import React, { useMemo, useState } from "react";
 import {
   X,
-  Building2,
+  Bookmark,
   MapPin,
   Globe,
   Phone,
-  Bookmark,
-  BookmarkPlus,
-  Loader2,
-  Package,
-  TrendingUp,
+  Package2,
   Route,
   Truck,
-  Calendar,
-  Users,
+  CalendarDays,
   BarChart3,
+  ShipWheel,
+  Boxes,
+  ChevronRight,
+  FileText,
 } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ResponsiveContainer,
   BarChart,
   Bar,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
 } from "recharts";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import {
   type IyCompanyProfile,
   type IyRouteKpis,
-  getFclShipments12m,
-  getLclShipments12m,
 } from "@/lib/api";
-import { formatUserFriendlyDate, getDateBadgeInfo } from "@/lib/dateUtils";
+import { formatUserFriendlyDate } from "@/lib/dateUtils";
 
-type ShipperLike = {
+type SearchPreviewShipper = {
   id?: string;
   key?: string;
   companyId?: string;
@@ -62,598 +43,739 @@ type ShipperLike = {
   name?: string;
   title?: string;
   website?: string;
-  domain?: string;
-  phone?: string;
   address?: string;
   city?: string;
   state?: string;
   country?: string;
   country_code?: string;
-  countryCode?: string;
+  last_shipment?: string;
   shipments?: number;
   shipments_12m?: number;
-  totalShipments?: number;
   teu_estimate?: number;
   top_suppliers?: string[];
-  topSuppliers?: string[];
-  last_shipment?: string;
-  lastShipmentDate?: string;
-  mostRecentShipment?: string;
+};
+
+type ShipmentRow = {
+  date: string | null;
+  bol: string | null;
+  route: string | null;
+  origin: string | null;
+  destination: string | null;
+  teu: number | null;
 };
 
 type Props = {
-  year?: number;
   isOpen: boolean;
-  shipper: ShipperLike | null;
-  loadingProfile?: boolean;
-  profile?: IyCompanyProfile | null;
-  routeKpis?: IyRouteKpis | null;
+  shipper: SearchPreviewShipper | null;
+  profile: IyCompanyProfile | null;
+  routeKpis: IyRouteKpis | null;
   enrichment?: any | null;
-  error?: string | null;
-  onClose: () => void;
-  onSaveToCommandCenter: (args: {
-    shipper: ShipperLike | null;
-    profile: IyCompanyProfile | null | undefined;
-  }) => void;
+  loadingProfile?: boolean;
   saveLoading?: boolean;
   isSaved?: boolean;
+  year?: number;
+  error?: string | null;
+  onClose: () => void;
+  onSaveToCommandCenter?: () => void;
 };
 
-function formatNumber(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  return Number(value).toLocaleString();
+type TabKey = "overview" | "routes" | "shipments";
+
+function safeNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "").trim();
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  const num = Number(value);
-  if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`;
-  if (num >= 1_000) return `$${(num / 1_000).toFixed(0)}K`;
-  return `$${num.toLocaleString()}`;
+function titleCaseMonth(monthKey: string): string {
+  if (!monthKey) return "";
+  if (/^\d{4}-\d{2}$/.test(monthKey)) {
+    const [year, month] = monthKey.split("-");
+    const date = new Date(Number(year), Number(month) - 1, 1);
+    return date.toLocaleString("en-US", { month: "short" });
+  }
+  return monthKey;
 }
 
-function getCountryFlag(countryCode?: string): string {
-  if (!countryCode || countryCode.length !== 2) return "";
-  return String.fromCodePoint(
-    ...countryCode.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0)),
-  );
+function compactNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: value >= 100 ? 0 : 1,
+  }).format(value);
 }
 
-function buildMonthlyChartData(profile?: IyCompanyProfile | null, selectedYear?: number) {
-  const points = Array.isArray(profile?.timeSeries) ? profile!.timeSeries : [];
-  const filtered = selectedYear
-    ? points.filter((p) => Number(p?.year) === Number(selectedYear))
-    : points;
-
-  return filtered
-    .map((point) => ({
-      month: typeof point.month === "string" && point.month.includes("-")
-        ? point.month.slice(5, 7)
-        : point.month,
-      shipments: Number(point.shipments ?? 0),
-      teu: Number(point.teu ?? 0),
-      fcl: Number(point.fclShipments ?? 0),
-      lcl: Number(point.lclShipments ?? 0),
-      estSpendUsd: Number(point.estSpendUsd ?? 0),
-    }))
-    .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+function fullNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
-function normalizeTopSuppliers(shipper: ShipperLike | null, profile?: IyCompanyProfile | null): string[] {
-  const fromProfile = Array.isArray(profile?.topSuppliers) ? profile!.topSuppliers! : [];
-  const fromShipper =
-    (Array.isArray(shipper?.top_suppliers) ? shipper?.top_suppliers : []) ??
-    (Array.isArray(shipper?.topSuppliers) ? shipper?.topSuppliers : []) ??
-    [];
-
-  return [...new Set([...fromProfile, ...fromShipper].filter(Boolean))].slice(0, 12);
+function currencyCompact(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
-export default function ShipperDetailModal({
-  year,
-  isOpen,
-  shipper,
-  loadingProfile = false,
-  profile,
-  routeKpis,
-  enrichment,
-  error,
-  onClose,
-  onSaveToCommandCenter,
-  saveLoading = false,
-  isSaved = false,
-}: Props) {
-  const [activeTab, setActiveTab] = useState("overview");
-
-  const companyName =
-    profile?.title ||
-    profile?.name ||
-    shipper?.title ||
-    shipper?.name ||
-    "Unknown Company";
-
-  const website =
-    profile?.website ||
-    shipper?.website ||
-    (profile?.domain ? `https://${profile.domain}` : null);
-
-  const phone =
-    profile?.phoneNumber ||
-    profile?.phone ||
-    shipper?.phone ||
-    null;
-
+function buildLocationLine(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string {
   const address =
     profile?.address ||
     shipper?.address ||
-    [shipper?.city, shipper?.state].filter(Boolean).join(", ") ||
-    "—";
+    [shipper?.city, shipper?.state, shipper?.country].filter(Boolean).join(", ");
 
-  const countryCode =
-    profile?.countryCode ||
-    shipper?.countryCode ||
-    shipper?.country_code ||
-    null;
+  return address || "Location unavailable";
+}
 
-  const shipments12m =
-    routeKpis?.shipmentsLast12m ??
-    profile?.routeKpis?.shipmentsLast12m ??
-    shipper?.shipments_12m ??
-    shipper?.totalShipments ??
-    shipper?.shipments ??
-    null;
+function buildWebsite(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string | null {
+  return profile?.website || shipper?.website || profile?.domain || null;
+}
 
-  const teu12m =
-    routeKpis?.teuLast12m ??
-    profile?.routeKpis?.teuLast12m ??
-    shipper?.teu_estimate ??
-    null;
+function buildPhone(profile: IyCompanyProfile | null): string | null {
+  return (profile as any)?.phoneNumber || (profile as any)?.phone || null;
+}
 
-  const estSpend12m =
-    routeKpis?.estSpendUsd12m ??
-    profile?.routeKpis?.estSpendUsd12m ??
-    profile?.estSpendUsd12m ??
-    null;
+function buildShipments12m(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null, routeKpis: IyRouteKpis | null): number | null {
+  return (
+    safeNumber(routeKpis?.shipmentsLast12m) ??
+    safeNumber(profile?.routeKpis?.shipmentsLast12m) ??
+    safeNumber(shipper?.shipments_12m) ??
+    safeNumber(shipper?.shipments) ??
+    safeNumber(profile?.totalShipments) ??
+    null
+  );
+}
 
-  const topRoute =
-    routeKpis?.topRouteLast12m ??
-    profile?.routeKpis?.topRouteLast12m ??
-    null;
+function buildTeu12m(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null, routeKpis: IyRouteKpis | null): number | null {
+  return (
+    safeNumber(routeKpis?.teuLast12m) ??
+    safeNumber(profile?.routeKpis?.teuLast12m) ??
+    safeNumber(shipper?.teu_estimate) ??
+    null
+  );
+}
 
-  const recentRoute =
-    routeKpis?.mostRecentRoute ??
-    profile?.routeKpis?.mostRecentRoute ??
-    null;
+function buildFclLcl(profile: IyCompanyProfile | null): string {
+  const fcl12m =
+    safeNumber((profile as any)?.containers?.fclShipments12m) ??
+    safeNumber((profile as any)?.fcl_count_12m) ??
+    0;
+  const lcl12m =
+    safeNumber((profile as any)?.containers?.lclShipments12m) ??
+    safeNumber((profile as any)?.lcl_count_12m) ??
+    0;
 
-  const lastShipmentDate =
+  if (!fcl12m && !lcl12m) {
+    const fclAllTime = safeNumber((profile as any)?.fcl_shipments_all_time);
+    const lclAllTime = safeNumber((profile as any)?.lcl_shipments_all_time);
+    if (fclAllTime != null || lclAllTime != null) {
+      return `${fullNumber(fclAllTime ?? 0)} / ${fullNumber(lclAllTime ?? 0)}`;
+    }
+    return "—";
+  }
+
+  return `${fullNumber(fcl12m)} / ${fullNumber(lcl12m)}`;
+}
+
+function buildLastShipment(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string | null {
+  return (
     profile?.lastShipmentDate ||
-    shipper?.lastShipmentDate ||
-    shipper?.mostRecentShipment ||
     shipper?.last_shipment ||
-    null;
+    null
+  );
+}
 
-  const fclShipments = getFclShipments12m(profile) ?? null;
-  const lclShipments = getLclShipments12m(profile) ?? null;
+function buildMonthlyChartData(profile: IyCompanyProfile | null, selectedYear?: number) {
+  const monthlyTotals = Array.isArray((profile as any)?.monthly_totals)
+    ? (profile as any).monthly_totals
+    : [];
 
-  const monthlyChartData = useMemo(
+  if (monthlyTotals.length > 0) {
+    return monthlyTotals
+      .filter((row: any) => !selectedYear || Number(row?.year) === Number(selectedYear))
+      .map((row: any) => ({
+        month: titleCaseMonth(`${row?.year}-${String(row?.month).padStart(2, "0")}`),
+        shipments: safeNumber(row?.shipments) ?? 0,
+        teu: safeNumber(row?.teu) ?? 0,
+      }));
+  }
+
+  const timeSeries = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
+  return timeSeries
+    .filter((row: any) => !selectedYear || Number(row?.year) === Number(selectedYear))
+    .map((row: any) => ({
+      month: titleCaseMonth(row?.month || ""),
+      shipments: safeNumber(row?.shipments) ?? 0,
+      teu: safeNumber(row?.teu) ?? 0,
+    }));
+}
+
+function buildRoutes(profile: IyCompanyProfile | null, routeKpis: IyRouteKpis | null) {
+  const source =
+    routeKpis?.topRoutesLast12m ||
+    profile?.routeKpis?.topRoutesLast12m ||
+    (Array.isArray((profile as any)?.top_routes) ? (profile as any).top_routes : []);
+
+  return (Array.isArray(source) ? source : [])
+    .map((row: any) => ({
+      route: row?.route || "Unknown route",
+      shipments: safeNumber(row?.shipments) ?? 0,
+      teu: safeNumber(row?.teu) ?? 0,
+      fcl: safeNumber(row?.fclShipments ?? row?.fcl_shipments) ?? 0,
+      lcl: safeNumber(row?.lclShipments ?? row?.lcl_shipments) ?? 0,
+    }))
+    .filter((row) => row.route && row.route !== "Unknown → Unknown");
+}
+
+function buildShipmentRows(profile: IyCompanyProfile | null): ShipmentRow[] {
+  const recentBols = Array.isArray((profile as any)?.recent_bols)
+    ? (profile as any).recent_bols
+    : Array.isArray(profile?.recentBols)
+      ? profile.recentBols
+      : [];
+
+  return recentBols.map((row: any) => {
+    const raw = row?.raw || row || {};
+    const date =
+      row?.date ||
+      raw?.date_formatted ||
+      raw?.date ||
+      raw?.arrival_date ||
+      null;
+
+    const route =
+      row?.route ||
+      raw?.shipping_route ||
+      raw?.route ||
+      null;
+
+    const origin =
+      row?.origin ||
+      raw?.origin_port ||
+      raw?.origin ||
+      raw?.supplier_address_loc ||
+      raw?.origin_city ||
+      null;
+
+    const destination =
+      row?.destination ||
+      raw?.destination_port ||
+      raw?.destination ||
+      raw?.company_address_loc ||
+      raw?.destination_city ||
+      null;
+
+    return {
+      date,
+      bol:
+        row?.bolNumber ||
+        raw?.bol_number ||
+        raw?.bol ||
+        raw?.bill_of_lading_number ||
+        null,
+      route,
+      origin,
+      destination,
+      teu:
+        safeNumber(row?.teu) ??
+        safeNumber(raw?.TEU) ??
+        safeNumber(raw?.teu) ??
+        safeNumber(raw?.total_teu) ??
+        null,
+    };
+  });
+}
+
+function buildSuppliers(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string[] {
+  const profileSuppliers = Array.isArray(profile?.topSuppliers) ? profile.topSuppliers : [];
+  const shipperSuppliers = Array.isArray(shipper?.top_suppliers) ? shipper.top_suppliers : [];
+  return [...new Set([...profileSuppliers, ...shipperSuppliers])].filter(Boolean).slice(0, 6);
+}
+
+function KpiCard({
+  icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div className={`group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${accent}`}>
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+export default function ShipperDetailModal({
+  isOpen,
+  shipper,
+  profile,
+  routeKpis,
+  loadingProfile = false,
+  saveLoading = false,
+  isSaved = false,
+  year,
+  error,
+  onClose,
+  onSaveToCommandCenter,
+}: Props) {
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+
+  const companyName = shipper?.name || shipper?.title || profile?.title || "Company";
+  const website = buildWebsite(shipper || {}, profile);
+  const phone = buildPhone(profile);
+  const locationLine = buildLocationLine(shipper || {}, profile);
+
+  const shipments12m = buildShipments12m(shipper || {}, profile, routeKpis);
+  const teu12m = buildTeu12m(shipper || {}, profile, routeKpis);
+  const fclLcl = buildFclLcl(profile);
+  const lastShipment = buildLastShipment(shipper || {}, profile);
+
+  const chartData = useMemo(
     () => buildMonthlyChartData(profile, year),
     [profile, year],
   );
 
-  const topRoutes = useMemo(
-    () => (profile?.routeKpis?.topRoutesLast12m || routeKpis?.topRoutesLast12m || []).slice(0, 8),
+  const routeRows = useMemo(
+    () => buildRoutes(profile, routeKpis),
     [profile, routeKpis],
   );
 
-  const recentBols = useMemo(
-    () => (Array.isArray(profile?.recentBols) ? profile!.recentBols.slice(0, 12) : []),
+  const shipmentRows = useMemo(
+    () => buildShipmentRows(profile),
     [profile],
   );
 
-  const topSuppliers = useMemo(
-    () => normalizeTopSuppliers(shipper, profile),
+  const suppliers = useMemo(
+    () => buildSuppliers(shipper || {}, profile),
     [shipper, profile],
   );
 
-  const dateBadge = getDateBadgeInfo(lastShipmentDate || undefined);
+  const topContainer =
+    (profile as any)?.top_container_length ||
+    "—";
 
-  const showProfileSkeleton = loadingProfile && !profile;
+  const estSpend12m =
+    safeNumber(routeKpis?.estSpendUsd12m) ??
+    safeNumber(profile?.estSpendUsd12m) ??
+    safeNumber((profile as any)?.estSpendUsd) ??
+    null;
+
+  const topRoute =
+    routeKpis?.topRouteLast12m ||
+    profile?.routeKpis?.topRouteLast12m ||
+    "—";
+
+  const mostRecentRoute =
+    routeKpis?.mostRecentRoute ||
+    profile?.routeKpis?.mostRecentRoute ||
+    "—";
+
+  if (!isOpen || !shipper) return null;
+
+  const tabButtonClass = (tab: TabKey) =>
+    `inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+      activeTab === tab
+        ? "bg-indigo-600 text-white shadow-sm"
+        : "bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
+    }`;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[95vw] w-[1200px] p-0 overflow-hidden border-slate-200">
-        <div className="flex h-[85vh] flex-col bg-slate-50">
-          <div className="border-b border-slate-200 bg-white px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-4">
-                <CompanyAvatar
-                  name={companyName}
-                  logoUrl={getCompanyLogoUrl(website || shipper?.website)}
-                  size="lg"
-                />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="truncate text-2xl font-semibold text-slate-900">
-                      {companyName}
-                    </h2>
-                    {countryCode ? (
-                      <span className="text-xl">{getCountryFlag(countryCode)}</span>
-                    ) : null}
-                    {isSaved ? (
-                      <Badge className="bg-blue-600 text-white hover:bg-blue-600">Saved</Badge>
-                    ) : null}
-                  </div>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
+      <div className="flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-slate-50 shadow-2xl sm:h-[90vh] sm:rounded-3xl">
+        <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-start gap-4">
+              <CompanyAvatar
+                name={companyName}
+                logoUrl={getCompanyLogoUrl(website || undefined)}
+                size="lg"
+                className="shrink-0"
+              />
 
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="h-4 w-4" />
-                      <span>{address}</span>
-                    </div>
-
-                    {website ? (
-                      <a
-                        href={website.startsWith("http") ? website : `https://${website}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1.5 hover:text-slate-900"
-                      >
-                        <Globe className="h-4 w-4" />
-                        <span className="truncate max-w-[260px]">
-                          {website.replace(/^https?:\/\//, "")}
-                        </span>
-                      </a>
-                    ) : null}
-
-                    {phone ? (
-                      <div className="flex items-center gap-1.5">
-                        <Phone className="h-4 w-4" />
-                        <span>{phone}</span>
-                      </div>
-                    ) : null}
-                  </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="truncate text-2xl font-semibold tracking-tight text-slate-900">
+                    {companyName}
+                  </h2>
+                  <span className="text-sm font-medium uppercase tracking-wide text-slate-500">
+                    {shipper?.country_code || (profile as any)?.countryCode || "US"}
+                  </span>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={isSaved ? "secondary" : "default"}
-                  onClick={() => onSaveToCommandCenter({ shipper, profile })}
-                  disabled={saveLoading || isSaved}
-                  className={isSaved ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : ""}
-                >
-                  {saveLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : isSaved ? (
-                    <Bookmark className="mr-2 h-4 w-4 fill-current" />
-                  ) : (
-                    <BookmarkPlus className="mr-2 h-4 w-4" />
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+                  <div className="inline-flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                    <span>{locationLine}</span>
+                  </div>
+
+                  {website && (
+                    <div className="inline-flex items-center gap-1.5">
+                      <Globe className="h-4 w-4 text-slate-400" />
+                      <span className="truncate">{website.replace(/^https?:\/\//, "")}</span>
+                    </div>
                   )}
-                  {isSaved ? "Saved to Command Center" : "Save to Command Center"}
-                </Button>
 
-                <Button variant="ghost" size="icon" onClick={onClose}>
-                  <X className="h-5 w-5" />
-                </Button>
+                  {phone && (
+                    <div className="inline-flex items-center gap-1.5">
+                      <Phone className="h-4 w-4 text-slate-400" />
+                      <span>{phone}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            {error ? (
-              <Card className="border-red-200 bg-red-50">
-                <CardContent className="py-6 text-sm text-red-700">
-                  {error}
-                </CardContent>
-              </Card>
-            ) : null}
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                className="rounded-xl border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                onClick={onSaveToCommandCenter}
+                disabled={saveLoading || isSaved}
+              >
+                <Bookmark className={`mr-2 h-4 w-4 ${isSaved ? "fill-current" : ""}`} />
+                {isSaved ? "Saved to Command Center" : "Save to Command Center"}
+              </Button>
 
-            {showProfileSkeleton ? (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Card key={i}>
-                      <CardContent className="p-5">
-                        <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
-                        <div className="mt-3 h-8 w-32 animate-pulse rounded bg-slate-200" />
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="h-[320px] animate-pulse rounded bg-slate-200" />
-                  </CardContent>
-                </Card>
-              </div>
-            ) : (
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-                <TabsList className="grid w-full grid-cols-3 max-w-[520px]">
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="routes">Routes</TabsTrigger>
-                  <TabsTrigger value="shipments">Shipments</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview" className="space-y-5">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <Card>
-                      <CardContent className="p-5">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <Package className="h-4 w-4" />
-                          Shipments 12m
-                        </div>
-                        <div className="mt-2 text-3xl font-semibold text-slate-900">
-                          {formatNumber(shipments12m)}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardContent className="p-5">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <TrendingUp className="h-4 w-4" />
-                          TEU 12m
-                        </div>
-                        <div className="mt-2 text-3xl font-semibold text-slate-900">
-                          {formatNumber(teu12m)}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardContent className="p-5">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <Truck className="h-4 w-4" />
-                          FCL / LCL
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-900">
-                          {formatNumber(fclShipments)} / {formatNumber(lclShipments)}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardContent className="p-5">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          <Calendar className="h-4 w-4" />
-                          Last Shipment
-                        </div>
-                        <div className="mt-2 text-lg font-semibold text-slate-900">
-                          {formatUserFriendlyDate(lastShipmentDate || undefined)}
-                        </div>
-                        {dateBadge ? (
-                          <div className="mt-2">
-                            <Badge
-                              variant="secondary"
-                              className={
-                                dateBadge.color === "green"
-                                  ? "bg-green-50 text-green-700 border-green-200"
-                                  : dateBadge.color === "yellow"
-                                  ? "bg-yellow-50 text-yellow-700 border-yellow-200"
-                                  : "bg-slate-100 text-slate-600"
-                              }
-                            >
-                              {dateBadge.label}
-                            </Badge>
-                          </div>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-                    <Card className="xl:col-span-2">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <BarChart3 className="h-4 w-4" />
-                          Monthly activity
-                          {year ? <span className="text-slate-400">• {year}</span> : null}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {monthlyChartData.length > 0 ? (
-                          <div className="h-[320px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={monthlyChartData}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="month" />
-                                <YAxis />
-                                <RechartsTooltip />
-                                <Bar dataKey="shipments" radius={[6, 6, 0, 0]} />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        ) : (
-                          <div className="flex h-[320px] items-center justify-center text-sm text-slate-500">
-                            No monthly activity available for this company yet.
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-base">Snapshot</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4 text-sm">
-                        <div>
-                          <div className="text-slate-500">Estimated spend 12m</div>
-                          <div className="mt-1 text-lg font-semibold text-slate-900">
-                            {formatCurrency(estSpend12m)}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-slate-500">Top route</div>
-                          <div className="mt-1 font-medium text-slate-900">
-                            {topRoute || "—"}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-slate-500">Most recent route</div>
-                          <div className="mt-1 font-medium text-slate-900">
-                            {recentRoute || "—"}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-slate-500">Suppliers</div>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {topSuppliers.length ? (
-                              topSuppliers.slice(0, 6).map((supplier) => (
-                                <Badge key={supplier} variant="secondary">
-                                  {supplier}
-                                </Badge>
-                              ))
-                            ) : (
-                              <span className="text-slate-400">No supplier data</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {enrichment ? (
-                          <div>
-                            <div className="text-slate-500">Enrichment</div>
-                            <div className="mt-1 text-slate-900">
-                              Available
-                            </div>
-                          </div>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="routes" className="space-y-5">
-                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-                    <Card className="xl:col-span-2">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Route className="h-4 w-4" />
-                          Top routes
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {topRoutes.length ? (
-                          <div className="space-y-3">
-                            {topRoutes.map((routeItem, idx) => (
-                              <div
-                                key={`${routeItem.route}-${idx}`}
-                                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate font-medium text-slate-900">
-                                    {routeItem.route}
-                                  </div>
-                                </div>
-                                <div className="ml-4 flex items-center gap-4 text-sm text-slate-600">
-                                  <span>{formatNumber(routeItem.shipments)} shipments</span>
-                                  <span>{formatNumber(routeItem.teu)} TEU</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-slate-500">
-                            No route data available yet.
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-base">Route KPIs</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4 text-sm">
-                        <div>
-                          <div className="text-slate-500">Top route 12m</div>
-                          <div className="mt-1 font-medium text-slate-900">
-                            {topRoute || "—"}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-slate-500">Most recent route</div>
-                          <div className="mt-1 font-medium text-slate-900">
-                            {recentRoute || "—"}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-slate-500">Sample size</div>
-                          <div className="mt-1 font-medium text-slate-900">
-                            {formatNumber(
-                              routeKpis?.sampleSize ?? profile?.routeKpis?.sampleSize ?? null,
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="shipments" className="space-y-5">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Users className="h-4 w-4" />
-                        Recent shipment records
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {recentBols.length ? (
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[760px] text-sm">
-                            <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                              <tr>
-                                <th className="py-3 pr-4">Date</th>
-                                <th className="py-3 pr-4">BOL</th>
-                                <th className="py-3 pr-4">Route</th>
-                                <th className="py-3 pr-4">Origin</th>
-                                <th className="py-3 pr-4">Destination</th>
-                                <th className="py-3 pr-4">TEU</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {recentBols.map((bol, idx) => (
-                                <tr key={`${bol.bolNumber || "bol"}-${idx}`} className="border-b border-slate-100">
-                                  <td className="py-3 pr-4 text-slate-700">
-                                    {formatUserFriendlyDate(bol.date || undefined)}
-                                  </td>
-                                  <td className="py-3 pr-4 font-medium text-slate-900">
-                                    {bol.bolNumber || "—"}
-                                  </td>
-                                  <td className="py-3 pr-4 text-slate-700">
-                                    {bol.route || "—"}
-                                  </td>
-                                  <td className="py-3 pr-4 text-slate-700">
-                                    {bol.origin || "—"}
-                                  </td>
-                                  <td className="py-3 pr-4 text-slate-700">
-                                    {bol.destination || "—"}
-                                  </td>
-                                  <td className="py-3 pr-4 text-slate-700">
-                                    {formatNumber(bol.teu)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="text-sm text-slate-500">
-                          No shipment rows available in the current profile payload.
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-6">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={tabButtonClass("overview")} onClick={() => setActiveTab("overview")}>
+              <BarChart3 className="h-4 w-4" />
+              Overview
+            </button>
+            <button type="button" className={tabButtonClass("routes")} onClick={() => setActiveTab("routes")}>
+              <Route className="h-4 w-4" />
+              Routes
+            </button>
+            <button type="button" className={tabButtonClass("shipments")} onClick={() => setActiveTab("shipments")}>
+              <Truck className="h-4 w-4" />
+              Shipments
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
+          {loadingProfile ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <div className="text-base font-medium text-slate-900">Loading company preview...</div>
+              <div className="mt-2 text-sm text-slate-500">Pulling trade intelligence and KPI snapshot.</div>
+            </div>
+          ) : error ? (
+            <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
+              {error}
+            </div>
+          ) : activeTab === "overview" ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <KpiCard
+                  icon={<Package2 className="h-4 w-4 text-indigo-500" />}
+                  label="Shipments 12m"
+                  value={fullNumber(shipments12m)}
+                  accent="hover:bg-indigo-50/60"
+                />
+                <KpiCard
+                  icon={<ShipWheel className="h-4 w-4 text-cyan-500" />}
+                  label="TEU 12m"
+                  value={fullNumber(teu12m)}
+                  accent="hover:bg-cyan-50/60"
+                />
+                <KpiCard
+                  icon={<Boxes className="h-4 w-4 text-violet-500" />}
+                  label="FCL / LCL"
+                  value={fclLcl}
+                  accent="hover:bg-violet-50/60"
+                />
+                <KpiCard
+                  icon={<CalendarDays className="h-4 w-4 text-emerald-500" />}
+                  label="Last shipment"
+                  value={lastShipment ? formatUserFriendlyDate(lastShipment) : "—"}
+                  accent="hover:bg-emerald-50/60"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_360px]">
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <div className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                        <BarChart3 className="h-5 w-5 text-indigo-500" />
+                        Monthly activity
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {year ? `Year ${year}` : "Latest 12-month activity"} · Shipments by month
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">
+                      Preview
+                    </Badge>
+                  </div>
+
+                  <div className="h-[280px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData}>
+                        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="month"
+                          tickLine={false}
+                          axisLine={false}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          tick={{ fontSize: 12 }}
+                        />
+                        <RechartsTooltip
+                          cursor={false}
+                          formatter={(value: any, name: any) => [
+                            fullNumber(safeNumber(value)),
+                            name === "shipments" ? "Shipments" : "TEU",
+                          ]}
+                        />
+                        <Bar dataKey="shipments" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="text-lg font-semibold text-slate-900">Snapshot</div>
+
+                  <div className="mt-5 space-y-5">
+                    <div>
+                      <div className="text-sm text-slate-500">Estimated spend 12m</div>
+                      <div className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+                        {currencyCompact(estSpend12m)}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Top route</div>
+                      <div className="mt-1 text-base font-medium leading-7 text-slate-900">{topRoute}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Most recent route</div>
+                      <div className="mt-1 text-base font-medium leading-7 text-slate-900">{mostRecentRoute}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Top container</div>
+                      <div className="mt-1 text-base font-medium text-slate-900">{topContainer}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Suppliers</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {suppliers.length > 0 ? (
+                          suppliers.map((supplier) => (
+                            <Badge
+                              key={supplier}
+                              variant="outline"
+                              className="rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-slate-700"
+                            >
+                              {supplier}
+                            </Badge>
+                          ))
+                        ) : (
+                          <div className="text-sm text-slate-400">No supplier data</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeTab === "routes" ? (
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_340px]">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <Route className="h-5 w-5 text-indigo-500" />
+                  Top routes
+                </div>
+
+                <div className="space-y-3">
+                  {routeRows.length > 0 ? (
+                    routeRows.map((route, index) => (
+                      <div
+                        key={`${route.route}-${index}`}
+                        className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 transition hover:border-indigo-200 hover:bg-indigo-50/60"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex items-start gap-2">
+                              <div className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                                <ChevronRight className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-base font-semibold leading-6 text-slate-900">
+                                  {route.route}
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  <Badge className="rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
+                                    {fullNumber(route.shipments)} shipments
+                                  </Badge>
+                                  <Badge className="rounded-full bg-cyan-100 text-cyan-700 hover:bg-cyan-100">
+                                    {fullNumber(route.teu)} TEU
+                                  </Badge>
+                                  {(route.fcl > 0 || route.lcl > 0) && (
+                                    <Badge className="rounded-full bg-violet-100 text-violet-700 hover:bg-violet-100">
+                                      FCL {fullNumber(route.fcl)} · LCL {fullNumber(route.lcl)}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                      No route breakdown available for this company yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-lg font-semibold text-slate-900">Route KPIs</div>
+
+                <div className="mt-5 space-y-5">
+                  <div>
+                    <div className="text-sm text-slate-500">Top route 12m</div>
+                    <div className="mt-1 text-base font-medium leading-7 text-slate-900">{topRoute}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Most recent route</div>
+                    <div className="mt-1 text-base font-medium leading-7 text-slate-900">{mostRecentRoute}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Sample size</div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-900">
+                      {fullNumber(safeNumber(routeKpis?.sampleSize ?? profile?.routeKpis?.sampleSize))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Shipments 12m</div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-900">
+                      {fullNumber(shipments12m)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">TEU 12m</div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-900">
+                      {fullNumber(teu12m)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                <FileText className="h-5 w-5 text-indigo-500" />
+                Recent shipment records
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[860px]">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Date
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          BOL
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Route
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Origin
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Destination
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          TEU
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {shipmentRows.length > 0 ? (
+                        shipmentRows.map((row, index) => (
+                          <tr key={`${row.bol || row.date || "shipment"}-${index}`} className="hover:bg-indigo-50/40">
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.date ? formatUserFriendlyDate(row.date) : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                              {row.bol || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.route || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.origin || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.destination || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                              {row.teu != null ? fullNumber(row.teu) : "—"}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                            No shipment rows available.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-4 text-xs text-slate-500">
+                Preview only. Save to Command Center to work with the full company intelligence record.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
