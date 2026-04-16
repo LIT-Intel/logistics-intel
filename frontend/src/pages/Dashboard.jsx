@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [rfpCount, setRfpCount] = useState(0);
   const [activities, setActivities] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
+  const [contacts, setContacts] = useState([]);
 
   useDashboardShortcuts();
 
@@ -31,12 +32,13 @@ export default function Dashboard() {
     const load = async () => {
       setLoading(true);
       try {
-        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes] = await Promise.allSettled([
+        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes, contactsRes] = await Promise.allSettled([
           getSavedCompanies(),
           getLitCampaigns().catch(() => getCrmCampaigns()),
           supabase.from('lit_rfps').select('id').eq('status', 'active'),
           supabase.from('lit_activity_events').select('*').order('created_at', { ascending: false }).limit(10),
-          supabase.from('search_queries').select('id', { count: 'exact', head: true }).eq('user_id', user?.id),
+          supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search'),
+          supabase.from('lit_contacts').select('id, full_name, title').limit(50),
         ]);
 
         if (mounted) {
@@ -54,6 +56,9 @@ export default function Dashboard() {
           }
           if (searchRes.status === 'fulfilled') {
             setSearchCount(searchRes.value?.count || 0);
+          }
+          if (contactsRes.status === 'fulfilled') {
+            setContacts(contactsRes.value?.data || []);
           }
           if (activitiesRes.status === 'fulfilled') {
             const rawActivities = activitiesRes.value?.data || [];
