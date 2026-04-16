@@ -1053,7 +1053,7 @@ export default function SearchPage() {
             enrichment={null}
             error={null}
             onClose={() => setSelectedCompany(null)}
-            onSaveToCommandCenter={({ shipper, profile }) => {
+            onSaveToCommandCenter={() => {
               if (selectedCompany) {
                 saveToCommandCenter(selectedCompany);
               }
