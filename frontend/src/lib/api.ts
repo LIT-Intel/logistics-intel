@@ -1016,7 +1016,29 @@ export function ensureCompanyKey(value: string) {
 }
 
 function deriveDomainCandidate(value: unknown): string | undefined {
-  function normalizeMonthLabel(value: unknown): string | null {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(trimmed)) {
+    return trimmed
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .toLowerCase();
+  }
+
+  try {
+    const url = new URL(
+      trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    );
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeMonthLabel(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
@@ -1417,8 +1439,6 @@ export async function iyCompanyBols(
   },
   signal?: AbortSignal,
 ) {
-
-  }
   const companySlug = normalizeCompanyIdToSlug(params.company_id);
   if (!companySlug) {
     throw new Error("iyCompanyBols requires company_id");
