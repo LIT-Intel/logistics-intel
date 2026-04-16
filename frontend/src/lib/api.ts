@@ -1406,23 +1406,7 @@ function coerceIySearchResponse(
     meta,
   };
 }
-
-export async function iySearch(q: string, limit = 10, offset = 0) {
-  const pageSize = Math.max(1, Number.isFinite(limit) ? Number(limit) : 10);
-  const computedOffset = Math.max(
-    0,
-    Number.isFinite(offset) ? Number(offset) : 0,
-  );
-  const page = Math.floor(computedOffset / pageSize) + 1;
-  const payload = await searchShippers({ q, page, pageSize });
-  return {
-    ok: payload.ok,
-    rows: payload.results,
-    meta: payload.meta,
-    total: payload.total,
-  };
-}
-
+  
 async function postIySearchShippers(
   body: { q: string; page: number; pageSize: number },
   signal?: AbortSignal,
