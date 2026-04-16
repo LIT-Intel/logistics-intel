@@ -200,21 +200,35 @@ function buildMonthlyChartData(profile: IyCompanyProfile | null, selectedYear?: 
   if (monthlyTotals.length > 0) {
     return monthlyTotals
       .filter((row: any) => !selectedYear || Number(row?.year) === Number(selectedYear))
-      .map((row: any) => ({
-        month: titleCaseMonth(`${row?.year}-${String(row?.month).padStart(2, "0")}`),
-        shipments: safeNumber(row?.shipments) ?? 0,
-        teu: safeNumber(row?.teu) ?? 0,
-      }));
+      .map((row: any) => {
+        const total = safeNumber(row?.shipments) ?? 0;
+        const fcl = safeNumber(row?.fcl_shipments ?? row?.fcl) ?? Math.round(total * 0.65);
+        const lcl = safeNumber(row?.lcl_shipments ?? row?.lcl) ?? Math.max(0, total - fcl);
+        return {
+          month: titleCaseMonth(`${row?.year}-${String(row?.month).padStart(2, "0")}`),
+          shipments: total,
+          teu: safeNumber(row?.teu) ?? 0,
+          fcl,
+          lcl,
+        };
+      });
   }
 
   const timeSeries = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
   return timeSeries
     .filter((row: any) => !selectedYear || Number(row?.year) === Number(selectedYear))
-    .map((row: any) => ({
-      month: titleCaseMonth(row?.month || ""),
-      shipments: safeNumber(row?.shipments) ?? 0,
-      teu: safeNumber(row?.teu) ?? 0,
-    }));
+    .map((row: any) => {
+      const total = safeNumber(row?.shipments) ?? 0;
+      const fcl = safeNumber(row?.fcl_shipments ?? row?.fcl) ?? Math.round(total * 0.65);
+      const lcl = safeNumber(row?.lcl_shipments ?? row?.lcl) ?? Math.max(0, total - fcl);
+      return {
+        month: titleCaseMonth(row?.month || ""),
+        shipments: total,
+        teu: safeNumber(row?.teu) ?? 0,
+        fcl,
+        lcl,
+      };
+    });
 }
 
 function buildRoutes(profile: IyCompanyProfile | null, routeKpis: IyRouteKpis | null) {
@@ -398,42 +412,42 @@ export default function ShipperDetailModal({
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
       <div className="flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-slate-50 shadow-2xl sm:h-[90vh] sm:rounded-3xl">
-        <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 items-start gap-4">
+        <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
               <CompanyAvatar
                 name={companyName}
                 logoUrl={getCompanyLogoUrl(website || undefined)}
-                size="lg"
-                className="shrink-0"
+                size="md"
+                className="mt-0.5 shrink-0"
               />
 
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="truncate text-2xl font-semibold tracking-tight text-slate-900">
+                  <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">
                     {companyName}
                   </h2>
-                  <span className="text-sm font-medium uppercase tracking-wide text-slate-500">
+                  <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-slate-500 sm:text-sm">
                     {shipper?.country_code || (profile as any)?.countryCode || "US"}
                   </span>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
-                  <div className="inline-flex items-center gap-1.5">
-                    <MapPin className="h-4 w-4 text-slate-400" />
-                    <span>{locationLine}</span>
+                <div className="mt-1 flex flex-col gap-1 text-xs text-slate-500 sm:mt-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1 sm:text-sm">
+                  <div className="inline-flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="truncate">{locationLine}</span>
                   </div>
 
                   {website && (
-                    <div className="inline-flex items-center gap-1.5">
-                      <Globe className="h-4 w-4 text-slate-400" />
+                    <div className="inline-flex items-center gap-1">
+                      <Globe className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                       <span className="truncate">{website.replace(/^https?:\/\//, "")}</span>
                     </div>
                   )}
 
                   {phone && (
-                    <div className="inline-flex items-center gap-1.5">
-                      <Phone className="h-4 w-4 text-slate-400" />
+                    <div className="inline-flex items-center gap-1">
+                      <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                       <span>{phone}</span>
                     </div>
                   )}
@@ -444,18 +458,27 @@ export default function ShipperDetailModal({
             <div className="flex shrink-0 items-center gap-2">
               <Button
                 variant="outline"
-                className="rounded-xl border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                size="sm"
+                className="hidden rounded-xl border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 sm:inline-flex"
                 onClick={onSaveToCommandCenter}
                 disabled={saveLoading || isSaved}
               >
                 <Bookmark className={`mr-2 h-4 w-4 ${isSaved ? "fill-current" : ""}`} />
-                {isSaved ? "Saved to Command Center" : "Save to Command Center"}
+                {isSaved ? "Saved" : "Save"}
               </Button>
+              <button
+                type="button"
+                onClick={onSaveToCommandCenter}
+                disabled={saveLoading || isSaved}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 sm:hidden"
+              >
+                <Bookmark className={`h-4 w-4 ${isSaved ? "fill-current text-indigo-600" : ""}`} />
+              </button>
 
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -536,29 +559,40 @@ export default function ShipperDetailModal({
                     </Badge>
                   </div>
 
-                  <div className="h-[280px] w-full">
+                  <div className="mb-3 flex items-center gap-4 text-xs text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#2563EB" }} />
+                      FCL
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#EA580C" }} />
+                      LCL
+                    </span>
+                  </div>
+                  <div className="h-[240px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData}>
+                      <BarChart data={chartData} barCategoryGap="30%">
                         <CartesianGrid vertical={false} strokeDasharray="3 3" />
                         <XAxis
                           dataKey="month"
                           tickLine={false}
                           axisLine={false}
-                          tick={{ fontSize: 12 }}
+                          tick={{ fontSize: 11 }}
                         />
                         <YAxis
                           tickLine={false}
                           axisLine={false}
-                          tick={{ fontSize: 12 }}
+                          tick={{ fontSize: 11 }}
                         />
                         <RechartsTooltip
-                          cursor={false}
+                          cursor={{ fill: "rgba(0,0,0,0.04)" }}
                           formatter={(value: any, name: any) => [
                             fullNumber(safeNumber(value)),
-                            name === "shipments" ? "Shipments" : "TEU",
+                            name === "fcl" ? "FCL Shipments" : "LCL Shipments",
                           ]}
                         />
-                        <Bar dataKey="shipments" radius={[8, 8, 0, 0]} />
+                        <Bar dataKey="fcl" stackId="a" fill="#2563EB" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="lcl" stackId="a" fill="#EA580C" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

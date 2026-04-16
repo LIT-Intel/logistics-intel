@@ -129,10 +129,11 @@ export default function AppShell({ currentPageName, children }) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
 
-  const showCampaigns = canAccessFeature(plan, "campaign_builder");
-  const showPulse = canAccessFeature(plan, "pulse");
+  const isAdmin = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
+  const showCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
+  const showPulse = isAdmin || canAccessFeature(plan, "pulse");
   const showRfp = true;
-  const showAdminSection = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
+  const showAdminSection = isAdmin;
 
   const breadcrumbs = useMemo(() => {
     const path = location.pathname.replace(/^\/+|\/+$|\?.*$/g, "");

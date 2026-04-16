@@ -629,7 +629,7 @@ export default function SearchPage() {
             </motion.div>
 
             {viewMode !== "list" ? (
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
                 {results.map((company, index) => (
                   <motion.div
                     key={company.id}
