@@ -51,6 +51,21 @@ type TopRoute = {
   lclShipments: number | null;
 };
 
+type YearlyPoint = {
+  year: number;
+  shipments: number;
+  teu: number;
+};
+
+type ContainerLengthRow = {
+  container_length: string;
+  type_rows: number;
+  shipments: number;
+  shipments_12m: number;
+  container_count: number;
+  teu: number;
+};
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -646,6 +661,102 @@ function pickPhone(raw: any): string | null {
   );
 }
 
+function parseContainerLengthBreakdown(raw: any): ContainerLengthRow[] {
+  const rows = Array.isArray(raw?.containers) ? raw.containers : [];
+  return rows
+    .map((row: any) => ({
+      container_length:
+        normalizeString(row?.container_length) ??
+        normalizeString(row?.length) ??
+        normalizeString(row?.container_type) ??
+        "Unknown",
+      type_rows: normalizeNumber(row?.type_rows) ?? 0,
+      shipments: normalizeNumber(row?.shipments) ?? 0,
+      shipments_12m:
+        normalizeNumber(row?.shipments_12m) ??
+        normalizeNumber(row?.shipmentsLast12m) ??
+        0,
+      container_count:
+        normalizeNumber(row?.container_count) ??
+        normalizeNumber(row?.containers_count) ??
+        0,
+      teu: normalizeNumber(row?.teu) ?? 0,
+    }))
+    .filter((row) =>
+      row.type_rows > 0 ||
+      row.shipments > 0 ||
+      row.shipments_12m > 0 ||
+      row.container_count > 0 ||
+      row.teu > 0
+    )
+    .sort((a, b) => b.container_count - a.container_count || b.shipments - a.shipments);
+}
+
+function parseContainerLoadBreakdown(raw: any) {
+  const rows = Array.isArray(raw?.containers_load) ? raw.containers_load : [];
+  const normalized = rows.map((row: any) => ({
+    load_type: normalizeString(row?.load_type)?.toUpperCase() ?? "UNKNOWN",
+    shipments: normalizeNumber(row?.shipments) ?? 0,
+    shipments_perc: normalizeNumber(row?.shipments_perc) ?? 0,
+  }));
+
+  const fclRow = normalized.find((row) => row.load_type === "FCL") ?? null;
+  const lclRow = normalized.find((row) => row.load_type === "LCL") ?? null;
+
+  return {
+    rows: normalized,
+    fcl_shipments_all_time: fclRow?.shipments ?? 0,
+    lcl_shipments_all_time: lclRow?.shipments ?? 0,
+    fcl_shipments_perc: fclRow?.shipments_perc ?? 0,
+    lcl_shipments_perc: lclRow?.shipments_perc ?? 0,
+  };
+}
+
+function parseYearlyTotalsFromMonthlyMap(
+  monthlyMap: Map<string, { fcl: number; lcl: number; shipments: number; teu: number; weight: number }>
+): YearlyPoint[] {
+  const yearMap = new Map<number, { shipments: number; teu: number }>();
+
+  for (const [monthKey, value] of monthlyMap.entries()) {
+    const year = Number(monthKey.slice(0, 4));
+    if (!Number.isFinite(year)) continue;
+    const current = yearMap.get(year) || { shipments: 0, teu: 0 };
+    current.shipments += value.shipments || 0;
+    current.teu += value.teu || 0;
+    yearMap.set(year, current);
+  }
+
+  return Array.from(yearMap.entries())
+    .map(([year, value]) => ({
+      year,
+      shipments: value.shipments,
+      teu: Math.round(value.teu * 100) / 100,
+    }))
+    .sort((a, b) => a.year - b.year);
+}
+
+function parseMonthlyTotalsFromMonthlyMap(
+  monthlyMap: Map<string, { fcl: number; lcl: number; shipments: number; teu: number; weight: number }>
+) {
+  return Array.from(monthlyMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([monthKey, value]) => {
+      const [yearRaw, monthRaw] = monthKey.split("-");
+      const year = Number(yearRaw);
+      const month = Number(monthRaw);
+      return {
+        month_date: `${monthKey}-01`,
+        year,
+        month,
+        shipments: value.shipments || 0,
+        teu: Math.round((value.teu || 0) * 100) / 100,
+        fcl: value.fcl || 0,
+        lcl: value.lcl || 0,
+        weight: Math.round((value.weight || 0) * 100) / 100,
+      };
+    });
+}
+
 function buildSnapshotFromCompanyData(
   companySlug: string,
   raw: any,
@@ -785,6 +896,31 @@ function buildSnapshotFromCompanyData(
     ]),
   );
 
+  const containerLengthBreakdown = parseContainerLengthBreakdown(raw);
+  const topContainer = containerLengthBreakdown[0] ?? null;
+
+  const loadBreakdown = parseContainerLoadBreakdown(raw);
+
+  const yearlyTotals = parseYearlyTotalsFromMonthlyMap(monthlyMap);
+  const monthlyTotals = parseMonthlyTotalsFromMonthlyMap(monthlyMap);
+
+  const totalShipmentsAllTime =
+    normalizeNumber(raw?.total_shipments) ??
+    yearlyTotals.reduce((sum, row) => sum + row.shipments, 0) ??
+    shipmentsLast12m;
+
+  const totalShippingCostAllTime =
+    Math.round((normalizeNumber(raw?.total_shipping_cost) ?? 0) * 100) / 100;
+
+  const totalTeuAllTime =
+    containerLengthBreakdown.reduce((sum, row) => sum + row.teu, 0) > 0
+      ? Math.round(
+          containerLengthBreakdown.reduce((sum, row) => sum + row.teu, 0) * 100,
+        ) / 100
+      : Math.round(
+          yearlyTotals.reduce((sum, row) => sum + row.teu, 0) * 100,
+        ) / 100;
+
   return {
     company_id: companySlug,
     key: `company/${companySlug}`,
@@ -810,33 +946,69 @@ function buildSnapshotFromCompanyData(
     country_code:
       normalizeString(raw?.country_code) ??
       null,
-    total_shipments:
-      normalizeNumber(raw?.total_shipments) ??
-      shipmentsLast12m,
+
+    total_shipments: totalShipmentsAllTime,
+    total_shipments_all_time: totalShipmentsAllTime,
     shipments_last_12m: shipmentsLast12m,
-    total_teu: Math.round(totalTeu12m * 100) / 100,
+
+    total_teu: totalTeuAllTime,
+    total_teu_all_time: totalTeuAllTime,
+    teu_last_12m: Math.round(totalTeu12m * 100) / 100,
+
     total_weight_kg_12m: Math.round(totalWeight12m * 100) / 100,
-    est_spend:
-      Math.round((normalizeNumber(raw?.total_shipping_cost) ?? 0) * 100) / 100,
+
+    est_spend: totalShippingCostAllTime,
+    total_shipping_cost_all_time: totalShippingCostAllTime,
+    est_spend_12m: totalShippingCostAllTime,
+
     fcl_count: fclCount12m,
     lcl_count: lclCount12m,
+    fcl_count_12m: fclCount12m,
+    lcl_count_12m: lclCount12m,
+
+    fcl_shipments_all_time: loadBreakdown.fcl_shipments_all_time,
+    lcl_shipments_all_time: loadBreakdown.lcl_shipments_all_time,
+    fcl_shipments_perc: loadBreakdown.fcl_shipments_perc,
+    lcl_shipments_perc: loadBreakdown.lcl_shipments_perc,
+
     last_shipment_date: lastShipmentDate,
+
     monthly_volumes: monthlyVolumes,
+    monthly_totals: monthlyTotals,
+    yearly_totals: yearlyTotals,
+
     top_routes: topRoutes,
+    most_recent_route:
+      buildRouteLabel(
+        Array.isArray(raw?.recent_bols) ? raw.recent_bols[0] : null,
+      ) ??
+      topRoutes[0]?.route ??
+      null,
+
     top_suppliers: topSuppliers,
     notify_parties: Array.isArray(raw?.notify_party_table)
       ? raw.notify_party_table
       : [],
     recent_bols: Array.isArray(raw?.recent_bols) ? raw.recent_bols : [],
+
     containers: Array.isArray(raw?.containers) ? raw.containers : [],
     containers_load: Array.isArray(raw?.containers_load) ? raw.containers_load : [],
+
+    container_lengths_breakdown: containerLengthBreakdown,
+    top_container_length: topContainer?.container_length ?? null,
+    top_container_count: topContainer?.container_count ?? 0,
+    top_container_shipments: topContainer?.shipments ?? 0,
+    top_container_teu: topContainer?.teu ?? 0,
+
     avg_teu_per_shipment: raw?.avg_teu_per_shipment ?? null,
     avg_teu_per_month: raw?.avg_teu_per_month ?? null,
+
+    raw_date_range: raw?.date_range ?? null,
+
     route_kpis: {
       shipmentsLast12m,
       teuLast12m: Math.round(totalTeu12m * 100) / 100,
-      estSpendUsd12m:
-        Math.round((normalizeNumber(raw?.total_shipping_cost) ?? 0) * 100) / 100,
+      estSpendUsd12m: totalShippingCostAllTime,
       topRouteLast12m: topRoutes[0]?.route ?? null,
       mostRecentRoute:
         buildRouteLabel(
@@ -873,14 +1045,14 @@ function buildCompanyProfileFromSnapshot(
     shipmentsLast12m:
       normalizeNumber(snapshot?.route_kpis?.shipmentsLast12m) ??
       normalizeNumber(snapshot?.shipments_last_12m) ??
-      normalizeNumber(snapshot?.total_shipments) ??
       0,
     teuLast12m:
       normalizeNumber(snapshot?.route_kpis?.teuLast12m) ??
-      normalizeNumber(snapshot?.total_teu) ??
+      normalizeNumber(snapshot?.teu_last_12m) ??
       0,
     estSpendUsd12m:
       normalizeNumber(snapshot?.route_kpis?.estSpendUsd12m) ??
+      normalizeNumber(snapshot?.est_spend_12m) ??
       normalizeNumber(snapshot?.est_spend) ??
       0,
     topRouteLast12m:
@@ -889,6 +1061,7 @@ function buildCompanyProfileFromSnapshot(
       null,
     mostRecentRoute:
       normalizeString(snapshot?.route_kpis?.mostRecentRoute) ??
+      normalizeString(snapshot?.most_recent_route) ??
       normalizeString(snapshot?.top_routes?.[0]?.route) ??
       null,
     sampleSize:
@@ -903,8 +1076,8 @@ function buildCompanyProfileFromSnapshot(
   };
 
   const containers = {
-    fclShipments12m: normalizeNumber(snapshot?.fcl_count) ?? 0,
-    lclShipments12m: normalizeNumber(snapshot?.lcl_count) ?? 0,
+    fclShipments12m: normalizeNumber(snapshot?.fcl_count_12m ?? snapshot?.fcl_count) ?? 0,
+    lclShipments12m: normalizeNumber(snapshot?.lcl_count_12m ?? snapshot?.lcl_count) ?? 0,
   };
 
   const title = inferProfileTitle(snapshot, raw, companySlug);
@@ -942,11 +1115,20 @@ function buildCompanyProfileFromSnapshot(
       normalizeString(snapshot?.last_shipment_date) ??
       null,
     estSpendUsd12m:
-      normalizeNumber(snapshot?.est_spend) ??
+      normalizeNumber(snapshot?.est_spend_12m ?? snapshot?.est_spend) ??
+      0,
+    estSpendUsd:
+      normalizeNumber(snapshot?.total_shipping_cost_all_time ?? snapshot?.est_spend) ??
       0,
     totalShipments:
       normalizeNumber(snapshot?.shipments_last_12m) ??
       normalizeNumber(snapshot?.total_shipments) ??
+      0,
+    totalShipmentsAllTime:
+      normalizeNumber(snapshot?.total_shipments_all_time ?? snapshot?.total_shipments) ??
+      0,
+    totalTeuAllTime:
+      normalizeNumber(snapshot?.total_teu_all_time ?? snapshot?.total_teu) ??
       0,
     routeKpis,
     timeSeries,
@@ -955,12 +1137,25 @@ function buildCompanyProfileFromSnapshot(
       ? snapshot.top_suppliers
       : [],
     time_series: monthlyVolumes,
+    monthly_totals: Array.isArray(snapshot?.monthly_totals)
+      ? snapshot.monthly_totals
+      : [],
+    yearly_totals: Array.isArray(snapshot?.yearly_totals)
+      ? snapshot.yearly_totals
+      : [],
     containers_load: Array.isArray(snapshot?.containers_load)
       ? snapshot.containers_load
       : [],
     containers_detail: Array.isArray(snapshot?.containers)
       ? snapshot.containers
       : [],
+    container_lengths_breakdown: Array.isArray(snapshot?.container_lengths_breakdown)
+      ? snapshot.container_lengths_breakdown
+      : [],
+    top_container_length: snapshot?.top_container_length ?? null,
+    top_container_count: normalizeNumber(snapshot?.top_container_count) ?? 0,
+    top_container_shipments: normalizeNumber(snapshot?.top_container_shipments) ?? 0,
+    top_container_teu: normalizeNumber(snapshot?.top_container_teu) ?? 0,
     top_routes: Array.isArray(snapshot?.top_routes) ? snapshot.top_routes : [],
     most_recent_route: routeKpis.mostRecentRoute
       ? { route: routeKpis.mostRecentRoute }
@@ -976,17 +1171,22 @@ function buildCompanyProfileFromSnapshot(
       : [],
     avg_teu_per_shipment: snapshot?.avg_teu_per_shipment ?? null,
     avg_teu_per_month: snapshot?.avg_teu_per_month ?? null,
-    totalShippingCost:
-      normalizeNumber(raw?.total_shipping_cost) ??
-      normalizeNumber(snapshot?.est_spend) ??
-      0,
+    fcl_shipments_all_time: normalizeNumber(snapshot?.fcl_shipments_all_time) ?? 0,
+    lcl_shipments_all_time: normalizeNumber(snapshot?.lcl_shipments_all_time) ?? 0,
+    fcl_shipments_perc: normalizeNumber(snapshot?.fcl_shipments_perc) ?? 0,
+    lcl_shipments_perc: normalizeNumber(snapshot?.lcl_shipments_perc) ?? 0,
     rawOverview: {
       totalShipmentsAllTime:
         normalizeNumber(raw?.total_shipments) ??
+        normalizeNumber(snapshot?.total_shipments_all_time) ??
         normalizeNumber(snapshot?.total_shipments) ??
         0,
+      totalTeuAllTime:
+        normalizeNumber(snapshot?.total_teu_all_time) ??
+        normalizeNumber(snapshot?.total_teu) ??
+        0,
       carriersPerCountry: raw?.carriers_per_country ?? {},
-      dateRange: raw?.date_range ?? null,
+      dateRange: raw?.date_range ?? snapshot?.raw_date_range ?? null,
       alsoKnownNames: Array.isArray(raw?.also_known_names) ? raw.also_known_names : [],
       hsCodes: raw?.hs_codes ?? [],
     },
@@ -1099,8 +1299,6 @@ async function handleSearchAction(
   try {
     const url = new URL(env.searchUrl);
     url.searchParams.set("name", searchTerm);
-    url.searchParams.set("page_size", String(validatedPageSize));
-    url.searchParams.set("offset", String(offset));
 
     const iyUrl = url.toString();
 
@@ -1270,6 +1468,9 @@ async function handleCompanyProfileAction(supabase: any, companyId: string, requ
       timeSeriesPoints: companyProfile.timeSeries?.length,
       topRoutes: companyProfile.routeKpis?.topRoutesLast12m?.length,
       recentBols: companyProfile.recent_bols?.length ?? 0,
+      totalShipmentsAllTime: companyProfile.totalShipmentsAllTime ?? null,
+      totalTeuAllTime: companyProfile.totalTeuAllTime ?? null,
+      topContainerLength: companyProfile.top_container_length ?? null,
     });
 
     const now = new Date().toISOString();
@@ -1297,8 +1498,8 @@ async function handleCompanyProfileAction(supabase: any, companyId: string, requ
       country: companyProfile.countryCode || null,
       city: companyProfile.address || null,
       last_shipment_date: companyProfile.lastShipmentDate || null,
-      total_shipments: companyProfile.totalShipments || 0,
-      total_teu: companyProfile.routeKpis?.teuLast12m || 0,
+      total_shipments: snapshot.total_shipments_all_time || companyProfile.totalShipments || 0,
+      total_teu: snapshot.total_teu_all_time || companyProfile.routeKpis?.teuLast12m || 0,
       updated_at: now,
     });
 
