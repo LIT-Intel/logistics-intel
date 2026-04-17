@@ -2035,99 +2035,159 @@ export default function CompanyDetailPanel({
   const [contactSlideOpen, setContactSlideOpen] = useState(false);
   const [slideContact, setSlideContact] = useState<any | null>(null);
   const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
+  const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "phantombuster" | "lusha" | null>(null);
 
   useEffect(() => {
-  const companyName =
-    (record as any)?.company?.name ||
-    (record as any)?.company?.company_name ||
-    (rawProfile as any)?.companyName ||
-    (rawProfile as any)?.company_name;
+    const companyId =
+      (record as any)?.company?.company_id ||
+      (record as any)?.company?.id ||
+      (rawProfile as any)?.company_id ||
+      null;
+
+    const companyName =
+      (record as any)?.company?.name ||
+      (record as any)?.company?.company_name ||
+      (rawProfile as any)?.companyName ||
+      (rawProfile as any)?.company_name;
 
   const companyDomain =
     (record as any)?.company?.domain ||
     (rawProfile as any)?.domain ||
     (rawProfile as any)?.companyDomain;
 
-  if (!companyName && !companyDomain) {
-    setLushaContacts([]);
-    setLushaSimilarCompanies([]);
-    return;
-  }
-
-  setContactsLoading(true);
-
-  phantombusterLinkedIn({
-    action: "company_contacts_search",
-    companyName: companyName || null,
-    companyDomain: companyDomain || null,
-    titles: [
-      "supply chain",
-      "logistics",
-      "procurement",
-      "operations",
-      "import",
-      "export",
-      "transportation",
-      "distribution",
-    ],
-    limit: 10,
-  })
-    .then(async (pbData: any) => {
-      const pbContacts = Array.isArray(pbData?.contacts) ? pbData.contacts : [];
-      const prioritizedPb = pbContacts.filter(isSupplyChainContact);
-      const finalPb = prioritizedPb.length ? prioritizedPb : pbContacts.slice(0, 5);
-
-      if (finalPb.length > 0) {
-        setLushaContacts(finalPb);
-        setLushaSimilarCompanies(
-          Array.isArray(pbData?.similarCompanies) ? pbData.similarCompanies : [],
-        );
-        if (finalPb.length && !selectedContact) {
-          setSelectedContact(finalPb[0]);
-        }
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke("enrich-contacts", {
-        body: {
-          companyName: companyName || null,
-          companyDomain: companyDomain || null,
-          filters: {
-            department: "supply chain",
-            seniority: "manager",
-          },
-        },
-      });
-
-      if (error) {
-        console.error("Lusha enrichment error", error);
-        setLushaContacts([]);
-        setLushaSimilarCompanies([]);
-        return;
-      }
-
-      const contacts = Array.isArray((data as any)?.contacts) ? (data as any).contacts : [];
-      const prioritized = contacts.filter(isSupplyChainContact);
-      const fallbackContacts = prioritized.length ? prioritized : contacts.slice(0, 5);
-
-      setLushaContacts(fallbackContacts);
-      setLushaSimilarCompanies(
-        Array.isArray((data as any)?.similarCompanies) ? (data as any).similarCompanies : [],
-      );
-
-      if (fallbackContacts.length && !selectedContact) {
-        setSelectedContact(fallbackContacts[0]);
-      }
-    })
-    .catch((err) => {
-      console.error("PhantomBuster/Lusha enrichment fetch error", err);
+    if (!companyId && !companyName && !companyDomain) {
       setLushaContacts([]);
       setLushaSimilarCompanies([]);
-    })
-    .finally(() => {
-      setContactsLoading(false);
-    });
-}, [record, rawProfile, contactFetchTrigger]);
+      setContactPreviewSource(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      setContactsLoading(true);
+
+      try {
+        if (companyId) {
+          const cached = await loadCachedContactPreview(String(companyId));
+          if (!cancelled && cached && Array.isArray(cached.contacts) && cached.contacts.length > 0) {
+            setLushaContacts(cached.contacts.slice(0, 5));
+            setLushaSimilarCompanies([]);
+            setContactPreviewSource("cache");
+            if (!selectedContact) {
+              setSelectedContact(cached.contacts[0]);
+            }
+            return;
+          }
+        }
+
+        const pbData: any = await phantombusterLinkedIn({
+          action: "company_contacts_search",
+          companyName: companyName || null,
+          companyDomain: companyDomain || null,
+          titles: [
+            "supply chain",
+            "logistics",
+            "procurement",
+            "operations",
+            "import",
+            "export",
+            "transportation",
+            "distribution",
+          ],
+          limit: 10,
+        });
+
+        const pbContacts = Array.isArray(pbData?.contacts) ? pbData.contacts : [];
+        const prioritizedPb = pbContacts.filter(isSupplyChainContact);
+        const finalPb = prioritizedPb.length ? prioritizedPb : pbContacts.slice(0, 5);
+
+        if (!cancelled && finalPb.length > 0) {
+          setLushaContacts(finalPb);
+          setLushaSimilarCompanies([]);
+          setContactPreviewSource("phantombuster");
+          if (!selectedContact) {
+            setSelectedContact(finalPb[0]);
+          }
+
+          if (companyId) {
+            await saveContactPreviewCache({
+              companyId: String(companyId),
+              companyName,
+              companyDomain,
+              sourceProvider: "phantombuster",
+              contacts: finalPb,
+            });
+          }
+          return;
+        }
+
+        const { data, error } = await supabase.functions.invoke("enrich-contacts", {
+          body: {
+            companyName: companyName || null,
+            companyDomain: companyDomain || null,
+            filters: {
+              department: "supply chain",
+              seniority: "manager",
+            },
+          },
+        });
+
+        if (error) {
+          console.error("Lusha enrichment error", error);
+          if (!cancelled) {
+            setLushaContacts([]);
+            setLushaSimilarCompanies([]);
+            setContactPreviewSource(null);
+          }
+          return;
+        }
+
+        const contacts = Array.isArray((data as any)?.contacts) ? (data as any).contacts : [];
+        const prioritized = contacts.filter(isSupplyChainContact);
+        const fallbackContacts = prioritized.length ? prioritized : contacts.slice(0, 5);
+
+        if (!cancelled) {
+          setLushaContacts(fallbackContacts);
+          setLushaSimilarCompanies(
+            Array.isArray((data as any)?.similarCompanies) ? (data as any).similarCompanies : [],
+          );
+          setContactPreviewSource(fallbackContacts.length ? "lusha" : null);
+
+          if (fallbackContacts.length && !selectedContact) {
+            setSelectedContact(fallbackContacts[0]);
+          }
+        }
+
+        if (companyId && fallbackContacts.length > 0) {
+          await saveContactPreviewCache({
+            companyId: String(companyId),
+            companyName,
+            companyDomain,
+            sourceProvider: "lusha",
+            contacts: fallbackContacts,
+          });
+        }
+      } catch (err) {
+        console.error("Contact preview fetch error", err);
+        if (!cancelled) {
+          setLushaContacts([]);
+          setLushaSimilarCompanies([]);
+          setContactPreviewSource(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setContactsLoading(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [record, rawProfile, contactFetchTrigger]);
     
   const freightosBenchmark = useMemo(
     () =>
@@ -2173,6 +2233,65 @@ export default function CompanyDetailPanel({
       : suppliersRawCount <= 20
       ? 4
       : 5;
+
+  const loadCachedContactPreview = async (companyId: string) => {
+    const { data, error } = await supabase
+      .from("lit_company_contact_previews")
+      .select("preview_contacts, expires_at, source_provider")
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Contact preview cache read error", error);
+      return null;
+    }
+
+    if (!data) return null;
+
+    const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+    if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+      return null;
+    }
+
+    return {
+      contacts: Array.isArray(data.preview_contacts) ? data.preview_contacts : [],
+      source: data.source_provider || "cache",
+    };
+  };
+
+  const saveContactPreviewCache = async ({
+    companyId,
+    companyName,
+    companyDomain,
+    sourceProvider,
+    contacts,
+  }: {
+    companyId: string;
+    companyName?: string | null;
+    companyDomain?: string | null;
+    sourceProvider: "phantombuster" | "lusha";
+    contacts: any[];
+  }) => {
+    const payload = {
+      company_id: companyId,
+      company_name: companyName || null,
+      company_domain: companyDomain || null,
+      source_provider: sourceProvider,
+      preview_contacts: contacts.slice(0, 5),
+      total_contacts_found: Array.isArray(contacts) ? contacts.length : 0,
+      fetched_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("lit_company_contact_previews")
+      .upsert(payload, { onConflict: "company_id" });
+
+    if (error) {
+      console.error("Contact preview cache write error", error);
+    }
+  };
 
   const contactOverviewRows = lushaContacts.slice(0, 5);
 
@@ -2605,7 +2724,9 @@ export default function CompanyDetailPanel({
               </div>
               <div className="flex items-center gap-2">
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {contactsLoading ? "Enriching…" : `${lushaContacts.length} found`}
+                  {contactsLoading
+                    ? "Enriching…"
+                    : `${lushaContacts.length} found${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
                 </div>
                 <button
                   type="button"
