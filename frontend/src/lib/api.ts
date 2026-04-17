@@ -3134,6 +3134,17 @@ export async function getSavedCompanies(signal?: AbortSignal) {
       return { rows: [] };
     }
 
+    // DEBUG: Log the raw data structure
+    if (data && data.length > 0) {
+      console.log('[DEBUG] getSavedCompanies raw data sample:', {
+        firstRow: data[0],
+        companyData: data[0]?.lit_companies,
+        shipments_12m: data[0]?.lit_companies?.shipments_12m,
+        teu_12m: data[0]?.lit_companies?.teu_12m,
+        est_spend_12m: data[0]?.lit_companies?.est_spend_12m,
+      });
+    }
+
     const rows = (data || []).map((item: any) => ({
       company: {
         company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
@@ -3156,6 +3167,11 @@ export async function getSavedCompanies(signal?: AbortSignal) {
       saved_at: item.created_at,
       stage: item.stage,
     }));
+
+    // DEBUG: Log mapped rows
+    if (rows.length > 0) {
+      console.log('[DEBUG] getSavedCompanies mapped first row:', rows[0]);
+    }
 
     return { rows };
   } catch (error) {
