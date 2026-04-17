@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { listSavedCompanies } from "@/lib/api";
+import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -186,7 +186,36 @@ export default function CommandCenter() {
         const rows = normalizeSavedCompaniesResponse(response);
 
         if (!isMounted) return;
-        setSavedCompanies(rows);
+
+        // Enrich rows with KPI data from lit_company_search_kpis
+        try {
+          const companyIds = rows
+            .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
+            .filter((id): id is string => Boolean(id));
+          const kpiMap = await enrichCompaniesFromKpis(companyIds);
+          const enriched = rows.map((r) => {
+            const cid = r.company?.company_id ?? (r as any)?.company?.source_company_key;
+            const kpiRow = cid ? kpiMap[cid] : null;
+            if (!kpiRow) return r;
+            const existingKpis = (r.company as any)?.kpis || {};
+            return {
+              ...r,
+              company: {
+                ...r.company,
+                kpis: {
+                  ...existingKpis,
+                  last_activity:    existingKpis.last_activity    ?? kpiRow.last_shipment_date    ?? null,
+                  teu_12m:          existingKpis.teu_12m          ?? kpiRow.all_time_teu_from_series ?? null,
+                  fcl_shipments_12m: existingKpis.fcl_shipments_12m ?? kpiRow.fcl_shipments ?? null,
+                  lcl_shipments_12m: existingKpis.lcl_shipments_12m ?? kpiRow.lcl_shipments ?? null,
+                },
+              },
+            };
+          });
+          setSavedCompanies(enriched);
+        } catch {
+          setSavedCompanies(rows);
+        }
       } catch (error: any) {
         if (!isMounted) return;
         setSavedError(error?.message ?? "Failed to load saved companies");

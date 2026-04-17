@@ -57,6 +57,7 @@ import {
   fetchCompanySnapshot,
   normalizeIyCompanyProfile,
   saveCompanyToCommandCenter,
+  fetchSearchKpiOverlay,
   type CompanySnapshot,
   type IyCompanyProfile,
 } from "@/lib/api";
@@ -99,7 +100,13 @@ interface MockCompany {
   teu_estimate?: number;
   revenue_range?: string;
   mode?: string;
-  last_shipment: string;
+  last_shipment: string | null;
+  latest_year?: number | null;
+  latest_year_shipments?: number | null;
+  latest_year_teu?: number | null;
+  top_container_length?: string | null;
+  fcl_shipments_perc?: number | null;
+  lcl_shipments_perc?: number | null;
   status: 'Active' | 'Inactive';
   frequency: 'High' | 'Medium' | 'Low';
   trend: 'up' | 'flat' | 'down';
@@ -469,6 +476,11 @@ const currentYear = new Date().getFullYear();
   const monthlyVolumes = computeMonthlyVolumes();
   const tradeRoutes = computeTradeRoutes();
 
+  function resolveLastShipmentDate(r: any): string | null {
+    return r?.lastShipmentDate ?? r?.mostRecentShipment
+      ?? r?.last_shipment_date ?? r?.most_recent_shipment ?? null;
+  }
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('[SearchPage] handleSearch fired', { searchQuery });
@@ -516,7 +528,7 @@ const currentYear = new Date().getFullYear();
             teu_estimate: undefined,
             revenue_range: undefined,
             mode: undefined,
-            last_shipment: parsedDate || new Date().toISOString().split('T')[0],
+            last_shipment: parsedDate ?? null,
             status: (result.totalShipments || 0) > 0 ? 'Active' : 'Inactive',
             frequency:
               (result.totalShipments || 0) > 1000
@@ -534,7 +546,31 @@ const currentYear = new Date().getFullYear();
             enrichment_status: 'pending',
           } as MockCompany;
         });
-        setResults(mappedResults);
+
+        // Overlay KPI data from lit_company_search_results
+        try {
+          const keys = mappedResults
+            .map((r: MockCompany) => r.importyeti_key)
+            .filter((k): k is string => Boolean(k));
+          const overlay = await fetchSearchKpiOverlay(keys);
+          const enriched = mappedResults.map((r: MockCompany) => {
+            const kpiRow = r.importyeti_key ? overlay[r.importyeti_key] : null;
+            if (!kpiRow) return r;
+            return {
+              ...r,
+              last_shipment: resolveLastShipmentDate(kpiRow) ?? r.last_shipment,
+              latest_year: kpiRow.latest_year ?? null,
+              latest_year_shipments: kpiRow.latest_year_shipments ?? null,
+              latest_year_teu: kpiRow.latest_year_teu ?? null,
+              top_container_length: kpiRow.top_container_length ?? null,
+              fcl_shipments_perc: kpiRow.fcl_shipments_perc ?? null,
+              lcl_shipments_perc: kpiRow.lcl_shipments_perc ?? null,
+            };
+          });
+          setResults(enriched);
+        } catch {
+          setResults(mappedResults);
+        }
         // Track search usage in search_queries table
         if (user?.id) {
           supabase.from('search_queries').insert({
@@ -962,31 +998,62 @@ const currentYear = new Date().getFullYear();
                           <div className="flex items-center justify-between text-xs md:text-sm">
                             <span className="text-slate-600">Last Shipment</span>
                             <div className="flex items-center gap-1">
-                              <span className="font-semibold text-slate-900 text-xs">
-                                {formatUserFriendlyDate(company.last_shipment)}
-                              </span>
-                              {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (badgeInfo) {
-                                  return (
-                                    <Badge
-                                      variant="secondary"
-                                      className={`text-xs py-0 px-1.5 ${
-                                        badgeInfo.color === 'green'
-                                          ? 'bg-green-50 text-green-700 border-green-200'
-                                          : badgeInfo.color === 'yellow'
-                                          ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                          : 'bg-slate-100 text-slate-600'
-                                      }`}
-                                    >
-                                      {badgeInfo.label}
-                                    </Badge>
-                                  );
-                                }
-                                return null;
-                              })()}
+                              {company.last_shipment ? (
+                                <>
+                                  <span className="font-semibold text-slate-900 text-xs">
+                                    {formatUserFriendlyDate(company.last_shipment)}
+                                  </span>
+                                  {(() => {
+                                    const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                                    if (badgeInfo) {
+                                      return (
+                                        <Badge
+                                          variant="secondary"
+                                          className={`text-xs py-0 px-1.5 ${
+                                            badgeInfo.color === 'green'
+                                              ? 'bg-green-50 text-green-700 border-green-200'
+                                              : badgeInfo.color === 'yellow'
+                                              ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                              : 'bg-slate-100 text-slate-600'
+                                          }`}
+                                        >
+                                          {badgeInfo.label}
+                                        </Badge>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </>
+                              ) : (
+                                <span className="text-xs text-slate-400">No date available</span>
+                              )}
                             </div>
                           </div>
+                          {company.latest_year != null && (
+                            <div className="flex items-center justify-between text-xs md:text-sm">
+                              <span className="text-slate-600">{company.latest_year} shipments</span>
+                              <span className="font-semibold text-slate-900 text-xs">
+                                {(company.latest_year_shipments ?? 0).toLocaleString()}
+                                {company.latest_year_teu != null ? ` · ${company.latest_year_teu.toLocaleString()} TEU` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {company.top_container_length && (
+                            <div className="flex items-center justify-between text-xs md:text-sm">
+                              <span className="text-slate-600">Top container</span>
+                              <span className="font-semibold text-slate-900 text-xs">{company.top_container_length}</span>
+                            </div>
+                          )}
+                          {(company.fcl_shipments_perc != null || company.lcl_shipments_perc != null) && (
+                            <div className="flex items-center justify-between text-xs md:text-sm">
+                              <span className="text-slate-600">FCL / LCL</span>
+                              <span className="font-semibold text-slate-900 text-xs">
+                                {company.fcl_shipments_perc != null ? `${Math.round(company.fcl_shipments_perc)}% FCL` : '—'}
+                                {' · '}
+                                {company.lcl_shipments_perc != null ? `${Math.round(company.lcl_shipments_perc)}% LCL` : '—'}
+                              </span>
+                            </div>
+                          )}
                         </div>
                         <div className="pt-3 md:pt-4 flex gap-2">
                           <Button

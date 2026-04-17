@@ -2889,11 +2889,18 @@ export async function getSavedCompanies(signal?: AbortSignal) {
         company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
         name: item.lit_companies?.name || 'Unknown Company',
         domain: item.lit_companies?.domain,
+        website: item.lit_companies?.website || null,
         address: item.lit_companies?.address_line1 || `${item.lit_companies?.city || ''}, ${item.lit_companies?.state || ''}`.trim(),
         country_code: item.lit_companies?.country_code,
         kpis: {
-          shipments_12m: item.lit_companies?.shipments_12m || 0,
-          last_activity: item.lit_companies?.most_recent_shipment_date,
+          shipments_12m:    item.lit_companies?.shipments_12m    ?? 0,
+          teu_12m:          item.lit_companies?.teu_12m           ?? null,
+          fcl_shipments_12m: item.lit_companies?.fcl_shipments_12m ?? null,
+          lcl_shipments_12m: item.lit_companies?.lcl_shipments_12m ?? null,
+          est_spend_12m:    null,
+          top_route_12m:    item.lit_companies?.top_route_12m    || null,
+          recent_route:     item.lit_companies?.recent_route      || null,
+          last_activity:    item.lit_companies?.most_recent_shipment_date ?? null,
         },
       },
       shipments: [],
@@ -2906,6 +2913,42 @@ export async function getSavedCompanies(signal?: AbortSignal) {
     console.error('getSavedCompanies error:', error);
     return { rows: [] };
   }
+}
+
+// KPI overlay for search result cards — reads from lit_company_search_results
+export async function fetchSearchKpiOverlay(
+  companyKeys: string[],
+): Promise<Record<string, any>> {
+  if (!companyKeys.length) return {};
+  const { data, error } = await supabase
+    .from('lit_company_search_results')
+    .select('*')
+    .in('company_id', companyKeys);
+  if (error || !data) return {};
+  const map: Record<string, any> = {};
+  for (const row of data) {
+    if (row.company_id) map[row.company_id] = row;
+  }
+  return map;
+}
+
+// Secondary KPI enrichment for Command Center rows — reads from lit_company_search_kpis
+export async function enrichCompaniesFromKpis(
+  companyIds: string[],
+): Promise<Record<string, any>> {
+  if (!companyIds.length) return {};
+  const { data, error } = await supabase
+    .from('lit_company_search_kpis')
+    .select(
+      'company_id, last_shipment_date, total_shipments, all_time_teu_from_series, fcl_shipments, lcl_shipments, latest_year, latest_year_shipments, latest_year_teu, top_container_length',
+    )
+    .in('company_id', companyIds);
+  if (error || !data) return {};
+  const map: Record<string, any> = {};
+  for (const row of data) {
+    if (row.company_id) map[row.company_id] = row;
+  }
+  return map;
 }
 
 // --- Filters singleton cache with 10m TTL ---
