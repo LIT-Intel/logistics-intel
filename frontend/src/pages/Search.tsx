@@ -33,6 +33,8 @@ import {
   fetchCompanySnapshot,
   normalizeIyCompanyProfile,
   saveCompanyToCommandCenter,
+  fetchSearchKpiOverlay,
+  type CompanySnapshot,
   type IyCompanyProfile,
 } from "@/lib/api";
 import {
@@ -65,10 +67,16 @@ type SearchCompany = {
   shipments_12m: number;
   teu_estimate?: number;
   mode?: string;
-  last_shipment: string;
-  status: "Active" | "Inactive";
-  frequency: "High" | "Medium" | "Low";
-  trend: "up" | "flat" | "down";
+  last_shipment: string | null;
+  latest_year?: number | null;
+  latest_year_shipments?: number | null;
+  latest_year_teu?: number | null;
+  top_container_length?: string | null;
+  fcl_shipments_perc?: number | null;
+  lcl_shipments_perc?: number | null;
+  status: 'Active' | 'Inactive';
+  frequency: 'High' | 'Medium' | 'Low';
+  trend: 'up' | 'flat' | 'down';
   top_origins: string[];
   top_destinations: string[];
   top_suppliers: string[];
@@ -228,6 +236,83 @@ export default function SearchPage() {
     };
   }, [selectedCompany]);
 
+  const computeKPIsFromRaw = () => {
+    if (!rawData?.snapshot) {
+      return {
+        totalTEU: 0,
+        fclCount: 0,
+        lclCount: 0,
+        estSpend: 0,
+        totalShipments: 0,
+        lastShipmentDate: null,
+      };
+    }
+    const snapshot = rawData.snapshot;
+    return {
+      totalTEU: snapshot.total_teu || 0,
+      fclCount: snapshot.fcl_count || 0,
+      lclCount: snapshot.lcl_count || 0,
+      estSpend: snapshot.est_spend || 0,
+      totalShipments: snapshot.total_shipments || 0,
+      lastShipmentDate: snapshot.last_shipment_date || null,
+    };
+  };
+
+  const computeMonthlyVolumes = () => {
+    if (!rawData) {
+      console.warn('[computeMonthlyVolumes] No rawData available');
+      return {};
+    }
+    const snapshot = rawData.snapshot;
+    const data = rawData.data || {};
+    if (snapshot?.monthly_volumes && Object.keys(snapshot.monthly_volumes).length > 0) {
+      return snapshot.monthly_volumes;
+    }
+    if (!Array.isArray(data.recent_bols) || data.recent_bols.length === 0) {
+      console.warn('[computeMonthlyVolumes] No BOL data available for aggregation');
+      return {};
+    }
+    const computed: Record<string, { fcl: number; lcl: number }> = {};
+    (data.recent_bols || []).forEach((bol: any) => {
+      if (!bol.date_formatted) return;
+      const parts = bol.date_formatted.split('/');
+      if (parts.length !== 3) return;
+      const [day, month, year] = parts;
+      const monthKey = `${year}-${month.padStart(2, '0')}`;
+      if (!computed[monthKey]) {
+        computed[monthKey] = { fcl: 0, lcl: 0 };
+      }
+      if (bol.lcl === true) {
+        computed[monthKey].lcl++;
+      } else if (bol.lcl === false) {
+        computed[monthKey].fcl++;
+      }
+    });
+    if (Object.keys(computed).length > 0) {
+      console.log('[computeMonthlyVolumes] Computed from BOL data:', Object.keys(computed).length, 'months');
+      return computed;
+    }
+    console.warn('[computeMonthlyVolumes] No monthly_volumes data available');
+    return {};
+  };
+
+  const computeTradeRoutes = () => {
+    if (!rawData?.snapshot?.top_ports) {
+      return { origins: [], destinations: [] };
+    }
+    const topPorts = rawData.snapshot.top_ports || [];
+    return { origins: topPorts.slice(0, 5), destinations: [] };
+  };
+
+  const kpis = computeKPIsFromRaw();
+  const monthlyVolumes = computeMonthlyVolumes();
+  const tradeRoutes = computeTradeRoutes();
+
+  function resolveLastShipmentDate(r: any): string | null {
+    return r?.lastShipmentDate ?? r?.mostRecentShipment
+      ?? r?.last_shipment_date ?? r?.most_recent_shipment ?? null;
+  }
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -339,7 +424,7 @@ export default function SearchPage() {
                       : undefined,
             mode: undefined,
             last_shipment: parsedDate ?? null,
-            status: totalShipments > 0 ? "Active" : "Inactive",
+            status: (result.totalShipments || 0) > 0 ? 'Active' : 'Inactive',
             frequency:
               totalShipments > 10000
                 ? "High"
@@ -387,8 +472,31 @@ export default function SearchPage() {
           return mapped;
         });
 
-        setResults(mappedResults);
-
+        // Overlay KPI data from lit_company_search_results
+        try {
+          const keys = mappedResults
+            .map((r: MockCompany) => r.importyeti_key)
+            .filter((k): k is string => Boolean(k));
+          const overlay = await fetchSearchKpiOverlay(keys);
+          const enriched = mappedResults.map((r: MockCompany) => {
+            const kpiRow = r.importyeti_key ? overlay[r.importyeti_key] : null;
+            if (!kpiRow) return r;
+            return {
+              ...r,
+              last_shipment: resolveLastShipmentDate(kpiRow) ?? r.last_shipment,
+              latest_year: kpiRow.latest_year ?? null,
+              latest_year_shipments: kpiRow.latest_year_shipments ?? null,
+              latest_year_teu: kpiRow.latest_year_teu ?? null,
+              top_container_length: kpiRow.top_container_length ?? null,
+              fcl_shipments_perc: kpiRow.fcl_shipments_perc ?? null,
+              lcl_shipments_perc: kpiRow.lcl_shipments_perc ?? null,
+            };
+          });
+          setResults(enriched);
+        } catch {
+          setResults(mappedResults);
+        }
+        // Track search usage in search_queries table
         if (user?.id) {
           supabase
             .from("search_queries")
@@ -897,6 +1005,65 @@ export default function SearchPage() {
                               <span className="text-xs text-slate-400">No data</span>
                             )}
                           </div>
+                          <div className="flex items-center justify-between text-xs md:text-sm">
+                            <span className="text-slate-600">Last Shipment</span>
+                            <div className="flex items-center gap-1">
+                              {company.last_shipment ? (
+                                <>
+                                  <span className="font-semibold text-slate-900 text-xs">
+                                    {formatUserFriendlyDate(company.last_shipment)}
+                                  </span>
+                                  {(() => {
+                                    const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                                    if (badgeInfo) {
+                                      return (
+                                        <Badge
+                                          variant="secondary"
+                                          className={`text-xs py-0 px-1.5 ${
+                                            badgeInfo.color === 'green'
+                                              ? 'bg-green-50 text-green-700 border-green-200'
+                                              : badgeInfo.color === 'yellow'
+                                              ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                              : 'bg-slate-100 text-slate-600'
+                                          }`}
+                                        >
+                                          {badgeInfo.label}
+                                        </Badge>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </>
+                              ) : (
+                                <span className="text-xs text-slate-400">No date available</span>
+                              )}
+                            </div>
+                          </div>
+                          {company.latest_year != null && (
+                            <div className="flex items-center justify-between text-xs md:text-sm">
+                              <span className="text-slate-600">{company.latest_year} shipments</span>
+                              <span className="font-semibold text-slate-900 text-xs">
+                                {(company.latest_year_shipments ?? 0).toLocaleString()}
+                                {company.latest_year_teu != null ? ` · ${company.latest_year_teu.toLocaleString()} TEU` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {company.top_container_length && (
+                            <div className="flex items-center justify-between text-xs md:text-sm">
+                              <span className="text-slate-600">Top container</span>
+                              <span className="font-semibold text-slate-900 text-xs">{company.top_container_length}</span>
+                            </div>
+                          )}
+                          {(company.fcl_shipments_perc != null || company.lcl_shipments_perc != null) && (
+                            <div className="flex items-center justify-between text-xs md:text-sm">
+                              <span className="text-slate-600">FCL / LCL</span>
+                              <span className="font-semibold text-slate-900 text-xs">
+                                {company.fcl_shipments_perc != null ? `${Math.round(company.fcl_shipments_perc)}% FCL` : '—'}
+                                {' · '}
+                                {company.lcl_shipments_perc != null ? `${Math.round(company.lcl_shipments_perc)}% LCL` : '—'}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex gap-2 pt-1">

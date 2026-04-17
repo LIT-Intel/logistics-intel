@@ -27,7 +27,6 @@ import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
-import CommandCenterInsights from "./CommandCenterInsights";
 import { supabase } from "@/lib/supabase";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 import {
@@ -2032,6 +2031,9 @@ export default function CompanyDetailPanel({
   const [lushaSimilarCompanies, setLushaSimilarCompanies] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
   const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactSlideOpen, setContactSlideOpen] = useState(false);
+  const [slideContact, setSlideContact] = useState<any | null>(null);
+  const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
 
   useEffect(() => {
     const companyName =
@@ -2090,7 +2092,7 @@ export default function CompanyDetailPanel({
       .finally(() => {
         setContactsLoading(false);
       });
-  }, [record, rawProfile]);
+  }, [record, rawProfile, contactFetchTrigger]);
 
   const freightosBenchmark = useMemo(
     () =>
@@ -2103,38 +2105,8 @@ export default function CompanyDetailPanel({
     [detail],
   );
 
-  const strategicInsights = [
-    detail.topRouteLabel && detail.topRouteLabel !== "—"
-      ? {
-          title: "Trade lane signal",
-          body: `Primary lane for ${effectiveSelectedYear ?? "the selected year"} is ${detail.topRouteLabel}. Position DSV around lane resilience, capacity optionality, and routing control.`,
-        }
-      : null,
-    detail.latestShipmentDate
-      ? {
-          title: "Recency risk",
-          tone: "warning" as const,
-          body: `Latest visible movement is ${formatDate(detail.latestShipmentDate)}. Use this to frame urgency, renewal timing, and outbound sequencing.`,
-        }
-      : null,
-    detail.shipments
-      ? {
-          title: "Volume profile",
-          tone: "highlight" as const,
-          body: `Selected-year activity shows ${formatNumber(detail.shipments)} shipments and ${formatNumber(detail.teu, 1)} TEUs. This account supports a real logistics intelligence conversation, not a generic sales pitch.`,
-        }
-      : null,
-    freightosBenchmark
-      ? {
-          title: "Market benchmark matched",
-          body: `${freightosBenchmark.code} aligns to the company’s dominant lane. Use it as market context, not company-specific contract pricing.`,
-        }
-      : null,
-  ].filter(Boolean) as Array<{
-    title: string;
-    body: string;
-    tone?: "default" | "warning" | "highlight";
-  }>;
+  // Trade lane signal, Recency risk, and Volume profile cards removed per UX cleanup.
+  // Only Contact Intelligence remains in the bottom overview section.
 
   const avgTeu = (rawProfile as any)?.avg_teu_per_month;
   const teu12m = avgTeu?.["12m"] ?? avgTeu?.["12m_avg"] ?? null;
@@ -2167,7 +2139,7 @@ export default function CompanyDetailPanel({
       ? 4
       : 5;
 
-  const contactOverviewRows = lushaContacts.slice(0, 4);
+  const contactOverviewRows = lushaContacts.slice(0, 5);
 
   if (!key) {
     return <CommandCenterEmptyState />;
@@ -2345,16 +2317,20 @@ export default function CompanyDetailPanel({
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Live rate feed
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Live rate chart — {freightosBenchmark.code}
                     </div>
-                    <div className="mt-2 text-sm text-slate-700">
-                      UI is ready. Current benchmark values will appear here once the Freightos feed is connected
-                      server-side.
-                    </div>
-                    <div className="mt-3 text-xs text-slate-500">
-                      Benchmark spot rate for 40 ft containers, not company-specific contract pricing.
+                    <iframe
+                      src={`https://fbx.freightos.com/widget/?index=${freightosBenchmark.code}`}
+                      title={`${freightosBenchmark.code} Freightos Rate Index`}
+                      className="w-full rounded-2xl border-0"
+                      style={{ height: 240 }}
+                      loading="lazy"
+                      sandbox="allow-scripts allow-same-origin"
+                    />
+                    <div className="mt-2 text-xs text-slate-500">
+                      Spot rate for 40 ft containers · Freightos Baltic Exchange · not company-specific pricing
                     </div>
                   </div>
                 </div>
@@ -2581,77 +2557,148 @@ export default function CompanyDetailPanel({
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,.9fr)]">
-            <CommandCenterInsights insights={strategicInsights} />
-
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    AI contact intelligence
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Auto-enriched supply chain and logistics decision makers
-                  </p>
+          {/* Contact Intelligence — full-width bottom section */}
+          <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  Contact Intelligence
                 </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Auto-enriched supply chain and logistics decision makers via Lusha
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                   {contactsLoading ? "Enriching…" : `${lushaContacts.length} found`}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setContactFetchTrigger((n) => n + 1)}
+                  disabled={contactsLoading}
+                  className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  {contactsLoading ? "Searching…" : "Search via Lusha"}
+                </button>
               </div>
+            </div>
 
-              {contactsLoading ? (
-                <div className="space-y-3">
-                  {[0, 1, 2].map((idx) => (
-                    <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                      <div className="h-4 w-1/3 rounded bg-slate-200" />
-                      <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
-                    </div>
-                  ))}
+            {contactsLoading ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {[0, 1, 2].map((idx) => (
+                  <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <div className="h-4 w-1/3 rounded bg-slate-200" />
+                    <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
+                  </div>
+                ))}
+              </div>
+            ) : contactOverviewRows.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                <p className="text-sm text-slate-500">No supply chain or logistics contacts found yet.</p>
+                <button
+                  type="button"
+                  onClick={() => setContactFetchTrigger((n) => n + 1)}
+                  className="mt-3 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                >
+                  Enrich contacts via Lusha
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {contactOverviewRows.map((contact: any, index: number) => {
+                  const fullName = getContactFullName(contact);
+                  const title = getContactTitle(contact);
+                  return (
+                    <button
+                      key={`${fullName}-${index}`}
+                      type="button"
+                      onClick={() => { setSlideContact(contact); setContactSlideOpen(true); }}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50/60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
+                          <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                          Verified
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400">Click to view details</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Contact slide-over */}
+          {contactSlideOpen && slideContact && (
+            <>
+              <div
+                className="fixed inset-0 z-40 bg-black/30"
+                onClick={() => setContactSlideOpen(false)}
+              />
+              <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                  <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
+                    Contact Details
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setContactSlideOpen(false)}
+                    className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
                 </div>
-              ) : contactOverviewRows.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                  No high-confidence supply chain or logistics contacts found yet.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {contactOverviewRows.map((contact: any, index: number) => {
-                    const fullName = getContactFullName(contact);
-                    const title = getContactTitle(contact);
-                    const email = contact.email || contact.email_address || "";
-                    const phone = contact.phone || contact.phone_number || "";
+                <div className="flex-1 overflow-y-auto p-5">
+                  {(() => {
+                    const fullName = getContactFullName(slideContact);
+                    const title = getContactTitle(slideContact);
+                    const email = slideContact.email || slideContact.email_address || "";
+                    const phone = slideContact.phone || slideContact.phone_number || "";
+                    const initials = fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
                     return (
-                      <div
-                        key={`${fullName}-${index}`}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-                            <div className="mt-1 truncate text-sm text-indigo-600">{title || "Role unavailable"}</div>
+                      <>
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-2xl bg-indigo-100 px-3 py-2 text-lg font-semibold text-indigo-700">
+                            {initials}
                           </div>
-                          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                          <div>
+                            <div className="text-lg font-semibold text-slate-950">{fullName}</div>
+                            {title && <div className="text-sm text-indigo-600">{title}</div>}
+                          </div>
+                        </div>
+                        <div className="mt-5 space-y-3">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
+                            <div className="mt-1 text-sm text-slate-900">{email || "Email unavailable"}</div>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
+                            <div className="mt-1 text-sm text-slate-900">{phone || "Phone unavailable"}</div>
+                          </div>
+                          <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
                             Verified
                           </span>
                         </div>
-                        <div className="mt-3 space-y-2 text-sm text-slate-600">
-                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            {email || "Email unavailable"}
-                          </div>
-                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            {phone || "Phone unavailable"}
-                          </div>
+                        <div className="mt-6 border-t border-slate-100 pt-5">
+                          <button
+                            type="button"
+                            onClick={() => { setContactSlideOpen(false); setContactFetchTrigger((n) => n + 1); }}
+                            className="w-full rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                          >
+                            Search for more contacts via Lusha
+                          </button>
                         </div>
-                      </div>
+                      </>
                     );
-                  })}
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                    These contacts are displayed in Overview first. Persistent save into the Contact Intel source is the next backend step.
-                  </div>
+                  })()}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="suppliers" className="space-y-4">
