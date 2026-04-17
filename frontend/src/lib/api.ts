@@ -2953,10 +2953,18 @@ export async function listSavedCompanies(
         kpis: {
           shipments_12m:
             row.company_data?.shipmentsLast12m ||
+            row.company_data?.shipments_12m ||
             row.company_data?.totalShipments ||
             0,
+          teu_12m: row.company_data?.teuLast12m || row.company_data?.teu_12m || null,
+          fcl_shipments_12m: row.company_data?.fclShipments12m || row.company_data?.fcl_shipments_12m || null,
+          lcl_shipments_12m: row.company_data?.lclShipments12m || row.company_data?.lcl_shipments_12m || null,
+          est_spend_12m: row.company_data?.estSpend12m || row.company_data?.est_spend_12m || null,
+          top_route_12m: row.company_data?.topRoute12m || row.company_data?.top_route_12m || null,
+          recent_route: row.company_data?.recentRoute || row.company_data?.recent_route || null,
           last_activity:
             row.company_data?.lastShipmentDate ||
+            row.company_data?.most_recent_shipment_date ||
             row.company_data?.mostRecentShipment ||
             null,
         },
