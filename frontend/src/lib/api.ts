@@ -2536,60 +2536,97 @@ export async function searchShippers(
     throw new Error(`Search failed: ${error.message || "Unknown error"}`);
   }
 
-  // Get raw normalized response from ImportYeti
-  const baseResponse = coerceIySearchResponse(data, { q, page, pageSize });
+  const base = coerceIySearchResponse(data, { q, page, pageSize });
 
-  // Extract company IDs from results for KPI enrichment
-  const companyIds = baseResponse.results
-    .map((result: any) => result.companyId || result.key)
-    .filter(Boolean);
+  const companyIds = Array.from(
+    new Set(
+      base.results
+        .map((hit: any) =>
+          normalizeCompanyIdToSlug(
+            hit.companyId || hit.companyKey || hit.key || ""
+          )
+        )
+        .filter(Boolean)
+    )
+  );
 
-  // Enrich results with KPI data from Supabase
   if (companyIds.length > 0) {
-    try {
-      const { data: kpiRows } = await supabase
-        .from("lit_company_search_results")
-        .select("*")
-        .in("company_id", companyIds);
+    const { data: kpiRows, error: kpiError } = await supabase
+      .from("lit_company_search_results")
+      .select("*")
+      .in("company_id", companyIds);
 
-      const kpiMap = new Map(
-        (kpiRows || []).map((row: any) => [
-          String(row.company_id || "").trim(),
-          row,
-        ])
-      );
-
-      // Merge KPI data into results
-      baseResponse.results = baseResponse.results.map((result: any) => {
-        const slug = String(result.companyId || result.key || "").trim();
-        const kpiData = kpiMap.get(slug);
-
-        if (kpiData) {
-          return {
-            ...result,
-            latestYearShipments:
-              coerceNumber(kpiData.latest_year_shipments) ?? result.latestYearShipments,
-            latestYearTeu:
-              coerceNumber(kpiData.latest_year_teu) ?? result.latestYearTeu,
-            fclShipments12m:
-              coerceNumber(kpiData.fcl_shipments) ?? result.fclShipments12m,
-            lclShipments12m:
-              coerceNumber(kpiData.lcl_shipments) ?? result.lclShipments12m,
-            topContainerLength:
-              kpiData.top_container_length ?? result.topContainerLength,
-            lastShipmentDate:
-              kpiData.last_shipment_date ?? result.lastShipmentDate,
-          };
-        }
-        return result;
-      });
-    } catch (enrichError) {
-      console.warn("KPI enrichment failed, continuing with base results:", enrichError);
-      // Continue with unenriched results on failure
+    if (kpiError) {
+      console.warn("KPI overlay failed:", kpiError);
+      return {
+        ...base,
+        results: base.results,
+      };
     }
+
+    const kpiMap = new Map(
+      (Array.isArray(kpiRows) ? kpiRows : []).map((row: any) => [
+        normalizeCompanyIdToSlug(row.company_id),
+        row,
+      ])
+    );
+
+    const mergedResults = base.results.map((hit: any) => {
+      const slug = normalizeCompanyIdToSlug(
+        hit.companyId || hit.companyKey || hit.key || ""
+      );
+      const kpiRow = kpiMap.get(slug);
+
+      if (!kpiRow) return hit;
+
+      return {
+        ...hit,
+        totalShipments:
+          coerceNumber(kpiRow.total_shipments) ?? hit.totalShipments,
+        shipmentsLast12m:
+          coerceNumber(kpiRow.latest_year_shipments) ?? hit.shipmentsLast12m,
+        teusLast12m:
+          coerceNumber(kpiRow.latest_year_teu) ?? hit.teusLast12m,
+        lastShipmentDate: kpiRow.last_shipment_date ?? hit.lastShipmentDate,
+        mostRecentShipment:
+          kpiRow.last_shipment_date ?? hit.mostRecentShipment,
+        latestYearShipments:
+          coerceNumber(kpiRow.latest_year_shipments) ?? hit.latestYearShipments,
+        latestYearTeu:
+          coerceNumber(kpiRow.latest_year_teu) ?? hit.latestYearTeu,
+        currentYearShipments:
+          coerceNumber(kpiRow.latest_year_shipments) ?? hit.currentYearShipments,
+        currentYearTeu:
+          coerceNumber(kpiRow.latest_year_teu) ?? hit.currentYearTeu,
+        topContainerLength: kpiRow.top_container_length ?? hit.topContainerLength,
+        fclShipments12m:
+          coerceNumber(kpiRow.fcl_shipments) ?? hit.fclShipments12m,
+        lclShipments12m:
+          coerceNumber(kpiRow.lcl_shipments) ?? hit.lclShipments12m,
+        country: kpiRow.country ?? hit.country,
+        countryCode: kpiRow.country_code ?? hit.countryCode,
+        website:
+          kpiRow.website && kpiRow.website.trim()
+            ? `https://${String(kpiRow.website).replace(/^https?:\/\//i, "")}`
+            : hit.website,
+        domain: kpiRow.website ?? hit.domain,
+        address: kpiRow.city ?? hit.address,
+        city: kpiRow.city ?? hit.city,
+        name: kpiRow.company_name ? kpiRow.company_name : hit.name,
+        title: kpiRow.company_name ? kpiRow.company_name : hit.title,
+      };
+    });
+
+    return {
+      ...base,
+      results: mergedResults,
+    };
   }
 
-  return baseResponse;
+  return {
+    ...base,
+    results: base.results,
+  };
 }
   
 export const searchIyShippers = searchShippers;
