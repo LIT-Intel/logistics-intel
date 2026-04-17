@@ -2509,34 +2509,70 @@ export async function searchShippers(
     return devSearchShippers({ q, page, pageSize });
   }
 
-  const headers = await getAuthHeaders();
+  const fromIndex = await supabase
+    .from("lit_company_search_results")
+    .select("*")
+    .ilike("company_name", `%${q}%`)
+    .range((page - 1) * pageSize, page * pageSize - 1);
 
-  const res = await fetch(
-    `${SUPABASE_URL}/functions/v1/importyeti-proxy`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        action: "search",
-        q,
-        page,
-        pageSize,
-      }),
-      signal,
-    }
-  );
-
-  const data = await res.json().catch(() => null);
-  const error = !res.ok
-    ? { message: data?.error || `HTTP ${res.status}` }
-    : null;
-
-  if (error) {
-    console.error("ImportYeti search error:", error);
-    throw new Error(`Search failed: ${error.message || "Unknown error"}`);
+  if (fromIndex.error) {
+    console.error("Supabase search error:", fromIndex.error);
+    throw new Error(`Search failed: ${fromIndex.error.message || "Unknown error"}`);
   }
 
-  return coerceIySearchResponse(data, { q, page, pageSize });
+  const rows = Array.isArray(fromIndex.data) ? fromIndex.data : [];
+
+  const results: IyShipperHit[] = rows.map((row: any) => {
+    const slug = String(row.company_id || "").trim();
+    const key = ensureCompanyKey(slug);
+
+    return {
+      key,
+      companyId: key,
+      companyKey: key,
+      name: row.company_name || "Unknown company",
+      title: row.company_name || "Unknown company",
+      normalizedName: row.company_name || null,
+      domain: row.website || null,
+      website: row.website
+        ? `https://${String(row.website).replace(/^https?:\/\//i, "")}`
+        : null,
+      phone: null,
+      address: row.city || null,
+      city: row.city || null,
+      state: null,
+      postalCode: null,
+      country: row.country || null,
+      countryCode: row.country_code || null,
+      totalShipments: coerceNumber(row.total_shipments),
+      shipmentsLast12m: coerceNumber(row.latest_year_shipments),
+      teusLast12m: coerceNumber(row.latest_year_teu),
+      estSpendLast12m: null,
+      primaryRouteSummary: null,
+      primaryRoute: null,
+      lastShipmentDate: row.last_shipment_date || null,
+      mostRecentShipment: row.last_shipment_date || null,
+      latestYearShipments: coerceNumber(row.latest_year_shipments),
+      latestYearTeu: coerceNumber(row.latest_year_teu),
+      currentYearShipments: coerceNumber(row.latest_year_shipments),
+      currentYearTeu: coerceNumber(row.latest_year_teu),
+      topContainerLength: row.top_container_length || null,
+      fclShipments12m: coerceNumber(row.fcl_shipments),
+      lclShipments12m: coerceNumber(row.lcl_shipments),
+      topSuppliers: null,
+    };
+  });
+
+  return {
+    ok: true,
+    results,
+    total: results.length,
+    meta: {
+      q,
+      page,
+      pageSize,
+    },
+  };
 }
   
 export const searchIyShippers = searchShippers;
