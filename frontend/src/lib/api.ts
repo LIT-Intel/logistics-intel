@@ -2511,7 +2511,7 @@ export async function searchShippers(
 
   const fromIndex = await supabase
     .from("lit_company_search_results")
-    .select("*")
+    .select("*", { count: "exact" })
     .ilike("company_name", `%${q}%`)
     .range((page - 1) * pageSize, page * pageSize - 1);
 
@@ -2521,6 +2521,7 @@ export async function searchShippers(
   }
 
   const rows = Array.isArray(fromIndex.data) ? fromIndex.data : [];
+  const total = fromIndex.count || rows.length;
 
   const results: IyShipperHit[] = rows.map((row: any) => {
     const slug = String(row.company_id || "").trim();
@@ -2566,7 +2567,7 @@ export async function searchShippers(
   return {
     ok: true,
     results,
-    total: results.length,
+    total,
     meta: {
       q,
       page,
