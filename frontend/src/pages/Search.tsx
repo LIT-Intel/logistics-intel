@@ -752,6 +752,15 @@ export default function SearchPage() {
                               Saved
                             </Badge>
                           )}
+                          {company.latest_year_teu == null &&
+                            company.latest_year_shipments == null &&
+                            company.top_container_length == null &&
+                            company.fcl_percent == null &&
+                            company.lcl_percent == null && (
+                            <Badge variant="outline" className="rounded-full text-xs text-slate-500">
+                              More intelligence on open
+                            </Badge>
+                          )}
                         </div>
                       </CardHeader>
 
