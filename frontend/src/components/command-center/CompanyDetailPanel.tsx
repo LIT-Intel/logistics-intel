@@ -23,6 +23,7 @@ import {
   buildYearScopedProfile,
   getCommandCenterAvailableYears,
 } from "@/lib/api";
+import { phantombusterLinkedIn } from "@/api/functions";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -2036,27 +2037,58 @@ export default function CompanyDetailPanel({
   const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
 
   useEffect(() => {
-    const companyName =
-      (record as any)?.company?.name ||
-      (record as any)?.company?.company_name ||
-      (rawProfile as any)?.companyName ||
-      (rawProfile as any)?.company_name;
+  const companyName =
+    (record as any)?.company?.name ||
+    (record as any)?.company?.company_name ||
+    (rawProfile as any)?.companyName ||
+    (rawProfile as any)?.company_name;
 
-    const companyDomain =
-      (record as any)?.company?.domain ||
-      (rawProfile as any)?.domain ||
-      (rawProfile as any)?.companyDomain;
+  const companyDomain =
+    (record as any)?.company?.domain ||
+    (rawProfile as any)?.domain ||
+    (rawProfile as any)?.companyDomain;
 
-    if (!companyName && !companyDomain) {
-      setLushaContacts([]);
-      setLushaSimilarCompanies([]);
-      return;
-    }
+  if (!companyName && !companyDomain) {
+    setLushaContacts([]);
+    setLushaSimilarCompanies([]);
+    return;
+  }
 
-    setContactsLoading(true);
+  setContactsLoading(true);
 
-    supabase.functions
-      .invoke("enrich-contacts", {
+  phantombusterLinkedIn({
+    action: "company_contacts_search",
+    companyName: companyName || null,
+    companyDomain: companyDomain || null,
+    titles: [
+      "supply chain",
+      "logistics",
+      "procurement",
+      "operations",
+      "import",
+      "export",
+      "transportation",
+      "distribution",
+    ],
+    limit: 10,
+  })
+    .then(async (pbData: any) => {
+      const pbContacts = Array.isArray(pbData?.contacts) ? pbData.contacts : [];
+      const prioritizedPb = pbContacts.filter(isSupplyChainContact);
+      const finalPb = prioritizedPb.length ? prioritizedPb : pbContacts.slice(0, 5);
+
+      if (finalPb.length > 0) {
+        setLushaContacts(finalPb);
+        setLushaSimilarCompanies(
+          Array.isArray(pbData?.similarCompanies) ? pbData.similarCompanies : [],
+        );
+        if (finalPb.length && !selectedContact) {
+          setSelectedContact(finalPb[0]);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("enrich-contacts", {
         body: {
           companyName: companyName || null,
           companyDomain: companyDomain || null,
@@ -2065,35 +2097,38 @@ export default function CompanyDetailPanel({
             seniority: "manager",
           },
         },
-      })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Lusha enrichment error", error);
-          setLushaContacts([]);
-          setLushaSimilarCompanies([]);
-        } else {
-          const contacts = Array.isArray((data as any)?.contacts) ? (data as any).contacts : [];
-          const filtered = contacts.filter(isSupplyChainContact);
+      });
 
-          setLushaContacts(filtered);
-          setLushaSimilarCompanies(
-            Array.isArray((data as any)?.similarCompanies) ? (data as any).similarCompanies : [],
-          );
-          if (filtered.length && !selectedContact) {
-            setSelectedContact(filtered[0]);
-          }
-        }
-      })
-      .catch((err) => {
-        console.error("Lusha enrichment fetch error", err);
+      if (error) {
+        console.error("Lusha enrichment error", error);
         setLushaContacts([]);
         setLushaSimilarCompanies([]);
-      })
-      .finally(() => {
-        setContactsLoading(false);
-      });
-  }, [record, rawProfile, contactFetchTrigger]);
+        return;
+      }
 
+      const contacts = Array.isArray((data as any)?.contacts) ? (data as any).contacts : [];
+      const prioritized = contacts.filter(isSupplyChainContact);
+      const fallbackContacts = prioritized.length ? prioritized : contacts.slice(0, 5);
+
+      setLushaContacts(fallbackContacts);
+      setLushaSimilarCompanies(
+        Array.isArray((data as any)?.similarCompanies) ? (data as any).similarCompanies : [],
+      );
+
+      if (fallbackContacts.length && !selectedContact) {
+        setSelectedContact(fallbackContacts[0]);
+      }
+    })
+    .catch((err) => {
+      console.error("PhantomBuster/Lusha enrichment fetch error", err);
+      setLushaContacts([]);
+      setLushaSimilarCompanies([]);
+    })
+    .finally(() => {
+      setContactsLoading(false);
+    });
+}, [record, rawProfile, contactFetchTrigger]);
+    
   const freightosBenchmark = useMemo(
     () =>
       detectFreightosBenchmark({
