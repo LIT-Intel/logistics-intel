@@ -17,6 +17,7 @@ import {
   Users,
   Mail,
   Briefcase,
+  Container,
 } from "lucide-react";
 import {
   BarChart,
@@ -84,7 +85,7 @@ type Props = {
   onSaveToCommandCenter?: () => void;
 };
 
-type TabKey = "overview" | "routes" | "shipments" | "contacts";
+type TabKey = "overview" | "routes" | "shipments" | "contacts" | "equipment";
 
 type Contact = {
   id: string;
@@ -524,6 +525,10 @@ export default function ShipperDetailModal({
                 Contacts ({contacts.length})
               </button>
             )}
+            <button type="button" className={tabButtonClass("equipment")} onClick={() => setActiveTab("equipment")}>
+              <Container className="h-4 w-4" />
+              Equipment
+            </button>
           </div>
         </div>
 
@@ -910,6 +915,112 @@ export default function ShipperDetailModal({
                   <div className="mt-2">No contacts available for this company.</div>
                 </div>
               )}
+            </div>
+          ) : activeTab === "equipment" ? (
+            <div className="space-y-5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <Container className="h-5 w-5 text-indigo-500" />
+                  Container breakdown
+                </div>
+
+                <div className="space-y-6">
+                  {topContainer && topContainer !== "—" && (
+                    <div>
+                      <div className="text-sm text-slate-500">Most used container</div>
+                      <div className="mt-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+                        <div className="text-base font-semibold text-indigo-900">{topContainer}</div>
+                        <div className="mt-1 text-xs text-indigo-700">Primary container type for shipments</div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="text-sm text-slate-500 mb-3">FCL / LCL split</div>
+                    <div className="space-y-2">
+                      {(() => {
+                        const fclShips = safeNumber(
+                          (profile as any)?.fclShipments12m ??
+                            (profile as any)?.fcl_shipments_12m ??
+                            (profile as any)?.containers?.fclShipments12m,
+                        ) ?? 0;
+                        const lclShips = safeNumber(
+                          (profile as any)?.lclShipments12m ??
+                            (profile as any)?.lcl_shipments_12m ??
+                            (profile as any)?.containers?.lclShipments12m,
+                        ) ?? 0;
+                        const total = fclShips + lclShips;
+                        const fclPct = total > 0 ? Math.round((fclShips / total) * 100) : 0;
+                        const lclPct = total > 0 ? Math.round((lclShips / total) * 100) : 0;
+
+                        return (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-slate-900">FCL (Full Container Load)</div>
+                                <div className="mt-1 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                                  <div
+                                    className="h-full bg-blue-500 transition-all"
+                                    style={{ width: `${fclPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-semibold text-slate-900">{fclPct}%</div>
+                                <div className="text-xs text-slate-500">{fullNumber(fclShips)}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-slate-900">LCL (Less Than Container Load)</div>
+                                <div className="mt-1 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                                  <div
+                                    className="h-full bg-orange-500 transition-all"
+                                    style={{ width: `${lclPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-semibold text-slate-900">{lclPct}%</div>
+                                <div className="text-xs text-slate-500">{fullNumber(lclShips)}</div>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-lg font-semibold text-slate-900">Shipping patterns</div>
+
+                <div className="mt-5 space-y-4">
+                  <div>
+                    <div className="text-sm text-slate-500">Total shipments (12m)</div>
+                    <div className="mt-2 text-3xl font-semibold text-slate-900">
+                      {fullNumber(shipments12m)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Total TEU (12m)</div>
+                    <div className="mt-2 text-3xl font-semibold text-slate-900">
+                      {fullNumber(teu12m)}
+                    </div>
+                  </div>
+
+                  {teu12m && shipments12m && shipments12m > 0 && (
+                    <div>
+                      <div className="text-sm text-slate-500">Average TEU per shipment</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">
+                        {(teu12m / shipments12m).toFixed(1)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
