@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import { getSavedCompanies, getIyCompanyProfile } from "@/lib/api";
-import { getCampaignsFromSupabase } from "@/lib/supabase";
+import { getCampaignsFromSupabase, supabase } from "@/lib/supabase";
+import { useAuth } from "@/auth/AuthProvider";
 import {
   ResponsiveContainer,
   BarChart,
@@ -1195,24 +1196,38 @@ function TradeMapPanel({ mapScales, regionSummary }) {
 
 export default function LITDashboard() {
   const navigate = useNavigate();
+  const { user, fullName } = useAuth();
   const [savedCompaniesLive, setSavedCompaniesLive] = useState([]);
   const [campaignsLive, setCampaignsLive] = useState([]);
   const [profileRoutesByCompany, setProfileRoutesByCompany] = useState({});
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [savedContactsCount, setSavedContactsCount] = useState(null);
+  const [searchCount, setSearchCount] = useState(null);
+
+  const displayName =
+    fullName ||
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email?.split("@")[0] ||
+    "there";
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadDashboardData() {
       try {
-        const [savedRes, campaignsRes] = await Promise.all([
+        const [savedRes, campaignsRes, contactsRes, searchRes] = await Promise.all([
           getSavedCompanies(),
           getCampaignsFromSupabase(),
+          supabase.from('lit_contacts').select('id', { count: 'exact', head: true }),
+          supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search'),
         ]);
 
         if (cancelled) return;
 
         setSavedCompaniesLive(Array.isArray(savedRes?.rows) ? savedRes.rows : []);
+        if (!contactsRes.error) setSavedContactsCount(contactsRes.count ?? 0);
+        if (!searchRes.error) setSearchCount(searchRes.count ?? 0);
         setCampaignsLive(Array.isArray(campaignsRes) ? campaignsRes : []);
       } catch (error) {
         console.error("Dashboard load error:", error);
@@ -1314,7 +1329,7 @@ export default function LITDashboard() {
               Overview
             </div>
             <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
-              Welcome back, Valesco
+              Welcome back, {displayName}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               This dashboard is your command center for company intelligence,
@@ -1322,7 +1337,7 @@ export default function LITDashboard() {
             </p>
           </section>
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <StatCard
               title="Saved Companies"
               value={dashboardLoading ? "—" : String(savedCompaniesCount)}
@@ -1342,17 +1357,17 @@ export default function LITDashboard() {
               chip="Outreach"
             />
             <StatCard
-              title="Open RFPs"
-              value="0"
-              note="Create your first RFP"
+              title="Saved Contacts"
+              value={dashboardLoading || savedContactsCount === null ? "—" : String(savedContactsCount)}
+              note={savedContactsCount ? "Enriched contacts" : "Save contacts from search"}
               change=""
-              icon={ShieldCheck}
+              icon={UserRoundPlus}
               accent="from-cyan-600 to-blue-600"
-              chip="Studio"
+              chip="Contacts"
             />
             <StatCard
               title="Searches Used"
-              value="3"
+              value={dashboardLoading || searchCount === null ? "—" : String(searchCount)}
               note="All-time usage"
               change=""
               icon={TrendingUp}

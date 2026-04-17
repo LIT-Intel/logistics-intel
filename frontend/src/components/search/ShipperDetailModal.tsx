@@ -1,1064 +1,1029 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  Search as SearchIcon,
-  Building2,
-  MapPin,
-  TrendingUp,
-  Package,
-  Ship,
-  Plane,
   X,
-  BookmarkPlus,
   Bookmark,
-  Eye,
-  Grid3x3,
-  List,
-  Loader2,
+  MapPin,
+  Globe,
+  Phone,
+  Package2,
+  Route,
+  Truck,
+  CalendarDays,
+  BarChart3,
+  ShipWheel,
+  Boxes,
+  ChevronRight,
+  FileText,
   Users,
+  Mail,
+  Briefcase,
+  Container,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import {
+  BarChart,
+  Bar,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { motion } from "framer-motion";
-import { useAuth } from "@/auth/AuthProvider";
-import { supabase } from "@/lib/supabase";
-import { useToast } from "@/components/ui/use-toast";
-import {
-  fetchCompanySnapshot,
-  normalizeIyCompanyProfile,
-  saveCompanyToCommandCenter,
-  type IyCompanyProfile,
-} from "@/lib/api";
-import { searchShippers } from "@/lib/supabaseApi";
-import {
-  parseImportYetiDate,
-  formatUserFriendlyDate,
-  getDateBadgeInfo,
-} from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
-import ShipperDetailModal from "@/components/search/ShipperDetailModal";
+import {
+  type IyCompanyProfile,
+  type IyRouteKpis,
+} from "@/lib/api";
+import { formatUserFriendlyDate } from "@/lib/dateUtils";
 
-function getCountryFlag(countryCode?: string): string {
-  if (!countryCode || countryCode.length !== 2) return "";
-  return String.fromCodePoint(
-    ...countryCode.toUpperCase().split("").map((c) => 127397 + c.charCodeAt(0)),
+type SearchPreviewShipper = {
+  id?: string;
+  key?: string;
+  companyId?: string;
+  company_id?: string;
+  importyeti_key?: string;
+  name?: string;
+  title?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  country_code?: string;
+  last_shipment?: string;
+  shipments?: number;
+  shipments_12m?: number;
+  teu_estimate?: number;
+  top_suppliers?: string[];
+};
+
+type ShipmentRow = {
+  date: string | null;
+  bol: string | null;
+  route: string | null;
+  origin: string | null;
+  destination: string | null;
+  teu: number | null;
+};
+
+type Props = {
+  isOpen: boolean;
+  shipper: SearchPreviewShipper | null;
+  profile: IyCompanyProfile | null;
+  routeKpis: IyRouteKpis | null;
+  enrichment?: any | null;
+  loadingProfile?: boolean;
+  saveLoading?: boolean;
+  isSaved?: boolean;
+  year?: number;
+  error?: string | null;
+  contacts?: Contact[];
+  loadingContacts?: boolean;
+  onClose: () => void;
+  onSaveToCommandCenter?: () => void;
+};
+
+type TabKey = "overview" | "routes" | "shipments" | "contacts" | "equipment";
+
+type Contact = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  title: string | null;
+  department: string | null;
+  seniority: string | null;
+  linkedin_url: string | null;
+  phone: string | null;
+};
+
+function safeNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "").trim();
+    if (!cleaned) return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function titleCaseMonth(monthKey: string): string {
+  if (!monthKey) return "";
+  if (/^\d{4}-\d{2}$/.test(monthKey)) {
+    const [year, month] = monthKey.split("-");
+    const date = new Date(Number(year), Number(month) - 1, 1);
+    return date.toLocaleString("en-US", { month: "short" });
+  }
+  return monthKey;
+}
+
+function compactNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: value >= 100 ? 0 : 1,
+  }).format(value);
+}
+
+function fullNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function currencyCompact(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function buildLocationLine(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string {
+  const address =
+    profile?.address ||
+    shipper?.address ||
+    [shipper?.city, shipper?.state, shipper?.country].filter(Boolean).join(", ");
+
+  return address || "Location unavailable";
+}
+
+function buildWebsite(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string | null {
+  return profile?.website || shipper?.website || profile?.domain || null;
+}
+
+function buildPhone(profile: IyCompanyProfile | null): string | null {
+  return (profile as any)?.phoneNumber || (profile as any)?.phone || null;
+}
+
+function buildShipments12m(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null, routeKpis: IyRouteKpis | null): number | null {
+  return (
+    safeNumber(routeKpis?.shipmentsLast12m) ??
+    safeNumber(profile?.routeKpis?.shipmentsLast12m) ??
+    safeNumber(shipper?.shipments_12m) ??
+    safeNumber(shipper?.shipments) ??
+    safeNumber(profile?.totalShipments) ??
+    null
   );
 }
 
-type SearchCompany = {
-  id: string;
-  name: string;
-  city: string;
-  state: string;
-  country: string;
-  country_code: string;
-  address: string;
-  website: string;
-  industry: string;
-  shipments: number;
-  shipments_12m: number;
-  teu_estimate?: number;
-  mode?: string;
-  last_shipment: string;
-  status: "Active" | "Inactive";
-  frequency: "High" | "Medium" | "Low";
-  trend: "up" | "flat" | "down";
-  top_origins: string[];
-  top_destinations: string[];
-  top_suppliers: string[];
-  gemini_summary: string;
-  risk_flags: string[];
-  importyeti_key?: string;
-  enrichment_status?: "pending" | "partial" | "complete";
-  enriched_at?: string;
-  top_container_length?: string;
-  top_container_count?: number;
-  fcl_percent?: number;
-  lcl_percent?: number;
-  latest_year?: number;
-  latest_year_shipments?: number;
-  latest_year_teu?: number;
-};
+function buildTeu12m(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null, routeKpis: IyRouteKpis | null): number | null {
+  return (
+    safeNumber(routeKpis?.teuLast12m) ??
+    safeNumber(profile?.routeKpis?.teuLast12m) ??
+    safeNumber(shipper?.teu_estimate) ??
+    null
+  );
+}
 
-export default function SearchPage() {
-  const { user, authReady } = useAuth();
-  const { toast } = useToast();
+function buildFclLcl(profile: IyCompanyProfile | null): string {
+  const fcl12m =
+    safeNumber((profile as any)?.containers?.fclShipments12m) ??
+    safeNumber((profile as any)?.fcl_count_12m) ??
+    0;
+  const lcl12m =
+    safeNumber((profile as any)?.containers?.lclShipments12m) ??
+    safeNumber((profile as any)?.lcl_count_12m) ??
+    0;
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [results, setResults] = useState<SearchCompany[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<SearchCompany | null>(null);
-  const [rawData, setRawData] = useState<any>(null);
-  const [normalizedProfile, setNormalizedProfile] = useState<IyCompanyProfile | null>(null);
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
-  const [hasSearched, setHasSearched] = useState(false);
-
-  const currentYear = new Date().getFullYear();
-  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
-
-  useEffect(() => {
-    const loadSavedCompanies = async () => {
-      if (!user) return;
-
-      try {
-        const { data, error } = await supabase
-          .from("lit_saved_companies")
-          .select("company_id, lit_companies!inner(source_company_key)")
-          .eq("user_id", user.id);
-
-        if (error) throw error;
-
-        if (data) {
-          const keys = data
-            .map((item: any) => item.lit_companies?.source_company_key)
-            .filter(Boolean);
-          setSavedCompanyIds(keys);
-        }
-      } catch (error) {
-        console.error("[Search] Failed to load saved companies:", error);
-      }
-    };
-
-    loadSavedCompanies();
-
-    if (!user) return;
-
-    const channel = supabase
-      .channel("public:lit_saved_companies")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "lit_saved_companies",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          loadSavedCompanies();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [user]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadSnapshot = async () => {
-      if (!selectedCompany || !selectedCompany.importyeti_key) {
-        setRawData(null);
-        setNormalizedProfile(null);
-        return;
-      }
-
-      setLoadingSnapshot(true);
-
-      try {
-        const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
-
-        if (!cancelled) {
-          if (result && result.snapshot) {
-            setRawData(result.raw);
-            const profile = normalizeIyCompanyProfile(result, selectedCompany.importyeti_key);
-            setNormalizedProfile(profile);
-          } else {
-            setRawData(null);
-            setNormalizedProfile(null);
-          }
-        }
-      } catch (error) {
-        console.error("[Search] Failed to load snapshot:", error);
-        if (!cancelled) {
-          setRawData(null);
-          setNormalizedProfile(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingSnapshot(false);
-        }
-      }
-    };
-
-    loadSnapshot();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCompany]);
-
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const query = searchQuery.trim();
-
-    if (!query || query.length < 2) {
-      toast({
-        title: "Search query required",
-        description: "Please enter at least 2 characters to search",
-        variant: "destructive",
-      });
-      return;
+  if (!fcl12m && !lcl12m) {
+    const fclAllTime = safeNumber((profile as any)?.fcl_shipments_all_time);
+    const lclAllTime = safeNumber((profile as any)?.lcl_shipments_all_time);
+    if (fclAllTime != null || lclAllTime != null) {
+      return `${fullNumber(fclAllTime ?? 0)} / ${fullNumber(lclAllTime ?? 0)}`;
     }
-
-    if (!authReady) {
-      toast({
-        title: "Authentication required",
-        description: "Please wait for authentication to complete",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setSearching(true);
-    setHasSearched(true);
-
-    try {
-      // Keep the current backend contract stable: string query, page 1, page size 25.
-      const response = await searchShippers(query, 1, 25);
-
-      if (response?.ok && Array.isArray(response?.results)) {
-        const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
-          const parsedAddress = result.address || "";
-          const cityMatch = parsedAddress.match(/^([^,]+)/);
-          const parsedDate = parseImportYetiDate(
-            result.mostRecentShipment ||
-              result.last_shipment_date ||
-              result.lastShipmentDate,
-          );
-
-          const totalShipments =
-            Number(result.totalShipments ?? result.total_shipments ?? 0) || 0;
-
-          const fclPercent =
-            typeof result.fcl_shipments_perc === "number"
-              ? result.fcl_shipments_perc
-              : typeof result.fcl_percent === "number"
-                ? result.fcl_percent
-                : undefined;
-
-          const lclPercent =
-            typeof result.lcl_shipments_perc === "number"
-              ? result.lcl_shipments_perc
-              : typeof result.lcl_percent === "number"
-                ? result.lcl_percent
-                : undefined;
-
-          return {
-            id: result.key || result.company_id || `iy-${Date.now()}-${idx}`,
-            name: result.title || result.name || result.company_name || "Unknown Company",
-            city: result.city || (cityMatch ? cityMatch[1] : "Unknown"),
-            state: result.state || "",
-            country: result.country || "United States",
-            country_code: result.countryCode || result.country_code || "US",
-            address: result.address || result.city || "",
-            website: result.website || "",
-            industry: "Import / Export",
-            shipments: totalShipments,
-            shipments_12m:
-              Number(result.latest_year_shipments ?? result.shipments_12m ?? totalShipments) || 0,
-            teu_estimate:
-              result.latest_year_teu != null
-                ? Number(result.latest_year_teu)
-                : result.totalTEU != null
-                  ? Number(result.totalTEU)
-                  : undefined,
-            mode: undefined,
-            last_shipment:
-              parsedDate || new Date().toISOString().split("T")[0],
-            status: totalShipments > 0 ? "Active" : "Inactive",
-            frequency:
-              totalShipments > 10000
-                ? "High"
-                : totalShipments > 1000
-                  ? "Medium"
-                  : "Low",
-            trend: "flat",
-            top_origins: [],
-            top_destinations: [],
-            top_suppliers: Array.isArray(result.topSuppliers) ? result.topSuppliers : [],
-            gemini_summary: `${result.title || result.company_name || "Company"} trade intelligence preview`,
-            risk_flags: [],
-            importyeti_key: result.key || (result.company_id ? `company/${result.company_id}` : undefined),
-            enrichment_status: "pending",
-            top_container_length: result.top_container_length,
-            top_container_count:
-              result.top_container_count != null ? Number(result.top_container_count) : undefined,
-            fcl_percent: fclPercent,
-            lcl_percent: lclPercent,
-            latest_year:
-              result.latest_year != null ? Number(result.latest_year) : undefined,
-            latest_year_shipments:
-              result.latest_year_shipments != null
-                ? Number(result.latest_year_shipments)
-                : undefined,
-            latest_year_teu:
-              result.latest_year_teu != null ? Number(result.latest_year_teu) : undefined,
-          };
-        });
-
-        setResults(mappedResults);
-
-        if (user?.id) {
-          supabase.from("search_queries").insert({
-            user_id: user.id,
-            query,
-            results_count: mappedResults.length,
-          }).then(() => {});
-        }
-
-        if (mappedResults.length === 0) {
-          toast({
-            title: "No results found",
-            description: `No companies found matching "${query}"`,
-          });
-        }
-      } else {
-        throw new Error(response?.error || "Search failed");
-      }
-    } catch (error: any) {
-      console.error("Search error:", error);
-      toast({
-        title: "Search failed",
-        description: error.message || "Unable to search companies. Please try again.",
-        variant: "destructive",
-      });
-      setResults([]);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleClear = () => {
-    setSearchQuery("");
-    setResults([]);
-    setHasSearched(false);
-  };
-
-  const saveToCommandCenter = async (company: SearchCompany) => {
-    if (!user) {
-      toast({
-        title: "Authentication required",
-        description: "Please log in to save companies",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const companyKey = company.importyeti_key || company.id;
-    if (!companyKey) {
-      toast({
-        title: "Save failed",
-        description: "This company is missing a valid company key.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const shipper = {
-        key: companyKey,
-        companyId: companyKey,
-        title: company.name,
-        name: company.name,
-        domain: company.website || undefined,
-        website: company.website || undefined,
-        phone: (normalizedProfile as any)?.phoneNumber || (normalizedProfile as any)?.phone || undefined,
-        address: company.address || undefined,
-        city: company.city || undefined,
-        state: company.state || undefined,
-        countryCode: company.country_code || undefined,
-        totalShipments:
-          normalizedProfile?.routeKpis?.shipmentsLast12m ??
-          company.shipments_12m ??
-          company.shipments ??
-          0,
-        teusLast12m:
-          normalizedProfile?.routeKpis?.teuLast12m ??
-          company.teu_estimate ??
-          null,
-        mostRecentShipment:
-          normalizedProfile?.lastShipmentDate ??
-          company.last_shipment ??
-          null,
-        lastShipmentDate:
-          normalizedProfile?.lastShipmentDate ??
-          company.last_shipment ??
-          null,
-        primaryRoute:
-          normalizedProfile?.routeKpis?.topRouteLast12m ??
-          null,
-        topSuppliers: company.top_suppliers ?? [],
-      };
-
-      await saveCompanyToCommandCenter({
-        shipper,
-        profile: normalizedProfile,
-        stage: "prospect",
-        source: "importyeti",
-      });
-
-      toast({
-        title: "Company saved",
-        description: `${company.name} has been saved to your Command Center`,
-      });
-
-      setSavedCompanyIds((prev) =>
-        prev.includes(companyKey) ? prev : [...prev, companyKey],
-      );
-
-      setSelectedCompany(null);
-    } catch (error: any) {
-      console.error("[saveToCommandCenter] Fatal error:", error);
-      toast({
-        title: "Save failed",
-        description: error?.message || "Could not save company. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const getModeIcon = (mode: string) => {
-    if (mode === "Ocean") return <Ship className="h-4 w-4" />;
-    if (mode === "Air") return <Plane className="h-4 w-4" />;
-    return <Package className="h-4 w-4" />;
-  };
-
-  const getFrequencyColor = (frequency: string) => {
-    if (frequency === "High") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    if (frequency === "Medium") return "bg-amber-50 text-amber-700 border-amber-200";
-    return "bg-slate-50 text-slate-700 border-slate-200";
-  };
-
-  if (!authReady) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">Initializing...</h2>
-          <p className="text-slate-600">
-            Please wait while we prepare your search experience
-          </p>
-        </div>
-      </div>
-    );
+    return "—";
   }
 
+  return `${fullNumber(fcl12m)} / ${fullNumber(lcl12m)}`;
+}
+
+function buildLastShipment(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string | null {
   return (
-    <div className="min-h-screen bg-slate-50 px-3 py-4 sm:px-6 sm:py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <motion.div
-          initial={{ opacity: 0, y: -16 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6"
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                Company Search
-              </h1>
-              <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                Search real import and export companies, then preview trade intelligence before saving to Command Center.
-              </p>
-            </div>
+    profile?.lastShipmentDate ||
+    shipper?.last_shipment ||
+    null
+  );
+}
 
-            <div className="flex items-center gap-2 self-start lg:self-auto">
-              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("grid")}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    viewMode === "grid"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Grid3x3 className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("list")}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    viewMode === "list"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
+function buildMonthlyChartData(profile: IyCompanyProfile | null, selectedYear?: number) {
+  const monthlyTotals = Array.isArray((profile as any)?.monthly_totals)
+    ? (profile as any).monthly_totals
+    : [];
 
-              <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Year
-                </span>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none"
-                >
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        </motion.div>
+  if (monthlyTotals.length > 0) {
+    return monthlyTotals
+      .filter((row: any) => !selectedYear || Number(row?.year) === Number(selectedYear))
+      .map((row: any) => {
+        const total = safeNumber(row?.shipments) ?? 0;
+        const fcl = safeNumber(row?.fcl_shipments ?? row?.fcl) ?? Math.round(total * 0.65);
+        const lcl = safeNumber(row?.lcl_shipments ?? row?.lcl) ?? Math.max(0, total - fcl);
+        return {
+          month: titleCaseMonth(`${row?.year}-${String(row?.month).padStart(2, "0")}`),
+          shipments: total,
+          teu: safeNumber(row?.teu) ?? 0,
+          fcl,
+          lcl,
+        };
+      });
+  }
 
-        <motion.form
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          onSubmit={handleSearch}
-          className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
-        >
-          <div className="flex flex-col gap-3 md:flex-row">
-            <div className="relative flex-1">
-              <SearchIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              <Input
-                type="text"
-                placeholder="Search company name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-12 rounded-xl border-slate-300 pl-12 pr-12 text-sm focus:border-indigo-500 focus:ring-indigo-500 sm:h-14 sm:text-base"
+  const timeSeries = Array.isArray(profile?.timeSeries) ? profile.timeSeries : [];
+  return timeSeries
+    .filter((row: any) => !selectedYear || Number(row?.year) === Number(selectedYear))
+    .map((row: any) => {
+      const total = safeNumber(row?.shipments) ?? 0;
+      const fcl = safeNumber(row?.fcl_shipments ?? row?.fcl) ?? Math.round(total * 0.65);
+      const lcl = safeNumber(row?.lcl_shipments ?? row?.lcl) ?? Math.max(0, total - fcl);
+      return {
+        month: titleCaseMonth(row?.month || ""),
+        shipments: total,
+        teu: safeNumber(row?.teu) ?? 0,
+        fcl,
+        lcl,
+      };
+    });
+}
+
+function buildRoutes(profile: IyCompanyProfile | null, routeKpis: IyRouteKpis | null) {
+  const source =
+    routeKpis?.topRoutesLast12m ||
+    profile?.routeKpis?.topRoutesLast12m ||
+    (Array.isArray((profile as any)?.top_routes) ? (profile as any).top_routes : []);
+
+  return (Array.isArray(source) ? source : [])
+    .map((row: any) => ({
+      route: row?.route || "Unknown route",
+      shipments: safeNumber(row?.shipments) ?? 0,
+      teu: safeNumber(row?.teu) ?? 0,
+      fcl: safeNumber(row?.fclShipments ?? row?.fcl_shipments) ?? 0,
+      lcl: safeNumber(row?.lclShipments ?? row?.lcl_shipments) ?? 0,
+    }))
+    .filter((row) => row.route && row.route !== "Unknown → Unknown");
+}
+
+function buildShipmentRows(profile: IyCompanyProfile | null): ShipmentRow[] {
+  const recentBols = Array.isArray((profile as any)?.recent_bols)
+    ? (profile as any).recent_bols
+    : Array.isArray(profile?.recentBols)
+      ? profile.recentBols
+      : [];
+
+  return recentBols.map((row: any) => {
+    const raw = row?.raw || row || {};
+    const date =
+      row?.date ||
+      raw?.date_formatted ||
+      raw?.date ||
+      raw?.arrival_date ||
+      null;
+
+    const route =
+      row?.route ||
+      raw?.shipping_route ||
+      raw?.route ||
+      null;
+
+    const origin =
+      row?.origin ||
+      raw?.origin_port ||
+      raw?.origin ||
+      raw?.supplier_address_loc ||
+      raw?.origin_city ||
+      null;
+
+    const destination =
+      row?.destination ||
+      raw?.destination_port ||
+      raw?.destination ||
+      raw?.company_address_loc ||
+      raw?.destination_city ||
+      null;
+
+    return {
+      date,
+      bol:
+        row?.bolNumber ||
+        raw?.bol_number ||
+        raw?.bol ||
+        raw?.bill_of_lading_number ||
+        null,
+      route,
+      origin,
+      destination,
+      teu:
+        safeNumber(row?.teu) ??
+        safeNumber(raw?.TEU) ??
+        safeNumber(raw?.teu) ??
+        safeNumber(raw?.total_teu) ??
+        null,
+    };
+  });
+}
+
+function buildSuppliers(shipper: SearchPreviewShipper, profile: IyCompanyProfile | null): string[] {
+  const profileSuppliers = Array.isArray(profile?.topSuppliers) ? profile.topSuppliers : [];
+  const shipperSuppliers = Array.isArray(shipper?.top_suppliers) ? shipper.top_suppliers : [];
+  return [...new Set([...profileSuppliers, ...shipperSuppliers])].filter(Boolean).slice(0, 6);
+}
+
+function KpiCard({
+  icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div className={`group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${accent}`}>
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+export default function ShipperDetailModal({
+  isOpen,
+  shipper,
+  profile,
+  routeKpis,
+  loadingProfile = false,
+  saveLoading = false,
+  isSaved = false,
+  year,
+  error,
+  contacts = [],
+  loadingContacts = false,
+  onClose,
+  onSaveToCommandCenter,
+}: Props) {
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+
+  const companyName = shipper?.name || shipper?.title || profile?.title || "Company";
+  const website = buildWebsite(shipper || {}, profile);
+  const phone = buildPhone(profile);
+  const locationLine = buildLocationLine(shipper || {}, profile);
+
+  const shipments12m = buildShipments12m(shipper || {}, profile, routeKpis);
+  const teu12m = buildTeu12m(shipper || {}, profile, routeKpis);
+  const fclLcl = buildFclLcl(profile);
+  const lastShipment = buildLastShipment(shipper || {}, profile);
+
+  const chartData = useMemo(
+    () => buildMonthlyChartData(profile, year),
+    [profile, year],
+  );
+
+  const routeRows = useMemo(
+    () => buildRoutes(profile, routeKpis),
+    [profile, routeKpis],
+  );
+
+  const shipmentRows = useMemo(
+    () => buildShipmentRows(profile),
+    [profile],
+  );
+
+  const suppliers = useMemo(
+    () => buildSuppliers(shipper || {}, profile),
+    [shipper, profile],
+  );
+
+  const topContainer =
+    (profile as any)?.top_container_length ||
+    "—";
+
+  const estSpend12m =
+    safeNumber(routeKpis?.estSpendUsd12m) ??
+    safeNumber(profile?.estSpendUsd12m) ??
+    safeNumber((profile as any)?.estSpendUsd) ??
+    null;
+
+  const topRoute =
+    routeKpis?.topRouteLast12m ||
+    profile?.routeKpis?.topRouteLast12m ||
+    "—";
+
+  const mostRecentRoute =
+    routeKpis?.mostRecentRoute ||
+    profile?.routeKpis?.mostRecentRoute ||
+    "—";
+
+  if (!isOpen || !shipper) return null;
+
+  const tabButtonClass = (tab: TabKey) =>
+    `inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+      activeTab === tab
+        ? "bg-indigo-600 text-white shadow-sm"
+        : "bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
+    }`;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
+      <div className="flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-slate-50 shadow-2xl sm:h-[90vh] sm:rounded-3xl">
+        <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <CompanyAvatar
+                name={companyName}
+                logoUrl={getCompanyLogoUrl(website || undefined)}
+                size="md"
+                className="mt-0.5 shrink-0"
               />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              )}
-            </div>
 
-            <Button
-              type="submit"
-              size="lg"
-              className="h-12 rounded-xl bg-indigo-600 px-6 text-sm font-semibold hover:bg-indigo-500 sm:h-14 sm:px-8 sm:text-base"
-              disabled={!authReady || searchQuery.length < 2 || searching}
-            >
-              {searching ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Searching...
-                </>
-              ) : !authReady ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Authenticating...
-                </>
-              ) : (
-                "Search"
-              )}
-            </Button>
-          </div>
-        </motion.form>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">
+                    {companyName}
+                  </h2>
+                  <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-slate-500 sm:text-sm">
+                    {shipper?.country_code || (profile as any)?.countryCode || "US"}
+                  </span>
+                </div>
 
-        {hasSearched && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-            >
-              <p className="text-sm text-slate-600">
-                {searching ? (
-                  "Searching..."
-                ) : (
-                  <>
-                    Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
-                  </>
-                )}
-              </p>
+                <div className="mt-1 flex flex-col gap-1 text-xs text-slate-500 sm:mt-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1 sm:text-sm">
+                  <div className="inline-flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="truncate">{locationLine}</span>
+                  </div>
 
-              <div className="flex items-center gap-2 md:hidden">
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("grid")}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      viewMode === "grid"
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <Grid3x3 className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("list")}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      viewMode === "list"
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    <List className="h-4 w-4" />
-                  </button>
+                  {website && (
+                    <div className="inline-flex items-center gap-1">
+                      <Globe className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate">{website.replace(/^https?:\/\//, "")}</span>
+                    </div>
+                  )}
+
+                  {phone && (
+                    <div className="inline-flex items-center gap-1">
+                      <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span>{phone}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-            </motion.div>
+            </div>
 
-            {viewMode !== "list" ? (
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                {results.map((company, index) => (
-                  <motion.div
-                    key={company.id}
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.04 + index * 0.03 }}
-                  >
-                    <Card className="group h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-indigo-300 hover:shadow-md">
-                      <CardHeader className="space-y-4 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-start gap-3">
-                            <CompanyAvatar
-                              name={company.name}
-                              logoUrl={getCompanyLogoUrl(company.website)}
-                              size="md"
-                              className="shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-start gap-2">
-                                <CardTitle className="truncate text-base font-semibold text-slate-900 transition group-hover:text-indigo-600">
-                                  {company.name}
-                                </CardTitle>
-                                <span className="text-lg">{getCountryFlag(company.country_code)}</span>
-                              </div>
-                              <div className="mt-1 flex items-center gap-1 text-sm text-slate-600">
-                                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">
-                                  {company.city}
-                                  {company.state ? `, ${company.state}` : ""}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden rounded-xl border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 sm:inline-flex"
+                onClick={onSaveToCommandCenter}
+                disabled={saveLoading || isSaved}
+              >
+                <Bookmark className={`mr-2 h-4 w-4 ${isSaved ? "fill-current" : ""}`} />
+                {isSaved ? "Saved" : "Save"}
+              </Button>
+              <button
+                type="button"
+                onClick={onSaveToCommandCenter}
+                disabled={saveLoading || isSaved}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 sm:hidden"
+              >
+                <Bookmark className={`h-4 w-4 ${isSaved ? "fill-current text-indigo-600" : ""}`} />
+              </button>
 
-                          <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
-                            {company.frequency}
-                          </Badge>
-                        </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
 
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="secondary" className="rounded-full">
-                            Search Preview
-                          </Badge>
-                          {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) && (
-                            <Badge className="rounded-full bg-indigo-600 text-white hover:bg-indigo-600">
-                              Saved
-                            </Badge>
-                          )}
-                        </div>
-                      </CardHeader>
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-6">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={tabButtonClass("overview")} onClick={() => setActiveTab("overview")}>
+              <BarChart3 className="h-4 w-4" />
+              Overview
+            </button>
+            <button type="button" className={tabButtonClass("routes")} onClick={() => setActiveTab("routes")}>
+              <Route className="h-4 w-4" />
+              Routes
+            </button>
+            <button type="button" className={tabButtonClass("shipments")} onClick={() => setActiveTab("shipments")}>
+              <Truck className="h-4 w-4" />
+              Shipments
+            </button>
+            {contacts && contacts.length > 0 && (
+              <button type="button" className={tabButtonClass("contacts")} onClick={() => setActiveTab("contacts")}>
+                <Users className="h-4 w-4" />
+                Contacts ({contacts.length})
+              </button>
+            )}
+            <button type="button" className={tabButtonClass("equipment")} onClick={() => setActiveTab("equipment")}>
+              <Container className="h-4 w-4" />
+              Equipment
+            </button>
+          </div>
+        </div>
 
-                      <CardContent className="space-y-4 p-4 pt-0">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Total shipments
-                            </div>
-                            <p className="mt-1 text-lg font-semibold text-slate-900">
-                              {company.shipments.toLocaleString()}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Latest year TEU
-                            </div>
-                            <p className="mt-1 text-lg font-semibold text-slate-900">
-                              {company.teu_estimate != null ? company.teu_estimate.toLocaleString() : "—"}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Top container
-                            </div>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {company.top_container_length || "—"}
-                            </p>
-                            {company.top_container_count != null && (
-                              <p className="text-xs text-slate-500">
-                                {company.top_container_count.toLocaleString()} units
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              FCL / LCL
-                            </div>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {company.fcl_percent != null && company.lcl_percent != null
-                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
-                                : "—"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
-                          {company.mode && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-600">Mode</span>
-                              <div className="flex items-center gap-1.5 font-medium text-slate-900">
-                                {getModeIcon(company.mode)}
-                                {company.mode}
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Latest year</span>
-                            <span className="font-medium text-slate-900">
-                              {company.latest_year ?? "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Year shipments</span>
-                            <span className="font-medium text-slate-900">
-                              {company.latest_year_shipments != null
-                                ? company.latest_year_shipments.toLocaleString()
-                                : "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Last shipment</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-medium text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment)}
-                              </span>
-                              {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (!badgeInfo) return null;
-                                return (
-                                  <Badge
-                                    variant="secondary"
-                                    className={`text-xs ${
-                                      badgeInfo.color === "green"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : badgeInfo.color === "yellow"
-                                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                                          : "bg-slate-100 text-slate-600"
-                                    }`}
-                                  >
-                                    {badgeInfo.label}
-                                  </Badge>
-                                );
-                              })()}
-                            </div>
-                          </div>
-
-                          <div className="flex items-start justify-between gap-3 text-sm">
-                            <span className="text-slate-600">Suppliers</span>
-                            {company.top_suppliers.length > 0 ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 text-right">
-                                      <Users className="mt-0.5 h-3.5 w-3.5 text-slate-500" />
-                                      <span className="max-w-[160px] truncate font-medium text-slate-900">
-                                        {company.top_suppliers[0]}
-                                      </span>
-                                      {company.top_suppliers.length > 1 && (
-                                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                                          +{company.top_suppliers.length - 1}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs">
-                                    <p className="mb-1 text-xs font-semibold">Suppliers</p>
-                                    <ul className="space-y-0.5">
-                                      {company.top_suppliers.map((supplier, idx) => (
-                                        <li key={idx} className="text-xs">
-                                          • {supplier}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            ) : (
-                              <span className="text-xs text-slate-400">No data</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="h-10 flex-1 rounded-xl bg-slate-900 text-sm font-semibold hover:bg-slate-800"
-                            onClick={() => setSelectedCompany(company)}
-                          >
-                            <Eye className="mr-1.5 h-4 w-4" />
-                            View Details
-                          </Button>
-
-                          <Button
-                            variant={
-                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                ? "secondary"
-                                : "outline"
-                            }
-                            size="sm"
-                            onClick={() => saveToCommandCenter(company)}
-                            disabled={
-                              saving ||
-                              (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
-                            }
-                            className={`h-10 rounded-xl px-3 ${
-                              company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                                : ""
-                            }`}
-                          >
-                            {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
-                              <Bookmark className="h-4 w-4 fill-current" />
-                            ) : (
-                              <BookmarkPlus className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
+          {loadingProfile ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <div className="text-base font-medium text-slate-900">Loading company preview...</div>
+              <div className="mt-2 text-sm text-slate-500">Pulling trade intelligence and KPI snapshot.</div>
+            </div>
+          ) : error ? (
+            <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
+              {error}
+            </div>
+          ) : activeTab === "overview" ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <KpiCard
+                  icon={<Package2 className="h-4 w-4 text-indigo-500" />}
+                  label="Shipments 12m"
+                  value={fullNumber(shipments12m)}
+                  accent="hover:bg-indigo-50/60"
+                />
+                <KpiCard
+                  icon={<ShipWheel className="h-4 w-4 text-cyan-500" />}
+                  label="TEU 12m"
+                  value={fullNumber(teu12m)}
+                  accent="hover:bg-cyan-50/60"
+                />
+                <KpiCard
+                  icon={<Boxes className="h-4 w-4 text-violet-500" />}
+                  label="FCL / LCL"
+                  value={fclLcl}
+                  accent="hover:bg-violet-50/60"
+                />
+                <KpiCard
+                  icon={<CalendarDays className="h-4 w-4 text-emerald-500" />}
+                  label="Last shipment"
+                  value={lastShipment ? formatUserFriendlyDate(lastShipment) : "—"}
+                  accent="hover:bg-emerald-50/60"
+                />
               </div>
-            ) : (
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_360px]">
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <div className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                        <BarChart3 className="h-5 w-5 text-indigo-500" />
+                        Monthly activity
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {year ? `Year ${year}` : "Latest 12-month activity"} · Shipments by month
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">
+                      Preview
+                    </Badge>
+                  </div>
+
+                  <div className="mb-3 flex items-center gap-4 text-xs text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#2563EB" }} />
+                      FCL
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#EA580C" }} />
+                      LCL
+                    </span>
+                  </div>
+                  <div className="h-[240px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} barCategoryGap="30%">
+                        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="month"
+                          tickLine={false}
+                          axisLine={false}
+                          tick={{ fontSize: 11 }}
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          tick={{ fontSize: 11 }}
+                        />
+                        <RechartsTooltip
+                          cursor={{ fill: "rgba(0,0,0,0.04)" }}
+                          formatter={(value: any, name: any) => [
+                            fullNumber(safeNumber(value)),
+                            name === "fcl" ? "FCL Shipments" : "LCL Shipments",
+                          ]}
+                        />
+                        <Bar dataKey="fcl" stackId="a" fill="#2563EB" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="lcl" stackId="a" fill="#EA580C" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="text-lg font-semibold text-slate-900">Snapshot</div>
+
+                  <div className="mt-5 space-y-5">
+                    <div>
+                      <div className="text-sm text-slate-500">Estimated spend 12m</div>
+                      <div className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+                        {currencyCompact(estSpend12m)}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Top route</div>
+                      <div className="mt-1 text-base font-medium leading-7 text-slate-900">{topRoute}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Most recent route</div>
+                      <div className="mt-1 text-base font-medium leading-7 text-slate-900">{mostRecentRoute}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Top container</div>
+                      <div className="mt-1 text-base font-medium text-slate-900">{topContainer}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm text-slate-500">Suppliers</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {suppliers.length > 0 ? (
+                          suppliers.map((supplier) => (
+                            <Badge
+                              key={supplier}
+                              variant="outline"
+                              className="rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-slate-700"
+                            >
+                              {supplier}
+                            </Badge>
+                          ))
+                        ) : (
+                          <div className="text-sm text-slate-400">No supplier data</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeTab === "routes" ? (
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_340px]">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <Route className="h-5 w-5 text-indigo-500" />
+                  Top routes
+                </div>
+
+                <div className="space-y-3">
+                  {routeRows.length > 0 ? (
+                    routeRows.map((route, index) => (
+                      <div
+                        key={`${route.route}-${index}`}
+                        className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 transition hover:border-indigo-200 hover:bg-indigo-50/60"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex items-start gap-2">
+                              <div className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                                <ChevronRight className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-base font-semibold leading-6 text-slate-900">
+                                  {route.route}
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  <Badge className="rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
+                                    {fullNumber(route.shipments)} shipments
+                                  </Badge>
+                                  <Badge className="rounded-full bg-cyan-100 text-cyan-700 hover:bg-cyan-100">
+                                    {fullNumber(route.teu)} TEU
+                                  </Badge>
+                                  {(route.fcl > 0 || route.lcl > 0) && (
+                                    <Badge className="rounded-full bg-violet-100 text-violet-700 hover:bg-violet-100">
+                                      FCL {fullNumber(route.fcl)} · LCL {fullNumber(route.lcl)}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                      No route breakdown available for this company yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-lg font-semibold text-slate-900">Route KPIs</div>
+
+                <div className="mt-5 space-y-5">
+                  <div>
+                    <div className="text-sm text-slate-500">Top route 12m</div>
+                    <div className="mt-1 text-base font-medium leading-7 text-slate-900">{topRoute}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Most recent route</div>
+                    <div className="mt-1 text-base font-medium leading-7 text-slate-900">{mostRecentRoute}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Sample size</div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-900">
+                      {fullNumber(safeNumber(routeKpis?.sampleSize ?? profile?.routeKpis?.sampleSize))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Shipments 12m</div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-900">
+                      {fullNumber(shipments12m)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">TEU 12m</div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-900">
+                      {fullNumber(teu12m)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeTab === "shipments" ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                <FileText className="h-5 w-5 text-indigo-500" />
+                Recent shipment records
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[880px]">
-                    <thead className="border-b border-slate-200 bg-slate-50">
+                  <table className="w-full min-w-[860px]">
+                    <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Company
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Date
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Location
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          BOL
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Total Shipments
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Route
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Top Container
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Origin
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          FCL / LCL
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Destination
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Last Shipment
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Actions
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          TEU
                         </th>
                       </tr>
                     </thead>
-
-                    <tbody className="divide-y divide-slate-100">
-                      {results.map((company, index) => (
-                        <motion.tr
-                          key={company.id}
-                          initial={{ opacity: 0, x: -14 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: index * 0.02 }}
-                          className="transition hover:bg-slate-50"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <CompanyAvatar
-                                name={company.name}
-                                logoUrl={getCompanyLogoUrl(company.website)}
-                                size="md"
-                              />
-                              <div>
-                                <div className="font-semibold text-slate-900">{company.name}</div>
-                                <div className="text-xs text-slate-500">Search Preview</div>
-                              </div>
-                            </div>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {shipmentRows.length > 0 ? (
+                        shipmentRows.map((row, index) => (
+                          <tr key={`${row.bol || row.date || "shipment"}-${index}`} className="hover:bg-indigo-50/40">
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.date ? formatUserFriendlyDate(row.date) : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                              {row.bol || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.route || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.origin || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-700">
+                              {row.destination || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                              {row.teu != null ? fullNumber(row.teu) : "—"}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                            No shipment rows available.
                           </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm text-slate-900">
-                              {company.city}
-                              {company.state ? `, ${company.state}` : ""}
-                            </div>
-                            <div className="text-xs text-slate-500">{company.country_code}</div>
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-semibold text-slate-900">
-                              {company.shipments.toLocaleString()}
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-slate-900">
-                              {company.top_container_length || "—"}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {company.top_container_count != null
-                                ? `${company.top_container_count.toLocaleString()} units`
-                                : "No detail"}
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-slate-900">
-                              {company.fcl_percent != null && company.lcl_percent != null
-                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
-                                : "—"}
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-1.5">
-                              <div className="text-sm text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment)}
-                              </div>
-                              {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (!badgeInfo) return null;
-                                return (
-                                  <Badge
-                                    variant="secondary"
-                                    className={`text-xs ${
-                                      badgeInfo.color === "green"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : badgeInfo.color === "yellow"
-                                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                                          : "bg-slate-100 text-slate-600"
-                                    }`}
-                                  >
-                                    {badgeInfo.label}
-                                  </Badge>
-                                );
-                              })()}
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setSelectedCompany(company)}
-                                className="rounded-xl"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => saveToCommandCenter(company)}
-                                disabled={
-                                  saving ||
-                                  (company.importyeti_key && savedCompanyIds.includes(company.importyeti_key))
-                                }
-                                className={`rounded-xl ${
-                                  company.importyeti_key && savedCompanyIds.includes(company.importyeti_key)
-                                    ? "text-indigo-600"
-                                    : ""
-                                }`}
-                              >
-                                {company.importyeti_key && savedCompanyIds.includes(company.importyeti_key) ? (
-                                  <Bookmark className="h-4 w-4 fill-current" />
-                                ) : (
-                                  <BookmarkPlus className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </td>
-                        </motion.tr>
-                      ))}
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
               </div>
-            )}
 
-            {!searching && results.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="rounded-2xl border border-slate-200 bg-white py-16 text-center shadow-sm"
-              >
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
-                  <SearchIcon className="h-8 w-8 text-slate-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900">No companies found</h3>
-                <p className="mt-1 text-slate-600">Try adjusting your search query</p>
-              </motion.div>
-            )}
-          </>
-        )}
-
-        {!hasSearched && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="rounded-2xl border border-slate-200 bg-white py-20 text-center shadow-sm"
-          >
-            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-indigo-50">
-              <SearchIcon className="h-10 w-10 text-indigo-600" />
+              <div className="mt-4 text-xs text-slate-500">
+                Preview only. Save to Command Center to work with the full company intelligence record.
+              </div>
             </div>
-            <h3 className="text-xl font-semibold text-slate-900">Start Your Search</h3>
-            <p className="mx-auto mt-2 max-w-md text-slate-600">
-              Enter a company name to discover trade intelligence and preview KPI insights before saving to Command Center.
-            </p>
-          </motion.div>
-        )}
+          ) : activeTab === "contacts" ? (
+            <div>
+              {loadingContacts ? (
+                <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                  <div className="text-base font-medium text-slate-900">Loading contacts...</div>
+                </div>
+              ) : contacts && contacts.length > 0 ? (
+                <div className="space-y-3">
+                  {contacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4 transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                              <Users className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-base font-semibold text-slate-900">
+                                {contact.full_name || "Unknown contact"}
+                              </div>
+                              {contact.title && (
+                                <div className="mt-0.5 flex items-center gap-1.5 text-sm text-slate-600">
+                                  <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+                                  <span>{contact.title}</span>
+                                </div>
+                              )}
+                              {contact.department && (
+                                <div className="text-xs text-slate-500">
+                                  {contact.department}
+                                  {contact.seniority && ` · ${contact.seniority}`}
+                                </div>
+                              )}
+                              <div className="mt-2 flex flex-col gap-1">
+                                {contact.email && (
+                                  <a
+                                    href={`mailto:${contact.email}`}
+                                    className="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700"
+                                  >
+                                    <Mail className="h-3.5 w-3.5" />
+                                    <span className="truncate">{contact.email}</span>
+                                  </a>
+                                )}
+                                {contact.phone && (
+                                  <a
+                                    href={`tel:${contact.phone}`}
+                                    className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+                                  >
+                                    <Phone className="h-3.5 w-3.5" />
+                                    <span>{contact.phone}</span>
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        {contact.linkedin_url && (
+                          <a
+                            href={contact.linkedin_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 sm:mt-0"
+                          >
+                            LinkedIn
+                            <ChevronRight className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                  <Users className="mx-auto h-8 w-8 text-slate-300" />
+                  <div className="mt-2">No contacts available for this company.</div>
+                </div>
+              )}
+            </div>
+          ) : activeTab === "equipment" ? (
+            <div className="space-y-5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <Container className="h-5 w-5 text-indigo-500" />
+                  Container breakdown
+                </div>
 
-        {selectedCompany && (
-          <ShipperDetailModal
-            year={selectedYear}
-            isOpen={true}
-            shipper={selectedCompany as any}
-            loadingProfile={loadingSnapshot}
-            profile={normalizedProfile}
-            routeKpis={normalizedProfile?.routeKpis ?? null}
-            enrichment={null}
-            error={null}
-            onClose={() => setSelectedCompany(null)}
-            onSaveToCommandCenter={() => {
-              if (selectedCompany) {
-                saveToCommandCenter(selectedCompany);
-              }
-            }}
-            saveLoading={saving}
-            isSaved={Boolean(
-              selectedCompany?.importyeti_key &&
-              savedCompanyIds.includes(selectedCompany.importyeti_key),
-            )}
-          />
-        )}
+                <div className="space-y-6">
+                  {topContainer && topContainer !== "—" && (
+                    <div>
+                      <div className="text-sm text-slate-500">Most used container</div>
+                      <div className="mt-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+                        <div className="text-base font-semibold text-indigo-900">{topContainer}</div>
+                        <div className="mt-1 text-xs text-indigo-700">Primary container type for shipments</div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="text-sm text-slate-500 mb-3">FCL / LCL split</div>
+                    <div className="space-y-2">
+                      {(() => {
+                        const fclShips = safeNumber(
+                          (profile as any)?.fclShipments12m ??
+                            (profile as any)?.fcl_shipments_12m ??
+                            (profile as any)?.containers?.fclShipments12m,
+                        ) ?? 0;
+                        const lclShips = safeNumber(
+                          (profile as any)?.lclShipments12m ??
+                            (profile as any)?.lcl_shipments_12m ??
+                            (profile as any)?.containers?.lclShipments12m,
+                        ) ?? 0;
+                        const total = fclShips + lclShips;
+                        const fclPct = total > 0 ? Math.round((fclShips / total) * 100) : 0;
+                        const lclPct = total > 0 ? Math.round((lclShips / total) * 100) : 0;
+
+                        return (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-slate-900">FCL (Full Container Load)</div>
+                                <div className="mt-1 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                                  <div
+                                    className="h-full bg-blue-500 transition-all"
+                                    style={{ width: `${fclPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-semibold text-slate-900">{fclPct}%</div>
+                                <div className="text-xs text-slate-500">{fullNumber(fclShips)}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-slate-900">LCL (Less Than Container Load)</div>
+                                <div className="mt-1 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                                  <div
+                                    className="h-full bg-orange-500 transition-all"
+                                    style={{ width: `${lclPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-semibold text-slate-900">{lclPct}%</div>
+                                <div className="text-xs text-slate-500">{fullNumber(lclShips)}</div>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-lg font-semibold text-slate-900">Shipping patterns</div>
+
+                <div className="mt-5 space-y-4">
+                  <div>
+                    <div className="text-sm text-slate-500">Total shipments (12m)</div>
+                    <div className="mt-2 text-3xl font-semibold text-slate-900">
+                      {fullNumber(shipments12m)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm text-slate-500">Total TEU (12m)</div>
+                    <div className="mt-2 text-3xl font-semibold text-slate-900">
+                      {fullNumber(teu12m)}
+                    </div>
+                  </div>
+
+                  {teu12m && shipments12m && shipments12m > 0 && (
+                    <div>
+                      <div className="text-sm text-slate-500">Average TEU per shipment</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">
+                        {(teu12m / shipments12m).toFixed(1)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

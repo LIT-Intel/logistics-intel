@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
-import { Building2, Mail, FileText, Search, ExternalLink } from "lucide-react";
+import { Building2, Mail, FileText, Search, ExternalLink, Users2 } from "lucide-react";
 import { getSavedCompanies, getCrmCampaigns } from "@/lib/api";
 import { getLitCampaigns } from "@/lib/litCampaigns";
 import { supabase } from "@/lib/supabase";
@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [rfpCount, setRfpCount] = useState(0);
   const [activities, setActivities] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
+  const [contacts, setContacts] = useState([]);
 
   useDashboardShortcuts();
 
@@ -31,12 +32,13 @@ export default function Dashboard() {
     const load = async () => {
       setLoading(true);
       try {
-        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes] = await Promise.allSettled([
+        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes, contactsRes] = await Promise.allSettled([
           getSavedCompanies(),
           getLitCampaigns().catch(() => getCrmCampaigns()),
           supabase.from('lit_rfps').select('id').eq('status', 'active'),
           supabase.from('lit_activity_events').select('*').order('created_at', { ascending: false }).limit(10),
-          supabase.from('search_queries').select('id', { count: 'exact', head: true }).eq('user_id', user?.id),
+          supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search'),
+          supabase.from('lit_contacts').select('id, full_name, title').limit(50),
         ]);
 
         if (mounted) {
@@ -54,6 +56,9 @@ export default function Dashboard() {
           }
           if (searchRes.status === 'fulfilled') {
             setSearchCount(searchRes.value?.count || 0);
+          }
+          if (contactsRes.status === 'fulfilled') {
+            setContacts(contactsRes.value?.data || []);
           }
           if (activitiesRes.status === 'fulfilled') {
             const rawActivities = activitiesRes.value?.data || [];
@@ -107,7 +112,7 @@ export default function Dashboard() {
       <div className="px-4 sm:px-6 py-6 space-y-6">
         <DashboardHeader userName={displayName} />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
           <EnhancedKpiCard
             icon={Building2}
             label="Saved Companies"
@@ -128,13 +133,12 @@ export default function Dashboard() {
             delay={0.1}
           />
           <EnhancedKpiCard
-            icon={FileText}
-            label="Open RFPs"
-            value={rfpCount}
-            trend={rfpCount > 0 ? "+2 this week" : undefined}
-            trendUp={rfpCount > 0}
-            href="/app/rfp-studio"
-            subtitle={rfpCount > 0 ? "Ready to send" : "Generate your first RFP"}
+            icon={Users2}
+            label="Saved Contacts"
+            value={contacts?.length || 0}
+            trend={contacts && contacts.length > 0 ? `${contacts.length} total` : undefined}
+            href="/app/search"
+            subtitle={contacts && contacts.length > 0 ? `${contacts.length} enriched contacts` : "Save contacts from search"}
             delay={0.2}
           />
           <EnhancedKpiCard
