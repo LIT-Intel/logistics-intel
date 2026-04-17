@@ -258,6 +258,8 @@ export default function SearchPage() {
       const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
 
       if (response?.ok && Array.isArray(response?.results)) {
+        console.log("[Search] Raw API results sample:", response.results[0]);
+
         const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
           const parsedAddress = result.address || "";
           const cityMatch = parsedAddress.match(/^([^,]+)/);
@@ -270,21 +272,29 @@ export default function SearchPage() {
           const totalShipments =
             Number(result.totalShipments ?? result.total_shipments ?? 0) || 0;
 
-          const fclPercent =
+          // Calculate FCL/LCL percentages from enriched counts
+          const fclCount = Number(result.fclShipments12m ?? result.fcl_shipments ?? 0) || 0;
+          const lclCount = Number(result.lclShipments12m ?? result.lcl_shipments ?? 0) || 0;
+          const totalCount = fclCount + lclCount;
+
+          const fclPercent = totalCount > 0 ? (fclCount / totalCount) * 100 : undefined;
+          const lclPercent = totalCount > 0 ? (lclCount / totalCount) * 100 : undefined;
+
+          const fclPercentFromResult =
             typeof result.fcl_shipments_perc === "number"
               ? result.fcl_shipments_perc
               : typeof result.fcl_percent === "number"
                 ? result.fcl_percent
-                : undefined;
+                : fclPercent;
 
-          const lclPercent =
+          const lclPercentFromResult =
             typeof result.lcl_shipments_perc === "number"
               ? result.lcl_shipments_perc
               : typeof result.lcl_percent === "number"
                 ? result.lcl_percent
-                : undefined;
+                : lclPercent;
 
-          return {
+          const mapped = {
             id: result.key || result.company_id || `iy-${Date.now()}-${idx}`,
             name: result.title || result.name || result.company_name || "Unknown Company",
             city: result.city || (cityMatch ? cityMatch[1] : "Unknown"),
@@ -324,8 +334,8 @@ export default function SearchPage() {
             top_container_length: result.top_container_length,
             top_container_count:
               result.top_container_count != null ? Number(result.top_container_count) : undefined,
-            fcl_percent: fclPercent,
-            lcl_percent: lclPercent,
+            fcl_percent: fclPercentFromResult,
+            lcl_percent: lclPercentFromResult,
             latest_year:
               result.latest_year != null ? Number(result.latest_year) : undefined,
             latest_year_shipments:
@@ -335,6 +345,20 @@ export default function SearchPage() {
             latest_year_teu:
               result.latest_year_teu != null ? Number(result.latest_year_teu) : undefined,
           };
+
+          if (idx === 0) {
+            console.log("[Search] Mapped result sample:", {
+              name: mapped.name,
+              latest_year_shipments: mapped.latest_year_shipments,
+              latest_year_teu: mapped.latest_year_teu,
+              top_container_length: mapped.top_container_length,
+              fcl_percent: mapped.fcl_percent,
+              lcl_percent: mapped.lcl_percent,
+              last_shipment: mapped.last_shipment,
+            });
+          }
+
+          return mapped;
         });
 
         setResults(mappedResults);
