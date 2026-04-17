@@ -125,6 +125,7 @@ type DetailModel = {
   selectedYear: number | null;
   filteredShipments: NormalizedShipment[];
   monthlySeries: ActivityPoint[];
+  allTimeShipments: number | null;
   shipments: number;
   teu: number;
   spend: number | null;
@@ -1228,12 +1229,8 @@ const aggregateContainerMix = (shipments: NormalizedShipment[]) => {
       rawTypes.forEach((type) => {
         map.set(type, (map.get(type) || 0) + 1);
       });
-      return;
     }
-
-    if (shipment.loadType !== "UNKNOWN") {
-      map.set(shipment.loadType, (map.get(shipment.loadType) || 0) + 1);
-    }
+    // No FCL/LCL loadType fallback — container mix shows equipment labels only
   });
 
   return [...map.entries()]
@@ -1566,7 +1563,9 @@ const buildDetailModel = (
     .map(normalizeSeriesPoint)
     .filter((point) => (selectedYear ? point.year === selectedYear : true));
 
-  const activeSeries = profileSeries.length >= routeSeries.length ? profileSeries : routeSeries;
+  // Prefer profileSeries (authoritative normalized data) when it has year-scoped data;
+  // fall back to routeSeries only when profileSeries is empty for the selected year.
+  const activeSeries = profileSeries.length > 0 ? profileSeries : routeSeries;
 
   const filteredShipments = selectedYear
     ? normalizedShipments.filter((shipment) => shipment.year === selectedYear)
@@ -1844,6 +1843,7 @@ const buildDetailModel = (
     selectedYear,
     filteredShipments,
     monthlySeries,
+    allTimeShipments: null,
     shipments,
     teu,
     spend,
@@ -1913,10 +1913,15 @@ export default function CompanyDetailPanel({
       (scopedProfile as any)?.routeKpis ?? rawRouteKpis,
     );
 
+    // All-time total — never mix with 12m or current-year series
+    const allTimeShipments = toNumber(
+      pickFirst(scopedProfile?.totalShipments, rawProfile?.totalShipments),
+    );
+
+    // Year-scoped display shipments: series wins, then baseModel, then fallback model
+    // Do NOT include shipmentsLast12m — that is a 12m metric, not a year-scoped metric
     const resolvedShipments = Math.max(
       Number(baseModel?.shipments ?? 0),
-      Number(scopedProfile?.totalShipments ?? 0),
-      Number(scopedRouteKpis?.shipmentsLast12m ?? 0),
       Number(fallbackModel.shipments ?? 0),
     );
 
@@ -1956,12 +1961,18 @@ export default function CompanyDetailPanel({
     const monthlySeriesBase =
       Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
         ? baseModel.activitySeries
-            .map((point: any) => ({
-              period: point.month || point.period,
-              fcl: Number(point.fcl || 0),
-              lcl: Number(point.lcl || 0),
-            }))
-            .filter((point: any) => (point.fcl || point.lcl) > 0)
+            .map((point: any) => {
+              const fcl = Number(point.fcl || 0);
+              const lcl = Number(point.lcl || 0);
+              const total = Number(point.shipments || 0);
+              // If a month has shipments but no FCL/LCL breakdown, bucket into FCL
+              return {
+                period: point.month || point.period,
+                fcl: fcl > 0 || lcl > 0 ? fcl : total,
+                lcl,
+              };
+            })
+            .filter((point: any) => point.period && (point.fcl || point.lcl) > 0)
         : fallbackModel.monthlySeries;
 
     const topRoutes =
@@ -1989,6 +2000,7 @@ export default function CompanyDetailPanel({
       ...fallbackModel,
       years: availableYears,
       selectedYear: activeYear,
+      allTimeShipments: allTimeShipments > 0 ? allTimeShipments : null,
       shipments: resolvedShipments,
       teu: resolvedTeu,
       spend: resolvedSpend,
@@ -2203,13 +2215,23 @@ export default function CompanyDetailPanel({
   // Trade lane signal, Recency risk, and Volume profile cards removed per UX cleanup.
   // Only Contact Intelligence remains in the bottom overview section.
 
-  const avgTeu = (rawProfile as any)?.avg_teu_per_month;
-  const teu12m = avgTeu?.["12m"] ?? avgTeu?.["12m_avg"] ?? null;
-  const teu12_24m = avgTeu?.["12_24m"] ?? null;
-  const trendPct =
-    teu12m != null && teu12_24m != null && teu12_24m > 0
-      ? ((teu12m - teu12_24m) / teu12_24m) * 100
-      : null;
+  // True YoY: sum shipments per year from timeSeries, compare selected year to prior year
+  const trendPct = (() => {
+    if (!effectiveSelectedYear) return null;
+    const series = safeArray(rawProfile?.timeSeries);
+    if (!series.length) return null;
+    const byYear = new Map<number, number>();
+    series.forEach((point: any) => {
+      const yr = toNumber(pickFirst(point?.year, 0));
+      if (!yr) return;
+      const count = toNumber(pickFirst(point?.shipments, point?.totalShipments, 0));
+      byYear.set(yr, (byYear.get(yr) || 0) + count);
+    });
+    const thisYear = byYear.get(effectiveSelectedYear) ?? null;
+    const priorYear = byYear.get(effectiveSelectedYear - 1) ?? null;
+    if (!thisYear || !priorYear || priorYear === 0) return null;
+    return ((thisYear - priorYear) / priorYear) * 100;
+  })();
   const trendArrow = trendPct == null ? null : trendPct > 5 ? "↑" : trendPct < -5 ? "↓" : "→";
   const trendColor =
     trendPct == null
@@ -2328,7 +2350,7 @@ export default function CompanyDetailPanel({
   );
 
   return (
-    <section className="w-full rounded-[30px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+    <section className="w-full rounded-[30px] border border-slate-200 bg-slate-50 p-4 shadow-sm">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -2381,8 +2403,8 @@ export default function CompanyDetailPanel({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <TabsContent value="overview" className="space-y-3">
+          <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
             <SmallMetric
               label="Avg TEU / shipment"
               value={formatNumber(detail.avgTeuPerShipment, 2)}
@@ -2413,7 +2435,7 @@ export default function CompanyDetailPanel({
             />
           </div>
 
-          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
+          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                 Peak seasonality index
@@ -2496,7 +2518,7 @@ export default function CompanyDetailPanel({
             </div>
           </div>
 
-          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
+          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
@@ -2719,7 +2741,7 @@ export default function CompanyDetailPanel({
                   Contact Intelligence
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Auto-enriched supply chain and logistics decision makers via Lusha
+                  Auto-enriched supply chain and logistics decision makers
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2734,7 +2756,7 @@ export default function CompanyDetailPanel({
                   disabled={contactsLoading}
                   className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
                 >
-                  {contactsLoading ? "Searching…" : "Search via Lusha"}
+                  {contactsLoading ? "Searching…" : "Refresh contacts"}
                 </button>
               </div>
             </div>
@@ -2756,7 +2778,7 @@ export default function CompanyDetailPanel({
                   onClick={() => setContactFetchTrigger((n) => n + 1)}
                   className="mt-3 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
                 >
-                  Enrich contacts via Lusha
+                  Search more contacts
                 </button>
               </div>
             ) : (
@@ -2845,7 +2867,7 @@ export default function CompanyDetailPanel({
                             onClick={() => { setContactSlideOpen(false); setContactFetchTrigger((n) => n + 1); }}
                             className="w-full rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
                           >
-                            Search for more contacts via Lusha
+                            Search for more contacts
                           </button>
                         </div>
                       </>
