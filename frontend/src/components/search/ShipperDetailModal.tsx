@@ -14,6 +14,9 @@ import {
   Boxes,
   ChevronRight,
   FileText,
+  Users,
+  Mail,
+  Briefcase,
 } from "lucide-react";
 import {
   BarChart,
@@ -75,11 +78,24 @@ type Props = {
   isSaved?: boolean;
   year?: number;
   error?: string | null;
+  contacts?: Contact[];
+  loadingContacts?: boolean;
   onClose: () => void;
   onSaveToCommandCenter?: () => void;
 };
 
-type TabKey = "overview" | "routes" | "shipments";
+type TabKey = "overview" | "routes" | "shipments" | "contacts";
+
+type Contact = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  title: string | null;
+  department: string | null;
+  seniority: string | null;
+  linkedin_url: string | null;
+  phone: string | null;
+};
 
 function safeNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -345,6 +361,8 @@ export default function ShipperDetailModal({
   isSaved = false,
   year,
   error,
+  contacts = [],
+  loadingContacts = false,
   onClose,
   onSaveToCommandCenter,
 }: Props) {
@@ -500,6 +518,12 @@ export default function ShipperDetailModal({
               <Truck className="h-4 w-4" />
               Shipments
             </button>
+            {contacts && contacts.length > 0 && (
+              <button type="button" className={tabButtonClass("contacts")} onClick={() => setActiveTab("contacts")}>
+                <Users className="h-4 w-4" />
+                Contacts ({contacts.length})
+              </button>
+            )}
           </div>
         </div>
 
@@ -807,7 +831,87 @@ export default function ShipperDetailModal({
                 Preview only. Save to Command Center to work with the full company intelligence record.
               </div>
             </div>
-          )}
+          ) : activeTab === "contacts" ? (
+            <div>
+              {loadingContacts ? (
+                <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                  <div className="text-base font-medium text-slate-900">Loading contacts...</div>
+                </div>
+              ) : contacts && contacts.length > 0 ? (
+                <div className="space-y-3">
+                  {contacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4 transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                              <Users className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-base font-semibold text-slate-900">
+                                {contact.full_name || "Unknown contact"}
+                              </div>
+                              {contact.title && (
+                                <div className="mt-0.5 flex items-center gap-1.5 text-sm text-slate-600">
+                                  <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+                                  <span>{contact.title}</span>
+                                </div>
+                              )}
+                              {contact.department && (
+                                <div className="text-xs text-slate-500">
+                                  {contact.department}
+                                  {contact.seniority && ` · ${contact.seniority}`}
+                                </div>
+                              )}
+                              <div className="mt-2 flex flex-col gap-1">
+                                {contact.email && (
+                                  <a
+                                    href={`mailto:${contact.email}`}
+                                    className="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700"
+                                  >
+                                    <Mail className="h-3.5 w-3.5" />
+                                    <span className="truncate">{contact.email}</span>
+                                  </a>
+                                )}
+                                {contact.phone && (
+                                  <a
+                                    href={`tel:${contact.phone}`}
+                                    className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+                                  >
+                                    <Phone className="h-3.5 w-3.5" />
+                                    <span>{contact.phone}</span>
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        {contact.linkedin_url && (
+                          <a
+                            href={contact.linkedin_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 sm:mt-0"
+                          >
+                            LinkedIn
+                            <ChevronRight className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                  <Users className="mx-auto h-8 w-8 text-slate-300" />
+                  <div className="mt-2">No contacts available for this company.</div>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

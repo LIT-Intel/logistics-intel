@@ -100,6 +100,8 @@ export default function SearchPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [savedCompanyIds, setSavedCompanyIds] = useState<string[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -164,10 +166,12 @@ export default function SearchPage() {
       if (!selectedCompany || !selectedCompany.importyeti_key) {
         setRawData(null);
         setNormalizedProfile(null);
+        setContacts([]);
         return;
       }
 
       setLoadingSnapshot(true);
+      setLoadingContacts(true);
 
       try {
         const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
@@ -180,9 +184,26 @@ export default function SearchPage() {
               selectedCompany.importyeti_key,
             );
             setNormalizedProfile(profile);
+
+            // Load contacts
+            const companyId = selectedCompany.id || selectedCompany.importyeti_key;
+            const { data: contactsData, error: contactsError } = await supabase
+              .from("lit_contacts")
+              .select("*")
+              .eq("company_id", companyId)
+              .limit(20);
+
+            if (!cancelled) {
+              if (!contactsError && Array.isArray(contactsData)) {
+                setContacts(contactsData);
+              } else {
+                setContacts([]);
+              }
+            }
           } else {
             setRawData(null);
             setNormalizedProfile(null);
+            setContacts([]);
           }
         }
       } catch (error) {
@@ -190,10 +211,12 @@ export default function SearchPage() {
         if (!cancelled) {
           setRawData(null);
           setNormalizedProfile(null);
+          setContacts([]);
         }
       } finally {
         if (!cancelled) {
           setLoadingSnapshot(false);
+          setLoadingContacts(false);
         }
       }
     };
@@ -1052,6 +1075,8 @@ export default function SearchPage() {
             routeKpis={normalizedProfile?.routeKpis ?? null}
             enrichment={null}
             error={null}
+            contacts={contacts}
+            loadingContacts={loadingContacts}
             onClose={() => setSelectedCompany(null)}
             onSaveToCommandCenter={() => {
               if (selectedCompany) {
