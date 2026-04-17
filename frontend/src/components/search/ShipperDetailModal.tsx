@@ -764,7 +764,7 @@ export default function ShipperDetailModal({
                 </div>
               </div>
             </div>
-          ) : (
+          ) : activeTab === "shipments" ? (
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
                 <FileText className="h-5 w-5 text-indigo-500" />
