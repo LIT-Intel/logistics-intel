@@ -79,10 +79,8 @@ export const findCompanyContacts = httpCall('/functions/findCompanyContacts', {
   contacts: [],
 });
 
-export const phantombusterLinkedIn = httpCall('/functions/phantombusterLinkedIn', {
-  ok: false,
-  message: 'Disabled',
-});
+export const phantombusterLinkedIn = async (payload = {}) =>
+  invokeSupabaseFunction('phantombuster-linkedin', payload);
 
 const rawSearchLeads = async (payload = {}) =>
   invokeSupabaseFunction('searchLeads', payload);
