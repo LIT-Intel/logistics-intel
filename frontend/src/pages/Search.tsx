@@ -258,23 +258,37 @@ export default function SearchPage() {
       const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
 
       if (response?.ok && Array.isArray(response?.results)) {
-        console.log("[Search] Raw API results sample:", response.results[0]);
-
         const mappedResults: SearchCompany[] = response.results.map((result: any, idx: number) => {
           const parsedAddress = result.address || "";
           const cityMatch = parsedAddress.match(/^([^,]+)/);
+
           const parsedDate = parseImportYetiDate(
-            result.mostRecentShipment ||
-              result.last_shipment_date ||
-              result.lastShipmentDate,
+            result.lastShipmentDate ??
+            result.mostRecentShipment ??
+            result.last_shipment_date ??
+            result.most_recent_shipment
           );
 
           const totalShipments =
             Number(result.totalShipments ?? result.total_shipments ?? 0) || 0;
 
-          // Calculate FCL/LCL percentages from enriched counts
-          const fclCount = Number(result.fclShipments12m ?? result.fcl_shipments ?? 0) || 0;
-          const lclCount = Number(result.lclShipments12m ?? result.lcl_shipments ?? 0) || 0;
+          // Extract FCL/LCL counts with camelCase priority
+          const fclCount =
+            Number(
+              result.fclShipments12m ??
+              result.fcl_shipments ??
+              result.fcl_count ??
+              0
+            ) || 0;
+
+          const lclCount =
+            Number(
+              result.lclShipments12m ??
+              result.lcl_shipments ??
+              result.lcl_count ??
+              0
+            ) || 0;
+
           const totalCount = fclCount + lclCount;
 
           const fclPercent = totalCount > 0 ? (fclCount / totalCount) * 100 : undefined;
@@ -306,13 +320,23 @@ export default function SearchPage() {
             industry: "Import / Export",
             shipments: totalShipments,
             shipments_12m:
-              Number(result.latest_year_shipments ?? result.shipments_12m ?? totalShipments) || 0,
+              Number(
+                result.latestYearShipments ??
+                result.latest_year_shipments ??
+                result.shipmentsLast12m ??
+                result.shipments_12m ??
+                totalShipments
+              ) || 0,
             teu_estimate:
-              result.latest_year_teu != null
-                ? Number(result.latest_year_teu)
-                : result.totalTEU != null
-                  ? Number(result.totalTEU)
-                  : undefined,
+              result.latestYearTeu != null
+                ? Number(result.latestYearTeu)
+                : result.latest_year_teu != null
+                  ? Number(result.latest_year_teu)
+                  : result.teusLast12m != null
+                    ? Number(result.teusLast12m)
+                    : result.totalTEU != null
+                      ? Number(result.totalTEU)
+                      : undefined,
             mode: undefined,
             last_shipment:
               parsedDate || new Date().toISOString().split("T")[0],
@@ -331,32 +355,35 @@ export default function SearchPage() {
             risk_flags: [],
             importyeti_key: result.key || (result.company_id ? `company/${result.company_id}` : undefined),
             enrichment_status: "pending",
-            top_container_length: result.top_container_length,
+            top_container_length:
+              result.topContainerLength ??
+              result.top_container_length ??
+              undefined,
             top_container_count:
-              result.top_container_count != null ? Number(result.top_container_count) : undefined,
+              result.top_container_count != null
+                ? Number(result.top_container_count)
+                : result.topContainerCount != null
+                  ? Number(result.topContainerCount)
+                  : undefined,
             fcl_percent: fclPercentFromResult,
             lcl_percent: lclPercentFromResult,
             latest_year:
-              result.latest_year != null ? Number(result.latest_year) : undefined,
-            latest_year_shipments:
-              result.latest_year_shipments != null
-                ? Number(result.latest_year_shipments)
+              result.latest_year != null
+                ? Number(result.latest_year)
                 : undefined,
+            latest_year_shipments:
+              result.latestYearShipments != null
+                ? Number(result.latestYearShipments)
+                : result.latest_year_shipments != null
+                  ? Number(result.latest_year_shipments)
+                  : undefined,
             latest_year_teu:
-              result.latest_year_teu != null ? Number(result.latest_year_teu) : undefined,
+              result.latestYearTeu != null
+                ? Number(result.latestYearTeu)
+                : result.latest_year_teu != null
+                  ? Number(result.latest_year_teu)
+                  : undefined,
           };
-
-          if (idx === 0) {
-            console.log("[Search] Mapped result sample:", {
-              name: mapped.name,
-              latest_year_shipments: mapped.latest_year_shipments,
-              latest_year_teu: mapped.latest_year_teu,
-              top_container_length: mapped.top_container_length,
-              fcl_percent: mapped.fcl_percent,
-              lcl_percent: mapped.lcl_percent,
-              last_shipment: mapped.last_shipment,
-            });
-          }
 
           return mapped;
         });
