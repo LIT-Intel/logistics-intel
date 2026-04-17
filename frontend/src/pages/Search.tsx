@@ -338,8 +338,7 @@ export default function SearchPage() {
                       ? Number(result.totalTEU)
                       : undefined,
             mode: undefined,
-            last_shipment:
-              parsedDate || new Date().toISOString().split("T")[0],
+            last_shipment: parsedDate ?? null,
             status: totalShipments > 0 ? "Active" : "Inactive",
             frequency:
               totalShipments > 10000

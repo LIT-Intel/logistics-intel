@@ -3211,6 +3211,7 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           fcl_shipments_12m,
           lcl_shipments_12m,
           est_spend_12m,
+          last_shipment_date,
           most_recent_shipment_date,
           top_route_12m,
           recent_route
@@ -3224,16 +3225,6 @@ export async function getSavedCompanies(signal?: AbortSignal) {
       return { rows: [] };
     }
 
-    // DEBUG: Log the raw data structure
-    if (data && data.length > 0) {
-      console.log('[DEBUG] getSavedCompanies raw data sample:', {
-        firstRow: data[0],
-        companyData: data[0]?.lit_companies,
-        shipments_12m: data[0]?.lit_companies?.shipments_12m,
-        teu_12m: data[0]?.lit_companies?.teu_12m,
-        est_spend_12m: data[0]?.lit_companies?.est_spend_12m,
-      });
-    }
 
     const rows = (data || []).map((item: any) => ({
       company: {
@@ -3250,7 +3241,7 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           est_spend_12m: item.lit_companies?.est_spend_12m ?? null,
           top_route_12m: item.lit_companies?.top_route_12m ?? null,
           recent_route: item.lit_companies?.recent_route ?? null,
-          last_activity: item.lit_companies?.most_recent_shipment_date ?? null,
+          last_activity: item.lit_companies?.last_shipment_date ?? item.lit_companies?.most_recent_shipment_date ?? null,
         },
       },
       shipments: [],
@@ -3258,10 +3249,6 @@ export async function getSavedCompanies(signal?: AbortSignal) {
       stage: item.stage,
     }));
 
-    // DEBUG: Log mapped rows
-    if (rows.length > 0) {
-      console.log('[DEBUG] getSavedCompanies mapped first row:', rows[0]);
-    }
 
     return { rows };
   } catch (error) {
