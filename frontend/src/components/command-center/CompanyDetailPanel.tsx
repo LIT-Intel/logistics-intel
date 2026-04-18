@@ -182,6 +182,24 @@ const formatDate = (value?: string | null) => {
   });
 };
 
+const FUTURE_DATE_TOLERANCE_DAYS = 2;
+
+const isValidPastOrCurrentDate = (value?: string | null) => {
+  if (!value) return false;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const maxAllowed = new Date();
+  maxAllowed.setDate(maxAllowed.getDate() + FUTURE_DATE_TOLERANCE_DAYS);
+  return parsed.getTime() <= maxAllowed.getTime();
+};
+
+const getDateTime = (value?: string | null) => {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return parsed.getTime();
+};
+
 const normalizeText = (value?: string | null) =>
   String(value || "")
     .replace(/\s+/g, " ")
@@ -370,11 +388,24 @@ const normalizeLocationLabel = (value?: string | null) => {
   return formatLocationLabel(parts);
 };
 
+const isUnknownRoute = (value?: string | null) => {
+  const text = normalizeText(value).toLowerCase();
+  return (
+    !text ||
+    text === "—" ||
+    text === "unknown" ||
+    text === "unknown route" ||
+    text.includes("unknown →") ||
+    text.includes("→ unknown")
+  );
+};
+
 const buildCleanRoute = (origin?: string | null, destination?: string | null) => {
   const from = normalizeLocationLabel(origin);
   const to = normalizeLocationLabel(destination);
   if (from && to) return `${from} → ${to}`;
-  return from || to || "Unknown route";
+  if (from || to) return from || to;
+  return "";
 };
 
 const buildRouteLabel = (value?: string | null) => {
@@ -1197,7 +1228,7 @@ const aggregateCarrierRows = (shipments: NormalizedShipment[]) => {
 const aggregateRouteRows = (shipments: NormalizedShipment[]) => {
   const map = new Map<string, { shipments: number; teu: number; spend: number }>();
   shipments.forEach((shipment) => {
-    if (!shipment.route || shipment.route === "—") return;
+    if (!shipment.route || shipment.route === "—" || isUnknownRoute(shipment.route)) return;
     const current = map.get(shipment.route) || { shipments: 0, teu: 0, spend: 0 };
     current.shipments += 1;
     current.teu += shipment.teu;
@@ -1517,6 +1548,32 @@ const DataTable = ({
   </div>
 );
 
+const parseYearFromPoint = (point: any): number | null => {
+  const explicitYear = toNumber(point?.year);
+  if (explicitYear >= 2000) return explicitYear;
+  const rawValue = String(
+    pickFirst(point?.month, point?.monthLabel, point?.period, point?.date, point?.label, ""),
+  );
+  const match = rawValue.match(/\b(20\d{2})\b/);
+  if (match) return Number(match[1]);
+  const parsed = new Date(rawValue);
+  if (!Number.isNaN(parsed.getTime())) return parsed.getFullYear();
+  return null;
+};
+
+const getPointShipmentCount = (point: any) =>
+  toNumber(
+    pickFirst(
+      point?.shipments,
+      point?.totalShipments,
+      point?.shipmentCount,
+      point?.count,
+      point?.fclShipments,
+      point?.lclShipments,
+      0,
+    ),
+  );
+
 const buildDetailModel = (
   normalizedShipments: NormalizedShipment[],
   selectedYear: number | null,
@@ -1675,11 +1732,21 @@ const buildDetailModel = (
   const fclShipments = seriesFcl > 0 ? seriesFcl : fallbackFcl > 0 ? fallbackFcl : inferredFclCount;
   const lclShipments = seriesLcl > 0 ? seriesLcl : fallbackLcl > 0 ? fallbackLcl : inferredLclCount;
 
-  const sortedByDate = [...filteredShipments].sort((a, b) => {
-    const da = a.date ? new Date(a.date).getTime() : 0;
-    const db = b.date ? new Date(b.date).getTime() : 0;
-    return da - db;
-  });
+  const validDatedShipments = filteredShipments.filter((shipment) =>
+    isValidPastOrCurrentDate(shipment.date),
+  );
+
+  const sortedByDate = [...validDatedShipments].sort(
+    (a, b) => getDateTime(a.date) - getDateTime(b.date),
+  );
+
+  const profileLatestDate = normalizeDateValue(
+    pickFirst(rawProfile?.lastShipmentDate, rawProfile?.last_shipment_date),
+  );
+
+  const safeProfileLatestDate = isValidPastOrCurrentDate(profileLatestDate)
+    ? profileLatestDate
+    : null;
 
   let topRoutes = safeArray(rawRouteKpis?.topRoutesLast12m)
     .map((route: any) => ({
@@ -1688,7 +1755,7 @@ const buildDetailModel = (
       teu: toNumber(route?.teu),
       spend: toNumber(pickFirst(route?.estSpendUsd, route?.estSpendUsd12m)) || null,
     }))
-    .filter((row: any) => row.lane && row.lane !== "—");
+    .filter((row: any) => row.lane && row.lane !== "—" && !isUnknownRoute(row.lane));
 
   if (!topRoutes.length) topRoutes = aggregateRouteRows(filteredShipments);
 
@@ -1700,7 +1767,7 @@ const buildDetailModel = (
         teu: toNumber(route?.teu),
         spend: toNumber(route?.estSpendUsd) || null,
       }))
-      .filter((row: any) => row.lane && row.lane !== "—");
+      .filter((row: any) => row.lane && row.lane !== "—" && !isUnknownRoute(row.lane));
   }
 
   topRoutes = topRoutes.sort((a, b) => b.shipments - a.shipments || b.teu - a.teu).slice(0, 10);
@@ -1854,8 +1921,7 @@ const buildDetailModel = (
     oldestShipmentDate: sortedByDate[0]?.date ?? rawProfile?.firstShipmentDate ?? null,
     latestShipmentDate:
       sortedByDate[sortedByDate.length - 1]?.date ??
-      rawProfile?.lastShipmentDate ??
-      rawProfile?.last_shipment_date ??
+      safeProfileLatestDate ??
       null,
     topRouteLabel,
     recentRouteLabel,
@@ -2040,14 +2106,16 @@ export default function CompanyDetailPanel({
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
   const activeLane = selectedLane || detail.topRoutes[0]?.lane || null;
 
-  const [lushaContacts, setLushaContacts] = useState<any[]>([]);
-  const [lushaSimilarCompanies, setLushaSimilarCompanies] = useState<any[]>([]);
+  const [phantomContacts, setPhantomContacts] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactSlideOpen, setContactSlideOpen] = useState(false);
   const [slideContact, setSlideContact] = useState<any | null>(null);
   const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
-  const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "phantombuster" | "lusha" | null>(null);
+  const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "phantombuster" | null>(null);
+  const [contactMessage, setContactMessage] = useState<string | null>(null);
+  const [contactDebug, setContactDebug] = useState<any | null>(null);
+  const [savedContactKeys, setSavedContactKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const companyId =
@@ -2068,8 +2136,7 @@ export default function CompanyDetailPanel({
     (rawProfile as any)?.companyDomain;
 
     if (!companyId && !companyName && !companyDomain) {
-      setLushaContacts([]);
-      setLushaSimilarCompanies([]);
+      setPhantomContacts([]);
       setContactPreviewSource(null);
       return;
     }
@@ -2083,8 +2150,7 @@ export default function CompanyDetailPanel({
         if (companyId) {
           const cached = await loadCachedContactPreview(String(companyId));
           if (!cancelled && cached && Array.isArray(cached.contacts) && cached.contacts.length > 0) {
-            setLushaContacts(cached.contacts.slice(0, 5));
-            setLushaSimilarCompanies([]);
+            setPhantomContacts(cached.contacts.slice(0, 5));
             setContactPreviewSource("cache");
             if (!selectedContact) {
               setSelectedContact(cached.contacts[0]);
@@ -2103,20 +2169,22 @@ export default function CompanyDetailPanel({
             "procurement",
             "operations",
             "import",
-            "export",
             "transportation",
-            "distribution",
           ],
-          limit: 10,
+          limit: 6,
         });
 
         const pbContacts = Array.isArray(pbData?.contacts) ? pbData.contacts : [];
         const prioritizedPb = pbContacts.filter(isSupplyChainContact);
         const finalPb = prioritizedPb.length ? prioritizedPb : pbContacts.slice(0, 5);
 
+        if (!cancelled) {
+          setContactMessage(pbData?.message || null);
+          setContactDebug(pbData?.debug || null);
+        }
+
         if (!cancelled && finalPb.length > 0) {
-          setLushaContacts(finalPb);
-          setLushaSimilarCompanies([]);
+          setPhantomContacts(finalPb);
           setContactPreviewSource("phantombuster");
           if (!selectedContact) {
             setSelectedContact(finalPb[0]);
@@ -2137,15 +2205,15 @@ export default function CompanyDetailPanel({
         // PhantomBuster returned no contacts — log and clear
         console.log("PhantomBuster returned no contacts:", pbData);
         if (!cancelled) {
-          setLushaContacts([]);
-          setLushaSimilarCompanies([]);
+          setPhantomContacts([]);
           setContactPreviewSource(null);
+          setContactMessage(pbData?.message || "No contacts returned from PhantomBuster yet.");
+          setContactDebug(pbData?.debug || null);
         }
       } catch (err) {
         console.error("Contact preview fetch error", err);
         if (!cancelled) {
-          setLushaContacts([]);
-          setLushaSimilarCompanies([]);
+          setPhantomContacts([]);
           setContactPreviewSource(null);
         }
       } finally {
@@ -2176,20 +2244,28 @@ export default function CompanyDetailPanel({
   // Trade lane signal, Recency risk, and Volume profile cards removed per UX cleanup.
   // Only Contact Intelligence remains in the bottom overview section.
 
-  // True YoY: sum shipments per year from timeSeries, compare selected year to prior year
   const trendPct = (() => {
-    if (!effectiveSelectedYear) return null;
+    const activeYear = effectiveSelectedYear || new Date().getFullYear();
     const series = safeArray(rawProfile?.timeSeries);
-    if (!series.length) return null;
     const byYear = new Map<number, number>();
+
     series.forEach((point: any) => {
-      const yr = toNumber(pickFirst(point?.year, 0));
+      const yr = parseYearFromPoint(point);
       if (!yr) return;
-      const count = toNumber(pickFirst(point?.shipments, point?.totalShipments, 0));
+      const count = getPointShipmentCount(point);
+      if (!count) return;
       byYear.set(yr, (byYear.get(yr) || 0) + count);
     });
-    const thisYear = byYear.get(effectiveSelectedYear) ?? null;
-    const priorYear = byYear.get(effectiveSelectedYear - 1) ?? null;
+
+    if (!byYear.size && normalizedShipments.length) {
+      normalizedShipments.forEach((shipment) => {
+        if (!shipment.year) return;
+        byYear.set(shipment.year, (byYear.get(shipment.year) || 0) + 1);
+      });
+    }
+
+    const thisYear = byYear.get(activeYear) ?? null;
+    const priorYear = byYear.get(activeYear - 1) ?? null;
     if (!thisYear || !priorYear || priorYear === 0) return null;
     return ((thisYear - priorYear) / priorYear) * 100;
   })();
@@ -2252,7 +2328,7 @@ export default function CompanyDetailPanel({
     companyId: string;
     companyName?: string | null;
     companyDomain?: string | null;
-    sourceProvider: "phantombuster" | "lusha";
+    sourceProvider: "phantombuster";
     contacts: any[];
   }) => {
     const payload = {
@@ -2276,7 +2352,67 @@ export default function CompanyDetailPanel({
     }
   };
 
-  const contactOverviewRows = lushaContacts.slice(0, 5);
+  const getContactKey = (contact: any) => {
+    const linkedin =
+      contact.linkedin || contact.linkedinUrl || contact.profileUrl || contact.url || "";
+    const name = getContactFullName(contact);
+    const title = getContactTitle(contact);
+    return [linkedin, name, title].join("|").toLowerCase();
+  };
+
+  const saveContactToSupabase = async (contact: any) => {
+    const companyId =
+      (record as any)?.company?.company_id ||
+      (record as any)?.company?.id ||
+      (rawProfile as any)?.company_id ||
+      null;
+    const companyName =
+      (record as any)?.company?.name ||
+      (record as any)?.company?.company_name ||
+      (rawProfile as any)?.companyName ||
+      (rawProfile as any)?.company_name ||
+      null;
+    const companyDomain =
+      (record as any)?.company?.domain ||
+      (rawProfile as any)?.domain ||
+      (rawProfile as any)?.companyDomain ||
+      null;
+
+    const payload = {
+      company_id: companyId,
+      company_name: companyName,
+      company_domain: companyDomain,
+      full_name: getContactFullName(contact),
+      title: getContactTitle(contact) || null,
+      email: contact.email || contact.email_address || null,
+      phone: contact.phone || contact.phone_number || null,
+      linkedin_url:
+        contact.linkedin || contact.linkedinUrl || contact.profileUrl || contact.url || null,
+      source_provider: "phantombuster",
+      raw_contact: contact,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("lit_contacts")
+      .upsert(payload, { onConflict: "company_id,linkedin_url" });
+
+    if (error) {
+      console.error("Save contact error", error);
+      setContactMessage("Could not save contact yet. Check lit_contacts schema/RLS.");
+      return;
+    }
+
+    setSavedContactKeys((prev) => {
+      const next = new Set(prev);
+      next.add(getContactKey(contact));
+      return next;
+    });
+    setContactMessage("Contact saved.");
+  };
+
+  const contactOverviewRows = phantomContacts.slice(0, 5);
 
   if (!key) {
     return <CommandCenterEmptyState />;
@@ -2709,7 +2845,7 @@ export default function CompanyDetailPanel({
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                   {contactsLoading
                     ? "Enriching…"
-                    : `${lushaContacts.length} found${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
+                    : `${phantomContacts.length} found${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
                 </div>
                 <button
                   type="button"
@@ -2718,6 +2854,13 @@ export default function CompanyDetailPanel({
                   className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
                 >
                   {contactsLoading ? "Searching…" : "Refresh contacts"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSlideContact(null); setContactSlideOpen(true); }}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Open panel
                 </button>
               </div>
             </div>
@@ -2733,7 +2876,9 @@ export default function CompanyDetailPanel({
               </div>
             ) : contactOverviewRows.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                <p className="text-sm text-slate-500">No supply chain or logistics contacts found yet.</p>
+                <p className="text-sm text-slate-500">
+                  {contactMessage || "No supply chain or logistics contacts found yet."}
+                </p>
                 <button
                   type="button"
                   onClick={() => setContactFetchTrigger((n) => n + 1)}
@@ -2771,17 +2916,22 @@ export default function CompanyDetailPanel({
             )}
           </div>
 
-          {/* Contact slide-over */}
-          {contactSlideOpen && slideContact && (
+          {/* Contact slide-over panel */}
+          {contactSlideOpen && (
             <>
               <div
                 className="fixed inset-0 z-40 bg-black/30"
                 onClick={() => setContactSlideOpen(false)}
               />
-              <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-white shadow-2xl">
+              <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-white shadow-2xl">
                 <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                  <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
-                    Contact Details
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
+                      Contact Intelligence
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {contactPreviewSource ? `Source: ${contactPreviewSource}` : "Source: PhantomBuster"}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -2791,49 +2941,133 @@ export default function CompanyDetailPanel({
                     ✕
                   </button>
                 </div>
+
+                <div className="border-b border-slate-100 px-5 py-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setSlideContact(null); setContactFetchTrigger((n) => n + 1); }}
+                      disabled={contactsLoading}
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      {contactsLoading ? "Searching…" : "Search more contacts"}
+                    </button>
+                    {slideContact && (
+                      <button
+                        type="button"
+                        onClick={() => setSlideContact(null)}
+                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Back to all contacts
+                      </button>
+                    )}
+                  </div>
+                  {contactMessage && (
+                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                      {contactMessage}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex-1 overflow-y-auto p-5">
-                  {(() => {
-                    const fullName = getContactFullName(slideContact);
-                    const title = getContactTitle(slideContact);
-                    const email = slideContact.email || slideContact.email_address || "";
-                    const phone = slideContact.phone || slideContact.phone_number || "";
-                    const initials = fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
-                    return (
-                      <>
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-2xl bg-indigo-100 px-3 py-2 text-lg font-semibold text-indigo-700">
-                            {initials}
-                          </div>
-                          <div>
-                            <div className="text-lg font-semibold text-slate-950">{fullName}</div>
-                            {title && <div className="text-sm text-indigo-600">{title}</div>}
-                          </div>
+                  {contactsLoading ? (
+                    <div className="space-y-3">
+                      {[0, 1, 2].map((idx) => (
+                        <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                          <div className="h-4 w-1/3 rounded bg-slate-200" />
+                          <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
                         </div>
-                        <div className="mt-5 space-y-3">
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
-                            <div className="mt-1 text-sm text-slate-900">{email || "Email unavailable"}</div>
+                      ))}
+                    </div>
+                  ) : slideContact ? (
+                    (() => {
+                      const fullName = getContactFullName(slideContact);
+                      const title = getContactTitle(slideContact);
+                      const email = slideContact.email || slideContact.email_address || "";
+                      const phone = slideContact.phone || slideContact.phone_number || "";
+                      const linkedin =
+                        slideContact.linkedin || slideContact.linkedinUrl ||
+                        slideContact.profileUrl || slideContact.url || "";
+                      const initials =
+                        fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
+                      const saved = savedContactKeys.has(getContactKey(slideContact));
+                      return (
+                        <div className="space-y-5">
+                          <div className="flex items-center gap-3">
+                            <div className="rounded-2xl bg-indigo-100 px-3 py-2 text-lg font-semibold text-indigo-700">
+                              {initials}
+                            </div>
+                            <div>
+                              <div className="text-lg font-semibold text-slate-950">{fullName}</div>
+                              {title && <div className="text-sm text-indigo-600">{title}</div>}
+                            </div>
                           </div>
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
-                            <div className="mt-1 text-sm text-slate-900">{phone || "Phone unavailable"}</div>
+                          <div className="space-y-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
+                              <div className="mt-1 text-sm text-slate-900">{email || "Email unavailable"}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
+                              <div className="mt-1 text-sm text-slate-900">{phone || "Phone unavailable"}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">LinkedIn</div>
+                              <div className="mt-1 truncate text-sm text-slate-900">
+                                {linkedin ? (
+                                  <a href={linkedin} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                                    {linkedin}
+                                  </a>
+                                ) : "LinkedIn unavailable"}
+                              </div>
+                            </div>
                           </div>
-                          <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                            Verified
-                          </span>
-                        </div>
-                        <div className="mt-6 border-t border-slate-100 pt-5">
                           <button
                             type="button"
-                            onClick={() => { setContactSlideOpen(false); setContactFetchTrigger((n) => n + 1); }}
-                            className="w-full rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                            onClick={() => saveContactToSupabase(slideContact)}
+                            className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
                           >
-                            Search for more contacts
+                            {saved ? "Saved ✓" : "Save contact"}
                           </button>
                         </div>
-                      </>
-                    );
-                  })()}
+                      );
+                    })()
+                  ) : phantomContacts.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                      <p className="text-sm text-slate-500">
+                        {contactMessage || "No contacts found yet. Try Search more contacts."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {phantomContacts.map((contact: any, index: number) => {
+                        const fullName = getContactFullName(contact);
+                        const title = getContactTitle(contact);
+                        const saved = savedContactKeys.has(getContactKey(contact));
+                        return (
+                          <div key={`${fullName}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setSlideContact(contact)}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
+                                <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => saveContactToSupabase(contact)}
+                                className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 hover:bg-emerald-100"
+                              >
+                                {saved ? "Saved" : "Save"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </>
@@ -3074,14 +3308,14 @@ export default function CompanyDetailPanel({
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
                 Loading contacts…
               </div>
-            ) : lushaContacts.length === 0 ? (
+            ) : phantomContacts.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
                 No contacts found. Adjust enrichment filters in the backend step or try another company.
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
                 <div className="space-y-2">
-                  {lushaContacts.map((contact: any, index: number) => {
+                  {phantomContacts.map((contact: any, index: number) => {
                     const fullName = getContactFullName(contact);
                     const title = getContactTitle(contact);
                     const initials =
