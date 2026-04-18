@@ -3238,6 +3238,12 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           teu_12m:          item.lit_companies?.teu_12m           ?? null,
           fcl_shipments_12m: item.lit_companies?.fcl_shipments_12m ?? null,
           lcl_shipments_12m: item.lit_companies?.lcl_shipments_12m ?? null,
+          fcl_shipments_perc: item.lit_companies?.fcl_shipments_12m && item.lit_companies?.shipments_12m
+            ? Math.round((item.lit_companies.fcl_shipments_12m / item.lit_companies.shipments_12m) * 100)
+            : null,
+          lcl_shipments_perc: item.lit_companies?.lcl_shipments_12m && item.lit_companies?.shipments_12m
+            ? Math.round((item.lit_companies.lcl_shipments_12m / item.lit_companies.shipments_12m) * 100)
+            : null,
           est_spend_12m:    null,
           top_route_12m:    item.lit_companies?.top_route_12m    || null,
           recent_route:     item.lit_companies?.recent_route      || null,
