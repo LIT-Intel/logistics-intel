@@ -410,12 +410,17 @@ const buildCleanRoute = (origin?: string | null, destination?: string | null) =>
 
 const buildRouteLabel = (value?: string | null) => {
   const cleaned = cleanDisplayText(value);
-  if (!cleaned) return "—";
+
+  if (!cleaned || isUnknownRoute(cleaned)) return "—";
+
   if (cleaned.includes("→")) {
     const [left, right] = cleaned.split("→");
-    return buildCleanRoute(left, right);
+    const route = buildCleanRoute(left, right);
+    return route && !isUnknownRoute(route) ? route : "—";
   }
-  return normalizeLocationLabel(cleaned) || cleaned;
+
+  const normalized = normalizeLocationLabel(cleaned) || cleaned;
+  return normalized && !isUnknownRoute(normalized) ? normalized : "—";
 };
 
 const monthKey = (value?: string | null) => {
@@ -1561,18 +1566,33 @@ const parseYearFromPoint = (point: any): number | null => {
   return null;
 };
 
-const getPointShipmentCount = (point: any) =>
-  toNumber(
+const getPointShipmentCount = (point: any) => {
+  const direct = toNumber(
     pickFirst(
       point?.shipments,
       point?.totalShipments,
       point?.shipmentCount,
       point?.count,
-      point?.fclShipments,
-      point?.lclShipments,
       0,
     ),
   );
+
+  if (direct > 0) return direct;
+
+  const fcl =
+    toNumber(point?.fclShipments) +
+    toNumber(point?.shipmentsFcl) +
+    toNumber(point?.fcl) +
+    toNumber(point?.fclCount);
+
+  const lcl =
+    toNumber(point?.lclShipments) +
+    toNumber(point?.shipmentsLcl) +
+    toNumber(point?.lcl) +
+    toNumber(point?.lclCount);
+
+  return fcl + lcl;
+};
 
 const buildDetailModel = (
   normalizedShipments: NormalizedShipment[],
@@ -2021,8 +2041,19 @@ export default function CompanyDetailPanel({
       Number(fallbackModel.lclShipments ?? 0),
     );
 
-    const latestDate =
-      baseModel?.latestShipmentDate ?? fallbackModel.latestShipmentDate ?? scopedProfile?.lastShipmentDate ?? null;
+    const baseLatestDate = isValidPastOrCurrentDate(baseModel?.latestShipmentDate)
+  ? baseModel?.latestShipmentDate
+  : null;
+
+const scopedLatestDate = isValidPastOrCurrentDate(scopedProfile?.lastShipmentDate)
+  ? scopedProfile?.lastShipmentDate
+  : null;
+
+const latestDate =
+  fallbackModel.latestShipmentDate ??
+  baseLatestDate ??
+  scopedLatestDate ??
+  null;
 
     const monthlySeriesBase =
       Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
@@ -2042,14 +2073,16 @@ export default function CompanyDetailPanel({
         : fallbackModel.monthlySeries;
 
     const topRoutes =
-      Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
-        ? baseModel.tradeLanes.map((lane: any) => ({
-            lane: buildRouteLabel(lane.label),
-            shipments: Number(lane.count || 0),
-            teu: Number(lane.teu || 0),
-            spend: lane.spend ?? null,
-          }))
-        : fallbackModel.topRoutes;
+  Array.isArray(baseModel?.tradeLanes) && baseModel.tradeLanes.length
+    ? baseModel.tradeLanes
+        .map((lane: any) => ({
+          lane: buildRouteLabel(lane.label),
+          shipments: Number(lane.count || 0),
+          teu: Number(lane.teu || 0),
+          spend: lane.spend ?? null,
+        }))
+        .filter((row: any) => row.lane && row.lane !== "—" && !isUnknownRoute(row.lane))
+    : fallbackModel.topRoutes;
 
     const carriers =
       Array.isArray(baseModel?.carriers) && baseModel.carriers.length
@@ -2211,12 +2244,14 @@ export default function CompanyDetailPanel({
           setContactDebug(pbData?.debug || null);
         }
       } catch (err) {
-        console.error("Contact preview fetch error", err);
-        if (!cancelled) {
-          setPhantomContacts([]);
-          setContactPreviewSource(null);
-        }
-      } finally {
+  console.error("Contact preview fetch error", err);
+  if (!cancelled) {
+    setPhantomContacts([]);
+    setContactPreviewSource(null);
+    setContactMessage("Contact enrichment failed. Check PhantomBuster and Supabase logs.");
+    setContactDebug(null);
+  }
+} finally {
         if (!cancelled) {
           setContactsLoading(false);
         }
@@ -3299,7 +3334,7 @@ export default function CompanyDetailPanel({
                   Contact intelligence
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Enriched contacts sourced from Lusha. Persistent contact save is the next backend step.
+                  Enriched contacts sourced from PhantomBuster. Save and outreach workflow is being wired into Command Center.
                 </p>
               </div>
             </div>
@@ -3310,7 +3345,7 @@ export default function CompanyDetailPanel({
               </div>
             ) : phantomContacts.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                No contacts found. Adjust enrichment filters in the backend step or try another company.
+              {contactMessage || "No contacts found. Try another company or search again after PhantomBuster finishes the current run."}
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
