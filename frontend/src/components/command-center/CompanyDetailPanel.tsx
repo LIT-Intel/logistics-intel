@@ -2134,51 +2134,12 @@ export default function CompanyDetailPanel({
           return;
         }
 
-        const { data, error } = await supabase.functions.invoke("enrich-contacts", {
-          body: {
-            companyName: companyName || null,
-            companyDomain: companyDomain || null,
-            filters: {
-              department: "supply chain",
-              seniority: "manager",
-            },
-          },
-        });
-
-        if (error) {
-          console.error("Lusha enrichment error", error);
-          if (!cancelled) {
-            setLushaContacts([]);
-            setLushaSimilarCompanies([]);
-            setContactPreviewSource(null);
-          }
-          return;
-        }
-
-        const contacts = Array.isArray((data as any)?.contacts) ? (data as any).contacts : [];
-        const prioritized = contacts.filter(isSupplyChainContact);
-        const fallbackContacts = prioritized.length ? prioritized : contacts.slice(0, 5);
-
+        // PhantomBuster returned no contacts — log and clear
+        console.log("PhantomBuster returned no contacts:", pbData);
         if (!cancelled) {
-          setLushaContacts(fallbackContacts);
-          setLushaSimilarCompanies(
-            Array.isArray((data as any)?.similarCompanies) ? (data as any).similarCompanies : [],
-          );
-          setContactPreviewSource(fallbackContacts.length ? "lusha" : null);
-
-          if (fallbackContacts.length && !selectedContact) {
-            setSelectedContact(fallbackContacts[0]);
-          }
-        }
-
-        if (companyId && fallbackContacts.length > 0) {
-          await saveContactPreviewCache({
-            companyId: String(companyId),
-            companyName,
-            companyDomain,
-            sourceProvider: "lusha",
-            contacts: fallbackContacts,
-          });
+          setLushaContacts([]);
+          setLushaSimilarCompanies([]);
+          setContactPreviewSource(null);
         }
       } catch (err) {
         console.error("Contact preview fetch error", err);
