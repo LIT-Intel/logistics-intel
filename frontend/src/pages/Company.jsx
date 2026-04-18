@@ -62,6 +62,93 @@ function capDateAtToday(value) {
   return parsed <= new Date() ? value : null;
 }
 
+function normalizeDateValue(value) {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+
+  return null;
+}
+
+function getNestedValue(obj, path) {
+  let current = obj;
+  for (const key of path) {
+    if (current == null) return null;
+    current = current[key];
+  }
+  return current ?? null;
+}
+
+function pickFirstValue(...values) {
+  for (const value of values) {
+    if (value == null) continue;
+    if (typeof value === "string" && !value.trim()) continue;
+    return value;
+  }
+  return null;
+}
+
+function getShipmentDateValue(shipment) {
+  const candidates = [shipment, shipment?.raw, shipment?.raw?.shipment, shipment?.raw?.data];
+
+  const paths = [
+    ["bill_of_lading_date"],
+    ["bill_of_lading_date_formatted"],
+    ["arrival_date"],
+    ["shipment_date"],
+    ["date"],
+    ["estimated_arrival"],
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+
+    for (const path of paths) {
+      const value = getNestedValue(candidate, path);
+      const normalized = normalizeDateValue(value);
+      const capped = capDateAtToday(normalized);
+      if (capped) return capped;
+    }
+  }
+
+  return null;
+}
+
+function getLatestShipmentFromProfile(profile) {
+  const directLatest = normalizeDateValue(
+    pickFirstValue(profile?.lastShipmentDate, profile?.last_shipment_date),
+  );
+
+  const safeDirectLatest = capDateAtToday(directLatest);
+  if (safeDirectLatest) return safeDirectLatest;
+
+  const shipments =
+    profile?.recentBols ||
+    profile?.recent_bols ||
+    profile?.bols ||
+    profile?.shipments ||
+    [];
+
+  if (!Array.isArray(shipments) || shipments.length === 0) return null;
+
+  const validDates = shipments
+    .map(getShipmentDateValue)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+  return validDates[0] || null;
+}
+
 function getStoredSelectedCompany() {
   try {
     const raw = localStorage.getItem("lit:selectedCompany");
@@ -253,11 +340,11 @@ export default function Company() {
         ? Number(explicitSpend)
         : estimateMarketSpend(teu);
 
-    const rawLatest =
-      activeProfile?.lastShipmentDate ||
-      activeProfile?.last_shipment_date ||
-      shellCompany?.kpis?.latestShipment ||
-      null;
+    const profileLatest = getLatestShipmentFromProfile(activeProfile);
+
+    const shellLatest = capDateAtToday(
+    normalizeDateValue(shellCompany?.kpis?.latestShipment),
+    );
 
     return {
       shipments:
@@ -267,7 +354,7 @@ export default function Company() {
         null,
       teu,
       spend,
-      latestShipment: capDateAtToday(rawLatest),
+      latestShipment: profileLatest || shellLatest,
       topRoute:
         activeRouteKpis?.topRouteLast12m ||
         shellCompany?.kpis?.topRoute ||
