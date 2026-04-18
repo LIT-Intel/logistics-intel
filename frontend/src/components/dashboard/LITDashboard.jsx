@@ -1126,11 +1126,11 @@ function TradeMapPanel({ mapScales, regionSummary }) {
                     {visibleRoutes.length ? visibleRoutes.map((route) => (
                       <div
                         key={route.label}
-                        className="group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60 sm:flex-row sm:items-center sm:justify-between"
+                        className="group flex flex-row items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60"
                         title={`${route.label} • ${route.count} saved account${route.count === 1 ? '' : 's'}`}
                       >
-                        <span className="font-medium leading-6 text-slate-700 group-hover:text-slate-900 break-words sm:pr-3">{route.label}</span>
-                        <span className="ml-3 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700">{route.count}</span>
+                        <span className="font-medium leading-6 text-slate-700 group-hover:text-slate-900 flex-1 min-w-0 truncate pr-2">{route.label}</span>
+                        <span className="flex-shrink-0 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700">{route.count}</span>
                       </div>
                     )) : (
                       <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">

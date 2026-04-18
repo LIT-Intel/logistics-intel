@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
-import { Building2, Mail, FileText, Search, ExternalLink, Users2 } from "lucide-react";
+import { Building2, Mail, FileText, Search, ExternalLink, Users2, Lock } from "lucide-react";
 import { getSavedCompanies, getCrmCampaigns } from "@/lib/api";
 import { getLitCampaigns } from "@/lib/litCampaigns";
 import { supabase } from "@/lib/supabase";
+import { getPlanLimits } from "@/lib/planLimits";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import EnhancedKpiCard from "@/components/dashboard/EnhancedKpiCard";
 import ActivityFeed from "@/components/dashboard/ActivityFeed";
@@ -24,6 +25,7 @@ export default function Dashboard() {
   const [activities, setActivities] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
   const [contacts, setContacts] = useState([]);
+  const [planCode, setPlanCode] = useState('free_trial');
 
   useDashboardShortcuts();
 
@@ -32,13 +34,16 @@ export default function Dashboard() {
     const load = async () => {
       setLoading(true);
       try {
-        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes, contactsRes] = await Promise.allSettled([
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes, contactsRes, planRes] = await Promise.allSettled([
           getSavedCompanies(),
           getLitCampaigns().catch(() => getCrmCampaigns()),
           supabase.from('lit_rfps').select('id').eq('status', 'active'),
           supabase.from('lit_activity_events').select('*').order('created_at', { ascending: false }).limit(10),
-          supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search'),
+          supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search').gte('created_at', monthStart),
           supabase.from('lit_contacts').select('id, full_name, title').limit(50),
+          supabase.from('subscriptions').select('plan_code').eq('user_id', user?.id).maybeSingle(),
         ]);
 
         if (mounted) {
@@ -56,6 +61,11 @@ export default function Dashboard() {
           }
           if (searchRes.status === 'fulfilled') {
             setSearchCount(searchRes.value?.count || 0);
+          }
+          if (planRes.status === 'fulfilled' && planRes.value?.data?.plan_code) {
+            setPlanCode(planRes.value.data.plan_code);
+          } else {
+            setPlanCode(user?.plan || user?.user_metadata?.plan || 'free_trial');
           }
           if (contactsRes.status === 'fulfilled') {
             setContacts(contactsRes.value?.data || []);
@@ -96,6 +106,14 @@ export default function Dashboard() {
 
   const totalActivity = savedCompanies.length + campaigns.length + rfpCount;
 
+  const planConfig = getPlanLimits(planCode);
+  const searchLimit = planConfig.limits.searches_per_month;
+  const savesLimit = planConfig.limits.command_center_saves_per_month;
+  const searchesRemaining = searchLimit !== null ? Math.max(0, searchLimit - searchCount) : null;
+  const savesRemaining = savesLimit !== null ? Math.max(0, savesLimit - savedCompanies.length) : null;
+  const searchLimitReached = searchLimit !== null && searchCount >= searchLimit;
+  const saveLimitReached = savesLimit !== null && savedCompanies.length >= savesLimit;
+
   if (loading) {
     return <DashboardLoadingSkeleton />;
   }
@@ -112,15 +130,15 @@ export default function Dashboard() {
       <div className="px-4 sm:px-6 py-6 space-y-6">
         <DashboardHeader userName={displayName} />
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
           <EnhancedKpiCard
             icon={Building2}
             label="Saved Companies"
             value={savedCompanies.length}
-            trend="+12%"
-            trendUp
+            trend={saveLimitReached ? "Limit reached" : savesRemaining !== null ? `${savesRemaining} left` : undefined}
+            trendUp={!saveLimitReached && savesRemaining !== null && savesRemaining > 0}
             href="/app/command-center"
-            subtitle="vs last month"
+            subtitle={savesLimit !== null ? `${savedCompanies.length} of ${savesLimit} saved this month` : 'Unlimited saves'}
             delay={0}
           />
           <EnhancedKpiCard
@@ -142,12 +160,13 @@ export default function Dashboard() {
             delay={0.2}
           />
           <EnhancedKpiCard
-            icon={Search}
+            icon={searchLimitReached ? Lock : Search}
             label="Searches Used"
             value={searchCount}
-            trend={searchCount > 0 ? `${searchCount} total` : undefined}
+            trend={searchLimitReached ? "Limit reached" : searchesRemaining !== null ? `${searchesRemaining} left` : undefined}
+            trendUp={!searchLimitReached && searchesRemaining !== null && searchesRemaining > 0}
             href="/app/search"
-            subtitle="All-time searches"
+            subtitle={searchLimit !== null ? `${searchCount} Used | ${searchesRemaining} Remaining` : 'Unlimited searches'}
             delay={0.3}
           />
         </div>
