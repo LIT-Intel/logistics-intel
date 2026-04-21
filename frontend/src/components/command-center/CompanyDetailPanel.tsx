@@ -2341,12 +2341,19 @@ if (!cancelled) {
   setContactDebug(enrichData?.debug || null);
 }
       } catch (err) {
-        console.error("Contact preview fetch error", err);
-        if (!cancelled) {
-          setPhantomContacts([]);
-          setContactPreviewSource(null);
-        }
-      } finally {
+  console.error("Contact preview fetch error", err);
+
+  if (!cancelled) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Contact enrichment failed.";
+
+    setPhantomContacts((current) => current);
+    setContactPreviewSource((current) => current);
+    setContactMessage(message);
+  }
+} finally {
         if (!cancelled) {
           setContactsLoading(false);
         }
