@@ -26,34 +26,34 @@ export default function AuthCallback() {
           if (exchangeError) throw exchangeError;
         }
 
-        // Confirm session exists after exchange (or if already set via implicit flow)
-        const { data, error: sessionError } = await auth.auth.getSession();
-        if (sessionError) throw sessionError;
-
-        if (data.session) {
-          const user = data.session.user;
-          const meta = user?.user_metadata || {};
-
-          // Primary signal: explicit flag written at registration
-          // Secondary: account < 20 min old means this IS the first confirmation link click
-          const createdAt = new Date(user?.created_at || 0);
-          const accountAgeMinutes = (Date.now() - createdAt.getTime()) / 60_000;
-          const isFreshSignup = accountAgeMinutes < 20;
-
-          const needsOnboarding =
-            meta.onboarding_completed === false ||
-            (meta.onboarding_completed !== true && isFreshSignup);
-
-          if (needsOnboarding && meta.onboarding_completed !== false) {
-            // Ensure the flag is written so RequireAuth always finds it
-            await auth.auth.updateUser({ data: { onboarding_completed: false } });
-          }
-
-          const destination = nextParam || (needsOnboarding ? '/onboarding' : '/app/dashboard');
-          navigate(destination, { replace: true });
-        } else {
+        // getUser() makes a live server call — guarantees fresh user_metadata
+        // (getSession() returns JWT-cached data which may lag after signUp)
+        const { data: userData, error: userError } = await auth.auth.getUser();
+        if (userError || !userData?.user) {
           navigate('/login', { replace: true });
+          return;
         }
+
+        const user = userData.user;
+        const meta = user.user_metadata || {};
+
+        // Primary: flag written at registration via signUp options.data
+        // Secondary: account < 30 min old = this is the first confirmation click
+        const createdAt = new Date(user.created_at || 0);
+        const accountAgeMinutes = (Date.now() - createdAt.getTime()) / 60_000;
+        const isFreshSignup = accountAgeMinutes < 30;
+
+        const needsOnboarding =
+          meta.onboarding_completed === false ||
+          (meta.onboarding_completed !== true && isFreshSignup);
+
+        if (needsOnboarding && meta.onboarding_completed !== false) {
+          // Write the flag so RequireAuth sees it on subsequent navigations
+          await auth.auth.updateUser({ data: { onboarding_completed: false } });
+        }
+
+        const destination = nextParam || (needsOnboarding ? '/onboarding' : '/app/dashboard');
+        navigate(destination, { replace: true });
       } catch (err: any) {
         console.error('[AuthCallback] error:', err);
         setError(err?.message || 'Authentication failed');

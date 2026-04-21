@@ -51,11 +51,12 @@ function RequireAuth({ children }) {
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
 
   const meta = user?.user_metadata || {};
-  // Primary: explicit flag; Secondary: account < 1 h old + flag not yet true = new signup
+  // Primary: explicit flag written at signup / after onboarding
+  // Secondary: account < 2 h old without an explicit true = treat as new signup
   const accountAgeHours = (Date.now() - new Date(user?.created_at || 0).getTime()) / 3_600_000;
   const onboardingDone =
     meta.onboarding_completed === true ||
-    (meta.onboarding_completed !== false && accountAgeHours >= 1);
+    (meta.onboarding_completed !== false && accountAgeHours >= 2);
 
   if (!isSuperAdmin && !onboardingDone && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;

@@ -129,7 +129,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsub = listenToAuth(async (u) => {
       if (u) {
-        const normalized = normalizeUser(u);
+        // getUser() fetches server-fresh metadata (JWT may lag after signUp metadata writes)
+        const freshData = supabase ? await supabase.auth.getUser().catch(() => null) : null;
+        const freshUser = freshData?.data?.user;
+        const merged = freshUser ? { ...u, user_metadata: { ...u.user_metadata, ...freshUser.user_metadata }, created_at: freshUser.created_at || u.created_at } : u;
+
+        const normalized = normalizeUser(merged);
         const email = String(normalized?.email || '').trim().toLowerCase();
         const superAdminByEmail = SUPER_ADMIN_EMAILS.has(email);
 
