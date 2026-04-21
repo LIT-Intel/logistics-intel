@@ -3211,7 +3211,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                         </div>
                       );
                     })()
-                  ) : phantomContacts.length === 0 ? (
+                  ) : filteredContacts.length === 0 ? (
                     <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
                       <p className="text-sm text-slate-500">
                         {contactMessage || "No contacts found yet. Try Search more contacts."}
@@ -3511,14 +3511,14 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
                 Loading contacts…
               </div>
-            ) : phantomContacts.length === 0 ? (
+            ) : filteredContacts.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
                 {contactMessage || "No contacts found yet. If Lusha is rate-limited, cached contacts will appear here when available."}
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
                 <div className="space-y-2">
-                  {phantomContacts.map((contact: any, index: number) => {
+                  {filteredContacts.map((contact: any, index: number) => {
                     const fullName = getContactFullName(contact);
                     const title = getContactTitle(contact);
                     const initials =
