@@ -286,7 +286,7 @@ export default function ModernSignupPage() {
     ? `/accept-invite?token=${encodeURIComponent(inviteToken)}${
         inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
       }`
-    : nextParam || "/search";
+    : nextParam || "/onboarding";
 
   useEffect(() => {
     if (inviteEmail) {
@@ -305,7 +305,12 @@ export default function ModernSignupPage() {
     try {
       setErr("");
       setLoading(true);
-      await registerWithEmailPassword({ fullName, email, password });
+      await registerWithEmailPassword({
+        fullName,
+        email,
+        password,
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(postInvitePath)}`,
+      });
 
       if (isInviteFlow) {
         setSignupSuccess(true);
@@ -364,7 +369,7 @@ export default function ModernSignupPage() {
             <p className="mt-3 text-sm text-slate-600">
               {isInviteFlow
                 ? "Your account is ready. We’re taking you back to your workspace invitation now."
-                : "We sent a verification link to your email. Confirm it, then sign in."}
+                : "We sent a verification link to your email. Click the link to confirm, then you’ll be guided through your workspace setup."}
             </p>
 
             {!isInviteFlow && (

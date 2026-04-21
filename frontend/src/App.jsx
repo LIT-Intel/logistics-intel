@@ -36,6 +36,7 @@ const CommandCenterPage = lazy(() => import("@/components/command-center/Command
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
+const OnboardingFlow = lazy(() => import("@/pages/OnboardingFlow"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
@@ -142,6 +143,15 @@ export default function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route path="/invite" element={<Navigate to="/accept-invite" replace />} />
+
+        <Route
+          path="/onboarding"
+          element={
+            <RequireAuth>
+              <OnboardingFlow />
+            </RequireAuth>
+          }
+        />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 
