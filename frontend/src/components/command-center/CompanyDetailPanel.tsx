@@ -2533,6 +2533,15 @@ export default function CompanyDetailPanel({
   };
 
   const contactOverviewRows = phantomContacts.slice(0, CONTACT_PREVIEW_LIMIT);
+  const filteredContacts = useMemo(() => {
+  const query = contactSearchQuery.trim().toLowerCase();
+
+  if (!query) return phantomContacts;
+
+  return phantomContacts.filter((contact) =>
+    getContactSearchText(contact).includes(query),
+  );
+}, [phantomContacts, contactSearchQuery]);
 
   if (!key) {
     return <CommandCenterEmptyState />;
