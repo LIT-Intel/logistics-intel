@@ -130,13 +130,34 @@ export default function SettingsPage() {
       .maybeSingle();
     requireNoError(baseProfileError, "Failed loading base profile");
 
+    const authFullName = user?.user_metadata?.full_name || user?.user_metadata?.display_name || user?.email?.split("@")[0] || "User";
+    const profileName = userProfileData?.full_name || baseProfileData?.full_name || authFullName;
+
+    // Upsert missing profiles from auth metadata for superadmin/early users
+    if (!userProfileData && (authFullName !== "User" || user?.email)) {
+      const { error: upsertError } = await supabase
+        .from("user_profiles")
+        .upsert(
+          { user_id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
+          { onConflict: "user_id" }
+        );
+      if (upsertError) console.warn("[SettingsPage] Upsert user_profiles warning:", upsertError);
+    }
+
+    if (!baseProfileData) {
+      const { error: upsertError } = await supabase
+        .from("profiles")
+        .upsert(
+          { id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
+          { onConflict: "id" }
+        );
+      if (upsertError) console.warn("[SettingsPage] Upsert profiles warning:", upsertError);
+    }
+
+    // Will be updated after subscriptions load below; set temporary value
     safeSet(() => {
       setProfile({
-        name:
-          userProfileData?.full_name ||
-          baseProfileData?.full_name ||
-          user?.user_metadata?.full_name ||
-          "",
+        name: profileName,
         title: userProfileData?.title || "",
         phone: userProfileData?.phone || "",
         location: userProfileData?.location || "",
@@ -229,7 +250,14 @@ export default function SettingsPage() {
 
     if (subResult.status === "fulfilled") {
       requireNoError(subResult.value.error, "Failed loading subscription");
-      safeSet(() => setSubscription(subResult.value.data ?? null));
+      const subData = subResult.value.data ?? null;
+      safeSet(() => {
+        setSubscription(subData);
+        // Update profile plan with actual subscription plan
+        if (subData?.plan_code) {
+          setProfile((prev) => ({ ...prev, plan: normalizePlan(subData.plan_code) }));
+        }
+      });
     }
 
     if (plansResult.status === "fulfilled") {
