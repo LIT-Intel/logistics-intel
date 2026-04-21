@@ -3074,16 +3074,15 @@ export default function CompanyDetailPanel({
                   ) : slideContact ? (
                     (() => {
                       const fullName = getContactFullName(slideContact);
-                      const title = getContactTitle(slideContact);
-                      const email = getContactEmail(contact);
-                      const phone = getContactPhone(contact);
-                      const saved = isContactSaved(contact);
-                      const linkedin =
-                        slideContact.linkedin || slideContact.linkedinUrl ||
-                        slideContact.profileUrl || slideContact.url || "";
-                      const initials =
-                        fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
-                      const saved = savedContactKeys.has(getContactKey(slideContact));
+const title = getContactTitle(slideContact);
+const email = getContactEmail(slideContact);
+const phone = getContactPhone(slideContact);
+const linkedin =
+  slideContact.linkedin || slideContact.linkedinUrl ||
+  slideContact.profileUrl || slideContact.url || "";
+const initials =
+  fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
+const saved = savedContactKeys.has(getContactKey(slideContact));
                       return (
                         <div className="space-y-5">
                           <div className="flex items-center gap-3">
