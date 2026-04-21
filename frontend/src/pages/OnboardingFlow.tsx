@@ -152,26 +152,57 @@ export default function OnboardingFlow() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated. Please log in again.');
 
-      // 1. Find the auto-bootstrapped org (created by DB trigger on signup)
-      const { data: membership, error: memberErr } = await supabase
+      const displayName = allData.fullName || user.user_metadata?.full_name || user.email?.split('@')[0] || '';
+
+      // 1. Write personal profile data (from Step 1) to both profile tables
+      await Promise.allSettled([
+        supabase.from('profiles').upsert(
+          { id: user.id, full_name: displayName },
+          { onConflict: 'id' }
+        ),
+        supabase.from('user_profiles').upsert(
+          { user_id: user.id, full_name: displayName },
+          { onConflict: 'user_id' }
+        ),
+      ]);
+
+      // 2. Find the org created by the bootstrap trigger (or create one if it failed)
+      let orgId: string | null = null;
+
+      const { data: membership } = await supabase
         .from('org_members')
         .select('org_id')
         .eq('user_id', user.id)
         .eq('role', 'owner')
         .maybeSingle();
 
-      if (memberErr) throw memberErr;
+      orgId = membership?.org_id ?? null;
 
-      const orgId = membership?.org_id;
+      if (!orgId) {
+        // Bootstrap trigger didn't run — create the org directly from onboarding data
+        const orgName = allData.orgName || `${displayName}'s Workspace`;
+        const { data: newOrg, error: orgErr } = await supabase
+          .from('organizations')
+          .insert({ name: orgName, owner_id: user.id, industry: allData.industry || null })
+          .select('id')
+          .single();
+        if (orgErr) throw orgErr;
+        orgId = newOrg.id;
 
-      // 2. Update the org with the name and industry from Step 2
-      if (orgId && allData.orgName) {
+        await supabase.from('org_members').insert({ org_id: orgId, user_id: user.id, role: 'owner' });
+
+        // Seed free_trial subscription if no Stripe checkout was done
+        if (allData.planCode === 'free_trial') {
+          await supabase.from('subscriptions').upsert(
+            { user_id: user.id, plan_code: 'free_trial', status: 'trialing' },
+            { onConflict: 'user_id' }
+          );
+        }
+      } else if (allData.orgName) {
+        // Org already exists — update with Step 2 data
         await supabase
           .from('organizations')
-          .update({
-            name: allData.orgName,
-            industry: allData.industry || null,
-          })
+          .update({ name: allData.orgName, industry: allData.industry || null })
           .eq('id', orgId);
       }
 
@@ -205,9 +236,14 @@ export default function OnboardingFlow() {
         }
       }
 
-      // 4. Mark onboarding complete and store org_id in user metadata
+      // 4. Update auth metadata with full name + org_id, mark onboarding complete
       await supabase.auth.updateUser({
-        data: { onboarding_completed: true, org_id: orgId },
+        data: {
+          full_name: displayName,
+          display_name: displayName,
+          onboarding_completed: true,
+          org_id: orgId,
+        },
       });
 
       // Clean up session storage

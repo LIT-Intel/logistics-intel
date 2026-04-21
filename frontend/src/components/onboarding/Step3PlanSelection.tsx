@@ -21,54 +21,56 @@ const plans = [
   {
     code: 'free_trial' as PlanCode,
     name: 'Free Trial',
-    description: 'Get started with core features',
+    description: 'Explore the product before committing',
+    seat_line: '1 seat',
+    usage_line: '10 discoveries • 10 saved accounts',
     features: [
-      '10 searches/month',
-      'Basic command center',
-      'Limited company views',
-      'Email support',
+      '10 company discoveries',
+      '10 saved accounts',
+      'Dashboard + Search access',
+      'No Pulse or Campaign Builder',
     ],
     highlighted: false,
   },
   {
     code: 'starter' as PlanCode,
     name: 'Starter',
-    description: 'For individual professionals',
+    description: 'Core intelligence for solo operators',
+    seat_line: '1 seat',
+    usage_line: '250 discoveries • 250 saved accounts',
     features: [
-      '100 searches/month',
-      'Full command center',
-      'Company enrichment',
-      'Priority email support',
-      'API access',
+      '250 company discoveries',
+      '250 saved accounts',
+      'Company Intelligence pages',
+      'No Pulse or Campaign Builder',
     ],
     highlighted: false,
   },
   {
     code: 'growth' as PlanCode,
     name: 'Growth',
-    description: 'For growing teams',
+    description: 'Multi-user prospecting and outreach at scale',
+    seat_line: '3 to 7 seats',
+    usage_line: '2,000 shared discoveries • 500 saved accounts',
     features: [
-      '500 searches/month per seat',
-      'Team collaboration',
-      'Campaign builder',
-      'Pulse monitoring',
-      'Enrichment credits',
-      '24/7 phone support',
-      '3–7 seats',
+      '2,000 shared discoveries',
+      '500 saved accounts',
+      'Pulse + Campaign Builder',
+      '100 enrichment credits',
     ],
     highlighted: true,
   },
   {
     code: 'enterprise' as PlanCode,
     name: 'Enterprise',
-    description: 'For large organizations',
+    description: 'Admin controls, scale, and commercial flexibility',
+    seat_line: '6+ seats',
+    usage_line: 'Custom usage limits',
     features: [
-      'Unlimited everything',
-      'Custom integrations',
-      'Dedicated account manager',
-      'SSO & SAML',
-      'Advanced reporting',
-      '6+ seats',
+      'Everything in Growth',
+      'Custom usage limits',
+      'Priority support',
+      'Contact sales only',
     ],
     highlighted: false,
   },
@@ -173,6 +175,11 @@ export function Step3PlanSelection({ onNext, initialData }: Step3PlanSelectionPr
                       Save ${Math.round(monthlyBase * 0.2 * 12)}/yr
                     </div>
                   )}
+                </div>
+
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-xs font-semibold text-slate-700">{plan.seat_line}</div>
+                  <div className="mt-0.5 text-xs text-slate-500">{plan.usage_line}</div>
                 </div>
 
                 <ul className="mt-5 space-y-2.5">
