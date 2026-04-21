@@ -1350,6 +1350,10 @@ const getContactPhone = (contact: any) =>
 
 const getContactLinkedIn = (contact: any) =>
   contact.linkedin_url || contact.linkedinUrl || contact.linkedInUrl || "";
+  const getContactLocation = (contact: any) =>
+  contact.location ||
+  [contact.city, contact.state, contact.country].filter(Boolean).join(", ") ||
+  "";
 
 const getContactAvatarUrl = (contact: any) =>
   contact.photo_url ||
