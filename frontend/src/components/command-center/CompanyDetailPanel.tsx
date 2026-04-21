@@ -23,7 +23,6 @@ import {
   buildYearScopedProfile,
   getCommandCenterAvailableYears,
 } from "@/lib/api";
-import { phantombusterLinkedIn } from "@/api/functions";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1561,18 +1560,33 @@ const parseYearFromPoint = (point: any): number | null => {
   return null;
 };
 
-const getPointShipmentCount = (point: any) =>
-  toNumber(
+const getPointShipmentCount = (point: any) => {
+  const direct = toNumber(
     pickFirst(
       point?.shipments,
       point?.totalShipments,
       point?.shipmentCount,
       point?.count,
-      point?.fclShipments,
-      point?.lclShipments,
       0,
     ),
   );
+
+  if (direct > 0) return direct;
+
+  const fcl =
+    toNumber(point?.fclShipments) +
+    toNumber(point?.shipmentsFcl) +
+    toNumber(point?.fcl) +
+    toNumber(point?.fclCount);
+
+  const lcl =
+    toNumber(point?.lclShipments) +
+    toNumber(point?.shipmentsLcl) +
+    toNumber(point?.lcl) +
+    toNumber(point?.lclCount);
+
+  return fcl + lcl;
+};
 
 const buildDetailModel = (
   normalizedShipments: NormalizedShipment[],
@@ -2112,7 +2126,7 @@ export default function CompanyDetailPanel({
   const [contactSlideOpen, setContactSlideOpen] = useState(false);
   const [slideContact, setSlideContact] = useState<any | null>(null);
   const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
-  const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "phantombuster" | null>(null);
+  const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "lusha" | null>(null);
   const [contactMessage, setContactMessage] = useState<string | null>(null);
   const [contactDebug, setContactDebug] = useState<any | null>(null);
   const [savedContactKeys, setSavedContactKeys] = useState<Set<string>>(new Set());
@@ -2159,56 +2173,52 @@ export default function CompanyDetailPanel({
           }
         }
 
-        const pbData: any = await phantombusterLinkedIn({
-          action: "company_contacts_search",
-          companyName: companyName || null,
-          companyDomain: companyDomain || null,
-          titles: [
-            "supply chain",
-            "logistics",
-            "procurement",
-            "operations",
-            "import",
-            "transportation",
-          ],
-          limit: 6,
-        });
+        const { data: enrichData, error: enrichError } = await supabase.functions.invoke(
+          "enrich-contacts",
+          {
+            body: {
+              companyId: companyId ? String(companyId) : undefined,
+              companyName: companyName || undefined,
+              companyDomain: companyDomain || undefined,
+              titles: [
+                "supply chain",
+                "logistics",
+                "procurement",
+                "operations",
+                "import",
+                "transportation",
+              ],
+              limit: 6,
+            },
+          },
+        );
 
-        const pbContacts = Array.isArray(pbData?.contacts) ? pbData.contacts : [];
-        const prioritizedPb = pbContacts.filter(isSupplyChainContact);
-        const finalPb = prioritizedPb.length ? prioritizedPb : pbContacts.slice(0, 5);
+        if (enrichError) throw enrichError;
+
+        const enrichContacts = Array.isArray(enrichData?.contacts) ? enrichData.contacts : [];
+        const prioritized = enrichContacts.filter(isSupplyChainContact);
+        const finalContacts = prioritized.length ? prioritized : enrichContacts.slice(0, 5);
 
         if (!cancelled) {
-          setContactMessage(pbData?.message || null);
-          setContactDebug(pbData?.debug || null);
+          setContactMessage(enrichData?.message || null);
+          setContactDebug(enrichData?.debug || null);
         }
 
-        if (!cancelled && finalPb.length > 0) {
-          setPhantomContacts(finalPb);
-          setContactPreviewSource("phantombuster");
+        if (!cancelled && finalContacts.length > 0) {
+          setPhantomContacts(finalContacts);
+          setContactPreviewSource("lusha");
           if (!selectedContact) {
-            setSelectedContact(finalPb[0]);
-          }
-
-          if (companyId) {
-            await saveContactPreviewCache({
-              companyId: String(companyId),
-              companyName,
-              companyDomain,
-              sourceProvider: "phantombuster",
-              contacts: finalPb,
-            });
+            setSelectedContact(finalContacts[0]);
           }
           return;
         }
 
-        // PhantomBuster returned no contacts — log and clear
-        console.log("PhantomBuster returned no contacts:", pbData);
+        // Lusha returned no contacts — log and clear
         if (!cancelled) {
           setPhantomContacts([]);
           setContactPreviewSource(null);
-          setContactMessage(pbData?.message || "No contacts returned from PhantomBuster yet.");
-          setContactDebug(pbData?.debug || null);
+          setContactMessage(enrichData?.message || "No contacts found via Lusha for this company.");
+          setContactDebug(enrichData?.debug || null);
         }
       } catch (err) {
         console.error("Contact preview fetch error", err);
@@ -2328,7 +2338,7 @@ export default function CompanyDetailPanel({
     companyId: string;
     companyName?: string | null;
     companyDomain?: string | null;
-    sourceProvider: "phantombuster";
+    sourceProvider: "lusha";
     contacts: any[];
   }) => {
     const payload = {
@@ -2388,7 +2398,7 @@ export default function CompanyDetailPanel({
       phone: contact.phone || contact.phone_number || null,
       linkedin_url:
         contact.linkedin || contact.linkedinUrl || contact.profileUrl || contact.url || null,
-      source_provider: "phantombuster",
+      source_provider: "lusha",
       raw_contact: contact,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -2930,7 +2940,7 @@ export default function CompanyDetailPanel({
                       Contact Intelligence
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
-                      {contactPreviewSource ? `Source: ${contactPreviewSource}` : "Source: PhantomBuster"}
+                      {contactPreviewSource ? `Source: ${contactPreviewSource}` : "Source: Lusha"}
                     </div>
                   </div>
                   <button
