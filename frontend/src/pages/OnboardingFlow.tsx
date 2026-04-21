@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { OnboardingStepper } from '@/components/onboarding/OnboardingStepper';
 import { Step1BasicInfo } from '@/components/onboarding/Step1BasicInfo';
 import { Step2Organization } from '@/components/onboarding/Step2Organization';
@@ -115,16 +116,20 @@ export default function OnboardingFlow() {
     }
   };
 
-  const handleStep5 = (stepData: {
+  const handleStep5 = async (stepData: {
     teamMembers: Array<{ id: string; email: string; role: 'member' | 'admin' }>;
   }) => {
     setData({ ...data, ...stepData });
+    // Mark onboarding complete so RequireAuth won't redirect back here
+    await supabase.auth.updateUser({ data: { onboarding_completed: true } });
     setCurrentStep(6);
   };
 
   const handleBack = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
+    } else {
+      navigate("/app/dashboard", { replace: true });
     }
   };
 
@@ -134,7 +139,7 @@ export default function OnboardingFlow() {
       <div className="border-b border-slate-200 bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <button
-            onClick={() => navigate(-1)}
+            onClick={handleBack}
             className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
           >
             <ChevronLeft className="h-5 w-5" />

@@ -70,6 +70,7 @@ export async function registerWithEmailPassword({
       data: {
         full_name: fullName || '',
         display_name: fullName || email.split('@')[0],
+        onboarding_completed: false,
       },
       emailRedirectTo:
         emailRedirectTo || `${window.location.origin}/auth/callback`,

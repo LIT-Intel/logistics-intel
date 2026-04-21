@@ -44,12 +44,13 @@ const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
-  const { user, loading, orgId, isSuperAdmin } = useAuth();
+  const { user, loading, isSuperAdmin } = useAuth();
   const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
-  if (!isSuperAdmin && orgId === null && location.pathname !== "/onboarding") {
+  const onboardingDone = user?.user_metadata?.onboarding_completed !== false;
+  if (!isSuperAdmin && !onboardingDone && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;
   }
   return children;
