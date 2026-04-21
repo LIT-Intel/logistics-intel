@@ -128,18 +128,21 @@ function AuthFeatureColumn({ inviteMode = false }: { inviteMode?: boolean }) {
           />
         </div>
 
-        <h1 className="text-[44px] font-semibold leading-[1.02] tracking-[-0.04em] text-slate-900">
-          {inviteMode ? "Join your workspace" : "Sign Up"}
-        </h1>
+function SignupFeatures({ inviteMode = false }: { inviteMode?: boolean }) {
+  const items = inviteMode
+    ? [
+        "Accept your workspace invitation securely",
+        "Join the correct organization automatically",
+        "Access the tools and pages assigned to your plan",
+      ]
+    : [
+        "Create your account with your work email",
+        "Get access to live shipment intelligence and CRM workflows",
+        "Unlock only the pages and tools included in your subscription",
+      ];
 
-        <p className="mt-4 text-[15px] leading-6 text-slate-500">
-          {inviteMode
-            ? "Create your account and finish joining your Logistics Intel workspace."
-            : "Start using shipment intelligence, company insights, and outreach workflows."}
-        </p>
-      </div>
-
-      <div className="space-y-4 rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
+  return (
+    <div className="space-y-4 rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600 ring-1 ring-cyan-100">
             <Building2 className="h-5 w-5" />
