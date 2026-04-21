@@ -5,6 +5,7 @@ import {
   loginWithGoogle,
   loginWithMicrosoft,
   loginWithEmailPassword,
+  resendConfirmationEmail,
 } from "@/auth/supabaseAuthClient";
 import { useAuth } from "@/auth/AuthProvider";
 
@@ -132,10 +133,27 @@ export default function ModernLoginPage() {
       }`
     : nextParam || "/app/dashboard";
 
-  const [err, setErr]         = useState("");
-  const [email, setEmail]     = useState(inviteEmail);
+  const [err, setErr]           = useState("");
+  const [email, setEmail]       = useState(inviteEmail);
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [resendSent, setResendSent] = useState(false);
+
+  const isEmailNotConfirmed = err.toLowerCase().includes('email not confirmed');
+
+  async function handleResend() {
+    if (!email) { setErr('Enter your email address above, then click Resend.'); return; }
+    try {
+      setLoading(true);
+      await resendConfirmationEmail(email);
+      setResendSent(true);
+      setErr('');
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to resend. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (user?.id) nav(loginRedirectPath, { replace: true });
@@ -212,9 +230,24 @@ export default function ModernLoginPage() {
             </p>
           </div>
 
+          {resendSent && (
+            <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              Confirmation email sent — check your inbox and click the link, then sign in again.
+            </div>
+          )}
+
           {err && (
             <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {err}
+              {isEmailNotConfirmed && (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  className="mt-2 block font-semibold underline hover:no-underline"
+                >
+                  Resend confirmation email →
+                </button>
+              )}
             </div>
           )}
 

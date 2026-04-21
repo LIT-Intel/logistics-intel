@@ -15,15 +15,30 @@ export default function AuthCallback() {
     const handleCallback = async () => {
       try {
         const searchParams = new URLSearchParams(window.location.search);
-        const code = searchParams.get('code');
-        const nextParam = searchParams.get('next');
+        const code       = searchParams.get('code');
+        const tokenHash  = searchParams.get('token_hash');
+        const otpType    = searchParams.get('type') as any;
+        const nextParam  = searchParams.get('next');
 
-        // Exchange PKCE code for session
+        // PKCE flow: ?code=xxx (Supabase JS v2 default for browser)
         if (code) {
           const { error: exchangeError } = await auth.auth.exchangeCodeForSession(
             window.location.href
           );
           if (exchangeError) throw exchangeError;
+        }
+        // OTP/token_hash flow: ?token_hash=xxx&type=signup (newer Supabase email templates)
+        else if (tokenHash && otpType) {
+          const { error: verifyError } = await auth.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: otpType,
+          });
+          if (verifyError) throw verifyError;
+        }
+        // Implicit/hash flow: #access_token=xxx — Supabase client auto-processes via onAuthStateChange
+        // Give it a moment to settle before calling getUser()
+        else if (window.location.hash.includes('access_token')) {
+          await new Promise((res) => setTimeout(res, 600));
         }
 
         // getUser() makes a live server call — guarantees fresh user_metadata

@@ -184,6 +184,13 @@ export async function updatePassword(newPassword: string) {
   if (error) throw error;
 }
 
+// Resend email confirmation (for users stuck at "Email not confirmed")
+export async function resendConfirmationEmail(email: string) {
+  if (!auth) throw new Error('Auth not configured');
+  const { error } = await auth.auth.resend({ type: 'signup', email });
+  if (error) throw error;
+}
+
 // Update User Profile metadata
 export async function updateProfile(updates: {
   full_name?: string;
