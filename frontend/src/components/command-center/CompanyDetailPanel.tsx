@@ -3110,6 +3110,7 @@ export default function CompanyDetailPanel({
 const title = getContactTitle(slideContact);
 const email = getContactEmail(slideContact);
 const phone = getContactPhone(slideContact);
+const avatarUrl = getContactAvatarUrl(slideContact);
 const linkedin =
   slideContact.linkedin || slideContact.linkedinUrl ||
   slideContact.profileUrl || slideContact.url || "";
@@ -3119,14 +3120,24 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                       return (
                         <div className="space-y-5">
                           <div className="flex items-center gap-3">
-                            <div className="rounded-2xl bg-indigo-100 px-3 py-2 text-lg font-semibold text-indigo-700">
-                              {initials}
-                            </div>
-                            <div>
-                              <div className="text-lg font-semibold text-slate-950">{fullName}</div>
-                              {title && <div className="text-sm text-indigo-600">{title}</div>}
-                            </div>
-                          </div>
+  {avatarUrl ? (
+    <img
+      src={avatarUrl}
+      alt={fullName}
+      className="h-14 w-14 shrink-0 rounded-2xl object-cover ring-1 ring-slate-200"
+      loading="lazy"
+    />
+  ) : (
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-lg font-semibold text-indigo-700 ring-1 ring-indigo-200">
+      {initials}
+    </div>
+  )}
+
+  <div className="min-w-0">
+    <div className="truncate text-lg font-semibold text-slate-950">{fullName}</div>
+    {title && <div className="text-sm text-indigo-600">{title}</div>}
+  </div>
+</div>
                           <div className="space-y-3">
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
