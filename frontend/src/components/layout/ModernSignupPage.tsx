@@ -28,7 +28,7 @@ function BrandPanel({ inviteMode = false }: { inviteMode?: boolean }) {
       <img
         src="/lit-logo-horizontal.svg"
         alt="Logistics Intel"
-        className="h-8 w-auto brightness-0 invert"
+        className="h-8 w-auto"
         onError={(e) => {
           const el = e.currentTarget;
           el.style.display = "none";
