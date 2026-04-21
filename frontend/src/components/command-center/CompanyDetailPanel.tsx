@@ -2313,13 +2313,13 @@ export default function CompanyDetailPanel({
           return;
         }
 
-        // Lusha returned no contacts — log and clear
-        if (!cancelled) {
-          setPhantomContacts([]);
-          setContactPreviewSource(null);
-          setContactMessage(enrichData?.message || "No contacts found via Lusha for this company.");
-          setContactDebug(enrichData?.debug || null);
-        }
+        // Provider returned no contacts or is currently locked/rate-limited.
+if (!cancelled) {
+  setPhantomContacts((current) => current);
+  setContactPreviewSource((current) => current);
+  setContactMessage(enrichData?.message || "No contacts found via Lusha for this company.");
+  setContactDebug(enrichData?.debug || null);
+}
       } catch (err) {
         console.error("Contact preview fetch error", err);
         if (!cancelled) {
@@ -3219,7 +3219,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {phantomContacts.map((contact: any, index: number) => {
+                      {filteredContacts.map((contact: any, index: number) => {
   const fullName = getContactFullName(contact);
   const title = getContactTitle(contact);
   const avatarUrl = getContactAvatarUrl(contact);
