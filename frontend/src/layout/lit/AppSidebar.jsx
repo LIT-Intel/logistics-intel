@@ -38,8 +38,9 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
   const canUseCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const canUsePulse = isAdmin || canAccessFeature(plan, "pulse");
-  const canUseRfp = isAdmin || ["growth", "enterprise"].includes(plan);
-  const showAdminSection = isAdmin;
+  const canUseRfp = isAdmin || canAccessFeature(plan, "rfp_studio");
+  const canUseLeadProspecting = isAdmin || canAccessFeature(plan, "lead_prospecting");
+  const showAdminSection = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
 
   const sections = [
     {
@@ -54,9 +55,12 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           icon: Megaphone,
           locked: !canUseCampaigns,
         },
-        ...(canUsePulse
-          ? [{ label: "Pulse", href: "/app/prospecting", icon: PulseIcon }]
-          : []),
+        {
+          label: "Pulse",
+          href: "/app/prospecting",
+          icon: PulseIcon,
+          locked: !canUsePulse && !canUseLeadProspecting,
+        },
       ],
     },
     {

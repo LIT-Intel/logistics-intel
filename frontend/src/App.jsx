@@ -7,6 +7,8 @@ import ModernSignupPage from "@/components/layout/ModernSignupPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
 import AcceptInvitePage from "@/pages/AcceptInvitePage";
+import { UpgradeGate } from "@/components/common/UpgradeGate";
+import { canAccessFeature, normalizePlan } from "@/lib/planLimits";
 
 const Landing = lazy(() => import("@/pages/LandingPage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
@@ -79,6 +81,27 @@ function RequireSuperAdmin({ children }) {
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
   if (!isSuperAdmin) return <Navigate to="/app/dashboard" replace />;
+  return children;
+}
+
+function RequirePlan({ feature, featureName, description, requiredPlan = "growth", children }) {
+  const { user, loading, plan: userPlan } = useAuth();
+  if (DEMO_MODE) return children;
+  if (loading) return null;
+  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  const plan = normalizePlan(userPlan);
+  const hasAccess = canAccessFeature(plan, feature);
+  if (!hasAccess) {
+    return (
+      <UpgradeGate
+        featureName={featureName}
+        description={description}
+        requiredPlan={requiredPlan}
+        currentPlan={plan}
+        hasAccess={false}
+      />
+    );
+  }
   return children;
 }
 
@@ -246,22 +269,32 @@ export default function App() {
         <Route
           path="/app/campaigns"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="campaign_builder"
+              featureName="Campaign Builder"
+              description="Build and run outreach campaigns targeting freight shippers and logistics prospects. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <Campaigns />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 
         <Route
           path="/app/campaigns/new"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="campaign_builder"
+              featureName="Campaign Builder"
+              description="Build and run outreach campaigns targeting freight shippers and logistics prospects. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <CampaignBuilder />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 
@@ -279,11 +312,16 @@ export default function App() {
         <Route
           path="/app/rfp"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="rfp_studio"
+              featureName="RFP Studio"
+              description="Generate professional RFP responses and freight quotes with AI assistance. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <RFPStudio />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 
@@ -367,11 +405,16 @@ export default function App() {
         <Route
           path="/app/prospecting"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="lead_prospecting"
+              featureName="Pulse — Lead Prospecting"
+              description="Discover and monitor shippers based on freight signals, import activity, and AI-driven scoring. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <LeadProspecting />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 

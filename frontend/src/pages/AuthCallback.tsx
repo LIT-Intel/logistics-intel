@@ -18,7 +18,7 @@ export default function AuthCallback() {
         const code = searchParams.get('code');
         const nextParam = searchParams.get('next');
 
-        // Handle PKCE email confirmation code exchange
+        // Exchange PKCE code for session
         if (code) {
           const { error: exchangeError } = await auth.auth.exchangeCodeForSession(
             window.location.href
@@ -38,7 +38,7 @@ export default function AuthCallback() {
         const meta = user.user_metadata || {};
 
         // Primary: flag written at registration via signUp options.data
-        // Secondary: account < 30 min old = this is the first confirmation click
+        // Secondary: account < 30 min old = first confirmation click
         const createdAt = new Date(user.created_at || 0);
         const accountAgeMinutes = (Date.now() - createdAt.getTime()) / 60_000;
         const isFreshSignup = accountAgeMinutes < 30;
@@ -47,8 +47,8 @@ export default function AuthCallback() {
           meta.onboarding_completed === false ||
           (meta.onboarding_completed !== true && isFreshSignup);
 
+        // Write the flag so RequireAuth sees it on subsequent navigations
         if (needsOnboarding && meta.onboarding_completed !== false) {
-          // Write the flag so RequireAuth sees it on subsequent navigations
           await auth.auth.updateUser({ data: { onboarding_completed: false } });
         }
 

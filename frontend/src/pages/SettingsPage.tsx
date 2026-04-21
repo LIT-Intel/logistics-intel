@@ -4,6 +4,22 @@ import { supabase } from "@/lib/supabase";
 import { updateProfile } from "@/auth/supabaseAuthClient";
 import { UploadFile } from "@/api/integrations";
 import SettingsLayout from "@/components/settings/SettingsLayout";
+import type { PlanCode } from "@/lib/planLimits";
+
+function normalizePlan(p?: string | null): PlanCode {
+  const v = String(p || "").trim().toLowerCase();
+  if (v === "free" || v === "free_trial") return "free_trial";
+  if (v === "standard" || v === "starter") return "starter";
+  if (v === "pro" || v === "growth") return "growth";
+  if (v === "unlimited" || v === "enterprise") return "enterprise";
+  return "free_trial";
+}
+
+function normalizeOrgRole(role?: string | null, fallback = "member"): string {
+  const r = String(role || "").toLowerCase().trim();
+  if (["owner", "admin", "member"].includes(r)) return r;
+  return fallback;
+}
 
 const PLAN_RANK: Record<string, number> = {
   free_trial: 0,
@@ -24,7 +40,7 @@ function requireNoError(
 }
 
 export default function SettingsPage() {
-  const { user, plan } = useAuth();
+  const { user, plan, isSuperAdmin } = useAuth();
   const mountedRef = useRef(true);
 
   const [profile, setProfile] = useState<JsonMap>({});
