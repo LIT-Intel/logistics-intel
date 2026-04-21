@@ -17,9 +17,6 @@ export default function AuthCallback() {
         const searchParams = new URLSearchParams(window.location.search);
         const code = searchParams.get('code');
         const nextParam = searchParams.get('next');
-        const callbackType = searchParams.get('type');
-        // New email signups land here with type=signup — send them to onboarding
-        const destination = nextParam || (callbackType === 'signup' ? '/onboarding' : '/app/dashboard');
 
         // Handle PKCE email confirmation code exchange
         if (code) {
@@ -34,6 +31,10 @@ export default function AuthCallback() {
         if (sessionError) throw sessionError;
 
         if (data.session) {
+          const meta = data.session.user?.user_metadata || {};
+          // New users have onboarding_completed=false written at registration
+          const needsOnboarding = meta.onboarding_completed === false;
+          const destination = nextParam || (needsOnboarding ? '/onboarding' : '/app/dashboard');
           navigate(destination, { replace: true });
         } else {
           navigate('/login', { replace: true });
