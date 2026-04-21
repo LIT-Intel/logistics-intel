@@ -3097,6 +3097,20 @@ export default function CompanyDetailPanel({
                 </div>
 
                 <div className="border-b border-slate-100 px-5 py-4">
+                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+  <div className="flex items-center gap-2">
+    <Search className="h-4 w-4 text-slate-400" />
+    <input
+      value={contactSearchQuery}
+      onChange={(event) => {
+        setContactSearchQuery(event.target.value);
+        setSlideContact(null);
+      }}
+      placeholder="Search by name, title, email, phone, city, country..."
+      className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+    />
+  </div>
+</div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
