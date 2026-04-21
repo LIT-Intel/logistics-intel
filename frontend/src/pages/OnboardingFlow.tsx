@@ -1,10 +1,5 @@
-/**
- * Onboarding Flow Page
- * Main page that orchestrates the 6-step onboarding process
- */
-
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { OnboardingStepper } from '@/components/onboarding/OnboardingStepper';
@@ -16,22 +11,18 @@ import { Step5TeamInvite } from '@/components/onboarding/Step5TeamInvite';
 import { Step6Success } from '@/components/onboarding/Step6Success';
 import type { PlanCode } from '@/lib/planLimits';
 
+const STORAGE_KEY = 'onboarding_progress';
+
 interface OnboardingData {
-  // Step 1
   fullName: string;
   email: string;
   role: string;
-  // Step 2
   orgName: string;
   industry: string;
   companySize: string;
-  // Step 3
   planCode: PlanCode;
   billingInterval: 'monthly' | 'yearly';
-  // Step 4
   paymentMethod: 'card' | 'invoice';
-  cardLast4?: string;
-  // Step 5
   teamMembers: Array<{ id: string; email: string; role: 'member' | 'admin' }>;
 }
 
@@ -49,69 +40,102 @@ const PLAN_NAMES: Record<PlanCode, string> = {
   enterprise: 'Enterprise',
 };
 
+function loadSavedData(): Partial<OnboardingData> {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveData(data: Partial<OnboardingData>) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {}
+}
+
 export default function OnboardingFlow() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [err, setErr] = useState('');
 
-  const [data, setData] = useState<Partial<OnboardingData>>({
+  const [data, setData] = useState<Partial<OnboardingData>>(() => ({
     billingInterval: 'monthly',
     planCode: 'growth',
     paymentMethod: 'card',
     teamMembers: [],
-  });
+    ...loadSavedData(),
+  }));
 
-  const goToStep = (step: number) => {
-    if (step < currentStep) {
-      setCurrentStep(step);
+  // Detect return from Stripe checkout (?step=5 or ?step=4 for cancel)
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    if (stepParam === '5') {
+      setCurrentStep(5);
+    } else if (stepParam === '4') {
+      setCurrentStep(4);
     }
+  }, []);
+
+  const updateData = (patch: Partial<OnboardingData>) => {
+    setData((prev) => {
+      const next = { ...prev, ...patch };
+      saveData(next);
+      return next;
+    });
   };
 
-  const handleStep1 = (stepData: {
-    fullName: string;
-    email: string;
-    role: string;
-  }) => {
-    setData({ ...data, ...stepData });
+  const handleStep1 = (stepData: { fullName: string; email: string; role: string }) => {
+    updateData(stepData);
     setCurrentStep(2);
   };
 
-  const handleStep2 = (stepData: {
-    orgName: string;
-    industry: string;
-    companySize: string;
-  }) => {
-    setData({ ...data, ...stepData });
+  const handleStep2 = (stepData: { orgName: string; industry: string; companySize: string }) => {
+    updateData(stepData);
     setCurrentStep(3);
   };
 
-  const handleStep3 = (stepData: {
-    planCode: PlanCode;
-    billingInterval: 'monthly' | 'yearly';
-  }) => {
-    setData({ ...data, ...stepData });
+  const handleStep3 = (stepData: { planCode: PlanCode; billingInterval: 'monthly' | 'yearly' }) => {
+    updateData(stepData);
     setCurrentStep(4);
   };
 
-  const handleStep4 = async (stepData: {
-    cardLast4?: string;
-    paymentMethod: 'card' | 'invoice';
-  }) => {
-    setData({ ...data, ...stepData });
+  const handleStep4 = async (stepData: { paymentMethod: 'card' | 'invoice' }) => {
+    const allData = { ...data, ...stepData };
+    updateData(stepData);
+    setErr('');
+
+    const isFree = allData.planCode === 'free_trial';
+    const isInvoice = stepData.paymentMethod === 'invoice';
+
+    // Free trial or invoice: skip Stripe, go straight to team invite
+    if (isFree || isInvoice) {
+      setCurrentStep(5);
+      return;
+    }
+
+    // Paid card payment → redirect to Stripe Hosted Checkout
     setIsLoading(true);
-
     try {
-      // TODO: Call Stripe checkout endpoint if card payment
-      // TODO: Create subscription in database
-      // TODO: Invite team members via email
+      const { data: checkout, error } = await supabase.functions.invoke('billing-checkout', {
+        body: {
+          plan_code: allData.planCode,
+          interval: allData.billingInterval === 'yearly' ? 'year' : 'month',
+          success_url: `${window.location.origin}/onboarding?step=5`,
+          cancel_url: `${window.location.origin}/onboarding?step=4`,
+        },
+      });
 
-      // For now, just move to next step
-      setTimeout(() => {
-        setCurrentStep(5);
-        setIsLoading(false);
-      }, 1000);
-    } catch (error) {
-      console.error('Payment processing failed:', error);
+      if (error) throw error;
+      if (!checkout?.url) throw new Error('No checkout URL received. Please try again.');
+
+      window.location.href = checkout.url;
+    } catch (e: any) {
+      console.error('[OnboardingFlow] Stripe checkout failed:', e);
+      setErr(e?.message || 'Failed to start checkout. Please try again.');
       setIsLoading(false);
     }
   };
@@ -119,17 +143,90 @@ export default function OnboardingFlow() {
   const handleStep5 = async (stepData: {
     teamMembers: Array<{ id: string; email: string; role: 'member' | 'admin' }>;
   }) => {
-    setData({ ...data, ...stepData });
-    // Mark onboarding complete so RequireAuth won't redirect back here
-    await supabase.auth.updateUser({ data: { onboarding_completed: true } });
-    setCurrentStep(6);
+    const allData = { ...data, ...stepData };
+    updateData(stepData);
+    setIsLoading(true);
+    setErr('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated. Please log in again.');
+
+      // 1. Find the auto-bootstrapped org (created by DB trigger on signup)
+      const { data: membership, error: memberErr } = await supabase
+        .from('org_members')
+        .select('org_id')
+        .eq('user_id', user.id)
+        .eq('role', 'owner')
+        .maybeSingle();
+
+      if (memberErr) throw memberErr;
+
+      const orgId = membership?.org_id;
+
+      // 2. Update the org with the name and industry from Step 2
+      if (orgId && allData.orgName) {
+        await supabase
+          .from('organizations')
+          .update({
+            name: allData.orgName,
+            industry: allData.industry || null,
+          })
+          .eq('id', orgId);
+      }
+
+      // 3. Create invites and send emails for each team member
+      for (const member of allData.teamMembers || []) {
+        const { data: invite, error: inviteErr } = await supabase
+          .from('org_invites')
+          .insert({
+            org_id: orgId,
+            email: member.email,
+            role: member.role,
+            invited_by: user.id,
+            invited_by_user_id: user.id,
+            status: 'pending',
+          })
+          .select('id')
+          .maybeSingle();
+
+        if (inviteErr) {
+          console.error('[OnboardingFlow] Failed to create invite for', member.email, inviteErr);
+          continue;
+        }
+
+        if (invite?.id) {
+          const { error: sendErr } = await supabase.functions.invoke('send-org-invite', {
+            body: { inviteId: invite.id },
+          });
+          if (sendErr) {
+            console.error('[OnboardingFlow] Failed to send invite email for', member.email, sendErr);
+          }
+        }
+      }
+
+      // 4. Mark onboarding complete and store org_id in user metadata
+      await supabase.auth.updateUser({
+        data: { onboarding_completed: true, org_id: orgId },
+      });
+
+      // Clean up session storage
+      sessionStorage.removeItem(STORAGE_KEY);
+
+      setCurrentStep(6);
+    } catch (e: any) {
+      console.error('[OnboardingFlow] Step 5 failed:', e);
+      setErr(e?.message || 'Failed to complete setup. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBack = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     } else {
-      navigate("/app/dashboard", { replace: true });
+      navigate('/app/dashboard', { replace: true });
     }
   };
 
@@ -155,47 +252,44 @@ export default function OnboardingFlow() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Stepper */}
         <div className="mb-12">
-          <OnboardingStepper currentStep={currentStep} onStepClick={goToStep} />
+          <OnboardingStepper currentStep={currentStep} onStepClick={(s) => s < currentStep && setCurrentStep(s)} />
         </div>
+
+        {/* Error banner */}
+        {err && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {err}
+          </div>
+        )}
 
         {/* Step Content */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 md:p-12">
           {currentStep === 1 && (
             <Step1BasicInfo
               onNext={handleStep1}
-              initialData={{
-                fullName: data.fullName,
-                email: data.email,
-                role: data.role,
-              }}
+              initialData={{ fullName: data.fullName, email: data.email, role: data.role }}
             />
           )}
 
           {currentStep === 2 && (
             <Step2Organization
               onNext={handleStep2}
-              initialData={{
-                orgName: data.orgName,
-                industry: data.industry,
-                companySize: data.companySize,
-              }}
+              initialData={{ orgName: data.orgName, industry: data.industry, companySize: data.companySize }}
             />
           )}
 
           {currentStep === 3 && (
             <Step3PlanSelection
               onNext={handleStep3}
-              initialData={{
-                planCode: data.planCode,
-                billingInterval: data.billingInterval,
-              }}
+              initialData={{ planCode: data.planCode, billingInterval: data.billingInterval }}
             />
           )}
 
           {currentStep === 4 && (
             <Step4Payment
-              planName={PLAN_NAMES[data.planCode || 'growth']}
-              price={PLAN_PRICES[data.planCode || 'growth']}
+              planName={PLAN_NAMES[data.planCode ?? 'growth']}
+              price={PLAN_PRICES[data.planCode ?? 'growth']}
+              billingInterval={data.billingInterval}
               onNext={handleStep4}
               isLoading={isLoading}
             />
@@ -209,12 +303,12 @@ export default function OnboardingFlow() {
             <Step6Success
               userName={data.fullName || 'User'}
               orgName={data.orgName || 'Your Organization'}
-              planName={PLAN_NAMES[data.planCode || 'growth']}
+              planName={PLAN_NAMES[data.planCode ?? 'growth']}
             />
           )}
         </div>
 
-        {/* Back Button (for steps with back button) */}
+        {/* Back link for middle steps */}
         {currentStep > 1 && currentStep < 6 && (
           <div className="mt-6 flex justify-center">
             <button

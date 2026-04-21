@@ -38,7 +38,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
   const canUseCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
   const canUsePulse = isAdmin || canAccessFeature(plan, "pulse");
-  const canUseRfp = true;
+  const canUseRfp = isAdmin || ["growth", "enterprise"].includes(plan);
   const showAdminSection = isAdmin;
 
   const sections = [
