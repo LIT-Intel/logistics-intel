@@ -3166,20 +3166,44 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                   ) : (
                     <div className="space-y-3">
                       {phantomContacts.map((contact: any, index: number) => {
-                        const fullName = getContactFullName(contact);
-                        const title = getContactTitle(contact);
-                        const saved = savedContactKeys.has(getContactKey(contact));
-                        return (
+  const fullName = getContactFullName(contact);
+  const title = getContactTitle(contact);
+  const avatarUrl = getContactAvatarUrl(contact);
+  const saved = savedContactKeys.has(getContactKey(contact));
+  const initials =
+    fullName
+      .split(" ")
+      .slice(0, 2)
+      .map((part: string) => part[0])
+      .join("")
+      .toUpperCase() || "CT";
+
+  return (
                           <div key={`${fullName}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                             <div className="flex items-start justify-between gap-3">
                               <button
-                                type="button"
-                                onClick={() => setSlideContact(contact)}
-                                className="min-w-0 flex-1 text-left"
-                              >
-                                <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-                                <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
-                              </button>
+  type="button"
+  onClick={() => setSlideContact(contact)}
+  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+>
+  {avatarUrl ? (
+    <img
+      src={avatarUrl}
+      alt={fullName}
+      className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+      loading="lazy"
+    />
+  ) : (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
+      {initials}
+    </div>
+  )}
+
+  <div className="min-w-0">
+    <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
+    <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
+  </div>
+</button>
                               <button
                                 type="button"
                                 onClick={() => saveContactToSupabase(contact)}
