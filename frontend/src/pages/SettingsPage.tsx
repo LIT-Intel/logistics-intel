@@ -66,7 +66,7 @@ export default function SettingsPage() {
   const isAdminEmail = isSuperAdmin;
 
   const currentMembership = orgMembers.find(
-    (member) => member.user_id === user?.id && member.status === "active"
+    (member) => member.user_id === user?.id
   );
 
   const currentOrgRole = normalizeOrgRole(
@@ -210,12 +210,13 @@ export default function SettingsPage() {
         })
       );
 
+      // org_members has no status/email/full_name columns — only select real schema columns
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
-        .select("id, org_id, user_id, role, status, joined_at, email, full_name")
+        .select("id, org_id, user_id, role, joined_at")
         .eq("org_id", currentOrgId)
-        .order("created_at", { ascending: false });
-      requireNoError(membersError, "Failed loading organization members");
+        .order("joined_at", { ascending: false });
+      if (membersError) console.warn("[SettingsPage] org_members load warning:", membersError.message);
       safeSet(() => setOrgMembers(membersData ?? []));
 
       const { data: invitesData, error: invitesError } = await supabase
@@ -274,26 +275,26 @@ export default function SettingsPage() {
     safeSet(() => setApiKeys(keysData ?? []));
 
     const { data: auditData, error: auditError } = await supabase
-      .from("security_audit_log")
+      .from("security_audit_logs")
       .select("id, action, ip_address, created_at")
       .eq("user_id", uid)
       .order("created_at", { ascending: false })
       .limit(20);
-    requireNoError(auditError, "Failed loading audit log");
+    if (auditError) console.warn("[SettingsPage] audit log load warning:", auditError.message);
     safeSet(() => setAuditLog(auditData ?? []));
 
     const { data: tokenData, error: tokenError } = await supabase
       .from("token_ledger")
-      .select("feature, tokens_used")
+      .select("feature, tokens")
       .eq("user_id", uid);
-    requireNoError(tokenError, "Failed loading token usage");
+    if (tokenError) console.warn("[SettingsPage] token ledger load warning:", tokenError.message);
     safeSet(() => setTokenUsage(tokenData ?? []));
 
     const { data: intData, error: integrationsError } = await supabase
       .from("integrations")
       .select("id, integration_type, type, created_at")
       .eq("user_id", uid);
-    requireNoError(integrationsError, "Failed loading integrations");
+    if (integrationsError) console.warn("[SettingsPage] integrations load warning:", integrationsError.message);
     safeSet(() => setIntegrations(intData ?? []));
 
     const [savedRes, campRes, rfpRes] = await Promise.allSettled([
