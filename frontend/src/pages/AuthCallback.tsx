@@ -17,7 +17,9 @@ export default function AuthCallback() {
         const searchParams = new URLSearchParams(window.location.search);
         const code = searchParams.get('code');
         const nextParam = searchParams.get('next');
-        const destination = nextParam || '/app/dashboard';
+        const callbackType = searchParams.get('type');
+        // New email signups land here with type=signup — send them to onboarding
+        const destination = nextParam || (callbackType === 'signup' ? '/onboarding' : '/app/dashboard');
 
         // Handle PKCE email confirmation code exchange
         if (code) {

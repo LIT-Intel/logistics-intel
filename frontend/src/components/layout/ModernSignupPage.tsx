@@ -309,7 +309,7 @@ export default function ModernSignupPage() {
         fullName,
         email,
         password,
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(postInvitePath)}`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       });
 
       if (isInviteFlow) {
