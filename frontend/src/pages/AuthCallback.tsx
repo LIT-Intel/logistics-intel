@@ -31,9 +31,24 @@ export default function AuthCallback() {
         if (sessionError) throw sessionError;
 
         if (data.session) {
-          const meta = data.session.user?.user_metadata || {};
-          // New users have onboarding_completed=false written at registration
-          const needsOnboarding = meta.onboarding_completed === false;
+          const user = data.session.user;
+          const meta = user?.user_metadata || {};
+
+          // Primary signal: explicit flag written at registration
+          // Secondary: account < 20 min old means this IS the first confirmation link click
+          const createdAt = new Date(user?.created_at || 0);
+          const accountAgeMinutes = (Date.now() - createdAt.getTime()) / 60_000;
+          const isFreshSignup = accountAgeMinutes < 20;
+
+          const needsOnboarding =
+            meta.onboarding_completed === false ||
+            (meta.onboarding_completed !== true && isFreshSignup);
+
+          if (needsOnboarding && meta.onboarding_completed !== false) {
+            // Ensure the flag is written so RequireAuth always finds it
+            await auth.auth.updateUser({ data: { onboarding_completed: false } });
+          }
+
           const destination = nextParam || (needsOnboarding ? '/onboarding' : '/app/dashboard');
           navigate(destination, { replace: true });
         } else {
