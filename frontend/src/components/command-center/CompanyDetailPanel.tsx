@@ -2261,26 +2261,18 @@ export default function CompanyDetailPanel({
           "enrich-contacts",
           {
             body: {
-              companyId: companyId ? String(companyId) : undefined,
-              companyName: companyName || undefined,
-              companyDomain: companyDomain || undefined,
-              titles: [
-                "supply chain",
-                "logistics",
-                "procurement",
-                "operations",
-                "import",
-                "transportation",
-              ],
-              limit: 6,
-            },
+  companyId: companyId ? String(companyId) : undefined,
+  companyName: companyName || undefined,
+  companyDomain: companyDomain || undefined,
+  limit: DEFAULT_CONTACT_SEARCH_LIMIT,
+},
           },
         );
 
         if (enrichError) throw enrichError;
 
         const enrichContacts = Array.isArray(enrichData?.contacts) ? enrichData.contacts : [];
-        const prioritized = enrichContacts.filter(isSupplyChainContact);
+        const prioritized = enrichContacts.filter(isTargetContact);
         const finalContacts = prioritized.length ? prioritized : enrichContacts.slice(0, 5);
 
         if (!cancelled) {
@@ -2506,7 +2498,7 @@ export default function CompanyDetailPanel({
     setContactMessage("Contact saved.");
   };
 
-  const contactOverviewRows = phantomContacts.slice(0, 5);
+  const contactOverviewRows = phantomContacts.slice(0, CONTACT_PREVIEW_LIMIT);
 
   if (!key) {
     return <CommandCenterEmptyState />;
