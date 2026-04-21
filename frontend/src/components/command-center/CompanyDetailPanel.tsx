@@ -1,4 +1,3 @@
-import React, { useMemo, useState, useEffect } from "react";
 import {
   Boxes,
   CalendarClock,
@@ -17,6 +16,11 @@ import {
   Waves,
   BarChart3,
   Container,
+  Search,
+  Save,
+  CheckCircle2,
+  Mail,
+  Linkedin,
 } from "lucide-react";
 import {
   buildCommandCenterDetailModel,
@@ -56,6 +60,20 @@ const CHART_COLORS = [
 
 const TEU_BAR_PRIMARY = "#6366f1";
 const TEU_BAR_SECONDARY = "#cbd5e1";
+const CONTACT_PREVIEW_LIMIT = 6;
+
+/**
+ * Temporary frontend plan limits.
+ * Final source of truth should come from Stripe/Supabase entitlements.
+ */
+const CONTACT_SEARCH_LIMITS_BY_PLAN: Record<string, number> = {
+  free: 6,
+  trial: 10,
+  pro: 25,
+  enterprise: 100,
+};
+
+const DEFAULT_CONTACT_SEARCH_LIMIT = CONTACT_SEARCH_LIMITS_BY_PLAN.free;
 
 type CompanyDetailPanelProps = {
   record: CommandCenterRecord | null;
@@ -1309,28 +1327,92 @@ const getStatusLabel = (shipments: number, teu: number) => {
 const getContactFullName = (contact: any) => {
   const firstName = contact.firstName || contact.first_name || contact.given_name || "";
   const lastName = contact.lastName || contact.last_name || contact.family_name || "";
-  return `${firstName} ${lastName}`.trim() || contact.name || contact.fullName || "Unknown";
+
+  return (
+    `${firstName} ${lastName}`.trim() ||
+    contact.full_name ||
+    contact.name ||
+    contact.fullName ||
+    "Unknown contact"
+  );
 };
 
 const getContactTitle = (contact: any) =>
-  contact.title || contact.role || contact.position || "";
+  contact.title || contact.role || contact.position || contact.jobTitle || "";
 
-const isSupplyChainContact = (contact: any) => {
+const getContactEmail = (contact: any) =>
+  contact.email || contact.email_address || contact.emailAddress || "";
+
+const getContactPhone = (contact: any) =>
+  contact.phone || contact.phone_number || contact.phoneNumber || "";
+
+const getContactLinkedIn = (contact: any) =>
+  contact.linkedin_url || contact.linkedinUrl || contact.linkedInUrl || "";
+
+const getContactLocation = (contact: any) =>
+  contact.location ||
+  [contact.city, contact.state, contact.country].filter(Boolean).join(", ") ||
+  "";
+
+const getContactSearchText = (contact: any) =>
+  [
+    getContactFullName(contact),
+    getContactTitle(contact),
+    getContactEmail(contact),
+    getContactPhone(contact),
+    getContactLocation(contact),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const isTargetContact = (contact: any) => {
   const title = getContactTitle(contact).toLowerCase();
-  if (!title) return false;
 
-  return (
-    title.includes("vp of supply chain") ||
-    title.includes("vice president supply chain") ||
-    title.includes("director of supply chain") ||
-    title.includes("supply chain director") ||
-    title.includes("logistics manager") ||
-    title.includes("supply chain manager") ||
-    title.includes("vp logistics") ||
-    title.includes("director logistics") ||
-    title.includes("head of logistics") ||
-    title.includes("head of supply chain")
-  );
+  if (!title) return true;
+
+  const targetTerms = [
+    "supply chain",
+    "logistics",
+    "procurement",
+    "operations",
+    "transportation",
+    "import",
+    "export",
+    "global sourcing",
+    "distribution",
+    "warehouse",
+    "fulfillment",
+    "shipping",
+    "trade compliance",
+  ];
+
+  return targetTerms.some((term) => title.includes(term));
+};
+
+const normalizeReturnedContacts = (contacts: any[]) => {
+  const seen = new Set<string>();
+
+  return contacts
+    .filter(Boolean)
+    .filter(isTargetContact)
+    .filter((contact) => {
+      const key = [
+        getContactEmail(contact),
+        getContactLinkedIn(contact),
+        getContactFullName(contact),
+        getContactTitle(contact),
+      ]
+        .filter(Boolean)
+        .join("|")
+        .toLowerCase();
+
+      if (!key) return false;
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    });
 };
 
 const detectFreightosBenchmark = ({
@@ -2993,8 +3075,9 @@ export default function CompanyDetailPanel({
                     (() => {
                       const fullName = getContactFullName(slideContact);
                       const title = getContactTitle(slideContact);
-                      const email = slideContact.email || slideContact.email_address || "";
-                      const phone = slideContact.phone || slideContact.phone_number || "";
+                      const email = getContactEmail(contact);
+                      const phone = getContactPhone(contact);
+                      const saved = isContactSaved(contact);
                       const linkedin =
                         slideContact.linkedin || slideContact.linkedinUrl ||
                         slideContact.profileUrl || slideContact.url || "";
