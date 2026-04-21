@@ -2230,13 +2230,19 @@ export default function CompanyDetailPanel({
   const [contactMessage, setContactMessage] = useState<string | null>(null);
   const [contactDebug, setContactDebug] = useState<any | null>(null);
   const [savedContactKeys, setSavedContactKeys] = useState<Set<string>>(new Set());
+  const [contactSearchQuery, setContactSearchQuery] = useState("");
 
   useEffect(() => {
     const companyId =
-      (record as any)?.company?.company_id ||
-      (record as any)?.company?.id ||
-      (rawProfile as any)?.company_id ||
-      null;
+  (record as any)?.company?.company_id ||
+  (record as any)?.company?.source_company_key ||
+  (record as any)?.company?.key ||
+  (record as any)?.company?.id ||
+  (rawProfile as any)?.company_id ||
+  (rawProfile as any)?.source_company_key ||
+  (rawProfile as any)?.companyKey ||
+  (rawProfile as any)?.key ||
+  null;
 
     const companyName =
       (record as any)?.company?.name ||
@@ -2265,7 +2271,7 @@ export default function CompanyDetailPanel({
           const cached = await loadCachedContactPreview(String(companyId));
           if (!cancelled && cached && Array.isArray(cached.contacts) && cached.contacts.length > 0) {
             setPhantomContacts(cached.contacts.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT));
-            setContactPreviewSource("cache");
+            setContactPreviewSource(cached.source === "lusha" ? "lusha" : "cache");
             if (!selectedContact) {
               setSelectedContact(cached.contacts[0]);
             }
@@ -3484,7 +3490,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
               </div>
             ) : phantomContacts.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                No contacts found. Adjust enrichment filters in the backend step or try another company.
+                {contactMessage || "No contacts found yet. If Lusha is rate-limited, cached contacts will appear here when available."}
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
