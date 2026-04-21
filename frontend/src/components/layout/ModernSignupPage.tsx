@@ -190,7 +190,6 @@ function SignupFeatures({ inviteMode = false }: { inviteMode?: boolean }) {
           </div>
         </div>
       </div>
-    </div>
   );
 }
 
