@@ -1351,9 +1351,21 @@ const getContactPhone = (contact: any) =>
 const getContactLinkedIn = (contact: any) =>
   contact.linkedin_url || contact.linkedinUrl || contact.linkedInUrl || "";
 
-const getContactLocation = (contact: any) =>
-  contact.location ||
-  [contact.city, contact.state, contact.country].filter(Boolean).join(", ") ||
+const getContactAvatarUrl = (contact: any) =>
+  contact.photo_url ||
+  contact.photoUrl ||
+  contact.profile_image_url ||
+  contact.profileImageUrl ||
+  contact.avatar_url ||
+  contact.avatarUrl ||
+  contact.image_url ||
+  contact.imageUrl ||
+  contact.picture ||
+  contact.pictureUrl ||
+  contact.raw_contact?.photo_url ||
+  contact.raw_contact?.photoUrl ||
+  contact.raw_contact?.profile_image_url ||
+  contact.raw_contact?.profileImageUrl ||
   "";
 
 const getContactSearchText = (contact: any) =>
@@ -2248,7 +2260,7 @@ export default function CompanyDetailPanel({
         if (companyId) {
           const cached = await loadCachedContactPreview(String(companyId));
           if (!cancelled && cached && Array.isArray(cached.contacts) && cached.contacts.length > 0) {
-            setPhantomContacts(cached.contacts.slice(0, 5));
+            setPhantomContacts(cached.contacts.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT));
             setContactPreviewSource("cache");
             if (!selectedContact) {
               setSelectedContact(cached.contacts[0]);
@@ -2273,7 +2285,9 @@ export default function CompanyDetailPanel({
 
         const enrichContacts = Array.isArray(enrichData?.contacts) ? enrichData.contacts : [];
         const prioritized = enrichContacts.filter(isTargetContact);
-        const finalContacts = prioritized.length ? prioritized : enrichContacts.slice(0, 5);
+        const finalContacts = prioritized.length
+  ? prioritized.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT)
+  : enrichContacts.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT);
 
         if (!cancelled) {
           setContactMessage(enrichData?.message || null);
@@ -2976,9 +2990,18 @@ export default function CompanyDetailPanel({
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {contactOverviewRows.map((contact: any, index: number) => {
-                  const fullName = getContactFullName(contact);
-                  const title = getContactTitle(contact);
-                  return (
+  const fullName = getContactFullName(contact);
+  const title = getContactTitle(contact);
+  const avatarUrl = getContactAvatarUrl(contact);
+  const initials =
+    fullName
+      .split(" ")
+      .slice(0, 2)
+      .map((part: string) => part[0])
+      .join("")
+      .toUpperCase() || "CT";
+
+  return (
                     <button
                       key={`${fullName}-${index}`}
                       type="button"
@@ -2986,14 +3009,30 @@ export default function CompanyDetailPanel({
                       className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50/60"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-                          <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                          Verified
-                        </span>
-                      </div>
+  <div className="flex min-w-0 items-start gap-3">
+    {avatarUrl ? (
+      <img
+        src={avatarUrl}
+        alt={fullName}
+        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+        loading="lazy"
+      />
+    ) : (
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
+        {initials}
+      </div>
+    )}
+
+    <div className="min-w-0">
+      <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
+      <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
+    </div>
+  </div>
+
+  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+    Verified
+  </span>
+</div>
                       <div className="mt-2 text-xs text-slate-400">Click to view details</div>
                     </button>
                   );
