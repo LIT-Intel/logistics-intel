@@ -16,15 +16,7 @@ import {
 } from "@/auth/supabaseAuthClient";
 import { useAuth } from "@/auth/AuthProvider";
 
-function AuthShell({
-  mode,
-  children,
-}: {
-  mode: "login" | "signup";
-  children: React.ReactNode;
-}) {
-  const isLogin = mode === "login";
-
+function Header({ isLogin, children }: { isLogin: boolean; children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(79,70,229,0.12),transparent_30%),linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] text-slate-900">
       <div className="relative mx-auto flex min-h-screen max-w-[1440px] flex-col px-4 py-6 sm:px-6 lg:px-8">
@@ -60,8 +52,7 @@ function AuthShell({
                   Looking for freight data?
                 </div>
                 <div className="text-sm text-slate-300">
-                  Logistics Intel gives your team live shipment intelligence,
-                  outreach tools, and company visibility in one workspace.
+                  Logistics Intel gives your team live shipment intelligence, outreach tools, and company visibility in one workspace.
                 </div>
               </div>
             </div>
@@ -104,6 +95,17 @@ function AuthShell({
   );
 }
 
+function AuthShell({
+  mode,
+  children,
+}: {
+  mode: "login" | "signup";
+  children: React.ReactNode;
+}) {
+  const isLogin = mode === "login";
+  return <Header isLogin={isLogin}>{children}</Header>;
+}
+
 function AuthFeatureColumn({ inviteMode = false }: { inviteMode?: boolean }) {
   const items = inviteMode
     ? [
@@ -127,6 +129,29 @@ function AuthFeatureColumn({ inviteMode = false }: { inviteMode?: boolean }) {
             className="h-9 w-auto"
           />
         </div>
+        <button
+          type="button"
+          className="hidden rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 md:inline-flex"
+        >
+          View features
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TrialBar() {
+  return (
+    <div className="mx-auto mb-4 w-full max-w-[980px] rounded-2xl border border-slate-200 bg-white/85 px-5 py-3 text-center shadow-sm backdrop-blur-sm">
+      <span className="text-sm text-slate-600">
+        ✨ New to Logistics Intel?{" "}
+        <span className="font-semibold text-cyan-600">
+          Get access to live shipment intelligence faster
+        </span>
+      </span>
+    </div>
+  );
+}
 
 function SignupFeatures({ inviteMode = false }: { inviteMode?: boolean }) {
   const items = inviteMode
@@ -148,12 +173,8 @@ function SignupFeatures({ inviteMode = false }: { inviteMode?: boolean }) {
             <Building2 className="h-5 w-5" />
           </div>
           <div>
-            <div className="text-sm font-semibold text-slate-900">
-              Built for freight teams
-            </div>
-            <div className="text-xs text-slate-500">
-              Search, monitor, and sell from one workspace
-            </div>
+            <div className="text-sm font-semibold text-slate-900">Built for freight teams</div>
+            <div className="text-xs text-slate-500">Search, monitor, and sell from one workspace</div>
           </div>
         </div>
 
@@ -444,10 +465,7 @@ export default function ModernSignupPage() {
                   Continue with
                 </div>
               </div>
-              <SocialButtons
-                onGoogle={handleGoogleSignup}
-                onMicrosoft={handleMicrosoftSignup}
-              />
+              <SocialButtons onGoogle={handleGoogleSignup} onMicrosoft={handleMicrosoftSignup} />
             </div>
 
             <div className="mt-8 text-center text-sm text-slate-500">
@@ -460,7 +478,7 @@ export default function ModernSignupPage() {
                       ? `/login?token=${encodeURIComponent(inviteToken)}${
                           inviteEmail ? `&email=${encodeURIComponent(inviteEmail)}` : ""
                         }`
-                      : "/login",
+                      : "/login"
                   )
                 }
                 className="font-semibold text-indigo-600 hover:underline"
