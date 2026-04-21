@@ -2251,15 +2251,25 @@ export default function CompanyDetailPanel({
       (rawProfile as any)?.company_name;
 
   const companyDomain =
-    (record as any)?.company?.domain ||
-    (rawProfile as any)?.domain ||
-    (rawProfile as any)?.companyDomain;
+  (record as any)?.company?.domain ||
+  (record as any)?.company?.website ||
+  (record as any)?.company?.company_domain ||
+  (rawProfile as any)?.domain ||
+  (rawProfile as any)?.website ||
+  (rawProfile as any)?.companyDomain ||
+  (rawProfile as any)?.company_domain ||
+  null;
 
     if (!companyId && !companyName && !companyDomain) {
-      setPhantomContacts([]);
-      setContactPreviewSource(null);
-      return;
-    }
+  setPhantomContacts([]);
+  setContactPreviewSource(null);
+  setContactMessage("Company details are missing, so contact search cannot run yet.");
+  return;
+}
+
+if (!companyDomain && companyName) {
+  setContactMessage(`Searching contacts by company name: ${companyName}`);
+}
 
     let cancelled = false;
 
@@ -2282,10 +2292,10 @@ export default function CompanyDetailPanel({
         const { data: enrichData, error: enrichError } = await supabase.functions.invoke(
           "enrich-contacts",
           {
-            body: {
+  body: {
   companyId: companyId ? String(companyId) : undefined,
-  companyName: companyName || undefined,
-  companyDomain: companyDomain || undefined,
+  companyName: companyName ? String(companyName) : undefined,
+  companyDomain: companyDomain ? String(companyDomain) : undefined,
   limit: DEFAULT_CONTACT_SEARCH_LIMIT,
 },
           },
@@ -2305,13 +2315,23 @@ export default function CompanyDetailPanel({
         }
 
         if (!cancelled && finalContacts.length > 0) {
-          setPhantomContacts(finalContacts);
-          setContactPreviewSource("lusha");
-          if (!selectedContact) {
-            setSelectedContact(finalContacts[0]);
-          }
-          return;
-        }
+  setPhantomContacts(finalContacts);
+  setContactPreviewSource("lusha");
+
+  await saveContactPreviewCache({
+    companyId: companyId ? String(companyId) : null,
+    companyName: companyName ? String(companyName) : null,
+    companyDomain: companyDomain ? String(companyDomain) : null,
+    sourceProvider: "lusha",
+    contacts: finalContacts,
+  });
+
+  if (!selectedContact) {
+    setSelectedContact(finalContacts[0]);
+  }
+
+  return;
+}
 
         // Provider returned no contacts or is currently locked/rate-limited.
 if (!cancelled) {
@@ -2439,33 +2459,42 @@ if (!cancelled) {
 };
         
   const saveContactPreviewCache = async ({
-    companyId,
-    companyName,
-    companyDomain,
-    sourceProvider,
-    contacts,
-  }: {
-    companyId: string;
-    companyName?: string | null;
-    companyDomain?: string | null;
-    sourceProvider: "lusha";
-    contacts: any[];
-  }) => {
-    const payload = {
-      company_id: companyId,
-      company_name: companyName || null,
-      company_domain: companyDomain || null,
-      source_provider: sourceProvider,
-      preview_contacts: contacts.slice(0, 5),
-      total_contacts_found: Array.isArray(contacts) ? contacts.length : 0,
-      fetched_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+  companyId,
+  companyName,
+  companyDomain,
+  sourceProvider,
+  contacts,
+}: {
+  companyId?: string | null;
+  companyName?: string | null;
+  companyDomain?: string | null;
+  sourceProvider: "lusha";
+  contacts: any[];
+}) => {
+    const isUuid =
+    !!companyId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
+      companyId,
+    );
+
+  const payload = {
+  company_id: isUuid ? companyId : null,
+  source_company_key: companyId && !isUuid ? companyId : null,
+  company_name: companyName || null,
+  company_domain: companyDomain || null,
+  source_provider: sourceProvider,
+  preview_contacts: contacts.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT),
+  total_contacts_found: Array.isArray(contacts) ? contacts.length : 0,
+  fetched_at: new Date().toISOString(),
+  expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+    const conflictTarget = isUuid ? "company_id" : "source_company_key";
 
     const { error } = await supabase
-      .from("lit_company_contact_previews")
-      .upsert(payload, { onConflict: "company_id" });
+    .from("lit_company_contact_previews")
+    .upsert(payload, { onConflict: conflictTarget });
 
     if (error) {
       console.error("Contact preview cache write error", error);
