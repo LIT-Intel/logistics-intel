@@ -2397,31 +2397,41 @@ export default function CompanyDetailPanel({
       ? 4
       : 5;
 
-  const loadCachedContactPreview = async (companyId: string) => {
-    const { data, error } = await supabase
-      .from("lit_company_contact_previews")
-      .select("preview_contacts, expires_at, source_provider")
-      .eq("company_id", companyId)
-      .maybeSingle();
+  const loadCachedContactPreview = async (companyIdentifier: string) => {
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
+      companyIdentifier,
+    );
 
-    if (error) {
-      console.error("Contact preview cache read error", error);
-      return null;
-    }
+  let query = supabase
+    .from("lit_company_contact_previews")
+    .select("preview_contacts, expires_at, source_provider");
 
-    if (!data) return null;
+  query = isUuid
+    ? query.eq("company_id", companyIdentifier)
+    : query.eq("source_company_key", companyIdentifier);
 
-    const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
-    if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
-      return null;
-    }
+  const { data, error } = await query.maybeSingle();
 
-    return {
-      contacts: Array.isArray(data.preview_contacts) ? data.preview_contacts : [],
-      source: data.source_provider || "cache",
-    };
+  if (error) {
+    console.error("Contact preview cache read error", error);
+    return null;
+  }
+
+  if (!data) return null;
+
+  const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+
+  if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+    return null;
+  }
+
+  return {
+    contacts: Array.isArray(data.preview_contacts) ? data.preview_contacts : [],
+    source: data.source_provider || "cache",
   };
-
+};
+        
   const saveContactPreviewCache = async ({
     companyId,
     companyName,
