@@ -84,17 +84,11 @@ async function fetchPrimaryOrgMembership(userId) {
   }
 
   try {
+    // Note: org_members has no status column — filter by user_id only
     const { data, error } = await supabase
       .from('org_members')
-      .select(`
-        org_id,
-        role,
-        status,
-        email,
-        full_name
-      `)
+      .select('org_id, role, email, full_name')
       .eq('user_id', userId)
-      .eq('status', 'active')
       .order('joined_at', { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -196,7 +190,9 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => {
     const resolvedPlan = normalizePlan(plan || rawUser?.user_metadata?.plan || 'free_trial');
     const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
-    const canAccessAdmin = Boolean(isSuperAdmin || isOrgAdmin);
+    // Platform admin (Admin Dashboard, CMS, Debug Agent) = superadmin only.
+    // isOrgAdmin means "owns/admins a workspace" — does NOT grant platform admin pages.
+    const canAccessAdmin = Boolean(isSuperAdmin);
 
     const legacyRole = canAccessAdmin ? 'admin' : 'user';
 

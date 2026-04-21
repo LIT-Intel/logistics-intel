@@ -154,17 +154,34 @@ export default function OnboardingFlow() {
 
       const displayName = allData.fullName || user.user_metadata?.full_name || user.email?.split('@')[0] || '';
 
-      // 1. Write personal profile data (from Step 1) to both profile tables
-      await Promise.allSettled([
+      // 1. Write personal profile data (Steps 1 + 2) to both profile tables
+      const profileResults = await Promise.allSettled([
         supabase.from('profiles').upsert(
-          { id: user.id, full_name: displayName },
+          {
+            id: user.id,
+            full_name: displayName,
+            company_name: allData.orgName || null,
+            organization_name: allData.orgName || null,
+          },
           { onConflict: 'id' }
         ),
         supabase.from('user_profiles').upsert(
-          { user_id: user.id, full_name: displayName },
+          {
+            user_id: user.id,
+            full_name: displayName,
+            // role from Step 1 maps to title field
+            title: allData.role || null,
+          },
           { onConflict: 'user_id' }
         ),
       ]);
+      profileResults.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          console.error(`[OnboardingFlow] Profile write ${i} failed:`, r.reason);
+        } else if (r.value?.error) {
+          console.error(`[OnboardingFlow] Profile write ${i} DB error:`, r.value.error.message);
+        }
+      });
 
       // 2. Find the org created by the bootstrap trigger (or create one if it failed)
       let orgId: string | null = null;
