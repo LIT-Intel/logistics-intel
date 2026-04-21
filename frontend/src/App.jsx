@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect } from "react";
-import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import ModernLoginPage from "@/components/layout/ModernLoginPage";
@@ -44,10 +44,14 @@ const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, orgId, isSuperAdmin } = useAuth();
+  const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  if (!isSuperAdmin && orgId === null && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
   return children;
 }
 
