@@ -20,18 +20,12 @@ import {
   Globe2,
   TrendingUp,
   Briefcase,
-  ShieldCheck,
-  MapPinned,
-  Radar,
-  Sparkles,
   Activity,
   SearchCheck,
   Megaphone,
   UserRoundPlus,
   FileText,
   PlusCircle,
-  Ship,
-  Plane,
   Users2,
   ArrowRight,
 } from "lucide-react";
@@ -132,6 +126,46 @@ const activityFeed = [
   { type: "Lead Prospect", name: "Maria Chen", when: "3 days ago" },
   { type: "RFP Generated", name: "Walmart Inbound 2026", when: "3 days ago" },
   { type: "Campaign Created", name: "Top Retailers Q2", when: "4 days ago" },
+];
+
+// Globe data — coordinate lookup and country highlighting IDs
+const GLOBE_COUNTRY_COORDS = {
+  China: [104.2, 35.9], USA: [-95.7, 37.1], 'United States': [-95.7, 37.1],
+  India: [78.9, 20.6], Germany: [10.5, 51.2], Japan: [138.3, 36.2],
+  'South Korea': [127.8, 35.9], 'S.Korea': [127.8, 35.9], Korea: [127.8, 35.9],
+  Vietnam: [108.3, 14.1], Mexico: [-102.6, 23.6], UK: [-1.5, 52.4],
+  'United Kingdom': [-1.5, 52.4], Brazil: [-51.9, -14.2], Australia: [133.8, -25.3],
+  Canada: [-96.8, 56.1], Netherlands: [5.3, 52.1], France: [2.3, 46.2],
+  Italy: [12.6, 42.5], Spain: [-3.7, 40.4], Poland: [19.1, 51.9],
+  Belgium: [4.5, 50.5], Singapore: [103.8, 1.3], Malaysia: [109.7, 4.2],
+  Indonesia: [113.9, -0.8], Thailand: [100.5, 15.9], 'Hong Kong': [114.2, 22.3],
+  Taiwan: [121.0, 23.7], 'South Africa': [25.1, -29.0], Morocco: [-7.1, 31.8],
+  Egypt: [30.8, 26.8], Nigeria: [8.7, 9.1], Kenya: [37.9, 0.0],
+  Argentina: [-65.0, -34.0], Chile: [-71.5, -35.7], Colombia: [-74.3, 4.6],
+  Peru: [-75.0, -9.2], 'New Zealand': [172.5, -41.3],
+};
+
+const GLOBE_COUNTRY_IDS = {
+  China: '156', USA: '840', 'United States': '840', India: '356',
+  Germany: '276', Japan: '392', 'South Korea': '410', 'S.Korea': '410',
+  Mexico: '484', UK: '826', 'United Kingdom': '826', Brazil: '076',
+  Australia: '036', Vietnam: '704', Canada: '124',
+  Netherlands: '528', France: '250', Italy: '380', Spain: '724',
+  Poland: '616', Belgium: '056', Singapore: '702', Malaysia: '458',
+  Indonesia: '360', Thailand: '764', 'Hong Kong': '344', Taiwan: '158',
+  'South Africa': '710', Morocco: '504', Egypt: '818', Nigeria: '566',
+  Kenya: '404', Argentina: '032', Chile: '152', Colombia: '170',
+  Peru: '604', 'New Zealand': '554',
+};
+
+const STATIC_GLOBE_LANES = [
+  { id: 'cn-us', from: 'China', to: 'USA', coords: [[104.2, 35.9], [-95.7, 37.1]], shipments: 42800, teu: '182K', trend: '+12%', up: true },
+  { id: 'in-us', from: 'India', to: 'USA', coords: [[78.9, 20.6], [-95.7, 37.1]], shipments: 18400, teu: '76K', trend: '+8%', up: true },
+  { id: 'de-us', from: 'Germany', to: 'USA', coords: [[10.5, 51.2], [-95.7, 37.1]], shipments: 12200, teu: '48K', trend: '+3%', up: true },
+  { id: 'jp-us', from: 'Japan', to: 'USA', coords: [[138.3, 36.2], [-95.7, 37.1]], shipments: 9800, teu: '38K', trend: '-2%', up: false },
+  { id: 'kr-us', from: 'South Korea', to: 'USA', coords: [[127.8, 35.9], [-95.7, 37.1]], shipments: 8400, teu: '31K', trend: '+5%', up: true },
+  { id: 'vn-us', from: 'Vietnam', to: 'USA', coords: [[108.3, 14.1], [-95.7, 37.1]], shipments: 6900, teu: '26K', trend: '+22%', up: true },
+  { id: 'us-mx', from: 'USA', to: 'Mexico', coords: [[-95.7, 37.1], [-102.6, 23.6]], shipments: 6200, teu: '22K', trend: '+18%', up: true },
 ];
 
 const fallbackMapCountryScales = {
@@ -783,6 +817,224 @@ function buildTrendData(companies) {
   return data.length ? data.slice(-6) : monthlyTrendData;
 }
 
+// Helpers for building globe lanes from real trade route data
+function findCoordsFromToken(token) {
+  if (!token) return null;
+  const normalized = String(token).trim();
+  if (GLOBE_COUNTRY_COORDS[normalized]) return GLOBE_COUNTRY_COORDS[normalized];
+  const lower = normalized.toLowerCase();
+  for (const [key, coords] of Object.entries(GLOBE_COUNTRY_COORDS)) {
+    if (key.toLowerCase() === lower) return coords;
+  }
+  for (const [key, coords] of Object.entries(GLOBE_COUNTRY_COORDS)) {
+    if (lower.includes(key.toLowerCase()) || key.toLowerCase().includes(lower)) return coords;
+  }
+  return null;
+}
+
+function buildGlobelanesFromRoutes(routes) {
+  if (!routes || !routes.length) return [];
+  const lanes = [];
+  routes.forEach((route, i) => {
+    const label = typeof route === 'string' ? route : route?.label;
+    if (!label || !label.includes('→')) return;
+    const [originToken, destToken] = label.split('→').map(s => s.trim());
+    const originCoords = findCoordsFromToken(originToken);
+    const destCoords = findCoordsFromToken(destToken);
+    if (!originCoords || !destCoords) return;
+    const count = typeof route === 'string' ? 1 : (route?.count || 1);
+    lanes.push({
+      id: `real-${i}`,
+      from: originToken,
+      to: destToken,
+      coords: [originCoords, destCoords],
+      shipments: Math.max(1, count) * 200,
+      teu: `${count}K`,
+      trend: '+0%',
+      up: true,
+    });
+  });
+  return lanes;
+}
+
+// D3 + TopoJSON canvas-based 3D globe with animated trade route arcs
+function D3Globe({ selectedLane, size = 280, lanes }) {
+  const canvasRef = useRef(null);
+  const stateRef = useRef({
+    world: null, rotation: [0, -25], targetRotation: null,
+    spinning: true, animFrame: null, dashOffset: 0,
+  });
+  const lanesRef = useRef(lanes);
+  const selectedRef = useRef(selectedLane);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => { lanesRef.current = lanes; }, [lanes]);
+  useEffect(() => { selectedRef.current = selectedLane; }, [selectedLane]);
+
+  // Load D3 v7, TopoJSON, and world atlas topology
+  useEffect(() => {
+    let mounted = true;
+    async function initDeps() {
+      try {
+        await loadScript('https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js');
+        const resp = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+        const data = await resp.json();
+        if (!mounted) return;
+        stateRef.current.world = data;
+        setLoaded(true);
+      } catch {
+        if (mounted) setLoaded(true);
+      }
+    }
+    initDeps();
+    return () => {
+      mounted = false;
+      if (stateRef.current.animFrame) cancelAnimationFrame(stateRef.current.animFrame);
+    };
+  }, []);
+
+  // Rotate to focused lane midpoint when a lane is selected
+  useEffect(() => {
+    const s = stateRef.current;
+    if (selectedLane) {
+      const lane = lanesRef.current?.find(l => l.id === selectedLane);
+      if (lane?.coords) {
+        const midLon = (lane.coords[0][0] + lane.coords[1][0]) / 2;
+        const midLat = (lane.coords[0][1] + lane.coords[1][1]) / 2;
+        s.targetRotation = [-midLon, -midLat];
+        s.spinning = false;
+      }
+    } else {
+      s.spinning = true;
+      s.targetRotation = null;
+    }
+  }, [selectedLane]);
+
+  // Canvas animation loop
+  useEffect(() => {
+    if (!loaded) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const s = stateRef.current;
+
+    function tick() {
+      s.animFrame = requestAnimationFrame(tick);
+      const d3g = window.d3;
+      const topo = window.topojson;
+      if (!d3g || !topo) return;
+
+      if (s.targetRotation) {
+        const [tr0, tr1] = s.targetRotation;
+        s.rotation[0] += (tr0 - s.rotation[0]) * 0.035;
+        s.rotation[1] += (tr1 - s.rotation[1]) * 0.035;
+        if (Math.abs(s.rotation[0] - tr0) < 0.05 && Math.abs(s.rotation[1] - tr1) < 0.05) {
+          s.rotation = [tr0, tr1];
+          s.targetRotation = null;
+        }
+      } else if (s.spinning) {
+        s.rotation[0] += 0.1;
+      }
+      s.dashOffset = (s.dashOffset + 0.4) % 24;
+
+      const proj = d3g.geoOrthographic()
+        .scale(size / 2 - 6)
+        .translate([size / 2, size / 2])
+        .rotate([s.rotation[0], s.rotation[1], 0])
+        .clipAngle(90);
+      const path = d3g.geoPath(proj, ctx);
+
+      ctx.clearRect(0, 0, size, size);
+
+      // Sphere gradient (blue-white)
+      const grad = ctx.createRadialGradient(size * 0.42, size * 0.38, size * 0.05, size / 2, size / 2, size / 2 - 6);
+      grad.addColorStop(0, '#F0F7FF');
+      grad.addColorStop(1, '#DBEAFE');
+      ctx.beginPath(); path({ type: 'Sphere' });
+      ctx.fillStyle = grad; ctx.fill();
+      ctx.strokeStyle = '#BFDBFE'; ctx.lineWidth = 1; ctx.stroke();
+
+      // Graticule lines
+      ctx.beginPath(); path(d3g.geoGraticule().step([30, 30])());
+      ctx.strokeStyle = 'rgba(59,130,246,0.07)'; ctx.lineWidth = 0.5; ctx.stroke();
+
+      // Country fills with optional highlight for active lane endpoints
+      if (s.world) {
+        const sel = selectedRef.current;
+        const hlIds = new Set();
+        if (sel) {
+          const lane = lanesRef.current?.find(l => l.id === sel);
+          if (lane) {
+            [lane.from, lane.to].forEach(name => {
+              const id = GLOBE_COUNTRY_IDS[name];
+              if (id) hlIds.add(id);
+            });
+          }
+        }
+        topo.feature(s.world, s.world.objects.countries).features.forEach(f => {
+          const isHl = hlIds.has(String(f.id));
+          ctx.beginPath(); path(f);
+          ctx.fillStyle = isHl ? 'rgba(59,130,246,0.48)' : '#E2E8F0';
+          ctx.fill();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.4; ctx.stroke();
+        });
+      }
+
+      // Animated arc for selected trade lane
+      const sel = selectedRef.current;
+      if (sel) {
+        const lane = lanesRef.current?.find(l => l.id === sel);
+        if (lane?.coords) {
+          const arc = { type: 'LineString', coordinates: [lane.coords[0], lane.coords[1]] };
+          ctx.beginPath(); path(arc);
+          ctx.strokeStyle = 'rgba(59,130,246,0.2)'; ctx.lineWidth = 7;
+          ctx.setLineDash([]); ctx.stroke();
+          ctx.beginPath(); path(arc);
+          ctx.strokeStyle = '#3B82F6'; ctx.lineWidth = 2.5;
+          ctx.setLineDash([8, 4]); ctx.lineDashOffset = -s.dashOffset; ctx.stroke();
+          ctx.setLineDash([]);
+          // Endpoint dots with pulse rings
+          lane.coords.forEach(coord => {
+            const dist = d3g.geoDistance(coord, [-s.rotation[0] * Math.PI / 180, -s.rotation[1] * Math.PI / 180]);
+            if (dist > Math.PI / 2) return;
+            const pt = proj(coord);
+            if (!pt) return;
+            const [px, py] = pt;
+            const pr = 7 + (s.dashOffset % 12) * 0.9;
+            const alpha = Math.max(0, 0.45 - (s.dashOffset % 12) / 26);
+            ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(59,130,246,${alpha})`; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#3B82F6'; ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+          });
+        }
+      }
+    }
+
+    s.animFrame = requestAnimationFrame(tick);
+    return () => { if (s.animFrame) cancelAnimationFrame(s.animFrame); };
+  }, [loaded, size]);
+
+  return (
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <canvas ref={canvasRef} style={{ display: 'block', borderRadius: '50%' }} />
+      {!loaded && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-full bg-[#EFF6FF]">
+          <span className="font-display text-[11px] text-slate-400">Loading…</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatCard({
   title,
   value,
@@ -791,29 +1043,28 @@ function StatCard({
   changeClass = "text-emerald-600",
   icon: Icon,
   accent = "from-blue-600 to-indigo-600",
-  chip = "Intel",
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-600 via-indigo-500 to-violet-500" />
+    <div className="group relative overflow-hidden rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all duration-200 hover:border-[#CBD5E1] hover:shadow-[0_12px_32px_rgba(15,23,42,0.10)]">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
             {title}
           </div>
           <div className="mt-3 flex items-end gap-2">
-            <div className="text-3xl font-semibold tracking-tight text-slate-900">{value}</div>
+            <div className="lit-kpi-mono text-[24px]">{value}</div>
             {change ? <div className={`pb-1 text-sm font-semibold ${changeClass}`}>{change}</div> : null}
           </div>
           <div className="mt-2 text-sm text-slate-500">{note}</div>
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${accent} text-white shadow-sm`}>
-            <Icon size={20} />
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${accent} text-white shadow-sm`}>
+            <Icon size={18} />
           </div>
-          <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-700">
-            {chip}
+          <span className="lit-live-pill">
+            <span className="lit-live-dot" />
+            Live
           </span>
         </div>
       </div>
@@ -832,16 +1083,16 @@ function SectionCardHeader({
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+          <div className="font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400">
             {eyebrow}
           </div>
         ) : null}
-        <div className="mt-1 text-sm font-semibold text-slate-800">{title}</div>
-        {subtitle ? <div className="mt-1 text-sm text-slate-500">{subtitle}</div> : null}
+        <div className="font-display mt-1 text-sm font-bold text-[#0F172A]">{title}</div>
+        {subtitle ? <div className="font-body mt-1 text-sm text-[#64748b]">{subtitle}</div> : null}
       </div>
 
-      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${iconAccent} text-white shadow-sm`}>
-        <Icon size={18} />
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${iconAccent} text-white shadow-sm`}>
+        <Icon size={17} />
       </div>
     </div>
   );
@@ -849,14 +1100,14 @@ function SectionCardHeader({
 
 function StatusPill({ value, tone = "green" }) {
   const styles = {
-    green: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    yellow: "bg-amber-50 text-amber-700 border-amber-200",
-    blue: "bg-blue-50 text-blue-700 border-blue-200",
-    slate: "bg-slate-50 text-slate-700 border-slate-200",
+    green:  "bg-[#F0FDF4] text-[#15803d] border-[#BBF7D0]",
+    yellow: "bg-[#FFFBEB] text-[#b45309] border-[#FDE68A]",
+    blue:   "bg-[#EFF6FF] text-[#1d4ed8] border-[#BFDBFE]",
+    slate:  "bg-[#F1F5F9] text-[#64748b] border-[#E2E8F0]",
   };
 
   return (
-    <span className={`inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${styles[tone]}`}>
+    <span className={`font-display inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${styles[tone]}`}>
       {value}
     </span>
   );
@@ -890,308 +1141,107 @@ function getActivityIcon(type) {
   }
 }
 
-function TradeMapPanel({ mapScales, regionSummary }) {
-  const [selectedRegion, setSelectedRegion] = useState(
-    regionSummary?.activeRegionLabel || "North America",
-  );
-  const activeFlags = getRegionFlags(selectedRegion);
-  const mapRef = useRef(null);
-  const mapInstanceRef = useRef(null);
+function TradeMapPanel({ regionSummary }) {
+  const [selectedLane, setSelectedLane] = useState(null);
 
-  useEffect(() => {
-    if (regionSummary?.activeRegionLabel) {
-      setSelectedRegion(regionSummary.activeRegionLabel);
-    }
-  }, [regionSummary?.activeRegionLabel]);
+  const globeLanes = useMemo(() => {
+    const allRoutes = [
+      ...(regionSummary?.activeTradeRoutes || []),
+      ...Object.values(regionSummary?.regionRoutes || {}).flat(),
+    ];
+    const built = buildGlobelanesFromRoutes(allRoutes);
+    return built.length ? built : STATIC_GLOBE_LANES;
+  }, [regionSummary]);
 
-  const regionDetails = {
-    "North America": {
-      countries: "United States, Canada, Mexico",
-      emphasis: "Regional account coverage",
-      key: "NA",
-    },
-    Europe: {
-      countries: "Germany, Netherlands, Italy",
-      emphasis: "Regional account coverage",
-      key: "EU",
-    },
-    Asia: {
-      countries: "China, Vietnam, India",
-      emphasis: "Regional account coverage",
-      key: "AS",
-    },
-    "South America": {
-      countries: "Brazil, Chile, Colombia",
-      emphasis: "Regional account coverage",
-      key: "SA",
-    },
-    Africa: {
-      countries: "South Africa, Morocco",
-      emphasis: "Regional account coverage",
-      key: "AF",
-    },
-    Oceania: {
-      countries: "Australia, New Zealand",
-      emphasis: "Regional account coverage",
-      key: "OC",
-    },
-  };
+  function handleLane(id) {
+    setSelectedLane(prev => prev === id ? null : id);
+  }
 
-  const active = regionDetails[selectedRegion];
-  const selectedRegionKey = active?.key || regionSummary?.activeRegionKey || "NA";
-  const visibleRoutes = (regionSummary?.regionRoutes?.[selectedRegionKey] || []).slice(0, 5);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function initMap() {
-      try {
-        await loadScript(
-          "https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/js/jsvectormap.min.js",
-        );
-        await loadScript(
-          "https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/maps/world.js",
-        );
-
-        if (!mounted || !mapRef.current || !window.jsVectorMap) return;
-
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.destroy();
-        }
-
-        mapRef.current.innerHTML = "";
-
-        mapInstanceRef.current = new window.jsVectorMap({
-          selector: mapRef.current,
-          map: "world",
-          backgroundColor: "transparent",
-          zoomOnScroll: false,
-          zoomButtons: false,
-          selectedMarkers: [],
-          markersSelectable: false,
-          regionStyle: {
-            initial: {
-              fill: "#eef3f9",
-              stroke: "#ffffff",
-              strokeWidth: 1.25,
-            },
-            hover: {
-              fill: "#2147c6",
-            },
-            selected: {
-              fill: "#2563eb",
-            },
-          },
-          series: {
-            regions: [
-              {
-                attribute: "fill",
-                scale: {
-                  tier1: '#eef3f9',
-                  tier2: selectedRegionKey === 'NA' ? '#a8c6ff' : selectedRegionKey === 'EU' ? '#aae6bd' : selectedRegionKey === 'AS' ? '#cfbfff' : selectedRegionKey === 'SA' ? '#ffc98f' : selectedRegionKey === 'AF' ? '#a5e4ff' : '#ffb6df',
-                  tier3: selectedRegionKey === 'NA' ? '#78a3ff' : selectedRegionKey === 'EU' ? '#76d497' : selectedRegionKey === 'AS' ? '#b39aff' : selectedRegionKey === 'SA' ? '#ffb25d' : selectedRegionKey === 'AF' ? '#67d0ff' : '#ff8dd0',
-                  tier4: selectedRegionKey === 'NA' ? '#4f7eff' : selectedRegionKey === 'EU' ? '#4fc16f' : selectedRegionKey === 'AS' ? '#966eff' : selectedRegionKey === 'SA' ? '#ff9834' : selectedRegionKey === 'AF' ? '#2fb8ff' : '#ff66c0',
-                  tier5: selectedRegionKey === 'NA' ? '#2f5bff' : selectedRegionKey === 'EU' ? '#34a853' : selectedRegionKey === 'AS' ? '#7c3aed' : selectedRegionKey === 'SA' ? '#f97316' : selectedRegionKey === 'AF' ? '#0ea5e9' : '#ec4899',
-                },
-                values: buildMapColorValues(mapScales, selectedRegion),
-              },
-            ],
-          },
-          onRegionTipShow(event, tooltip) {
-            const countryLabel = tooltip.text();
-            tooltip.html(
-              `${countryLabel}<div style="font-size:11px;color:#64748b;margin-top:4px;">${selectedRegion} activity</div>`,
-            );
-          },
-        });
-      } catch (error) {
-        console.error("Failed to initialize vector map", error);
-      }
-    }
-
-    initMap();
-
-    return () => {
-      mounted = false;
-    };
-  }, [active.key, selectedRegion, mapScales]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (mapInstanceRef.current?.updateSize) {
-        mapInstanceRef.current.updateSize();
-      }
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.destroy();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, []);
-
-  const regionButton = (label) =>
-    [
-      "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
-      selectedRegion === label
-        ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm"
-        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-    ].join(" ");
-
-  const showingLiveRegion = selectedRegion === regionSummary?.activeRegionLabel;
+  const activeLane = globeLanes.find(l => l.id === selectedLane);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="rounded-[14px] border border-[#E5E7EB] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] overflow-hidden">
+      {/* Header */}
+      <div className="border-b border-[#F1F5F9] px-5 py-4 flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-            <Globe2 size={16} className="text-blue-600" />
-            Global Trade Map
-          </div>
-          <div className="mt-1 text-sm text-slate-500">
-            Live regional visibility based on saved company coverage
-          </div>
+          <div className="font-display text-sm font-bold text-[#0F172A]">Top Active Trade Lanes</div>
+          <div className="font-body mt-0.5 text-xs text-[#94A3B8]">Click a lane to focus the globe</div>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          {Object.keys(regionDetails).map((region) => (
-            <button
-              key={region}
-              type="button"
-              className={regionButton(region)}
-              onClick={() => setSelectedRegion(region)}
-            >
-              {region}
-            </button>
-          ))}
-        </div>
+        <Globe2 size={16} className="text-blue-500 flex-shrink-0" />
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_.9fr]">
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100/90 p-2 md:p-3">
-          <div ref={mapRef} className="h-[500px] md:h-[620px] w-full" style={{ filter: "contrast(1.05) brightness(0.92) saturate(1.06)" }} />
+      <div className="flex flex-col md:flex-row">
+        {/* 3D Globe */}
+        <div className="flex items-center justify-center bg-[#F8FAFC] md:border-r border-b md:border-b-0 border-[#F1F5F9] p-5">
+          <D3Globe selectedLane={selectedLane} size={270} lanes={globeLanes} />
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                Region Intelligence
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-800">Active Region</div>
-              <div className="mt-1 text-sm text-slate-500">Regional concentration and saved-account coverage</div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm">
-                <Ship size={18} />
-              </div>
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-400 shadow-sm">
-                <Plane size={18} />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
-              Current Focus
-            </div>
-            <div className="mt-1 flex items-center gap-3">
-              <div className="text-2xl font-semibold text-slate-900">{selectedRegion}</div>
-              <div className="flex items-center gap-1.5">
-                {activeFlags.map((flag) => (
-                  <span
-                    key={flag}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-100 bg-white text-base shadow-sm"
-                  >
-                    {flag}
+        {/* Lane list */}
+        <div className="flex-1 overflow-y-auto" style={{ maxHeight: 320 }}>
+          {globeLanes.map(lane => {
+            const isSelected = selectedLane === lane.id;
+            return (
+              <button
+                key={lane.id}
+                type="button"
+                onClick={() => handleLane(lane.id)}
+                className={[
+                  "w-full text-left px-4 py-3 border-b border-[#F1F5F9] transition-colors cursor-pointer",
+                  isSelected
+                    ? "bg-[#EFF6FF] border-l-2 border-l-[#3b82f6]"
+                    : "hover:bg-[#F8FAFC] border-l-2 border-l-transparent",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`font-mono text-[11px] font-semibold ${isSelected ? 'text-[#1d4ed8]' : 'text-[#374151]'}`}>
+                      {lane.from}
+                    </span>
+                    <ArrowRight size={8} className="text-slate-300 flex-shrink-0" />
+                    <span className={`font-mono text-[11px] font-semibold ${isSelected ? 'text-[#1d4ed8]' : 'text-[#374151]'}`}>
+                      {lane.to}
+                    </span>
+                  </div>
+                  <span className={[
+                    "font-display text-[10px] font-bold rounded-full px-1.5 py-px",
+                    lane.up ? 'text-[#15803d] bg-[rgba(34,197,94,0.1)]' : 'text-[#b91c1c] bg-[rgba(239,68,68,0.1)]',
+                  ].join(" ")}>
+                    {lane.up ? '↑' : '↓'} {lane.trend}
                   </span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
-                  <Radar size={16} />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    Top Trade Routes
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    {visibleRoutes.length ? visibleRoutes.map((route) => (
-                      <div
-                        key={route.label}
-                        className="group flex flex-row items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 transition hover:border-blue-200 hover:bg-blue-50/60"
-                        title={`${route.label} • ${route.count} saved account${route.count === 1 ? '' : 's'}`}
-                      >
-                        <span className="font-medium leading-6 text-slate-700 group-hover:text-slate-900 flex-1 min-w-0 truncate pr-2">{route.label}</span>
-                        <span className="flex-shrink-0 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-xs font-semibold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700">{route.count}</span>
-                      </div>
-                    )) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
-                        Trade routes will appear here as lane data becomes available.
-                      </div>
-                    )}
-                  </div>
+                <div className="flex gap-3">
+                  <span className="font-mono text-[10px] text-[#94A3B8]">
+                    {typeof lane.shipments === 'number' ? lane.shipments.toLocaleString() : lane.shipments} ships
+                  </span>
+                  <span className="font-mono text-[10px] text-[#94A3B8]">{lane.teu} TEU</span>
                 </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
-                    <Activity size={15} />
-                  </div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    Lane Density
-                  </div>
-                </div>
-                <div className="mt-3 text-xl font-semibold text-slate-900">
-                  {visibleRoutes.length ? regionSummary?.laneDensity || "0%" : "—"}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-violet-600 shadow-sm ring-1 ring-slate-200">
-                    <Building2 size={15} />
-                  </div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    Saved Accounts
-                  </div>
-                </div>
-                <div className="mt-3 text-xl font-semibold text-slate-900">
-                  {regionSummary?.savedAccounts ?? 0}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-cyan-600 shadow-sm ring-1 ring-slate-200">
-                  <Sparkles size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-                    Suggested Use
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Use this panel to identify high-value sourcing regions and prioritize saved accounts by live CRM coverage.
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* Selected lane detail bar */}
+      {activeLane && (
+        <div className="flex flex-wrap items-center gap-4 border-t border-[#BFDBFE] bg-[#EFF6FF] px-5 py-2.5">
+          <span className="font-display text-xs font-semibold text-[#1d4ed8]">
+            {activeLane.from} → {activeLane.to}
+          </span>
+          <div className="ml-auto flex flex-wrap gap-4">
+            <span className="font-body text-xs text-slate-500">
+              Ships: <strong className="font-mono text-[#1d4ed8]">
+                {typeof activeLane.shipments === 'number' ? activeLane.shipments.toLocaleString() : activeLane.shipments}
+              </strong>
+            </span>
+            <span className="font-body text-xs text-slate-500">
+              TEU: <strong className="font-mono text-[#1d4ed8]">{activeLane.teu}</strong>
+            </span>
+            <span className={`font-display text-xs font-bold ${activeLane.up ? 'text-[#15803d]' : 'text-[#b91c1c]'}`}>
+              {activeLane.up ? '↑' : '↓'} {activeLane.trend}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1213,7 +1263,7 @@ function SavedContactsPanel({ contacts, loading }) {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
         {header}
         <div className="px-5 py-8 text-center text-sm text-slate-400">Loading contacts…</div>
       </div>
@@ -1222,14 +1272,14 @@ function SavedContactsPanel({ contacts, loading }) {
 
   if (!contacts.length) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
         {header}
         <div className="px-5 py-10 text-center">
           <Users2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500 mb-3">No enriched contacts yet</p>
+          <p className="font-body text-sm text-[#475569] mb-3">No enriched contacts yet</p>
           <Link
             to="/app/command-center"
-            className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+            className="inline-flex items-center gap-1 text-sm font-semibold font-display text-[#3b82f6] hover:text-[#2563eb]"
           >
             Go to Command Center <ArrowRight size={14} />
           </Link>
@@ -1239,7 +1289,7 @@ function SavedContactsPanel({ contacts, loading }) {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
       {header}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[600px]">
@@ -1392,11 +1442,6 @@ export default function LITDashboard() {
     return companiesTable.slice(0, 10);
   }, [savedCompaniesLive, dashboardLoading, profileRoutesByCompany]);
 
-  const mapScales = useMemo(
-    () => buildMapScalesFromCompanies(normalizedCompanies),
-    [normalizedCompanies],
-  );
-
   const regionSummary = useMemo(
     () => buildRegionSummary(normalizedCompanies),
     [normalizedCompanies],
@@ -1423,19 +1468,34 @@ export default function LITDashboard() {
 
   return (
     <AppLayout>
-      <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
+      <div className="min-h-full bg-[#F8FAFC] p-4 md:p-6 xl:p-8">
         <div className="mx-auto max-w-[1600px] space-y-6">
           <section>
-            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+            <div className="font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400">
               Overview
             </div>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
+            <h1 className="font-display mt-1 text-3xl font-bold tracking-tight text-[#0F172A] md:text-4xl">
               Welcome back, {displayName}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              This dashboard is your command center for company intelligence,
-              campaign activity, search usage, and product visibility.
+            <p className="font-body mt-2 max-w-3xl text-sm leading-6 text-[#475569]">
+              Real-time shipment intelligence and opportunity signals across your saved accounts.
             </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/app/search')}
+                className="inline-flex items-center gap-2 rounded-[10px] bg-gradient-to-b from-[#3B82F6] to-[#2563EB] px-4 py-2 text-[13px] font-semibold font-display text-white shadow-[0_1px_4px_rgba(59,130,246,0.3)] hover:opacity-90 transition-opacity"
+              >
+                <SearchCheck size={14} /> Discover Companies
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/app/campaigns')}
+                className="inline-flex items-center gap-2 rounded-[10px] border border-[#E5E7EB] bg-white px-4 py-2 text-[13px] font-semibold font-display text-[#374151] hover:border-[#CBD5E1] transition-colors"
+              >
+                <PlusCircle size={14} /> New Campaign
+              </button>
+            </div>
           </section>
 
           <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -1477,22 +1537,21 @@ export default function LITDashboard() {
             />
           </section>
 
-          <TradeMapPanel mapScales={mapScales} regionSummary={regionSummary} />
+          <TradeMapPanel regionSummary={regionSummary} />
 
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-5 py-4">
+          <section className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+            <div className="border-b border-[#F1F5F9] px-5 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="text-sm font-semibold text-slate-800">
+                  <div className="font-display text-sm font-bold text-[#0F172A]">
                     Saved Companies
                   </div>
-                  <div className="mt-1 text-sm text-slate-500">
+                  <div className="font-body mt-1 text-sm text-[#64748b]">
                     Showing the 10 most recent saved accounts with live CRM data
                   </div>
                 </div>
-
-                <div className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm md:flex">
-                  <Building2 size={18} />
+                <div className="hidden h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm md:flex">
+                  <Building2 size={17} />
                 </div>
               </div>
             </div>
@@ -1500,34 +1559,16 @@ export default function LITDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px]">
                 <thead>
-                  <tr className="border-b border-slate-200 text-left">
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Company
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Location
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Shipments (12M)
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      TEU
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Mode
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Last Shipment
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Recency
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Status
-                    </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Actions
-                    </th>
+                  <tr className="border-b border-[#F1F5F9] text-left">
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Company</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Location</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Shipments 12m</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">TEU</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Mode</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Last Shipment</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Recency</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Status</th>
+                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1540,28 +1581,30 @@ export default function LITDashboard() {
                 ) : displayedCompanies.map((row) => {
                     const commandCenterHref = row.commandCenterHref || getCommandCenterHref(row);
                     return (
-                    <tr key={`${row.company}-${row.location}`} className="border-b border-slate-100 align-top">
+                    <tr key={`${row.company}-${row.location}`} className="border-b border-[#F1F5F9] align-top hover:bg-[#F8FAFC] transition-colors">
                       <td className="px-5 py-4">
                         <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                            <Building2 size={18} />
+                          <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#3b82f6]">
+                            <Building2 size={16} />
                           </div>
                           <div>
-                            <div className="font-semibold text-slate-900">{row.company}</div>
-                            <div className="text-sm text-slate-500">{row.type}</div>
+                            <div className="font-display text-sm font-semibold text-[#0F172A]">{row.company}</div>
+                            <div className="font-body text-xs text-[#94A3B8] mt-0.5">{row.type}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-700">{row.location}</td>
-                      <td className="px-5 py-4 text-sm font-semibold text-slate-900">{row.shipments}</td>
+                      <td className="px-5 py-4 font-body text-sm text-[#475569]">{row.location}</td>
+                      <td className="px-5 py-4">
+                        <span className="font-mono text-sm font-semibold text-[#1d4ed8]">{row.shipments}</span>
+                      </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <MiniProgress value={row.teu || 0} />
-                          <span className="text-sm text-slate-600">{row.teu || 0}</span>
+                          <span className="font-mono text-sm text-[#475569]">{row.teu || 0}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{row.mode}</td>
-                      <td className="px-5 py-4 text-sm text-slate-700">{row.lastShipment}</td>
+                      <td className="px-5 py-4 font-body text-sm text-[#475569]">{row.mode}</td>
+                      <td className="px-5 py-4 font-mono text-sm text-[#475569]">{row.lastShipment}</td>
                       <td className="px-5 py-4">
                         <StatusPill
                           value={row.recency}
@@ -1613,7 +1656,7 @@ export default function LITDashboard() {
           <SavedContactsPanel contacts={savedContacts} loading={dashboardLoading} />
 
           <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.75fr)_minmax(340px,.95fr)]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
               <SectionCardHeader
                 eyebrow="Trend Intelligence"
                 title="Performance Trends"
@@ -1622,76 +1665,79 @@ export default function LITDashboard() {
                 iconAccent="from-sky-600 to-blue-500"
               />
 
-              <div className="mt-5 flex gap-6 text-sm">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+              <div className="mt-5 flex gap-4 text-sm">
+                <div className="rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
+                  <div className="font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-[#94A3B8]">
                     Companies
                   </div>
-                  <div className="mt-1 text-2xl font-semibold text-slate-900">{dashboardLoading ? "—" : savedCompaniesCount}</div>
+                  <div className="lit-kpi-mono mt-1 text-[22px]">{dashboardLoading ? "—" : savedCompaniesCount}</div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                <div className="rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
+                  <div className="font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-[#94A3B8]">
                     Contacts
                   </div>
-                  <div className="mt-1 text-2xl font-semibold text-slate-900">{savedContactsCount ?? "—"}</div>
+                  <div className="lit-kpi-mono mt-1 text-[22px]">{savedContactsCount ?? "—"}</div>
                 </div>
               </div>
 
-              <div className="mt-4 h-[320px] rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <div className="mt-4 h-[320px] rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] p-3">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={trendData} barCategoryGap="20%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                     <XAxis
                       dataKey="month"
-                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      tick={{ fill: "#94A3B8", fontSize: 11, fontFamily: 'Space Grotesk, sans-serif' }}
                       axisLine={false}
                       tickLine={false}
                     />
                     <YAxis
-                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      tick={{ fill: "#94A3B8", fontSize: 11, fontFamily: 'Space Grotesk, sans-serif' }}
                       axisLine={false}
                       tickLine={false}
                     />
-                    <Tooltip />
+                    <Tooltip
+                      contentStyle={{ borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 12, fontFamily: 'Space Grotesk, sans-serif' }}
+                    />
                     <Bar dataKey="companies" radius={[6, 6, 0, 0]} fill="#3b82f6" />
-                    <Bar dataKey="contacts" radius={[6, 6, 0, 0]} fill="#6366f1" />
+                    <Bar dataKey="contacts" radius={[6, 6, 0, 0]} fill="#8b5cf6" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
               <SectionCardHeader
                 eyebrow="Timeline"
-                title="Activity Feed"
-                subtitle="Recent actions and updates"
+                title="Recent Changes"
+                subtitle="Intelligence signals and activity updates"
                 icon={Activity}
                 iconAccent="from-violet-600 to-indigo-600"
               />
 
-              <div className="mt-5 space-y-3">
-                {displayedActivity.map((item) => {
+              <div className="mt-5 relative pl-5 border-l-2 border-[#F1F5F9]">
+                {displayedActivity.map((item, idx) => {
                   const ItemIcon = getActivityIcon(item.type);
-
                   return (
                     <div
-                      key={`${item.type}-${item.name}`}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                      key={`${item.type}-${item.name}-${idx}`}
+                      className="relative mb-3 last:mb-0"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
-                          <ItemIcon size={16} />
-                        </div>
-
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-slate-800">
-                            {item.type}
+                      <div className="absolute -left-[21px] top-3.5 w-2.5 h-2.5 rounded-full bg-[#3b82f6] border-2 border-white shadow-sm" />
+                      <div className="rounded-[10px] border border-[#F1F5F9] bg-[#F8FAFC] px-4 py-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white text-[#3b82f6] shadow-sm ring-1 ring-[#E5E7EB]">
+                            <ItemIcon size={14} />
                           </div>
-                          <div className="mt-1 text-sm text-slate-600">
-                            {item.name}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-400">
-                            {item.when}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-display text-sm font-semibold text-[#0F172A]">
+                              {item.type}
+                            </div>
+                            <div className="font-body mt-0.5 text-sm text-[#475569]">
+                              {item.name}
+                            </div>
+                            <div className="font-body mt-0.5 text-xs text-[#94A3B8]">
+                              {item.when}
+                            </div>
                           </div>
                         </div>
                       </div>
