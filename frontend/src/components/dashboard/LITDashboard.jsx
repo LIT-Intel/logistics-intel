@@ -168,6 +168,23 @@ const STATIC_GLOBE_LANES = [
   { id: 'us-mx', from: 'USA', to: 'Mexico', coords: [[-95.7, 37.1], [-102.6, 23.6]], shipments: 6200, teu: '22K', trend: '+18%', up: true },
 ];
 
+// ISO code substitution map for shortening country names in route labels
+const COUNTRY_NAME_TO_ISO = {
+  'United States of America': 'US', 'United States': 'US', 'USA': 'US',
+  'China': 'CN', 'Germany': 'DE', 'Japan': 'JP', 'South Korea': 'KR',
+  'Vietnam': 'VN', 'Mexico': 'MX', 'United Kingdom': 'UK', 'Brazil': 'BR',
+  'Australia': 'AU', 'Canada': 'CA', 'Netherlands': 'NL', 'France': 'FR',
+  'Italy': 'IT', 'Spain': 'ES', 'Poland': 'PL', 'Belgium': 'BE',
+  'Singapore': 'SG', 'Malaysia': 'MY', 'Indonesia': 'ID', 'Thailand': 'TH',
+  'Hong Kong': 'HK', 'Taiwan': 'TW', 'South Africa': 'ZA', 'Morocco': 'MA',
+  'Egypt': 'EG', 'Nigeria': 'NG', 'Kenya': 'KE', 'Argentina': 'AR',
+  'Chile': 'CL', 'Colombia': 'CO', 'Peru': 'PE', 'New Zealand': 'NZ',
+  'India': 'IN',
+};
+
+// Data viz palette for per-lane coloring (matches design system)
+const LANE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#f97316'];
+
 const fallbackMapCountryScales = {
   NA: {
     US: "scale8",
@@ -680,6 +697,28 @@ function normalizeSavedCompanyRow(row, enrichedProfile = null) {
   });
   
 
+  // Carrier — top carrier from any available field
+  const carrier =
+    companyData?.topCarrier ||
+    companyData?.top_carrier ||
+    companyData?.carrier ||
+    enrichedProfile?.routeKpis?.topCarrier ||
+    enrichedProfile?.routeKpis?.top_carrier ||
+    company?.kpis?.top_carrier ||
+    '—';
+
+  // % change — compute from 3m vs 6m shipments if available, else null
+  const s3m = Number(companyData?.shipments_3m ?? companyData?.shipmentsLast3m ?? 0);
+  const s6m = Number(companyData?.shipments_6m ?? companyData?.shipmentsLast6m ?? 0);
+  const rawChangePercent = companyData?.growth_rate ?? companyData?.yoy_change ?? companyData?.volume_change ?? null;
+  let changePercent = null;
+  if (rawChangePercent !== null) {
+    changePercent = Math.round(Number(rawChangePercent));
+  } else if (s3m > 0 && s6m > 0) {
+    const prev = s6m / 2;
+    changePercent = Math.round(((s3m - prev) / prev) * 100);
+  }
+
   return {
     company: prettifyCompanyName(rawCompanyName),
     type: row?.stage ? titleCase(row.stage) : raw?.source ? titleCase(raw.source) : 'Saved Company',
@@ -689,8 +728,11 @@ function normalizeSavedCompanyRow(row, enrichedProfile = null) {
     teu: teuValue,
     mode,
     lastShipment: formatDate(lastShipment),
+    lastShipmentRaw: lastShipment,
     recency: lastShipment ? 'Recent' : 'Inactive',
     status: shipmentsValue >= 1000 ? 'High' : shipmentsValue >= 100 ? 'Medium' : 'Low',
+    carrier,
+    changePercent,
     countryCode: countryCode || '',
     companyId,
     companyKey,
@@ -788,6 +830,42 @@ function buildMapColorValues(mapCounts, selectedRegion) {
   return values;
 }
 
+// Deterministic color for company avatar based on name
+function companyInitialColor(name) {
+  const palette = ['#3B82F6', '#F59E0B', '#10B981', '#8B5CF6', '#EF4444', '#06B6D4', '#F97316'];
+  let hash = 0;
+  const str = String(name || '');
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return palette[Math.abs(hash) % palette.length];
+}
+
+// Relative date ("Today", "3 days ago", etc.)
+function relativeDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diffDays < 0) return '—';
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+  return `${Math.floor(diffDays / 365)}yr ago`;
+}
+
+// Abbreviate country names to ISO 2-letter codes for compact display
+function abbreviateCountryToken(token) {
+  if (!token) return token;
+  let result = String(token);
+  // Replace longest names first to avoid partial overwrites
+  const entries = Object.entries(COUNTRY_NAME_TO_ISO).sort((a, b) => b[0].length - a[0].length);
+  for (const [name, iso] of entries) {
+    result = result.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), iso);
+  }
+  return result;
+}
+
 function buildTrendData(companies) {
   if (!companies.length) return monthlyTrendData;
 
@@ -858,7 +936,7 @@ function buildGlobelanesFromRoutes(routes) {
 }
 
 // D3 + TopoJSON canvas-based 3D globe with animated trade route arcs
-function D3Globe({ selectedLane, size = 280, lanes }) {
+function D3Globe({ selectedLane, size = 280, lanes, arcColor = '#3B82F6', hlColor = 'rgba(59,130,246,0.48)' }) {
   const canvasRef = useRef(null);
   const stateRef = useRef({
     world: null, rotation: [0, -25], targetRotation: null,
@@ -866,10 +944,14 @@ function D3Globe({ selectedLane, size = 280, lanes }) {
   });
   const lanesRef = useRef(lanes);
   const selectedRef = useRef(selectedLane);
+  const arcColorRef = useRef(arcColor);
+  const hlColorRef = useRef(hlColor);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => { lanesRef.current = lanes; }, [lanes]);
   useEffect(() => { selectedRef.current = selectedLane; }, [selectedLane]);
+  useEffect(() => { arcColorRef.current = arcColor; }, [arcColor]);
+  useEffect(() => { hlColorRef.current = hlColor; }, [hlColor]);
 
   // Load D3 v7, TopoJSON, and world atlas topology
   useEffect(() => {
@@ -965,6 +1047,10 @@ function D3Globe({ selectedLane, size = 280, lanes }) {
       ctx.beginPath(); path(d3g.geoGraticule().step([30, 30])());
       ctx.strokeStyle = 'rgba(59,130,246,0.07)'; ctx.lineWidth = 0.5; ctx.stroke();
 
+      // Read current arcColor/hlColor from refs so they update without remount
+      const currentArcColor = arcColorRef.current;
+      const currentHlColor = hlColorRef.current;
+
       // Country fills with optional highlight for active lane endpoints
       if (s.world) {
         const sel = selectedRef.current;
@@ -981,7 +1067,7 @@ function D3Globe({ selectedLane, size = 280, lanes }) {
         topo.feature(s.world, s.world.objects.countries).features.forEach(f => {
           const isHl = hlIds.has(String(f.id));
           ctx.beginPath(); path(f);
-          ctx.fillStyle = isHl ? 'rgba(59,130,246,0.48)' : '#E2E8F0';
+          ctx.fillStyle = isHl ? currentHlColor : '#E2E8F0';
           ctx.fill();
           ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.4; ctx.stroke();
         });
@@ -994,10 +1080,10 @@ function D3Globe({ selectedLane, size = 280, lanes }) {
         if (lane?.coords) {
           const arc = { type: 'LineString', coordinates: [lane.coords[0], lane.coords[1]] };
           ctx.beginPath(); path(arc);
-          ctx.strokeStyle = 'rgba(59,130,246,0.2)'; ctx.lineWidth = 7;
+          ctx.strokeStyle = currentArcColor + '33'; ctx.lineWidth = 7;
           ctx.setLineDash([]); ctx.stroke();
           ctx.beginPath(); path(arc);
-          ctx.strokeStyle = '#3B82F6'; ctx.lineWidth = 2.5;
+          ctx.strokeStyle = currentArcColor; ctx.lineWidth = 2.5;
           ctx.setLineDash([8, 4]); ctx.lineDashOffset = -s.dashOffset; ctx.stroke();
           ctx.setLineDash([]);
           // Endpoint dots with pulse rings
@@ -1010,9 +1096,10 @@ function D3Globe({ selectedLane, size = 280, lanes }) {
             const pr = 7 + (s.dashOffset % 12) * 0.9;
             const alpha = Math.max(0, 0.45 - (s.dashOffset % 12) / 26);
             ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(59,130,246,${alpha})`; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.strokeStyle = currentArcColor + Math.round(alpha * 255).toString(16).padStart(2, '0');
+            ctx.lineWidth = 1.5; ctx.stroke();
             ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2);
-            ctx.fillStyle = '#3B82F6'; ctx.fill();
+            ctx.fillStyle = currentArcColor; ctx.fill();
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
           });
         }
@@ -1158,6 +1245,10 @@ function TradeMapPanel({ regionSummary }) {
   }
 
   const activeLane = globeLanes.find(l => l.id === selectedLane);
+  const selectedIdx = selectedLane ? globeLanes.findIndex(l => l.id === selectedLane) : -1;
+  const activeLaneColor = selectedIdx >= 0 ? LANE_COLORS[selectedIdx % LANE_COLORS.length] : '#3b82f6';
+  // hlColor: lane color at ~48% opacity (hex)
+  const activeLaneHlColor = activeLaneColor + '7a';
 
   return (
     <div className="rounded-[14px] border border-[#E5E7EB] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] overflow-hidden">
@@ -1173,33 +1264,47 @@ function TradeMapPanel({ regionSummary }) {
       <div className="flex flex-col md:flex-row">
         {/* 3D Globe */}
         <div className="flex items-center justify-center bg-[#F8FAFC] md:border-r border-b md:border-b-0 border-[#F1F5F9] p-5">
-          <D3Globe selectedLane={selectedLane} size={270} lanes={globeLanes} />
+          <D3Globe
+            selectedLane={selectedLane}
+            size={270}
+            lanes={globeLanes}
+            arcColor={activeLaneColor}
+            hlColor={activeLaneHlColor}
+          />
         </div>
 
         {/* Lane list */}
         <div className="flex-1 overflow-y-auto" style={{ maxHeight: 320 }}>
-          {globeLanes.map(lane => {
+          {globeLanes.map((lane, idx) => {
             const isSelected = selectedLane === lane.id;
+            const laneColor = LANE_COLORS[idx % LANE_COLORS.length];
+            const fromLabel = abbreviateCountryToken(lane.from);
+            const toLabel = abbreviateCountryToken(lane.to);
             return (
               <button
                 key={lane.id}
                 type="button"
                 onClick={() => handleLane(lane.id)}
+                style={isSelected ? { borderLeftColor: laneColor, background: laneColor + '10' } : {}}
                 className={[
-                  "w-full text-left px-4 py-3 border-b border-[#F1F5F9] transition-colors cursor-pointer",
-                  isSelected
-                    ? "bg-[#EFF6FF] border-l-2 border-l-[#3b82f6]"
-                    : "hover:bg-[#F8FAFC] border-l-2 border-l-transparent",
+                  "w-full text-left px-4 py-3 border-b border-[#F1F5F9] transition-colors cursor-pointer border-l-2",
+                  isSelected ? "" : "hover:bg-[#F8FAFC] border-l-transparent",
                 ].join(" ")}
               >
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-1.5">
-                    <span className={`font-mono text-[11px] font-semibold ${isSelected ? 'text-[#1d4ed8]' : 'text-[#374151]'}`}>
-                      {lane.from}
+                    <span
+                      style={isSelected ? { color: laneColor } : {}}
+                      className={`font-mono text-[11px] font-semibold ${isSelected ? '' : 'text-[#374151]'}`}
+                    >
+                      {fromLabel}
                     </span>
                     <ArrowRight size={8} className="text-slate-300 flex-shrink-0" />
-                    <span className={`font-mono text-[11px] font-semibold ${isSelected ? 'text-[#1d4ed8]' : 'text-[#374151]'}`}>
-                      {lane.to}
+                    <span
+                      style={isSelected ? { color: laneColor } : {}}
+                      className={`font-mono text-[11px] font-semibold ${isSelected ? '' : 'text-[#374151]'}`}
+                    >
+                      {toLabel}
                     </span>
                   </div>
                   <span className={[
@@ -1223,18 +1328,21 @@ function TradeMapPanel({ regionSummary }) {
 
       {/* Selected lane detail bar */}
       {activeLane && (
-        <div className="flex flex-wrap items-center gap-4 border-t border-[#BFDBFE] bg-[#EFF6FF] px-5 py-2.5">
-          <span className="font-display text-xs font-semibold text-[#1d4ed8]">
-            {activeLane.from} → {activeLane.to}
+        <div
+          className="flex flex-wrap items-center gap-4 border-t px-5 py-2.5"
+          style={{ borderTopColor: activeLaneColor + '40', background: activeLaneColor + '0d' }}
+        >
+          <span className="font-display text-xs font-semibold" style={{ color: activeLaneColor }}>
+            {abbreviateCountryToken(activeLane.from)} → {abbreviateCountryToken(activeLane.to)}
           </span>
           <div className="ml-auto flex flex-wrap gap-4">
             <span className="font-body text-xs text-slate-500">
-              Ships: <strong className="font-mono text-[#1d4ed8]">
+              Ships: <strong className="font-mono" style={{ color: activeLaneColor }}>
                 {typeof activeLane.shipments === 'number' ? activeLane.shipments.toLocaleString() : activeLane.shipments}
               </strong>
             </span>
             <span className="font-body text-xs text-slate-500">
-              TEU: <strong className="font-mono text-[#1d4ed8]">{activeLane.teu}</strong>
+              TEU: <strong className="font-mono" style={{ color: activeLaneColor }}>{activeLane.teu}</strong>
             </span>
             <span className={`font-display text-xs font-bold ${activeLane.up ? 'text-[#15803d]' : 'text-[#b91c1c]'}`}>
               {activeLane.up ? '↑' : '↓'} {activeLane.trend}
@@ -1540,112 +1648,76 @@ export default function LITDashboard() {
           <TradeMapPanel regionSummary={regionSummary} />
 
           <section className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
-            <div className="border-b border-[#F1F5F9] px-5 py-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="font-display text-sm font-bold text-[#0F172A]">
-                    Saved Companies
-                  </div>
-                  <div className="font-body mt-1 text-sm text-[#64748b]">
-                    Showing the 10 most recent saved accounts with live CRM data
-                  </div>
-                </div>
-                <div className="hidden h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm md:flex">
-                  <Building2 size={17} />
-                </div>
+            <div className="border-b border-[#F1F5F9] px-5 py-4 flex items-start justify-between">
+              <div>
+                <div className="font-display text-sm font-bold text-[#0F172A]">What Matters Now</div>
+                <div className="font-body mt-1 text-xs text-[#94A3B8]">Active shipment activity across saved companies</div>
               </div>
+              <span className="lit-live-pill"><span className="lit-live-dot" />Live</span>
             </div>
-
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px]">
+              <table className="w-full min-w-[700px]">
                 <thead>
-                  <tr className="border-b border-[#F1F5F9] text-left">
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Company</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Location</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Shipments 12m</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">TEU</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Mode</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Last Shipment</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Recency</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Status</th>
-                    <th className="px-5 py-4 font-display text-[9px] font-bold uppercase tracking-[0.09em] text-[#94A3B8]">Actions</th>
+                  <tr className="border-b border-[#F1F5F9]">
+                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Company</th>
+                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Shipments</th>
+                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Last Shipment</th>
+                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Carrier</th>
+                    <th className="px-5 py-3 font-display text-left text-[9px] font-bold uppercase tracking-[0.12em] text-[#94A3B8]">Change</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayedCompanies.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-500">
-                      No saved companies yet
-                    </td>
-                  </tr>
-                ) : displayedCompanies.map((row) => {
-                    const commandCenterHref = row.commandCenterHref || getCommandCenterHref(row);
-                    return (
-                    <tr key={`${row.company}-${row.location}`} className="border-b border-[#F1F5F9] align-top hover:bg-[#F8FAFC] transition-colors">
-                      <td className="px-5 py-4">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#3b82f6]">
-                            <Building2 size={16} />
-                          </div>
-                          <div>
-                            <div className="font-display text-sm font-semibold text-[#0F172A]">{row.company}</div>
-                            <div className="font-body text-xs text-[#94A3B8] mt-0.5">{row.type}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 font-body text-sm text-[#475569]">{row.location}</td>
-                      <td className="px-5 py-4">
-                        <span className="font-mono text-sm font-semibold text-[#1d4ed8]">{row.shipments}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <MiniProgress value={row.teu || 0} />
-                          <span className="font-mono text-sm text-[#475569]">{row.teu || 0}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 font-body text-sm text-[#475569]">{row.mode}</td>
-                      <td className="px-5 py-4 font-mono text-sm text-[#475569]">{row.lastShipment}</td>
-                      <td className="px-5 py-4">
-                        <StatusPill
-                          value={row.recency}
-                          tone={row.recency === "Recent" ? "green" : "yellow"}
-                        />
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusPill
-                          value={row.status}
-                          tone={
-                            row.status === "High"
-                              ? "green"
-                              : row.status === "Medium"
-                                ? "yellow"
-                                : "slate"
-                          }
-                        />
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3 text-slate-500">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigate(commandCenterHref);
-                            }}
-                            className="rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-                            title="Open in Command Center"
-                          >
-                            <Eye size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-lg bg-blue-50 p-1 text-blue-600 ring-1 ring-blue-200"
-                            title="Already saved"
-                            aria-label="Already saved"
-                          >
-                            <Bookmark size={18} fill="currentColor" />
-                          </button>
-                        </div>
+                    <tr>
+                      <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">
+                        No saved companies yet
                       </td>
                     </tr>
+                  ) : displayedCompanies.map((row) => {
+                    const avatarColor = companyInitialColor(row.company);
+                    const commandCenterHref = row.commandCenterHref || getCommandCenterHref(row);
+                    return (
+                      <tr
+                        key={`${row.company}-${row.location}`}
+                        className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors cursor-pointer"
+                        onClick={() => navigate(commandCenterHref)}
+                      >
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div
+                              style={{ background: avatarColor }}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold text-white"
+                            >
+                              {(row.company || '?')[0].toUpperCase()}
+                            </div>
+                            <span className="font-display text-sm font-semibold text-[#0F172A]">{row.company}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-mono text-sm font-semibold text-[#1d4ed8]">{row.shipments}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-body text-sm text-[#64748b]">{relativeDate(row.lastShipmentRaw)}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-body text-sm text-[#64748b]">{row.carrier}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {row.changePercent !== null ? (
+                            <span
+                              style={{
+                                color: row.changePercent >= 0 ? '#15803d' : '#b91c1c',
+                                background: row.changePercent >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                              }}
+                              className="font-display inline-block rounded-full px-2 py-0.5 text-[11px] font-bold"
+                            >
+                              {row.changePercent >= 0 ? '↑' : '↓'} {Math.abs(row.changePercent)}%
+                            </span>
+                          ) : (
+                            <span className="font-body text-sm text-[#94A3B8]">—</span>
+                          )}
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
@@ -1655,98 +1727,6 @@ export default function LITDashboard() {
 
           <SavedContactsPanel contacts={savedContacts} loading={dashboardLoading} />
 
-          <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.75fr)_minmax(340px,.95fr)]">
-            <div className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
-              <SectionCardHeader
-                eyebrow="Trend Intelligence"
-                title="Performance Trends"
-                subtitle="Saved companies and enriched contacts over time"
-                icon={TrendingUp}
-                iconAccent="from-sky-600 to-blue-500"
-              />
-
-              <div className="mt-5 flex gap-4 text-sm">
-                <div className="rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
-                  <div className="font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-[#94A3B8]">
-                    Companies
-                  </div>
-                  <div className="lit-kpi-mono mt-1 text-[22px]">{dashboardLoading ? "—" : savedCompaniesCount}</div>
-                </div>
-                <div className="rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
-                  <div className="font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-[#94A3B8]">
-                    Contacts
-                  </div>
-                  <div className="lit-kpi-mono mt-1 text-[22px]">{savedContactsCount ?? "—"}</div>
-                </div>
-              </div>
-
-              <div className="mt-4 h-[320px] rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] p-3">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={trendData} barCategoryGap="20%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fill: "#94A3B8", fontSize: 11, fontFamily: 'Space Grotesk, sans-serif' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: "#94A3B8", fontSize: 11, fontFamily: 'Space Grotesk, sans-serif' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{ borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 12, fontFamily: 'Space Grotesk, sans-serif' }}
-                    />
-                    <Bar dataKey="companies" radius={[6, 6, 0, 0]} fill="#3b82f6" />
-                    <Bar dataKey="contacts" radius={[6, 6, 0, 0]} fill="#8b5cf6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="rounded-[14px] border border-[#E5E7EB] bg-gradient-to-b from-white to-[#F8FAFC] p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
-              <SectionCardHeader
-                eyebrow="Timeline"
-                title="Recent Changes"
-                subtitle="Intelligence signals and activity updates"
-                icon={Activity}
-                iconAccent="from-violet-600 to-indigo-600"
-              />
-
-              <div className="mt-5 relative pl-5 border-l-2 border-[#F1F5F9]">
-                {displayedActivity.map((item, idx) => {
-                  const ItemIcon = getActivityIcon(item.type);
-                  return (
-                    <div
-                      key={`${item.type}-${item.name}-${idx}`}
-                      className="relative mb-3 last:mb-0"
-                    >
-                      <div className="absolute -left-[21px] top-3.5 w-2.5 h-2.5 rounded-full bg-[#3b82f6] border-2 border-white shadow-sm" />
-                      <div className="rounded-[10px] border border-[#F1F5F9] bg-[#F8FAFC] px-4 py-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white text-[#3b82f6] shadow-sm ring-1 ring-[#E5E7EB]">
-                            <ItemIcon size={14} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-display text-sm font-semibold text-[#0F172A]">
-                              {item.type}
-                            </div>
-                            <div className="font-body mt-0.5 text-sm text-[#475569]">
-                              {item.name}
-                            </div>
-                            <div className="font-body mt-0.5 text-xs text-[#94A3B8]">
-                              {item.when}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
         </div>
       </div>
     </AppLayout>
