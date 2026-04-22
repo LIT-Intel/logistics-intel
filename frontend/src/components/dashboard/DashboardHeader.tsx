@@ -1,63 +1,56 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Sparkles, Search, Command } from 'lucide-react';
+import { Building2, Send, FileText } from 'lucide-react';
 
 interface DashboardHeaderProps {
   userName?: string;
 }
 
-export default function DashboardHeader({ userName = 'User' }: DashboardHeaderProps) {
-  const currentHour = new Date().getHours();
-  const getGreeting = () => {
-    if (currentHour < 12) return 'Good morning';
-    if (currentHour < 18) return 'Good afternoon';
-    return 'Good evening';
-  };
+const ACTIONS = [
+  { icon: Building2, label: 'Add Company',     href: '/app/search'    },
+  { icon: Send,      label: 'Start Campaign',   href: '/app/campaigns' },
+  { icon: FileText,  label: 'Generate Quote',   href: '/app/rfp-studio'},
+];
 
-  const firstName = userName?.split(' ')[0] || userName || 'there';
-  const currentDate = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
+export default function DashboardHeader({ userName }: DashboardHeaderProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: -10 }}
+      initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className="mb-8"
+      transition={{ duration: 0.3 }}
+      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-1"
     >
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-1 flex items-center gap-2">
-            {getGreeting()}, {firstName}
-            <motion.span
-              initial={{ rotate: 0 }}
-              animate={{ rotate: [0, 14, -8, 14, -4, 10, 0] }}
-              transition={{
-                duration: 0.6,
-                delay: 0.3,
-                ease: 'easeInOut',
-              }}
-            >
-              <Sparkles className="w-7 h-7 text-amber-500" />
-            </motion.span>
-          </h1>
-          <p className="text-slate-600">{currentDate}</p>
-        </div>
+      <div>
+        <h1
+          className="text-xl font-bold tracking-tight text-slate-900 leading-tight"
+          style={{ fontFamily: "'Space Grotesk', sans-serif", letterSpacing: '-0.02em' }}
+        >
+          Dashboard
+        </h1>
+        <p
+          className="text-sm text-slate-500 mt-0.5"
+          style={{ fontFamily: "'DM Sans', sans-serif" }}
+        >
+          Real-time shipment intelligence and opportunity signals
+          {userName && (
+            <span className="text-slate-400"> · {userName}</span>
+          )}
+        </p>
+      </div>
 
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all group">
-            <Search className="w-4 h-4 text-slate-600 group-hover:text-blue-600 transition-colors" />
-            <span className="text-sm font-medium text-slate-700">Quick Search</span>
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">
-              <Command className="w-3 h-3 text-slate-500" />
-              <span className="text-xs text-slate-500">K</span>
-            </div>
-          </button>
-        </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {ACTIONS.map(({ icon: Icon, label, href }) => (
+          <Link
+            key={label}
+            to={href}
+            className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            <Icon className="w-3 h-3" />
+            {label}
+          </Link>
+        ))}
       </div>
     </motion.div>
   );

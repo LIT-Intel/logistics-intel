@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -221,6 +221,41 @@
   font-size: 14px;
   padding: 16px;
   border-bottom: 1px solid var(--lit-dashboard-card-border);
+}
+
+/* LIT Design System — typography utilities */
+.font-display { font-family: 'Space Grotesk', 'Outfit', system-ui, sans-serif; }
+.font-body    { font-family: 'DM Sans', system-ui, sans-serif; }
+.font-mono    { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+/* KPI data value emphasis */
+.lit-kpi-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #0F172A;
+}
+
+/* Live indicator pill */
+.lit-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.1);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-family: 'Space Grotesk', sans-serif;
+}
+.lit-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 5px rgba(34, 197, 94, 0.6);
+  flex-shrink: 0;
 }
 
 .pulse-breathe {

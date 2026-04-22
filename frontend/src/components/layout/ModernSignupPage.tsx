@@ -25,7 +25,6 @@ function AuthShell({
 }) {
   const isLogin = mode === "login";
 
-function Header() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(79,70,229,0.12),transparent_30%),linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] text-slate-900">
       <div className="relative mx-auto flex min-h-screen max-w-[1440px] flex-col px-4 py-6 sm:px-6 lg:px-8">
@@ -134,23 +133,8 @@ function AuthFeatureColumn({ inviteMode = false }: { inviteMode?: boolean }) {
           View features
         </button>
       </div>
-    </div>
-  );
-}
 
-function TrialBar() {
-  return (
-    <div className="mx-auto mb-4 w-full max-w-[980px] rounded-2xl border border-slate-200 bg-white/85 px-5 py-3 text-center shadow-sm backdrop-blur-sm">
-      <span className="text-sm text-slate-600">
-        ✨ New to Logistics Intel?{" "}
-        <span className="font-semibold text-cyan-600">
-          Get access to live shipment intelligence faster
-        </span>
-      </span>
-    </div>
-  );
-}
-
+      <div className="mb-6">
         <h1 className="text-[44px] font-semibold leading-[1.02] tracking-[-0.04em] text-slate-900">
           {inviteMode ? "Join your workspace" : "Sign Up"}
         </h1>
@@ -206,6 +190,19 @@ function TrialBar() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TrialBar() {
+  return (
+    <div className="mx-auto mb-4 w-full max-w-[980px] rounded-2xl border border-slate-200 bg-white/85 px-5 py-3 text-center shadow-sm backdrop-blur-sm">
+      <span className="text-sm text-slate-600">
+        ✨ New to Logistics Intel?{" "}
+        <span className="font-semibold text-cyan-600">
+          Get access to live shipment intelligence faster
+        </span>
+      </span>
     </div>
   );
 }
@@ -359,7 +356,7 @@ export default function ModernSignupPage() {
             </h2>
             <p className="mt-3 text-sm text-slate-600">
               {isInviteFlow
-                ? "Your account is ready. We’re taking you back to your workspace invitation now."
+                ? "Your account is ready. We're taking you back to your workspace invitation now."
                 : "We sent a verification link to your email. Confirm it, then sign in."}
             </p>
 
