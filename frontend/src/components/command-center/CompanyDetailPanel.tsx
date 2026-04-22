@@ -33,6 +33,7 @@ import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
+import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import { supabase } from "@/lib/supabase";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 import {
@@ -63,6 +64,33 @@ const CHART_COLORS = [
 const TEU_BAR_PRIMARY = "#6366f1";
 const TEU_BAR_SECONDARY = "#cbd5e1";
 const CONTACT_PREVIEW_LIMIT = 6;
+
+const COUNTRY_COORDS: Record<string, [number, number]> = {
+  china: [104.2, 35.9], usa: [-95.7, 37.1], "united states": [-95.7, 37.1],
+  india: [78.9, 20.6], germany: [10.5, 51.2], japan: [138.3, 36.2],
+  "south korea": [127.8, 35.9], korea: [127.8, 35.9], vietnam: [108.3, 14.1],
+  mexico: [-102.6, 23.6], uk: [-1.5, 52.4], "united kingdom": [-1.5, 52.4],
+  brazil: [-51.9, -14.2], canada: [-96.8, 56.1], australia: [133.7, -25.3],
+  taiwan: [120.9, 23.7], thailand: [100.9, 15.9], malaysia: [109.7, 4.2],
+  indonesia: [113.9, -0.8], bangladesh: [90.4, 23.7], pakistan: [69.3, 30.4],
+  turkey: [35.2, 38.9], italy: [12.6, 41.9], france: [2.2, 46.2],
+  netherlands: [5.3, 52.1], belgium: [4.5, 50.5], spain: [-3.7, 40.4],
+  poland: [19.1, 51.9], "hong kong": [114.2, 22.3], singapore: [103.8, 1.4],
+};
+
+function laneStringToGlobeLane(laneStr: string, index: number): GlobeLane | null {
+  const parts = laneStr.split(/→|->|>/).map((s) => s.trim().toLowerCase());
+  if (parts.length < 2) return null;
+  const fromCoords = COUNTRY_COORDS[parts[0]] ?? null;
+  const toCoords = COUNTRY_COORDS[parts[1]] ?? null;
+  if (!fromCoords || !toCoords) return null;
+  return {
+    id: laneStr,
+    from: parts[0],
+    to: parts[1],
+    coords: [fromCoords, toCoords],
+  };
+}
 
 /**
  * Temporary frontend plan limits.
@@ -2865,50 +2893,25 @@ if (!cancelled) {
                   </table>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    TEU ranking
-                  </div>
-                  {detail.topRoutes.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
-                      No chart data yet.
-                    </div>
-                  ) : (
-                    <div className="h-[280px]">
-                      <RechartContainer width="100%" height="100%">
-                        <BarChart
-                          data={detail.topRoutes.slice(0, 6).map((route) => ({
-  lane: route.lane,
-  name: route.lane.length > 24 ? `${route.lane.slice(0, 24)}…` : route.lane,
-  teu: route.teu,
-}))}
-                          layout="vertical"
-                          margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis type="number" tick={{ fontSize: 11 }} />
-                          <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                          <RechartTooltip />
-  <Bar
-  dataKey="teu"
-  radius={[0, 6, 6, 0]}
-  onClick={(data: any) => setSelectedLane(data?.lane || null)}
->
-  {detail.topRoutes.slice(0, 6).map((_, index) => (
-    <Cell
-      key={`teu-cell-${index}`}
-      fill={
-        detail.topRoutes.slice(0, 6)[index]?.lane === activeLane
-          ? TEU_BAR_PRIMARY
-          : TEU_BAR_SECONDARY
-      }
-    />
-  ))}
-</Bar>
-                        </BarChart>
-                      </RechartContainer>
-                    </div>
-                  )}
+                <div style={{ background: '#F8FAFC', borderRadius: 24, border: '1px solid #F1F5F9', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  {(() => {
+                    const globeLanes: GlobeLane[] = detail.topRoutes
+                      .slice(0, 6)
+                      .map((r, i) => laneStringToGlobeLane(r.lane, i))
+                      .filter((l): l is GlobeLane => l !== null);
+                    const selectedGlobeLane = selectedLane ?? null;
+                    return (
+                      <>
+                        <GlobeCanvas lanes={globeLanes} selectedLane={selectedGlobeLane} size={268} />
+                        {selectedGlobeLane && (
+                          <div style={{ alignSelf: 'stretch', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8, padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{selectedGlobeLane}</span>
+                            <button onClick={() => setSelectedLane(null)} style={{ fontSize: 10, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif" }}>✕</button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
