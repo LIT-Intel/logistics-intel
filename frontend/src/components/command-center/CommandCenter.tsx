@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
+import { CompanyAvatar } from "@/components/CompanyAvatar";
+import { getCompanyLogoUrl } from "@/lib/logo";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Building2,
@@ -111,10 +113,6 @@ function formatDate(value?: string | null) {
   return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function companyInitialColor(name: string) {
-  const colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#6366f1'];
-  return colors[(name.charCodeAt(0) || 0) % colors.length];
-}
 
 function statusForRow(row: ListRow): 'active' | 'pending' | 'inactive' {
   if ((row.shipments12m || 0) > 0) return 'active';
@@ -414,15 +412,12 @@ export default function CommandCenter() {
                     {/* Company */}
                     <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                        <div style={{
-                          width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-                          background: companyInitialColor(row.companyName),
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 11, fontWeight: 700, color: '#fff',
-                          fontFamily: "'Space Grotesk', sans-serif",
-                        }}>
-                          {row.companyName[0]?.toUpperCase() ?? '?'}
-                        </div>
+                        <CompanyAvatar
+                          name={row.companyName}
+                          logoUrl={getCompanyLogoUrl(row.domain || row.website || undefined)}
+                          size="sm"
+                          className="shrink-0"
+                        />
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {row.companyName}
