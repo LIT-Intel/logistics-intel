@@ -181,11 +181,11 @@ function HeroKpiCard({ icon: Icon, label, value, tone = "default" }) {
 
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+      <div className="flex items-center gap-2" style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif" }}>
         <Icon className={`h-3.5 w-3.5 ${toneMap[tone] || toneMap.default}`} />
         {label}
       </div>
-      <div className="mt-2 text-xl font-semibold text-white">{value}</div>
+      <div className="mt-2" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>{value}</div>
     </div>
   );
 }
@@ -414,8 +414,8 @@ export default function Company() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[32px] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-xl md:p-7 xl:p-8">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(129,140,248,0.22),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(34,211,238,0.14),transparent_28%)]" />
+      <section className="relative overflow-hidden rounded-[28px] border border-slate-200 p-5 text-white shadow-xl md:p-7 xl:p-8" style={{ background: 'linear-gradient(160deg,#132344 0%,#0F1D38 100%)' }}>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(0,240,255,0.08),transparent_28%)]" />
 
         <div className="relative flex flex-col gap-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -443,7 +443,7 @@ export default function Company() {
                   Company Intelligence
                 </div>
 
-                <h1 className="mt-4 truncate text-2xl font-semibold tracking-tight text-white md:text-4xl">
+                <h1 className="mt-4 truncate text-2xl md:text-4xl" style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: '#fff', letterSpacing: '-0.025em' }}>
                   {companyName}
                 </h1>
 
@@ -537,20 +537,20 @@ export default function Company() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif" }}>
                 Top route
               </div>
-              <div className="mt-2 truncate text-base font-semibold text-white">
-                {headerKpis.topRoute || (loading ? "Loading route…" : "—")}
+              <div className="mt-2 truncate" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#fff' }}>
+                {headerKpis.topRoute || (loading ? "Loading…" : "—")}
               </div>
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif" }}>
                 Recent route
               </div>
-              <div className="mt-2 truncate text-base font-semibold text-white">
-                {headerKpis.recentRoute || (loading ? "Loading route…" : "—")}
+              <div className="mt-2 truncate" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#fff' }}>
+                {headerKpis.recentRoute || (loading ? "Loading…" : "—")}
               </div>
             </div>
           </div>
