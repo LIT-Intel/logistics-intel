@@ -342,12 +342,36 @@ function KpiCard({
   accent: string;
 }) {
   return (
-    <div className={`group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${accent}`}>
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+    <div
+      className={`group transition-all hover:-translate-y-0.5 ${accent}`}
+      style={{
+        background: 'linear-gradient(180deg,#FFFFFF 0%,#F8FAFC 100%)',
+        border: '1px solid #E5E7EB',
+        borderRadius: 14,
+        padding: 16,
+        boxShadow: '0 8px 30px rgba(15,23,42,0.06)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          fontSize: 9, fontWeight: 700, letterSpacing: '0.09em',
+          textTransform: 'uppercase', color: '#94a3b8',
+          fontFamily: "'Space Grotesk', sans-serif",
+        }}
+      >
         {icon}
         <span>{label}</span>
       </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+      <div
+        style={{
+          marginTop: 10,
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 22, fontWeight: 700, color: '#1d4ed8', letterSpacing: '-0.01em',
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
@@ -421,17 +445,34 @@ export default function ShipperDetailModal({
 
   if (!isOpen || !shipper) return null;
 
-  const tabButtonClass = (tab: TabKey) =>
-    `inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition ${
-      activeTab === tab
-        ? "bg-indigo-600 text-white shadow-sm"
-        : "bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
-    }`;
+  const tabStyle = (tab: TabKey): React.CSSProperties =>
+    activeTab === tab
+      ? {
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+          background: 'linear-gradient(180deg,#3B82F6,#2563EB)',
+          color: '#fff', fontSize: 13, fontWeight: 600,
+          fontFamily: "'Space Grotesk', sans-serif",
+          boxShadow: '0 2px 8px rgba(59,130,246,0.3)',
+        }
+      : {
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '8px 16px', borderRadius: 10, cursor: 'pointer',
+          background: '#FFFFFF', border: '1px solid #E5E7EB',
+          color: '#374151', fontSize: 13, fontWeight: 600,
+          fontFamily: "'Space Grotesk', sans-serif",
+        };
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
-      <div className="flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-slate-50 shadow-2xl sm:h-[90vh] sm:rounded-3xl">
-        <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-5">
+      <div className="flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden shadow-2xl sm:h-[90vh]"
+        style={{ borderRadius: 18, border: '1px solid #E5E7EB', background: '#F8FAFC' }}>
+
+        {/* Gradient accent bar */}
+        <div style={{ height: 3, background: 'linear-gradient(90deg,#3B82F6,#6366F1)', borderRadius: '18px 18px 0 0', flexShrink: 0 }} />
+
+        {/* Header */}
+        <div style={{ borderBottom: '1px solid #E5E7EB', background: '#FFFFFF', padding: '14px 20px', flexShrink: 0 }}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
               <CompanyAvatar
@@ -443,91 +484,83 @@ export default function ShipperDetailModal({
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-2xl">
+                  <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>
                     {companyName}
                   </h2>
-                  <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-slate-500 sm:text-sm">
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: '#F1F5F9', color: '#64748b', fontFamily: "'Space Grotesk', sans-serif" }}>
                     {shipper?.country_code || (profile as any)?.countryCode || "US"}
                   </span>
                 </div>
 
-                <div className="mt-1 flex flex-col gap-1 text-xs text-slate-500 sm:mt-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1 sm:text-sm">
-                  <div className="inline-flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1" style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#64748b' }}>
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3 w-3 shrink-0" />
                     <span className="truncate">{locationLine}</span>
-                  </div>
-
+                  </span>
                   {website && (
-                    <div className="inline-flex items-center gap-1">
-                      <Globe className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="inline-flex items-center gap-1">
+                      <Globe className="h-3 w-3 shrink-0" />
                       <span className="truncate">{website.replace(/^https?:\/\//, "")}</span>
-                    </div>
+                    </span>
                   )}
-
                   {phone && (
-                    <div className="inline-flex items-center gap-1">
-                      <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="inline-flex items-center gap-1">
+                      <Phone className="h-3 w-3 shrink-0" />
                       <span>{phone}</span>
-                    </div>
+                    </span>
                   )}
                 </div>
               </div>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="hidden rounded-xl border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 sm:inline-flex"
-                onClick={onSaveToCommandCenter}
-                disabled={saveLoading || isSaved}
-              >
-                <Bookmark className={`mr-2 h-4 w-4 ${isSaved ? "fill-current" : ""}`} />
-                {isSaved ? "Saved" : "Save"}
-              </Button>
               <button
                 type="button"
                 onClick={onSaveToCommandCenter}
                 disabled={saveLoading || isSaved}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 sm:hidden"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '7px 14px', borderRadius: 10, cursor: (saveLoading || isSaved) ? 'not-allowed' : 'pointer',
+                  ...(isSaved
+                    ? { background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803d' }
+                    : { background: 'linear-gradient(180deg,#3B82F6,#2563EB)', border: 'none', color: '#fff', boxShadow: '0 2px 8px rgba(59,130,246,0.3)' }),
+                  fontSize: 12, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif",
+                }}
               >
-                <Bookmark className={`h-4 w-4 ${isSaved ? "fill-current text-indigo-600" : ""}`} />
+                <Bookmark className={`h-3.5 w-3.5 ${isSaved ? "fill-current" : ""}`} />
+                <span className="hidden sm:inline">{isSaved ? "Saved" : "Save"}</span>
               </button>
 
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF', color: '#64748b', cursor: 'pointer' }}
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
         </div>
 
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-6">
+        {/* Tab bar */}
+        <div style={{ borderBottom: '1px solid #E5E7EB', background: '#F8FAFC', padding: '10px 20px', flexShrink: 0 }}>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={tabButtonClass("overview")} onClick={() => setActiveTab("overview")}>
-              <BarChart3 className="h-4 w-4" />
-              Overview
+            <button type="button" style={tabStyle("overview")} onClick={() => setActiveTab("overview")}>
+              <BarChart3 className="h-3.5 w-3.5" /> Overview
             </button>
-            <button type="button" className={tabButtonClass("routes")} onClick={() => setActiveTab("routes")}>
-              <Route className="h-4 w-4" />
-              Routes
+            <button type="button" style={tabStyle("routes")} onClick={() => setActiveTab("routes")}>
+              <Route className="h-3.5 w-3.5" /> Routes
             </button>
-            <button type="button" className={tabButtonClass("shipments")} onClick={() => setActiveTab("shipments")}>
-              <Truck className="h-4 w-4" />
-              Shipments
+            <button type="button" style={tabStyle("shipments")} onClick={() => setActiveTab("shipments")}>
+              <Truck className="h-3.5 w-3.5" /> Shipments
             </button>
             {contacts && contacts.length > 0 && (
-              <button type="button" className={tabButtonClass("contacts")} onClick={() => setActiveTab("contacts")}>
-                <Users className="h-4 w-4" />
-                Contacts ({contacts.length})
+              <button type="button" style={tabStyle("contacts")} onClick={() => setActiveTab("contacts")}>
+                <Users className="h-3.5 w-3.5" /> Contacts ({contacts.length})
               </button>
             )}
-            <button type="button" className={tabButtonClass("equipment")} onClick={() => setActiveTab("equipment")}>
-              <Container className="h-4 w-4" />
-              Equipment
+            <button type="button" style={tabStyle("equipment")} onClick={() => setActiveTab("equipment")}>
+              <Container className="h-3.5 w-3.5" /> Equipment
             </button>
           </div>
         </div>
@@ -627,47 +660,41 @@ export default function ShipperDetailModal({
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-lg font-semibold text-slate-900">Snapshot</div>
+                <div style={{ background: 'linear-gradient(180deg,#FFFFFF 0%,#F8FAFC 100%)', border: '1px solid #E5E7EB', borderRadius: 14, padding: 20, boxShadow: '0 8px 30px rgba(15,23,42,0.06)' }}>
+                  <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 16, fontWeight: 700, color: '#0F172A', marginBottom: 16 }}>Snapshot</div>
 
-                  <div className="mt-5 space-y-5">
+                  <div className="space-y-4">
                     <div>
-                      <div className="text-sm text-slate-500">Estimated spend 12m</div>
-                      <div className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
-                        {currencyCompact(estSpend12m)}
-                      </div>
+                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Est. Spend 12m</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: '#1d4ed8' }}>{currencyCompact(estSpend12m)}</div>
                     </div>
 
-                    <div>
-                      <div className="text-sm text-slate-500">Top route</div>
-                      <div className="mt-1 text-base font-medium leading-7 text-slate-900">{topRoute}</div>
+                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Top Route</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: '#374151', background: '#F1F5F9', padding: '3px 8px', borderRadius: 4, display: 'inline-block' }}>{topRoute}</div>
                     </div>
 
-                    <div>
-                      <div className="text-sm text-slate-500">Most recent route</div>
-                      <div className="mt-1 text-base font-medium leading-7 text-slate-900">{mostRecentRoute}</div>
+                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Recent Route</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: '#374151', background: '#F1F5F9', padding: '3px 8px', borderRadius: 4, display: 'inline-block' }}>{mostRecentRoute}</div>
                     </div>
 
-                    <div>
-                      <div className="text-sm text-slate-500">Top container</div>
-                      <div className="mt-1 text-base font-medium text-slate-900">{topContainer}</div>
+                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 4 }}>Top Container</div>
+                      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, color: '#374151' }}>{topContainer}</div>
                     </div>
 
-                    <div>
-                      <div className="text-sm text-slate-500">Suppliers</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                    <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 8 }}>Suppliers</div>
+                      <div className="flex flex-wrap gap-2">
                         {suppliers.length > 0 ? (
                           suppliers.map((supplier) => (
-                            <Badge
-                              key={supplier}
-                              variant="outline"
-                              className="rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-slate-700"
-                            >
+                            <span key={supplier} style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: '#F8FAFC', color: '#374151', border: '1px solid #E5E7EB', fontFamily: "'DM Sans', sans-serif" }}>
                               {supplier}
-                            </Badge>
+                            </span>
                           ))
                         ) : (
-                          <div className="text-sm text-slate-400">No supplier data</div>
+                          <div style={{ fontSize: 12, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif" }}>No supplier data</div>
                         )}
                       </div>
                     </div>
