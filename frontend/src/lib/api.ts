@@ -1575,7 +1575,7 @@ export async function fetchCompanySnapshot(
       hasRaw: !!responseData?.raw
     });
 
-    if (!responseData || !responseData.ok || !responseData.snapshot) {
+    if (!responseData || !responseData.ok || (!responseData.snapshot && !responseData.company)) {
       console.warn("[fetchCompanySnapshot] No snapshot data");
       return null;
     }
@@ -1606,9 +1606,13 @@ export async function fetchCompanySnapshot(
 
     return {
       ok: responseData.ok,
-      source: responseData.source,
+      source: responseData.snapshotMeta?.source ?? responseData.source,
       snapshot: responseData.snapshot,
-      raw: responseData.raw
+      company: responseData.company ?? null,
+      analytics: responseData.analytics ?? null,
+      preview: responseData.preview ?? null,
+      snapshotMeta: responseData.snapshotMeta ?? null,
+      recentBolsPreview: responseData.preview?.recentBolsPreview ?? responseData.recentBolsPreview ?? [],
     };
   } catch (error) {
     console.error("[fetchCompanySnapshot] Fatal error:", error);
@@ -2447,7 +2451,7 @@ export async function getIyCompanyProfile({
   data = primaryCall.data;
   error = primaryCall.error;
 
-  if (error || !data?.companyProfile) {
+  if (error || !(data?.companyProfile || data?.company)) {
     const fallbackCall = await supabase.functions.invoke(
       "importyeti-proxy",
       {
@@ -2467,11 +2471,13 @@ export async function getIyCompanyProfile({
     throw new Error(`getIyCompanyProfile failed: ${error.message || "Unknown error"}`);
   }
 
-  if (!data || !data.companyProfile) {
+  if (!data || !(data.companyProfile || data.company)) {
     throw new Error("getIyCompanyProfile returned no profile");
   }
 
-  const companyProfile = normalizeCompanyProfile(data.companyProfile, normalizedSlug);
+  // Support both old companyProfile shape and new canonical shape (via compat snapshot field)
+  const profileSource = data.companyProfile ?? data.snapshot;
+  const companyProfile = normalizeCompanyProfile(profileSource, normalizedSlug);
 
   return {
     companyProfile,
