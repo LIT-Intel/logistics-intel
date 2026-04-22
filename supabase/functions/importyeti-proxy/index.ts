@@ -305,14 +305,22 @@ function buildEnvConfig(): EnvConfig {
 }
 
 async function fetchImportYetiJson(url: string, apiKey: string) {
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      IYApiKey: apiKey,
-      "X-API-Key": apiKey,
-      Accept: "application/json",
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45_000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        IYApiKey: apiKey,
+        "X-API-Key": apiKey,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   const text = await response.text();
 

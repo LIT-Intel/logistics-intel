@@ -69,16 +69,24 @@ Provide:
 
 Format as JSON with keys: opportunities (array), risks (array), talking_points (array)`;
 
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-          }),
-        }
-      );
+      const briefController = new AbortController();
+      const briefTimer = setTimeout(() => briefController.abort(), 45_000);
+      let geminiResponse: Response;
+      try {
+        geminiResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+            }),
+            signal: briefController.signal,
+          }
+        );
+      } finally {
+        clearTimeout(briefTimer);
+      }
 
       if (geminiResponse.ok) {
         const geminiData = await geminiResponse.json();
