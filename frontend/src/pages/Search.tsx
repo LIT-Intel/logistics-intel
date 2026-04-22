@@ -185,8 +185,8 @@ export default function SearchPage() {
         const result = await fetchCompanySnapshot(selectedCompany.importyeti_key);
 
         if (!cancelled) {
-          if (result && result.snapshot) {
-            setRawData(result.raw);
+          if (result && (result.snapshot || result.company)) {
+            setRawData(result);
             const profile = normalizeIyCompanyProfile(
               result,
               selectedCompany.importyeti_key,
@@ -260,39 +260,19 @@ export default function SearchPage() {
 
   const computeMonthlyVolumes = () => {
     if (!rawData) {
-      console.warn('[computeMonthlyVolumes] No rawData available');
       return {};
     }
     const snapshot = rawData.snapshot;
-    const data = rawData.data || {};
     if (snapshot?.monthly_volumes && Object.keys(snapshot.monthly_volumes).length > 0) {
       return snapshot.monthly_volumes;
     }
-    if (!Array.isArray(data.recent_bols) || data.recent_bols.length === 0) {
-      console.warn('[computeMonthlyVolumes] No BOL data available for aggregation');
-      return {};
+    if (rawData?.analytics?.timeSeries && rawData.analytics.timeSeries.length > 0) {
+      const fromSeries: Record<string, { fcl: number; lcl: number; shipments?: number; teu?: number }> = {};
+      rawData.analytics.timeSeries.forEach((pt: any) => {
+        fromSeries[pt.month] = { fcl: pt.fcl ?? 0, lcl: pt.lcl ?? 0, shipments: pt.shipments, teu: pt.teu };
+      });
+      return fromSeries;
     }
-    const computed: Record<string, { fcl: number; lcl: number }> = {};
-    (data.recent_bols || []).forEach((bol: any) => {
-      if (!bol.date_formatted) return;
-      const parts = bol.date_formatted.split('/');
-      if (parts.length !== 3) return;
-      const [day, month, year] = parts;
-      const monthKey = `${year}-${month.padStart(2, '0')}`;
-      if (!computed[monthKey]) {
-        computed[monthKey] = { fcl: 0, lcl: 0 };
-      }
-      if (bol.lcl === true) {
-        computed[monthKey].lcl++;
-      } else if (bol.lcl === false) {
-        computed[monthKey].fcl++;
-      }
-    });
-    if (Object.keys(computed).length > 0) {
-      console.log('[computeMonthlyVolumes] Computed from BOL data:', Object.keys(computed).length, 'months');
-      return computed;
-    }
-    console.warn('[computeMonthlyVolumes] No monthly_volumes data available');
     return {};
   };
 
@@ -818,7 +798,7 @@ export default function SearchPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.04 + index * 0.03 }}
                   >
-                    <Card className="group h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-indigo-300 hover:shadow-md">
+                    <Card className="group h-full overflow-hidden rounded-2xl border border-slate-200 shadow-sm transition hover:border-slate-300 hover:shadow-md" style={{ background: 'linear-gradient(180deg,#FFFFFF 0%,#F8FAFC 100%)' }}>
                       <CardHeader className="space-y-4 p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex min-w-0 items-start gap-3">
@@ -830,7 +810,7 @@ export default function SearchPage() {
                             />
                             <div className="min-w-0">
                               <div className="flex items-start gap-2">
-                                <CardTitle className="truncate text-base font-semibold text-slate-900 transition group-hover:text-indigo-600">
+                                <CardTitle className="truncate text-base font-semibold text-slate-900 transition group-hover:text-indigo-600 font-['Space_Grotesk']">
                                   {company.name}
                                 </CardTitle>
                                 <span className="text-lg">{getCountryFlag(company.country_code)}</span>
@@ -845,9 +825,17 @@ export default function SearchPage() {
                             </div>
                           </div>
 
-                          <Badge variant="outline" className={getFrequencyColor(company.frequency)}>
-                            {company.frequency}
-                          </Badge>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            padding: '3px 9px', borderRadius: 9999, fontSize: 11, fontWeight: 600,
+                            fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap',
+                            ...(company.status === 'Active' && (company.shipments || 0) > 0
+                              ? { background: '#F0FDF4', color: '#15803d', border: '1px solid #BBF7D0' }
+                              : { background: '#F1F5F9', color: '#64748b', border: '1px solid #E2E8F0' }),
+                          }}>
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: company.status === 'Active' && (company.shipments || 0) > 0 ? '#22C55E' : '#94A3B8' }} />
+                            {company.status === 'Active' && (company.shipments || 0) > 0 ? 'Active' : 'Inactive'}
+                          </span>
                         </div>
 
                         <div className="flex flex-wrap gap-2">
@@ -872,198 +860,57 @@ export default function SearchPage() {
                       </CardHeader>
 
                       <CardContent className="space-y-4 p-4 pt-0">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Total shipments
+                        <div className="grid grid-cols-3 gap-2">
+                          <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 3 }}>
+                              Shipments
                             </div>
-                            <p className="mt-1 text-lg font-semibold text-slate-900">
-                              {company.shipments.toLocaleString()}
-                            </p>
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600, color: '#1d4ed8' }}>
+                              {company.shipments_12m ? company.shipments_12m.toLocaleString() : company.shipments.toLocaleString()}
+                            </div>
                           </div>
 
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Latest year TEU
+                          <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 3 }}>
+                              TEU
                             </div>
-                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600, color: '#374151' }}>
                               {company.teu_estimate != null ? company.teu_estimate.toLocaleString() : "—"}
-                            </p>
+                            </div>
                           </div>
 
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              Top container
+                          <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif", marginBottom: 3 }}>
+                              Last Ship
                             </div>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {company.top_container_length || "—"}
-                            </p>
-                            {company.top_container_count != null && (
-                              <p className="text-xs text-slate-500">
-                                {company.top_container_count.toLocaleString()} units
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              FCL / LCL
+                            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600, color: '#374151' }}>
+                              {formatUserFriendlyDate(company.last_shipment) || "—"}
                             </div>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                              {company.fcl_percent != null && company.lcl_percent != null
-                                ? `${Math.round(company.fcl_percent)}% / ${Math.round(company.lcl_percent)}%`
-                                : "—"}
-                            </p>
                           </div>
                         </div>
 
-                        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-3 py-3">
-                          {company.mode && (
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-slate-600">Mode</span>
-                              <div className="flex items-center gap-1.5 font-medium text-slate-900">
-                                {getModeIcon(company.mode)}
-                                {company.mode}
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Latest year</span>
-                            <span className="font-medium text-slate-900">
-                              {company.latest_year ?? "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Year shipments</span>
-                            <span className="font-medium text-slate-900">
-                              {company.latest_year_shipments != null
-                                ? company.latest_year_shipments.toLocaleString()
-                                : "—"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-600">Last shipment</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-medium text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment)}
+                        <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Users className="h-3 w-3" />
+                            {company.top_suppliers.length > 0 ? company.top_suppliers[0] : '—'}
+                            {company.top_suppliers.length > 1 && (
+                              <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 9999, background: '#F1F5F9', color: '#64748b' }}>
+                                +{company.top_suppliers.length - 1}
                               </span>
-                              {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                if (!badgeInfo) return null;
-                                return (
-                                  <Badge
-                                    variant="secondary"
-                                    className={`text-xs ${
-                                      badgeInfo.color === "green"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : badgeInfo.color === "yellow"
-                                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                                          : "bg-slate-100 text-slate-600"
-                                    }`}
-                                  >
-                                    {badgeInfo.label}
-                                  </Badge>
-                                );
-                              })()}
-                            </div>
-                          </div>
-
-                          <div className="flex items-start justify-between gap-3 text-sm">
-                            <span className="text-slate-600">Suppliers</span>
-                            {company.top_suppliers.length > 0 ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 text-right">
-                                      <Users className="mt-0.5 h-3.5 w-3.5 text-slate-500" />
-                                      <span className="max-w-[160px] truncate font-medium text-slate-900">
-                                        {company.top_suppliers[0]}
-                                      </span>
-                                      {company.top_suppliers.length > 1 && (
-                                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                                          +{company.top_suppliers.length - 1}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs">
-                                    <p className="mb-1 text-xs font-semibold">Suppliers</p>
-                                    <ul className="space-y-0.5">
-                                      {company.top_suppliers.map((supplier, idx) => (
-                                        <li key={idx} className="text-xs">
-                                          • {supplier}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            ) : (
-                              <span className="text-xs text-slate-400">No data</span>
+                            )}
+                          </span>
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            {company.top_container_length && (
+                              <span style={{ fontSize: 10, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", padding: '2px 7px', borderRadius: 4, background: '#EFF6FF', color: '#3b82f6', border: '1px solid #BFDBFE' }}>
+                                {company.top_container_length}
+                              </span>
+                            )}
+                            {(company.fcl_shipments_perc != null || company.fcl_percent != null) && (
+                              <span style={{ fontSize: 10, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif", padding: '2px 7px', borderRadius: 4, background: '#F8FAFC', color: '#64748b', border: '1px solid #E5E7EB' }}>
+                                {Math.round(company.fcl_shipments_perc ?? company.fcl_percent ?? 0)}% FCL
+                              </span>
                             )}
                           </div>
-                          <div className="flex items-center justify-between text-xs md:text-sm">
-                            <span className="text-slate-600">Last Shipment</span>
-                            <div className="flex items-center gap-1">
-                              {company.last_shipment ? (
-                                <>
-                                  <span className="font-semibold text-slate-900 text-xs">
-                                    {formatUserFriendlyDate(company.last_shipment)}
-                                  </span>
-                                  {(() => {
-                                    const badgeInfo = getDateBadgeInfo(company.last_shipment);
-                                    if (badgeInfo) {
-                                      return (
-                                        <Badge
-                                          variant="secondary"
-                                          className={`text-xs py-0 px-1.5 ${
-                                            badgeInfo.color === 'green'
-                                              ? 'bg-green-50 text-green-700 border-green-200'
-                                              : badgeInfo.color === 'yellow'
-                                              ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                              : 'bg-slate-100 text-slate-600'
-                                          }`}
-                                        >
-                                          {badgeInfo.label}
-                                        </Badge>
-                                      );
-                                    }
-                                    return null;
-                                  })()}
-                                </>
-                              ) : (
-                                <span className="text-xs text-slate-400">No date available</span>
-                              )}
-                            </div>
-                          </div>
-                          {company.latest_year != null && (
-                            <div className="flex items-center justify-between text-xs md:text-sm">
-                              <span className="text-slate-600">{company.latest_year} shipments</span>
-                              <span className="font-semibold text-slate-900 text-xs">
-                                {(company.latest_year_shipments ?? 0).toLocaleString()}
-                                {company.latest_year_teu != null ? ` · ${company.latest_year_teu.toLocaleString()} TEU` : ''}
-                              </span>
-                            </div>
-                          )}
-                          {company.top_container_length && (
-                            <div className="flex items-center justify-between text-xs md:text-sm">
-                              <span className="text-slate-600">Top container</span>
-                              <span className="font-semibold text-slate-900 text-xs">{company.top_container_length}</span>
-                            </div>
-                          )}
-                          {(company.fcl_shipments_perc != null || company.lcl_shipments_perc != null) && (
-                            <div className="flex items-center justify-between text-xs md:text-sm">
-                              <span className="text-slate-600">FCL / LCL</span>
-                              <span className="font-semibold text-slate-900 text-xs">
-                                {company.fcl_shipments_perc != null ? `${Math.round(company.fcl_shipments_perc)}% FCL` : '—'}
-                                {' · '}
-                                {company.lcl_shipments_perc != null ? `${Math.round(company.lcl_shipments_perc)}% LCL` : '—'}
-                              </span>
-                            </div>
-                          )}
                         </div>
 
                         <div className="flex gap-2 pt-1">
