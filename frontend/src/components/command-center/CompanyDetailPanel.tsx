@@ -2626,40 +2626,46 @@ if (!cancelled) {
       ) : null}
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="flex h-auto min-h-[44px] w-full flex-wrap items-stretch gap-2 overflow-visible rounded-[26px] border border-slate-200 bg-white p-3 shadow-sm">
+        <TabsList className="flex h-auto w-full gap-0 overflow-x-auto rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
           <TabsTrigger
             value="overview"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Overview
           </TabsTrigger>
           <TabsTrigger
             value="products"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Products
           </TabsTrigger>
           <TabsTrigger
             value="history"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Shipment History
           </TabsTrigger>
           <TabsTrigger
             value="credit"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Credit Rating
           </TabsTrigger>
           <TabsTrigger
             value="suppliers"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Suppliers
           </TabsTrigger>
           <TabsTrigger
             value="contacts"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Contact Intel
           </TabsTrigger>
