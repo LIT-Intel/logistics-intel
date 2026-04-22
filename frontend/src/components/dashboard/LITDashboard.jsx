@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import { getSavedCompanies, getIyCompanyProfile } from "@/lib/api";
 import { getCampaignsFromSupabase, supabase } from "@/lib/supabase";
@@ -32,6 +32,8 @@ import {
   PlusCircle,
   Ship,
   Plane,
+  Users2,
+  ArrowRight,
 } from "lucide-react";
 
 const monthlyTrendData = [
@@ -1194,6 +1196,91 @@ function TradeMapPanel({ mapScales, regionSummary }) {
   );
 }
 
+function SavedContactsPanel({ contacts, loading }) {
+  const header = (
+    <div className="border-b border-slate-200 px-5 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-sm font-semibold text-slate-800">Saved Contacts</div>
+          <div className="mt-1 text-sm text-slate-500">Enriched contacts from your saved companies</div>
+        </div>
+        <div className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-600 to-blue-600 text-white shadow-sm md:flex">
+          <Users2 size={18} />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {header}
+        <div className="px-5 py-8 text-center text-sm text-slate-400">Loading contacts…</div>
+      </div>
+    );
+  }
+
+  if (!contacts.length) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {header}
+        <div className="px-5 py-10 text-center">
+          <Users2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 mb-3">No enriched contacts yet</p>
+          <Link
+            to="/app/command-center"
+            className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+          >
+            Go to Command Center <ArrowRight size={14} />
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {header}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[600px]">
+          <thead>
+            <tr className="border-b border-slate-200 text-left">
+              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Name</th>
+              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Title</th>
+              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Company</th>
+              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contacts.map((contact) => (
+              <tr key={contact.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600">
+                      <Users2 size={16} />
+                    </div>
+                    <span className="font-medium text-slate-900 text-sm">{contact.full_name || '—'}</span>
+                  </div>
+                </td>
+                <td className="px-5 py-4 text-sm text-slate-600">{contact.title || '—'}</td>
+                <td className="px-5 py-4 text-sm text-slate-700">{contact.company_name || '—'}</td>
+                <td className="px-5 py-4">
+                  <Link
+                    to="/app/command-center"
+                    className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
+                  >
+                    View <ArrowRight size={12} />
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function LITDashboard() {
   const navigate = useNavigate();
   const { user, fullName } = useAuth();
@@ -1203,6 +1290,8 @@ export default function LITDashboard() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [savedContactsCount, setSavedContactsCount] = useState(null);
   const [searchCount, setSearchCount] = useState(null);
+  const [savedContacts, setSavedContacts] = useState([]);
+  const [activityEvents, setActivityEvents] = useState([]);
 
   const displayName =
     fullName ||
@@ -1216,18 +1305,22 @@ export default function LITDashboard() {
 
     async function loadDashboardData() {
       try {
-        const [savedRes, campaignsRes, contactsRes, searchRes] = await Promise.all([
+        const [savedRes, campaignsRes, contactsCountRes, searchRes, contactsRowsRes, activityRes] = await Promise.all([
           getSavedCompanies(),
           getCampaignsFromSupabase(),
           supabase.from('lit_contacts').select('id', { count: 'exact', head: true }),
           supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search'),
+          supabase.from('lit_contacts').select('id, full_name, title, company_name, created_at').order('created_at', { ascending: false }).limit(8),
+          supabase.from('lit_activity_events').select('event_type, metadata, created_at').eq('user_id', user?.id).order('created_at', { ascending: false }).limit(10),
         ]);
 
         if (cancelled) return;
 
         setSavedCompaniesLive(Array.isArray(savedRes?.rows) ? savedRes.rows : []);
-        if (!contactsRes.error) setSavedContactsCount(contactsRes.count ?? 0);
+        if (!contactsCountRes.error) setSavedContactsCount(contactsCountRes.count ?? 0);
         if (!searchRes.error) setSearchCount(searchRes.count ?? 0);
+        if (!contactsRowsRes.error) setSavedContacts(contactsRowsRes.data || []);
+        if (!activityRes.error) setActivityEvents(activityRes.data || []);
         setCampaignsLive(Array.isArray(campaignsRes) ? campaignsRes : []);
       } catch (error) {
         console.error("Dashboard load error:", error);
@@ -1319,6 +1412,14 @@ export default function LITDashboard() {
     .slice(0, 10);
   const savedCompaniesCount = normalizedCompanies.length;
   const activeCampaignsCount = campaignsLive.length;
+
+  const displayedActivity = activityEvents.length
+    ? activityEvents.map((e) => ({
+        type: titleCase((e.event_type || 'activity').replace(/_/g, ' ')),
+        name: e.metadata?.company_name || e.metadata?.name || e.metadata?.query || '',
+        when: formatDate(e.created_at) || 'Recently',
+      }))
+    : activityFeed;
 
   return (
     <AppLayout>
@@ -1509,6 +1610,8 @@ export default function LITDashboard() {
             </div>
           </section>
 
+          <SavedContactsPanel contacts={savedContacts} loading={dashboardLoading} />
+
           <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.75fr)_minmax(340px,.95fr)]">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <SectionCardHeader
@@ -1530,7 +1633,7 @@ export default function LITDashboard() {
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                     Contacts
                   </div>
-                  <div className="mt-1 text-2xl font-semibold text-slate-900">13</div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-900">{savedContactsCount ?? "—"}</div>
                 </div>
               </div>
 
@@ -1567,7 +1670,7 @@ export default function LITDashboard() {
               />
 
               <div className="mt-5 space-y-3">
-                {activityFeed.map((item) => {
+                {displayedActivity.map((item) => {
                   const ItemIcon = getActivityIcon(item.type);
 
                   return (
