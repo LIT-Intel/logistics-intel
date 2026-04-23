@@ -1433,14 +1433,14 @@ async function handleCompanyProfileAction(supabase: any, companyId: string, requ
     }
 
     const indexError = await safeUpsertIndex(supabase, {
-  company_id: normalizedCompanyKey,
-  company_name: snapshot.title || snapshot.company_name || normalizedCompanyKey,
-  country: snapshot.country_code || snapshot.country || null,
-  city: snapshot.address || null,
-  last_shipment_date: normalizeDateForPg(snapshot.last_shipment_date),
-  total_shipments: snapshot.containers_count || 0,
-  total_teu: snapshot.route_kpis?.teuLast12m ?? snapshot.est_teu_12m ?? null,
-  updated_at: new Date().toISOString(),
+      company_id: normalizedCompanyKey,
+      company_name: snapshot.title || snapshot.company_name || normalizedCompanyKey,
+      country: snapshot.country_code || snapshot.country || null,
+      city: snapshot.address || null,
+      last_shipment_date: normalizeDateForPg(snapshot.last_shipment_date),
+      total_shipments: snapshot.shipments_last_12m || 0,
+      total_teu: snapshot.route_kpis?.teuLast12m ?? snapshot.total_teu ?? null,
+      updated_at: new Date().toISOString(),
     });
 
     if (indexError) {
