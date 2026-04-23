@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import {
   Building2, Mail, FileText, Search,
-  Package, Layers, DollarSign, Zap,
-  ArrowRight, TrendingUp, TrendingDown,
+  Package, Layers, Zap, Users2,
+  ArrowRight, TrendingUp,
   Send, Clock, PlusCircle, AlertCircle,
   ExternalLink, SlidersHorizontal,
 } from "lucide-react";
@@ -130,29 +130,29 @@ function TD({ children, mono = false, className = "" }) {
   );
 }
 
-function WhatMattersNow({ companies }) {
-  if (!companies.length) {
+function SavedContacts({ contacts }) {
+  if (!contacts.length) {
     return (
       <CardShell>
         <CardHeader
-          title="What Matters Now"
-          subtitle="Active shipment activity across saved companies"
+          title="Saved Contacts"
+          subtitle="Enriched contacts from your saved companies"
           right={<span className="lit-live-pill"><span className="lit-live-dot" />Live</span>}
         />
         <div className="px-6 py-10 text-center">
-          <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <Users2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
           <p className="text-sm font-medium text-slate-500" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-            No companies saved yet
+            No enriched contacts yet
           </p>
           <p className="text-xs text-slate-400 mt-1" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-            Discover shippers and add them to Command Center
+            Open a company in Command Center and enrich their contacts
           </p>
           <Link
-            to="/app/search"
+            to="/app/command-center"
             className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-blue-600 hover:text-blue-800"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}
           >
-            Discover Companies <ArrowRight className="w-3 h-3" />
+            Go to Command Center <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
       </CardShell>
@@ -162,65 +162,60 @@ function WhatMattersNow({ companies }) {
   return (
     <CardShell>
       <CardHeader
-        title="What Matters Now"
-        subtitle="Active shipment activity across saved companies"
+        title="Saved Contacts"
+        subtitle="Enriched contacts from your saved companies"
         right={<span className="lit-live-pill"><span className="lit-live-dot" />Live</span>}
       />
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr>
+              <TH>Name</TH>
+              <TH>Title</TH>
               <TH>Company</TH>
-              <TH>Shipments 12m</TH>
-              <TH>TEU 12m</TH>
-              <TH>Country</TH>
               <TH>Action</TH>
             </tr>
           </thead>
           <tbody>
-            {companies.slice(0, 8).map((saved, i) => {
-              const co = saved?.company || saved?.company_data || {};
-              const name = co?.name || saved?.company_name || "Unknown";
-              const shipments = co?.shipments_12m;
-              const teu = co?.teu_12m;
-              const country = co?.country_code || co?.country || "—";
-              const companyId = saved?.company_id || saved?.id;
+            {contacts.slice(0, 8).map((contact, i) => {
+              const name = contact?.full_name || "Unknown";
+              const title = contact?.title || "—";
+              const company = contact?.company_name || "—";
               const initColor = companyInitialColor(name);
 
               return (
                 <tr
-                  key={companyId || i}
+                  key={contact?.id || i}
                   className="border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   <TD>
                     <div className="flex items-center gap-2">
                       <div
-                        className="w-6 h-6 rounded-[6px] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
                         style={{ background: initColor }}
                       >
                         {name[0]}
                       </div>
-                      <span className="font-semibold text-slate-900 text-[13px] truncate max-w-[160px]"
+                      <span className="font-semibold text-slate-900 text-[13px] truncate max-w-[140px]"
                         style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                         {name}
                       </span>
                     </div>
                   </TD>
-                  <TD mono>{shipments ? Number(shipments).toLocaleString() : "—"}</TD>
-                  <TD mono>{teu ? Number(teu).toLocaleString() : "—"}</TD>
                   <TD>
-                    <span className="text-xs text-slate-500">{country}</span>
+                    <span className="text-xs text-slate-500 truncate max-w-[130px] block">{title}</span>
                   </TD>
                   <TD>
-                    <div className="flex items-center gap-1.5">
-                      <Link
-                        to={`/app/command-center?company=${encodeURIComponent(companyId || "")}`}
-                        className="text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-200 rounded-md px-2.5 py-1 hover:bg-blue-100 transition-colors"
-                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-                      >
-                        View
-                      </Link>
-                    </div>
+                    <span className="text-xs text-slate-500 truncate max-w-[120px] block">{company}</span>
+                  </TD>
+                  <TD>
+                    <Link
+                      to="/app/command-center"
+                      className="text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-200 rounded-md px-2.5 py-1 hover:bg-blue-100 transition-colors"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      View
+                    </Link>
                   </TD>
                 </tr>
               );
@@ -228,14 +223,14 @@ function WhatMattersNow({ companies }) {
           </tbody>
         </table>
       </div>
-      {companies.length > 8 && (
+      {contacts.length > 8 && (
         <div className="px-4 py-2.5 border-t border-slate-100">
           <Link
             to="/app/command-center"
             className="text-xs font-semibold text-blue-600 hover:text-blue-800"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}
           >
-            View all {companies.length} companies →
+            View all {contacts.length} contacts →
           </Link>
         </div>
       )}
@@ -582,6 +577,7 @@ export default function Dashboard() {
   const [rfpCount, setRfpCount] = useState(0);
   const [activities, setActivities] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
+  const [contacts, setContacts] = useState([]);
   const [selectedLane, setSelectedLane] = useState(null);
 
   useDashboardShortcuts();
@@ -591,12 +587,15 @@ export default function Dashboard() {
     const load = async () => {
       setLoading(true);
       try {
-        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes] = await Promise.allSettled([
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes, contactsRes] = await Promise.allSettled([
           getSavedCompanies(),
           getLitCampaigns().catch(() => getCrmCampaigns()),
-          supabase.from("lit_rfps").select("id").eq("status", "active"),
-          supabase.from("lit_activity_events").select("*").order("created_at", { ascending: false }).limit(10),
-          supabase.from("search_queries").select("id", { count: "exact", head: true }).eq("user_id", user?.id),
+          supabase.from('lit_rfps').select('id').eq('status', 'active'),
+          supabase.from('lit_activity_events').select('*').order('created_at', { ascending: false }).limit(10),
+          supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search').gte('created_at', monthStart),
+          supabase.from('lit_contacts').select('id, full_name, title, company_name').order('created_at', { ascending: false }).limit(8),
         ]);
 
         if (mounted) {
@@ -615,7 +614,10 @@ export default function Dashboard() {
           if (searchRes.status === "fulfilled") {
             setSearchCount(searchRes.value?.count || 0);
           }
-          if (activitiesRes.status === "fulfilled") {
+          if (contactsRes.status === 'fulfilled') {
+            setContacts(contactsRes.value?.data || []);
+          }
+          if (activitiesRes.status === 'fulfilled') {
             const rawActivities = activitiesRes.value?.data || [];
             if (rawActivities.length > 0) {
               const formattedActivities = rawActivities.map(act => ({
@@ -738,7 +740,7 @@ export default function Dashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.25 }}
             >
-              <WhatMattersNow companies={savedCompanies} />
+              <SavedContacts contacts={contacts} />
             </motion.div>
 
             <motion.div

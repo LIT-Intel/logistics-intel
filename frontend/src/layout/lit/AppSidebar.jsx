@@ -34,11 +34,15 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
   } = useAuth();
 
   const plan = userPlan || "free_trial";
+  // Platform admin section (Admin Dashboard, CMS, Debug Agent) = superadmin only
+  const showAdminSection = Boolean(isSuperAdmin);
+  // Feature locks bypass for superadmins only (not org owners)
+  const isAdmin = Boolean(isSuperAdmin);
 
-  const canUseCampaigns = canAccessFeature(plan, "campaign_builder");
-  const canUsePulse = canAccessFeature(plan, "pulse");
-  const canUseRfp = true;
-  const showAdminSection = Boolean(canAccessAdmin || isOrgAdmin || isSuperAdmin);
+  const canUseCampaigns = isAdmin || canAccessFeature(plan, "campaign_builder");
+  const canUsePulse = isAdmin || canAccessFeature(plan, "pulse");
+  const canUseRfp = isAdmin || canAccessFeature(plan, "rfp_studio");
+  const canUseLeadProspecting = isAdmin || canAccessFeature(plan, "lead_prospecting");
 
   const sections = [
     {
@@ -53,9 +57,12 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
           icon: Megaphone,
           locked: !canUseCampaigns,
         },
-        ...(canUsePulse
-          ? [{ label: "Pulse", href: "/app/prospecting", icon: PulseIcon }]
-          : []),
+        {
+          label: "Pulse",
+          href: "/app/prospecting",
+          icon: PulseIcon,
+          locked: !canUsePulse && !canUseLeadProspecting,
+        },
       ],
     },
     {

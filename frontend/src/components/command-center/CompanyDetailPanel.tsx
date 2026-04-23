@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+
 import {
   Boxes,
   CalendarClock,
@@ -17,6 +18,11 @@ import {
   Waves,
   BarChart3,
   Container,
+  Search,
+  Save,
+  CheckCircle2,
+  Mail,
+  Linkedin,
 } from "lucide-react";
 import {
   buildCommandCenterDetailModel,
@@ -27,7 +33,7 @@ import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
-import CommandCenterInsights from "./CommandCenterInsights";
+import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import { supabase } from "@/lib/supabase";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 import {
@@ -57,6 +63,47 @@ const CHART_COLORS = [
 
 const TEU_BAR_PRIMARY = "#6366f1";
 const TEU_BAR_SECONDARY = "#cbd5e1";
+const CONTACT_PREVIEW_LIMIT = 6;
+
+const COUNTRY_COORDS: Record<string, [number, number]> = {
+  china: [104.2, 35.9], usa: [-95.7, 37.1], "united states": [-95.7, 37.1],
+  india: [78.9, 20.6], germany: [10.5, 51.2], japan: [138.3, 36.2],
+  "south korea": [127.8, 35.9], korea: [127.8, 35.9], vietnam: [108.3, 14.1],
+  mexico: [-102.6, 23.6], uk: [-1.5, 52.4], "united kingdom": [-1.5, 52.4],
+  brazil: [-51.9, -14.2], canada: [-96.8, 56.1], australia: [133.7, -25.3],
+  taiwan: [120.9, 23.7], thailand: [100.9, 15.9], malaysia: [109.7, 4.2],
+  indonesia: [113.9, -0.8], bangladesh: [90.4, 23.7], pakistan: [69.3, 30.4],
+  turkey: [35.2, 38.9], italy: [12.6, 41.9], france: [2.2, 46.2],
+  netherlands: [5.3, 52.1], belgium: [4.5, 50.5], spain: [-3.7, 40.4],
+  poland: [19.1, 51.9], "hong kong": [114.2, 22.3], singapore: [103.8, 1.4],
+};
+
+function laneStringToGlobeLane(laneStr: string, index: number): GlobeLane | null {
+  const parts = laneStr.split(/→|->|>/).map((s) => s.trim().toLowerCase());
+  if (parts.length < 2) return null;
+  const fromCoords = COUNTRY_COORDS[parts[0]] ?? null;
+  const toCoords = COUNTRY_COORDS[parts[1]] ?? null;
+  if (!fromCoords || !toCoords) return null;
+  return {
+    id: laneStr,
+    from: parts[0],
+    to: parts[1],
+    coords: [fromCoords, toCoords],
+  };
+}
+
+/**
+ * Temporary frontend plan limits.
+ * Final source of truth should come from Stripe/Supabase entitlements.
+ */
+const CONTACT_SEARCH_LIMITS_BY_PLAN: Record<string, number> = {
+  free: 6,
+  trial: 10,
+  pro: 25,
+  enterprise: 100,
+};
+
+const DEFAULT_CONTACT_SEARCH_LIMIT = CONTACT_SEARCH_LIMITS_BY_PLAN.free;
 
 type CompanyDetailPanelProps = {
   record: CommandCenterRecord | null;
@@ -125,6 +172,7 @@ type DetailModel = {
   selectedYear: number | null;
   filteredShipments: NormalizedShipment[];
   monthlySeries: ActivityPoint[];
+  allTimeShipments: number | null;
   shipments: number;
   teu: number;
   spend: number | null;
@@ -179,6 +227,24 @@ const formatDate = (value?: string | null) => {
     day: "numeric",
     year: "numeric",
   });
+};
+
+const FUTURE_DATE_TOLERANCE_DAYS = 2;
+
+const isValidPastOrCurrentDate = (value?: string | null) => {
+  if (!value) return false;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const maxAllowed = new Date();
+  maxAllowed.setDate(maxAllowed.getDate() + FUTURE_DATE_TOLERANCE_DAYS);
+  return parsed.getTime() <= maxAllowed.getTime();
+};
+
+const getDateTime = (value?: string | null) => {
+  if (!value) return 0;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return parsed.getTime();
 };
 
 const normalizeText = (value?: string | null) =>
@@ -369,11 +435,24 @@ const normalizeLocationLabel = (value?: string | null) => {
   return formatLocationLabel(parts);
 };
 
+const isUnknownRoute = (value?: string | null) => {
+  const text = normalizeText(value).toLowerCase();
+  return (
+    !text ||
+    text === "—" ||
+    text === "unknown" ||
+    text === "unknown route" ||
+    text.includes("unknown →") ||
+    text.includes("→ unknown")
+  );
+};
+
 const buildCleanRoute = (origin?: string | null, destination?: string | null) => {
   const from = normalizeLocationLabel(origin);
   const to = normalizeLocationLabel(destination);
   if (from && to) return `${from} → ${to}`;
-  return from || to || "Unknown route";
+  if (from || to) return from || to;
+  return "";
 };
 
 const buildRouteLabel = (value?: string | null) => {
@@ -1196,7 +1275,7 @@ const aggregateCarrierRows = (shipments: NormalizedShipment[]) => {
 const aggregateRouteRows = (shipments: NormalizedShipment[]) => {
   const map = new Map<string, { shipments: number; teu: number; spend: number }>();
   shipments.forEach((shipment) => {
-    if (!shipment.route || shipment.route === "—") return;
+    if (!shipment.route || shipment.route === "—" || isUnknownRoute(shipment.route)) return;
     const current = map.get(shipment.route) || { shipments: 0, teu: 0, spend: 0 };
     current.shipments += 1;
     current.teu += shipment.teu;
@@ -1228,12 +1307,8 @@ const aggregateContainerMix = (shipments: NormalizedShipment[]) => {
       rawTypes.forEach((type) => {
         map.set(type, (map.get(type) || 0) + 1);
       });
-      return;
     }
-
-    if (shipment.loadType !== "UNKNOWN") {
-      map.set(shipment.loadType, (map.get(shipment.loadType) || 0) + 1);
-    }
+    // No FCL/LCL loadType fallback — container mix shows equipment labels only
   });
 
   return [...map.entries()]
@@ -1282,28 +1357,108 @@ const getStatusLabel = (shipments: number, teu: number) => {
 const getContactFullName = (contact: any) => {
   const firstName = contact.firstName || contact.first_name || contact.given_name || "";
   const lastName = contact.lastName || contact.last_name || contact.family_name || "";
-  return `${firstName} ${lastName}`.trim() || contact.name || contact.fullName || "Unknown";
+
+  return (
+    `${firstName} ${lastName}`.trim() ||
+    contact.full_name ||
+    contact.name ||
+    contact.fullName ||
+    "Unknown contact"
+  );
 };
 
 const getContactTitle = (contact: any) =>
-  contact.title || contact.role || contact.position || "";
+  contact.title || contact.role || contact.position || contact.jobTitle || "";
 
-const isSupplyChainContact = (contact: any) => {
+const getContactEmail = (contact: any) =>
+  contact.email || contact.email_address || contact.emailAddress || "";
+
+const getContactPhone = (contact: any) =>
+  contact.phone || contact.phone_number || contact.phoneNumber || "";
+
+const getContactLinkedIn = (contact: any) =>
+  contact.linkedin_url || contact.linkedinUrl || contact.linkedInUrl || "";
+  const getContactLocation = (contact: any) =>
+  contact.location ||
+  [contact.city, contact.state, contact.country].filter(Boolean).join(", ") ||
+  "";
+
+const getContactAvatarUrl = (contact: any) =>
+  contact.photo_url ||
+  contact.photoUrl ||
+  contact.profile_image_url ||
+  contact.profileImageUrl ||
+  contact.avatar_url ||
+  contact.avatarUrl ||
+  contact.image_url ||
+  contact.imageUrl ||
+  contact.picture ||
+  contact.pictureUrl ||
+  contact.raw_contact?.photo_url ||
+  contact.raw_contact?.photoUrl ||
+  contact.raw_contact?.profile_image_url ||
+  contact.raw_contact?.profileImageUrl ||
+  "";
+
+const getContactSearchText = (contact: any) =>
+  [
+    getContactFullName(contact),
+    getContactTitle(contact),
+    getContactEmail(contact),
+    getContactPhone(contact),
+    getContactLocation(contact),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const isTargetContact = (contact: any) => {
   const title = getContactTitle(contact).toLowerCase();
-  if (!title) return false;
 
-  return (
-    title.includes("vp of supply chain") ||
-    title.includes("vice president supply chain") ||
-    title.includes("director of supply chain") ||
-    title.includes("supply chain director") ||
-    title.includes("logistics manager") ||
-    title.includes("supply chain manager") ||
-    title.includes("vp logistics") ||
-    title.includes("director logistics") ||
-    title.includes("head of logistics") ||
-    title.includes("head of supply chain")
-  );
+  if (!title) return true;
+
+  const targetTerms = [
+    "supply chain",
+    "logistics",
+    "procurement",
+    "operations",
+    "transportation",
+    "import",
+    "export",
+    "global sourcing",
+    "distribution",
+    "warehouse",
+    "fulfillment",
+    "shipping",
+    "trade compliance",
+  ];
+
+  return targetTerms.some((term) => title.includes(term));
+};
+
+const normalizeReturnedContacts = (contacts: any[]) => {
+  const seen = new Set<string>();
+
+  return contacts
+    .filter(Boolean)
+    .filter(isTargetContact)
+    .filter((contact) => {
+      const key = [
+        getContactEmail(contact),
+        getContactLinkedIn(contact),
+        getContactFullName(contact),
+        getContactTitle(contact),
+      ]
+        .filter(Boolean)
+        .join("|")
+        .toLowerCase();
+
+      if (!key) return false;
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    });
 };
 
 const detectFreightosBenchmark = ({
@@ -1520,6 +1675,47 @@ const DataTable = ({
   </div>
 );
 
+const parseYearFromPoint = (point: any): number | null => {
+  const explicitYear = toNumber(point?.year);
+  if (explicitYear >= 2000) return explicitYear;
+  const rawValue = String(
+    pickFirst(point?.month, point?.monthLabel, point?.period, point?.date, point?.label, ""),
+  );
+  const match = rawValue.match(/\b(20\d{2})\b/);
+  if (match) return Number(match[1]);
+  const parsed = new Date(rawValue);
+  if (!Number.isNaN(parsed.getTime())) return parsed.getFullYear();
+  return null;
+};
+
+const getPointShipmentCount = (point: any) => {
+  const direct = toNumber(
+    pickFirst(
+      point?.shipments,
+      point?.totalShipments,
+      point?.shipmentCount,
+      point?.count,
+      0,
+    ),
+  );
+
+  if (direct > 0) return direct;
+
+  const fcl =
+    toNumber(point?.fclShipments) +
+    toNumber(point?.shipmentsFcl) +
+    toNumber(point?.fcl) +
+    toNumber(point?.fclCount);
+
+  const lcl =
+    toNumber(point?.lclShipments) +
+    toNumber(point?.shipmentsLcl) +
+    toNumber(point?.lcl) +
+    toNumber(point?.lclCount);
+
+  return fcl + lcl;
+};
+
 const buildDetailModel = (
   normalizedShipments: NormalizedShipment[],
   selectedYear: number | null,
@@ -1566,7 +1762,9 @@ const buildDetailModel = (
     .map(normalizeSeriesPoint)
     .filter((point) => (selectedYear ? point.year === selectedYear : true));
 
-  const activeSeries = profileSeries.length >= routeSeries.length ? profileSeries : routeSeries;
+  // Prefer profileSeries (authoritative normalized data) when it has year-scoped data;
+  // fall back to routeSeries only when profileSeries is empty for the selected year.
+  const activeSeries = profileSeries.length > 0 ? profileSeries : routeSeries;
 
   const filteredShipments = selectedYear
     ? normalizedShipments.filter((shipment) => shipment.year === selectedYear)
@@ -1676,11 +1874,21 @@ const buildDetailModel = (
   const fclShipments = seriesFcl > 0 ? seriesFcl : fallbackFcl > 0 ? fallbackFcl : inferredFclCount;
   const lclShipments = seriesLcl > 0 ? seriesLcl : fallbackLcl > 0 ? fallbackLcl : inferredLclCount;
 
-  const sortedByDate = [...filteredShipments].sort((a, b) => {
-    const da = a.date ? new Date(a.date).getTime() : 0;
-    const db = b.date ? new Date(b.date).getTime() : 0;
-    return da - db;
-  });
+  const validDatedShipments = filteredShipments.filter((shipment) =>
+    isValidPastOrCurrentDate(shipment.date),
+  );
+
+  const sortedByDate = [...validDatedShipments].sort(
+    (a, b) => getDateTime(a.date) - getDateTime(b.date),
+  );
+
+  const profileLatestDate = normalizeDateValue(
+    pickFirst(rawProfile?.lastShipmentDate, rawProfile?.last_shipment_date),
+  );
+
+  const safeProfileLatestDate = isValidPastOrCurrentDate(profileLatestDate)
+    ? profileLatestDate
+    : null;
 
   let topRoutes = safeArray(rawRouteKpis?.topRoutesLast12m)
     .map((route: any) => ({
@@ -1689,7 +1897,7 @@ const buildDetailModel = (
       teu: toNumber(route?.teu),
       spend: toNumber(pickFirst(route?.estSpendUsd, route?.estSpendUsd12m)) || null,
     }))
-    .filter((row: any) => row.lane && row.lane !== "—");
+    .filter((row: any) => row.lane && row.lane !== "—" && !isUnknownRoute(row.lane));
 
   if (!topRoutes.length) topRoutes = aggregateRouteRows(filteredShipments);
 
@@ -1701,7 +1909,7 @@ const buildDetailModel = (
         teu: toNumber(route?.teu),
         spend: toNumber(route?.estSpendUsd) || null,
       }))
-      .filter((row: any) => row.lane && row.lane !== "—");
+      .filter((row: any) => row.lane && row.lane !== "—" && !isUnknownRoute(row.lane));
   }
 
   topRoutes = topRoutes.sort((a, b) => b.shipments - a.shipments || b.teu - a.teu).slice(0, 10);
@@ -1844,6 +2052,7 @@ const buildDetailModel = (
     selectedYear,
     filteredShipments,
     monthlySeries,
+    allTimeShipments: null,
     shipments,
     teu,
     spend,
@@ -1854,8 +2063,7 @@ const buildDetailModel = (
     oldestShipmentDate: sortedByDate[0]?.date ?? rawProfile?.firstShipmentDate ?? null,
     latestShipmentDate:
       sortedByDate[sortedByDate.length - 1]?.date ??
-      rawProfile?.lastShipmentDate ??
-      rawProfile?.last_shipment_date ??
+      safeProfileLatestDate ??
       null,
     topRouteLabel,
     recentRouteLabel,
@@ -1913,10 +2121,15 @@ export default function CompanyDetailPanel({
       (scopedProfile as any)?.routeKpis ?? rawRouteKpis,
     );
 
+    // All-time total — never mix with 12m or current-year series
+    const allTimeShipments = toNumber(
+      pickFirst(scopedProfile?.totalShipments, rawProfile?.totalShipments),
+    );
+
+    // Year-scoped display shipments: series wins, then baseModel, then fallback model
+    // Do NOT include shipmentsLast12m — that is a 12m metric, not a year-scoped metric
     const resolvedShipments = Math.max(
       Number(baseModel?.shipments ?? 0),
-      Number(scopedProfile?.totalShipments ?? 0),
-      Number(scopedRouteKpis?.shipmentsLast12m ?? 0),
       Number(fallbackModel.shipments ?? 0),
     );
 
@@ -1956,12 +2169,18 @@ export default function CompanyDetailPanel({
     const monthlySeriesBase =
       Array.isArray(baseModel?.activitySeries) && baseModel.activitySeries.length
         ? baseModel.activitySeries
-            .map((point: any) => ({
-              period: point.month || point.period,
-              fcl: Number(point.fcl || 0),
-              lcl: Number(point.lcl || 0),
-            }))
-            .filter((point: any) => (point.fcl || point.lcl) > 0)
+            .map((point: any) => {
+              const fcl = Number(point.fcl || 0);
+              const lcl = Number(point.lcl || 0);
+              const total = Number(point.shipments || 0);
+              // If a month has shipments but no FCL/LCL breakdown, bucket into FCL
+              return {
+                period: point.month || point.period,
+                fcl: fcl > 0 || lcl > 0 ? fcl : total,
+                lcl,
+              };
+            })
+            .filter((point: any) => point.period && (point.fcl || point.lcl) > 0)
         : fallbackModel.monthlySeries;
 
     const topRoutes =
@@ -1989,6 +2208,7 @@ export default function CompanyDetailPanel({
       ...fallbackModel,
       years: availableYears,
       selectedYear: activeYear,
+      allTimeShipments: allTimeShipments > 0 ? allTimeShipments : null,
       shipments: resolvedShipments,
       teu: resolvedTeu,
       spend: resolvedSpend,
@@ -2028,70 +2248,153 @@ export default function CompanyDetailPanel({
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
   const activeLane = selectedLane || detail.topRoutes[0]?.lane || null;
 
-  const [lushaContacts, setLushaContacts] = useState<any[]>([]);
-  const [lushaSimilarCompanies, setLushaSimilarCompanies] = useState<any[]>([]);
+  const [phantomContacts, setPhantomContacts] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
   const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactSlideOpen, setContactSlideOpen] = useState(false);
+  const [slideContact, setSlideContact] = useState<any | null>(null);
+  const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
+  const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "lusha" | null>(null);
+  const [contactMessage, setContactMessage] = useState<string | null>(null);
+  const [contactDebug, setContactDebug] = useState<any | null>(null);
+  const [savedContactKeys, setSavedContactKeys] = useState<Set<string>>(new Set());
+  const [contactSearchQuery, setContactSearchQuery] = useState("");
 
   useEffect(() => {
+    const companyId =
+  (record as any)?.company?.company_id ||
+  (record as any)?.company?.source_company_key ||
+  (record as any)?.company?.key ||
+  (record as any)?.company?.id ||
+  (rawProfile as any)?.company_id ||
+  (rawProfile as any)?.source_company_key ||
+  (rawProfile as any)?.companyKey ||
+  (rawProfile as any)?.key ||
+  null;
+
     const companyName =
       (record as any)?.company?.name ||
       (record as any)?.company?.company_name ||
       (rawProfile as any)?.companyName ||
       (rawProfile as any)?.company_name;
 
-    const companyDomain =
-      (record as any)?.company?.domain ||
-      (rawProfile as any)?.domain ||
-      (rawProfile as any)?.companyDomain;
+  const companyDomain =
+  (record as any)?.company?.domain ||
+  (record as any)?.company?.website ||
+  (record as any)?.company?.company_domain ||
+  (rawProfile as any)?.domain ||
+  (rawProfile as any)?.website ||
+  (rawProfile as any)?.companyDomain ||
+  (rawProfile as any)?.company_domain ||
+  null;
 
-    if (!companyName && !companyDomain) {
-      setLushaContacts([]);
-      setLushaSimilarCompanies([]);
-      return;
-    }
+    if (!companyId && !companyName && !companyDomain) {
+  setPhantomContacts([]);
+  setContactPreviewSource(null);
+  setContactMessage("Company details are missing, so contact search cannot run yet.");
+  return;
+}
 
-    setContactsLoading(true);
+if (!companyDomain && companyName) {
+  setContactMessage(`Searching contacts by company name: ${companyName}`);
+}
 
-    supabase.functions
-      .invoke("enrich-contacts", {
-        body: {
-          companyName: companyName || null,
-          companyDomain: companyDomain || null,
-          filters: {
-            department: "supply chain",
-            seniority: "manager",
-          },
-        },
-      })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Lusha enrichment error", error);
-          setLushaContacts([]);
-          setLushaSimilarCompanies([]);
-        } else {
-          const contacts = Array.isArray((data as any)?.contacts) ? (data as any).contacts : [];
-          const filtered = contacts.filter(isSupplyChainContact);
+    let cancelled = false;
 
-          setLushaContacts(filtered);
-          setLushaSimilarCompanies(
-            Array.isArray((data as any)?.similarCompanies) ? (data as any).similarCompanies : [],
-          );
-          if (filtered.length && !selectedContact) {
-            setSelectedContact(filtered[0]);
+    const run = async () => {
+      setContactsLoading(true);
+
+      try {
+        if (companyId) {
+          const cached = await loadCachedContactPreview(String(companyId));
+          if (!cancelled && cached && Array.isArray(cached.contacts) && cached.contacts.length > 0) {
+            setPhantomContacts(cached.contacts.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT));
+            setContactPreviewSource(cached.source === "lusha" ? "lusha" : "cache");
+            if (!selectedContact) {
+              setSelectedContact(cached.contacts[0]);
+            }
+            return;
           }
         }
-      })
-      .catch((err) => {
-        console.error("Lusha enrichment fetch error", err);
-        setLushaContacts([]);
-        setLushaSimilarCompanies([]);
-      })
-      .finally(() => {
-        setContactsLoading(false);
-      });
-  }, [record, rawProfile]);
 
+        const { data: enrichData, error: enrichError } = await supabase.functions.invoke(
+          "enrich-contacts",
+          {
+  body: {
+  companyId: companyId ? String(companyId) : undefined,
+  companyName: companyName ? String(companyName) : undefined,
+  companyDomain: companyDomain ? String(companyDomain) : undefined,
+  limit: DEFAULT_CONTACT_SEARCH_LIMIT,
+},
+          },
+        );
+
+        if (enrichError) throw enrichError;
+
+        const enrichContacts = Array.isArray(enrichData?.contacts) ? enrichData.contacts : [];
+        const prioritized = enrichContacts.filter(isTargetContact);
+        const finalContacts = prioritized.length
+  ? prioritized.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT)
+  : enrichContacts.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT);
+
+        if (!cancelled) {
+          setContactMessage(enrichData?.message || null);
+          setContactDebug(enrichData?.debug || null);
+        }
+
+        if (!cancelled && finalContacts.length > 0) {
+  setPhantomContacts(finalContacts);
+  setContactPreviewSource("lusha");
+
+  await saveContactPreviewCache({
+    companyId: companyId ? String(companyId) : null,
+    companyName: companyName ? String(companyName) : null,
+    companyDomain: companyDomain ? String(companyDomain) : null,
+    sourceProvider: "lusha",
+    contacts: finalContacts,
+  });
+
+  if (!selectedContact) {
+    setSelectedContact(finalContacts[0]);
+  }
+
+  return;
+}
+
+        // Provider returned no contacts or is currently locked/rate-limited.
+if (!cancelled) {
+  setPhantomContacts((current) => current);
+  setContactPreviewSource((current) => current);
+  setContactMessage(enrichData?.message || "No contacts found via Lusha for this company.");
+  setContactDebug(enrichData?.debug || null);
+}
+      } catch (err) {
+  console.error("Contact preview fetch error", err);
+
+  if (!cancelled) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Contact enrichment failed.";
+
+    setPhantomContacts((current) => current);
+    setContactPreviewSource((current) => current);
+    setContactMessage(message);
+  }
+} finally {
+        if (!cancelled) {
+          setContactsLoading(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [record, rawProfile, contactFetchTrigger]);
+    
   const freightosBenchmark = useMemo(
     () =>
       detectFreightosBenchmark({
@@ -2103,46 +2406,34 @@ export default function CompanyDetailPanel({
     [detail],
   );
 
-  const strategicInsights = [
-    detail.topRouteLabel && detail.topRouteLabel !== "—"
-      ? {
-          title: "Trade lane signal",
-          body: `Primary lane for ${effectiveSelectedYear ?? "the selected year"} is ${detail.topRouteLabel}. Position DSV around lane resilience, capacity optionality, and routing control.`,
-        }
-      : null,
-    detail.latestShipmentDate
-      ? {
-          title: "Recency risk",
-          tone: "warning" as const,
-          body: `Latest visible movement is ${formatDate(detail.latestShipmentDate)}. Use this to frame urgency, renewal timing, and outbound sequencing.`,
-        }
-      : null,
-    detail.shipments
-      ? {
-          title: "Volume profile",
-          tone: "highlight" as const,
-          body: `Selected-year activity shows ${formatNumber(detail.shipments)} shipments and ${formatNumber(detail.teu, 1)} TEUs. This account supports a real logistics intelligence conversation, not a generic sales pitch.`,
-        }
-      : null,
-    freightosBenchmark
-      ? {
-          title: "Market benchmark matched",
-          body: `${freightosBenchmark.code} aligns to the company’s dominant lane. Use it as market context, not company-specific contract pricing.`,
-        }
-      : null,
-  ].filter(Boolean) as Array<{
-    title: string;
-    body: string;
-    tone?: "default" | "warning" | "highlight";
-  }>;
+  // Trade lane signal, Recency risk, and Volume profile cards removed per UX cleanup.
+  // Only Contact Intelligence remains in the bottom overview section.
 
-  const avgTeu = (rawProfile as any)?.avg_teu_per_month;
-  const teu12m = avgTeu?.["12m"] ?? avgTeu?.["12m_avg"] ?? null;
-  const teu12_24m = avgTeu?.["12_24m"] ?? null;
-  const trendPct =
-    teu12m != null && teu12_24m != null && teu12_24m > 0
-      ? ((teu12m - teu12_24m) / teu12_24m) * 100
-      : null;
+  const trendPct = (() => {
+    const activeYear = effectiveSelectedYear || new Date().getFullYear();
+    const series = safeArray(rawProfile?.timeSeries);
+    const byYear = new Map<number, number>();
+
+    series.forEach((point: any) => {
+      const yr = parseYearFromPoint(point);
+      if (!yr) return;
+      const count = getPointShipmentCount(point);
+      if (!count) return;
+      byYear.set(yr, (byYear.get(yr) || 0) + count);
+    });
+
+    if (!byYear.size && normalizedShipments.length) {
+      normalizedShipments.forEach((shipment) => {
+        if (!shipment.year) return;
+        byYear.set(shipment.year, (byYear.get(shipment.year) || 0) + 1);
+      });
+    }
+
+    const thisYear = byYear.get(activeYear) ?? null;
+    const priorYear = byYear.get(activeYear - 1) ?? null;
+    if (!thisYear || !priorYear || priorYear === 0) return null;
+    return ((thisYear - priorYear) / priorYear) * 100;
+  })();
   const trendArrow = trendPct == null ? null : trendPct > 5 ? "↑" : trendPct < -5 ? "↓" : "→";
   const trendColor =
     trendPct == null
@@ -2167,7 +2458,154 @@ export default function CompanyDetailPanel({
       ? 4
       : 5;
 
-  const contactOverviewRows = lushaContacts.slice(0, 4);
+  const loadCachedContactPreview = async (companyIdentifier: string) => {
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
+      companyIdentifier,
+    );
+
+  let query = supabase
+    .from("lit_company_contact_previews")
+    .select("preview_contacts, expires_at, source_provider");
+
+  query = isUuid
+    ? query.eq("company_id", companyIdentifier)
+    : query.eq("source_company_key", companyIdentifier);
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    console.error("Contact preview cache read error", error);
+    return null;
+  }
+
+  if (!data) return null;
+
+  const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+
+  if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+    return null;
+  }
+
+  return {
+    contacts: Array.isArray(data.preview_contacts) ? data.preview_contacts : [],
+    source: data.source_provider || "cache",
+  };
+};
+        
+  const saveContactPreviewCache = async ({
+  companyId,
+  companyName,
+  companyDomain,
+  sourceProvider,
+  contacts,
+}: {
+  companyId?: string | null;
+  companyName?: string | null;
+  companyDomain?: string | null;
+  sourceProvider: "lusha";
+  contacts: any[];
+}) => {
+    const isUuid =
+    !!companyId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(
+      companyId,
+    );
+
+  const payload = {
+  company_id: isUuid ? companyId : null,
+  source_company_key: companyId && !isUuid ? companyId : null,
+  company_name: companyName || null,
+  company_domain: companyDomain || null,
+  source_provider: sourceProvider,
+  preview_contacts: contacts.slice(0, DEFAULT_CONTACT_SEARCH_LIMIT),
+  total_contacts_found: Array.isArray(contacts) ? contacts.length : 0,
+  fetched_at: new Date().toISOString(),
+  expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+    const conflictTarget = isUuid ? "company_id" : "source_company_key";
+
+    const { error } = await supabase
+    .from("lit_company_contact_previews")
+    .upsert(payload, { onConflict: conflictTarget });
+
+    if (error) {
+      console.error("Contact preview cache write error", error);
+    }
+  };
+
+  const getContactKey = (contact: any) => {
+    const linkedin =
+      contact.linkedin || contact.linkedinUrl || contact.profileUrl || contact.url || "";
+    const name = getContactFullName(contact);
+    const title = getContactTitle(contact);
+    return [linkedin, name, title].join("|").toLowerCase();
+  };
+
+  const saveContactToSupabase = async (contact: any) => {
+    const companyId =
+      (record as any)?.company?.company_id ||
+      (record as any)?.company?.id ||
+      (rawProfile as any)?.company_id ||
+      null;
+    const companyName =
+      (record as any)?.company?.name ||
+      (record as any)?.company?.company_name ||
+      (rawProfile as any)?.companyName ||
+      (rawProfile as any)?.company_name ||
+      null;
+    const companyDomain =
+      (record as any)?.company?.domain ||
+      (rawProfile as any)?.domain ||
+      (rawProfile as any)?.companyDomain ||
+      null;
+
+    const payload = {
+      company_id: companyId,
+      company_name: companyName,
+      company_domain: companyDomain,
+      full_name: getContactFullName(contact),
+      title: getContactTitle(contact) || null,
+      email: contact.email || contact.email_address || null,
+      phone: contact.phone || contact.phone_number || null,
+      linkedin_url:
+        contact.linkedin || contact.linkedinUrl || contact.profileUrl || contact.url || null,
+      source_provider: "lusha",
+      raw_contact: contact,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("lit_contacts")
+      .upsert(payload, { onConflict: "company_id,linkedin_url" });
+
+    if (error) {
+      console.error("Save contact error", error);
+      setContactMessage("Could not save contact yet. Check lit_contacts schema/RLS.");
+      return;
+    }
+
+    setSavedContactKeys((prev) => {
+      const next = new Set(prev);
+      next.add(getContactKey(contact));
+      return next;
+    });
+    setContactMessage("Contact saved.");
+  };
+
+  const contactOverviewRows = phantomContacts.slice(0, CONTACT_PREVIEW_LIMIT);
+  const filteredContacts = useMemo(() => {
+  const query = contactSearchQuery.trim().toLowerCase();
+
+  if (!query) return phantomContacts;
+
+  return phantomContacts.filter((contact) =>
+    getContactSearchText(contact).includes(query),
+  );
+}, [phantomContacts, contactSearchQuery]);
 
   if (!key) {
     return <CommandCenterEmptyState />;
@@ -2202,7 +2640,7 @@ export default function CompanyDetailPanel({
   );
 
   return (
-    <section className="w-full rounded-[30px] border border-slate-200 bg-slate-50 p-5 shadow-sm">
+    <section className="w-full rounded-[30px] border border-slate-200 bg-slate-50 p-4 shadow-sm">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -2216,47 +2654,53 @@ export default function CompanyDetailPanel({
       ) : null}
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="flex h-auto min-h-[44px] w-full flex-wrap items-stretch gap-2 overflow-visible rounded-[26px] border border-slate-200 bg-white p-3 shadow-sm">
+        <TabsList className="flex h-auto w-full gap-0 overflow-x-auto rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
           <TabsTrigger
             value="overview"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Overview
           </TabsTrigger>
           <TabsTrigger
             value="products"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Products
           </TabsTrigger>
           <TabsTrigger
             value="history"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Shipment History
           </TabsTrigger>
           <TabsTrigger
             value="credit"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Credit Rating
           </TabsTrigger>
           <TabsTrigger
             value="suppliers"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Suppliers
           </TabsTrigger>
           <TabsTrigger
             value="contacts"
-            className="inline-flex min-h-[36px] items-center justify-center rounded-2xl px-4 py-2 text-xs font-semibold leading-none md:text-sm data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#7F3DFF] data-[state=active]:to-[#A97EFF] data-[state=active]:text-white"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Contact Intel
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <TabsContent value="overview" className="space-y-3">
+          <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
             <SmallMetric
               label="Avg TEU / shipment"
               value={formatNumber(detail.avgTeuPerShipment, 2)}
@@ -2287,7 +2731,7 @@ export default function CompanyDetailPanel({
             />
           </div>
 
-          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
+          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                 Peak seasonality index
@@ -2345,16 +2789,20 @@ export default function CompanyDetailPanel({
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Live rate feed
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Live rate chart — {freightosBenchmark.code}
                     </div>
-                    <div className="mt-2 text-sm text-slate-700">
-                      UI is ready. Current benchmark values will appear here once the Freightos feed is connected
-                      server-side.
-                    </div>
-                    <div className="mt-3 text-xs text-slate-500">
-                      Benchmark spot rate for 40 ft containers, not company-specific contract pricing.
+                    <iframe
+                      src={`https://fbx.freightos.com/widget/?index=${freightosBenchmark.code}`}
+                      title={`${freightosBenchmark.code} Freightos Rate Index`}
+                      className="w-full rounded-2xl border-0"
+                      style={{ height: 240 }}
+                      loading="lazy"
+                      sandbox="allow-scripts allow-same-origin"
+                    />
+                    <div className="mt-2 text-xs text-slate-500">
+                      Spot rate for 40 ft containers · Freightos Baltic Exchange · not company-specific pricing
                     </div>
                   </div>
                 </div>
@@ -2366,7 +2814,7 @@ export default function CompanyDetailPanel({
             </div>
           </div>
 
-          <div className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
+          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
@@ -2445,50 +2893,25 @@ export default function CompanyDetailPanel({
                   </table>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    TEU ranking
-                  </div>
-                  {detail.topRoutes.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
-                      No chart data yet.
-                    </div>
-                  ) : (
-                    <div className="h-[280px]">
-                      <RechartContainer width="100%" height="100%">
-                        <BarChart
-                          data={detail.topRoutes.slice(0, 6).map((route) => ({
-  lane: route.lane,
-  name: route.lane.length > 24 ? `${route.lane.slice(0, 24)}…` : route.lane,
-  teu: route.teu,
-}))}
-                          layout="vertical"
-                          margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis type="number" tick={{ fontSize: 11 }} />
-                          <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                          <RechartTooltip />
-  <Bar
-  dataKey="teu"
-  radius={[0, 6, 6, 0]}
-  onClick={(data: any) => setSelectedLane(data?.lane || null)}
->
-  {detail.topRoutes.slice(0, 6).map((_, index) => (
-    <Cell
-      key={`teu-cell-${index}`}
-      fill={
-        detail.topRoutes.slice(0, 6)[index]?.lane === activeLane
-          ? TEU_BAR_PRIMARY
-          : TEU_BAR_SECONDARY
-      }
-    />
-  ))}
-</Bar>
-                        </BarChart>
-                      </RechartContainer>
-                    </div>
-                  )}
+                <div style={{ background: '#F8FAFC', borderRadius: 24, border: '1px solid #F1F5F9', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  {(() => {
+                    const globeLanes: GlobeLane[] = detail.topRoutes
+                      .slice(0, 6)
+                      .map((r, i) => laneStringToGlobeLane(r.lane, i))
+                      .filter((l): l is GlobeLane => l !== null);
+                    const selectedGlobeLane = selectedLane ?? null;
+                    return (
+                      <>
+                        <GlobeCanvas lanes={globeLanes} selectedLane={selectedGlobeLane} size={268} />
+                        {selectedGlobeLane && (
+                          <div style={{ alignSelf: 'stretch', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8, padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{selectedGlobeLane}</span>
+                            <button onClick={() => setSelectedLane(null)} style={{ fontSize: 10, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif" }}>✕</button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -2581,77 +3004,322 @@ export default function CompanyDetailPanel({
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,.9fr)]">
-            <CommandCenterInsights insights={strategicInsights} />
-
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    AI contact intelligence
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Auto-enriched supply chain and logistics decision makers
-                  </p>
+          {/* Contact Intelligence — full-width bottom section */}
+          <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  Contact Intelligence
                 </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Auto-enriched supply chain and logistics decision makers
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {contactsLoading ? "Enriching…" : `${lushaContacts.length} found`}
+                  {contactsLoading
+                    ? "Enriching…"
+                    : `${phantomContacts.length} found${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setContactFetchTrigger((n) => n + 1)}
+                  disabled={contactsLoading}
+                  className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  {contactsLoading ? "Searching…" : "Refresh contacts"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSlideContact(null); setContactSlideOpen(true); }}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Open panel
+                </button>
+              </div>
+            </div>
+
+            {contactsLoading ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {[0, 1, 2].map((idx) => (
+                  <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <div className="h-4 w-1/3 rounded bg-slate-200" />
+                    <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
+                  </div>
+                ))}
+              </div>
+            ) : contactOverviewRows.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                <p className="text-sm text-slate-500">
+                  {contactMessage || "No supply chain or logistics contacts found yet."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setContactFetchTrigger((n) => n + 1)}
+                  className="mt-3 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                >
+                  Search more contacts
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {contactOverviewRows.map((contact: any, index: number) => {
+  const fullName = getContactFullName(contact);
+  const title = getContactTitle(contact);
+  const avatarUrl = getContactAvatarUrl(contact);
+  const initials =
+    fullName
+      .split(" ")
+      .slice(0, 2)
+      .map((part: string) => part[0])
+      .join("")
+      .toUpperCase() || "CT";
+
+  return (
+                    <button
+                      key={`${fullName}-${index}`}
+                      type="button"
+                      onClick={() => { setSlideContact(contact); setContactSlideOpen(true); }}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50/60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+  <div className="flex min-w-0 items-start gap-3">
+    {avatarUrl ? (
+      <img
+        src={avatarUrl}
+        alt={fullName}
+        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+        loading="lazy"
+      />
+    ) : (
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
+        {initials}
+      </div>
+    )}
+
+    <div className="min-w-0">
+      <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
+      <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
+    </div>
+  </div>
+
+  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+    Verified
+  </span>
+</div>
+                      <div className="mt-2 text-xs text-slate-400">Click to view details</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Contact slide-over panel */}
+          {contactSlideOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40 bg-black/30"
+                onClick={() => setContactSlideOpen(false)}
+              />
+              <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
+                      Contact Intelligence
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {contactPreviewSource ? `Source: ${contactPreviewSource}` : "Source: Lusha"}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setContactSlideOpen(false)}
+                    className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="border-b border-slate-100 px-5 py-4">
+                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+  <div className="flex items-center gap-2">
+    <Search className="h-4 w-4 text-slate-400" />
+    <input
+      value={contactSearchQuery}
+      onChange={(event) => {
+        setContactSearchQuery(event.target.value);
+        setSlideContact(null);
+      }}
+      placeholder="Search by name, title, email, phone, city, country..."
+      className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+    />
+  </div>
+</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setSlideContact(null); setContactFetchTrigger((n) => n + 1); }}
+                      disabled={contactsLoading}
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      {contactsLoading ? "Searching…" : "Search more contacts"}
+                    </button>
+                    {slideContact && (
+                      <button
+                        type="button"
+                        onClick={() => setSlideContact(null)}
+                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        Back to all contacts
+                      </button>
+                    )}
+                  </div>
+                  {contactMessage && (
+                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                      {contactMessage}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5">
+                  {contactsLoading ? (
+                    <div className="space-y-3">
+                      {[0, 1, 2].map((idx) => (
+                        <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                          <div className="h-4 w-1/3 rounded bg-slate-200" />
+                          <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : slideContact ? (
+                    (() => {
+                      const fullName = getContactFullName(slideContact);
+const title = getContactTitle(slideContact);
+const email = getContactEmail(slideContact);
+const phone = getContactPhone(slideContact);
+const avatarUrl = getContactAvatarUrl(slideContact);
+const linkedin =
+  slideContact.linkedin || slideContact.linkedinUrl ||
+  slideContact.profileUrl || slideContact.url || "";
+const initials =
+  fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
+const saved = savedContactKeys.has(getContactKey(slideContact));
+                      return (
+                        <div className="space-y-5">
+                          <div className="flex items-center gap-3">
+  {avatarUrl ? (
+    <img
+      src={avatarUrl}
+      alt={fullName}
+      className="h-14 w-14 shrink-0 rounded-2xl object-cover ring-1 ring-slate-200"
+      loading="lazy"
+    />
+  ) : (
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-lg font-semibold text-indigo-700 ring-1 ring-indigo-200">
+      {initials}
+    </div>
+  )}
+
+  <div className="min-w-0">
+    <div className="truncate text-lg font-semibold text-slate-950">{fullName}</div>
+    {title && <div className="text-sm text-indigo-600">{title}</div>}
+  </div>
+</div>
+                          <div className="space-y-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
+                              <div className="mt-1 text-sm text-slate-900">{email || "Email unavailable"}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
+                              <div className="mt-1 text-sm text-slate-900">{phone || "Phone unavailable"}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">LinkedIn</div>
+                              <div className="mt-1 truncate text-sm text-slate-900">
+                                {linkedin ? (
+                                  <a href={linkedin} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                                    {linkedin}
+                                  </a>
+                                ) : "LinkedIn unavailable"}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => saveContactToSupabase(slideContact)}
+                            className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            {saved ? "Saved ✓" : "Save contact"}
+                          </button>
+                        </div>
+                      );
+                    })()
+                  ) : filteredContacts.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                      <p className="text-sm text-slate-500">
+                        {contactMessage || "No contacts found yet. Try Search more contacts."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredContacts.map((contact: any, index: number) => {
+  const fullName = getContactFullName(contact);
+  const title = getContactTitle(contact);
+  const avatarUrl = getContactAvatarUrl(contact);
+  const saved = savedContactKeys.has(getContactKey(contact));
+  const initials =
+    fullName
+      .split(" ")
+      .slice(0, 2)
+      .map((part: string) => part[0])
+      .join("")
+      .toUpperCase() || "CT";
+
+  return (
+                          <div key={`${fullName}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <button
+  type="button"
+  onClick={() => setSlideContact(contact)}
+  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+>
+  {avatarUrl ? (
+    <img
+      src={avatarUrl}
+      alt={fullName}
+      className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+      loading="lazy"
+    />
+  ) : (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
+      {initials}
+    </div>
+  )}
+
+  <div className="min-w-0">
+    <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
+    <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
+  </div>
+</button>
+                              <button
+                                type="button"
+                                onClick={() => saveContactToSupabase(contact)}
+                                className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 hover:bg-emerald-100"
+                              >
+                                {saved ? "Saved" : "Save"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {contactsLoading ? (
-                <div className="space-y-3">
-                  {[0, 1, 2].map((idx) => (
-                    <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                      <div className="h-4 w-1/3 rounded bg-slate-200" />
-                      <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
-                    </div>
-                  ))}
-                </div>
-              ) : contactOverviewRows.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                  No high-confidence supply chain or logistics contacts found yet.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {contactOverviewRows.map((contact: any, index: number) => {
-                    const fullName = getContactFullName(contact);
-                    const title = getContactTitle(contact);
-                    const email = contact.email || contact.email_address || "";
-                    const phone = contact.phone || contact.phone_number || "";
-                    return (
-                      <div
-                        key={`${fullName}-${index}`}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-                            <div className="mt-1 truncate text-sm text-indigo-600">{title || "Role unavailable"}</div>
-                          </div>
-                          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                            Verified
-                          </span>
-                        </div>
-                        <div className="mt-3 space-y-2 text-sm text-slate-600">
-                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            {email || "Email unavailable"}
-                          </div>
-                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                            {phone || "Phone unavailable"}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                    These contacts are displayed in Overview first. Persistent save into the Contact Intel source is the next backend step.
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="suppliers" className="space-y-4">
@@ -2888,14 +3556,14 @@ export default function CompanyDetailPanel({
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
                 Loading contacts…
               </div>
-            ) : lushaContacts.length === 0 ? (
+            ) : filteredContacts.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                No contacts found. Adjust enrichment filters in the backend step or try another company.
+                {contactMessage || "No contacts found yet. If Lusha is rate-limited, cached contacts will appear here when available."}
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
                 <div className="space-y-2">
-                  {lushaContacts.map((contact: any, index: number) => {
+                  {filteredContacts.map((contact: any, index: number) => {
                     const fullName = getContactFullName(contact);
                     const title = getContactTitle(contact);
                     const initials =

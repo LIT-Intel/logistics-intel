@@ -15,27 +15,60 @@ export default function AuthCallback() {
     const handleCallback = async () => {
       try {
         const searchParams = new URLSearchParams(window.location.search);
-        const code = searchParams.get('code');
-        const nextParam = searchParams.get('next');
-        const destination = nextParam || '/app/dashboard';
+        const code       = searchParams.get('code');
+        const tokenHash  = searchParams.get('token_hash');
+        const otpType    = searchParams.get('type') as any;
+        const nextParam  = searchParams.get('next');
 
-        // Handle PKCE email confirmation code exchange
+        // PKCE flow: ?code=xxx (Supabase JS v2 default for browser)
         if (code) {
           const { error: exchangeError } = await auth.auth.exchangeCodeForSession(
             window.location.href
           );
           if (exchangeError) throw exchangeError;
         }
-
-        // Confirm session exists after exchange (or if already set via implicit flow)
-        const { data, error: sessionError } = await auth.auth.getSession();
-        if (sessionError) throw sessionError;
-
-        if (data.session) {
-          navigate(destination, { replace: true });
-        } else {
-          navigate('/login', { replace: true });
+        // OTP/token_hash flow: ?token_hash=xxx&type=signup (newer Supabase email templates)
+        else if (tokenHash && otpType) {
+          const { error: verifyError } = await auth.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: otpType,
+          });
+          if (verifyError) throw verifyError;
         }
+        // Implicit/hash flow: #access_token=xxx — Supabase client auto-processes via onAuthStateChange
+        // Give it a moment to settle before calling getUser()
+        else if (window.location.hash.includes('access_token')) {
+          await new Promise((res) => setTimeout(res, 600));
+        }
+
+        // getUser() makes a live server call — guarantees fresh user_metadata
+        // (getSession() returns JWT-cached data which may lag after signUp)
+        const { data: userData, error: userError } = await auth.auth.getUser();
+        if (userError || !userData?.user) {
+          navigate('/login', { replace: true });
+          return;
+        }
+
+        const user = userData.user;
+        const meta = user.user_metadata || {};
+
+        // Primary: flag written at registration via signUp options.data
+        // Secondary: account < 30 min old = first confirmation click
+        const createdAt = new Date(user.created_at || 0);
+        const accountAgeMinutes = (Date.now() - createdAt.getTime()) / 60_000;
+        const isFreshSignup = accountAgeMinutes < 30;
+
+        const needsOnboarding =
+          meta.onboarding_completed === false ||
+          (meta.onboarding_completed !== true && isFreshSignup);
+
+        // Write the flag so RequireAuth sees it on subsequent navigations
+        if (needsOnboarding && meta.onboarding_completed !== false) {
+          await auth.auth.updateUser({ data: { onboarding_completed: false } });
+        }
+
+        const destination = nextParam || (needsOnboarding ? '/onboarding' : '/app/dashboard');
+        navigate(destination, { replace: true });
       } catch (err: any) {
         console.error('[AuthCallback] error:', err);
         setError(err?.message || 'Authentication failed');

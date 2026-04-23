@@ -161,22 +161,30 @@ Make it personalized, data-driven, and value-focused. 2-3 sentences max.`;
       throw new Error(`Unknown enrichment type: ${enrichmentType}`);
   }
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }],
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 500,
-        },
-      }),
-    }
-  );
+  const geminiController = new AbortController();
+  const geminiTimer = setTimeout(() => geminiController.abort(), 45_000);
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }],
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 500,
+          },
+        }),
+        signal: geminiController.signal,
+      }
+    );
+  } finally {
+    clearTimeout(geminiTimer);
+  }
 
   if (!response.ok) {
     const error = await response.text();

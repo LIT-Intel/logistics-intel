@@ -735,7 +735,7 @@ export default function Billing() {
                             onChange={(e) => setSelectedSeats(Number(e.target.value))}
                             className="h-11 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-10 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
                           >
-                            {[3, 4, 5, 6, 7].map((seat) => (
+                            {[3, 4, 5].map((seat) => (
                               <option key={seat} value={seat}>
                                 {seat} seats
                               </option>
@@ -744,7 +744,7 @@ export default function Billing() {
                           <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         </div>
                         <p className="mt-2 text-xs text-slate-500">
-                          Need more than 7 seats? Move to Enterprise.
+                          Need more than 5 seats? Move to Enterprise.
                         </p>
                       </div>
                     )}

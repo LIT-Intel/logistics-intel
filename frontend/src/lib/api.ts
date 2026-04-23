@@ -283,9 +283,15 @@ export interface IyShipperHit {
   primaryRouteSummary?: string | null;
   primaryRoute?: string | null;
   lastShipmentDate?: string | null;
+  latestYearShipments?: number | null;
+  latestYearTeu?: number | null;
+  currentYearShipments?: number | null;
+  currentYearTeu?: number | null;
+  topContainerLength?: string | null;
+  fclShipments12m?: number | null;
+  lclShipments12m?: number | null;
   topSuppliers?: string[] | null;
 }
-
 export type IySearchMeta = {
   q: string;
   page: number;
@@ -364,11 +370,22 @@ export interface IyCompanyProfile {
   phone: string | null;
   address: string | null;
   countryCode: string | null;
+  country?: string | null;
   lastShipmentDate: string | null;
   estSpendUsd12m: number | null;
   estSpendCoveragePct?: number | null;
   estSpendUsd?: number | null;
   totalShipments: number | null;
+  totalShipmentsAllTime?: number | null;
+  totalTeuAllTime?: number | null;
+  latestYearShipments?: number | null;
+  latestYearTeu?: number | null;
+  currentYearShipments?: number | null;
+  currentYearTeu?: number | null;
+  topContainerLength?: string | null;
+  topContainerCount?: number | null;
+  topContainerShipments?: number | null;
+  topContainerTeu?: number | null;
   routeKpis: IyRouteKpis | null;
   timeSeries: IyTimeSeriesPoint[];
   recentBols: IyRecentBol[];
@@ -377,14 +394,47 @@ export interface IyCompanyProfile {
   monthly_shipments?: Array<Record<string, any>> | null;
   monthly_volumes?: Record<string, any> | null;
   recent_bols?: Array<Record<string, any>> | null;
-  // Legacy/raw passthrough fields for compatibility with older UI
+  monthly_totals?: Array<Record<string, any>> | null;
+  yearly_totals?: Array<Record<string, any>> | null;
+  container_lengths_breakdown?: Array<Record<string, any>> | null;
   time_series?: Record<string, any>;
   containers_load?: Array<Record<string, any>>;
   top_routes?: Array<Record<string, any>>;
   most_recent_route?: Record<string, any> | null;
   suppliers_sample?: string[];
+  fcl_shipments_all_time?: number | null;
+  lcl_shipments_all_time?: number | null;
+  fcl_shipments_perc?: number | null;
+  lcl_shipments_perc?: number | null;
+  // Freightos benchmark rate for company's active lane
+  freightosRate?: {
+    code: string;
+    lane: string;
+    ratePerTeu: number;
+    currency?: string;
+    mode?: string;
+    equipment?: string;
+  } | null;
+  // Monthly activity series for charts and trend analysis
+  monthlyActivity?: Array<{
+    date: string;
+    month: string;
+    year: number;
+    shipments: number;
+    teu: number;
+    fcl: number;
+    lcl: number;
+  }> | null;
+  // 12-month TEU volume (convenience field, may duplicate latestYearTeu)
+  teu12m?: number | null;
+  // Top 3-5 routes for quick reference
+  topRoutes?: Array<{
+    route: string;
+    shipments: number;
+    teu: number;
+    percentage: number;
+  }> | null;
 }
-
 export function getFclShipments12m(
   profile?: IyCompanyProfile | null,
 ): number | null {
@@ -1016,6 +1066,118 @@ function deriveDomainCandidate(value: unknown): string | undefined {
   }
 }
 
+function normalizeMonthLabel(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+function getCurrentYear(): number {
+  return new Date().getFullYear();
+}
+
+function buildYearMetricsFromSnapshot(entry: any) {
+  const monthlyTotals = Array.isArray(entry?.monthly_totals) ? entry.monthly_totals : [];
+  const yearlyTotals = Array.isArray(entry?.yearly_totals) ? entry.yearly_totals : [];
+  const currentYear = getCurrentYear();
+
+  let latestYear: number | null = null;
+  let latestYearShipments: number | null = null;
+  let latestYearTeu: number | null = null;
+  let currentYearShipments: number | null = null;
+  let currentYearTeu: number | null = null;
+
+  if (yearlyTotals.length > 0) {
+    const sorted = [...yearlyTotals]
+      .map((row: any) => ({
+        year: coerceNumber(row?.year),
+        shipments: coerceNumber(row?.shipments) ?? 0,
+        teu: coerceNumber(row?.teu) ?? 0,
+      }))
+      .filter((row) => row.year != null)
+      .sort((a, b) => Number(b.year) - Number(a.year));
+
+    if (sorted.length > 0) {
+      latestYear = sorted[0].year;
+      latestYearShipments = sorted[0].shipments;
+      latestYearTeu = sorted[0].teu;
+    }
+
+    const currentRow = sorted.find((row) => Number(row.year) === currentYear);
+    if (currentRow) {
+      currentYearShipments = currentRow.shipments;
+      currentYearTeu = currentRow.teu;
+    }
+  }
+
+  if (monthlyTotals.length > 0) {
+    const byYear = new Map<number, { shipments: number; teu: number }>();
+    for (const row of monthlyTotals) {
+      const year = coerceNumber((row as any)?.year);
+      if (year == null) continue;
+      const current = byYear.get(year) || { shipments: 0, teu: 0 };
+      current.shipments += coerceNumber((row as any)?.shipments) ?? 0;
+      current.teu += coerceNumber((row as any)?.teu) ?? 0;
+      byYear.set(year, current);
+    }
+
+    const years = [...byYear.keys()].sort((a, b) => b - a);
+    if (years.length > 0) {
+      latestYear = years[0];
+      latestYearShipments = byYear.get(years[0])?.shipments ?? latestYearShipments;
+      latestYearTeu = byYear.get(years[0])?.teu ?? latestYearTeu;
+    }
+    if (byYear.has(currentYear)) {
+      currentYearShipments = byYear.get(currentYear)?.shipments ?? currentYearShipments;
+      currentYearTeu = byYear.get(currentYear)?.teu ?? currentYearTeu;
+    }
+  }
+
+  return {
+    latestYear,
+    latestYearShipments,
+    latestYearTeu,
+    currentYearShipments,
+    currentYearTeu,
+  };
+}
+
+function estimateSpendFromBenchmark(params: {
+  shipmentsLast12m?: number | null;
+  teuLast12m?: number | null;
+  routeKpis?: any;
+  profileData?: any;
+}): number | null {
+  const teu =
+    coerceNumber(params.teuLast12m) ??
+    coerceNumber(params.routeKpis?.teuLast12m) ??
+    coerceNumber(params.profileData?.teu_last_12m) ??
+    null;
+
+  const shipments =
+    coerceNumber(params.shipmentsLast12m) ??
+    coerceNumber(params.routeKpis?.shipmentsLast12m) ??
+    coerceNumber(params.profileData?.shipments_last_12m) ??
+    null;
+
+  if (teu != null && teu > 0) {
+    const benchmarkUsdPerTeu = 3100;
+    return Math.round(teu * benchmarkUsdPerTeu);
+  }
+
+  if (shipments != null && shipments > 0) {
+    const benchmarkUsdPerShipment = 1850;
+    return Math.round(shipments * benchmarkUsdPerShipment);
+  }
+
+  return null;
+}
+
 function normalizeIyShipperHit(entry: any): IyShipperHit {
   const normalizeString = (value: unknown): string | null => {
     if (typeof value !== "string") return null;
@@ -1102,44 +1264,81 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
     normalizeNumber(entry?.shipmentsLast12m) ??
     normalizeNumber(entry?.shipments_12m) ??
     normalizeNumber(entry?.shipments12m) ??
+    normalizeNumber(entry?.shipments_last_12m) ??
     normalizeNumber(entry?.shipments) ??
     null;
+
   const totalShipments =
     normalizeNumber(entry?.totalShipments) ??
     normalizeNumber(entry?.shipments_total) ??
+    normalizeNumber(entry?.total_shipments_all_time) ??
+    normalizeNumber(entry?.total_shipments) ??
     shipmentsLast12m;
+
   const teusLast12m =
     normalizeNumber(entry?.teusLast12m) ??
     normalizeNumber(entry?.teuLast12m) ??
+    normalizeNumber(entry?.teu_last_12m) ??
     normalizeNumber(entry?.total_teus) ??
     normalizeNumber(entry?.teu_12m) ??
     null;
-  const estSpendLast12m =
+
+  const routeKpis = entry?.routeKpis ?? entry?.route_kpis ?? null;
+
+  const spendCoveragePct =
+    normalizeNumber(entry?.estSpendCoveragePct) ??
+    normalizeNumber(entry?.est_spend_coverage_pct) ??
+    normalizeNumber(entry?.spend_coverage_pct) ??
+    null;
+
+  const rawSpend =
     normalizeNumber(entry?.estSpendLast12m) ??
     normalizeNumber(entry?.estimated_spend_12m) ??
+    normalizeNumber(entry?.est_spend_12m) ??
+    normalizeNumber(entry?.estSpendUsd12m) ??
+    normalizeNumber(routeKpis?.estSpendUsd12m) ??
     null;
+
+  const benchmarkSpend = estimateSpendFromBenchmark({
+    shipmentsLast12m,
+    teuLast12m: teusLast12m,
+    routeKpis,
+    profileData: entry,
+  });
+
+  const estSpendLast12m =
+    rawSpend != null && rawSpend > 0 && (spendCoveragePct == null || spendCoveragePct >= 60)
+      ? rawSpend
+      : benchmarkSpend;
 
   const primaryRouteSummary =
     normalizeString(entry?.primaryRouteSummary) ??
     normalizeString(entry?.top_route_12m) ??
     normalizeString(entry?.topRouteLast12m) ??
+    normalizeString(routeKpis?.topRouteLast12m) ??
     null;
+
   const lastShipmentDate =
     normalizeString(entry?.lastShipmentDate) ??
     normalizeString(entry?.mostRecentShipment) ??
     normalizeString(entry?.last_activity) ??
+    normalizeString(entry?.last_shipment_date) ??
     null;
+
   const mostRecentShipment =
     normalizeString(entry?.mostRecentShipment) ??
     normalizeString(entry?.lastShipmentDate) ??
     normalizeString(entry?.last_activity) ??
+    normalizeString(entry?.last_shipment_date) ??
     null;
+
   const primaryRoute =
     normalizeString(entry?.primaryRoute) ??
     normalizeString(entry?.primary_route) ??
     primaryRouteSummary;
 
   const companyKey = companyId || fallbackKey;
+  const yearMetrics = buildYearMetricsFromSnapshot(entry);
 
   return {
     key: companyId,
@@ -1168,6 +1367,24 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
     primaryRoute: primaryRoute ?? null,
     lastShipmentDate,
     mostRecentShipment,
+    latestYearShipments: yearMetrics.latestYearShipments,
+    latestYearTeu: yearMetrics.latestYearTeu,
+    currentYearShipments: yearMetrics.currentYearShipments,
+    currentYearTeu: yearMetrics.currentYearTeu,
+    topContainerLength:
+      normalizeString(entry?.top_container_length) ??
+      normalizeString(entry?.topContainerLength) ??
+      null,
+    fclShipments12m:
+      normalizeNumber(entry?.fcl_count_12m) ??
+      normalizeNumber(entry?.fcl_count) ??
+      normalizeNumber(entry?.fclShipments12m) ??
+      null,
+    lclShipments12m:
+      normalizeNumber(entry?.lcl_count_12m) ??
+      normalizeNumber(entry?.lcl_count) ??
+      normalizeNumber(entry?.lclShipments12m) ??
+      null,
     topSuppliers:
       Array.isArray(entry?.topSuppliers) || Array.isArray(entry?.top_suppliers)
         ? (entry?.topSuppliers ?? entry?.top_suppliers)?.filter(
@@ -1178,7 +1395,6 @@ function normalizeIyShipperHit(entry: any): IyShipperHit {
     companyKey,
   };
 }
-
 function resolveIySearchArray(raw: any): any[] {
   // Edge function returns { ok: true, rows: [...] }
   if (Array.isArray(raw?.rows)) return raw.rows;
@@ -1218,7 +1434,7 @@ function buildIySearchMeta(
 function coerceIySearchResponse(
   raw: any,
   fallback: { q: string; page: number; pageSize: number },
-): IySearchResponse {
+) {
   // Handle edge function response shape: { ok: true, rows: [...], page, pageSize, total }
   const items = resolveIySearchArray(raw);
   const rows = items.map(normalizeIyShipperHit);
@@ -1240,39 +1456,17 @@ function coerceIySearchResponse(
     meta,
   };
 }
-
-export async function iySearch(q: string, limit = 10, offset = 0) {
-  const pageSize = Math.max(1, Number.isFinite(limit) ? Number(limit) : 10);
-  const computedOffset = Math.max(
-    0,
-    Number.isFinite(offset) ? Number(offset) : 0,
-  );
-  const page = Math.floor(computedOffset / pageSize) + 1;
-  const payload = await searchShippers({ q, page, pageSize });
-  return {
-    ok: payload.ok,
-    rows: payload.results,
-    meta: payload.meta,
-    total: payload.total,
-  };
-}
-
-async function postIySearchShippers(
-  body: { q: string; page: number; pageSize: number },
+  
+export async function iyCompanyBols(
+  params: {
+    company_id: string;
+    limit?: number;
+    offset?: number;
+    start_date?: string;
+    end_date?: string;
+  },
   signal?: AbortSignal,
 ) {
-  return fetchJson<any>(`/api/importyeti/searchShippers`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-}
-
-export async function iyCompanyBols(
-  params: { company_id: string; limit?: number; offset?: number; start_date?: string; end_date?: string },
-  signal?: AbortSignal,
-): Promise<{ ok: boolean; data: any; rows: any[]; total: number }> {
   const companySlug = normalizeCompanyIdToSlug(params.company_id);
   if (!companySlug) {
     throw new Error("iyCompanyBols requires company_id");
@@ -1381,7 +1575,7 @@ export async function fetchCompanySnapshot(
       hasRaw: !!responseData?.raw
     });
 
-    if (!responseData || !responseData.ok || !responseData.snapshot) {
+    if (!responseData || !responseData.ok || (!responseData.snapshot && !responseData.company)) {
       console.warn("[fetchCompanySnapshot] No snapshot data");
       return null;
     }
@@ -1412,9 +1606,13 @@ export async function fetchCompanySnapshot(
 
     return {
       ok: responseData.ok,
-      source: responseData.source,
+      source: responseData.snapshotMeta?.source ?? responseData.source,
       snapshot: responseData.snapshot,
-      raw: responseData.raw
+      company: responseData.company ?? null,
+      analytics: responseData.analytics ?? null,
+      preview: responseData.preview ?? null,
+      snapshotMeta: responseData.snapshotMeta ?? null,
+      recentBolsPreview: responseData.preview?.recentBolsPreview ?? responseData.recentBolsPreview ?? [],
     };
   } catch (error) {
     console.error("[fetchCompanySnapshot] Fatal error:", error);
@@ -1482,11 +1680,11 @@ function normalizeContainers(raw: any): IyCompanyContainers | null {
       typeof entry?.load_type === "string" && entry.load_type.toUpperCase() === "LCL",
   );
   return {
-    fclShipments12m: coerceNumber(fcl?.shipments),
-    lclShipments12m: coerceNumber(lcl?.shipments),
+    fclShipments12m: coerceNumber(fcl?.shipments) ?? coerceNumber(fcl?.shipments_12m),
+    lclShipments12m: coerceNumber(lcl?.shipments) ?? coerceNumber(lcl?.shipments_12m),
   };
 }
-
+  
 function normalizeTimeSeries(raw: any): IyTimeSeriesPoint[] {
   const normalizeMonthLabel = (value: unknown): string | null => {
     if (typeof value !== "string" || !value.trim()) return null;
@@ -1960,6 +2158,7 @@ function normalizeCompanyProfile(
   const recentBols = normalizeRecentBols(profileData);
   const containers = normalizeContainers(profileData);
   const topSuppliers = normalizeTopSuppliers(profileData);
+  const yearMetrics = buildYearMetricsFromSnapshot(profileData);
 
   const websiteValue = typeof profileData.website === "string" ? profileData.website : null;
   const domainValue =
@@ -1983,6 +2182,42 @@ function normalizeCompanyProfile(
     profileData.phone_number ??
     profileData.company_phone ??
     null;
+
+  const spendCoveragePct =
+    coerceNumber(
+      profileData.est_spend_coverage_pct ??
+      profileData.spend_coverage_pct ??
+      profileData.coverage_pct
+    ) ?? null;
+
+  const rawSpend12m =
+    coerceNumber(
+      profileData.est_spend_usd_12m ??
+      profileData.est_spend_12m ??
+      profileData.est_spend_usd ??
+      profileData.estimated_spend_12m ??
+      profileData.spend_12m
+    ) ?? null;
+
+  const benchmarkSpend12m = estimateSpendFromBenchmark({
+    shipmentsLast12m:
+      coerceNumber(profileData.shipments_last_12m) ??
+      coerceNumber(profileData.shipments_12m) ??
+      routeKpis?.shipmentsLast12m ??
+      null,
+    teuLast12m:
+      coerceNumber(profileData.teu_last_12m) ??
+      coerceNumber(profileData.teu_12m) ??
+      routeKpis?.teuLast12m ??
+      null,
+    routeKpis,
+    profileData,
+  });
+
+  const finalSpend12m =
+    rawSpend12m != null && rawSpend12m > 0 && (spendCoveragePct == null || spendCoveragePct >= 60)
+      ? rawSpend12m
+      : benchmarkSpend12m;
 
   return {
     key: profileKey,
@@ -2015,32 +2250,43 @@ function normalizeCompanyProfile(
       profileData.countryCode ??
       profileData.country ??
       null,
+    country:
+      profileData.country ??
+      null,
     lastShipmentDate:
       profileData.last_shipment_date ??
       profileData.lastShipment ??
       profileData.lastShipmentDate ??
       null,
-    estSpendUsd12m:
-      coerceNumber(
-        profileData.est_spend_usd_12m ??
-          profileData.est_spend_usd ??
-          profileData.estimated_spend_12m ??
-          profileData.spend_12m,
-      ) ?? null,
-    estSpendCoveragePct:
-      coerceNumber(
-        profileData.est_spend_coverage_pct ??
-          profileData.spend_coverage_pct ??
-          profileData.coverage_pct,
-      ) ?? null,
+    estSpendUsd12m: finalSpend12m,
+    estSpendCoveragePct: spendCoveragePct,
     estSpendUsd:
       coerceNumber(
-        profileData.est_spend_usd ??
+        profileData.total_shipping_cost_all_time ??
+          profileData.est_spend_usd ??
           profileData.est_spend ??
           profileData.totalShippingCost,
       ) ?? null,
     totalShipments:
-      coerceNumber(profileData.total_shipments ?? profileData.shipments_12m) ?? null,
+      coerceNumber(profileData.shipments_last_12m ?? profileData.shipments_12m ?? profileData.total_shipments) ?? null,
+    totalShipmentsAllTime:
+      coerceNumber(profileData.total_shipments_all_time ?? profileData.total_shipments) ?? null,
+    totalTeuAllTime:
+      coerceNumber(profileData.total_teu_all_time ?? profileData.total_teu) ?? null,
+    latestYearShipments: yearMetrics.latestYearShipments,
+    latestYearTeu: yearMetrics.latestYearTeu,
+    currentYearShipments: yearMetrics.currentYearShipments,
+    currentYearTeu: yearMetrics.currentYearTeu,
+    topContainerLength:
+      profileData.top_container_length ??
+      profileData.topContainerLength ??
+      null,
+    topContainerCount:
+      coerceNumber(profileData.top_container_count ?? profileData.topContainerCount) ?? null,
+    topContainerShipments:
+      coerceNumber(profileData.top_container_shipments ?? profileData.topContainerShipments) ?? null,
+    topContainerTeu:
+      coerceNumber(profileData.top_container_teu ?? profileData.topContainerTeu) ?? null,
     routeKpis,
     timeSeries,
     recentBols,
@@ -2050,13 +2296,19 @@ function normalizeCompanyProfile(
     time_series: profileData.time_series,
     monthly_volumes: profileData.monthly_volumes,
     recent_bols: Array.isArray(profileData.recent_bols) ? profileData.recent_bols : undefined,
+    monthly_totals: Array.isArray(profileData.monthly_totals) ? profileData.monthly_totals : undefined,
+    yearly_totals: Array.isArray(profileData.yearly_totals) ? profileData.yearly_totals : undefined,
+    container_lengths_breakdown: Array.isArray(profileData.container_lengths_breakdown) ? profileData.container_lengths_breakdown : undefined,
     containers_load: profileData.containers_load,
     top_routes: profileData.top_routes,
     most_recent_route: profileData.most_recent_route,
     suppliers_sample: profileData.suppliers_sample,
+    fcl_shipments_all_time: coerceNumber(profileData.fcl_shipments_all_time),
+    lcl_shipments_all_time: coerceNumber(profileData.lcl_shipments_all_time),
+    fcl_shipments_perc: coerceNumber(profileData.fcl_shipments_perc),
+    lcl_shipments_perc: coerceNumber(profileData.lcl_shipments_perc),
   };
 }
-
 /**
  * Phase 2.1: Public export for normalizing ImportYeti snapshot data into IyCompanyProfile.
  * Accepts raw snapshot data and ensures all KPI fields are properly populated.
@@ -2199,7 +2451,7 @@ export async function getIyCompanyProfile({
   data = primaryCall.data;
   error = primaryCall.error;
 
-  if (error || !data?.companyProfile) {
+  if (error || !(data?.companyProfile || data?.company)) {
     const fallbackCall = await supabase.functions.invoke(
       "importyeti-proxy",
       {
@@ -2219,11 +2471,13 @@ export async function getIyCompanyProfile({
     throw new Error(`getIyCompanyProfile failed: ${error.message || "Unknown error"}`);
   }
 
-  if (!data || !data.companyProfile) {
+  if (!data || !(data.companyProfile || data.company)) {
     throw new Error("getIyCompanyProfile returned no profile");
   }
 
-  const companyProfile = normalizeCompanyProfile(data.companyProfile, normalizedSlug);
+  // Support both old companyProfile shape and new canonical shape (via compat snapshot field)
+  const profileSource = data.companyProfile ?? data.snapshot;
+  const companyProfile = normalizeCompanyProfile(profileSource, normalizedSlug);
 
   return {
     companyProfile,
@@ -2236,7 +2490,6 @@ export async function searchShippers(
   signal?: AbortSignal,
 ): Promise<IySearchResponse> {
   const q = typeof params.q === "string" ? params.q.trim() : "";
-    console.log("[api.ts] searchShippers called", { params });
   const page = Math.max(
     1,
     Number.isFinite(Number(params.page)) ? Number(params.page) : 1,
@@ -2262,11 +2515,7 @@ export async function searchShippers(
     return devSearchShippers({ q, page, pageSize });
   }
 
-  console.log("[api.ts] searchShippers about to invoke importyeti-proxy", { q, page, pageSize });
-    console.log("[api.ts] searchShippers about to invoke importyeti-proxy", { q, page, pageSize });
-
   const headers = await getAuthHeaders();
-  console.log("[api.ts] searchShippers got auth headers");
 
   const res = await fetch(
     `${SUPABASE_URL}/functions/v1/importyeti-proxy`,
@@ -2283,8 +2532,6 @@ export async function searchShippers(
     }
   );
 
-  console.log("[api.ts] searchShippers fetch status", res.status);
-
   const data = await res.json().catch(() => null);
   const error = !res.ok
     ? { message: data?.error || `HTTP ${res.status}` }
@@ -2295,9 +2542,99 @@ export async function searchShippers(
     throw new Error(`Search failed: ${error.message || "Unknown error"}`);
   }
 
-  return coerceIySearchResponse(data, { q, page, pageSize });
-}
+  const base = coerceIySearchResponse(data, { q, page, pageSize });
 
+  const companyIds = Array.from(
+    new Set(
+      base.results
+        .map((hit: any) =>
+          normalizeCompanyIdToSlug(
+            hit.companyId || hit.companyKey || hit.key || ""
+          )
+        )
+        .filter(Boolean)
+    )
+  );
+
+  if (companyIds.length > 0) {
+    const { data: kpiRows, error: kpiError } = await supabase
+      .from("lit_company_search_results")
+      .select("*")
+      .in("company_id", companyIds);
+
+    if (kpiError) {
+      console.warn("KPI overlay failed:", kpiError);
+      return {
+        ...base,
+        results: base.results,
+      };
+    }
+
+    const kpiMap = new Map(
+      (Array.isArray(kpiRows) ? kpiRows : []).map((row: any) => [
+        normalizeCompanyIdToSlug(row.company_id),
+        row,
+      ])
+    );
+
+    const mergedResults = base.results.map((hit: any) => {
+      const slug = normalizeCompanyIdToSlug(
+        hit.companyId || hit.companyKey || hit.key || ""
+      );
+      const kpiRow = kpiMap.get(slug);
+
+      if (!kpiRow) return hit;
+
+      return {
+        ...hit,
+        totalShipments:
+          coerceNumber(kpiRow.total_shipments) ?? hit.totalShipments,
+        shipmentsLast12m:
+          coerceNumber(kpiRow.latest_year_shipments) ?? hit.shipmentsLast12m,
+        teusLast12m:
+          coerceNumber(kpiRow.latest_year_teu) ?? hit.teusLast12m,
+        lastShipmentDate: kpiRow.last_shipment_date ?? hit.lastShipmentDate,
+        mostRecentShipment:
+          kpiRow.last_shipment_date ?? hit.mostRecentShipment,
+        latestYearShipments:
+          coerceNumber(kpiRow.latest_year_shipments) ?? hit.latestYearShipments,
+        latestYearTeu:
+          coerceNumber(kpiRow.latest_year_teu) ?? hit.latestYearTeu,
+        currentYearShipments:
+          coerceNumber(kpiRow.latest_year_shipments) ?? hit.currentYearShipments,
+        currentYearTeu:
+          coerceNumber(kpiRow.latest_year_teu) ?? hit.currentYearTeu,
+        topContainerLength: kpiRow.top_container_length ?? hit.topContainerLength,
+        fclShipments12m:
+          coerceNumber(kpiRow.fcl_shipments) ?? hit.fclShipments12m,
+        lclShipments12m:
+          coerceNumber(kpiRow.lcl_shipments) ?? hit.lclShipments12m,
+        country: kpiRow.country ?? hit.country,
+        countryCode: kpiRow.country_code ?? hit.countryCode,
+        website:
+          kpiRow.website && kpiRow.website.trim()
+            ? `https://${String(kpiRow.website).replace(/^https?:\/\//i, "")}`
+            : hit.website,
+        domain: kpiRow.website ?? hit.domain,
+        address: kpiRow.city ?? hit.address,
+        city: kpiRow.city ?? hit.city,
+        name: kpiRow.company_name ? kpiRow.company_name : hit.name,
+        title: kpiRow.company_name ? kpiRow.company_name : hit.title,
+      };
+    });
+
+    return {
+      ...base,
+      results: mergedResults,
+    };
+  }
+
+  return {
+    ...base,
+    results: base.results,
+  };
+}
+  
 export const searchIyShippers = searchShippers;
 
 function mapIyRowsToShipments(rows: any[]): ShipmentLite[] {
@@ -2712,10 +3049,18 @@ export async function listSavedCompanies(
         kpis: {
           shipments_12m:
             row.company_data?.shipmentsLast12m ||
+            row.company_data?.shipments_12m ||
             row.company_data?.totalShipments ||
             0,
+          teu_12m: row.company_data?.teuLast12m || row.company_data?.teu_12m || null,
+          fcl_shipments_12m: row.company_data?.fclShipments12m || row.company_data?.fcl_shipments_12m || null,
+          lcl_shipments_12m: row.company_data?.lclShipments12m || row.company_data?.lcl_shipments_12m || null,
+          est_spend_12m: row.company_data?.estSpend12m || row.company_data?.est_spend_12m || null,
+          top_route_12m: row.company_data?.topRoute12m || row.company_data?.top_route_12m || null,
+          recent_route: row.company_data?.recentRoute || row.company_data?.recent_route || null,
           last_activity:
             row.company_data?.lastShipmentDate ||
+            row.company_data?.most_recent_shipment_date ||
             row.company_data?.mostRecentShipment ||
             null,
         },
@@ -2871,6 +3216,7 @@ export async function getSavedCompanies(signal?: AbortSignal) {
           teu_12m,
           fcl_shipments_12m,
           lcl_shipments_12m,
+          est_spend_12m,
           most_recent_shipment_date,
           top_route_12m,
           recent_route
@@ -2884,16 +3230,24 @@ export async function getSavedCompanies(signal?: AbortSignal) {
       return { rows: [] };
     }
 
+
     const rows = (data || []).map((item: any) => ({
       company: {
         company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
         name: item.lit_companies?.name || 'Unknown Company',
         domain: item.lit_companies?.domain,
+        website: item.lit_companies?.website || null,
         address: item.lit_companies?.address_line1 || `${item.lit_companies?.city || ''}, ${item.lit_companies?.state || ''}`.trim(),
         country_code: item.lit_companies?.country_code,
         kpis: {
-          shipments_12m: item.lit_companies?.shipments_12m || 0,
-          last_activity: item.lit_companies?.most_recent_shipment_date,
+          shipments_12m:    item.lit_companies?.shipments_12m    ?? 0,
+          teu_12m:          item.lit_companies?.teu_12m           ?? null,
+          fcl_shipments_12m: item.lit_companies?.fcl_shipments_12m ?? null,
+          lcl_shipments_12m: item.lit_companies?.lcl_shipments_12m ?? null,
+          est_spend_12m:    null,
+          top_route_12m:    item.lit_companies?.top_route_12m    || null,
+          recent_route:     item.lit_companies?.recent_route      || null,
+          last_activity:    item.lit_companies?.most_recent_shipment_date ?? null,
         },
       },
       shipments: [],
@@ -2901,11 +3255,48 @@ export async function getSavedCompanies(signal?: AbortSignal) {
       stage: item.stage,
     }));
 
+
     return { rows };
   } catch (error) {
     console.error('getSavedCompanies error:', error);
     return { rows: [] };
   }
+}
+
+// KPI overlay for search result cards — reads from lit_company_search_results
+export async function fetchSearchKpiOverlay(
+  companyKeys: string[],
+): Promise<Record<string, any>> {
+  if (!companyKeys.length) return {};
+  const { data, error } = await supabase
+    .from('lit_company_search_results')
+    .select('*')
+    .in('company_id', companyKeys);
+  if (error || !data) return {};
+  const map: Record<string, any> = {};
+  for (const row of data) {
+    if (row.company_id) map[row.company_id] = row;
+  }
+  return map;
+}
+
+// Secondary KPI enrichment for Command Center rows — reads from lit_company_search_kpis
+export async function enrichCompaniesFromKpis(
+  companyIds: string[],
+): Promise<Record<string, any>> {
+  if (!companyIds.length) return {};
+  const { data, error } = await supabase
+    .from('lit_company_search_kpis')
+    .select(
+      'company_id, last_shipment_date, total_shipments, all_time_teu_from_series, fcl_shipments, lcl_shipments, latest_year, latest_year_shipments, latest_year_teu, top_container_length',
+    )
+    .in('company_id', companyIds);
+  if (error || !data) return {};
+  const map: Record<string, any> = {};
+  for (const row of data) {
+    if (row.company_id) map[row.company_id] = row;
+  }
+  return map;
 }
 
 // --- Filters singleton cache with 10m TTL ---

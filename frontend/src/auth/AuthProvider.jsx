@@ -84,17 +84,11 @@ async function fetchPrimaryOrgMembership(userId) {
   }
 
   try {
+    // Note: org_members has no status column — filter by user_id only
     const { data, error } = await supabase
       .from('org_members')
-      .select(`
-        org_id,
-        role,
-        status,
-        email,
-        full_name
-      `)
+      .select('org_id, role, email, full_name')
       .eq('user_id', userId)
-      .eq('status', 'active')
       .order('joined_at', { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -129,7 +123,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsub = listenToAuth(async (u) => {
       if (u) {
-        const normalized = normalizeUser(u);
+        // getUser() fetches server-fresh metadata (JWT may lag after signUp metadata writes)
+        const freshData = supabase ? await supabase.auth.getUser().catch(() => null) : null;
+        const freshUser = freshData?.data?.user;
+        const merged = freshUser ? { ...u, user_metadata: { ...u.user_metadata, ...freshUser.user_metadata }, created_at: freshUser.created_at || u.created_at } : u;
+
+        const normalized = normalizeUser(merged);
         const email = String(normalized?.email || '').trim().toLowerCase();
         const superAdminByEmail = SUPER_ADMIN_EMAILS.has(email);
 
@@ -191,7 +190,9 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => {
     const resolvedPlan = normalizePlan(plan || rawUser?.user_metadata?.plan || 'free_trial');
     const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
-    const canAccessAdmin = Boolean(isSuperAdmin || isOrgAdmin);
+    // Platform admin (Admin Dashboard, CMS, Debug Agent) = superadmin only.
+    // isOrgAdmin means "owns/admins a workspace" — does NOT grant platform admin pages.
+    const canAccessAdmin = Boolean(isSuperAdmin);
 
     const legacyRole = canAccessAdmin ? 'admin' : 'user';
 

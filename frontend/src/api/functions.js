@@ -60,6 +60,10 @@ export const createStripePortalSession = async (payload = {}) =>
 export const stripeWebhookHandler = async (payload = {}) =>
   invokeSupabaseFunction('billing-webhook', payload);
 
+// ✅ NEW: Server-side entitlement checking
+export const checkEntitlements = async (payload = {}) =>
+  invokeSupabaseFunction('check-entitlements', payload);
+
 export const sendEmail = httpCall('/functions/sendEmail', {
   ok: false,
   message: 'Email not yet wired',
@@ -79,10 +83,8 @@ export const findCompanyContacts = httpCall('/functions/findCompanyContacts', {
   contacts: [],
 });
 
-export const phantombusterLinkedIn = httpCall('/functions/phantombusterLinkedIn', {
-  ok: false,
-  message: 'Disabled',
-});
+export const phantombusterLinkedIn = async (payload = {}) =>
+  invokeSupabaseFunction('phantombuster-linkedin', payload);
 
 const rawSearchLeads = async (payload = {}) =>
   invokeSupabaseFunction('searchLeads', payload);

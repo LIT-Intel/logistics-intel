@@ -206,7 +206,8 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
   const [success, setSuccess] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const planLabel = isAdmin ? "Admin" : (initialData?.plan || "Free trial");
+  const rawPlan = initialData?.plan || "free_trial";
+  const planLabel = rawPlan.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   useEffect(() => {
     setForm({

@@ -20,7 +20,7 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 
-const mobileSections = [
+const BASE_MOBILE_SECTIONS = [
   {
     title: "Menu",
     items: [
@@ -46,15 +46,16 @@ const mobileSections = [
       { label: "Affiliate", href: "/app/affiliate", icon: Shield },
     ],
   },
-  {
-    title: "Admin",
-    items: [
-      { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
-      { label: "CMS", href: "/app/cms", icon: Database },
-      { label: "Debug Agent", href: "/app/agent", icon: Bug },
-    ],
-  },
 ];
+
+const ADMIN_MOBILE_SECTION = {
+  title: "Admin",
+  items: [
+    { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
+    { label: "CMS", href: "/app/cms", icon: Database },
+    { label: "Debug Agent", href: "/app/agent", icon: Bug },
+  ],
+};
 
 const PAGE_META = [
   { match: /^\/app\/dashboard/, title: "Dashboard", subtitle: "Trade Intelligence overview" },
@@ -87,11 +88,15 @@ function getInitials(nameOrEmail) {
 const AppHeader = ({ sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, fullName, role, logout } = useAuth();
+  const { user, fullName, role, isSuperAdmin, logout } = useAuth();
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const profileRef = useRef(null);
+
+  const mobileSections = isSuperAdmin
+    ? [...BASE_MOBILE_SECTIONS, ADMIN_MOBILE_SECTION]
+    : BASE_MOBILE_SECTIONS;
 
   const currentMeta = useMemo(
     () => PAGE_META.find((item) => item.match.test(location.pathname)) || PAGE_META[0],

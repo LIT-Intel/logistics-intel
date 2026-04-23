@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect } from "react";
-import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 import Layout from "@/pages/Layout";
 import AppLayout from "@/layout/lit/AppLayout.jsx";
 import ModernLoginPage from "@/components/layout/ModernLoginPage";
@@ -7,6 +7,8 @@ import ModernSignupPage from "@/components/layout/ModernSignupPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import { useAuth } from "@/auth/AuthProvider";
 import AcceptInvitePage from "@/pages/AcceptInvitePage";
+import { UpgradeGate } from "@/components/common/UpgradeGate";
+import { canAccessFeature, normalizePlan } from "@/lib/planLimits";
 
 const Landing = lazy(() => import("@/pages/LandingPage"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
@@ -36,6 +38,7 @@ const CommandCenterPage = lazy(() => import("@/components/command-center/Command
 const PreCallBriefing = lazy(() => import("@/pages/PreCallBriefing"));
 const DemoCompany = lazy(() => import("@/pages/demo/company"));
 const CompaniesIndex = lazy(() => import("@/pages/companies/index"));
+const OnboardingFlow = lazy(() => import("@/pages/OnboardingFlow"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
@@ -43,10 +46,23 @@ const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const DEMO_MODE = !import.meta.env.VITE_SUPABASE_URL;
 
 function RequireAuth({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isSuperAdmin } = useAuth();
+  const location = useLocation();
   if (DEMO_MODE) return children;
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+
+  const meta = user?.user_metadata || {};
+  // Primary: explicit flag written at signup / after onboarding
+  // Secondary: account < 2 h old without an explicit true = treat as new signup
+  const accountAgeHours = (Date.now() - new Date(user?.created_at || 0).getTime()) / 3_600_000;
+  const onboardingDone =
+    meta.onboarding_completed === true ||
+    (meta.onboarding_completed !== false && accountAgeHours >= 2);
+
+  if (!isSuperAdmin && !onboardingDone && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
   return children;
 }
 
@@ -65,6 +81,27 @@ function RequireSuperAdmin({ children }) {
   if (loading) return null;
   if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
   if (!isSuperAdmin) return <Navigate to="/app/dashboard" replace />;
+  return children;
+}
+
+function RequirePlan({ feature, featureName, description, requiredPlan = "growth", children }) {
+  const { user, loading, plan: userPlan } = useAuth();
+  if (DEMO_MODE) return children;
+  if (loading) return null;
+  if (!user) return <Navigate to="/login?next=/app/dashboard" replace />;
+  const plan = normalizePlan(userPlan);
+  const hasAccess = canAccessFeature(plan, feature);
+  if (!hasAccess) {
+    return (
+      <UpgradeGate
+        featureName={featureName}
+        description={description}
+        requiredPlan={requiredPlan}
+        currentPlan={plan}
+        hasAccess={false}
+      />
+    );
+  }
   return children;
 }
 
@@ -142,6 +179,15 @@ export default function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route path="/invite" element={<Navigate to="/accept-invite" replace />} />
+
+        <Route
+          path="/onboarding"
+          element={
+            <RequireAuth>
+              <OnboardingFlow />
+            </RequireAuth>
+          }
+        />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 
@@ -223,22 +269,32 @@ export default function App() {
         <Route
           path="/app/campaigns"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="campaign_builder"
+              featureName="Campaign Builder"
+              description="Build and run outreach campaigns targeting freight shippers and logistics prospects. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <Campaigns />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 
         <Route
           path="/app/campaigns/new"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="campaign_builder"
+              featureName="Campaign Builder"
+              description="Build and run outreach campaigns targeting freight shippers and logistics prospects. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <CampaignBuilder />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 
@@ -256,11 +312,16 @@ export default function App() {
         <Route
           path="/app/rfp"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="rfp_studio"
+              featureName="RFP Studio"
+              description="Generate professional RFP responses and freight quotes with AI assistance. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <RFPStudio />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 
@@ -344,11 +405,16 @@ export default function App() {
         <Route
           path="/app/prospecting"
           element={
-            <RequireAuth>
+            <RequirePlan
+              feature="lead_prospecting"
+              featureName="Pulse — Lead Prospecting"
+              description="Discover and monitor shippers based on freight signals, import activity, and AI-driven scoring. Available on Growth and above."
+              requiredPlan="growth"
+            >
               <LITPage>
                 <LeadProspecting />
               </LITPage>
-            </RequireAuth>
+            </RequirePlan>
           }
         />
 

@@ -70,6 +70,7 @@ export async function registerWithEmailPassword({
       data: {
         full_name: fullName || '',
         display_name: fullName || email.split('@')[0],
+        onboarding_completed: false,
       },
       emailRedirectTo:
         emailRedirectTo || `${window.location.origin}/auth/callback`,
@@ -180,6 +181,13 @@ export async function resetPassword(email: string) {
 export async function updatePassword(newPassword: string) {
   if (!auth) throw new Error('Auth not configured');
   const { error } = await auth.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+// Resend email confirmation (for users stuck at "Email not confirmed")
+export async function resendConfirmationEmail(email: string) {
+  if (!auth) throw new Error('Auth not configured');
+  const { error } = await auth.auth.resend({ type: 'signup', email });
   if (error) throw error;
 }
 

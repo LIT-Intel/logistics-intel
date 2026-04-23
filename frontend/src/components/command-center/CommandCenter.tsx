@@ -3,27 +3,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { listSavedCompanies } from "@/lib/api";
+import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import { useToast } from "@/components/ui/use-toast";
 import {
-  ArrowUpRight,
-  BookOpenText,
   Building2,
-  Filter,
-  Globe,
-  Loader2,
-  MapPin,
-  Package,
-  Search,
-  Ship,
-  TrendingUp,
-  Route,
-  Boxes,
   ChevronLeft,
   ChevronRight,
+  Filter,
+  Loader2,
+  Search,
 } from "lucide-react";
 
 type FilterTab = "all" | "high_value" | "active" | "recent";
@@ -56,6 +47,8 @@ type ListRow = {
   recentRoute: string | null;
 };
 
+type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipments12m' | 'teu12m' | 'estSpend12m' | 'topRoute12m'>;
+
 const FILTER_TABS: Array<{ id: FilterTab; label: string }> = [
   { id: "all", label: "All saved" },
   { id: "high_value", label: "High value" },
@@ -63,19 +56,29 @@ const FILTER_TABS: Array<{ id: FilterTab; label: string }> = [
   { id: "recent", label: "Recent activity" },
 ];
 
+const TABLE_COLS: Array<{ key: SortableKey | 'activity' | 'status' | 'actions'; label: string; width: string; sortable: boolean }> = [
+  { key: 'companyName',  label: 'Company',       width: '22%', sortable: true },
+  { key: 'lastActivity', label: 'Last Shipment',  width: '12%', sortable: true },
+  { key: 'shipments12m', label: 'Shipments 12m',  width: '11%', sortable: true },
+  { key: 'teu12m',       label: 'TEU 12m',        width: '9%',  sortable: true },
+  { key: 'estSpend12m',  label: 'Est. Spend',     width: '10%', sortable: true },
+  { key: 'topRoute12m',  label: 'Top Route',      width: '12%', sortable: true },
+  { key: 'activity',     label: 'Activity',       width: '9%',  sortable: false },
+  { key: 'status',       label: 'Status',         width: '9%',  sortable: false },
+  { key: 'actions',      label: '',               width: '6%',  sortable: false },
+];
+
+const STATUS_STYLE = {
+  active:   { bg: '#F0FDF4', color: '#15803d', border: '#BBF7D0', dot: '#22C55E', label: 'Active'   },
+  pending:  { bg: '#FFFBEB', color: '#B45309', border: '#FDE68A', dot: '#F59E0B', label: 'Pending'  },
+  inactive: { bg: '#F1F5F9', color: '#64748b', border: '#E2E8F0', dot: '#94A3B8', label: 'Inactive' },
+};
+
 const PAGE_SIZE = 25;
 
-function normalizeSavedCompaniesResponse(
-  input: SavedCompaniesResponse,
-): CommandCenterRecord[] {
-  if (Array.isArray(input)) {
-    return input;
-  }
-
-  if (input && Array.isArray(input.rows)) {
-    return input.rows;
-  }
-
+function normalizeSavedCompaniesResponse(input: SavedCompaniesResponse): CommandCenterRecord[] {
+  if (Array.isArray(input)) return input;
+  if (input && Array.isArray(input.rows)) return input.rows;
   return [];
 }
 
@@ -92,53 +95,35 @@ function recordKey(record: CommandCenterRecord) {
 
 function formatNumber(value: number | null | undefined, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
-  return Number(value).toLocaleString(undefined, {
-    maximumFractionDigits: digits,
-  });
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
 function formatCurrency(value: number | null | undefined) {
   if (value == null || Number.isNaN(Number(value))) return "—";
-  return Number(value).toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
+  const n = Number(value);
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
+  return `$${n.toLocaleString()}`;
 }
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function badgeToneForStage(stage?: string | null) {
-  const normalized = String(stage || "prospect").toLowerCase();
-  if (normalized === "customer") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  }
-  if (normalized === "qualified") {
-    return "border-indigo-200 bg-indigo-50 text-indigo-700";
-  }
-  if (normalized === "nurture") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-  return "border-slate-200 bg-slate-100 text-slate-700";
+
+function statusForRow(row: ListRow): 'active' | 'pending' | 'inactive' {
+  if ((row.shipments12m || 0) > 0) return 'active';
+  if (row.stage === 'prospect' || row.stage === 'qualified') return 'pending';
+  return 'inactive';
 }
 
 function buildListRow(record: CommandCenterRecord): ListRow {
   const company = record.company || ({} as any);
   const kpis = (company as any)?.kpis || {};
-
-  const sourceCompanyKey =
-    company?.company_id ||
-    (company as any)?.source_company_key ||
-    null;
+  const sourceCompanyKey = company?.company_id || (company as any)?.source_company_key || null;
 
   return {
     record,
@@ -153,10 +138,8 @@ function buildListRow(record: CommandCenterRecord): ListRow {
     shipments12m: Number(kpis?.shipments_12m || 0),
     teu12m: kpis?.teu_12m != null ? Number(kpis.teu_12m) : null,
     estSpend12m: kpis?.est_spend_12m != null ? Number(kpis.est_spend_12m) : null,
-    fclShipments12m:
-      kpis?.fcl_shipments_12m != null ? Number(kpis.fcl_shipments_12m) : null,
-    lclShipments12m:
-      kpis?.lcl_shipments_12m != null ? Number(kpis.lcl_shipments_12m) : null,
+    fclShipments12m: kpis?.fcl_shipments_12m != null ? Number(kpis.fcl_shipments_12m) : null,
+    lclShipments12m: kpis?.lcl_shipments_12m != null ? Number(kpis.lcl_shipments_12m) : null,
     lastActivity: kpis?.last_activity || null,
     topRoute12m: kpis?.top_route_12m || null,
     recentRoute: kpis?.recent_route || null,
@@ -173,6 +156,8 @@ export default function CommandCenter() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortKey, setSortKey] = useState<SortableKey>('shipments12m');
+  const [sortDir, setSortDir] = useState<1 | -1>(-1);
 
   useEffect(() => {
     let isMounted = true;
@@ -186,416 +171,387 @@ export default function CommandCenter() {
         const rows = normalizeSavedCompaniesResponse(response);
 
         if (!isMounted) return;
-        setSavedCompanies(rows);
+
+        try {
+          const companyIds = rows
+            .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
+            .filter((id): id is string => Boolean(id));
+          const kpiMap = await enrichCompaniesFromKpis(companyIds);
+          const enriched = rows.map((r) => {
+            const cid = r.company?.company_id ?? (r as any)?.company?.source_company_key;
+            const kpiRow = cid ? kpiMap[cid] : null;
+            if (!kpiRow) return r;
+            const existingKpis = (r.company as any)?.kpis || {};
+            return {
+              ...r,
+              company: {
+                ...r.company,
+                kpis: {
+                  ...existingKpis,
+                  last_activity:     existingKpis.last_activity     ?? kpiRow.last_shipment_date    ?? null,
+                  teu_12m:           existingKpis.teu_12m           ?? kpiRow.all_time_teu_from_series ?? null,
+                  fcl_shipments_12m: existingKpis.fcl_shipments_12m ?? kpiRow.fcl_shipments ?? null,
+                  lcl_shipments_12m: existingKpis.lcl_shipments_12m ?? kpiRow.lcl_shipments ?? null,
+                },
+              },
+            };
+          });
+          setSavedCompanies(enriched);
+        } catch {
+          setSavedCompanies(rows);
+        }
       } catch (error: any) {
         if (!isMounted) return;
         setSavedError(error?.message ?? "Failed to load saved companies");
         setSavedCompanies([]);
       } finally {
-        if (isMounted) {
-          setSavedLoading(false);
-        }
+        if (isMounted) setSavedLoading(false);
       }
     }
 
     loadSavedCompanies();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, []);
 
-  const listRows = useMemo(() => {
-    return savedCompanies.map(buildListRow).filter((row) => row.key);
-  }, [savedCompanies]);
+  const listRows = useMemo(() => savedCompanies.map(buildListRow).filter((r) => r.key), [savedCompanies]);
 
   const filteredRows = useMemo(() => {
     const lower = searchTerm.trim().toLowerCase();
-
     return listRows.filter((row) => {
-      const haystack = [
-        row.companyName,
-        row.domain,
-        row.website,
-        row.address,
-        row.countryCode,
-        row.topRoute12m,
-        row.recentRoute,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
+      const haystack = [row.companyName, row.domain, row.website, row.address, row.countryCode, row.topRoute12m, row.recentRoute]
+        .filter(Boolean).join(" ").toLowerCase();
       const matchesSearch = !lower || haystack.includes(lower);
-
       const lastActivityTime = row.lastActivity ? new Date(row.lastActivity).getTime() : null;
       const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-
       let matchesFilter = true;
-      if (activeFilter === "high_value") {
-        matchesFilter = (row.estSpend12m || 0) >= 100000 || (row.teu12m || 0) >= 100;
-      } else if (activeFilter === "active") {
-        matchesFilter = (row.shipments12m || 0) >= 12;
-      } else if (activeFilter === "recent") {
-        matchesFilter = !!lastActivityTime && lastActivityTime >= thirtyDaysAgo;
-      }
-
+      if (activeFilter === "high_value")   matchesFilter = (row.estSpend12m || 0) >= 100000 || (row.teu12m || 0) >= 100;
+      else if (activeFilter === "active")  matchesFilter = (row.shipments12m || 0) >= 12;
+      else if (activeFilter === "recent")  matchesFilter = !!lastActivityTime && lastActivityTime >= thirtyDaysAgo;
       return matchesSearch && matchesFilter;
     });
   }, [listRows, searchTerm, activeFilter]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, activeFilter]);
+  const sortedRows = useMemo(() => {
+    return [...filteredRows].sort((a, b) => {
+      const av = a[sortKey] ?? '';
+      const bv = b[sortKey] ?? '';
+      const an = parseFloat(String(av).replace(/[^0-9.-]/g, ''));
+      const bn = parseFloat(String(bv).replace(/[^0-9.-]/g, ''));
+      if (!isNaN(an) && !isNaN(bn)) return sortDir * (an - bn);
+      return sortDir * String(av).localeCompare(String(bv));
+    });
+  }, [filteredRows, sortKey, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, activeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
 
   useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
+    if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredRows.slice(start, start + PAGE_SIZE);
-  }, [filteredRows, currentPage]);
+    return sortedRows.slice(start, start + PAGE_SIZE);
+  }, [sortedRows, currentPage]);
 
-  const pageStart = filteredRows.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
-  const pageEnd = filteredRows.length
-    ? Math.min(currentPage * PAGE_SIZE, filteredRows.length)
-    : 0;
+  const pageStart = sortedRows.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
+  const pageEnd   = sortedRows.length ? Math.min(currentPage * PAGE_SIZE, sortedRows.length) : 0;
 
-  const summaryMetrics = useMemo(() => {
-    const totalCompanies = listRows.length;
-    const totalShipments = listRows.reduce((sum, row) => sum + (row.shipments12m || 0), 0);
-    const activeAccounts = listRows.filter((row) => (row.shipments12m || 0) > 0).length;
+  const summaryMetrics = useMemo(() => ({
+    totalCompanies: listRows.length,
+    totalShipments: listRows.reduce((s, r) => s + (r.shipments12m || 0), 0),
+    activeAccounts:  listRows.filter((r) => (r.shipments12m || 0) > 0).length,
+  }), [listRows]);
 
-    return {
-      totalCompanies,
-      totalShipments,
-      activeAccounts,
-    };
-  }, [listRows]);
+  function toggleSort(key: SortableKey) {
+    if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
+    else { setSortKey(key); setSortDir(-1); }
+  }
 
-  const handleOpenCompany = (row: ListRow) => {
+  function handleOpenCompany(row: ListRow) {
     if (!row.companyId) {
-      toast({
-        title: "Company unavailable",
-        description: "This saved record does not have a source company key yet.",
-        variant: "destructive",
-      });
+      toast({ title: "Company unavailable", description: "This saved record does not have a source company key yet.", variant: "destructive" });
       return;
     }
-
     try {
-      localStorage.setItem(
-        "lit:selectedCompany",
-        JSON.stringify({
-          company_id: row.companyId,
-          source_company_key: row.companyId,
-          name: row.companyName,
-          domain: row.domain,
-          website: row.website,
-        }),
-      );
-    } catch {
-      // ignore localStorage failures
-    }
-
+      localStorage.setItem("lit:selectedCompany", JSON.stringify({
+        company_id: row.companyId,
+        source_company_key: row.companyId,
+        name: row.companyName,
+        domain: row.domain,
+        website: row.website,
+      }));
+    } catch { /* ignore */ }
     navigate(`/app/companies/${encodeURIComponent(row.companyId)}`);
-  };
+  }
 
   return (
-    <div className="flex flex-col gap-4 px-0 pb-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            <BookOpenText className="h-3 w-3" />
-            Command Center
-          </div>
-          <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">
-            Saved companies
-          </h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Click any row to open the full company intelligence page.
-          </p>
-        </div>
-
-        <div className="flex shrink-0 flex-wrap gap-2 sm:flex-nowrap">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <Ship className="h-3.5 w-3.5 text-cyan-500" />
-            <span className="font-semibold text-slate-900">
-              {formatNumber(summaryMetrics.totalCompanies)}
-            </span>
-            <span className="text-slate-500">saved</span>
-          </div>
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <Package className="h-3.5 w-3.5 text-indigo-500" />
-            <span className="font-semibold text-slate-900">
-              {formatNumber(summaryMetrics.totalShipments)}
-            </span>
-            <span className="text-slate-500">shipments</span>
-          </div>
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-            <span className="font-semibold text-slate-900">
-              {formatNumber(summaryMetrics.activeAccounts)}
-            </span>
-            <span className="text-slate-500">active</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-        <div className="flex flex-wrap gap-1.5">
-          {FILTER_TABS.map((tab) => {
-            const active = activeFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveFilter(tab.id)}
-                className={[
-                  "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold transition",
-                  active
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                ].join(" ")}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="relative flex-1 sm:min-w-[260px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search companies, routes, domains…"
-            className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-300"
-          />
-        </div>
-
-        <div className="hidden items-center gap-1.5 text-xs text-slate-400 sm:flex">
-          <Filter className="h-3.5 w-3.5" />
-          {formatNumber(filteredRows.length)} shown
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-        <div className="hidden border-b border-slate-200 bg-slate-50/80 px-5 py-3 xl:grid xl:grid-cols-[minmax(0,2.1fr)_110px_110px_140px_150px] xl:gap-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Account
-          </div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Shipments
-          </div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            TEU
-          </div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Est. Spend
-          </div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Last activity
-          </div>
-        </div>
-
-        <div>
-          {savedLoading ? (
-            <div className="flex items-center justify-center gap-3 px-6 py-16 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading saved companies…
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F8FAFC' }}>
+      {/* Header */}
+      <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #E5E7EB', background: '#FFFFFF', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>
+              Command Center
             </div>
-          ) : savedError ? (
-            <div className="px-6 py-10 text-sm text-rose-600">{savedError}</div>
-          ) : filteredRows.length === 0 ? (
-            <div className="px-6 py-16 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-                <Building2 className="h-6 w-6 text-slate-400" />
-              </div>
-              <div className="mt-4 text-base font-semibold text-slate-900">
-                No saved companies match this view
-              </div>
-              <div className="mt-1 text-sm text-slate-500">
-                Try changing your filters or save more companies from Search.
-              </div>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#64748b', marginTop: 2 }}>
+              {sortedRows.length} saved companies · {formatNumber(summaryMetrics.totalShipments)} shipments · {summaryMetrics.activeAccounts} active
             </div>
-          ) : (
-            paginatedRows.map((row, index) => {
-              const logoUrl = getCompanyLogoUrl(row.domain || row.website || undefined);
+          </div>
+        </div>
 
+        {/* Filter tabs + search */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {FILTER_TABS.map((tab) => {
+              const active = activeFilter === tab.id;
               return (
-                <motion.button
-                  key={row.key}
+                <button
+                  key={tab.id}
                   type="button"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: index * 0.015 }}
-                  onClick={() => handleOpenCompany(row)}
-                  className="group block w-full border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50/90 last:border-b-0 md:px-5"
+                  onClick={() => setActiveFilter(tab.id)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center',
+                    borderRadius: 9999, padding: '5px 12px',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 120ms',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    ...(active
+                      ? { background: '#0F172A', color: '#fff', border: '1px solid #0F172A' }
+                      : { background: '#FFFFFF', color: '#475569', border: '1px solid #E5E7EB' }),
+                  }}
                 >
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,2.1fr)_110px_110px_140px_150px] xl:items-center">
-                    <div className="min-w-0">
-                      <div className="flex items-start gap-3">
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 340, marginLeft: 4 }}>
+            <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: '#94a3b8' }} />
+            <input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search companies, routes, domains…"
+              style={{
+                width: '100%', background: '#F8FAFC', border: '1.5px solid #CBD5E1', borderRadius: 10,
+                padding: '7px 12px 7px 30px', fontSize: 13, fontFamily: "'DM Sans', sans-serif",
+                color: '#0F172A', outline: 'none',
+              }}
+              onFocus={(e) => { e.target.style.borderColor = '#3B82F6'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; }}
+              onBlur={(e)  => { e.target.style.borderColor = '#CBD5E1'; e.target.style.boxShadow = 'none'; }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#94a3b8', fontFamily: "'DM Sans', sans-serif" }}>
+            <Filter style={{ width: 13, height: 13 }} />
+            {formatNumber(sortedRows.length)} shown
+          </div>
+        </div>
+      </div>
+
+      {/* Table area */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {savedLoading ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '64px 0', color: '#64748b', fontFamily: "'DM Sans', sans-serif", fontSize: 14 }}>
+            <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+            Loading saved companies…
+          </div>
+        ) : savedError ? (
+          <div style={{ padding: '40px 24px', color: '#dc2626', fontFamily: "'DM Sans', sans-serif", fontSize: 14 }}>{savedError}</div>
+        ) : sortedRows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '64px 0' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: '50%', background: '#F1F5F9', marginBottom: 16 }}>
+              <Building2 style={{ width: 24, height: 24, color: '#94a3b8' }} />
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif" }}>No saved companies match this view</div>
+            <div style={{ fontSize: 13, color: '#64748b', fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}>Try changing your filters or save more companies from Search.</div>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+              <tr style={{ background: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
+                {TABLE_COLS.map((col) => {
+                  const isSorted = col.sortable && col.key === sortKey;
+                  return (
+                    <th
+                      key={col.key}
+                      style={{
+                        width: col.width, textAlign: 'left', padding: '10px 14px',
+                        fontSize: 9, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase',
+                        color: '#94A3B8', fontFamily: "'Space Grotesk', sans-serif",
+                        cursor: col.sortable ? 'pointer' : 'default',
+                        whiteSpace: 'nowrap', userSelect: 'none',
+                      }}
+                      onClick={() => col.sortable && toggleSort(col.key as SortableKey)}
+                    >
+                      {col.label}
+                      {isSorted && (
+                        <span style={{ marginLeft: 3, color: '#3B82F6' }}>{sortDir > 0 ? '↑' : '↓'}</span>
+                      )}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedRows.map((row, index) => {
+                const st = STATUS_STYLE[statusForRow(row)];
+                const hasActivity = (row.shipments12m || 0) > 0;
+                return (
+                  <motion.tr
+                    key={row.key}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.15, delay: index * 0.012 }}
+                    onClick={() => handleOpenCompany(row)}
+                    style={{ borderBottom: '1px solid #F1F5F9', cursor: 'pointer', transition: 'background 120ms' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                  >
+                    {/* Company */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                         <CompanyAvatar
                           name={row.companyName}
-                          logoUrl={logoUrl ?? undefined}
-                          size="md"
+                          logoUrl={getCompanyLogoUrl(row.domain || row.website || undefined)}
+                          size="sm"
                           className="shrink-0"
                         />
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="truncate text-base font-semibold text-slate-950">
-                              {row.companyName}
-                            </div>
-                            <span
-                              className={[
-                                "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em]",
-                                badgeToneForStage(row.stage),
-                              ].join(" ")}
-                            >
-                              {row.stage}
-                            </span>
-                            {row.companyId ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                                Open page
-                                <ArrowUpRight className="h-3 w-3" />
-                              </span>
-                            ) : null}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {row.companyName}
                           </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                            {row.address ? (
-                              <span className="inline-flex items-center gap-1">
-                                <MapPin className="h-3.5 w-3.5" />
-                                {row.address}
-                              </span>
-                            ) : null}
-                            {row.domain ? (
-                              <span className="inline-flex items-center gap-1">
-                                <Globe className="h-3.5 w-3.5" />
-                                {row.domain}
-                              </span>
-                            ) : null}
-                            {row.countryCode ? (
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                                {row.countryCode}
-                              </span>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-3 grid gap-2 md:grid-cols-2">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 group-hover:border-indigo-200 group-hover:bg-indigo-50/70 group-hover:shadow-sm">
-                              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 group-hover:text-indigo-700">
-                                <Route className="h-3.5 w-3.5" />
-                                Top lane
-                              </div>
-                              <div className="mt-1 truncate text-sm font-medium text-slate-900 group-hover:text-indigo-950">
-                                {row.topRoute12m || row.recentRoute || "—"}
-                              </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 group-hover:border-indigo-200 group-hover:bg-indigo-50/70 group-hover:shadow-sm">
-                              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 group-hover:text-indigo-700">
-                                <Boxes className="h-3.5 w-3.5" />
-                                Structure
-                              </div>
-                              <div className="mt-1 text-sm font-medium text-slate-900 group-hover:text-indigo-950">
-                                FCL {formatNumber(row.fclShipments12m)} · LCL {formatNumber(row.lclShipments12m)}
-                              </div>
-                            </div>
+                          <div style={{ fontSize: 10, color: '#94A3B8', fontFamily: "'DM Sans', sans-serif", marginTop: 1 }}>
+                            {row.address || row.countryCode || row.domain || '—'}
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </td>
 
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 xl:border-0 xl:bg-transparent xl:px-0 xl:py-0">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 xl:hidden">
-                        Shipments
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-slate-950 xl:mt-0">
-                        {formatNumber(row.shipments12m)}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 xl:border-0 xl:bg-transparent xl:px-0 xl:py-0">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 xl:hidden">
-                        TEU
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-slate-950 xl:mt-0">
-                        {formatNumber(row.teu12m, 1)}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 xl:border-0 xl:bg-transparent xl:px-0 xl:py-0">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 xl:hidden">
-                        Est. Spend
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-slate-950 xl:mt-0">
-                        {formatCurrency(row.estSpend12m)}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 xl:justify-between">
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 xl:border-0 xl:bg-transparent xl:px-0 xl:py-0">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 xl:hidden">
-                          Last activity
-                        </div>
-                        <div className="mt-1 text-sm font-semibold text-slate-950 xl:mt-0">
-                          {formatDate(row.lastActivity)}
-                        </div>
-                      </div>
-
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition group-hover:border-indigo-200 group-hover:bg-indigo-50 group-hover:text-indigo-700">
-                        <ArrowUpRight className="h-4 w-4" />
+                    {/* Last Shipment */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <span style={{ fontSize: 12, color: '#64748b', fontFamily: "'DM Sans', sans-serif" }}>
+                        {formatDate(row.lastActivity)}
                       </span>
-                    </div>
-                  </div>
-                </motion.button>
-              );
-            })
-          )}
-        </div>
+                    </td>
 
-        {!savedLoading && !savedError && filteredRows.length > 0 ? (
-          <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5">
-            <div className="text-xs text-slate-500">
-              Showing {pageStart}–{pageEnd} of {filteredRows.length} companies
-            </div>
+                    {/* Shipments 12m */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>
+                        {formatNumber(row.shipments12m)}
+                      </span>
+                    </td>
 
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                disabled={currentPage === 1}
-                className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Prev
-              </button>
+                    {/* TEU 12m */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
+                        {formatNumber(row.teu12m, 1)}
+                      </span>
+                    </td>
 
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900">
-                {currentPage} / {totalPages}
-              </div>
+                    {/* Est. Spend */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
+                        {formatCurrency(row.estSpend12m)}
+                      </span>
+                    </td>
 
-              <button
-                type="button"
-                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                disabled={currentPage === totalPages}
-                className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        ) : null}
+                    {/* Top Route */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#64748b', background: '#F1F5F9', padding: '2px 7px', borderRadius: 4 }}>
+                        {row.topRoute12m || row.recentRoute || '—'}
+                      </span>
+                    </td>
+
+                    {/* Activity */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
+                        padding: '2px 7px', borderRadius: 9999,
+                        ...(hasActivity
+                          ? { color: '#15803d', background: 'rgba(34,197,94,0.1)' }
+                          : { color: '#94A3B8', background: '#F1F5F9' }),
+                      }}>
+                        {hasActivity ? '↑ Active' : '→ Idle'}
+                      </span>
+                    </td>
+
+                    {/* Status */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999,
+                        background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+                        fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap',
+                      }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+                        {st.label}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
+                        style={{
+                          fontSize: 11, fontWeight: 600, background: '#EFF6FF', color: '#3b82f6',
+                          border: '1px solid #BFDBFE', borderRadius: 6, padding: '4px 10px',
+                          cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap',
+                        }}
+                      >
+                        View →
+                      </button>
+                    </td>
+                  </motion.tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
+
+      {/* Pagination */}
+      {!savedLoading && !savedError && sortedRows.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderTop: '1px solid #E5E7EB', background: '#FAFAFA', flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: '#64748b', fontFamily: "'DM Sans', sans-serif" }}>
+            Showing {pageStart}–{pageEnd} of {sortedRows.length} companies
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, height: 32, padding: '0 12px',
+                borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF',
+                fontSize: 12, fontWeight: 600, color: '#374151', cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                opacity: currentPage === 1 ? 0.4 : 1, fontFamily: "'Space Grotesk', sans-serif",
+              }}
+            >
+              <ChevronLeft style={{ width: 14, height: 14 }} />
+              Prev
+            </button>
+            <span style={{ padding: '0 10px', height: 32, display: 'inline-flex', alignItems: 'center', borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF', fontSize: 12, fontWeight: 700, color: '#0F172A', fontFamily: "'Space Grotesk', sans-serif" }}>
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, height: 32, padding: '0 12px',
+                borderRadius: 8, border: '1px solid #E5E7EB', background: '#FFFFFF',
+                fontSize: 12, fontWeight: 600, color: '#374151', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                opacity: currentPage === totalPages ? 0.4 : 1, fontFamily: "'Space Grotesk', sans-serif",
+              }}
+            >
+              Next
+              <ChevronRight style={{ width: 14, height: 14 }} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

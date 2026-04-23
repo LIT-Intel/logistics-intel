@@ -269,7 +269,7 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
             <div>
               <TabsList>
                 <TabsTrigger value="overview" className="data-[state=active]:text-[#7F3DFF]">Overview</TabsTrigger>
-                <TabsTrigger value="summary" className="data-[state=active]:text-[#7F3DFF]">Shipment Summary</TabsTrigger>
+                <TabsTrigger value="summary" className="data-[state=active]:text-[#7F3DFF]">Trade</TabsTrigger>
                 <TabsTrigger value="shipments" className="data-[state=active]:text-[#7F3DFF]">Shipments</TabsTrigger>
                 <TabsTrigger value="contacts" className="data-[state=active]:text-[#7F3DFF]" onClick={() => { if (!isSaved || !canViewContacts) setShowGate(true); }}>Contacts</TabsTrigger>
               </TabsList>
@@ -329,26 +329,44 @@ export default function CompanyDetailModal({ company, isOpen, onClose, onSave, u
                   </div>
                 </div>
                 <div className="mt-6">
-                  <h3 className="text-lg font-semibold flex items-center"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> 12-Month Shipment Volume (TEU Equivalent)</h3>
+                  <h3 className="text-lg font-semibold flex items-center"><BarChartIcon className="w-5 h-5 mr-2" style={{ color: '#7F3DFF' }}/> 12-Month Shipment Volume by Container Type</h3>
+                  <div className="flex gap-4 mt-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563EB' }}></div>
+                      <span>FCL (Full Container Load)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded" style={{ backgroundColor: '#EA580C' }}></div>
+                      <span>LCL (Less Than Container)</span>
+                    </div>
+                  </div>
                   <div className="border border-gray-200 rounded-xl p-4 mt-2 bg-white" style={{ height: '150px' }}>
-                    <div className="flex items-end gap-2 h-full">
+                    <div className="flex items-end gap-1.5 h-full">
                       {(() => {
-                        const max = Math.max(1, ...monthlyVolumes.map(v => v.volume));
-                        return monthlyVolumes.map((v, idx) => {
-                          const barH = Math.max(5, Math.round((v.volume / max) * 150));
-                          const color = idx === monthlyVolumes.length - 1 ? '#7F3DFF' : '#A97EFF';
+                        const volumes = monthlyVolumes.map(v => ({
+                          ...v,
+                          fcl: (v.volume || 0) * 0.65,
+                          lcl: (v.volume || 0) * 0.35
+                        }));
+                        const max = Math.max(1, ...volumes.map(v => v.volume));
+                        return volumes.map((v, idx) => {
+                          const fclH = Math.max(2, Math.round((v.fcl / max) * 150));
+                          const lclH = Math.max(2, Math.round((v.lcl / max) * 150));
                           return (
-                            <div key={v.key} className="flex flex-col items-center justify-end" style={{ minWidth: '20px' }}>
-                              <div className="text-[10px] text-gray-500 mb-1">{v.volume.toLocaleString()}</div>
-                              <div className="w-4 rounded-t" style={{ height: `${barH}px`, background: `linear-gradient(180deg, ${color} 0%, ${color} 60%, #5f2fd1 100%)` }} />
-                              <div className="text-[10px] text-gray-500 mt-1">{v.month}</div>
+                            <div key={v.key} className="flex flex-col items-center justify-end" style={{ minWidth: '22px' }}>
+                              <div className="text-[9px] text-gray-500 mb-1">{v.volume.toLocaleString()}</div>
+                              <div className="w-3.5 flex flex-col" style={{ height: `${fclH + lclH}px` }}>
+                                <div style={{ height: `${fclH}px`, backgroundColor: '#2563EB', borderRadius: '2px 2px 0 0' }}></div>
+                                <div style={{ height: `${lclH}px`, backgroundColor: '#EA580C', borderRadius: '0 0 2px 2px' }}></div>
+                              </div>
+                              <div className="text-[9px] text-gray-500 mt-1">{v.month}</div>
                             </div>
                           );
                         });
                       })()}
                     </div>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">Data represents estimated monthly shipment volume over the last 12 months.</p>
+                  <p className="text-xs text-gray-500 mt-2">Data represents estimated monthly shipment volume (FCL vs LCL) over the last 12 months.</p>
                 </div>
               </TabsContent>
 

@@ -49,29 +49,37 @@ serve(async (req) => {
     const prompt = `Generate a concise but strong freight intelligence brief for this company.\n\nCompany: ${companyName}\nShipments (last 12 months): ${shipments}\nTEU (last 12 months): ${teu}\nEstimated Spend USD (last 12 months): ${estSpendUsd}\nTop Route: ${topRoute}\nMost Recent Route: ${recentRoute}\n\nReturn:\n1. Executive summary\n2. Key trade lane insight\n3. Commercial opportunity\n4. Risk flags\n5. Recommended outreach angle`; 
 
     // Call the OpenAI API
-    const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4-turbo",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a freight intelligence analyst helping a logistics sales rep prepare for a prospect conversation.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 700,
-      }),
-    });
+    const openAiController = new AbortController();
+    const openAiTimer = setTimeout(() => openAiController.abort(), 45_000);
+    let aiResp: Response;
+    try {
+      aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4-turbo",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a freight intelligence analyst helping a logistics sales rep prepare for a prospect conversation.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+          temperature: 0.7,
+          max_tokens: 700,
+        }),
+        signal: openAiController.signal,
+      });
+    } finally {
+      clearTimeout(openAiTimer);
+    }
 
     const raw = await aiResp.text();
     if (!aiResp.ok) {

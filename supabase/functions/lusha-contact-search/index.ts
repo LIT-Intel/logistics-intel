@@ -60,9 +60,67 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (company) {
-        // TODO: call Lusha prospecting API with company domain/name and filters
-        // For now, return empty until Lusha API wiring is complete
-        contacts = [];
+        const domain = company.domain || company.website?.replace(/^https?:\/\//, '').split('/')[0];
+        const companyName = company.name;
+
+        if (domain || companyName) {
+          const lushaUrl = 'https://api.lusha.com/prospecting/v1/';
+          const lushaBody: Record<string, any> = {
+            accountInfo: {},
+            size: 10,
+          };
+
+          if (domain) lushaBody.accountInfo.websiteUrl = domain;
+          else lushaBody.accountInfo.name = companyName;
+
+          if (department) lushaBody.attributes = { ...(lushaBody.attributes || {}), departments: [department] };
+          if (seniority) lushaBody.attributes = { ...(lushaBody.attributes || {}), seniorityLevels: [seniority] };
+
+          const lushaRes = await fetch(lushaUrl, {
+            method: 'POST',
+            headers: {
+              'api_key': lushaApiKey,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(lushaBody),
+          });
+
+          if (lushaRes.ok) {
+            const lushaData = await lushaRes.json();
+            const rawContacts = lushaData?.data || lushaData?.contacts || [];
+
+            contacts = rawContacts.map((c: any) => {
+              const emailVal = Array.isArray(c.email)
+                ? (c.email.find((e: any) => e.emailType === 'professional' || e.type === 'professional')?.value || c.email[0]?.value)
+                : c.email || null;
+              const phoneVal = Array.isArray(c.phone)
+                ? (c.phone.find((p: any) => p.type === 'direct' || p.type === 'direct_phone')?.value || c.phone[0]?.value)
+                : c.phone || null;
+
+              const firstName = c.firstName || c.first_name || '';
+              const lastName = c.lastName || c.last_name || '';
+
+              return {
+                full_name: `${firstName} ${lastName}`.trim() || c.fullName || c.full_name || null,
+                first_name: firstName || null,
+                last_name: lastName || null,
+                title: c.jobTitle || c.job_title || c.title || null,
+                department: c.department || department || null,
+                seniority: c.seniorityLevel || c.seniority || seniority || null,
+                email: emailVal,
+                phone: phoneVal,
+                linkedin_url: c.linkedinUrl || c.linkedin_url || null,
+                city: c.city || city || null,
+                state: c.state || state || null,
+                country_code: c.country || c.country_code || null,
+                buying_intent: c.buyingIntent || null,
+              };
+            }).filter((c: any) => c.full_name || c.email);
+          } else {
+            const errText = await lushaRes.text().catch(() => lushaRes.statusText);
+            console.error(JSON.stringify({ fn: 'lusha-contact-search', lushaStatus: lushaRes.status, error: errText }));
+          }
+        }
       }
     }
 

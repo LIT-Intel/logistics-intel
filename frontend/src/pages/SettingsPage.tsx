@@ -4,6 +4,22 @@ import { supabase } from "@/lib/supabase";
 import { updateProfile } from "@/auth/supabaseAuthClient";
 import { UploadFile } from "@/api/integrations";
 import SettingsLayout from "@/components/settings/SettingsLayout";
+import type { PlanCode } from "@/lib/planLimits";
+
+function normalizePlan(p?: string | null): PlanCode {
+  const v = String(p || "").trim().toLowerCase();
+  if (v === "free" || v === "free_trial") return "free_trial";
+  if (v === "standard" || v === "starter") return "starter";
+  if (v === "pro" || v === "growth") return "growth";
+  if (v === "unlimited" || v === "enterprise") return "enterprise";
+  return "free_trial";
+}
+
+function normalizeOrgRole(role?: string | null, fallback = "member"): string {
+  const r = String(role || "").toLowerCase().trim();
+  if (["owner", "admin", "member"].includes(r)) return r;
+  return fallback;
+}
 
 const PLAN_RANK: Record<string, number> = {
   free_trial: 0,
@@ -24,7 +40,7 @@ function requireNoError(
 }
 
 export default function SettingsPage() {
-  const { user, plan } = useAuth();
+  const { user, plan, isSuperAdmin } = useAuth();
   const mountedRef = useRef(true);
 
   const [profile, setProfile] = useState<JsonMap>({});
@@ -50,7 +66,7 @@ export default function SettingsPage() {
   const isAdminEmail = isSuperAdmin;
 
   const currentMembership = orgMembers.find(
-    (member) => member.user_id === user?.id && member.status === "active"
+    (member) => member.user_id === user?.id
   );
 
   const currentOrgRole = normalizeOrgRole(
@@ -114,13 +130,34 @@ export default function SettingsPage() {
       .maybeSingle();
     requireNoError(baseProfileError, "Failed loading base profile");
 
+    const authFullName = user?.user_metadata?.full_name || user?.user_metadata?.display_name || user?.email?.split("@")[0] || "User";
+    const profileName = userProfileData?.full_name || baseProfileData?.full_name || authFullName;
+
+    // Upsert missing profiles from auth metadata for superadmin/early users
+    if (!userProfileData && (authFullName !== "User" || user?.email)) {
+      const { error: upsertError } = await supabase
+        .from("user_profiles")
+        .upsert(
+          { user_id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
+          { onConflict: "user_id" }
+        );
+      if (upsertError) console.warn("[SettingsPage] Upsert user_profiles warning:", upsertError);
+    }
+
+    if (!baseProfileData) {
+      const { error: upsertError } = await supabase
+        .from("profiles")
+        .upsert(
+          { id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
+          { onConflict: "id" }
+        );
+      if (upsertError) console.warn("[SettingsPage] Upsert profiles warning:", upsertError);
+    }
+
+    // Will be updated after subscriptions load below; set temporary value
     safeSet(() => {
       setProfile({
-        name:
-          userProfileData?.full_name ||
-          baseProfileData?.full_name ||
-          user?.user_metadata?.full_name ||
-          "",
+        name: profileName,
         title: userProfileData?.title || "",
         phone: userProfileData?.phone || "",
         location: userProfileData?.location || "",
@@ -173,12 +210,13 @@ export default function SettingsPage() {
         })
       );
 
+      // org_members has no status/email/full_name columns — only select real schema columns
       const { data: membersData, error: membersError } = await supabase
         .from("org_members")
-        .select("id, org_id, user_id, role, status, joined_at, email, full_name")
+        .select("id, org_id, user_id, role, joined_at")
         .eq("org_id", currentOrgId)
-        .order("created_at", { ascending: false });
-      requireNoError(membersError, "Failed loading organization members");
+        .order("joined_at", { ascending: false });
+      if (membersError) console.warn("[SettingsPage] org_members load warning:", membersError.message);
       safeSet(() => setOrgMembers(membersData ?? []));
 
       const { data: invitesData, error: invitesError } = await supabase
@@ -213,7 +251,14 @@ export default function SettingsPage() {
 
     if (subResult.status === "fulfilled") {
       requireNoError(subResult.value.error, "Failed loading subscription");
-      safeSet(() => setSubscription(subResult.value.data ?? null));
+      const subData = subResult.value.data ?? null;
+      safeSet(() => {
+        setSubscription(subData);
+        // Update profile plan with actual subscription plan
+        if (subData?.plan_code) {
+          setProfile((prev) => ({ ...prev, plan: normalizePlan(subData.plan_code) }));
+        }
+      });
     }
 
     if (plansResult.status === "fulfilled") {
@@ -230,26 +275,26 @@ export default function SettingsPage() {
     safeSet(() => setApiKeys(keysData ?? []));
 
     const { data: auditData, error: auditError } = await supabase
-      .from("security_audit_log")
+      .from("security_audit_logs")
       .select("id, action, ip_address, created_at")
       .eq("user_id", uid)
       .order("created_at", { ascending: false })
       .limit(20);
-    requireNoError(auditError, "Failed loading audit log");
+    if (auditError) console.warn("[SettingsPage] audit log load warning:", auditError.message);
     safeSet(() => setAuditLog(auditData ?? []));
 
     const { data: tokenData, error: tokenError } = await supabase
       .from("token_ledger")
-      .select("feature, tokens_used")
+      .select("feature, tokens")
       .eq("user_id", uid);
-    requireNoError(tokenError, "Failed loading token usage");
+    if (tokenError) console.warn("[SettingsPage] token ledger load warning:", tokenError.message);
     safeSet(() => setTokenUsage(tokenData ?? []));
 
     const { data: intData, error: integrationsError } = await supabase
       .from("integrations")
       .select("id, integration_type, type, created_at")
       .eq("user_id", uid);
-    requireNoError(integrationsError, "Failed loading integrations");
+    if (integrationsError) console.warn("[SettingsPage] integrations load warning:", integrationsError.message);
     safeSet(() => setIntegrations(intData ?? []));
 
     const [savedRes, campRes, rfpRes] = await Promise.allSettled([
