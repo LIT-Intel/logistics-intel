@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIT — Logistics Intel Platform</title>
+<meta name="ext-resource-dependency" content="https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json" data-resource-id="worldAtlas" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { font-family: 'DM Sans', system-ui, sans-serif; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #CBD5E1; }
+  button { font-family: inherit; }
+</style>
+</head>
+<body>
+<template id="__bundler_thumbnail" data-bg-color="#020617">
+  <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+    <rect width="64" height="64" fill="#020617"/>
+    <g filter="url(#glow)">
+      <path d="M14 14v36h20" stroke="#00F0FF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M30 14h22" stroke="#00F0FF" stroke-width="6" stroke-linecap="round" fill="none"/>
+      <path d="M30 28h9" stroke="#00F0FF" stroke-width="6" stroke-linecap="round" fill="none"/>
+      <path d="M44 28v22" stroke="#00F0FF" stroke-width="6" stroke-linecap="round" fill="none"/>
+      <path d="M30 50h14" stroke="#00F0FF" stroke-width="6" stroke-linecap="round" fill="none"/>
+    </g>
+    <defs>
+      <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="1.2" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+  </svg>
+</template>
+<div id="root"></div>
+
+<script type="text/babel" src="Sidebar.jsx?v=2"></script>
+<script type="text/babel" src="CompanyCard.jsx?v=2"></script>
+<script type="text/babel" src="IntelligencePanel.jsx?v=2"></script>
+<script type="text/babel" src="Globe.standalone.jsx?v=2"></script>
+<script type="text/babel" src="Dashboard.jsx?v=2"></script>
+<script type="text/babel" src="CommandCenter.jsx?v=2"></script>
+<script type="text/babel" src="CompanyDetailPage.jsx?v=2"></script>
+<script type="text/babel" src="OutboundEngine.jsx?v=3"></script>
+
+<script type="text/babel">
+/* ── Nav config ──────────────────────────────────── */
+const NAV_ITEMS_MAIN = [
+  { id:'dashboard', label:'Dashboard',       icon:'layout-dashboard' },
+  { id:'discover',  label:'Discover',        icon:'search'           },
+  { id:'command',   label:'Command Center',  icon:'database'         },
+  { id:'outbound',  label:'Outbound Engine', icon:'send'             },
+  { id:'deals',     label:'Deal Builder',    icon:'file-text'        },
+];
+
+/* ── Mock companies ───────────────────────────────── */
+const MOCK_COMPANIES = [
+  { company_id:'COMP-00412', company_name:'Pacific Freight Co.',     shipments_12m:2840,  est_spend:'$4.2M',  teu:'12,400', lanes:'8',  top_carriers:['Maersk','Evergreen'],   last_activity:'3 days ago', status:'active',   in_crm:true,  pillar:'organize' },
+  { company_id:'COMP-00839', company_name:'Atlas Global Logistics',  shipments_12m:14200, est_spend:'$18M',   teu:'62,000', lanes:'22', top_carriers:['MSC','CMA CGM'],        last_activity:'Today',      status:'active',   in_crm:false, pillar:'discover' },
+  { company_id:'COMP-01204', company_name:'Summit Shipping Ltd',     shipments_12m:880,   est_spend:'$1.1M',  teu:'3,200',  lanes:'4',  top_carriers:['Hapag-Lloyd'],           last_activity:'12 days ago',status:'pending',  in_crm:true,  pillar:'engage'   },
+  { company_id:'COMP-00551', company_name:'RedSea Lines',            shipments_12m:5600,  est_spend:'$7.8M',  teu:'24,100', lanes:'14', top_carriers:['ONE','Maersk'],          last_activity:'Yesterday',  status:'active',   in_crm:false, pillar:'close'    },
+  { company_id:'COMP-01890', company_name:'NorthStar Freight',       shipments_12m:390,   est_spend:'$580K',  teu:'1,800',  lanes:'3',  top_carriers:['ZIM','Evergreen'],       last_activity:'1 week ago', status:'inactive', in_crm:false, pillar:'discover' },
+  { company_id:'COMP-00723', company_name:'Harbor Logistics Group',  shipments_12m:9100,  est_spend:'$11M',   teu:'38,600', lanes:'18', top_carriers:['MSC','Yang Ming'],       last_activity:'4 days ago', status:'active',   in_crm:true,  pillar:'organize' },
+  { company_id:'COMP-02011', company_name:'Meridian Cargo Partners', shipments_12m:1240,  est_spend:'$1.8M',  teu:'5,400',  lanes:'6',  top_carriers:['CMA CGM','Hapag-Lloyd'], last_activity:'2 days ago', status:'active',   in_crm:false, pillar:'engage'   },
+  { company_id:'COMP-00318', company_name:'Blue Ocean Express',      shipments_12m:7800,  est_spend:'$9.4M',  teu:'31,200', lanes:'16', top_carriers:['Maersk','ONE'],          last_activity:'Today',      status:'active',   in_crm:false, pillar:'discover' },
+  { company_id:'COMP-03301', company_name:'Vanguard Trade Group',    shipments_12m:3320,  est_spend:'$5.1M',  teu:'14,800', lanes:'10', top_carriers:['Evergreen','Yang Ming'], last_activity:'5 days ago', status:'active',   in_crm:false, pillar:'understand'},
+];
+
+/* ── Shared btn styles ────────────────────────────── */
+const btnPrimary = { display:'flex',alignItems:'center',gap:6,background:'linear-gradient(180deg,#3B82F6,#2563EB)',border:'none',borderRadius:8,padding:'8px 16px',fontSize:13,fontWeight:600,fontFamily:'Space Grotesk,sans-serif',color:'#fff',cursor:'pointer',boxShadow:'0 1px 4px rgba(59,130,246,0.3)' };
+const btnGhost   = { display:'flex',alignItems:'center',gap:6,background:'#FFFFFF',border:'1px solid #E5E7EB',borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:600,fontFamily:'Space Grotesk,sans-serif',color:'#374151',cursor:'pointer' };
+
+/* ── Top bar ──────────────────────────────────────── */
+function TopBar({ title, subtitle, actions }) {
+  return (
+    <div style={{padding:'20px 24px 16px',borderBottom:'1px solid #E5E7EB',background:'#FFFFFF',flexShrink:0,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16}}>
+      <div>
+        <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:20,fontWeight:700,color:'#0F172A',letterSpacing:'-0.02em'}}>{title}</div>
+        {subtitle && <div style={{fontFamily:'DM Sans,sans-serif',fontSize:13,color:'#64748b',marginTop:3}}>{subtitle}</div>}
+      </div>
+      {actions && <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>{actions}</div>}
+    </div>
+  );
+}
+
+/* ── Discover view ────────────────────────────────── */
+function DiscoverView({ companies, selectedCompany, onSelect, onAddToCRM, onViewFull }) {
+  const [query, setQuery] = React.useState('');
+  const filtered = query
+    ? companies.filter(c => c.company_name.toLowerCase().includes(query.toLowerCase()) || c.company_id.includes(query))
+    : companies;
+
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',background:'#F8FAFC'}}>
+      <TopBar
+        title="Discover Companies"
+        subtitle={`${filtered.length.toLocaleString()} companies · Global shipment intelligence`}
+        actions={<>
+          <button style={btnGhost}><i data-lucide="upload" style={{width:13,height:13}}></i> Import</button>
+          <button style={btnPrimary}><i data-lucide="plus" style={{width:13,height:13}}></i> Add Company</button>
+        </>}
+      />
+
+      {/* Search */}
+      <div style={{padding:'14px 24px',background:'#FFFFFF',borderBottom:'1px solid #E5E7EB',flexShrink:0,display:'flex',gap:8}}>
+        <div style={{flex:1,position:'relative'}}>
+          <i data-lucide="search" style={{position:'absolute',left:11,top:'50%',transform:'translateY(-50%)',width:14,height:14,color:'#94a3b8'}}></i>
+          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search by company, carrier, trade lane…"
+            style={{width:'100%',background:'#F8FAFC',border:'1.5px solid #E5E7EB',borderRadius:10,padding:'8px 12px 8px 34px',fontSize:13,fontFamily:'DM Sans,sans-serif',color:'#0F172A',outline:'none'}}
+            onFocus={e=>{e.target.style.borderColor='#3b82f6';e.target.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)'}}
+            onBlur={e=>{e.target.style.borderColor='#E5E7EB';e.target.style.boxShadow='none'}} />
+        </div>
+        {['Carrier','Trade Lane','HS Code','TEU Range'].map(f => (
+          <button key={f} style={{...btnGhost,padding:'7px 12px',fontSize:12,color:'#64748b',gap:4}}>
+            <i data-lucide="chevron-down" style={{width:11,height:11}}></i>{f}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats strip */}
+      <div style={{display:'flex',gap:0,background:'#FFFFFF',borderBottom:'1px solid #F1F5F9',flexShrink:0}}>
+        {[
+          {label:'Total Companies',value:'124,400',icon:'building-2'},
+          {label:'Active Shippers', value:'89,200', icon:'activity'},
+          {label:'Avg TEU/Year',    value:'18,400', icon:'package'},
+          {label:'In Command Center',value:'34',   icon:'check-circle'},
+        ].map((s,i) => (
+          <div key={s.label} style={{flex:1,padding:'10px 20px',borderRight:i<3?'1px solid #F1F5F9':'none',display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:28,height:28,borderRadius:7,background:'#EFF6FF',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <i data-lucide={s.icon} style={{width:13,height:13,color:'#3b82f6'}}></i>
+            </div>
+            <div>
+              <div style={{fontFamily:'JetBrains Mono,monospace',fontSize:14,fontWeight:600,color:'#1d4ed8'}}>{s.value}</div>
+              <div style={{fontSize:10,color:'#94a3b8',fontFamily:'Space Grotesk,sans-serif',letterSpacing:'0.04em'}}>{s.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div style={{flex:1,overflowY:'auto',padding:'16px 24px',display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:12,alignContent:'start',position:'relative'}}>
+        {filtered.map(c => <CompanyCard key={c.company_id} company={c} onSelect={onSelect} selected={selectedCompany} />)}
+      </div>
+
+      {selectedCompany && <IntelligencePanel company={selectedCompany} onClose={()=>onSelect(null)} onAddToCRM={onAddToCRM} onViewFull={onViewFull} />}
+    </div>
+  );
+}
+
+/* ── Deal Builder ─────────────────────────────────── */
+function DealBuilder() {
+  const deals = [
+    {id:'RFP-0041',company:'Pacific Freight Co.',lane:'LAX → SHA',value:'$240K',status:'Sent',    due:'Apr 28'},
+    {id:'RFP-0038',company:'Atlas Global',        lane:'NYC → RTM',value:'$88K', status:'Draft',   due:'May 3'},
+    {id:'RFP-0035',company:'Summit Shipping',     lane:'MIA → HAM',value:'$320K',status:'Accepted',due:'—'},
+    {id:'RFP-0029',company:'RedSea Lines',         lane:'SEA → TYO',value:'$55K', status:'Expired', due:'—'},
+    {id:'RFP-0044',company:'Harbor Logistics',    lane:'LAX → RTM',value:'$190K',status:'Draft',   due:'May 10'},
+  ];
+  const sMap = {Sent:{bg:'#EFF6FF',color:'#3b82f6',border:'#BFDBFE'},Draft:{bg:'#F1F5F9',color:'#64748b',border:'#E2E8F0'},Accepted:{bg:'#F0FDF4',color:'#15803d',border:'#BBF7D0'},Expired:{bg:'#FEF2F2',color:'#b91c1c',border:'#FECACA'}};
+  return (
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:'#F8FAFC'}}>
+      <TopBar title="Deal Builder" subtitle="Quotes, RFPs, and lane benchmarking"
+        actions={<><button style={btnGhost}><i data-lucide="download" style={{width:13,height:13}}></i> Export</button><button style={btnPrimary}><i data-lucide="plus" style={{width:13,height:13}}></i> New Quote</button></>} />
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',background:'#FFFFFF',borderBottom:'1px solid #E5E7EB',flexShrink:0}}>
+        {[{l:'Open Quotes',v:'3'},{l:'Total Value',v:'$893K'},{l:'Avg. Response',v:'3.2d'},{l:'Win Rate',v:'68%'}].map((s,i)=>(
+          <div key={s.l} style={{padding:'12px 20px',borderRight:i<3?'1px solid #F1F5F9':'none'}}>
+            <div style={{fontFamily:'JetBrains Mono,monospace',fontSize:16,fontWeight:600,color:'#1d4ed8'}}>{s.v}</div>
+            <div style={{fontSize:10,color:'#94a3b8',fontFamily:'Space Grotesk,sans-serif',letterSpacing:'0.04em',marginTop:2}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'16px 24px',display:'flex',flexDirection:'column',gap:8}}>
+        {deals.map(d=>{const s=sMap[d.status];return(
+          <div key={d.id} style={{background:'linear-gradient(180deg,#fff,#FAFBFC)',border:'1px solid #E5E7EB',borderRadius:10,padding:'14px 20px',display:'flex',alignItems:'center',gap:20,cursor:'pointer',boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
+            <span style={{fontFamily:'JetBrains Mono,monospace',fontSize:11,color:'#94a3b8',width:76,flexShrink:0}}>{d.id}</span>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:13,fontWeight:600,color:'#0F172A'}}>{d.company}</div>
+              <div style={{fontFamily:'JetBrains Mono,monospace',fontSize:11,color:'#94a3b8',marginTop:2}}>{d.lane}</div>
+            </div>
+            <div style={{fontFamily:'JetBrains Mono,monospace',fontSize:16,fontWeight:600,color:'#1d4ed8'}}>{d.value}</div>
+            <div style={{fontSize:11,color:'#94a3b8',fontFamily:'DM Sans,sans-serif',width:54,textAlign:'right'}}>{d.due}</div>
+            <span style={{fontSize:11,fontWeight:600,fontFamily:'Space Grotesk,sans-serif',padding:'3px 10px',borderRadius:9999,background:s.bg,color:s.color,border:`1px solid ${s.border}`,flexShrink:0}}>{d.status}</span>
+          </div>
+        );})}
+      </div>
+    </div>
+  );
+}
+
+/* ── App root ─────────────────────────────────────── */
+function App() {
+  const [nav, setNav]           = React.useState(() => localStorage.getItem('lit_nav2') || 'dashboard');
+  const [selCo, setSelCo]       = React.useState(null);
+  const [detailCo, setDetailCo] = React.useState(null); // company detail page
+  const [crmIds, setCrmIds]     = React.useState(MOCK_COMPANIES.filter(c=>c.in_crm).map(c=>c.company_id));
+
+  function handleNav(id) {
+    setNav(id); localStorage.setItem('lit_nav2', id);
+    setSelCo(null); setDetailCo(null);
+  }
+  function handleAddToCRM(co) {
+    setCrmIds(p=>[...p, co.company_id||co.id]);
+    setSelCo(c => c ? {...c, in_crm:true} : null);
+  }
+  function handleViewFull(co) {
+    setDetailCo(co); setSelCo(null);
+  }
+  function handleCCSelect(co) {
+    // Normalize CommandCenter row to company shape
+    const normalized = {
+      company_id:    co.id,
+      company_name:  co.name,
+      shipments_12m: parseInt((co.shipments||'0').replace(/,/g,'')),
+      est_spend:     co.spend,
+      teu:           co.teu,
+      location:      co.location,
+      top_carriers:  [co.route],
+      last_activity: co.lastShip,
+      status:        co.status,
+      in_crm:        true,
+      pillar:        'organize',
+    };
+    setDetailCo(normalized);
+  }
+
+  React.useEffect(() => {
+    if (window.lucide) window.lucide.createIcons();
+  });
+
+  const companies = MOCK_COMPANIES.map(c => ({...c, in_crm: crmIds.includes(c.company_id)}));
+
+  // Company detail page takes over the main area
+  if (detailCo) {
+    return (
+      <div style={{display:'flex',height:'100vh',overflow:'hidden',background:'#020617'}}>
+        <Sidebar active={nav} onNav={handleNav} />
+        <main style={{flex:1,display:'flex',overflow:'hidden',position:'relative'}}>
+          <CompanyDetailPage company={detailCo} onBack={()=>setDetailCo(null)} />
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{display:'flex',height:'100vh',overflow:'hidden',background:'#020617'}}>
+      <Sidebar active={nav} onNav={handleNav} />
+      <main style={{flex:1,display:'flex',overflow:'hidden',position:'relative'}}>
+        {nav==='dashboard' && <Dashboard />}
+        {nav==='discover'  && <DiscoverView companies={companies} selectedCompany={selCo} onSelect={setSelCo} onAddToCRM={handleAddToCRM} onViewFull={handleViewFull} />}
+        {nav==='command'   && <CommandCenter onSelectCompany={handleCCSelect} />}
+        {nav==='outbound'  && <OutboundEngine />}
+        {nav==='deals'     && <DealBuilder />}
+        {nav==='settings'  && (
+          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10,background:'#F8FAFC'}}>
+            <i data-lucide="settings" style={{width:28,height:28,color:'#CBD5E1'}}></i>
+            <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:14,color:'#94a3b8'}}>Settings coming soon</div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
