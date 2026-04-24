@@ -97,6 +97,18 @@ function normalizeNumber(value: unknown): number | null {
   return null;
 }
 
+function todayUtcMidnight(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+}
+
+function isPastOrToday(d: Date | null | undefined): boolean {
+  if (!d || Number.isNaN(d.getTime())) return false;
+  return d.getTime() <= todayUtcMidnight().getTime();
+}
+
 function parseImportYetiDate(value: unknown): Date | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const trimmed = value.trim();
@@ -108,26 +120,43 @@ function parseImportYetiDate(value: unknown): Date | null {
     const b = Number(second);
     const y = Number(year);
 
-    if (a >= 1 && a <= 12 && b >= 1 && b <= 31) {
-      const d = new Date(Date.UTC(y, a - 1, b));
-      return Number.isNaN(d.getTime()) ? null : d;
-    }
+    const mmddValid = a >= 1 && a <= 12 && b >= 1 && b <= 31;
+    const ddmmValid = b >= 1 && b <= 12 && a >= 1 && a <= 31;
 
-    if (b >= 1 && b <= 12 && a >= 1 && a <= 31) {
-      const d = new Date(Date.UTC(y, b - 1, a));
-      return Number.isNaN(d.getTime()) ? null : d;
-    }
+    const mmddCand = mmddValid ? new Date(Date.UTC(y, a - 1, b)) : null;
+    const ddmmCand = ddmmValid ? new Date(Date.UTC(y, b - 1, a)) : null;
 
-    return null;
+    const validMmdd = mmddCand && !Number.isNaN(mmddCand.getTime()) ? mmddCand : null;
+    const validDdmm = ddmmCand && !Number.isNaN(ddmmCand.getTime()) ? ddmmCand : null;
+
+    if (!validMmdd && !validDdmm) return null;
+    if (validMmdd && !validDdmm) return validMmdd;
+    if (!validMmdd && validDdmm) return validDdmm;
+
+    // Both interpretations are valid calendar dates.
+    // Prefer the one that is past-or-today; if both are past or both are future,
+    // keep the legacy MM/DD bias.
+    const mmddPast = isPastOrToday(validMmdd);
+    const ddmmPast = isPastOrToday(validDdmm);
+
+    if (mmddPast && !ddmmPast) return validMmdd;
+    if (ddmmPast && !mmddPast) return validDdmm;
+    return validMmdd;
   }
 
   const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function parseImportYetiDateNoFuture(value: unknown): Date | null {
+  const parsed = parseImportYetiDate(value);
+  if (!parsed) return null;
+  return isPastOrToday(parsed) ? parsed : null;
+}
+
 function normalizeDateForPg(value: string | null | undefined): string | null {
   if (!value) return null;
-  const parsed = parseImportYetiDate(value);
+  const parsed = parseImportYetiDateNoFuture(value);
   return parsed ? parsed.toISOString().slice(0, 10) : null;
 }
 
@@ -584,6 +613,8 @@ function parseTimeSeriesToMonthlyVolumes(timeSeriesRaw: any) {
     return monthlyMap;
   }
 
+  const currentMonthKey = formatMonthKey(todayUtcMidnight());
+
   if (Array.isArray(timeSeriesRaw)) {
     for (const row of timeSeriesRaw) {
       const rawMonth =
@@ -596,6 +627,7 @@ function parseTimeSeriesToMonthlyVolumes(timeSeriesRaw: any) {
       if (!d) continue;
 
       const monthKey = formatMonthKey(d);
+      if (monthKey > currentMonthKey) continue;
 
       const shipments =
         normalizeNumber(row?.shipments) ??
@@ -640,6 +672,7 @@ function parseTimeSeriesToMonthlyVolumes(timeSeriesRaw: any) {
     if (!d) continue;
 
     const monthKey = formatMonthKey(d);
+    if (monthKey > currentMonthKey) continue;
     const shipments = normalizeNumber((rawValue as any)?.shipments) ?? 0;
     const teu = normalizeNumber((rawValue as any)?.teu) ?? 0;
     const weight = normalizeNumber((rawValue as any)?.weight) ?? 0;
@@ -671,7 +704,7 @@ function applyRecentBolsFclLclSplits(
     const d = parseImportYetiDate(
       bol?.date_formatted ?? bol?.date ?? bol?.shipped_on ?? bol?.arrival_date,
     );
-    if (!d) continue;
+    if (!d || !isPastOrToday(d)) continue;
 
     const monthKey = formatMonthKey(d);
     const current = splitByMonth.get(monthKey) || { fcl: 0, lcl: 0 };
@@ -892,7 +925,7 @@ function buildSnapshotFromCompanyData(
       ? (() => {
           const dates = raw.recent_bols
             .map((bol: any) =>
-              parseImportYetiDate(
+              parseImportYetiDateNoFuture(
                 bol?.date_formatted ?? bol?.date ?? bol?.arrival_date ?? bol?.shipped_on,
               ),
             )
@@ -902,7 +935,7 @@ function buildSnapshotFromCompanyData(
           return dates[0] ? dates[0].toISOString().slice(0, 10) : null;
         })()
       : (() => {
-          const end = parseImportYetiDate(raw?.date_range?.end_date);
+          const end = parseImportYetiDateNoFuture(raw?.date_range?.end_date);
           return end ? end.toISOString().slice(0, 10) : null;
         })();
 
