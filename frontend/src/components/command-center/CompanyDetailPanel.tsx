@@ -929,6 +929,42 @@ const extractContainerNumbers = (shipment: any) => {
 };
 
 const extractContainerTypes = (shipment: any) => {
+  // Phase H P1 fix — upstream returns `container_type_descriptions` as
+  // either a comma-joined string OR an array of short codes. Previously
+  // we stringified the array (e.g. "40HC,40GP") and ran the whole thing
+  // through normalizeContainerTypeLabel, which collapsed the distinct
+  // types into one garbled token. Now we check for the array form first
+  // and map each element through the normalizer individually.
+  const rawDescriptions = pickFirst(
+    getShipmentValue(
+      shipment,
+      ["container_type_descriptions"],
+      ["containerTypeDescriptions"],
+      ["container_types"],
+      ["containerTypes"],
+    ),
+    null,
+  );
+  if (Array.isArray(rawDescriptions)) {
+    const types = rawDescriptions
+      .map((item: any) =>
+        normalizeContainerTypeLabel(
+          typeof item === "string"
+            ? item
+            : item?.container_type ||
+                item?.type ||
+                item?.equipment_type ||
+                item?.equipmentType ||
+                item?.description ||
+                "",
+        ),
+      )
+      .filter(Boolean);
+    if (types.length) {
+      return [...new Set(types)].join(", ");
+    }
+  }
+
   const direct = normalizeContainerTypeLabel(
     String(
       pickFirst(
@@ -2452,7 +2488,17 @@ if (!cancelled) {
       ? "text-rose-600"
       : "text-amber-600";
 
-  const suppliersRawCount = safeArray((rawProfile as any)?.suppliers_table).length;
+  // Phase H P1 fix — the proxy's buildSnapshotFromCompanyData emits
+  // `top_suppliers` but never `suppliers_table`. The panel was reading
+  // only `suppliers_table` and getting nothing. We now fall through to
+  // top_suppliers (snake_case, canonical from proxy) and topSuppliers
+  // (camelCase, legacy variant) so suppliers populate in production.
+  const rawSuppliersSource =
+    (rawProfile as any)?.suppliers_table ||
+    (rawProfile as any)?.top_suppliers ||
+    (rawProfile as any)?.topSuppliers ||
+    [];
+  const suppliersRawCount = safeArray(rawSuppliersSource).length;
   const diversityScore =
     suppliersRawCount === 0
       ? null
@@ -2619,7 +2665,16 @@ if (!cancelled) {
     return <CommandCenterEmptyState />;
   }
 
-  const suppliersRaw: any[] = safeArray((rawProfile as any)?.suppliers_table);
+  // Phase H P1 fix — same fallback chain as above so the Suppliers tab
+  // and Overview mini card both render real rows from top_suppliers
+  // when suppliers_table is absent (which is the case for every real
+  // company today per the proxy output).
+  const suppliersRaw: any[] = safeArray(
+    (rawProfile as any)?.suppliers_table ||
+      (rawProfile as any)?.top_suppliers ||
+      (rawProfile as any)?.topSuppliers ||
+      [],
+  );
   const supplierPageSize = 25;
   const suppliersPageCount = Math.ceil(suppliersRaw.length / supplierPageSize);
   const suppliersSlice = suppliersRaw.slice(
@@ -3742,35 +3797,64 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                     </tr>
                   </thead>
                   <tbody>
-                    {suppliersSlice.map((sup: any, idx: number) => (
-                      <tr key={idx} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
-                        <td className="px-3 py-3 align-top">
-                          <div className="max-w-[220px] truncate text-sm font-semibold text-slate-900">
-                            {sup.supplier_name || "—"}
-                          </div>
-                          {sup.supplier_address && (
-                            <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400">
-                              {sup.supplier_address}
+                    {suppliersSlice.map((sup: any, idx: number) => {
+                      // Phase H P1 fix — top_suppliers rows from the proxy
+                      // use `name` / `shipments` / `total_teu`, while the
+                      // legacy suppliers_table rows used `supplier_name` /
+                      // `shipments_12m` / `total_teus`. Both shapes render
+                      // through the same cells now.
+                      const supplierName = sup.supplier_name || sup.name || "—";
+                      const supplierAddress = sup.supplier_address || sup.address || null;
+                      const supplierCountry = sup.country || sup.supplier_address_country || null;
+                      const shipments =
+                        sup.shipments_12m != null
+                          ? sup.shipments_12m
+                          : sup.shipments != null
+                          ? sup.shipments
+                          : null;
+                      const teu =
+                        sup.total_teus != null
+                          ? sup.total_teus
+                          : sup.total_teu != null
+                          ? sup.total_teu
+                          : sup.teu != null
+                          ? sup.teu
+                          : null;
+                      const mostRecent =
+                        sup.most_recent_shipment ||
+                        sup.last_shipment_date ||
+                        sup.lastShipmentDate ||
+                        null;
+                      return (
+                        <tr key={idx} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
+                          <td className="px-3 py-3 align-top">
+                            <div className="max-w-[220px] truncate text-sm font-semibold text-slate-900">
+                              {supplierName}
                             </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 align-top text-sm text-slate-600">
-                          {sup.country || sup.supplier_address_country || "—"}
-                        </td>
-                        <td className="px-3 py-3 align-top text-right text-sm font-semibold text-indigo-600">
-                          {formatNumber(sup.shipments_12m)}
-                        </td>
-                        <td className="px-3 py-3 align-top text-right text-sm text-slate-700">
-                          {formatNumber(sup.total_teus, 1)}
-                        </td>
-                        <td className="px-3 py-3 align-top text-xs text-slate-500">
-                          {sup.most_recent_shipment ? formatDate(sup.most_recent_shipment) : "—"}
-                        </td>
-                        <td className="px-3 py-3 align-top text-xs text-slate-500">
-                          {sup.business_length || "—"}
-                        </td>
-                      </tr>
-                    ))}
+                            {supplierAddress && (
+                              <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400">
+                                {supplierAddress}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 align-top text-sm text-slate-600">
+                            {supplierCountry || "—"}
+                          </td>
+                          <td className="px-3 py-3 align-top text-right text-sm font-semibold text-indigo-600">
+                            {formatNumber(shipments)}
+                          </td>
+                          <td className="px-3 py-3 align-top text-right text-sm text-slate-700">
+                            {formatNumber(teu, 1)}
+                          </td>
+                          <td className="px-3 py-3 align-top text-xs text-slate-500">
+                            {mostRecent ? formatDate(mostRecent) : "—"}
+                          </td>
+                          <td className="px-3 py-3 align-top text-xs text-slate-500">
+                            {sup.business_length || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

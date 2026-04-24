@@ -335,13 +335,18 @@ export default function SearchPage() {
     // Fire-and-forget usage event so the Dashboard "Searches Used" KPI
     // reflects real activity. Never awaited, never surfaced to the user —
     // if the insert fails (RLS, network, schema), the search continues.
+    // Phase H P1 fix — payload previously used `event_data` which is not a
+    // column on `lit_activity_events` (schema has `metadata jsonb`). The
+    // REST call was silently rejected and zero rows landed, so the
+    // Searches Used KPI read 0 forever. Renamed to `metadata` to match
+    // the real schema.
     if (user?.id) {
       void supabase
         .from("lit_activity_events")
         .insert({
           user_id: user.id,
           event_type: "search",
-          event_data: { q: query },
+          metadata: { q: query },
         })
         .then(
           () => undefined,
