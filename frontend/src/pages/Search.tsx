@@ -44,6 +44,7 @@ import {
 } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
+import { canonicalContainerCode } from "@/lib/containerUtils";
 import ShipperDetailModal from "@/components/search/ShipperDetailModal";
 
 function getCountryFlag(countryCode?: string): string {
@@ -110,6 +111,18 @@ export default function SearchPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [contacts, setContacts] = useState<any[]>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
+
+  // Phase D client-side filters. Every chip maps to a field that's already
+  // populated on the mapped company rows — nothing fetched, nothing mocked.
+  // Defaults are "any" / false so the filter is a pass-through until the
+  // user changes it.
+  type TeuRange = "any" | "<=1k" | "1k-10k" | "10k-100k" | ">100k";
+  type LoadType = "any" | "fcl" | "lcl";
+  type TopContainer = "any" | "20FT" | "40FT" | "40HC" | "45FT";
+  const [teuRange, setTeuRange] = useState<TeuRange>("any");
+  const [loadType, setLoadType] = useState<LoadType>("any");
+  const [topContainer, setTopContainer] = useState<TopContainer>("any");
+  const [savedOnly, setSavedOnly] = useState(false);
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -319,6 +332,23 @@ export default function SearchPage() {
     setSearching(true);
     setHasSearched(true);
 
+    // Fire-and-forget usage event so the Dashboard "Searches Used" KPI
+    // reflects real activity. Never awaited, never surfaced to the user —
+    // if the insert fails (RLS, network, schema), the search continues.
+    if (user?.id) {
+      void supabase
+        .from("lit_activity_events")
+        .insert({
+          user_id: user.id,
+          event_type: "search",
+          event_data: { q: query },
+        })
+        .then(
+          () => undefined,
+          () => undefined,
+        );
+    }
+
     try {
       const response = await searchShippers({ q: query, page: 1, pageSize: 25 });
 
@@ -392,16 +422,30 @@ export default function SearchPage() {
                 result.shipments_12m ??
                 totalShipments
               ) || 0,
-            teu_estimate:
-              result.latestYearTeu != null
-                ? Number(result.latestYearTeu)
-                : result.latest_year_teu != null
-                  ? Number(result.latest_year_teu)
-                  : result.teusLast12m != null
-                    ? Number(result.teusLast12m)
-                    : result.totalTEU != null
-                      ? Number(result.totalTEU)
-                      : undefined,
+            teu_estimate: (() => {
+              // Prefer normalized parsed_summary / companyProfile shapes first,
+              // then fall back to flat fields the search action returns, then
+              // finally anything on raw_payload-shaped objects.
+              const candidates: Array<unknown> = [
+                result?.parsed_summary?.total_teu,
+                result?.parsed_summary?.route_kpis?.teuLast12m,
+                result?.companyProfile?.routeKpis?.teuLast12m,
+                result?.routeKpis?.teuLast12m,
+                result?.route_kpis?.teuLast12m,
+                result?.snapshot?.total_teu,
+                result?.total_teu,
+                result?.totalTEU,
+                result?.latestYearTeu,
+                result?.latest_year_teu,
+                result?.teusLast12m,
+              ];
+              for (const value of candidates) {
+                if (value == null) continue;
+                const num = Number(value);
+                if (Number.isFinite(num)) return num;
+              }
+              return undefined;
+            })(),
             mode: undefined,
             last_shipment: parsedDate ?? null,
             status: (result.totalShipments || 0) > 0 ? 'Active' : 'Inactive',
@@ -615,6 +659,67 @@ export default function SearchPage() {
     return "bg-slate-50 text-slate-700 border-slate-200";
   };
 
+  // Phase D client-side filter pipeline. Applies the 4 approved chips
+  // (TEU Range, Load Type, Top Container, Saved Only) to `results` in-memory.
+  // Zero new network calls. Every field read here is already on the mapped
+  // company rows from the existing searchShippers → fetchSearchKpiOverlay
+  // path. When every chip is at its default value the filter is a
+  // pass-through identity, so unfiltered UX is byte-for-byte unchanged.
+  const filteredResults = useMemo(() => {
+    return results.filter((co) => {
+      if (teuRange !== "any") {
+        const t = co.teu_estimate;
+        if (t == null || !Number.isFinite(t)) return false;
+        if (teuRange === "<=1k" && t > 1000) return false;
+        if (teuRange === "1k-10k" && (t <= 1000 || t > 10000)) return false;
+        if (teuRange === "10k-100k" && (t <= 10000 || t > 100000)) return false;
+        if (teuRange === ">100k" && t <= 100000) return false;
+      }
+      if (loadType === "fcl") {
+        const pct = (co as any).fcl_percent;
+        if (pct == null || Number(pct) < 50) return false;
+      }
+      if (loadType === "lcl") {
+        const pct = (co as any).lcl_percent;
+        if (pct == null || Number(pct) < 50) return false;
+      }
+      if (topContainer !== "any") {
+        const code = canonicalContainerCode((co as any).top_container_length);
+        if (code !== topContainer) return false;
+      }
+      if (savedOnly) {
+        const key =
+          (co as any).importyeti_key ||
+          ((co as any).company_id ? `company/${(co as any).company_id}` : null);
+        if (!key || !savedCompanyIds.includes(key)) return false;
+      }
+      return true;
+    });
+  }, [results, teuRange, loadType, topContainer, savedOnly, savedCompanyIds]);
+
+  const hasActiveFilter =
+    teuRange !== "any" || loadType !== "any" || topContainer !== "any" || savedOnly;
+
+  const clearFilters = () => {
+    setTeuRange("any");
+    setLoadType("any");
+    setTopContainer("any");
+    setSavedOnly(false);
+  };
+
+  // KPI strip values — Total / Active / Avg TEU / Saved. All read from
+  // already-fetched results or existing savedCompanyIds. `—` when empty.
+  const kpiTotal = results.length;
+  const kpiActive = results.filter((co) => (co.shipments || 0) > 0).length;
+  const kpiAvgTeu = (() => {
+    const vals = results
+      .map((co) => co.teu_estimate)
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+    if (vals.length === 0) return null;
+    return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
+  })();
+  const kpiSaved = savedCompanyIds.length;
+
   if (!authReady) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -639,11 +744,23 @@ export default function SearchPage() {
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                Company Search
+              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Discover
+              </div>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+                Discover Companies
               </h1>
-              <p className="mt-1 text-sm text-slate-600 sm:text-base">
-                Search real import and export companies, then preview trade intelligence before saving to Command Center.
+              <p className="mt-1 text-sm text-slate-500">
+                Global shipment and company intelligence
+                {hasSearched && !searching && filteredResults.length > 0 ? (
+                  <span className="ml-2 text-slate-400">·</span>
+                ) : null}
+                {hasSearched && !searching && filteredResults.length > 0 ? (
+                  <span className="ml-2 text-slate-600">
+                    <span className="font-semibold text-slate-900">{filteredResults.length.toLocaleString()}</span>{" "}
+                    {filteredResults.length === 1 ? "company" : "companies"} shown
+                  </span>
+                ) : null}
               </p>
             </div>
 
@@ -692,6 +809,83 @@ export default function SearchPage() {
             </div>
           </div>
         </motion.div>
+
+        {/* Phase D — Discover KPI strip. All four tiles read real, already
+            in-flight data; no extra fetches, no mock numbers. Tiles show
+            "—" when their source is empty. Only rendered after a search
+            completes so the pre-search empty state stays calm. */}
+        {hasSearched && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.04 }}
+            className="rounded-2xl border border-slate-200 p-3 md:p-4 shadow-sm"
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.9) 100%)",
+              boxShadow: "0 10px 30px -22px rgba(15, 23, 42, 0.22)",
+            }}
+          >
+            <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">
+              Discover · This search
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              {
+                label: "Total Companies",
+                value: kpiTotal > 0 ? kpiTotal.toLocaleString() : "—",
+                icon: SearchIcon,
+                tintBg: "bg-indigo-50",
+                tintText: "text-indigo-600",
+                tintRing: "ring-indigo-100",
+              },
+              {
+                label: "Active Shippers",
+                value: kpiActive > 0 ? kpiActive.toLocaleString() : "—",
+                icon: Ship,
+                tintBg: "bg-cyan-50",
+                tintText: "text-cyan-600",
+                tintRing: "ring-cyan-100",
+              },
+              {
+                label: "Avg TEU / Year",
+                value: kpiAvgTeu != null && kpiAvgTeu > 0 ? kpiAvgTeu.toLocaleString() : "—",
+                icon: Package,
+                tintBg: "bg-amber-50",
+                tintText: "text-amber-600",
+                tintRing: "ring-amber-100",
+              },
+              {
+                label: "In Command Center",
+                value: kpiSaved > 0 ? kpiSaved.toLocaleString() : "—",
+                icon: Bookmark,
+                tintBg: "bg-emerald-50",
+                tintText: "text-emerald-600",
+                tintRing: "ring-emerald-100",
+              },
+            ].map((k) => (
+              <div
+                key={k.label}
+                className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+              >
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${k.tintBg} ${k.tintRing}`}
+                >
+                  <k.icon className={`h-4 w-4 ${k.tintText}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {k.label}
+                  </div>
+                  <div className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-950">
+                    {k.value}
+                  </div>
+                </div>
+              </div>
+            ))}
+            </div>
+          </motion.div>
+        )}
 
         <motion.form
           initial={{ opacity: 0, y: 14 }}
@@ -744,6 +938,112 @@ export default function SearchPage() {
           </div>
         </motion.form>
 
+        {/* Phase D — Inline filter chips. Only shown after a search, and
+            only for filters backed by real fields already on the mapped
+            results (teu_estimate, fcl_percent / lcl_percent,
+            top_container_length via canonicalContainerCode, savedCompanyIds).
+            No Carrier / Trade Lane / HS Code chips because those fields
+            aren't on search results today. */}
+        {hasSearched && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+          >
+            {[
+              {
+                label: "TEU Range",
+                value: teuRange,
+                onChange: (v: string) => setTeuRange(v as TeuRange),
+                options: [
+                  { value: "any", label: "Any" },
+                  { value: "<=1k", label: "≤1K" },
+                  { value: "1k-10k", label: "1K–10K" },
+                  { value: "10k-100k", label: "10K–100K" },
+                  { value: ">100k", label: ">100K" },
+                ] as Array<{ value: string; label: string }>,
+              },
+              {
+                label: "Load Type",
+                value: loadType,
+                onChange: (v: string) => setLoadType(v as LoadType),
+                options: [
+                  { value: "any", label: "Any" },
+                  { value: "fcl", label: "FCL-heavy" },
+                  { value: "lcl", label: "LCL-heavy" },
+                ] as Array<{ value: string; label: string }>,
+              },
+              {
+                label: "Top Container",
+                value: topContainer,
+                onChange: (v: string) => setTopContainer(v as TopContainer),
+                options: [
+                  { value: "any", label: "Any" },
+                  { value: "20FT", label: "20FT" },
+                  { value: "40FT", label: "40FT" },
+                  { value: "40HC", label: "40HC" },
+                  { value: "45FT", label: "45FT" },
+                ] as Array<{ value: string; label: string }>,
+              },
+            ].map((group) => (
+              <div key={group.label} className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {group.label}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.options.map((opt) => {
+                    const active = group.value === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => group.onChange(opt.value)}
+                        aria-pressed={active}
+                        className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
+                          active
+                            ? "bg-slate-900 text-white shadow-sm"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Saved Only
+              </span>
+              <button
+                type="button"
+                onClick={() => setSavedOnly((v) => !v)}
+                aria-pressed={savedOnly}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
+                  savedOnly
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                {savedOnly ? <Bookmark className="h-3 w-3" /> : null}
+                {savedOnly ? "On" : "Off"}
+              </button>
+            </div>
+
+            {hasActiveFilter && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="ml-auto inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                <X className="h-3 w-3" /> Clear filters
+              </button>
+            )}
+          </motion.div>
+        )}
+
         {hasSearched && (
           <>
             <motion.div
@@ -756,7 +1056,15 @@ export default function SearchPage() {
                   "Searching..."
                 ) : (
                   <>
-                    Showing <span className="font-semibold text-slate-900">{results.length}</span> companies
+                    Showing{" "}
+                    <span className="font-semibold text-slate-900">{filteredResults.length.toLocaleString()}</span>
+                    {hasActiveFilter && filteredResults.length !== results.length ? (
+                      <>
+                        {" "}
+                        of <span className="font-semibold text-slate-700">{results.length.toLocaleString()}</span>
+                      </>
+                    ) : null}{" "}
+                    companies
                   </>
                 )}
               </p>
@@ -791,7 +1099,7 @@ export default function SearchPage() {
 
             {viewMode !== "list" ? (
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                {results.map((company, index) => (
+                {filteredResults.map((company, index) => (
                   <motion.div
                     key={company.id}
                     initial={{ opacity: 0, y: 18 }}
@@ -884,7 +1192,7 @@ export default function SearchPage() {
                               Last Ship
                             </div>
                             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600, color: '#374151' }}>
-                              {formatUserFriendlyDate(company.last_shipment) || "—"}
+                              {formatUserFriendlyDate(company.last_shipment, { fallback: "—" })}
                             </div>
                           </div>
                         </div>
@@ -985,7 +1293,7 @@ export default function SearchPage() {
                     </thead>
 
                     <tbody className="divide-y divide-slate-100">
-                      {results.map((company, index) => (
+                      {filteredResults.map((company, index) => (
                         <motion.tr
                           key={company.id}
                           initial={{ opacity: 0, x: -14 }}
@@ -1043,7 +1351,7 @@ export default function SearchPage() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-1.5">
                               <div className="text-sm text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment)}
+                                {formatUserFriendlyDate(company.last_shipment, { fallback: "—" })}
                               </div>
                               {(() => {
                                 const badgeInfo = getDateBadgeInfo(company.last_shipment);
@@ -1106,7 +1414,7 @@ export default function SearchPage() {
               </div>
             )}
 
-            {!searching && results.length === 0 && (
+            {!searching && filteredResults.length === 0 && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

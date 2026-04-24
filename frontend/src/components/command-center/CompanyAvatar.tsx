@@ -1,6 +1,5 @@
 import React from "react";
 import { CompanyAvatar as SharedCompanyAvatar } from "@/components/CompanyAvatar";
-import { getCompanyLogoUrl } from "@/lib/logo";
 
 type CompanyAvatarProps = {
   name: string;
@@ -24,14 +23,13 @@ export default function CompanyAvatar({
   size = 56,
   className = "",
 }: CompanyAvatarProps) {
-  const logoUrl = src || getCompanyLogoUrl(domain || undefined) || undefined;
-
   return (
     <SharedCompanyAvatar
       name={name}
       size={mapSize(size)}
       className={className}
-      logoUrl={logoUrl}
+      logoUrl={src || undefined}
+      domain={domain || undefined}
     />
   );
 }

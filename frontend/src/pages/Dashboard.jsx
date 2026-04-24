@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import {
   Building2, Mail, FileText, Search,
-  Package, Layers, Zap, Users2,
+  Package, Zap, Users2,
   ArrowRight, TrendingUp,
   Send, Clock, PlusCircle, AlertCircle,
   ExternalLink, SlidersHorizontal,
@@ -17,16 +17,8 @@ import { DashboardLoadingSkeleton } from "@/components/dashboard/LoadingSkeleton
 import { useDashboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import QuickActionsButton from "@/components/dashboard/QuickActionsButton";
 import { motion } from "framer-motion";
-
-// Static trade lane data — in a later phase these will be driven by IyRouteKpis
-const TRADE_LANES = [
-  { id: "cn-us", from: "China",   to: "USA",    shipments: 42800, teu: "182K", trend: "+12%", up: true  },
-  { id: "in-us", from: "India",   to: "USA",    shipments: 18400, teu: "76K",  trend: "+8%",  up: true  },
-  { id: "de-us", from: "Germany", to: "USA",    shipments: 12200, teu: "48K",  trend: "+3%",  up: true  },
-  { id: "jp-us", from: "Japan",   to: "USA",    shipments: 9800,  teu: "38K",  trend: "-2%",  up: false },
-  { id: "kr-us", from: "S.Korea", to: "USA",    shipments: 8400,  teu: "31K",  trend: "+5%",  up: true  },
-  { id: "vn-us", from: "Vietnam", to: "USA",    shipments: 6900,  teu: "26K",  trend: "+22%", up: true  },
-];
+import GlobeCanvas from "@/components/GlobeCanvas";
+import { laneStringToGlobeLane } from "@/lib/laneGlobe";
 
 const ACTIVITY_ICON_MAP = {
   "trending-up":  TrendingUp,
@@ -58,6 +50,26 @@ function formatCompactNumber(n) {
   if (num >= 1_000_000) return "$" + (num / 1_000_000).toFixed(1) + "M";
   if (num >= 1_000) return num.toLocaleString();
   return String(num);
+}
+
+// Deterministic lane-key normalizer. Unifies arrow variants (→, ->, >,
+// stand-alone "to"), trims whitespace around each leg, uppercases, and
+// rejoins with a canonical separator so equal lanes compare equal
+// regardless of which arrow style upstream returned. Not fuzzy — only
+// collapses known separator variants.
+// Examples:
+//   "China → USA"   → "CHINA > USA"
+//   "china -> usa"  → "CHINA > USA"
+//   "China to USA"  → "CHINA > USA"
+function normalizeLaneKey(lane) {
+  if (!lane || typeof lane !== "string") return "";
+  return lane
+    .replace(/→|->|>|\bto\b/gi, ">")
+    .split(">")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" > ")
+    .toUpperCase();
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -238,7 +250,7 @@ function SavedContacts({ contacts }) {
   );
 }
 
-function HighOpportunityPanel({ savedCompanies, campaigns }) {
+function HighOpportunityPanel({ savedCompanies, campaigns, selectedLane, onClearLane }) {
   // Derive "not yet engaged" from saved companies that have no associated campaign
   const engagedNames = new Set(
     campaigns.map(c => (c?.company_name || c?.name || "").toLowerCase()).filter(Boolean)
@@ -247,6 +259,22 @@ function HighOpportunityPanel({ savedCompanies, campaigns }) {
     const name = (s?.company?.name || s?.company_name || "").toLowerCase();
     return name && !engagedNames.has(name);
   });
+
+  // Lane filter — when a lane is selected in TradeLanesPanel, only show
+  // companies whose top_route_12m (primary) or recent_route (fallback)
+  // matches. Both sides are passed through normalizeLaneKey so arrow-style
+  // variants ("China → USA" / "china -> usa" / "China to USA") resolve to
+  // the same canonical key before comparison. Deterministic, not fuzzy.
+  // Zero-risk for callers: when selectedLane is null, filter is a
+  // pass-through.
+  const selectedLaneKey = normalizeLaneKey(selectedLane);
+  const filtered = selectedLaneKey
+    ? notEngaged.filter((s) => {
+        const co = s?.company || s?.company_data || {};
+        const lane = co?.kpis?.top_route_12m || co?.kpis?.recent_route || null;
+        return normalizeLaneKey(lane) === selectedLaneKey;
+      })
+    : notEngaged;
 
   return (
     <CardShell>
@@ -262,7 +290,25 @@ function HighOpportunityPanel({ savedCompanies, campaigns }) {
           </button>
         }
       />
-      {notEngaged.length === 0 ? (
+      {selectedLane && (
+        <div
+          className="flex items-center justify-between gap-3 border-b border-blue-100 bg-blue-50/60 px-4 py-2"
+          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+        >
+          <span className="text-[11px] font-semibold text-blue-700">
+            Filtered to {selectedLane}
+            {filtered.length > 0 ? ` · ${filtered.length} ${filtered.length === 1 ? "match" : "matches"}` : " · no matches"}
+          </span>
+          <button
+            type="button"
+            onClick={onClearLane}
+            className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+      {filtered.length === 0 ? (
         <div className="px-6 py-8 text-center">
           <Zap className="w-7 h-7 text-slate-300 mx-auto mb-2" />
           <p className="text-sm font-medium text-slate-500" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
@@ -291,7 +337,7 @@ function HighOpportunityPanel({ savedCompanies, campaigns }) {
               </tr>
             </thead>
             <tbody>
-              {notEngaged.slice(0, 5).map((saved, i) => {
+              {filtered.slice(0, 5).map((saved, i) => {
                 const co = saved?.company || saved?.company_data || {};
                 const name = co?.name || saved?.company_name || "Unknown";
                 const shipments = co?.shipments_12m;
@@ -352,150 +398,264 @@ function HighOpportunityPanel({ savedCompanies, campaigns }) {
   );
 }
 
-function TradeLanesPanel({ selectedLane, onSelect }) {
+function TradeLanesPanel({ lanes, selectedLane, onSelect }) {
+  // `lanes` is aggregated from real saved-company snapshots. Each entry:
+  //   { id: "China → USA", from, to, shipments, teu, companies: [...] }
+  // `selectedLane` is the lane id (the same lane string).
+  // Globe lanes are derived once; laneStringToGlobeLane returns null when
+  // coordinates can't be resolved — those rows still render in the list.
+  const globeLanes = useMemo(
+    () =>
+      lanes
+        .map((lane) => laneStringToGlobeLane(lane.id))
+        .filter((entry) => entry !== null),
+    [lanes],
+  );
+
+  const selected = selectedLane
+    ? lanes.find((lane) => lane.id === selectedLane) || null
+    : null;
+
   return (
-    <CardShell style={{ padding: 0, overflow: "hidden" }}>
-      <div className="px-[18px] pt-4 pb-3 border-b border-slate-100">
+    <CardShell
+      style={{
+        padding: 0,
+        overflow: "hidden",
+        background:
+          "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 55%, #EEF2FF 100%)",
+        boxShadow: "0 12px 34px -20px rgba(15, 23, 42, 0.22)",
+      }}
+    >
+      <div
+        className="px-5 pt-4 pb-3 border-b border-slate-100"
+        style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)" }}
+      >
         <div
-          className="text-sm font-bold text-slate-900"
+          className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500"
           style={{ fontFamily: "'Space Grotesk', sans-serif" }}
         >
-          Top Active Trade Lanes
+          Trade Lane Intelligence
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <div
+            className="text-[15px] font-bold tracking-tight text-slate-950"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            Top Active Trade Lanes
+          </div>
+          {lanes.length > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-indigo-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-indigo-700"
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+              {lanes.length} active
+            </span>
+          ) : null}
         </div>
         <div
-          className="text-[11px] text-slate-400 mt-0.5"
+          className="mt-1 text-[11px] text-slate-500"
           style={{ fontFamily: "'DM Sans', sans-serif" }}
         >
-          Global freight route intelligence
+          {lanes.length > 0
+            ? `Real route intelligence derived from ${lanes.length} saved-company ${lanes.length === 1 ? "lane" : "lanes"}`
+            : "Save companies in Command Center to surface their top trade lanes"}
         </div>
       </div>
 
-      {/* Static globe placeholder — D3 globe enhancement can be layered on top in a future pass */}
-      <div className="flex">
-        <div className="w-[110px] flex-shrink-0 bg-slate-50 border-r border-slate-100 flex items-center justify-center p-3">
-          <svg viewBox="0 0 100 100" width="90" height="90" className="opacity-70">
-            <circle cx="50" cy="50" r="44" fill="#DBEAFE" stroke="#BFDBFE" strokeWidth="1.5" />
-            {/* Graticule rings */}
-            <ellipse cx="50" cy="50" rx="44" ry="20" fill="none" stroke="rgba(59,130,246,0.12)" strokeWidth="0.8" />
-            <ellipse cx="50" cy="50" rx="44" ry="36" fill="none" stroke="rgba(59,130,246,0.08)" strokeWidth="0.8" />
-            <line x1="50" y1="6" x2="50" y2="94" stroke="rgba(59,130,246,0.10)" strokeWidth="0.8" />
-            <line x1="6" y1="50" x2="94" y2="50" stroke="rgba(59,130,246,0.10)" strokeWidth="0.8" />
-            {/* Highlighted arc for selected lane (decorative) */}
-            {selectedLane && (
-              <path
-                d="M 18 40 Q 50 10 82 45"
-                fill="none"
-                stroke="#3B82F6"
-                strokeWidth="2.5"
-                strokeDasharray="4 3"
-                opacity="0.85"
-              />
-            )}
-            {/* Dot markers */}
-            <circle cx="72" cy="42" r="4" fill="#3B82F6" stroke="#fff" strokeWidth="1.5" />
-            <circle cx="22" cy="44" r="4" fill="#3B82F6" stroke="#fff" strokeWidth="1.5" />
-          </svg>
+      {lanes.length === 0 ? (
+        <div className="px-4 py-10 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 ring-1 ring-slate-200">
+            <Package className="h-5 w-5 text-slate-300" />
+          </div>
+          <p
+            className="text-sm font-medium text-slate-500"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            No route intelligence yet
+          </p>
+          <p
+            className="mt-1 text-xs text-slate-400"
+            style={{ fontFamily: "'DM Sans', sans-serif" }}
+          >
+            Save a shipper from Discover to surface its primary lane here.
+          </p>
+          <Link
+            to="/app/search"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            Discover Companies <ArrowRight className="h-3 w-3" />
+          </Link>
         </div>
+      ) : (
+        <div className="flex flex-col lg:flex-row">
+          <div
+            className="relative flex flex-shrink-0 flex-col items-center justify-center border-b border-slate-100 p-5 lg:w-[272px] lg:border-b-0 lg:border-r"
+            style={{
+              background:
+                "radial-gradient(circle at 50% 35%, rgba(99,102,241,0.12) 0%, rgba(6,182,212,0.08) 45%, rgba(255,255,255,0) 75%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)",
+            }}
+          >
+            {/* Cosmetic glow ring — zero behavior change. */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  "radial-gradient(circle at 50% 40%, rgba(59,130,246,0.18) 0%, rgba(59,130,246,0) 55%)",
+              }}
+            />
+            <div className="relative z-10">
+              <GlobeCanvas lanes={globeLanes} selectedLane={selectedLane} size={220} />
+            </div>
+            <div
+              className="relative z-10 mt-3 inline-flex items-center gap-1.5 rounded-full border border-indigo-100 bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-indigo-600 backdrop-blur"
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+            >
+              <span className="h-1 w-1 rounded-full bg-indigo-500" />
+              Live route map
+            </div>
+          </div>
 
-        <div className="flex-1 overflow-y-auto max-h-[276px]">
-          {TRADE_LANES.map(lane => {
-            const isSelected = selectedLane === lane.id;
-            return (
-              <div
-                key={lane.id}
-                onClick={() => onSelect(isSelected ? null : lane.id)}
-                className="px-3.5 py-2.5 border-b border-slate-100 cursor-pointer transition-colors"
-                style={{
-                  background: isSelected ? "#EFF6FF" : "transparent",
-                  borderLeft: isSelected ? "2px solid #3B82F6" : "2px solid transparent",
-                }}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "#F8FAFC"; }}
-                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
-              >
-                <div className="flex items-center justify-between mb-0.5">
-                  <div className="flex items-center gap-1.5">
+          <div className="max-h-[320px] flex-1 overflow-y-auto">
+            {lanes.map((lane) => {
+              const isSelected = selectedLane === lane.id;
+              return (
+                <div
+                  key={lane.id}
+                  onClick={() => onSelect(isSelected ? null : lane.id)}
+                  className="cursor-pointer border-b border-slate-100 px-3.5 py-2.5 transition-colors"
+                  style={{
+                    background: isSelected ? "#EFF6FF" : "transparent",
+                    borderLeft: isSelected ? "2px solid #3B82F6" : "2px solid transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = "#F8FAFC";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <div className="mb-0.5 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="text-[11px] font-semibold"
+                        style={{
+                          fontFamily: "'JetBrains Mono', monospace",
+                          color: isSelected ? "#1d4ed8" : "#374151",
+                        }}
+                      >
+                        {lane.from}
+                      </span>
+                      <ArrowRight className="h-2.5 w-2.5 text-slate-300" />
+                      <span
+                        className="text-[11px] font-semibold"
+                        style={{
+                          fontFamily: "'JetBrains Mono', monospace",
+                          color: isSelected ? "#1d4ed8" : "#374151",
+                        }}
+                      >
+                        {lane.to}
+                      </span>
+                    </div>
                     <span
-                      className="text-[11px] font-semibold"
-                      style={{ fontFamily: "'JetBrains Mono', monospace", color: isSelected ? "#1d4ed8" : "#374151" }}
+                      className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-500"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                     >
-                      {lane.from}
-                    </span>
-                    <ArrowRight className="w-2.5 h-2.5 text-slate-300" />
-                    <span
-                      className="text-[11px] font-semibold"
-                      style={{ fontFamily: "'JetBrains Mono', monospace", color: isSelected ? "#1d4ed8" : "#374151" }}
-                    >
-                      {lane.to}
+                      {lane.companies.length} {lane.companies.length === 1 ? "co" : "cos"}
                     </span>
                   </div>
-                  <span
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={{
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      color: lane.up ? "#15803d" : "#b91c1c",
-                      background: lane.up ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
-                    }}
-                  >
-                    {lane.up ? "↑" : "↓"} {lane.trend}
-                  </span>
+                  <div className="flex gap-3">
+                    <span
+                      className="text-[10px] text-slate-400"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      {lane.shipments > 0 ? lane.shipments.toLocaleString() : "—"} ships
+                    </span>
+                    <span
+                      className="text-[10px] text-slate-400"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      {lane.teu > 0 ? Math.round(lane.teu).toLocaleString() : "—"} TEU
+                    </span>
+                  </div>
                 </div>
-                <div className="flex gap-3">
-                  <span
-                    className="text-[10px] text-slate-400"
-                    style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                  >
-                    {lane.shipments.toLocaleString()} ships
-                  </span>
-                  <span
-                    className="text-[10px] text-slate-400"
-                    style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                  >
-                    {lane.teu} TEU
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
-      {selectedLane && (() => {
-        const lane = TRADE_LANES.find(l => l.id === selectedLane);
-        if (!lane) return null;
-        return (
-          <div
-            className="px-4 py-2.5 border-t border-blue-200 flex items-center gap-4"
-            style={{ background: "#EFF6FF" }}
-          >
+      {selected && (
+        <div
+          className="flex flex-col gap-2 border-t border-blue-200 px-4 py-2.5"
+          style={{ background: "#EFF6FF" }}
+        >
+          <div className="flex items-center gap-4">
             <span
               className="text-[12px] font-semibold text-blue-700"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              {lane.from} → {lane.to}
+              {selected.from} → {selected.to}
             </span>
-            <div className="flex gap-3 ml-auto">
-              <span className="text-[11px] text-slate-500" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+            <div className="ml-auto flex gap-3">
+              <span
+                className="text-[11px] text-slate-500"
+                style={{ fontFamily: "'DM Sans', sans-serif" }}
+              >
                 Ships:{" "}
-                <strong className="text-blue-700" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                  {lane.shipments.toLocaleString()}
-                </strong>
-              </span>
-              <span className="text-[11px] text-slate-500" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-                TEU:{" "}
-                <strong className="text-blue-700" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                  {lane.teu}
+                <strong
+                  className="text-blue-700"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                >
+                  {selected.shipments > 0 ? selected.shipments.toLocaleString() : "—"}
                 </strong>
               </span>
               <span
-                className="text-[11px] font-bold"
-                style={{ color: lane.up ? "#15803d" : "#b91c1c" }}
+                className="text-[11px] text-slate-500"
+                style={{ fontFamily: "'DM Sans', sans-serif" }}
               >
-                {lane.up ? "↑" : "↓"} {lane.trend}
+                TEU:{" "}
+                <strong
+                  className="text-blue-700"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                >
+                  {selected.teu > 0 ? Math.round(selected.teu).toLocaleString() : "—"}
+                </strong>
               </span>
             </div>
           </div>
-        );
-      })()}
+          {selected.companies.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {selected.companies.slice(0, 3).map((co, i) => {
+                const name = co?.name || co?.company_name || "Unknown";
+                return (
+                  <span
+                    key={`${name}-${i}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                  >
+                    <span
+                      className="inline-block h-1.5 w-1.5 rounded-full"
+                      style={{ background: companyInitialColor(name) }}
+                    />
+                    {name}
+                  </span>
+                );
+              })}
+              {selected.companies.length > 3 && (
+                <span
+                  className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  +{selected.companies.length - 3} more
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </CardShell>
   );
 }
@@ -574,10 +734,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [savedCompanies, setSavedCompanies] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
-  const [rfpCount, setRfpCount] = useState(0);
   const [activities, setActivities] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
   const [contacts, setContacts] = useState([]);
+  // Saved-contacts KPI count. Kept separate from the `contacts` preview list
+  // because that list is limit-8 for the SavedContacts panel — we need a true
+  // `count: exact` for the KPI tile.
+  const [contactsCount, setContactsCount] = useState(0);
   const [selectedLane, setSelectedLane] = useState(null);
 
   useDashboardShortcuts();
@@ -589,13 +752,47 @@ export default function Dashboard() {
       try {
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const [companiesRes, campaignsRes, rfpsRes, activitiesRes, searchRes, contactsRes] = await Promise.allSettled([
+
+        // Resolve organisation id for per-org KPI scoping. Read from auth
+        // metadata first (no extra fetch). If the user object carries no
+        // organisation reference we'll fall back to an UNSCOPED count below
+        // — this is the temporary fallback the Phase-C plan approved.
+        const orgId =
+          user?.user_metadata?.organization_id ||
+          user?.user_metadata?.org_id ||
+          user?.app_metadata?.organization_id ||
+          user?.app_metadata?.org_id ||
+          null;
+
+        // Build the contacts-count query. We attempt org-scoped first when
+        // we have an id and fall through to unscoped if the scoped call
+        // errors (likely because `organization_id` isn't on `lit_contacts`
+        // in this environment). Either way: real counts, never mocked.
+        // TEMP FALLBACK — proper per-org scoping requires a schema add on
+        // `lit_contacts.organization_id` + backfill. Tracked as a Phase-C
+        // backend ticket.
+        const buildContactsCountQuery = () => {
+          let q = supabase
+            .from("lit_contacts")
+            .select("id", { count: "exact", head: true });
+          if (orgId) q = q.eq("organization_id", orgId);
+          return q;
+        };
+
+        const [
+          companiesRes,
+          campaignsRes,
+          activitiesRes,
+          searchRes,
+          contactsRes,
+          contactsCountRes,
+        ] = await Promise.allSettled([
           getSavedCompanies(),
           getLitCampaigns().catch(() => getCrmCampaigns()),
-          supabase.from('lit_rfps').select('id').eq('status', 'active'),
           supabase.from('lit_activity_events').select('*').order('created_at', { ascending: false }).limit(10),
           supabase.from('lit_activity_events').select('id', { count: 'exact', head: true }).eq('user_id', user?.id).eq('event_type', 'search').gte('created_at', monthStart),
           supabase.from('lit_contacts').select('id, full_name, title, company_name').order('created_at', { ascending: false }).limit(8),
+          buildContactsCountQuery(),
         ]);
 
         if (mounted) {
@@ -608,14 +805,28 @@ export default function Dashboard() {
                          Array.isArray(campaignsRes.value) ? campaignsRes.value : [];
             setCampaigns(rows);
           }
-          if (rfpsRes.status === "fulfilled") {
-            setRfpCount(rfpsRes.value?.data?.length || 0);
-          }
           if (searchRes.status === "fulfilled") {
             setSearchCount(searchRes.value?.count || 0);
           }
           if (contactsRes.status === 'fulfilled') {
             setContacts(contactsRes.value?.data || []);
+          }
+          if (contactsCountRes.status === "fulfilled" && !contactsCountRes.value?.error) {
+            setContactsCount(contactsCountRes.value?.count || 0);
+          } else if (orgId) {
+            // Org-scoped count failed (likely because `organization_id` is
+            // not a column on `lit_contacts` yet). Retry unscoped so the
+            // KPI tile still reflects real data, not zero.
+            try {
+              const fallback = await supabase
+                .from("lit_contacts")
+                .select("id", { count: "exact", head: true });
+              if (mounted && !fallback.error) {
+                setContactsCount(fallback.count || 0);
+              }
+            } catch {
+              /* silent — empty count is honest when the table is unreachable */
+            }
           }
           if (activitiesRes.status === 'fulfilled') {
             const rawActivities = activitiesRes.value?.data || [];
@@ -652,17 +863,6 @@ export default function Dashboard() {
     return <DashboardLoadingSkeleton />;
   }
 
-  // KPI aggregates from real saved companies data
-  const totalShipments = savedCompanies.reduce((sum, s) => {
-    const n = Number(s?.company?.shipments_12m || s?.company_data?.shipments_12m || 0);
-    return sum + (isNaN(n) ? 0 : n);
-  }, 0);
-
-  const totalTeu = savedCompanies.reduce((sum, s) => {
-    const n = Number(s?.company?.teu_12m || s?.company_data?.teu_12m || 0);
-    return sum + (isNaN(n) ? 0 : n);
-  }, 0);
-
   const activeCampaigns = campaigns.filter(c => c?.status === "active" || c?.status === "live").length;
 
   const displayName =
@@ -670,10 +870,55 @@ export default function Dashboard() {
     user?.user_metadata?.name ||
     user?.email?.split("@")[0];
 
+  // Real lane aggregation from saved-company snapshots. Uses
+  // top_route_12m as the primary lane, falling back to recent_route.
+  // Lane ids are the full lane string (e.g. "China → USA") so they
+  // round-trip through `laneStringToGlobeLane` for the globe canvas and
+  // through `HighOpportunityPanel`'s filter predicate.
+  const tradeLanes = useMemo(() => {
+    const laneMap = new Map();
+    for (const saved of savedCompanies) {
+      const co = saved?.company || saved?.company_data || {};
+      const topRoute =
+        co?.kpis?.top_route_12m ||
+        co?.top_route_12m ||
+        co?.kpis?.recent_route ||
+        co?.recent_route ||
+        null;
+      if (!topRoute || typeof topRoute !== "string") continue;
+
+      const shipments = Number(co?.kpis?.shipments_12m || co?.shipments_12m || 0) || 0;
+      const teu = Number(co?.kpis?.teu_12m || co?.teu_12m || 0) || 0;
+
+      const existing = laneMap.get(topRoute) || {
+        id: topRoute,
+        shipments: 0,
+        teu: 0,
+        companies: [],
+      };
+      existing.shipments += shipments;
+      existing.teu += teu;
+      existing.companies.push(co);
+      laneMap.set(topRoute, existing);
+    }
+
+    return [...laneMap.values()]
+      .map((entry) => {
+        const [from, to] = entry.id.split(/→|->|>/).map((s) => s.trim());
+        return {
+          ...entry,
+          from: from || entry.id,
+          to: to || "—",
+        };
+      })
+      .sort((a, b) => b.shipments - a.shipments || b.teu - a.teu)
+      .slice(0, 6);
+  }, [savedCompanies]);
+
   const KPI_CARDS = [
     {
       icon: Building2,
-      label: "Active Companies",
+      label: "Saved Companies",
       value: savedCompanies.length || "—",
       sub: "In Command Center",
       iconColor: "#3B82F6",
@@ -682,21 +927,21 @@ export default function Dashboard() {
       delay: 0,
     },
     {
-      icon: Package,
-      label: "Total Shipments 12m",
-      value: totalShipments > 0 ? totalShipments.toLocaleString() : "—",
-      sub: "All saved companies",
-      iconColor: "#6366F1",
+      icon: Users2,
+      label: "Saved Contacts",
+      value: contactsCount > 0 ? contactsCount.toLocaleString() : "—",
+      sub: contactsCount > 0 ? "Verified decision makers" : "Enrich a company to save contacts",
+      iconColor: "#F59E0B",
       href: "/app/command-center",
       delay: 0.05,
     },
     {
-      icon: Layers,
-      label: "Total TEU 12m",
-      value: totalTeu > 0 ? totalTeu.toLocaleString() : "—",
-      sub: "All saved companies",
-      iconColor: "#10B981",
-      href: "/app/command-center",
+      icon: Search,
+      label: "Searches Used",
+      value: searchCount > 0 ? searchCount.toLocaleString() : "—",
+      sub: "This month",
+      iconColor: "#8B5CF6",
+      href: "/app/search",
       delay: 0.1,
     },
     {
@@ -704,31 +949,42 @@ export default function Dashboard() {
       label: "Active Campaigns",
       value: activeCampaigns,
       sub: campaigns.length > 0 ? `${campaigns.length} total` : "No campaigns yet",
-      iconColor: "#F59E0B",
+      iconColor: "#10B981",
       href: "/app/campaigns",
       delay: 0.15,
-    },
-    {
-      icon: FileText,
-      label: "Open RFPs",
-      value: rfpCount,
-      sub: rfpCount > 0 ? "Ready to send" : "Generate your first RFP",
-      iconColor: "#8B5CF6",
-      href: "/app/rfp-studio",
-      delay: 0.2,
     },
   ];
 
   return (
     <>
-      <div className="px-4 sm:px-6 py-5 space-y-5" style={{ background: "#F8FAFC", minHeight: "100%" }}>
+      <div
+        className="px-4 sm:px-6 py-5 space-y-5 md:space-y-6"
+        style={{
+          background:
+            "radial-gradient(circle at 8% -8%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 28%), radial-gradient(circle at 100% 0%, rgba(6,182,212,0.08) 0%, rgba(6,182,212,0) 32%), #F8FAFC",
+          minHeight: "100%",
+        }}
+      >
         <DashboardHeader userName={displayName} />
 
-        {/* KPI row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {KPI_CARDS.map(card => (
-            <EnhancedKpiCard key={card.label} {...card} />
-          ))}
+        {/* KPI row — 4 approved KPIs (Saved Companies, Saved Contacts,
+            Searches Used, Active Campaigns). All counts are from real
+            Supabase queries; no mocks. Phase G — wrapped in a soft-gradient
+            shell so the strip reads as a single premium band instead of
+            four detached tiles on a flat background. */}
+        <div
+          className="rounded-2xl border border-slate-200 p-3 md:p-4"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.9) 100%)",
+            boxShadow: "0 10px 30px -22px rgba(15, 23, 42, 0.24)",
+          }}
+        >
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {KPI_CARDS.map(card => (
+              <EnhancedKpiCard key={card.label} {...card} />
+            ))}
+          </div>
         </div>
 
         {/* Main 2-column grid */}
@@ -748,7 +1004,12 @@ export default function Dashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.35 }}
             >
-              <HighOpportunityPanel savedCompanies={savedCompanies} campaigns={campaigns} />
+              <HighOpportunityPanel
+                savedCompanies={savedCompanies}
+                campaigns={campaigns}
+                selectedLane={selectedLane}
+                onClearLane={() => setSelectedLane(null)}
+              />
             </motion.div>
           </div>
 
@@ -759,7 +1020,11 @@ export default function Dashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.3 }}
             >
-              <TradeLanesPanel selectedLane={selectedLane} onSelect={setSelectedLane} />
+              <TradeLanesPanel
+                lanes={tradeLanes}
+                selectedLane={selectedLane}
+                onSelect={setSelectedLane}
+              />
             </motion.div>
 
             <motion.div

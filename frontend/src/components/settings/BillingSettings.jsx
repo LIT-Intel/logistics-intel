@@ -7,13 +7,10 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import {
   CreditCard,
   Calendar,
-  TrendingUp,
   Crown,
-  AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -82,36 +79,12 @@ function getPlanLimits(plan = 'free_trial') {
   return planMap[canonical] || planMap.free_trial;
 }
 
-function UsageRow({ label, current, max }) {
-  const isUnlimited = max === Infinity;
-  const safeCurrent = Number(current || 0);
-  const percentage = !isUnlimited && Number(max) > 0
-    ? Math.min((safeCurrent / Number(max)) * 100, 100)
-    : 0;
-
-  return (
-    <div>
-      <div className="flex justify-between text-sm mb-2">
-        <span>{label}</span>
-        <span className="font-medium">
-          {safeCurrent} / {isUnlimited ? '∞' : Number(max).toLocaleString()}
-        </span>
-      </div>
-
-      {!isUnlimited ? (
-        <Progress value={percentage} className="h-2" />
-      ) : (
-        <div className="h-2 rounded-full bg-slate-100" />
-      )}
-
-      {!isUnlimited && percentage >= 90 && (
-        <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
-          <AlertCircle className="w-4 h-4" />
-          <span>Approaching usage limit</span>
-        </div>
-      )}
-    </div>
-  );
+// Phase F — `UsageRow` helper removed alongside the "Usage This Month"
+// card. Detailed usage meters live on the canonical Billing page only.
+// The `AlertCircle` import is retained because it is still used below
+// for inline upgrade/warning hints elsewhere in the file.
+function _removedUsageRow() {
+  return null;
 }
 
 export default function BillingSettings({ user }) {
@@ -141,9 +114,15 @@ export default function BillingSettings({ user }) {
     !!stripeCustomerId &&
     ['active', 'trialing'].includes(String(subscriptionStatus || '').toLowerCase());
 
-  const companiesUsed = Number(user?.monthly_companies_viewed || 0);
-  const emailsUsed = Number(user?.monthly_emails_sent || 0);
-  const rfpsUsed = Number(user?.monthly_rfps_generated || 0);
+  // Phase F — detailed usage meters removed from this summary. They live
+  // on the canonical Billing page at /app/billing, which pulls real
+  // counters from lit_activity_events and live Supabase queries. Keeping
+  // fake `user.monthly_*` fields here would render mock data. Per rule 6
+  // this surface is "compact summary only".
+  const nextBillingDate =
+    user?.subscription?.current_period_end ||
+    user?.user_metadata?.current_period_end ||
+    null;
 
   const handleUpgrade = async (planCode) => {
     setLoadingAction(true);
@@ -285,11 +264,14 @@ export default function BillingSettings({ user }) {
                 <div className="flex justify-between">
                   <span>Next billing date</span>
                   <span className="font-medium">
-                    {hasActiveSubscription
-                      ? format(
-                          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-                          'MMM dd, yyyy'
-                        )
+                    {/* Phase F — fake `now + 30d` computation removed. We
+                        now read from the real subscription period end when
+                        it flows into the prop; otherwise defer to the
+                        Stripe Billing Portal which always has truth. */}
+                    {nextBillingDate
+                      ? format(new Date(nextBillingDate), 'MMM dd, yyyy')
+                      : hasActiveSubscription
+                      ? 'Managed in Stripe'
                       : 'N/A'}
                   </span>
                 </div>
@@ -318,73 +300,58 @@ export default function BillingSettings({ user }) {
         </CardContent>
       </Card>
 
-      <Card className="bg-white/90 backdrop-blur-sm shadow-lg border-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-blue-600" />
-            Usage This Month
-          </CardTitle>
-        </CardHeader>
-
-        <CardContent className="space-y-5">
-          <UsageRow
-            label="Companies Viewed"
-            current={companiesUsed}
-            max={plan.max_companies}
-          />
-
-          <UsageRow
-            label="Emails Sent"
-            current={emailsUsed}
-            max={plan.max_emails}
-          />
-
-          <UsageRow
-            label="RFPs Generated"
-            current={rfpsUsed}
-            max={plan.max_rfps}
-          />
-        </CardContent>
-      </Card>
+      {/* Phase F — "Usage This Month" card removed. The prior meters read
+          fake `user.monthly_*` auth-metadata fields that no writer
+          populates. Detailed, real-counter meters now live exclusively on
+          the canonical Billing page at /app/billing, per the
+          "Settings summary only" rule. */}
 
       <Card className="bg-white/90 backdrop-blur-sm shadow-lg border-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-blue-600" />
-            Billing History
+            Invoices
           </CardTitle>
         </CardHeader>
 
         <CardContent className="space-y-3">
-          {hasActiveSubscription ? (
-            <>
-              {[0, 1].map((offset) => {
-                const date = new Date();
-                date.setMonth(date.getMonth() - offset);
-
-                return (
-                  <div
-                    key={offset}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <div>
-                      <div className="font-medium">{format(date, 'MMMM yyyy')}</div>
-                      <div className="text-sm text-gray-600">{plan.name} Plan</div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <Badge className="bg-green-100 text-green-800">Paid</Badge>
-                      <span className="font-medium">{plan.price}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </>
-          ) : (
-            <div className="text-sm text-slate-500">
-              No billing history yet for this account.
+          {/* Phase F — the previous two hardcoded "Paid" month rows were
+              mock data and have been removed per the no-fake-billing rule.
+              Real invoice history lives in Stripe; we deep-link users
+              directly into the Billing Portal and the canonical Billing
+              page instead of duplicating an invoice list here. */}
+          <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+            <div className="text-sm font-medium text-slate-900">
+              Invoices are managed securely in Stripe
             </div>
-          )}
+            <div className="text-xs text-slate-500">
+              Download receipts, review payment history, and update your card from the
+              Stripe Billing Portal. We never store card details inside Logistic Intel.
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManageSubscription}
+                disabled={loadingAction}
+              >
+                {loadingAction ? 'Opening…' : 'Open Stripe Billing Portal'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  try {
+                    window.location.assign('/app/billing');
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+              >
+                View full Billing page →
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

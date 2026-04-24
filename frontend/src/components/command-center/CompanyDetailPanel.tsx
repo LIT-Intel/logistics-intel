@@ -34,6 +34,12 @@ import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
+import { laneStringToGlobeLane } from "@/lib/laneGlobe";
+import {
+  CANONICAL_CONTAINER_CODES,
+  canonicalContainerLabel,
+  normalizeContainerTypeLabel,
+} from "@/lib/containerUtils";
 import { supabase } from "@/lib/supabase";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 import {
@@ -64,33 +70,6 @@ const CHART_COLORS = [
 const TEU_BAR_PRIMARY = "#6366f1";
 const TEU_BAR_SECONDARY = "#cbd5e1";
 const CONTACT_PREVIEW_LIMIT = 6;
-
-const COUNTRY_COORDS: Record<string, [number, number]> = {
-  china: [104.2, 35.9], usa: [-95.7, 37.1], "united states": [-95.7, 37.1],
-  india: [78.9, 20.6], germany: [10.5, 51.2], japan: [138.3, 36.2],
-  "south korea": [127.8, 35.9], korea: [127.8, 35.9], vietnam: [108.3, 14.1],
-  mexico: [-102.6, 23.6], uk: [-1.5, 52.4], "united kingdom": [-1.5, 52.4],
-  brazil: [-51.9, -14.2], canada: [-96.8, 56.1], australia: [133.7, -25.3],
-  taiwan: [120.9, 23.7], thailand: [100.9, 15.9], malaysia: [109.7, 4.2],
-  indonesia: [113.9, -0.8], bangladesh: [90.4, 23.7], pakistan: [69.3, 30.4],
-  turkey: [35.2, 38.9], italy: [12.6, 41.9], france: [2.2, 46.2],
-  netherlands: [5.3, 52.1], belgium: [4.5, 50.5], spain: [-3.7, 40.4],
-  poland: [19.1, 51.9], "hong kong": [114.2, 22.3], singapore: [103.8, 1.4],
-};
-
-function laneStringToGlobeLane(laneStr: string, index: number): GlobeLane | null {
-  const parts = laneStr.split(/→|->|>/).map((s) => s.trim().toLowerCase());
-  if (parts.length < 2) return null;
-  const fromCoords = COUNTRY_COORDS[parts[0]] ?? null;
-  const toCoords = COUNTRY_COORDS[parts[1]] ?? null;
-  if (!fromCoords || !toCoords) return null;
-  return {
-    id: laneStr,
-    from: parts[0],
-    to: parts[1],
-    coords: [fromCoords, toCoords],
-  };
-}
 
 /**
  * Temporary frontend plan limits.
@@ -949,16 +928,6 @@ const extractContainerNumbers = (shipment: any) => {
   return "";
 };
 
-const normalizeContainerTypeLabel = (value?: string | null) => {
-  const text = cleanDisplayText(value);
-  if (!text) return "";
-  return text
-    .replace(/container/gi, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toUpperCase();
-};
-
 const extractContainerTypes = (shipment: any) => {
   const direct = normalizeContainerTypeLabel(
     String(
@@ -1316,6 +1285,42 @@ const aggregateContainerMix = (shipments: NormalizedShipment[]) => {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 };
+
+function aggregateCanonicalContainerMix(
+  shipments: NormalizedShipment[],
+): Array<{ code: string; count: number; details: string[] }> {
+  const map = new Map<string, { count: number; details: Set<string> }>();
+
+  for (const shipment of shipments) {
+    const parts = String(shipment.containerTypes || "")
+      .split(",")
+      .map((piece) => piece.trim())
+      .filter(Boolean);
+
+    for (const part of parts) {
+      const { code, detail } = canonicalContainerLabel(part);
+      if (!code) continue;
+      const entry = map.get(code) || { count: 0, details: new Set<string>() };
+      entry.count += 1;
+      if (detail && detail !== code) entry.details.add(detail);
+      map.set(code, entry);
+    }
+  }
+
+  return [...map.entries()]
+    .map(([code, { count, details }]) => ({
+      code,
+      count,
+      details: [...details].slice(0, 5),
+    }))
+    .sort((a, b) => {
+      // Keep canonical codes first, then anything else by count desc.
+      const aCanonical = (CANONICAL_CONTAINER_CODES as readonly string[]).includes(a.code);
+      const bCanonical = (CANONICAL_CONTAINER_CODES as readonly string[]).includes(b.code);
+      if (aCanonical !== bCanonical) return aCanonical ? -1 : 1;
+      return b.count - a.count;
+    });
+}
 
 const getAvailableYears = (
   shipments: NormalizedShipment[],
@@ -2242,6 +2247,9 @@ export default function CompanyDetailPanel({
     };
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
 
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "equipment" | "shipments" | "suppliers" | "contacts" | "credit"
+  >("overview");
   const [suppliersPage, setSuppliersPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
@@ -2653,7 +2661,79 @@ if (!cancelled) {
         </div>
       ) : null}
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      {/* Hero KPI strip — light-premium (no dark navy). Values come from the
+          already-normalized `detail` memo, which resolves each field through
+          the canonical parsed_summary / companyProfile fallback chain. */}
+      <div
+        className="mb-4 rounded-[30px] border border-slate-200 p-4 shadow-sm"
+        style={{
+          background:
+            "radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 42%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 60%, #EEF2FF 100%)",
+        }}
+      >
+        <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">
+          Company Intelligence · 12-month window
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            {
+              label: "Shipments 12m",
+              value: formatNumber(detail.shipments),
+              icon: Package,
+              tintBg: "bg-indigo-50",
+              tintText: "text-indigo-600",
+              tintRing: "ring-indigo-100",
+            },
+            {
+              label: "TEU 12m",
+              value: formatNumber(detail.teu, 1),
+              icon: Container,
+              tintBg: "bg-cyan-50",
+              tintText: "text-cyan-600",
+              tintRing: "ring-cyan-100",
+            },
+            {
+              label: "Est Spend 12m",
+              value: formatCurrency(detail.spend),
+              icon: DollarSign,
+              tintBg: "bg-amber-50",
+              tintText: "text-amber-600",
+              tintRing: "ring-amber-100",
+            },
+            {
+              label: "Latest Shipment",
+              value: formatDate(detail.latestShipmentDate),
+              icon: CalendarClock,
+              tintBg: "bg-emerald-50",
+              tintText: "text-emerald-600",
+              tintRing: "ring-emerald-100",
+            },
+          ].map((k) => (
+            <div
+              key={k.label}
+              className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+            >
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${k.tintBg} ${k.tintRing}`}>
+                <k.icon className={`h-4 w-4 ${k.tintText}`} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  {k.label}
+                </div>
+                <div className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-950">
+                  {k.value}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(v: string) => setActiveTab(v as typeof activeTab)}
+        className="space-y-4"
+      >
         <TabsList className="flex h-auto w-full gap-0 overflow-x-auto rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
           <TabsTrigger
             value="overview"
@@ -2663,25 +2743,18 @@ if (!cancelled) {
             Overview
           </TabsTrigger>
           <TabsTrigger
-            value="products"
+            value="equipment"
             className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
-            Products
+            Equipment
           </TabsTrigger>
           <TabsTrigger
-            value="history"
+            value="shipments"
             className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
-            Shipment History
-          </TabsTrigger>
-          <TabsTrigger
-            value="credit"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Credit Rating
+            Shipments
           </TabsTrigger>
           <TabsTrigger
             value="suppliers"
@@ -2696,6 +2769,13 @@ if (!cancelled) {
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Contact Intel
+          </TabsTrigger>
+          <TabsTrigger
+            value="credit"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+          >
+            Credit &amp; Company Health
           </TabsTrigger>
         </TabsList>
 
@@ -2917,13 +2997,22 @@ if (!cancelled) {
             </div>
 
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4">
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Equipment intelligence
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                    Equipment intelligence
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Load split, container mix, and equipment footprint
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Load split, container mix, and equipment footprint
-                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("equipment")}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
+                >
+                  View Equipment <ArrowUpRight className="h-3 w-3" />
+                </button>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -3004,6 +3093,146 @@ if (!cancelled) {
             </div>
           </div>
 
+          {/* Top Suppliers + Recent Shipments — compact summary cards using
+              real suppliers_table / normalizedShipments data. No mock names,
+              no mock rows. Each card cross-links to its dedicated tab. */}
+          <div className="grid gap-3 md:grid-cols-2">
+            {(() => {
+              const topSuppliers = suppliersRaw.slice(0, 3);
+              return (
+                <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                        Top suppliers
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {suppliersRaw.length > 0
+                          ? `Top 3 of ${suppliersRaw.length} verified suppliers`
+                          : "From verified BOL records"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("suppliers")}
+                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
+                    >
+                      View Suppliers <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {topSuppliers.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                      No supplier data yet
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {topSuppliers.map((sup: any, idx: number) => {
+                        const name = sup.supplier_name || sup.name || "—";
+                        const shipments =
+                          Number(sup.shipments_12m ?? sup.shipments ?? 0) || 0;
+                        const country = sup.supplier_country || sup.country || null;
+                        return (
+                          <li
+                            key={`${name}-${idx}`}
+                            className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-900">
+                                {name}
+                              </div>
+                              {country ? (
+                                <div className="mt-0.5 truncate text-xs text-slate-500">
+                                  {country}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                12m
+                              </div>
+                              <div className="text-sm font-semibold text-indigo-600">
+                                {formatNumber(shipments)}
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
+
+            {(() => {
+              const recentShipments = [...normalizedShipments]
+                .sort((a, b) => {
+                  const da = a.date ? new Date(a.date).getTime() : 0;
+                  const db = b.date ? new Date(b.date).getTime() : 0;
+                  return db - da;
+                })
+                .slice(0, 3);
+              return (
+                <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                        Recent shipments
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {normalizedShipments.length > 0
+                          ? `Latest 3 of ${normalizedShipments.length} BOL records`
+                          : "From verified bill-of-lading records"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("shipments")}
+                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
+                    >
+                      View Shipments <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {recentShipments.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                      No shipment records yet
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {recentShipments.map((s, idx) => (
+                        <li
+                          key={s.id || idx}
+                          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                              {s.route || "—"}
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-slate-500">
+                              <span>{formatDate(s.date)}</span>
+                              {s.containerTypes && s.containerTypes !== "—" ? (
+                                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                  {s.containerTypes}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                              TEU
+                            </div>
+                            <div className="text-sm font-semibold text-cyan-700">
+                              {formatNumber(s.teu, 1)}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Contact Intelligence — full-width bottom section */}
           <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-start justify-between gap-3">
@@ -3035,6 +3264,13 @@ if (!cancelled) {
                   className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                 >
                   Open panel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("contacts")}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
+                >
+                  View all <ArrowUpRight className="h-3 w-3" />
                 </button>
               </div>
             </div>
@@ -3322,6 +3558,135 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
           )}
         </TabsContent>
 
+        <TabsContent value="equipment" className="space-y-4">
+          {(() => {
+            // Canonical mix derived from detail.filteredShipments (BOL-backed).
+            // detail.containerMix already exists from parsed_summary flow; we
+            // reuse its counts but re-label into canonical codes + detail.
+            const canonicalMix = aggregateCanonicalContainerMix(detail.filteredShipments);
+            const loadLines = Array.isArray((rawProfile as any)?.containers_load)
+              ? (rawProfile as any).containers_load
+              : [];
+            const fclPct = (() => {
+              const row = loadLines.find(
+                (r: any) => String(r?.load_type || "").toUpperCase() === "FCL",
+              );
+              return row && row.shipments_perc != null ? Number(row.shipments_perc) : null;
+            })();
+            const lclPct = (() => {
+              const row = loadLines.find(
+                (r: any) => String(r?.load_type || "").toUpperCase() === "LCL",
+              );
+              return row && row.shipments_perc != null ? Number(row.shipments_perc) : null;
+            })();
+
+            const hasLoadSplit =
+              (detail.fclShipments || 0) > 0 ||
+              (detail.lclShipments || 0) > 0 ||
+              fclPct != null ||
+              lclPct != null;
+            const hasContainerMix = canonicalMix.length > 0;
+
+            return (
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,1fr)]">
+                <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4">
+                    <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                      Load type split
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      FCL vs LCL from containers_load / BOL load type
+                    </p>
+                  </div>
+
+                  {hasLoadSplit ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-white p-4">
+                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600">
+                          <Container className="h-3.5 w-3.5" /> FCL
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                          {formatNumber(detail.fclShipments)}
+                        </div>
+                        {fclPct != null ? (
+                          <div className="mt-1 text-xs text-slate-500">{fclPct.toFixed(1)}% of shipments</div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-3xl border border-cyan-100 bg-gradient-to-br from-cyan-50/80 to-white p-4">
+                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
+                          <Container className="h-3.5 w-3.5" /> LCL
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                          {formatNumber(detail.lclShipments)}
+                        </div>
+                        {lclPct != null ? (
+                          <div className="mt-1 text-xs text-slate-500">{lclPct.toFixed(1)}% of shipments</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                      Load split unavailable
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                        Container type mix
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Canonical sizes with raw vendor detail in tooltip
+                      </p>
+                    </div>
+                    {hasContainerMix ? (
+                      <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                        {canonicalMix.length} {canonicalMix.length === 1 ? "type" : "types"}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {hasContainerMix ? (
+                    <div className="space-y-2">
+                      {canonicalMix.map((entry, i) => (
+                        <div
+                          key={entry.code}
+                          title={entry.details.length ? `Raw: ${entry.details.join(" · ")}` : undefined}
+                          className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-2.5"
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span
+                              className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                            />
+                            <span className="truncate font-semibold text-slate-900">
+                              {entry.code}
+                            </span>
+                            {entry.details.length > 0 && entry.details[0] !== entry.code ? (
+                              <span className="truncate text-xs text-slate-500">
+                                {entry.details.join(" · ")}
+                              </span>
+                            ) : null}
+                          </div>
+                          <span className="shrink-0 font-semibold text-indigo-600">
+                            {formatNumber(entry.count)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                      Container type unavailable
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </TabsContent>
+
         <TabsContent value="suppliers" className="space-y-4">
           <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -3413,53 +3778,77 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
           </div>
         </TabsContent>
 
-        <TabsContent value="products" className="space-y-4">
-          <div className="space-y-3">
-            {prodPageCount > 1 && (
-              <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
-                <span>
-                  {productsPage * productsPageSize + 1}–
-                  {Math.min((productsPage + 1) * productsPageSize, totalProducts)} of {totalProducts}
-                </span>
-                <button
-                  disabled={productsPage === 0}
-                  onClick={() => setProductsPage((p) => Math.max(0, p - 1))}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  Prev
-                </button>
-                <button
-                  disabled={productsPage >= prodPageCount - 1}
-                  onClick={() => setProductsPage((p) => Math.min(prodPageCount - 1, p + 1))}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
+        <TabsContent value="shipments" className="space-y-4">
+          {/* Products & HS Codes — folded in from former Products tab. Data
+              and pagination wiring are unchanged; same hsRows / productRows
+              from detail memo. */}
+          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  Products &amp; HS Codes
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Cargo descriptions and HS codes derived from shipment history
+                </p>
               </div>
-            )}
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <MetricList
-                title={`Product mix — HS codes (${totalProducts})`}
-                items={hsSlice.map((row) => ({
-                  label: row.hsCode,
-                  value: formatNumber(row.count),
-                  meta: row.description,
-                }))}
-              />
-              <MetricList
-                title="Top products"
-                items={prodSlice.map((row) => ({
-                  label: String(row.product),
-                  value: row.volumeShare,
-                  meta: `HS ${row.hsCode}`,
-                }))}
-              />
+              {totalProducts > 0 ? (
+                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                  {totalProducts} {totalProducts === 1 ? "HS code" : "HS codes"}
+                </div>
+              ) : null}
             </div>
-          </div>
-        </TabsContent>
 
-        <TabsContent value="history" className="space-y-4">
+            {totalProducts === 0 && detail.productRows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                No product or HS-code data derived from shipments yet
+              </div>
+            ) : (
+              <>
+                {prodPageCount > 1 && (
+                  <div className="mb-3 flex items-center justify-end gap-2 text-xs text-slate-500">
+                    <span>
+                      {productsPage * productsPageSize + 1}–
+                      {Math.min((productsPage + 1) * productsPageSize, totalProducts)} of {totalProducts}
+                    </span>
+                    <button
+                      disabled={productsPage === 0}
+                      onClick={() => setProductsPage((p) => Math.max(0, p - 1))}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      disabled={productsPage >= prodPageCount - 1}
+                      onClick={() => setProductsPage((p) => Math.min(prodPageCount - 1, p + 1))}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <MetricList
+                    title={`Product mix — HS codes (${totalProducts})`}
+                    items={hsSlice.map((row) => ({
+                      label: row.hsCode,
+                      value: formatNumber(row.count),
+                      meta: row.description,
+                    }))}
+                  />
+                  <MetricList
+                    title="Top products"
+                    items={prodSlice.map((row) => ({
+                      label: String(row.product),
+                      value: row.volumeShare,
+                      meta: `HS ${row.hsCode}`,
+                    }))}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="space-y-3">
             {histPageCount > 1 && (
               <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
@@ -3523,20 +3912,151 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
         </TabsContent>
 
         <TabsContent value="credit" className="space-y-4">
-          <div className="flex min-h-[200px] items-center justify-center rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="relative w-full text-center">
-              <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center opacity-10">
-                <span className="text-6xl font-extrabold uppercase tracking-widest">Credit Rating</span>
+          {(() => {
+            // Honest empty state — no mock scores, no invented ratings.
+            // Public-source deep links use the company's existing name/country
+            // from the profile so the user can verify manually while the
+            // SEC EDGAR / GLEIF / Companies House edge function is being built
+            // (tracked as a separate backend ticket — not shipped in Phase B).
+            const companyName =
+              (rawProfile as any)?.company_name ||
+              (rawProfile as any)?.companyName ||
+              (rawProfile as any)?.name ||
+              (rawProfile as any)?.title ||
+              (record as any)?.company?.name ||
+              (record as any)?.company?.company_name ||
+              "";
+            const countryCode = String(
+              (rawProfile as any)?.country_code ||
+                (rawProfile as any)?.countryCode ||
+                (record as any)?.company?.country_code ||
+                "",
+            )
+              .trim()
+              .toUpperCase();
+            // Accept GB and UK variants (upper or lower-case both map through
+            // the uppercase normalize above) so UK-registered companies always
+            // get the Companies House deep link.
+            const isUkCompany = countryCode === "GB" || countryCode === "UK";
+            const q = encodeURIComponent(companyName.trim());
+            const canSearch = q.length > 0;
+            const edgarUrl = canSearch
+              ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${q}&type=10-K&dateb=&owner=include&count=40`
+              : null;
+            const gleifUrl = canSearch
+              ? `https://search.gleif.org/#/search/simpleSearch=${q}`
+              : null;
+            const companiesHouseUrl =
+              canSearch && isUkCompany
+                ? `https://find-and-update.company-information.service.gov.uk/search?q=${q}`
+                : null;
+
+            return (
+              <div className="space-y-4">
+                <div className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50/40 p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                          Credit &amp; Company Health
+                        </div>
+                        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+                          Beta
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Public financial and registry signals. No invented scores.
+                      </p>
+                    </div>
+                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                      Public sources
+                    </div>
+                  </div>
+
+                  <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+                    <div className="text-sm font-semibold text-slate-700">Credit data not available</div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      We don&rsquo;t have a public credit or filing match cached for this
+                      company yet. Use the links below to inspect public registries
+                      directly, or wait for the backend integration that will surface
+                      SEC EDGAR filings, GLEIF legal-entity status, and Companies House
+                      data inline here.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <a
+                    href={edgarUrl ?? "#"}
+                    target={edgarUrl ? "_blank" : undefined}
+                    rel={edgarUrl ? "noreferrer" : undefined}
+                    aria-disabled={!edgarUrl}
+                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
+                      edgarUrl ? "hover:border-indigo-200 hover:bg-indigo-50/40" : "pointer-events-none opacity-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600">
+                      <BarChart3 className="h-3.5 w-3.5" />
+                      SEC EDGAR
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-slate-900">Public filings &amp; financials</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      US-listed companies: 10-K, 10-Q, revenue, assets from XBRL. Free, no key.
+                    </div>
+                  </a>
+
+                  <a
+                    href={gleifUrl ?? "#"}
+                    target={gleifUrl ? "_blank" : undefined}
+                    rel={gleifUrl ? "noreferrer" : undefined}
+                    aria-disabled={!gleifUrl}
+                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
+                      gleifUrl ? "hover:border-cyan-200 hover:bg-cyan-50/40" : "pointer-events-none opacity-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
+                      <Building2 className="h-3.5 w-3.5" />
+                      GLEIF LEI
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-slate-900">Legal-entity status</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      LEI, entity status, registration authority across jurisdictions. Free, no key.
+                    </div>
+                  </a>
+
+                  <a
+                    href={companiesHouseUrl ?? "#"}
+                    target={companiesHouseUrl ? "_blank" : undefined}
+                    rel={companiesHouseUrl ? "noreferrer" : undefined}
+                    aria-disabled={!companiesHouseUrl}
+                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
+                      companiesHouseUrl
+                        ? "hover:border-emerald-200 hover:bg-emerald-50/40"
+                        : "pointer-events-none opacity-50"
+                    }`}
+                    title={
+                      companiesHouseUrl
+                        ? undefined
+                        : "Companies House lookup is only surfaced for UK-registered companies"
+                    }
+                  >
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                      <Briefcase className="h-3.5 w-3.5" />
+                      Companies House
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-slate-900">
+                      UK company registry
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {companiesHouseUrl
+                        ? "Filing history, charges, officers. UK only."
+                        : "Only available for UK-registered companies."}
+                    </div>
+                  </a>
+                </div>
               </div>
-              <div className="relative p-4">
-                <p className="text-sm text-slate-500">
-                  Financial data and credit ratings for publicly traded companies will appear here once the
-                  FinancialModelingPrep and related APIs are integrated.
-                </p>
-                <p className="mt-2 text-xs italic text-slate-400">Integration pending – placeholder only.</p>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
         </TabsContent>
 
         <TabsContent value="contacts" className="space-y-4">

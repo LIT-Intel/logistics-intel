@@ -51,17 +51,40 @@ export function extractDomain(value?: string | null): string | null {
   }
 }
 
-export function getCompanyLogoUrl(source?: string | null): string | null {
+function buildLogoDevUrl(domain: string): string {
+  const params = new URLSearchParams();
+  params.set("size", "160");
+  if (LOGO_DEV_TOKEN) params.set("token", LOGO_DEV_TOKEN);
+  return `${LOGO_DEV_BASE}/${domain}?${params.toString()}`;
+}
+
+/**
+ * Returns an ordered list of logo URLs to try for a given domain/website/email.
+ * Callers should iterate through these on <img> onError before falling back to
+ * an initials avatar. Services are tried in this order:
+ *   1. logo.dev — highest fidelity when VITE_LOGO_DEV_TOKEN is configured
+ *   2. Clearbit — free, no token
+ *   3. Unavatar — aggregates multiple providers
+ *   4. DuckDuckGo ip3 — favicon fallback
+ */
+export function getLogoCandidates(source?: string | null): string[] {
   const domain = extractDomain(source);
-  if (!domain) return null;
+  if (!domain) return [];
 
-  if (LOGO_DEV_TOKEN) {
-    const params = new URLSearchParams();
-    params.set("size", "160");
-    params.set("token", LOGO_DEV_TOKEN);
-    return `${LOGO_DEV_BASE}/${domain}?${params.toString()}`;
-  }
+  const candidates: string[] = [];
+  if (LOGO_DEV_TOKEN) candidates.push(buildLogoDevUrl(domain));
+  candidates.push(`https://logo.clearbit.com/${domain}`);
+  candidates.push(`https://unavatar.io/${domain}?fallback=false`);
+  candidates.push(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
+  return candidates;
+}
 
-  // Fallback to Clearbit (no token required)
-  return `https://logo.clearbit.com/${domain}`;
+/**
+ * Backwards-compatible single-URL accessor. Returns the first candidate from
+ * {@link getLogoCandidates}. Prefer passing a `domain` prop to CompanyAvatar
+ * and letting it walk the cascade on load errors.
+ */
+export function getCompanyLogoUrl(source?: string | null): string | null {
+  const [first] = getLogoCandidates(source);
+  return first ?? null;
 }
