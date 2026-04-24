@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { createStripeCheckout, createStripePortalSession } from '@/api/functions';
 import { supabase } from '@/lib/supabase';
+import { getSavedCompanies } from '@/lib/api';
+import { getLitCampaigns } from '@/lib/litCampaigns';
 import {
   getPlanConfig,
   getTotalPrice,
@@ -226,6 +228,15 @@ export default function Billing() {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly');
   const [selectedSeats, setSelectedSeats] = useState<number>(3);
 
+  // Phase F — real usage counters, scoped to the current billing month.
+  // Only three meters are rendered (Searches Used / Saved Companies /
+  // Active Campaigns) because these are the only counters we have real
+  // writers for today. Pulse runs and enrichment credits are intentionally
+  // removed until their writers exist.
+  const [realSearches, setRealSearches] = useState<number>(0);
+  const [realSaves, setRealSaves] = useState<number>(0);
+  const [realActiveCampaigns, setRealActiveCampaigns] = useState<number>(0);
+
   const checkoutSuccess = searchParams.get('checkout') === 'success';
   const planCards = useMemo(() => getPlanCards(), []);
 
@@ -237,12 +248,68 @@ export default function Billing() {
     if (!user) return;
 
     loadSubscription();
+    loadRealUsageCounters();
 
     if (checkoutSuccess) {
-      const t = setTimeout(() => loadSubscription(), 3500);
+      const t = setTimeout(() => {
+        loadSubscription();
+        loadRealUsageCounters();
+      }, 3500);
       return () => clearTimeout(t);
     }
   }, [user, checkoutSuccess]);
+
+  // Phase F — load the three real usage counters (Searches Used / Saved
+  // Companies / Active Campaigns). Each promise is independent and any
+  // failure only clears its own counter to 0; the rest still populate.
+  // Silent-fail on every branch — never blocks the Billing page render.
+  async function loadRealUsageCounters() {
+    if (!user?.id) return;
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+    // Searches this month — same query the Dashboard uses in Phase C.
+    supabase
+      .from('lit_activity_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', (user as any).id)
+      .eq('event_type', 'search')
+      .gte('created_at', monthStart)
+      .then(
+        (res: any) => {
+          if (!res?.error && typeof res?.count === 'number') {
+            setRealSearches(res.count);
+          }
+        },
+        () => {
+          /* silent */
+        },
+      );
+
+    // Saved companies — all-time count via getSavedCompanies (no monthly
+    // scoping; plan limits are "in Command Center right now", not "this
+    // month"). Mirrors the Dashboard aggregate.
+    getSavedCompanies()
+      .then((resp: any) => {
+        const rows = Array.isArray(resp?.rows) ? resp.rows : Array.isArray(resp) ? resp : [];
+        setRealSaves(rows.length || 0);
+      })
+      .catch(() => {
+        /* silent */
+      });
+
+    // Active campaigns — filter by status. Mirrors Dashboard filter.
+    getLitCampaigns()
+      .then((resp: any) => {
+        const rows = Array.isArray(resp?.rows) ? resp.rows : Array.isArray(resp) ? resp : [];
+        const active = rows.filter(
+          (c: any) => c?.status === 'active' || c?.status === 'live',
+        ).length;
+        setRealActiveCampaigns(active);
+      })
+      .catch(() => {
+        /* silent */
+      });
+  }
 
   useEffect(() => {
     const rawPlan =
@@ -363,16 +430,12 @@ export default function Billing() {
     (user as any).stripe_customer_id ||
     (user as any).user_metadata?.stripe_customer_id;
 
-  const searchesUsed = (user as any).monthly_searches || 0;
-  const savesUsed =
-    (user as any).monthly_command_center_saves ||
-    (user as any).monthly_saved_companies ||
-    0;
-  const pulseUsed =
-    (user as any).monthly_pulse_runs ||
-    (user as any).monthly_emails_sent ||
-    0;
-  const enrichmentsUsed = (user as any).monthly_enrichments || 0;
+  // Phase F — usage meters read real counters loaded by loadRealUsageCounters().
+  // The previous `user.user_metadata.monthly_*` reads were removed because no
+  // real writer populates those fields; rendering them would be mock data.
+  const searchesUsed = realSearches;
+  const savesUsed = realSaves;
+  const activeCampaignsUsed = realActiveCampaigns;
 
   const renewalDate = subscription?.current_period_end
     ? new Date(subscription.current_period_end).toLocaleDateString('en-US', {
@@ -396,19 +459,28 @@ export default function Billing() {
   const intervalLabel = billingInterval === 'monthly' ? '/mo' : '/yr';
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-white">
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          "radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 28%), radial-gradient(circle at 100% 10%, rgba(6,182,212,0.08) 0%, rgba(6,182,212,0) 32%), linear-gradient(180deg, #F8FAFC 0%, #F8FAFC 60%, #FFFFFF 100%)",
+      }}
+    >
       <div className="mx-auto max-w-7xl p-4 md:p-6 xl:p-8">
-        <div className="mb-6 md:mb-8">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-slate-400">
-            Account
+        <div className="mb-5 md:mb-7">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-indigo-500">
+            Account · Billing
           </span>
 
-          <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="mt-1.5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
-                Billing & Plans
+              <h1
+                className="text-xl font-bold tracking-tight text-slate-950 md:text-[26px]"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                Billing &amp; Plans
               </h1>
-              <p className="mt-1 text-sm text-slate-600 md:text-base">
+              <p className="mt-1 text-sm text-slate-500">
                 Manage seats, billing, usage, and plan access across your workspace.
               </p>
             </div>
@@ -595,34 +667,31 @@ export default function Billing() {
               </div>
             </div>
 
+            {/* Phase F — three real meters only. Pulse Runs + Enrichment
+                Credits tiles removed until real writers exist. Active
+                Campaigns has no plan cap today (passed max={null}), so it
+                renders as "N · Unlimited" with no misleading progress bar. */}
             <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <MetricCard
                 icon={Search}
-                label="Company Discoveries"
+                label="Searches Used"
                 current={searchesUsed}
                 max={currentPlan.limits.searches_per_month}
                 accentClass="bg-blue-500"
               />
               <MetricCard
                 icon={Bookmark}
-                label="Saved Accounts"
+                label="Saved Companies"
                 current={savesUsed}
                 max={currentPlan.limits.command_center_saves_per_month}
                 accentClass="bg-violet-500"
               />
               <MetricCard
                 icon={Mail}
-                label="Pulse Runs"
-                current={pulseUsed}
-                max={currentPlan.limits.pulse_runs_per_month}
+                label="Active Campaigns"
+                current={activeCampaignsUsed}
+                max={null}
                 accentClass="bg-emerald-500"
-              />
-              <MetricCard
-                icon={Zap}
-                label="Enrichment Credits"
-                current={enrichmentsUsed}
-                max={currentPlan.limits.enrichment_credits_per_month}
-                accentClass="bg-amber-500"
               />
             </div>
           </div>

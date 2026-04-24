@@ -17,21 +17,34 @@ import {
   Plus,
   CheckCircle2,
   AlertCircle,
+  Plug,
+  Send,
+  Gift,
+  ExternalLink,
+  Lock,
 } from "lucide-react";
 
+// Phase F — 11-section nav approved by the user. Previous sections
+// "Email", "LinkedIn", "Company & Signature", "Workspace Credits", and
+// "Team Subscriptions" are folded:
+//   - Email + LinkedIn    → Integrations
+//   - email_signature     → Outreach Accounts
+//   - Company & Signature → Organization (renamed)
+//   - Billing & Plans     → Billing (renamed; Workspace Credits info
+//                          surfaces on the canonical /app/billing page)
+//   - Team Subscriptions  → Access & Roles (seat capacity rendered there)
 export type SettingsSectionId =
   | "Profile"
-  | "Company & Signature"
-  | "Email"
-  | "LinkedIn"
-  | "Access & Roles"
-  | "Billing & Plans"
-  | "RFP & Pipeline"
-  | "Campaign Preferences"
-  | "Alerts & Notifications"
   | "Security & API"
-  | "Workspace Credits"
-  | "Team Subscriptions";
+  | "Alerts & Notifications"
+  | "Access & Roles"
+  | "Integrations"
+  | "Outreach Accounts"
+  | "Campaign Preferences"
+  | "RFP & Pipeline"
+  | "Affiliate Program"
+  | "Organization"
+  | "Billing";
 
 export const SETTINGS_SECTIONS: Array<{
   id: SettingsSectionId;
@@ -39,17 +52,16 @@ export const SETTINGS_SECTIONS: Array<{
   icon: React.ComponentType<any>;
 }> = [
   { id: "Profile", title: "Profile", icon: User },
-  { id: "Company & Signature", title: "Company & Signature", icon: Building2 },
-  { id: "Email", title: "Email", icon: Mail },
-  { id: "LinkedIn", title: "LinkedIn", icon: Linkedin },
-  { id: "Access & Roles", title: "Access & Roles", icon: ShieldCheck },
-  { id: "Billing & Plans", title: "Billing & Plans", icon: CreditCard },
-  { id: "RFP & Pipeline", title: "RFP & Pipeline", icon: FileText },
-  { id: "Campaign Preferences", title: "Campaign Preferences", icon: Megaphone },
-  { id: "Alerts & Notifications", title: "Alerts & Notifications", icon: Bell },
   { id: "Security & API", title: "Security & API", icon: KeyRound },
-  { id: "Workspace Credits", title: "Workspace Credits", icon: Coins },
-  { id: "Team Subscriptions", title: "Team Subscriptions", icon: Users },
+  { id: "Alerts & Notifications", title: "Alerts & Notifications", icon: Bell },
+  { id: "Access & Roles", title: "Access & Roles", icon: ShieldCheck },
+  { id: "Integrations", title: "Integrations", icon: Plug },
+  { id: "Outreach Accounts", title: "Outreach Accounts", icon: Send },
+  { id: "Campaign Preferences", title: "Campaign Preferences", icon: Megaphone },
+  { id: "RFP & Pipeline", title: "RFP & Pipeline", icon: FileText },
+  { id: "Affiliate Program", title: "Affiliate Program", icon: Gift },
+  { id: "Organization", title: "Organization", icon: Building2 },
+  { id: "Billing", title: "Billing", icon: CreditCard },
 ];
 
 function SectionShell({
@@ -882,21 +894,88 @@ export function BillingPlansSection({ subscription, plans, isAdmin }: any) {
   );
 }
 
+// Phase F — small inline helper used by the weak-save sections below so
+// they no longer silently claim success on a failed write. The real-write
+// handler (`onSavePreferences` in SettingsPage.tsx) throws on Supabase
+// error via `requireNoError`, so the try/catch here surfaces real state.
+function useSaveStatus() {
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(
+    null,
+  );
+  return { saving, status, setSaving, setStatus };
+}
+
+function SaveStatusPill({
+  status,
+}: {
+  status: { kind: "ok" | "error"; message: string } | null;
+}) {
+  if (!status) return null;
+  const cls =
+    status.kind === "ok"
+      ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+      : "border border-rose-200 bg-rose-50 text-rose-700";
+  const Icon = status.kind === "ok" ? CheckCircle2 : AlertCircle;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold ${cls}`}
+    >
+      <Icon className="h-3 w-3" />
+      {status.message}
+    </span>
+  );
+}
+
 export function RfpPipelineSection({ preferences, onSavePreferences }: any) {
   const [state, setState] = useState(preferences || {});
+  const { saving, status, setSaving, setStatus } = useSaveStatus();
 
   useEffect(() => {
     setState(preferences || {});
   }, [preferences]);
 
+  async function handleSave() {
+    if (!onSavePreferences) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      await onSavePreferences(state);
+      setStatus({ kind: "ok", message: "RFP settings saved" });
+    } catch (err: any) {
+      setStatus({
+        kind: "error",
+        message: err?.message || "Could not save RFP settings. Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <SectionShell title="RFP & Pipeline" description="Configure pipeline defaults for RFP workflows.">
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
         <Field label="Default pipeline owner">
-          <Input value={state.owner || ""} onChange={(e) => setState((p: any) => ({ ...p, owner: e.target.value }))} />
+          <Input
+            value={state.owner || ""}
+            onChange={(e) => setState((p: any) => ({ ...p, owner: e.target.value }))}
+          />
         </Field>
-        <div className="mt-5 flex justify-end">
-          <ActionButton onClick={() => onSavePreferences?.(state)}>Save RFP settings</ActionButton>
+        {/* Phase F — stage editor, response-window, auto-assign, lane-benchmark
+            and currency controls aren't yet persisted (no `pipeline_stages`
+            table; `organizations` is missing the relevant columns). We'd
+            rather say so than render disabled stubs that suggest the feature
+            ships today. */}
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-xs text-slate-500">
+          Pipeline stage editor, default response window, auto-assign, lane benchmark
+          source, and currency are tracked as a Phase-F-backend ticket. Defaults apply
+          until the database layer lands.
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <SaveStatusPill status={status} />
+          <ActionButton onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save RFP settings"}
+          </ActionButton>
         </div>
       </div>
     </SectionShell>
@@ -905,61 +984,254 @@ export function RfpPipelineSection({ preferences, onSavePreferences }: any) {
 
 export function CampaignPreferencesSection({ preferences, onSavePreferences }: any) {
   const [state, setState] = useState(preferences || {});
+  const { saving, status, setSaving, setStatus } = useSaveStatus();
 
   useEffect(() => {
     setState(preferences || {});
   }, [preferences]);
 
+  async function handleSave() {
+    if (!onSavePreferences) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      await onSavePreferences(state);
+      setStatus({ kind: "ok", message: "Campaign settings saved" });
+    } catch (err: any) {
+      setStatus({
+        kind: "error",
+        message: err?.message || "Could not save campaign settings. Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <SectionShell title="Campaign Preferences" description="Choose defaults for outbound campaign behavior.">
       <div className="rounded-3xl border border-slate-200 bg-white p-5">
         <Field label="Default campaign sender">
-          <Input value={state.sender || ""} onChange={(e) => setState((p: any) => ({ ...p, sender: e.target.value }))} />
+          <Input
+            value={state.sender || ""}
+            onChange={(e) => setState((p: any) => ({ ...p, sender: e.target.value }))}
+          />
         </Field>
-        <div className="mt-5 flex justify-end">
-          <ActionButton onClick={() => onSavePreferences?.(state)}>Save campaign settings</ActionButton>
+        {/* Phase F — A/B test, stop-on-reply, stop-on-meeting, track opens,
+            track clicks, default steps, and gap-between-steps defaults are
+            not yet persisted. Shown as honest "coming soon" text rather than
+            disabled toggles to avoid implying they're toggleable today. */}
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-xs text-slate-500">
+          Default sequence length, gap days, A/B subject-line tests, stop-on-reply /
+          stop-on-meeting, and open/click tracking toggles are tracked as a Phase-F-backend
+          ticket. Defaults apply until the database layer lands.
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <SaveStatusPill status={status} />
+          <ActionButton onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save campaign settings"}
+          </ActionButton>
         </div>
       </div>
     </SectionShell>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase F — Alerts & Notifications: 8 events × 3 channels (Email / In-app /
+// Slack) = 24 toggles. Persisted as nested JSON at
+// `user_preferences.preferences.alerts_notifications.matrix`. No new table,
+// no migration — matches your "store in existing JSONB" decision.
+// Save handler surfaces real success/error (`status` state below) so the UI
+// no longer silently claims success on a failed write.
+// ─────────────────────────────────────────────────────────────────────────────
+const NOTIFICATION_EVENTS: Array<{ id: string; label: string; description: string }> = [
+  {
+    id: "reply_received",
+    label: "Reply received",
+    description: "A prospect replies to a campaign email.",
+  },
+  {
+    id: "meeting_booked",
+    label: "Meeting booked",
+    description: "A prospect books a slot on your calendar.",
+  },
+  {
+    id: "deal_stage_changed",
+    label: "Deal stage changed",
+    description: "Someone moves a deal in Command Center.",
+  },
+  {
+    id: "campaign_finished",
+    label: "Campaign finished",
+    description: "All prospects in a sequence have completed.",
+  },
+  {
+    id: "rfp_due_soon",
+    label: "RFP due within 48h",
+    description: "Deal Builder items approaching deadline.",
+  },
+  {
+    id: "weekly_digest",
+    label: "Weekly pipeline digest",
+    description: "Monday morning summary.",
+  },
+  {
+    id: "billing_alerts",
+    label: "Billing alerts",
+    description: "Invoice failures, credit exhaustion.",
+  },
+  {
+    id: "security_events",
+    label: "Security events",
+    description: "New device login, password changes.",
+  },
+];
+
+type NotificationChannel = "email" | "in_app" | "slack";
+type NotificationMatrix = Record<string, Record<NotificationChannel, boolean>>;
+
+function defaultNotificationMatrix(): NotificationMatrix {
+  const m: NotificationMatrix = {};
+  for (const ev of NOTIFICATION_EVENTS) {
+    m[ev.id] = { email: true, in_app: true, slack: false };
+  }
+  return m;
+}
+
+function readNotificationMatrix(preferences: any): NotificationMatrix {
+  const fromPrefs = preferences?.matrix;
+  if (!fromPrefs || typeof fromPrefs !== "object") return defaultNotificationMatrix();
+  const defaults = defaultNotificationMatrix();
+  const merged: NotificationMatrix = {};
+  for (const ev of NOTIFICATION_EVENTS) {
+    const stored = fromPrefs[ev.id] || {};
+    merged[ev.id] = {
+      email: stored.email ?? defaults[ev.id].email,
+      in_app: stored.in_app ?? defaults[ev.id].in_app,
+      slack: stored.slack ?? defaults[ev.id].slack,
+    };
+  }
+  return merged;
+}
+
 export function AlertsNotificationsSection({ preferences, onSavePreferences }: any) {
-  const [state, setState] = useState({
-    emailAlerts: preferences?.emailAlerts ?? true,
-    productUpdates: preferences?.productUpdates ?? true,
-  });
+  const [matrix, setMatrix] = useState<NotificationMatrix>(() =>
+    readNotificationMatrix(preferences),
+  );
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(
+    null,
+  );
 
   useEffect(() => {
-    setState({
-      emailAlerts: preferences?.emailAlerts ?? true,
-      productUpdates: preferences?.productUpdates ?? true,
-    });
+    setMatrix(readNotificationMatrix(preferences));
   }, [preferences]);
 
+  function toggle(eventId: string, channel: NotificationChannel) {
+    setMatrix((prev) => ({
+      ...prev,
+      [eventId]: {
+        ...prev[eventId],
+        [channel]: !prev[eventId][channel],
+      },
+    }));
+    setStatus(null);
+  }
+
+  async function handleSave() {
+    if (!onSavePreferences) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      await onSavePreferences({ matrix });
+      setStatus({ kind: "ok", message: "Notification preferences saved" });
+    } catch (err: any) {
+      setStatus({
+        kind: "error",
+        message: err?.message || "Could not save preferences. Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const channelMeta: Array<{ id: NotificationChannel; label: string }> = [
+    { id: "email", label: "Email" },
+    { id: "in_app", label: "In-app" },
+    { id: "slack", label: "Slack" },
+  ];
+
   return (
-    <SectionShell title="Alerts & Notifications" description="Decide what notifications you want to receive.">
-      <div className="rounded-3xl border border-slate-200 bg-white p-5">
-        <div className="space-y-4">
-          <label className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
-            <span className="text-sm font-medium text-slate-700">Email alerts</span>
-            <input
-              type="checkbox"
-              checked={state.emailAlerts}
-              onChange={(e) => setState((p) => ({ ...p, emailAlerts: e.target.checked }))}
-            />
-          </label>
-          <label className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
-            <span className="text-sm font-medium text-slate-700">Product updates</span>
-            <input
-              type="checkbox"
-              checked={state.productUpdates}
-              onChange={(e) => setState((p) => ({ ...p, productUpdates: e.target.checked }))}
-            />
-          </label>
+    <SectionShell
+      title="Alerts & Notifications"
+      description="Route the signals you care about to email, in-app, or Slack. Everything else stays quiet."
+    >
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="hidden grid-cols-[minmax(0,1fr)_repeat(3,80px)] gap-2 border-b border-slate-100 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 md:grid">
+          <span>Event</span>
+          {channelMeta.map((c) => (
+            <span key={c.id} className="text-center">
+              {c.label}
+            </span>
+          ))}
         </div>
-        <div className="mt-5 flex justify-end">
-          <ActionButton onClick={() => onSavePreferences?.(state)}>Save notification settings</ActionButton>
+
+        <div className="divide-y divide-slate-100">
+          {NOTIFICATION_EVENTS.map((ev) => (
+            <div
+              key={ev.id}
+              className="grid grid-cols-[minmax(0,1fr)_repeat(3,56px)] items-center gap-2 px-5 py-3 md:grid-cols-[minmax(0,1fr)_repeat(3,80px)]"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900">{ev.label}</div>
+                <div className="mt-0.5 truncate text-xs text-slate-500">{ev.description}</div>
+              </div>
+              {channelMeta.map((c) => {
+                const on = matrix[ev.id]?.[c.id] ?? false;
+                return (
+                  <div key={c.id} className="flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => toggle(ev.id, c.id)}
+                      aria-pressed={on}
+                      aria-label={`${ev.label} — ${c.label}`}
+                      className={`relative h-5 w-9 rounded-full transition ${
+                        on ? "bg-indigo-600" : "bg-slate-200"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-all ${
+                          on ? "left-4" : "left-0.5"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
+          {status ? (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold ${
+                status.kind === "ok"
+                  ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border border-rose-200 bg-rose-50 text-rose-700"
+              }`}
+            >
+              {status.kind === "ok" ? (
+                <CheckCircle2 className="h-3 w-3" />
+              ) : (
+                <AlertCircle className="h-3 w-3" />
+              )}
+              {status.message}
+            </span>
+          ) : null}
+          <ActionButton onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save notification settings"}
+          </ActionButton>
         </div>
       </div>
     </SectionShell>
@@ -1072,6 +1344,317 @@ export function TeamSubscriptionsSection({ members = [], subscription, isAdmin }
             </div>
           </div>
         </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase F — Integrations section.
+// Gmail / Outlook tiles are real (disconnect is wired via onDisconnect).
+// PhantomBuster / Apollo / ImportYeti / logo.dev tiles render an honest
+// "Managed centrally" disabled state because the `integrations.integration_type`
+// CHECK constraint in Supabase only currently allows Gmail / Outlook / Slack /
+// Salesforce / Zapier — persisting the other providers requires a backend
+// schema change (tracked as a Phase-F-backend ticket). We never fake a
+// connection.
+// ─────────────────────────────────────────────────────────────────────────────
+const INTEGRATION_CATALOG = [
+  {
+    id: "gmail",
+    name: "Gmail",
+    category: "Inbox / Sending",
+    icon: Mail,
+    status: "wired",
+    description: "Send outbound directly from your Gmail account.",
+  },
+  {
+    id: "outlook",
+    name: "Outlook",
+    category: "Inbox / Sending",
+    icon: Mail,
+    status: "wired",
+    description: "Send outbound directly from Microsoft 365 / Outlook.",
+  },
+  {
+    id: "linkedin",
+    name: "LinkedIn (via PhantomBuster)",
+    category: "Social engagement",
+    icon: Linkedin,
+    status: "managed_centrally",
+    description: "Sync connection requests, InMail sends, and reply signals.",
+  },
+  {
+    id: "apollo",
+    name: "Apollo",
+    category: "Contact enrichment",
+    icon: Users,
+    status: "managed_centrally",
+    description: "Resolve shipper decision-makers surfaced in Discover.",
+  },
+  {
+    id: "importyeti",
+    name: "ImportYeti",
+    category: "Shipment intelligence",
+    icon: FileText,
+    status: "managed_centrally",
+    description: "Sourced automatically behind the scenes — no action required.",
+  },
+  {
+    id: "logo_dev",
+    name: "logo.dev",
+    category: "Company branding",
+    icon: Building2,
+    status: "managed_centrally",
+    description: "Auto-resolves company logos across the app.",
+  },
+] as const;
+
+export function IntegrationsSection({
+  integrations,
+  onDisconnect,
+}: {
+  integrations?: Array<{
+    id?: string;
+    integration_type?: string;
+    type?: string;
+    status?: string;
+    external_id?: string;
+  }>;
+  onDisconnect?: (id: string) => Promise<void> | void;
+}) {
+  const wired = Array.isArray(integrations) ? integrations : [];
+  const connectedByType = new Map<string, { id?: string; external_id?: string }>();
+  for (const row of wired) {
+    const key = String(row?.integration_type || row?.type || "").toLowerCase();
+    if (!key) continue;
+    connectedByType.set(key, { id: row?.id, external_id: row?.external_id });
+  }
+
+  return (
+    <SectionShell
+      title="Integrations"
+      description="Connect inboxes and enrichment providers. Inbox connections power the Outbound Engine."
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        {INTEGRATION_CATALOG.map((entry) => {
+          const Icon = entry.icon;
+          const managed = entry.status === "managed_centrally";
+          const connection = connectedByType.get(entry.id);
+          const isConnected = !managed && Boolean(connection);
+          return (
+            <div
+              key={entry.id}
+              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
+                    <Icon className="h-4 w-4 text-slate-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900">{entry.name}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      {entry.category}
+                    </div>
+                  </div>
+                </div>
+                {managed ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                    <Lock className="h-3 w-3" />
+                    Managed centrally
+                  </span>
+                ) : isConnected ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Connected
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                    Not connected
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">{entry.description}</p>
+              {managed ? (
+                <div className="text-[11px] text-slate-400">
+                  This provider is configured by your workspace administrator. No action
+                  needed from you.
+                </div>
+              ) : isConnected ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="truncate text-xs text-slate-600">
+                    {connection?.external_id || "Active"}
+                  </div>
+                  {onDisconnect && connection?.id ? (
+                    <button
+                      type="button"
+                      onClick={() => onDisconnect(connection.id as string)}
+                      className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Disconnect
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-400">
+                  Connect {entry.name} from the Outbound Engine onboarding flow when you
+                  launch a campaign.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </SectionShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase F — Outreach Accounts section.
+// Email-signature write is real (persists to user_preferences). Daily cap /
+// quiet hours / inbox warmup / SPF-DKIM panel render honest "Not yet
+// configured" tiles — no backend writer / read surface exists. Tracked as a
+// Phase-F-backend ticket.
+// ─────────────────────────────────────────────────────────────────────────────
+export function OutreachAccountsSection({
+  emailSignature,
+  onSaveSignature,
+}: {
+  emailSignature?: string;
+  onSaveSignature?: (signature: string) => Promise<void> | void;
+}) {
+  const [signature, setSignature] = useState(emailSignature || "");
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    setSignature(emailSignature || "");
+  }, [emailSignature]);
+
+  async function handleSaveSignature() {
+    if (!onSaveSignature) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      await onSaveSignature(signature);
+      setStatus({ kind: "ok", message: "Signature saved" });
+    } catch (err: any) {
+      setStatus({
+        kind: "error",
+        message: err?.message || "Could not save signature. Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SectionShell
+      title="Outreach Accounts"
+      description="Sender identity, signature, and deliverability controls for the Outbound Engine."
+    >
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <Send className="h-4 w-4 text-slate-500" />
+            <div className="text-sm font-semibold text-slate-900">Outbound signature</div>
+          </div>
+          <Field label="Signature">
+            <textarea
+              value={signature}
+              onChange={(e) => setSignature(e.target.value)}
+              rows={5}
+              placeholder="Jordan Davis&#10;VP of Sales · Logistic Intel&#10;jordan@logisticintel.com"
+              className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </Field>
+          <p className="mt-1 text-xs text-slate-400">
+            Appended to every campaign send. Merge tags supported by the Outbound Engine.
+          </p>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSaveSignature}
+              disabled={saving || !onSaveSignature}
+              className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save signature"}
+            </button>
+            {status ? (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold ${
+                  status.kind === "ok"
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border border-rose-200 bg-rose-50 text-rose-700"
+                }`}
+              >
+                {status.kind === "ok" ? (
+                  <CheckCircle2 className="h-3 w-3" />
+                ) : (
+                  <AlertCircle className="h-3 w-3" />
+                )}
+                {status.message}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-5">
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-slate-400" />
+            <div className="text-sm font-semibold text-slate-700">
+              Deliverability controls
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Daily send cap, quiet hours, inbox warmup, SPF/DKIM verification, and tracking
+            domain are not yet configurable from Settings. We never apply unsafe defaults
+            silently — contact your workspace admin or wait for the upcoming release.
+          </p>
+        </div>
+      </div>
+    </SectionShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase F — Affiliate Program section.
+// No `affiliate_links`, `affiliate_earnings`, or `referred_workspaces` tables
+// exist. Rendering a referral URL / earnings / workspace list without those
+// tables would be mock data. Ships as honest empty state + "Request access"
+// CTA that mails support.
+// ─────────────────────────────────────────────────────────────────────────────
+export function AffiliateProgramSection() {
+  return (
+    <SectionShell
+      title="Affiliate Program"
+      description="Referrals, earnings, and affiliate payouts for your workspace."
+    >
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200">
+          <Gift className="h-4 w-4 text-slate-500" />
+        </div>
+        <div className="text-sm font-semibold text-slate-900">
+          Program not yet enabled for your workspace
+        </div>
+        <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
+          We&rsquo;re rolling out affiliate payouts and workspace referral tracking in a
+          future release. Real referral links, earnings, and referred-workspace status
+          will appear here once the program ships — we won&rsquo;t show any numbers until
+          they&rsquo;re real.
+        </p>
+        <a
+          href="mailto:support@logisticintel.com?subject=Affiliate%20Program%20access"
+          className="mt-4 inline-flex items-center gap-1 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+        >
+          Request access
+          <ExternalLink className="h-3 w-3" />
+        </a>
       </div>
     </SectionShell>
   );

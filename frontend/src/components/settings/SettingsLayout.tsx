@@ -5,16 +5,15 @@ import {
   type SettingsSectionId,
   ProfileSection,
   CompanySignatureSection,
-  EmailSection,
-  LinkedInSection,
   AccessRolesSection,
   BillingPlansSection,
   RfpPipelineSection,
   CampaignPreferencesSection,
   AlertsNotificationsSection,
   SecurityApiSection,
-  WorkspaceCreditsSection,
-  TeamSubscriptionsSection,
+  IntegrationsSection,
+  OutreachAccountsSection,
+  AffiliateProgramSection,
 } from "./SettingsSections";
 import { KpiCard, SettingsHeader } from "./SettingsPrimitives";
 
@@ -203,30 +202,20 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           isAdmin={props.isAdmin}
         />
       );
-    case "Company & Signature":
+    case "Security & API":
       return (
-        <CompanySignatureSection
-          orgProfile={props.orgProfile}
-          emailSignature={props.preferences?.email_signature}
-          onSaveOrg={props.onSaveOrgProfile}
-          onSaveSignature={props.onSaveEmailSignature}
-          onUploadLogo={props.onUploadLogo}
+        <SecurityApiSection
+          apiKeys={props.apiKeys}
+          auditLog={props.auditLog}
+          onGenerateKey={props.onGenerateApiKey}
+          onRevokeKey={props.onRevokeApiKey}
         />
       );
-    case "Email":
+    case "Alerts & Notifications":
       return (
-        <EmailSection
-          integrations={props.integrations}
-          preferences={props.preferences?.preferences?.email}
-          onSavePreferences={(data) => props.onSavePreferences?.("email", data)}
-          onDisconnect={props.onDisconnectIntegration}
-        />
-      );
-    case "LinkedIn":
-      return (
-        <LinkedInSection
-          preferences={props.preferences?.preferences?.linkedin}
-          onSavePreferences={(data) => props.onSavePreferences?.("linkedin", data)}
+        <AlertsNotificationsSection
+          preferences={props.preferences?.preferences?.alerts_notifications}
+          onSavePreferences={(data) => props.onSavePreferences?.("alerts_notifications", data)}
         />
       );
     case "Access & Roles":
@@ -242,19 +231,18 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           isAdmin={props.isAdmin}
         />
       );
-    case "Billing & Plans":
+    case "Integrations":
       return (
-        <BillingPlansSection
-          subscription={props.subscription}
-          plans={props.plans}
-          isAdmin={props.isAdmin}
+        <IntegrationsSection
+          integrations={props.integrations}
+          onDisconnect={props.onDisconnectIntegration}
         />
       );
-    case "RFP & Pipeline":
+    case "Outreach Accounts":
       return (
-        <RfpPipelineSection
-          preferences={props.preferences?.preferences?.rfp_pipeline}
-          onSavePreferences={(data) => props.onSavePreferences?.("rfp_pipeline", data)}
+        <OutreachAccountsSection
+          emailSignature={props.preferences?.email_signature}
+          onSaveSignature={props.onSaveEmailSignature}
         />
       );
     case "Campaign Preferences":
@@ -264,35 +252,30 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           onSavePreferences={(data) => props.onSavePreferences?.("campaign_preferences", data)}
         />
       );
-    case "Alerts & Notifications":
+    case "RFP & Pipeline":
       return (
-        <AlertsNotificationsSection
-          preferences={props.preferences?.preferences?.alerts_notifications}
-          onSavePreferences={(data) => props.onSavePreferences?.("alerts_notifications", data)}
+        <RfpPipelineSection
+          preferences={props.preferences?.preferences?.rfp_pipeline}
+          onSavePreferences={(data) => props.onSavePreferences?.("rfp_pipeline", data)}
         />
       );
-    case "Security & API":
+    case "Affiliate Program":
+      return <AffiliateProgramSection />;
+    case "Organization":
       return (
-        <SecurityApiSection
-          apiKeys={props.apiKeys}
-          auditLog={props.auditLog}
-          onGenerateKey={props.onGenerateApiKey}
-          onRevokeKey={props.onRevokeApiKey}
+        <CompanySignatureSection
+          orgProfile={props.orgProfile}
+          emailSignature={props.preferences?.email_signature}
+          onSaveOrg={props.onSaveOrgProfile}
+          onSaveSignature={props.onSaveEmailSignature}
+          onUploadLogo={props.onUploadLogo}
         />
       );
-    case "Workspace Credits":
+    case "Billing":
       return (
-        <WorkspaceCreditsSection
-          tokenUsage={props.tokenUsage}
+        <BillingPlansSection
           subscription={props.subscription}
-          isAdmin={props.isAdmin}
-        />
-      );
-    case "Team Subscriptions":
-      return (
-        <TeamSubscriptionsSection
-          members={props.members}
-          subscription={props.subscription}
+          plans={props.plans}
           isAdmin={props.isAdmin}
         />
       );
@@ -325,11 +308,22 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
       </div>
 
       <main className="min-w-0 flex-1 space-y-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-          <SettingsHeader
-            title="Workspace controls"
-            description="Adjust messaging defaults, workspace credits, security, team access, and billing with the same visual language used across the new LIT dashboard."
-          />
+        <div
+          className="relative overflow-hidden rounded-3xl border border-slate-200 p-5 shadow-sm md:p-6"
+          style={{
+            background:
+              "radial-gradient(circle at 100% 0%, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0) 45%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)",
+          }}
+        >
+          <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-indigo-500">
+            Account · Settings
+          </div>
+          <div className="mt-1">
+            <SettingsHeader
+              title="Workspace controls"
+              description="Profile, security, access, integrations, outreach, pipelines, affiliate — one place to configure how your workspace behaves."
+            />
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
