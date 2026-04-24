@@ -13,20 +13,13 @@ import { motion } from "framer-motion";
 import type { IyShipperHit } from "@/lib/api";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
+import { formatUserFriendlyDate } from "@/lib/dateUtils";
 
 const formatNumber = (value: number | null | undefined) =>
   typeof value === "number" ? value.toLocaleString() : "—";
 
-const formatDate = (value: string | null | undefined) => {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-};
+const formatDate = (value: string | null | undefined) =>
+  formatUserFriendlyDate(value, { fallback: "—" });
 
 const buildAddress = (shipper: IyShipperHit) => {
   if (shipper.address) return shipper.address;

@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { getLogoCandidates } from "@/lib/logo";
 
 type CompanyAvatarProps = {
   name: string;
   size?: "sm" | "md" | "lg";
   className?: string;
   logoUrl?: string | null;
+  domain?: string | null;
 };
 
 function getInitials(name: string) {
@@ -21,13 +23,24 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
   size = "md",
   className = "",
   logoUrl,
-}) => {
+  domain,
+}: CompanyAvatarProps) => {
   const initials = getInitials(name || "LIT");
-  const [imageError, setImageError] = useState(false);
+
+  const candidates = useMemo(() => {
+    const list: string[] = [];
+    if (logoUrl) list.push(logoUrl);
+    list.push(...getLogoCandidates(domain ?? logoUrl ?? null));
+    return Array.from(new Set(list.filter(Boolean)));
+  }, [logoUrl, domain]);
+
+  const [attempt, setAttempt] = useState(0);
+  const [exhausted, setExhausted] = useState(candidates.length === 0);
 
   useEffect(() => {
-    setImageError(false);
-  }, [logoUrl]);
+    setAttempt(0);
+    setExhausted(candidates.length === 0);
+  }, [candidates]);
 
   const sizeClasses =
     size === "sm"
@@ -36,7 +49,7 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
       ? "h-14 w-14 text-lg"
       : "h-10 w-10 text-sm";
 
-  if (!logoUrl || imageError) {
+  if (exhausted) {
     return (
       <div
         className={[
@@ -53,6 +66,8 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
     );
   }
 
+  const currentUrl = candidates[attempt];
+
   return (
     <div
       className={[
@@ -63,12 +78,19 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
       ].join(" ")}
     >
       <img
-        src={logoUrl}
+        key={currentUrl}
+        src={currentUrl}
         alt={`${name} logo`}
         className="h-full w-full object-contain p-1"
         loading="eager"
         decoding="sync"
-        onError={() => setImageError(true)}
+        onError={() => {
+          if (attempt + 1 < candidates.length) {
+            setAttempt(attempt + 1);
+          } else {
+            setExhausted(true);
+          }
+        }}
       />
     </div>
   );

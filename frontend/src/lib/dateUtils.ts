@@ -51,17 +51,23 @@ export function parseImportYetiDate(dateString: string | null | undefined): stri
 /**
  * Format ISO date to user-friendly format
  * @param isoDate - ISO date string "2025-12-26"
- * @returns Formatted date "Dec 26, 2025" or original if invalid
+ * @param options.fallback - Value returned when the input is null, empty, or unparseable. Defaults to 'Unknown' for backwards compatibility; card surfaces should pass '—'.
+ * @returns Formatted date "Dec 26, 2025" or the fallback
  */
-export function formatUserFriendlyDate(isoDate: string | null | undefined): string {
+export function formatUserFriendlyDate(
+  isoDate: string | null | undefined,
+  options?: { fallback?: string }
+): string {
+  const fallback = options?.fallback ?? 'Unknown';
+
   if (!isoDate) {
-    return 'Unknown';
+    return fallback;
   }
 
   try {
     const date = new Date(isoDate);
     if (isNaN(date.getTime())) {
-      return isoDate;
+      return fallback;
     }
 
     return date.toLocaleDateString('en-US', {
@@ -70,7 +76,7 @@ export function formatUserFriendlyDate(isoDate: string | null | undefined): stri
       year: 'numeric'
     });
   } catch {
-    return isoDate;
+    return fallback;
   }
 }
 
