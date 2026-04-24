@@ -116,13 +116,13 @@ export default function SettingsPage() {
       return;
     }
 
-    const { data: userProfileData, error: userProfileError } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("user_id", uid)
-      .maybeSingle();
-    requireNoError(userProfileError, "Failed loading user profile");
-
+    // Phase H Step 3.1 — SSoT split:
+    //   * `profiles.full_name` + `profiles.avatar_url` are canonical (read by
+    //     app sidebar, invites, other surfaces) so they stay in `profiles`.
+    //   * Extended profile fields (`title`, `phone`, `location`, `bio`) live
+    //     only in `user_profiles` — the `profiles` table doesn't carry those
+    //     columns and we can't migrate here. Writes no longer duplicate the
+    //     shared fields across both tables.
     const { data: baseProfileData, error: baseProfileError } = await supabase
       .from("profiles")
       .select("id, full_name, company_name, organization_name, avatar_url")
@@ -130,31 +130,34 @@ export default function SettingsPage() {
       .maybeSingle();
     requireNoError(baseProfileError, "Failed loading base profile");
 
-    const authFullName = user?.user_metadata?.full_name || user?.user_metadata?.display_name || user?.email?.split("@")[0] || "User";
-    const profileName = userProfileData?.full_name || baseProfileData?.full_name || authFullName;
+    const { data: userProfileData, error: userProfileError } = await supabase
+      .from("user_profiles")
+      .select("user_id, title, phone, location, bio")
+      .eq("user_id", uid)
+      .maybeSingle();
+    requireNoError(userProfileError, "Failed loading user profile");
 
-    // Upsert missing profiles from auth metadata for superadmin/early users
-    if (!userProfileData && (authFullName !== "User" || user?.email)) {
-      const { error: upsertError } = await supabase
-        .from("user_profiles")
-        .upsert(
-          { user_id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
-          { onConflict: "user_id" }
-        );
-      if (upsertError) console.warn("[SettingsPage] Upsert user_profiles warning:", upsertError);
-    }
+    const authFullName =
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.display_name ||
+      user?.email?.split("@")[0] ||
+      "User";
+    const profileName = baseProfileData?.full_name || authFullName;
 
     if (!baseProfileData) {
       const { error: upsertError } = await supabase
         .from("profiles")
         .upsert(
-          { id: uid, full_name: profileName, avatar_url: user?.user_metadata?.avatar_url || null },
-          { onConflict: "id" }
+          {
+            id: uid,
+            full_name: profileName,
+            avatar_url: user?.user_metadata?.avatar_url || null,
+          },
+          { onConflict: "id" },
         );
       if (upsertError) console.warn("[SettingsPage] Upsert profiles warning:", upsertError);
     }
 
-    // Will be updated after subscriptions load below; set temporary value
     safeSet(() => {
       setProfile({
         name: profileName,
@@ -163,7 +166,6 @@ export default function SettingsPage() {
         location: userProfileData?.location || "",
         bio: userProfileData?.bio || "",
         avatar_url:
-          userProfileData?.avatar_url ||
           baseProfileData?.avatar_url ||
           user?.user_metadata?.avatar_url ||
           "",
@@ -337,6 +339,11 @@ export default function SettingsPage() {
     };
   }, [loadAll]);
 
+  // Phase H Step 3.1 — dual-write removed. `profiles.full_name` /
+  // `profiles.avatar_url` are the canonical SSoT for name + avatar (used by
+  // app sidebar + invite flow). Extended fields (title/phone/location/bio)
+  // only exist on `user_profiles` and stay there. `updateProfile` keeps auth
+  // metadata in sync with the canonical name/avatar.
   const onSaveProfile = async (data: Record<string, unknown>) => {
     const uid = user?.id;
     if (!uid) throw new Error("No authenticated user");
@@ -352,24 +359,24 @@ export default function SettingsPage() {
     const trimmedBio =
       data.bio !== undefined ? String(data.bio || "").trim() || null : undefined;
 
-    const profileUpdates: JsonMap = { user_id: uid };
-    if (trimmedName !== undefined) profileUpdates.full_name = trimmedName;
-    if (trimmedTitle !== undefined) profileUpdates.title = trimmedTitle;
-    if (trimmedPhone !== undefined) profileUpdates.phone = trimmedPhone;
-    if (trimmedLocation !== undefined) profileUpdates.location = trimmedLocation;
-    if (trimmedBio !== undefined) profileUpdates.bio = trimmedBio;
-
-    const { error: userProfileError } = await supabase
-      .from("user_profiles")
-      .upsert(profileUpdates, { onConflict: "user_id" });
-    requireNoError(userProfileError, "Failed saving user profile");
-
     if (trimmedName !== undefined) {
       const { error: baseProfileSaveError } = await supabase
         .from("profiles")
         .upsert({ id: uid, full_name: trimmedName }, { onConflict: "id" });
-      requireNoError(baseProfileSaveError, "Failed saving base profile");
+      requireNoError(baseProfileSaveError, "Failed saving profile");
       await updateProfile({ full_name: trimmedName ?? "" });
+    }
+
+    const extendedUpdates: JsonMap = { user_id: uid };
+    if (trimmedTitle !== undefined) extendedUpdates.title = trimmedTitle;
+    if (trimmedPhone !== undefined) extendedUpdates.phone = trimmedPhone;
+    if (trimmedLocation !== undefined) extendedUpdates.location = trimmedLocation;
+    if (trimmedBio !== undefined) extendedUpdates.bio = trimmedBio;
+    if (Object.keys(extendedUpdates).length > 1) {
+      const { error: extendedError } = await supabase
+        .from("user_profiles")
+        .upsert(extendedUpdates, { onConflict: "user_id" });
+      requireNoError(extendedError, "Failed saving profile details");
     }
 
     setProfile((prev) => ({
@@ -393,18 +400,76 @@ export default function SettingsPage() {
 
     const avatarUrl = result.file_url;
 
-    const { error: userProfileAvatarError } = await supabase
-      .from("user_profiles")
-      .upsert({ user_id: uid, avatar_url: avatarUrl }, { onConflict: "user_id" });
-    requireNoError(userProfileAvatarError, "Failed saving avatar to user_profiles");
-
     const { error: baseProfileAvatarError } = await supabase
       .from("profiles")
       .upsert({ id: uid, avatar_url: avatarUrl }, { onConflict: "id" });
-    requireNoError(baseProfileAvatarError, "Failed saving avatar to profiles");
+    requireNoError(baseProfileAvatarError, "Failed saving avatar");
 
     await updateProfile({ avatar_url: avatarUrl });
     setProfile((prev) => ({ ...prev, avatar_url: avatarUrl }));
+  };
+
+  const onExportData = async (): Promise<{ error?: string } | void> => {
+    const uid = user?.id;
+    if (!uid) return { error: "No authenticated user" };
+
+    const [savedRes, campaignsRes, rfpsRes, prefsRes] = await Promise.allSettled([
+      supabase.from("saved_companies").select("*").eq("user_id", uid),
+      supabase.from("lit_campaigns").select("*").eq("user_id", uid),
+      supabase.from("lit_rfps").select("*").eq("user_id", uid),
+      supabase.from("user_preferences").select("*").eq("user_id", uid).maybeSingle(),
+    ]);
+
+    const readPayload = <T,>(
+      res: PromiseSettledResult<{ data: T | null; error: { message?: string } | null }>,
+    ): T | null => (res.status === "fulfilled" && !res.value.error ? res.value.data : null);
+
+    const payload = {
+      exported_at: new Date().toISOString(),
+      user: {
+        id: uid,
+        email: user?.email,
+        full_name: profile?.name,
+        title: profile?.title,
+        phone: profile?.phone,
+        location: profile?.location,
+        bio: profile?.bio,
+      },
+      saved_companies: readPayload(savedRes) ?? [],
+      campaigns: readPayload(campaignsRes) ?? [],
+      rfps: readPayload(rfpsRes) ?? [],
+      preferences: readPayload(prefsRes) ?? null,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `lit-export-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(href);
+  };
+
+  // Honest delete flow: account deletion requires Supabase admin API (service
+  // role). We don't ship that in the frontend, so we hand off to support via
+  // mailto rather than fake a destructive action client-side.
+  const onDeleteAccount = async (): Promise<{ error?: string } | void> => {
+    const confirmed = window.confirm(
+      "Deleting your account permanently removes all workspace data. We'll email support to process the request — continue?",
+    );
+    if (!confirmed) return { error: "Delete cancelled" };
+    const subject = encodeURIComponent("Delete my Logistics Intel account");
+    const body = encodeURIComponent(
+      [
+        "Please delete my account and all associated data.",
+        "",
+        `User ID: ${user?.id ?? ""}`,
+        `Email: ${user?.email ?? ""}`,
+      ].join("\n"),
+    );
+    window.location.href = `mailto:support@logisticintel.com?subject=${subject}&body=${body}`;
   };
 
   const onSaveOrgProfile = async (data: Record<string, unknown>) => {
@@ -634,13 +699,12 @@ export default function SettingsPage() {
     savedCount,
     campaignsCount: campaignCount,
     rfpsCount: rfpCount,
+    planStatus: subscription?.status,
   };
-
-  const effectiveSubscription = subscription ?? undefined;
 
   return (
     <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
-      <div className="mx-auto max-w-[1600px]">
+      <div className="mx-auto max-w-[1200px]">
         <SettingsLayout
           profile={profileWithStats}
           orgProfile={orgProfile}
@@ -657,6 +721,8 @@ export default function SettingsPage() {
           canAccess={canAccess}
           onSaveProfile={onSaveProfile}
           onUploadAvatar={onUploadAvatar}
+          onExportData={onExportData}
+          onDeleteAccount={onDeleteAccount}
           onSaveOrgProfile={onSaveOrgProfile}
           onSaveEmailSignature={onSaveEmailSignature}
           onUploadLogo={onUploadLogo}

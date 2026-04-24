@@ -22,6 +22,8 @@ import {
   Gift,
   ExternalLink,
   Lock,
+  Camera,
+  Download,
 } from "lucide-react";
 
 // Phase F — 11-section nav approved by the user. Previous sections
@@ -196,14 +198,201 @@ type ProfileSectionProps = {
     campaignsCount?: number;
     rfpsCount?: number;
     plan?: string;
+    planStatus?: string;
     isAdmin?: boolean;
   };
   onSave?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
+  onExportData?: () => Promise<{ error?: string } | void>;
+  onDeleteAccount?: () => Promise<{ error?: string } | void>;
   isAdmin?: boolean;
 };
 
-export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }: ProfileSectionProps) {
+function ProfileHeroCard({
+  name,
+  title,
+  location,
+  avatarUrl,
+  planLabel,
+  planStatus,
+  savedCount,
+  campaignsCount,
+  rfpsCount,
+  onAvatarClick,
+  uploading,
+}: {
+  name: string;
+  title: string;
+  location: string;
+  avatarUrl: string;
+  planLabel: string;
+  planStatus: string;
+  savedCount: number;
+  campaignsCount: number;
+  rfpsCount: number;
+  onAvatarClick: () => void;
+  uploading: boolean;
+}) {
+  const initials = (name || "U")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "U";
+
+  const statusMeta =
+    planStatus === "active"
+      ? { label: "Active", bg: "bg-green-100", dot: "bg-green-500", text: "text-green-700" }
+      : planStatus === "past_due"
+      ? { label: "Past due", bg: "bg-amber-100", dot: "bg-amber-500", text: "text-amber-700" }
+      : { label: "Trial", bg: "bg-slate-100", dot: "bg-slate-400", text: "text-slate-700" };
+
+  const subtitle = [title, location].filter(Boolean).join(" · ") || "Add your role and location";
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ring-1 ring-black/[0.02]">
+      <div
+        className="relative h-32"
+        style={{
+          background:
+            "linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e3a5f 100%)",
+        }}
+      />
+      <div className="px-6 pb-6">
+        <div className="-mt-10 mb-4 flex items-end justify-between">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={onAvatarClick}
+              disabled={uploading}
+              aria-label="Change profile image"
+              className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-2xl font-bold text-white shadow ring-4 ring-white transition hover:brightness-110 disabled:cursor-wait"
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span>{initials}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onAvatarClick}
+              disabled={uploading}
+              aria-label="Upload new profile image"
+              className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white shadow transition hover:bg-slate-700 disabled:cursor-wait"
+            >
+              <Camera className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${statusMeta.bg} ${statusMeta.text}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`} />
+              {statusMeta.label}
+            </span>
+            <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
+              {planLabel}
+            </span>
+          </div>
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">{name || "User"}</h2>
+          <p className="text-sm text-slate-500">{subtitle}</p>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-4 border-t border-slate-100 pt-5">
+          <div className="text-center">
+            <p className="text-2xl font-semibold text-slate-900">{savedCount}</p>
+            <p className="mt-0.5 text-xs uppercase tracking-[0.15em] text-slate-400">
+              Saved Companies
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-semibold text-slate-900">{campaignsCount}</p>
+            <p className="mt-0.5 text-xs uppercase tracking-[0.15em] text-slate-400">
+              Campaigns
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-semibold text-slate-900">{rfpsCount}</p>
+            <p className="mt-0.5 text-xs uppercase tracking-[0.15em] text-slate-400">
+              RFPs
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DangerZone({
+  onExport,
+  onDelete,
+  exporting,
+  deleting,
+}: {
+  onExport: () => void;
+  onDelete: () => void;
+  exporting: boolean;
+  deleting: boolean;
+}) {
+  return (
+    <div className="rounded-3xl border border-red-200 bg-red-50/50 p-6 shadow-sm">
+      <div className="mb-4">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-red-400">
+          Danger Zone
+        </span>
+        <h3 className="mt-2 text-lg font-semibold text-slate-900">Account Actions</h3>
+      </div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-100 bg-white p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-900">Export your data</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Download all your saved companies, campaigns, and RFP data as JSON.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={exporting}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Download className="h-3 w-3" />
+            {exporting ? "Preparing…" : "Export"}
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-100 bg-white p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-red-700">Delete account</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Permanently remove your account and all associated data.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            className="inline-flex shrink-0 items-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-red-700 disabled:cursor-wait disabled:opacity-60"
+          >
+            {deleting ? "Submitting…" : "Delete Account"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ProfileSection({
+  initialData,
+  onSave,
+  onUploadAvatar,
+  onExportData,
+  onDeleteAccount,
+  isAdmin,
+}: ProfileSectionProps) {
   const [form, setForm] = useState({
     name: initialData?.name || "",
     title: initialData?.title || "",
@@ -211,24 +400,30 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
     location: initialData?.location || "",
     bio: initialData?.bio || "",
   });
+  const [initial, setInitial] = useState(form);
   const [avatarUrl, setAvatarUrl] = useState(initialData?.avatar_url || "");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const rawPlan = initialData?.plan || "free_trial";
   const planLabel = rawPlan.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const planStatus = initialData?.planStatus || "trial";
 
   useEffect(() => {
-    setForm({
+    const next = {
       name: initialData?.name || "",
       title: initialData?.title || "",
       phone: initialData?.phone || "",
       location: initialData?.location || "",
       bio: initialData?.bio || "",
-    });
+    };
+    setForm(next);
+    setInitial(next);
     setAvatarUrl(initialData?.avatar_url || "");
   }, [
     initialData?.name,
@@ -239,7 +434,15 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
     initialData?.avatar_url,
   ]);
 
+  const dirty =
+    form.name !== initial.name ||
+    form.title !== initial.title ||
+    form.phone !== initial.phone ||
+    form.location !== initial.location ||
+    form.bio !== initial.bio;
+
   async function handleSave() {
+    if (!dirty) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -249,12 +452,19 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
         setError((result as any).error);
       } else {
         setSuccess("Profile saved");
+        setInitial(form);
       }
     } catch (e: any) {
       setError(e?.message || "Failed saving profile");
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCancel() {
+    setForm(initial);
+    setError(null);
+    setSuccess(null);
   }
 
   async function handleAvatarChange(file?: File | null) {
@@ -276,105 +486,178 @@ export function ProfileSection({ initialData, onSave, onUploadAvatar, isAdmin }:
     }
   }
 
+  async function handleExport() {
+    if (!onExportData) return;
+    setExporting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await onExportData();
+      if ((result as any)?.error) {
+        setError((result as any).error);
+      } else {
+        setSuccess("Export started");
+      }
+    } catch (e: any) {
+      setError(e?.message || "Failed exporting data");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!onDeleteAccount) return;
+    setDeleting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await onDeleteAccount();
+      if ((result as any)?.error) {
+        setError((result as any).error);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Failed submitting delete request");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
-    <SectionShell
-      title="User profile"
-      description="Update your personal profile, contact details, and account identity."
-    >
+    <div className="space-y-6">
       <StatusMessage error={error} success={success} />
-      <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-          <div className="flex flex-col items-center text-center">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="group relative mb-4 h-28 w-28 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow"
-            >
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-2xl font-semibold text-slate-600">
-                  {(initialData?.name || "U").slice(0, 2).toUpperCase()}
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 bg-black/50 px-2 py-1 text-xs text-white opacity-0 transition group-hover:opacity-100">
-                Change
-              </div>
-            </button>
+
+      <ProfileHeroCard
+        name={initialData?.name || ""}
+        title={initialData?.title || ""}
+        location={initialData?.location || ""}
+        avatarUrl={avatarUrl}
+        planLabel={planLabel}
+        planStatus={planStatus}
+        savedCount={initialData?.savedCount ?? 0}
+        campaignsCount={initialData?.campaignsCount ?? 0}
+        rfpsCount={initialData?.rfpsCount ?? 0}
+        uploading={uploading}
+        onAvatarClick={() => inputRef.current?.click()}
+      />
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => handleAvatarChange(e.target.files?.[0])}
+      />
+
+      <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <div className="mb-5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+            Identity
+          </span>
+          <h3 className="mt-2 text-lg font-semibold text-slate-900">Personal Information</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Your name, title, and contact details visible to your team.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                Full Name
+              </label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                Job Title
+              </label>
+              <input
+                type="text"
+                value={form.title}
+                onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-500">Phone</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                Location
+              </label>
+              <input
+                type="text"
+                value={form.location}
+                onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+              Email Address
+            </label>
             <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleAvatarChange(e.target.files?.[0])}
+              type="email"
+              value={initialData?.email || ""}
+              readOnly
+              className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-400"
             />
-            <div className="text-lg font-semibold text-slate-900">{initialData?.name || "User"}</div>
-            <div className="mt-1 text-sm text-slate-500">{initialData?.email || "—"}</div>
-            <div className="mt-4 inline-flex rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
-              {planLabel}
-            </div>
-            <div className="mt-5 grid w-full grid-cols-3 gap-3 text-center">
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-lg font-semibold text-slate-900">{initialData?.savedCount ?? 0}</div>
-                <div className="text-xs text-slate-500">Saved</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-lg font-semibold text-slate-900">{initialData?.campaignsCount ?? 0}</div>
-                <div className="text-xs text-slate-500">Campaigns</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-lg font-semibold text-slate-900">{initialData?.rfpsCount ?? 0}</div>
-                <div className="text-xs text-slate-500">RFPs</div>
-              </div>
-            </div>
-            <div className="mt-4 w-full">
-              <ActionButton
-                type="button"
-                variant="secondary"
-                onClick={() => inputRef.current?.click()}
-                disabled={uploading}
-                className="w-full"
-              >
-                <Upload size={16} />
-                {uploading ? "Uploading..." : "Upload profile image"}
-              </ActionButton>
-            </div>
+            <p className="mt-1 text-xs text-slate-400">Managed by your auth provider</p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-500">Bio</label>
+            <textarea
+              rows={3}
+              value={form.bio}
+              onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
+              className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            />
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Full name">
-              <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
-            </Field>
-            <Field label="Title">
-              <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} />
-            </Field>
-            <Field label="Phone">
-              <Input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
-            </Field>
-            <Field label="Location">
-              <Input value={form.location} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))} />
-            </Field>
-            <div className="md:col-span-2">
-              <Field label="Bio">
-                <Textarea
-                  rows={5}
-                  value={form.bio}
-                  onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
-                />
-              </Field>
-            </div>
-          </div>
-
-          <div className="mt-5 flex justify-end">
-            <ActionButton onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save profile"}
-            </ActionButton>
-          </div>
+        <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-5">
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={saving || !dirty}
+            className="rounded-full border border-slate-200 px-5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            className="rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
         </div>
       </div>
-    </SectionShell>
+
+      <DangerZone
+        onExport={handleExport}
+        onDelete={handleDelete}
+        exporting={exporting}
+        deleting={deleting}
+      />
+    </div>
   );
 }
 
