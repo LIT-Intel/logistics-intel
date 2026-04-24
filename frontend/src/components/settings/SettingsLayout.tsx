@@ -42,10 +42,8 @@ type ProfileData = {
   phone?: string;
   location?: string;
   bio?: string;
+  timezone?: string;
   avatar_url?: string;
-  savedCount?: number;
-  campaignsCount?: number;
-  rfpsCount?: number;
   planName?: string;
   plan?: string;
   planStatus?: string;
@@ -116,6 +114,13 @@ type PlanData = {
   seat_limit?: number;
 };
 
+type WorkspaceChip = {
+  name?: string;
+  planLabel?: string;
+  roleLabel?: string;
+  joinedLabel?: string;
+};
+
 export type SettingsLayoutProps = {
   profile?: ProfileData;
   orgProfile?: OrgProfileData;
@@ -128,12 +133,11 @@ export type SettingsLayoutProps = {
   auditLog?: AuditEvent[];
   tokenUsage?: TokenUsage[];
   integrations?: Integration[];
+  workspace?: WorkspaceChip;
   isAdmin?: boolean;
   canAccess?: (minPlan: string) => boolean;
   onSaveProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
-  onExportData?: () => Promise<{ error?: string } | void>;
-  onDeleteAccount?: () => Promise<{ error?: string } | void>;
   onSaveOrgProfile?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onSaveEmailSignature?: (sig: string) => Promise<{ error?: string } | void>;
   onUploadLogo?: (file: File) => Promise<{ error?: string } | void>;
@@ -147,16 +151,96 @@ export type SettingsLayoutProps = {
   onDisconnectIntegration?: (id: string) => Promise<void>;
 };
 
+// Map section → header kicker category, matching the LIT design PDF
+// (Account / Workspace / Outreach / Growth).
+const SECTION_KICKER: Record<SettingsSectionId, string> = {
+  Profile: "Account · Settings",
+  "Security & API": "Account · Settings",
+  "Alerts & Notifications": "Account · Settings",
+  Billing: "Account · Settings",
+  "Access & Roles": "Workspace · Settings",
+  Organization: "Workspace · Settings",
+  Integrations: "Outreach · Settings",
+  "Outreach Accounts": "Outreach · Settings",
+  "Campaign Preferences": "Outreach · Settings",
+  "RFP & Pipeline": "Outreach · Settings",
+  "Affiliate Program": "Growth · Settings",
+};
+
+// Sentence-cased page H1 per PDF (tab labels stay title-cased via SETTINGS_SECTIONS).
+const SECTION_TITLE: Record<SettingsSectionId, string> = {
+  Profile: "Profile",
+  "Security & API": "Security & API",
+  "Alerts & Notifications": "Alerts & notifications",
+  "Access & Roles": "Access & roles",
+  Integrations: "Integrations",
+  "Outreach Accounts": "Outreach accounts",
+  "Campaign Preferences": "Campaign preferences",
+  "RFP & Pipeline": "RFP & pipeline",
+  "Affiliate Program": "Affiliate program",
+  Organization: "Organization",
+  Billing: "Billing",
+};
+
+const SECTION_DESCRIPTION: Partial<Record<SettingsSectionId, string>> = {
+  Profile:
+    "Your personal identity across Logistic Intel. Displayed on your outbound sends, comments, and teammate mentions.",
+  "Security & API": "Password, two-factor, active sessions, and developer API keys.",
+  "Alerts & Notifications":
+    "Route the signals you care about to email, in-app, or Slack. Everything else stays quiet.",
+  "Access & Roles":
+    "Teammates, pending invites, and the permissions each role carries across the workspace.",
+  Integrations:
+    "Connect your inboxes, enrichment providers, and data sources. Inbox connections power the Outbound Engine.",
+  "Outreach Accounts":
+    "Sender identity, inbox configuration, and sending eligibility. What Outbound Engine reads when launching a campaign.",
+  "Campaign Preferences":
+    "Defaults that the Outbound Engine uses when you spin up a new campaign.",
+  "RFP & Pipeline": "How Command Center and Deal Builder behave for you by default.",
+  "Affiliate Program": "Your referral link, earnings, and referred workspaces.",
+  Organization: "Workspace branding, domain, and shared defaults.",
+  Billing: "Plan, payment method, invoices, and renewal schedule.",
+};
+
+function WorkspaceChipBlock({ workspace }: { workspace?: WorkspaceChip }) {
+  const name = workspace?.name || "LIT · Logistics Intelligence";
+  const meta = [workspace?.planLabel, workspace?.roleLabel, workspace?.joinedLabel]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-xs font-bold text-white shadow-sm">
+        L
+      </div>
+      <div className="text-right">
+        <p className="text-sm font-semibold text-slate-900">{name}</p>
+        {meta ? (
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
+            {meta}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
+  const messagingPrefs = props.preferences?.preferences?.messaging_preferences;
+  const profileTimezone =
+    props.profile?.timezone || props.preferences?.preferences?.profile_preferences?.timezone || "";
+
   switch (section) {
     case "Profile":
       return (
         <ProfileSection
-          initialData={props.profile}
+          initialData={{ ...props.profile, timezone: profileTimezone }}
+          messagingPrefs={messagingPrefs}
           onSave={props.onSaveProfile}
           onUploadAvatar={props.onUploadAvatar}
-          onExportData={props.onExportData}
-          onDeleteAccount={props.onDeleteAccount}
+          onSaveMessagingPreferences={async (data) => {
+            if (!props.onSavePreferences) return;
+            return props.onSavePreferences("messaging_preferences", data);
+          }}
           isAdmin={props.isAdmin}
         />
       );
@@ -248,11 +332,14 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
     default:
       return (
         <ProfileSection
-          initialData={props.profile}
+          initialData={{ ...props.profile, timezone: profileTimezone }}
+          messagingPrefs={messagingPrefs}
           onSave={props.onSaveProfile}
           onUploadAvatar={props.onUploadAvatar}
-          onExportData={props.onExportData}
-          onDeleteAccount={props.onDeleteAccount}
+          onSaveMessagingPreferences={async (data) => {
+            if (!props.onSavePreferences) return;
+            return props.onSavePreferences("messaging_preferences", data);
+          }}
           isAdmin={props.isAdmin}
         />
       );
@@ -262,13 +349,30 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
 export default function SettingsLayout(props: SettingsLayoutProps) {
   const [activeSection, setActiveSection] = React.useState<SettingsSectionId>("Profile");
 
+  const kicker = SECTION_KICKER[activeSection] || "Account · Settings";
+  const title = SECTION_TITLE[activeSection] || activeSection;
+  const description = SECTION_DESCRIPTION[activeSection];
+
   return (
     <div className="flex w-full flex-col">
+      {/* Page header: kicker + title on left, workspace chip on right */}
+      <header className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-600">
+            {kicker}
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+            {title}
+          </h1>
+        </div>
+        <WorkspaceChipBlock workspace={props.workspace} />
+      </header>
+
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 px-1 pb-3 text-sm">
         <span className="text-slate-400">Settings</span>
         <ChevronRight className="h-3 w-3 text-slate-300" />
-        <span className="font-medium text-slate-900">{activeSection}</span>
+        <span className="font-medium text-slate-900">{title}</span>
       </nav>
 
       {/* Horizontal tab bar */}
@@ -295,8 +399,14 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
         </div>
       </div>
 
-      {/* Section content */}
-      <main className="mx-auto w-full max-w-4xl pt-6">
+      {/* Section header: sentence-case H2 + description */}
+      <main className="mx-auto w-full max-w-5xl pt-6">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h2>
+          {description ? (
+            <p className="mt-1 text-sm text-slate-500">{description}</p>
+          ) : null}
+        </div>
         {renderSection(activeSection, props)}
       </main>
     </div>

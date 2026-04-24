@@ -22,8 +22,6 @@ import {
   Gift,
   ExternalLink,
   Lock,
-  Camera,
-  Download,
 } from "lucide-react";
 
 // Phase F — 11-section nav approved by the user. Previous sections
@@ -185,6 +183,8 @@ function StatusMessage({ error, success }: { error?: string | null; success?: st
   );
 }
 
+type MessagingKey = "mentions" | "weekly_digest" | "direct_messages" | "assignments";
+
 type ProfileSectionProps = {
   initialData?: {
     name?: string;
@@ -193,204 +193,126 @@ type ProfileSectionProps = {
     phone?: string;
     location?: string;
     bio?: string;
+    timezone?: string;
     avatar_url?: string;
-    savedCount?: number;
-    campaignsCount?: number;
-    rfpsCount?: number;
     plan?: string;
     planStatus?: string;
     isAdmin?: boolean;
   };
+  messagingPrefs?: Partial<Record<MessagingKey, boolean>>;
   onSave?: (data: Record<string, unknown>) => Promise<{ error?: string } | void>;
   onUploadAvatar?: (file: File) => Promise<{ error?: string } | void>;
-  onExportData?: () => Promise<{ error?: string } | void>;
-  onDeleteAccount?: () => Promise<{ error?: string } | void>;
+  onSaveMessagingPreferences?: (data: Record<MessagingKey, boolean>) => Promise<{ error?: string } | void>;
   isAdmin?: boolean;
 };
 
-function ProfileHeroCard({
-  name,
-  title,
-  location,
-  avatarUrl,
-  planLabel,
-  planStatus,
-  savedCount,
-  campaignsCount,
-  rfpsCount,
-  onAvatarClick,
-  uploading,
+const BIO_MAX_CHARS = 160;
+
+// Common IANA zones surfaced in the picker. Persists the raw IANA ID so
+// server-side scheduling keeps working if we wire it later.
+const TIMEZONE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "America/Los_Angeles", label: "America/Los_Angeles" },
+  { value: "America/Denver", label: "America/Denver" },
+  { value: "America/Chicago", label: "America/Chicago" },
+  { value: "America/New_York", label: "America/New_York" },
+  { value: "America/Sao_Paulo", label: "America/Sao_Paulo" },
+  { value: "Europe/London", label: "Europe/London" },
+  { value: "Europe/Paris", label: "Europe/Paris" },
+  { value: "Europe/Berlin", label: "Europe/Berlin" },
+  { value: "Africa/Johannesburg", label: "Africa/Johannesburg" },
+  { value: "Asia/Dubai", label: "Asia/Dubai" },
+  { value: "Asia/Kolkata", label: "Asia/Kolkata" },
+  { value: "Asia/Singapore", label: "Asia/Singapore" },
+  { value: "Asia/Shanghai", label: "Asia/Shanghai" },
+  { value: "Asia/Tokyo", label: "Asia/Tokyo" },
+  { value: "Australia/Sydney", label: "Australia/Sydney" },
+];
+
+function PreferenceToggle({
+  on,
+  onToggle,
+  label,
 }: {
-  name: string;
-  title: string;
-  location: string;
-  avatarUrl: string;
-  planLabel: string;
-  planStatus: string;
-  savedCount: number;
-  campaignsCount: number;
-  rfpsCount: number;
-  onAvatarClick: () => void;
-  uploading: boolean;
+  on: boolean;
+  onToggle: () => void;
+  label: string;
 }) {
-  const initials = (name || "U")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2) || "U";
-
-  const statusMeta =
-    planStatus === "active"
-      ? { label: "Active", bg: "bg-green-100", dot: "bg-green-500", text: "text-green-700" }
-      : planStatus === "past_due"
-      ? { label: "Past due", bg: "bg-amber-100", dot: "bg-amber-500", text: "text-amber-700" }
-      : { label: "Trial", bg: "bg-slate-100", dot: "bg-slate-400", text: "text-slate-700" };
-
-  const subtitle = [title, location].filter(Boolean).join(" · ") || "Add your role and location";
-
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ring-1 ring-black/[0.02]">
-      <div
-        className="relative h-32"
-        style={{
-          background:
-            "linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e3a5f 100%)",
-        }}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={onToggle}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition ${
+        on ? "bg-indigo-600" : "bg-slate-300"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-all ${
+          on ? "left-4" : "left-0.5"
+        }`}
       />
-      <div className="px-6 pb-6">
-        <div className="-mt-10 mb-4 flex items-end justify-between">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={onAvatarClick}
-              disabled={uploading}
-              aria-label="Change profile image"
-              className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 text-2xl font-bold text-white shadow ring-4 ring-white transition hover:brightness-110 disabled:cursor-wait"
-            >
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <span>{initials}</span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onAvatarClick}
-              disabled={uploading}
-              aria-label="Upload new profile image"
-              className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white shadow transition hover:bg-slate-700 disabled:cursor-wait"
-            >
-              <Camera className="h-3 w-3" />
-            </button>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${statusMeta.bg} ${statusMeta.text}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`} />
-              {statusMeta.label}
-            </span>
-            <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
-              {planLabel}
-            </span>
-          </div>
-        </div>
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">{name || "User"}</h2>
-          <p className="text-sm text-slate-500">{subtitle}</p>
-        </div>
-        <div className="mt-5 grid grid-cols-3 gap-4 border-t border-slate-100 pt-5">
-          <div className="text-center">
-            <p className="text-2xl font-semibold text-slate-900">{savedCount}</p>
-            <p className="mt-0.5 text-xs uppercase tracking-[0.15em] text-slate-400">
-              Saved Companies
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-semibold text-slate-900">{campaignsCount}</p>
-            <p className="mt-0.5 text-xs uppercase tracking-[0.15em] text-slate-400">
-              Campaigns
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-semibold text-slate-900">{rfpsCount}</p>
-            <p className="mt-0.5 text-xs uppercase tracking-[0.15em] text-slate-400">
-              RFPs
-            </p>
-          </div>
-        </div>
+    </button>
+  );
+}
+
+function MessagingTile({
+  label,
+  description,
+  on,
+  onToggle,
+  disabled,
+}: {
+  label: string;
+  description: string;
+  on: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3 ${
+        disabled ? "opacity-60" : ""
+      }`}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-900">{label}</p>
+        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
       </div>
+      <PreferenceToggle on={on} onToggle={onToggle} label={label} />
     </div>
   );
 }
 
-function DangerZone({
-  onExport,
-  onDelete,
-  exporting,
-  deleting,
-}: {
-  onExport: () => void;
-  onDelete: () => void;
-  exporting: boolean;
-  deleting: boolean;
-}) {
-  return (
-    <div className="rounded-3xl border border-red-200 bg-red-50/50 p-6 shadow-sm">
-      <div className="mb-4">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-red-400">
-          Danger Zone
-        </span>
-        <h3 className="mt-2 text-lg font-semibold text-slate-900">Account Actions</h3>
-      </div>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-100 bg-white p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-900">Export your data</p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Download all your saved companies, campaigns, and RFP data as JSON.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={exporting}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
-          >
-            <Download className="h-3 w-3" />
-            {exporting ? "Preparing…" : "Export"}
-          </button>
-        </div>
-        <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-100 bg-white p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-red-700">Delete account</p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Permanently remove your account and all associated data.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={deleting}
-            className="inline-flex shrink-0 items-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-red-700 disabled:cursor-wait disabled:opacity-60"
-          >
-            {deleting ? "Submitting…" : "Delete Account"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+const MESSAGING_ROWS: Array<{ key: MessagingKey; label: string; description: string }> = [
+  { key: "mentions", label: "@mentions in comments", description: "Email me when teammates tag me." },
+  { key: "weekly_digest", label: "Weekly digest", description: "Monday morning summary of pipeline." },
+  { key: "direct_messages", label: "Direct messages", description: "In-app DMs from workspace members." },
+  { key: "assignments", label: "Assignments", description: "Notify when a deal is routed to me." },
+];
+
+function defaultMessagingPrefs(): Record<MessagingKey, boolean> {
+  return { mentions: true, weekly_digest: true, direct_messages: true, assignments: true };
+}
+
+function normalizeMessagingPrefs(
+  input?: Partial<Record<MessagingKey, boolean>>,
+): Record<MessagingKey, boolean> {
+  const base = defaultMessagingPrefs();
+  if (!input) return base;
+  for (const row of MESSAGING_ROWS) {
+    if (typeof input[row.key] === "boolean") base[row.key] = input[row.key] as boolean;
+  }
+  return base;
 }
 
 export function ProfileSection({
   initialData,
+  messagingPrefs,
   onSave,
   onUploadAvatar,
-  onExportData,
-  onDeleteAccount,
+  onSaveMessagingPreferences,
   isAdmin,
 }: ProfileSectionProps) {
   const [form, setForm] = useState({
@@ -398,21 +320,22 @@ export function ProfileSection({
     title: initialData?.title || "",
     phone: initialData?.phone || "",
     location: initialData?.location || "",
+    timezone: initialData?.timezone || "",
     bio: initialData?.bio || "",
   });
   const [initial, setInitial] = useState(form);
   const [avatarUrl, setAvatarUrl] = useState(initialData?.avatar_url || "");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const rawPlan = initialData?.plan || "free_trial";
-  const planLabel = rawPlan.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  const planStatus = initialData?.planStatus || "trial";
+  const [msg, setMsg] = useState<Record<MessagingKey, boolean>>(() =>
+    normalizeMessagingPrefs(messagingPrefs),
+  );
+  const [msgSaving, setMsgSaving] = useState<MessagingKey | null>(null);
+  const [msgError, setMsgError] = useState<string | null>(null);
 
   useEffect(() => {
     const next = {
@@ -420,6 +343,7 @@ export function ProfileSection({
       title: initialData?.title || "",
       phone: initialData?.phone || "",
       location: initialData?.location || "",
+      timezone: initialData?.timezone || "",
       bio: initialData?.bio || "",
     };
     setForm(next);
@@ -430,15 +354,21 @@ export function ProfileSection({
     initialData?.title,
     initialData?.phone,
     initialData?.location,
+    initialData?.timezone,
     initialData?.bio,
     initialData?.avatar_url,
   ]);
+
+  useEffect(() => {
+    setMsg(normalizeMessagingPrefs(messagingPrefs));
+  }, [messagingPrefs]);
 
   const dirty =
     form.name !== initial.name ||
     form.title !== initial.title ||
     form.phone !== initial.phone ||
     form.location !== initial.location ||
+    form.timezone !== initial.timezone ||
     form.bio !== initial.bio;
 
   async function handleSave() {
@@ -486,148 +416,180 @@ export function ProfileSection({
     }
   }
 
-  async function handleExport() {
-    if (!onExportData) return;
-    setExporting(true);
-    setError(null);
-    setSuccess(null);
+  async function toggleMessaging(key: MessagingKey) {
+    if (!onSaveMessagingPreferences) return;
+    const optimistic = { ...msg, [key]: !msg[key] };
+    setMsg(optimistic);
+    setMsgError(null);
+    setMsgSaving(key);
     try {
-      const result = await onExportData();
+      const result = await onSaveMessagingPreferences(optimistic);
       if ((result as any)?.error) {
-        setError((result as any).error);
-      } else {
-        setSuccess("Export started");
+        setMsg(msg);
+        setMsgError((result as any).error);
       }
     } catch (e: any) {
-      setError(e?.message || "Failed exporting data");
+      setMsg(msg);
+      setMsgError(e?.message || "Failed updating preference");
     } finally {
-      setExporting(false);
+      setMsgSaving(null);
     }
   }
 
-  async function handleDelete() {
-    if (!onDeleteAccount) return;
-    setDeleting(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const result = await onDeleteAccount();
-      if ((result as any)?.error) {
-        setError((result as any).error);
-      }
-    } catch (e: any) {
-      setError(e?.message || "Failed submitting delete request");
-    } finally {
-      setDeleting(false);
-    }
-  }
+  const initials =
+    (initialData?.name || initialData?.email || "U")
+      .split(/\s+|@/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "U";
 
   return (
     <div className="space-y-6">
-      <StatusMessage error={error} success={success} />
+      <StatusMessage error={error || msgError} success={success} />
 
-      <ProfileHeroCard
-        name={initialData?.name || ""}
-        title={initialData?.title || ""}
-        location={initialData?.location || ""}
-        avatarUrl={avatarUrl}
-        planLabel={planLabel}
-        planStatus={planStatus}
-        savedCount={initialData?.savedCount ?? 0}
-        campaignsCount={initialData?.campaignsCount ?? 0}
-        rfpsCount={initialData?.rfpsCount ?? 0}
-        uploading={uploading}
-        onAvatarClick={() => inputRef.current?.click()}
-      />
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => handleAvatarChange(e.target.files?.[0])}
-      />
-
-      <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm ring-1 ring-black/[0.02]">
-        <div className="mb-5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
-            Identity
-          </span>
-          <h3 className="mt-2 text-lg font-semibold text-slate-900">Personal Information</h3>
+      {/* Identity card */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <div className="mb-6">
+          <h3 className="text-base font-semibold text-slate-900">Identity</h3>
           <p className="mt-1 text-sm text-slate-500">
-            Your name, title, and contact details visible to your team.
+            Public profile details visible to your workspace and in outbound signatures.
           </p>
         </div>
 
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                Job Title
-              </label>
-              <input
-                type="text"
-                value={form.title}
-                onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">Phone</label>
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-                Location
-              </label>
-              <input
-                type="text"
-                value={form.location}
-                onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-500">
-              Email Address
-            </label>
+        <div className="grid gap-6 md:grid-cols-[160px_minmax(0,1fr)]">
+          <div className="flex flex-col items-center">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+              aria-label="Change profile image"
+              className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-3xl font-bold text-white shadow transition hover:brightness-110 disabled:cursor-wait"
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span>{initials}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              <Upload className="h-3 w-3" />
+              {uploading ? "Uploading…" : "Change photo"}
+            </button>
             <input
-              type="email"
-              value={initialData?.email || ""}
-              readOnly
-              className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-400"
+              ref={inputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleAvatarChange(e.target.files?.[0])}
             />
-            <p className="mt-1 text-xs text-slate-400">Managed by your auth provider</p>
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-500">Bio</label>
-            <textarea
-              rows={3}
-              value={form.bio}
-              onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
-              className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-            />
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Full name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Job title
+                </label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={initialData?.email || ""}
+                  readOnly
+                  className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500"
+                />
+                <p className="mt-1 text-xs text-emerald-600">Primary login email — verified</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Phone
+                </label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Location
+                </label>
+                <input
+                  type="text"
+                  value={form.location}
+                  onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                  Timezone
+                </label>
+                <select
+                  value={form.timezone}
+                  onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="">Select timezone…</option>
+                  {TIMEZONE_OPTIONS.map((tz) => (
+                    <option key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-500">
+                Short bio
+              </label>
+              <textarea
+                rows={3}
+                maxLength={BIO_MAX_CHARS}
+                value={form.bio}
+                onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
+                className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                {BIO_MAX_CHARS} chars max. Shown on your outbound signature and teammate cards.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -646,17 +608,40 @@ export function ProfileSection({
             disabled={saving || !dirty}
             className="rounded-full bg-slate-900 px-6 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save Changes"}
+            {saving ? "Saving…" : "Save changes"}
           </button>
         </div>
       </div>
 
-      <DangerZone
-        onExport={handleExport}
-        onDelete={handleDelete}
-        exporting={exporting}
-        deleting={deleting}
-      />
+      {/* Messaging preferences */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <div className="mb-5">
+          <h3 className="text-base font-semibold text-slate-900">Messaging preferences</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            How teammates and automated systems contact you inside the app.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {MESSAGING_ROWS.map((row) => (
+            <MessagingTile
+              key={row.key}
+              label={row.label}
+              description={row.description}
+              on={msg[row.key]}
+              onToggle={() => toggleMessaging(row.key)}
+              disabled={msgSaving !== null && msgSaving !== row.key}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Account handoff */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
+        <h3 className="text-base font-semibold text-slate-900">Account</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Session, password, and two-factor security live under Security & API.
+        </p>
+      </div>
     </div>
   );
 }

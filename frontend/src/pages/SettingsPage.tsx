@@ -342,8 +342,10 @@ export default function SettingsPage() {
   // Phase H Step 3.1 — dual-write removed. `profiles.full_name` /
   // `profiles.avatar_url` are the canonical SSoT for name + avatar (used by
   // app sidebar + invite flow). Extended fields (title/phone/location/bio)
-  // only exist on `user_profiles` and stay there. `updateProfile` keeps auth
-  // metadata in sync with the canonical name/avatar.
+  // only exist on `user_profiles` and stay there. Timezone has no column on
+  // either profile table — it lands in `user_preferences.preferences.
+  // profile_preferences.timezone` alongside the other JSONB prefs.
+  // `updateProfile` keeps auth metadata in sync with name/avatar.
   const onSaveProfile = async (data: Record<string, unknown>) => {
     const uid = user?.id;
     if (!uid) throw new Error("No authenticated user");
@@ -358,6 +360,10 @@ export default function SettingsPage() {
       data.location !== undefined ? String(data.location || "").trim() || null : undefined;
     const trimmedBio =
       data.bio !== undefined ? String(data.bio || "").trim() || null : undefined;
+    const trimmedTimezone =
+      data.timezone !== undefined
+        ? String(data.timezone || "").trim() || null
+        : undefined;
 
     if (trimmedName !== undefined) {
       const { error: baseProfileSaveError } = await supabase
@@ -379,6 +385,15 @@ export default function SettingsPage() {
       requireNoError(extendedError, "Failed saving profile details");
     }
 
+    if (trimmedTimezone !== undefined) {
+      const existingPrefs =
+        (preferences as any)?.preferences?.profile_preferences ?? {};
+      await onSavePreferences("profile_preferences", {
+        ...existingPrefs,
+        timezone: trimmedTimezone,
+      });
+    }
+
     setProfile((prev) => ({
       ...prev,
       ...(data.name !== undefined ? { name: trimmedName ?? "" } : {}),
@@ -386,6 +401,7 @@ export default function SettingsPage() {
       ...(data.phone !== undefined ? { phone: trimmedPhone ?? "" } : {}),
       ...(data.location !== undefined ? { location: trimmedLocation ?? "" } : {}),
       ...(data.bio !== undefined ? { bio: trimmedBio ?? "" } : {}),
+      ...(data.timezone !== undefined ? { timezone: trimmedTimezone ?? "" } : {}),
     }));
 
     await loadAll();
@@ -409,68 +425,6 @@ export default function SettingsPage() {
     setProfile((prev) => ({ ...prev, avatar_url: avatarUrl }));
   };
 
-  const onExportData = async (): Promise<{ error?: string } | void> => {
-    const uid = user?.id;
-    if (!uid) return { error: "No authenticated user" };
-
-    const [savedRes, campaignsRes, rfpsRes, prefsRes] = await Promise.allSettled([
-      supabase.from("saved_companies").select("*").eq("user_id", uid),
-      supabase.from("lit_campaigns").select("*").eq("user_id", uid),
-      supabase.from("lit_rfps").select("*").eq("user_id", uid),
-      supabase.from("user_preferences").select("*").eq("user_id", uid).maybeSingle(),
-    ]);
-
-    const readPayload = <T,>(
-      res: PromiseSettledResult<{ data: T | null; error: { message?: string } | null }>,
-    ): T | null => (res.status === "fulfilled" && !res.value.error ? res.value.data : null);
-
-    const payload = {
-      exported_at: new Date().toISOString(),
-      user: {
-        id: uid,
-        email: user?.email,
-        full_name: profile?.name,
-        title: profile?.title,
-        phone: profile?.phone,
-        location: profile?.location,
-        bio: profile?.bio,
-      },
-      saved_companies: readPayload(savedRes) ?? [],
-      campaigns: readPayload(campaignsRes) ?? [],
-      rfps: readPayload(rfpsRes) ?? [],
-      preferences: readPayload(prefsRes) ?? null,
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const href = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = `lit-export-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(href);
-  };
-
-  // Honest delete flow: account deletion requires Supabase admin API (service
-  // role). We don't ship that in the frontend, so we hand off to support via
-  // mailto rather than fake a destructive action client-side.
-  const onDeleteAccount = async (): Promise<{ error?: string } | void> => {
-    const confirmed = window.confirm(
-      "Deleting your account permanently removes all workspace data. We'll email support to process the request — continue?",
-    );
-    if (!confirmed) return { error: "Delete cancelled" };
-    const subject = encodeURIComponent("Delete my Logistics Intel account");
-    const body = encodeURIComponent(
-      [
-        "Please delete my account and all associated data.",
-        "",
-        `User ID: ${user?.id ?? ""}`,
-        `Email: ${user?.email ?? ""}`,
-      ].join("\n"),
-    );
-    window.location.href = `mailto:support@logisticintel.com?subject=${subject}&body=${body}`;
-  };
 
   const onSaveOrgProfile = async (data: Record<string, unknown>) => {
     if (!orgId) throw new Error("No organization found for this user");
@@ -694,13 +648,39 @@ export default function SettingsPage() {
     setIntegrations((prev) => prev.filter((i) => i.id !== integrationId));
   };
 
+  const profileTimezone =
+    (preferences as any)?.preferences?.profile_preferences?.timezone || "";
+
   const profileWithStats = {
     ...profile,
-    savedCount,
-    campaignsCount: campaignCount,
-    rfpsCount: rfpCount,
+    timezone: profileTimezone,
     planStatus: subscription?.status,
   };
+
+  const joinedIso =
+    currentMembership?.joined_at ||
+    (user as any)?.created_at ||
+    user?.user_metadata?.created_at;
+  const joinedLabel = joinedIso
+    ? new Date(joinedIso).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : undefined;
+
+  const workspaceName =
+    orgProfile?.company ||
+    (orgProfile as any)?.name ||
+    "LIT · Logistics Intelligence";
+  const workspacePlanLabel = profile?.plan
+    ? String(profile.plan)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase()) + " Plan"
+    : "Free Trial";
+  const workspaceRoleLabel = currentOrgRole
+    ? currentOrgRole.replace(/\b\w/g, (c) => c.toUpperCase())
+    : undefined;
 
   return (
     <div className="min-h-full bg-slate-100 p-4 md:p-6 xl:p-8">
@@ -717,12 +697,16 @@ export default function SettingsPage() {
           auditLog={auditLog}
           tokenUsage={tokenUsage}
           integrations={integrations}
+          workspace={{
+            name: workspaceName,
+            planLabel: workspacePlanLabel,
+            roleLabel: workspaceRoleLabel,
+            joinedLabel,
+          }}
           isAdmin={isAdmin}
           canAccess={canAccess}
           onSaveProfile={onSaveProfile}
           onUploadAvatar={onUploadAvatar}
-          onExportData={onExportData}
-          onDeleteAccount={onDeleteAccount}
           onSaveOrgProfile={onSaveOrgProfile}
           onSaveEmailSignature={onSaveEmailSignature}
           onUploadLogo={onUploadLogo}
