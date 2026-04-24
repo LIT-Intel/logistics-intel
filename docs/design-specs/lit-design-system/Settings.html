@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIT — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { font-family: 'DM Sans', system-ui, sans-serif; background:#020617; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  button { font-family: inherit; }
+  input, textarea, select { font-family: inherit; }
+  select option { background:#fff; color:#0F172A; }
+
+  /* ── Responsive ─────────────────────────────── */
+  /* Tablets: collapse secondary settings nav to a horizontal strip */
+  @media (max-width: 1100px) {
+    .lit-settings-nav { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E5E7EB !important; flex-direction: column !important; }
+    .lit-settings-nav nav { padding: 8px 10px !important; display: flex !important; flex-direction: row !important; gap: 6px !important; overflow-x: auto !important; overflow-y: hidden !important; }
+    .lit-settings-nav nav > div { margin-bottom: 0 !important; display: flex !important; gap: 4px !important; align-items: center; flex-shrink: 0; }
+    .lit-settings-nav nav > div > div:first-child { display: none !important; }  /* hide group labels */
+    .lit-settings-nav nav > div > div:last-child { flex-direction: row !important; gap: 4px !important; }
+    .lit-settings-nav nav > div:not(:last-child)::after { content:''; width:1px; height:20px; background:#E5E7EB; margin:0 4px; }
+    .lit-settings-nav nav button { white-space: nowrap; flex-shrink: 0; padding: 7px 12px !important; font-size: 12.5px !important; }
+    .lit-settings-nav > div:first-child { padding: 12px 14px 10px !important; }
+    .lit-settings-nav > div:last-child { display: none !important; }  /* hide help card */
+    .lit-settings-main > div:nth-child(2) { flex-direction: column !important; }
+    .lit-settings-body { padding: 20px 22px 28px !important; }
+  }
+  /* Mobile: compact header + tighter grids */
+  @media (max-width: 720px) {
+    .lit-settings-header { padding: 14px 16px 12px !important; }
+    .lit-settings-header > div:first-child > div:first-child { font-size: 18px !important; }
+    .lit-settings-body { padding: 16px 14px 24px !important; }
+    .lit-grid-2 { grid-template-columns: 1fr !important; }
+    .lit-grid-3 { grid-template-columns: 1fr !important; }
+    .lit-grid-4 { grid-template-columns: repeat(2,1fr) !important; }
+    .lit-plan-grid { grid-template-columns: 1fr 1fr !important; }
+    .lit-billing-hero { grid-template-columns: 1fr !important; gap: 14px !important; padding: 18px !important; }
+    .lit-profile-row { flex-direction: column !important; align-items: flex-start !important; }
+    .lit-profile-row > div:last-child { grid-template-columns: 1fr !important; }
+    .lit-members-row { flex-wrap: wrap !important; }
+    .lit-settings-sidebar { display: none !important; }
+    .lit-tweaks-panel { width: calc(100vw - 32px) !important; right: 16px !important; bottom: 16px !important; }
+    .lit-mobile-hide { display: none !important; }
+    .lit-readiness { flex-wrap: wrap !important; gap: 8px 12px !important; }
+  }
+  @media (max-width: 480px) {
+    .lit-grid-4 { grid-template-columns: 1fr !important; }
+    .lit-plan-grid { grid-template-columns: 1fr !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="Sidebar.jsx"></script>
+<script type="text/babel" src="SettingsShared.jsx"></script>
+<script type="text/babel" src="SettingsSections.jsx"></script>
+<script type="text/babel" src="SettingsIntegrations.jsx"></script>
+<script type="text/babel" src="SettingsPrefs.jsx"></script>
+
+<script type="text/babel">
+'use strict';
+
+/* ══ Tweakable defaults ══════════════════════════════ */
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "role": "member",
+  "plan": "growth",
+  "gmailConnected": true,
+  "outlookConnected": false,
+  "affiliateEnrolled": true
+}/*EDITMODE-END*/;
+
+/* ══ Mock state ══════════════════════════════════════ */
+function makeInitialState(tweaks) {
+  return {
+    profile: {
+      name:'Jordan Davis',
+      title:'VP of Sales',
+      email:'jordan@logisticintel.com',
+      phone:'+1 (415) 555-0148',
+      location:'San Francisco, USA',
+      bio:'VP Sales @ Logistic Intel. 12 years closing ocean freight RFPs.',
+      tz:'America/Los_Angeles',
+      mentions:true, digest:true, dm:true, assignments:true,
+    },
+    org: {
+      name:'Logistic Intel Inc.',
+      website:'logisticintel.com',
+      hq:'San Francisco, CA',
+      industry:'Freight Forwarder',
+      signature:'Jordan Davis\nVP of Sales · Logistic Intel\n+1 (415) 555-0148 · jordan@logisticintel.com',
+      teammateDir:true, sharedPipeline:true, sandbox:false, enforceSignature:false,
+    },
+    members: [
+      { id:'u-me',   name:'Jordan Davis',   email:'jordan@logisticintel.com',   role:'admin',   status:'active',   last:'active now',     color:'#3b82f6', seatTier:'scale' },
+      { id:'u-02',   name:'Mika Harrison',  email:'mika@logisticintel.com',     role:'manager', status:'active',   last:'2h ago',         color:'#8b5cf6', seatTier:'scale' },
+      { id:'u-03',   name:'Sam Okonkwo',    email:'sam@logisticintel.com',      role:'member',  status:'active',   last:'yesterday',      color:'#22c55e', seatTier:'growth' },
+      { id:'u-04',   name:'Priya Narang',   email:'priya@logisticintel.com',    role:'member',  status:'active',   last:'3 days ago',     color:'#f59e0b', seatTier:'growth' },
+      { id:'u-05',   name:'Diego Marín',    email:'diego@logisticintel.com',    role:'viewer',  status:'inactive', last:'12 days ago',    color:'#ef4444', seatTier:'growth' },
+    ],
+    invites: [
+      { id:'inv-1', email:'alex@coastalfreight.com',    role:'manager', sent:'2 days ago', by:'Jordan Davis',  expires:'5 days' },
+      { id:'inv-2', email:'jordan@atlasglobal.co',      role:'member',  sent:'yesterday',  by:'Mika Harrison', expires:'6 days' },
+      { id:'inv-3', email:'reva@harborlogistics.group', role:'viewer',  sent:'today',      by:'Jordan Davis',  expires:'7 days' },
+    ],
+    integrations: {
+      gmail:      { connected: tweaks.gmailConnected,   account: 'jordan@logisticintel.com' },
+      outlook:    { connected: tweaks.outlookConnected, account: 'jordan@logisticintel.com' },
+      linkedin:   { connected: true,                    account: 'linkedin.com/in/jordan-davis-freight' },
+      apollo:     { connected: true,                    account: 'API key · apo_************4821' },
+      importyeti: { connected: false,                   account: null },
+      webhook:    { connected: false,                   account: null },
+    },
+    outreach: {
+      senderName:'Jordan Davis',
+      senderAccount: tweaks.gmailConnected ? 'gmail' : 'outlook',
+      replyTo:'jordan@logisticintel.com',
+      trackingDomain:'go.logisticintel.com',
+      signature:'Jordan Davis\nVP of Sales · Logistic Intel\njordan@logisticintel.com · +1 (415) 555-0148',
+      dailyCap:120, minGap:45,
+      quietStart:'19:00', quietEnd:'07:00',
+      warmup:true, skipWeekends:true, autoUnsubscribe:true, dnsVerified:true,
+    },
+    billing: {
+      mrr: 745, seats: 10, seatsUsed: 5,
+      credits: 28400, creditsMax: 50000,
+      invoices:[
+        { id:'INV-20260501', date:'May 1, 2026',  amount: 745, status:'due'  },
+        { id:'INV-20260401', date:'Apr 1, 2026',  amount: 745, status:'paid' },
+        { id:'INV-20260301', date:'Mar 1, 2026',  amount: 596, status:'paid' },
+        { id:'INV-20260201', date:'Feb 1, 2026',  amount: 447, status:'paid' },
+      ],
+    },
+    notifications: {
+      replyReceived:   { email:true,  inapp:true,  slack:true  },
+      meetingBooked:   { email:true,  inapp:true,  slack:true  },
+      stageChanged:    { email:false, inapp:true,  slack:false },
+      campaignFinished:{ email:true,  inapp:true,  slack:false },
+      rfpDue:          { email:true,  inapp:true,  slack:true  },
+      weeklyDigest:    { email:true,  inapp:false, slack:false },
+      billingAlerts:   { email:true,  inapp:true,  slack:false },
+      securityEvents:  { email:true,  inapp:true,  slack:false },
+    },
+    security: {
+      twoFactor: true,
+      sessions: [
+        { id:'s1', device:'MacBook Pro · Chrome', type:'desktop', location:'San Francisco, USA', lastActive:'active now',  current:true },
+        { id:'s2', device:'iPhone 15 · LIT iOS',  type:'mobile',  location:'San Francisco, USA', lastActive:'2h ago',      current:false },
+        { id:'s3', device:'Windows · Edge',       type:'desktop', location:'London, UK',         lastActive:'3 days ago',  current:false },
+      ],
+      apiKeys: [
+        { id:'k1', name:'Production · pipeline sync', prefix:'lit_live_', suffix:'f2a9', created:'Jan 12, 2026', scope:'write' },
+        { id:'k2', name:'Analytics export (read)',    prefix:'lit_live_', suffix:'8c41', created:'Mar 3, 2026',  scope:'read'  },
+      ],
+    },
+    affiliate: {
+      enrolled: tweaks.affiliateEnrolled,
+      link:'https://logisticintel.com/r/jordan-davis',
+      earnings: 4280, pending: 620, referrals: 11, conversion: 38,
+      referred:[
+        { id:'R-01', workspace:'Harbor Logistics Group', plan:'Growth · 4 seats', signedUp:'Feb 14', status:'active', mrr:596 },
+        { id:'R-02', workspace:'RedSea Lines',           plan:'Scale · 2 seats',  signedUp:'Mar 22', status:'active', mrr:698 },
+        { id:'R-03', workspace:'Meridian Cargo',         plan:'Growth · 1 seat',  signedUp:'Apr 8',  status:'trial',  mrr:0 },
+        { id:'R-04', workspace:'NorthStar Freight',      plan:'Growth · 2 seats', signedUp:'Jan 3',  status:'churned',mrr:0 },
+      ],
+    },
+    campaignPrefs: {
+      defaultSteps:3, defaultGap:4,
+      defaultTemplate:'Cold Outreach',
+      abTest:'On · 50/50',
+      stopOnReply:true, stopOnMeeting:true, trackOpens:true, trackClicks:true,
+    },
+    pipelinePrefs: {
+      stages:[
+        { name:'Discovery',    color:'#94a3b8', count:42 },
+        { name:'Qualified',    color:'#3b82f6', count:18 },
+        { name:'Proposal',     color:'#8b5cf6', count:9  },
+        { name:'Negotiation',  color:'#f59e0b', count:5  },
+        { name:'Closed Won',   color:'#22c55e', count:14 },
+        { name:'Closed Lost',  color:'#ef4444', count:7  },
+      ],
+      rfpWindow:'5 days',
+      autoAssign:'Round robin',
+      benchmark:'LIT shipment index',
+      currency:'USD',
+    },
+    flags: {
+      aiInsights:true, predictiveScore:false, multiInbox:true, webhookV2:false, newDashboard:true, dealExports:false,
+      forceEnterprise:false, unlimitedCredits:false,
+    },
+  };
+}
+
+/* ══ Nav config ══════════════════════════════════════ */
+const NAV = [
+  { group:'Account', items:[
+    { id:'profile',      label:'Profile',               icon:'user'          },
+    { id:'security',     label:'Security & API',        icon:'shield-check'  },
+    { id:'notifications',label:'Alerts & notifications',icon:'bell'          },
+  ]},
+  { group:'Workspace', items:[
+    { id:'organization', label:'Organization',       icon:'building-2',   adminOnly:true },
+    { id:'access',       label:'Access & roles',     icon:'users'         },
+    { id:'team',         label:'Team subscriptions', icon:'credit-card',  adminOnly:true },
+    { id:'billing',      label:'Plan & billing',     icon:'receipt',      adminOnly:true },
+  ]},
+  { group:'Outreach', items:[
+    { id:'integrations', label:'Integrations',        icon:'plug'   },
+    { id:'outreach',     label:'Outreach accounts',   icon:'send'   },
+    { id:'campaigns',    label:'Campaign preferences',icon:'mail'   },
+    { id:'pipeline',     label:'RFP & pipeline',      icon:'git-branch' },
+  ]},
+  { group:'Growth', items:[
+    { id:'affiliate',    label:'Affiliate program',  icon:'gift' },
+  ]},
+  { group:'Internal', items:[
+    { id:'flags',        label:'Feature flags',      icon:'flask-conical', superOnly:true },
+  ]},
+];
+
+/* ══ Section wrapper ═════════════════════════════════ */
+function SettingsHeader({ plan, role }) {
+  const roleLabel = {admin:'Admin',manager:'Manager',member:'Member',viewer:'Viewer',super:'Superadmin'}[role] || role;
+  const planLabel = {free:'Free',growth:'Growth',scale:'Scale',enterprise:'Enterprise'}[plan] || plan;
+  return (
+    <div className="lit-settings-header" style={{padding:'20px 32px 18px',borderBottom:'1px solid #E5E7EB',background:'#FFFFFF',flexShrink:0,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
+      <div>
+        <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:22,fontWeight:700,color:'#0F172A',letterSpacing:'-0.02em'}}>Settings</div>
+        <div style={{fontFamily:'DM Sans,sans-serif',fontSize:13,color:'#64748b',marginTop:3}}>Control center for your profile, workspace, integrations, and outreach.</div>
+      </div>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <SBadge tone="blue" icon="user-cog">{roleLabel}</SBadge>
+        <SBadge tone={plan==='free'?'slate':(plan==='enterprise'?'violet':'cyan')} dot>{planLabel} plan</SBadge>
+      </div>
+    </div>
+  );
+}
+
+function SettingsNav({ active, onNav, plan, role, search, onSearch }) {
+  const isAdmin = role==='admin' || role==='super';
+  const isSuper = role==='super';
+  const visibleGroups = NAV.map(g => ({
+    ...g,
+    items: g.items.filter(it => {
+      if (it.superOnly && !isSuper) return false;
+      if (it.adminOnly && !isAdmin) return false;
+      if (g.group==='Internal' && !isSuper) return false;
+      if (search && !it.label.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+  })).filter(g => g.items.length > 0);
+
+  return (
+    <aside className="lit-settings-nav" style={{width:252,minWidth:252,borderRight:'1px solid #E5E7EB',background:'#FAFBFC',display:'flex',flexDirection:'column',flexShrink:0,overflow:'hidden'}}>
+      <div style={{padding:'18px 18px 12px',borderBottom:'1px solid #F1F5F9'}}>
+        <div style={{position:'relative'}}>
+          <i data-lucide="search" style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',width:13,height:13,color:'#94a3b8'}}></i>
+          <input value={search} onChange={e=>onSearch(e.target.value)} placeholder="Search settings…"
+            style={{width:'100%',background:'#fff',border:'1px solid #E5E7EB',borderRadius:8,padding:'7px 12px 7px 30px',fontSize:12.5,fontFamily:'DM Sans,sans-serif',color:'#0F172A',outline:'none'}}
+            onFocus={e=>{e.target.style.borderColor='#3b82f6';e.target.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)'}}
+            onBlur={e=>{e.target.style.borderColor='#E5E7EB';e.target.style.boxShadow='none'}}/>
+        </div>
+      </div>
+      <nav style={{flex:1,overflowY:'auto',padding:'10px 10px'}}>
+        {visibleGroups.map(g => (
+          <div key={g.group} style={{marginBottom:14}}>
+            <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:10,fontWeight:600,color:'#94a3b8',letterSpacing:'0.08em',textTransform:'uppercase',padding:'6px 10px 4px'}}>{g.group}</div>
+            <div style={{display:'flex',flexDirection:'column',gap:1}}>
+              {g.items.map(it => {
+                const isActive = active === it.id;
+                return (
+                  <button key={it.id} onClick={()=>onNav(it.id)}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:7,fontSize:13,fontWeight:isActive?600:500,fontFamily:'Space Grotesk,sans-serif',background: isActive?'#EFF6FF':'transparent',color: isActive?'#1d4ed8':'#334155',border:'none',cursor:'pointer',textAlign:'left',width:'100%',transition:'all 140ms',position:'relative'}}>
+                    <i data-lucide={it.icon} style={{width:14,height:14,color: isActive?'#3b82f6':'#64748b'}}></i>
+                    <span>{it.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+      <div style={{padding:'14px 16px',borderTop:'1px solid #F1F5F9',display:'flex',alignItems:'center',gap:10}}>
+        <i data-lucide="life-buoy" style={{width:14,height:14,color:'#64748b'}}></i>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:12,fontWeight:600,color:'#0F172A'}}>Need help?</div>
+          <a href="#" style={{fontFamily:'DM Sans,sans-serif',fontSize:11.5,color:'#3b82f6',textDecoration:'none'}}>docs.logisticintel.com</a>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ══ Settings Page ═══════════════════════════════════ */
+function SettingsPage() {
+  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
+  const [sec, setSec] = React.useState(() => localStorage.getItem('lit_settings_sec') || 'profile');
+  const [search, setSearch] = React.useState('');
+  const [state, setState] = React.useState(() => makeInitialState(TWEAK_DEFAULTS));
+  const [showEditMode, setShowEditMode] = React.useState(false);
+  const [dirty, setDirty] = React.useState(false);
+  const [savedFlash, setSavedFlash] = React.useState(false);
+
+  const role = tweaks.role;
+  const plan = tweaks.plan;
+
+  // Re-seed when role/plan/connection tweaks change so integrations reflect connected state live
+  React.useEffect(() => {
+    setState(s => ({
+      ...s,
+      integrations: {
+        ...s.integrations,
+        gmail:   { ...s.integrations.gmail,   connected: tweaks.gmailConnected },
+        outlook: { ...s.integrations.outlook, connected: tweaks.outlookConnected },
+      },
+      affiliate: { ...s.affiliate, enrolled: tweaks.affiliateEnrolled },
+    }));
+  }, [tweaks.gmailConnected, tweaks.outlookConnected, tweaks.affiliateEnrolled]);
+
+  const onNav = (id) => { setSec(id); localStorage.setItem('lit_settings_sec', id); };
+
+  // Wrap setState to mark dirty
+  const setStateDirty = React.useCallback((updater) => {
+    setState(prev => typeof updater === 'function' ? updater(prev) : updater);
+    setDirty(true);
+  }, []);
+
+  function onSave() {
+    setDirty(false); setSavedFlash(true); setTimeout(()=>setSavedFlash(false), 1800);
+  }
+
+  function onPlanChange(newPlan) {
+    setTweaks(t => ({...t, plan:newPlan}));
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits:{plan:newPlan}}, '*');
+  }
+
+  // Edit-mode tweaks
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (!e.data || typeof e.data !== 'object') return;
+      if (e.data.type === '__activate_edit_mode') setShowEditMode(true);
+      if (e.data.type === '__deactivate_edit_mode') setShowEditMode(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({type:'__edit_mode_available'}, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  React.useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
+
+  // Redirect away from restricted sections if role/plan changes
+  React.useEffect(() => {
+    const isAdmin = role==='admin'||role==='super';
+    const isSuper = role==='super';
+    const adminOnly = ['organization','billing','team'];
+    const superOnly = ['flags'];
+    if (adminOnly.includes(sec) && !isAdmin) onNav('profile');
+    if (superOnly.includes(sec) && !isSuper) onNav('profile');
+  }, [role, sec]);
+
+  const content = (() => {
+    switch (sec) {
+      case 'profile':       return <ProfileSection       state={state} set={setStateDirty} plan={plan}/>;
+      case 'organization':  return <OrganizationSection  state={state} set={setStateDirty} plan={plan} role={role}/>;
+      case 'access':        return <AccessSection        state={state} set={setStateDirty} role={role}/>;
+      case 'integrations':  return <IntegrationsSection  state={state} set={setStateDirty} role={role}/>;
+      case 'outreach':      return <OutreachSection      state={state} set={setStateDirty}/>;
+      case 'billing':       return <BillingSection       state={state} set={setStateDirty} plan={plan} role={role} onPlanChange={onPlanChange}/>;
+      case 'team':          return <TeamSubsSection      state={state} plan={plan}/>;
+      case 'notifications': return <AlertsSection        state={state} set={setStateDirty}/>;
+      case 'security':      return <SecuritySection      state={state} set={setStateDirty} plan={plan}/>;
+      case 'affiliate':     return <AffiliateSection     state={state} set={setStateDirty}/>;
+      case 'campaigns':     return <CampaignPrefsSection state={state} set={setStateDirty}/>;
+      case 'pipeline':      return <PipelinePrefsSection state={state} set={setStateDirty}/>;
+      case 'flags':         return <FlagsSection         state={state} set={setStateDirty} role={role}/>;
+      default:              return <ProfileSection       state={state} set={setStateDirty} plan={plan}/>;
+    }
+  })();
+
+  return (
+    <div style={{display:'flex',height:'100vh',overflow:'hidden',background:'#020617'}}>
+      <div className="lit-settings-sidebar"><Sidebar active="settings" onNav={()=>{}}/></div>
+      <main className="lit-settings-main" style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:'#F8FAFC',minWidth:0}}>
+        <SettingsHeader plan={plan} role={role}/>
+        <div style={{flex:1,display:'flex',overflow:'hidden',minHeight:0}}>
+          <SettingsNav active={sec} onNav={onNav} plan={plan} role={role} search={search} onSearch={setSearch}/>
+          <div className="lit-settings-body" style={{flex:1,overflowY:'auto',padding:'28px 32px 40px',position:'relative',minWidth:0}}>
+            <div style={{maxWidth:1100,margin:'0 auto'}}>{content}</div>
+            {/* Sticky save bar */}
+            {dirty && (
+              <div style={{position:'sticky',bottom:20,marginTop:24,maxWidth:1100,marginLeft:'auto',marginRight:'auto'}}>
+                <div style={{background:'#0F172A',color:'#fff',borderRadius:12,padding:'12px 18px',display:'flex',alignItems:'center',gap:14,boxShadow:'0 10px 30px rgba(15,23,42,0.3)',border:'1px solid #1e293b'}}>
+                  <div style={{width:32,height:32,borderRadius:8,background:'rgba(245,158,11,0.15)',border:'1px solid rgba(245,158,11,0.3)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <i data-lucide="circle-dot" style={{width:14,height:14,color:'#f59e0b'}}></i>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:13,fontWeight:700}}>Unsaved changes</div>
+                    <div style={{fontFamily:'DM Sans,sans-serif',fontSize:12,color:'#94a3b8',marginTop:1}}>Your edits won't sync until you save.</div>
+                  </div>
+                  <button onClick={()=>setDirty(false)} style={{background:'transparent',border:'1px solid #334155',borderRadius:8,padding:'7px 12px',color:'#cbd5e1',fontFamily:'Space Grotesk,sans-serif',fontSize:12.5,fontWeight:600,cursor:'pointer'}}>Discard</button>
+                  <button onClick={onSave} style={{...sBtnPrimary,padding:'8px 16px'}}><i data-lucide="check" style={{width:13,height:13}}></i> Save changes</button>
+                </div>
+              </div>
+            )}
+            {savedFlash && (
+              <div style={{position:'fixed',bottom:24,right:24,background:'#15803d',color:'#fff',borderRadius:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:8,fontFamily:'Space Grotesk,sans-serif',fontSize:13,fontWeight:600,boxShadow:'0 8px 24px rgba(21,128,61,0.3)',zIndex:100}}>
+                <i data-lucide="check-circle" style={{width:14,height:14}}></i> Saved
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* Tweaks panel */}
+      {showEditMode && (
+        <div className="lit-tweaks-panel" style={{position:'fixed',bottom:20,right:20,background:'#0F172A',border:'1px solid #1e293b',borderRadius:12,padding:16,width:260,boxShadow:'0 20px 60px rgba(0,0,0,0.5)',zIndex:300,color:'#fff'}}>
+          <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'-0.01em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+            <i data-lucide="sliders" style={{width:13,height:13,color:'#60a5fa'}}></i> Tweaks
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            <TweakSelect label="View as" value={tweaks.role} onChange={v=>{setTweaks(t=>({...t,role:v}));window.parent.postMessage({type:'__edit_mode_set_keys',edits:{role:v}}, '*');}}
+              options={[['super','Superadmin'],['admin','Admin'],['manager','Manager'],['member','Member'],['viewer','Viewer']]}/>
+            <TweakSelect label="Plan" value={tweaks.plan} onChange={v=>{setTweaks(t=>({...t,plan:v}));window.parent.postMessage({type:'__edit_mode_set_keys',edits:{plan:v}}, '*');}}
+              options={[['free','Free'],['growth','Growth'],['scale','Scale'],['enterprise','Enterprise']]}/>
+            <TweakToggle label="Gmail connected" checked={tweaks.gmailConnected} onChange={v=>{setTweaks(t=>({...t,gmailConnected:v}));window.parent.postMessage({type:'__edit_mode_set_keys',edits:{gmailConnected:v}}, '*');}}/>
+            <TweakToggle label="Outlook connected" checked={tweaks.outlookConnected} onChange={v=>{setTweaks(t=>({...t,outlookConnected:v}));window.parent.postMessage({type:'__edit_mode_set_keys',edits:{outlookConnected:v}}, '*');}}/>
+            <TweakToggle label="Enrolled in affiliate" checked={tweaks.affiliateEnrolled} onChange={v=>{setTweaks(t=>({...t,affiliateEnrolled:v}));window.parent.postMessage({type:'__edit_mode_set_keys',edits:{affiliateEnrolled:v}}, '*');}}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TweakSelect({ label, value, onChange, options }) {
+  return (
+    <div>
+      <div style={{fontFamily:'Space Grotesk,sans-serif',fontSize:10.5,fontWeight:600,color:'#94a3b8',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:4}}>{label}</div>
+      <select value={value} onChange={e=>onChange(e.target.value)} style={{width:'100%',background:'#020617',border:'1px solid #1e293b',borderRadius:7,padding:'7px 10px',color:'#E2E8F0',fontSize:12.5,fontFamily:'Space Grotesk,sans-serif',fontWeight:600,outline:'none',cursor:'pointer'}}>
+        {options.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+      </select>
+    </div>
+  );
+}
+function TweakToggle({ label, checked, onChange }) {
+  return (
+    <div onClick={()=>onChange(!checked)} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,cursor:'pointer'}}>
+      <span style={{fontFamily:'Space Grotesk,sans-serif',fontSize:12,fontWeight:600,color:'#cbd5e1'}}>{label}</span>
+      <div style={{width:30,height:17,borderRadius:9,background:checked?'#3b82f6':'#334155',position:'relative',flexShrink:0,transition:'all 160ms'}}>
+        <div style={{position:'absolute',top:2,left:checked?15:2,width:13,height:13,borderRadius:'50%',background:'#fff',transition:'all 160ms'}}/>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<SettingsPage/>);
+</script>
+</body>
+</html>
