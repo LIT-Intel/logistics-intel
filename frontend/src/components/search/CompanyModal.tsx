@@ -11,6 +11,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { getGatewayBase } from "@/lib/env";
+import { formatUserFriendlyDate } from "@/lib/dateUtils";
 import {
   X,
   Ship,
@@ -277,7 +278,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="flex h-[95vh] max-w-4xl flex-col rounded-xl bg-white p-0">
+      <DialogContent className="flex h-[90vh] max-h-[90vh] w-[calc(100%-16px)] max-w-4xl flex-col rounded-xl bg-white p-0 sm:h-[92vh]">
         <DialogHeader className="border-b p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -438,54 +439,59 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
               </TabsContent>
 
               {/* Summary */}
-              <TabsContent value="summary" className="space-y-6 p-6">
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+              <TabsContent value="summary" className="space-y-4 p-4 sm:space-y-6 sm:p-6">
+                {/* Compact KPI tiles: tighter padding + responsive number
+                    size so the row stays 2-up on mobile without feeling
+                    cramped, and scales up on sm+. Data paths unchanged. */}
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-3 text-center sm:p-4">
                     <Ship
-                      className="mx-auto mb-2 h-6 w-6"
+                      className="mx-auto mb-1.5 h-5 w-5 sm:mb-2 sm:h-6 sm:w-6"
                       style={{ color: "#7F3DFF" }}
                     />
-                    <div className="text-2xl font-bold">
+                    <div className="text-lg font-bold sm:text-2xl">
                       {(company as any)?.shipments_12m ?? "—"}
                     </div>
-                    <div className="mt-1 text-xs font-medium uppercase text-gray-500">
+                    <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">
                       Total Shipments (12m)
                     </div>
                   </div>
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+                  <div className="rounded-xl border border-gray-200 bg-white p-3 text-center sm:p-4">
                     <Box
-                      className="mx-auto mb-2 h-6 w-6"
+                      className="mx-auto mb-1.5 h-5 w-5 sm:mb-2 sm:h-6 sm:w-6"
                       style={{ color: "#7F3DFF" }}
                     />
-                    <div className="text-2xl font-bold">
+                    <div className="text-lg font-bold sm:text-2xl">
                       {(company as any)?.total_teus != null
                         ? Number((company as any).total_teus).toLocaleString()
                         : "—"}
                     </div>
-                    <div className="mt-1 text-xs font-medium uppercase text-gray-500">
+                    <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">
                       Total TEUs (12m)
                     </div>
                   </div>
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+                  <div className="rounded-xl border border-gray-200 bg-white p-3 text-center sm:p-4">
                     <TrendingUp
-                      className="mx-auto mb-2 h-6 w-6"
+                      className="mx-auto mb-1.5 h-5 w-5 sm:mb-2 sm:h-6 sm:w-6"
                       style={{ color: "#7F3DFF" }}
                     />
-                    <div className="text-2xl font-bold">
+                    <div className="text-lg font-bold sm:text-2xl">
                       {(company as any)?.growth_rate != null
                         ? `${Math.round(
                             Number((company as any).growth_rate) * 100,
                           )}%`
                         : "—"}
                     </div>
-                    <div className="mt-1 text-xs font-medium uppercase text-gray-500">
+                    <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">
                       Growth Rate (YoY)
                     </div>
                   </div>
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
-                    <MapPin className="mx-auto mb-2 h-6 w-6 text-red-500" />
-                    <div className="text-lg font-bold">{topRoute}</div>
-                    <div className="mt-1 text-xs font-medium uppercase text-gray-500">
+                  <div className="rounded-xl border border-gray-200 bg-white p-3 text-center sm:p-4">
+                    <MapPin className="mx-auto mb-1.5 h-5 w-5 text-red-500 sm:mb-2 sm:h-6 sm:w-6" />
+                    <div className="truncate text-sm font-bold sm:text-lg" title={topRoute}>
+                      {topRoute}
+                    </div>
+                    <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">
                       Primary Route
                     </div>
                   </div>
@@ -694,9 +700,7 @@ export default function CompanyModal({ company, open, onClose }: ModalProps) {
                           return (
                             <tr key={i} className="bg-white">
                               <td className="whitespace-nowrap px-3 py-2">
-                                {d
-                                  ? new Date(String(d)).toLocaleDateString()
-                                  : "—"}
+                                {formatUserFriendlyDate(d ? String(d) : null, { fallback: "—" })}
                               </td>
                               <td className="px-3 py-2 capitalize">
                                 {String(modeVal).toLowerCase()}
