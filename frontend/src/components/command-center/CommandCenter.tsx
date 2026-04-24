@@ -6,16 +6,22 @@ import { motion } from "framer-motion";
 import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
-import { getCompanyLogoUrl } from "@/lib/logo";
+import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  DollarSign,
   Filter,
+  Layers,
   Loader2,
+  Package,
   Search,
+  Send,
+  Users2,
 } from "lucide-react";
+import AddToCampaignModal from "./AddToCampaignModal";
 
 type FilterTab = "all" | "high_value" | "active" | "recent";
 
@@ -56,16 +62,18 @@ const FILTER_TABS: Array<{ id: FilterTab; label: string }> = [
   { id: "recent", label: "Recent activity" },
 ];
 
-const TABLE_COLS: Array<{ key: SortableKey | 'activity' | 'status' | 'actions'; label: string; width: string; sortable: boolean }> = [
-  { key: 'companyName',  label: 'Company',       width: '22%', sortable: true },
-  { key: 'lastActivity', label: 'Last Shipment',  width: '12%', sortable: true },
-  { key: 'shipments12m', label: 'Shipments 12m',  width: '11%', sortable: true },
-  { key: 'teu12m',       label: 'TEU 12m',        width: '9%',  sortable: true },
-  { key: 'estSpend12m',  label: 'Est. Spend',     width: '10%', sortable: true },
-  { key: 'topRoute12m',  label: 'Top Route',      width: '12%', sortable: true },
-  { key: 'activity',     label: 'Activity',       width: '9%',  sortable: false },
-  { key: 'status',       label: 'Status',         width: '9%',  sortable: false },
-  { key: 'actions',      label: '',               width: '6%',  sortable: false },
+const TABLE_COLS: Array<{ key: SortableKey | 'activity' | 'status' | 'actions' | 'contacts' | 'stage'; label: string; width: string; sortable: boolean }> = [
+  { key: 'companyName',  label: 'Company',       width: '19%', sortable: true },
+  { key: 'lastActivity', label: 'Last Shipment',  width: '10%', sortable: true },
+  { key: 'shipments12m', label: 'Shipments 12m',  width: '10%', sortable: true },
+  { key: 'teu12m',       label: 'TEU 12m',        width: '8%',  sortable: true },
+  { key: 'estSpend12m',  label: 'Est. Spend',     width: '9%',  sortable: true },
+  { key: 'topRoute12m',  label: 'Top Route',      width: '10%', sortable: true },
+  { key: 'stage',        label: 'Stage',          width: '8%',  sortable: false },
+  { key: 'contacts',     label: 'Contacts',       width: '7%',  sortable: false },
+  { key: 'activity',     label: 'Activity',       width: '7%',  sortable: false },
+  { key: 'status',       label: 'Status',         width: '7%',  sortable: false },
+  { key: 'actions',      label: '',               width: '5%',  sortable: false },
 ];
 
 const STATUS_STYLE = {
@@ -73,6 +81,26 @@ const STATUS_STYLE = {
   pending:  { bg: '#FFFBEB', color: '#B45309', border: '#FDE68A', dot: '#F59E0B', label: 'Pending'  },
   inactive: { bg: '#F1F5F9', color: '#64748b', border: '#E2E8F0', dot: '#94A3B8', label: 'Inactive' },
 };
+
+// Stage pill palette — aligned with Settings RFP & pipeline stage colors
+// (Discovery / Qualified / Proposal / Negotiation / Closed Won / Closed Lost).
+// "prospect" is treated as Discovery. Unknown values fall through to slate.
+const STAGE_STYLE: Record<string, { bg: string; color: string; border: string; label: string }> = {
+  prospect:     { bg: '#F1F5F9', color: '#475569', border: '#E2E8F0', label: 'Prospect'     },
+  discovery:    { bg: '#F1F5F9', color: '#475569', border: '#E2E8F0', label: 'Discovery'    },
+  qualified:    { bg: '#EFF6FF', color: '#1D4ED8', border: '#BFDBFE', label: 'Qualified'    },
+  proposal:     { bg: '#F5F3FF', color: '#6D28D9', border: '#DDD6FE', label: 'Proposal'     },
+  negotiation:  { bg: '#FFFBEB', color: '#B45309', border: '#FDE68A', label: 'Negotiation'  },
+  closed_won:   { bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0', label: 'Closed Won'   },
+  won:          { bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0', label: 'Closed Won'   },
+  closed_lost:  { bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA', label: 'Closed Lost'  },
+  lost:         { bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA', label: 'Closed Lost'  },
+};
+
+function stageStyleFor(stage?: string | null) {
+  const key = String(stage || 'prospect').toLowerCase();
+  return STAGE_STYLE[key] || STAGE_STYLE.prospect;
+}
 
 const PAGE_SIZE = 25;
 
@@ -159,6 +187,17 @@ export default function CommandCenter() {
   const [sortKey, setSortKey] = useState<SortableKey>('shipments12m');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
 
+  // Phase E — per-company contact counts. Loaded once after saved companies
+  // arrive, via a single bulk `lit_contacts` select scoped by the set of
+  // company_ids on the page. Silent-fail: if the query errors the map stays
+  // empty and rows render "—" for their contact count. Command Center load
+  // is never blocked on this.
+  const [contactCounts, setContactCounts] = useState<Record<string, number>>({});
+
+  // Phase E — "Add to Campaign" per-row action. When set, the existing
+  // AddToCampaignModal mounts with that row's company id + name pre-filled.
+  const [campaignModalRow, setCampaignModalRow] = useState<ListRow | null>(null);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -213,6 +252,48 @@ export default function CommandCenter() {
     return () => { isMounted = false; };
   }, []);
 
+  // Bulk-load contact counts once saved companies arrive. One query
+  // (`.select("company_id").in("company_id", [...])`), counted client-side
+  // into a Record<company_id, number>. No per-row requests. Silent fail.
+  useEffect(() => {
+    let isMounted = true;
+    const ids = savedCompanies
+      .map((r) => r.company?.company_id ?? (r as any)?.company?.source_company_key)
+      .filter((id): id is string => Boolean(id));
+    if (ids.length === 0) {
+      setContactCounts({});
+      return () => {
+        isMounted = false;
+      };
+    }
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("lit_contacts")
+          .select("company_id")
+          .in("company_id", ids);
+        if (!isMounted) return;
+        if (error || !Array.isArray(data)) {
+          // Silent: leave map empty, rows show "—". Never blocks CC render.
+          setContactCounts({});
+          return;
+        }
+        const counts: Record<string, number> = {};
+        for (const row of data as Array<{ company_id?: string | null }>) {
+          const key = row?.company_id;
+          if (!key) continue;
+          counts[key] = (counts[key] || 0) + 1;
+        }
+        setContactCounts(counts);
+      } catch {
+        if (isMounted) setContactCounts({});
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [savedCompanies]);
+
   const listRows = useMemo(() => savedCompanies.map(buildListRow).filter((r) => r.key), [savedCompanies]);
 
   const filteredRows = useMemo(() => {
@@ -258,11 +339,22 @@ export default function CommandCenter() {
   const pageStart = sortedRows.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0;
   const pageEnd   = sortedRows.length ? Math.min(currentPage * PAGE_SIZE, sortedRows.length) : 0;
 
-  const summaryMetrics = useMemo(() => ({
-    totalCompanies: listRows.length,
-    totalShipments: listRows.reduce((s, r) => s + (r.shipments12m || 0), 0),
-    activeAccounts:  listRows.filter((r) => (r.shipments12m || 0) > 0).length,
-  }), [listRows]);
+  const summaryMetrics = useMemo(() => {
+    // Phase E — adds TEU + Est Spend aggregates for the hero KPI strip.
+    // Est Spend is `null` when every row is null (so the tile renders "—"
+    // rather than "$0"). TEU sums `teu_12m` only where present.
+    const teuSum = listRows.reduce((s, r) => s + (Number(r.teu12m) || 0), 0);
+    const spendVals = listRows
+      .map((r) => (r.estSpend12m != null && Number.isFinite(Number(r.estSpend12m)) ? Number(r.estSpend12m) : null))
+      .filter((v): v is number => v != null);
+    return {
+      totalCompanies: listRows.length,
+      totalShipments: listRows.reduce((s, r) => s + (r.shipments12m || 0), 0),
+      activeAccounts: listRows.filter((r) => (r.shipments12m || 0) > 0).length,
+      totalTeu12m: teuSum,
+      totalEstSpend12m: spendVals.length > 0 ? spendVals.reduce((s, v) => s + v, 0) : null,
+    };
+  }, [listRows]);
 
   function toggleSort(key: SortableKey) {
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -289,16 +381,135 @@ export default function CommandCenter() {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F8FAFC' }}>
       {/* Header */}
-      <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #E5E7EB', background: '#FFFFFF', flexShrink: 0 }}>
+      <div
+        style={{
+          padding: '20px 24px 16px',
+          borderBottom: '1px solid #E5E7EB',
+          background:
+            'radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 35%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)',
+          flexShrink: 0,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
           <div>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 10, fontWeight: 700, color: '#6366F1', letterSpacing: '0.24em', textTransform: 'uppercase' }}>
+              Revenue Intelligence
+            </div>
+            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em', marginTop: 4 }}>
               Command Center
             </div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#64748b', marginTop: 2 }}>
               {sortedRows.length} saved companies · {formatNumber(summaryMetrics.totalShipments)} shipments · {summaryMetrics.activeAccounts} active
             </div>
           </div>
+        </div>
+
+        {/* Phase E — KPI strip. Reads client-side aggregates from listRows
+            only; no fetches. Tiles render "—" when underlying value is null.
+            Layout tokens reused from Dashboard / Discover / Company Detail
+            hero so the system feels cohesive. No navy backgrounds. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            gap: 12,
+            marginBottom: 14,
+          }}
+          className="lg:!grid-cols-4"
+        >
+          {[
+            {
+              label: 'Saved Companies',
+              value: summaryMetrics.totalCompanies > 0 ? formatNumber(summaryMetrics.totalCompanies) : '—',
+              Icon: Building2,
+              tintBg: '#EEF2FF',
+              tintText: '#4F46E5',
+              tintRing: '#E0E7FF',
+            },
+            {
+              label: 'Active Shippers',
+              value: summaryMetrics.activeAccounts > 0 ? formatNumber(summaryMetrics.activeAccounts) : '—',
+              Icon: Package,
+              tintBg: '#ECFEFF',
+              tintText: '#0E7490',
+              tintRing: '#CFFAFE',
+            },
+            {
+              label: 'Total TEU 12m',
+              value: summaryMetrics.totalTeu12m > 0 ? formatNumber(summaryMetrics.totalTeu12m, 1) : '—',
+              Icon: Layers,
+              tintBg: '#FEF3C7',
+              tintText: '#B45309',
+              tintRing: '#FDE68A',
+            },
+            {
+              label: 'Est Spend 12m',
+              value: summaryMetrics.totalEstSpend12m != null ? formatCurrency(summaryMetrics.totalEstSpend12m) : '—',
+              Icon: DollarSign,
+              tintBg: '#ECFDF5',
+              tintText: '#047857',
+              tintRing: '#D1FAE5',
+            },
+          ].map((tile) => (
+            <div
+              key={tile.label}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                borderRadius: 16,
+                padding: '12px 14px',
+                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  flexShrink: 0,
+                  borderRadius: 12,
+                  background: tile.tintBg,
+                  boxShadow: `0 0 0 1px ${tile.tintRing}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <tile.Icon style={{ width: 16, height: 16, color: tile.tintText }} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: '#64748B',
+                  }}
+                >
+                  {tile.label}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: '#0F172A',
+                    letterSpacing: '-0.01em',
+                    marginTop: 2,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {tile.value}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Filter tabs + search */}
@@ -414,7 +625,7 @@ export default function CommandCenter() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                         <CompanyAvatar
                           name={row.companyName}
-                          logoUrl={getCompanyLogoUrl(row.domain || row.website || undefined)}
+                          domain={row.domain || row.website || undefined}
                           size="sm"
                           className="shrink-0"
                         />
@@ -464,6 +675,62 @@ export default function CommandCenter() {
                       </span>
                     </td>
 
+                    {/* Stage — read-only pill, backed by existing row.stage field */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      {(() => {
+                        const ss = stageStyleFor(row.stage);
+                        return (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: '3px 9px',
+                              borderRadius: 9999,
+                              background: ss.bg,
+                              color: ss.color,
+                              border: `1px solid ${ss.border}`,
+                              fontFamily: "'Space Grotesk', sans-serif",
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {ss.label}
+                          </span>
+                        );
+                      })()}
+                    </td>
+
+                    {/* Contacts — bulk-loaded from lit_contacts keyed on company_id. "—" on silent fail. */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                      {(() => {
+                        const count = row.companyId ? contactCounts[row.companyId] : 0;
+                        if (!count) {
+                          return (
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#94A3B8' }}>
+                              —
+                            </span>
+                          );
+                        }
+                        return (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: '#1D4ED8',
+                            }}
+                          >
+                            <Users2 style={{ width: 12, height: 12 }} />
+                            {formatNumber(count)}
+                          </span>
+                        );
+                      })()}
+                    </td>
+
                     {/* Activity */}
                     <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                       <span style={{
@@ -492,16 +759,42 @@ export default function CommandCenter() {
 
                     {/* Actions */}
                     <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
-                        style={{
-                          fontSize: 11, fontWeight: 600, background: '#EFF6FF', color: '#3b82f6',
-                          border: '1px solid #BFDBFE', borderRadius: 6, padding: '4px 10px',
-                          cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap',
-                        }}
-                      >
-                        View →
-                      </button>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
+                          style={{
+                            fontSize: 11, fontWeight: 600, background: '#EFF6FF', color: '#3b82f6',
+                            border: '1px solid #BFDBFE', borderRadius: 6, padding: '4px 10px',
+                            cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap',
+                          }}
+                        >
+                          View →
+                        </button>
+                        {row.companyId ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setCampaignModalRow(row); }}
+                            title="Add to Campaign"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              fontSize: 11,
+                              fontWeight: 600,
+                              background: '#FFFFFF',
+                              color: '#475569',
+                              border: '1px solid #E2E8F0',
+                              borderRadius: 6,
+                              padding: '4px 8px',
+                              cursor: 'pointer',
+                              fontFamily: "'Space Grotesk', sans-serif",
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <Send style={{ width: 11, height: 11 }} />
+                            Add
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </motion.tr>
                 );
@@ -510,6 +803,20 @@ export default function CommandCenter() {
           </table>
         )}
       </div>
+
+      {/* Phase E — Add-to-Campaign modal. Uses existing AddToCampaignModal
+          + addCompanyToCampaign flow; no new campaign API. Mounts only
+          when a row is targeted; closes on success or cancel. */}
+      {campaignModalRow ? (
+        <AddToCampaignModal
+          open={Boolean(campaignModalRow)}
+          onClose={() => setCampaignModalRow(null)}
+          company={{
+            company_id: campaignModalRow.companyId,
+            name: campaignModalRow.companyName,
+          }}
+        />
+      ) : null}
 
       {/* Pagination */}
       {!savedLoading && !savedError && sortedRows.length > 0 && (
