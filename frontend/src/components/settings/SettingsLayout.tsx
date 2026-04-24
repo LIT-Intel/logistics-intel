@@ -208,14 +208,14 @@ function WorkspaceChipBlock({ workspace }: { workspace?: WorkspaceChip }) {
     .filter(Boolean)
     .join(" · ");
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-xs font-bold text-white shadow-sm">
+    <div className="flex min-w-0 items-center gap-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-xs font-bold text-white shadow-sm">
         L
       </div>
-      <div className="text-right">
-        <p className="text-sm font-semibold text-slate-900">{name}</p>
+      <div className="min-w-0 md:text-right">
+        <p className="truncate text-sm font-semibold text-slate-900">{name}</p>
         {meta ? (
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
+          <p className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
             {meta}
           </p>
         ) : null}

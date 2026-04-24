@@ -228,23 +228,11 @@ const TIMEZONE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "Australia/Sydney", label: "Australia/Sydney" },
 ];
 
-function PreferenceToggle({
-  on,
-  onToggle,
-  label,
-}: {
-  on: boolean;
-  onToggle: () => void;
-  label: string;
-}) {
+function ToggleSwitch({ on }: { on: boolean }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={onToggle}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition ${
+    <span
+      aria-hidden="true"
+      className={`relative block h-5 w-9 shrink-0 rounded-full transition ${
         on ? "bg-indigo-600" : "bg-slate-300"
       }`}
     >
@@ -253,7 +241,7 @@ function PreferenceToggle({
           on ? "left-4" : "left-0.5"
         }`}
       />
-    </button>
+    </span>
   );
 }
 
@@ -271,17 +259,21 @@ function MessagingTile({
   disabled?: boolean;
 }) {
   return (
-    <div
-      className={`flex items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3 ${
-        disabled ? "opacity-60" : ""
-      }`}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onToggle}
+      className={`flex w-full items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-left transition hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-wait disabled:opacity-60`}
     >
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-slate-900">{label}</p>
-        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
-      </div>
-      <PreferenceToggle on={on} onToggle={onToggle} label={label} />
-    </div>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-900">{label}</span>
+        <span className="mt-0.5 block text-xs text-slate-500">{description}</span>
+      </span>
+      <ToggleSwitch on={on} />
+    </button>
   );
 }
 
