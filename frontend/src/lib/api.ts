@@ -4451,3 +4451,269 @@ export function buildCommandCenterDetailModel(
     monthlyPivot,
   };
 }
+
+// ============================================================================
+// LIT Outbound Engine — Phase A (append-only)
+//
+// Direct-Supabase helpers for the new Outbound tables created in
+// `supabase/migrations/20260424000000_create_lit_outbound_schema.sql`.
+//
+// Rules for this block:
+//   - Append-only. Do not modify existing helpers above.
+//   - No helper selects raw OAuth tokens from `lit_oauth_tokens`
+//     (RLS blocks it anyway — tokens are service-role only).
+//   - RLS does the user scoping; client-side `.eq('user_id', ...)` is
+//     omitted unless needed for a secondary filter (e.g. is_primary).
+// ============================================================================
+
+import type {
+  LitSequenceRow,
+  LitSequenceInput,
+  LitCampaignStepRow,
+  LitCampaignStepInput,
+  LitOutreachHistoryRow,
+  LitEmailAccountRow,
+  LitCampaignReadiness,
+} from "@/types/lit-outbound";
+
+async function getCurrentUserIdOrThrow(): Promise<string> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const userId = data.session?.user?.id;
+  if (!userId) throw new Error("No active Supabase session");
+  return userId;
+}
+
+// ---------------- Sequences ----------------
+
+export async function listSequences(
+  opts: { status?: string; limit?: number } = {},
+): Promise<LitSequenceRow[]> {
+  let query = supabase
+    .from("lit_sequences")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (opts.status) query = query.eq("status", opts.status);
+  if (opts.limit) query = query.limit(opts.limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as LitSequenceRow[];
+}
+
+export async function getSequence(
+  sequenceId: string,
+): Promise<LitSequenceRow | null> {
+  const { data, error } = await supabase
+    .from("lit_sequences")
+    .select("*")
+    .eq("id", sequenceId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as LitSequenceRow) ?? null;
+}
+
+export async function createSequence(
+  input: LitSequenceInput,
+): Promise<LitSequenceRow> {
+  const userId = await getCurrentUserIdOrThrow();
+  const payload = {
+    user_id: userId,
+    name: input.name,
+    description: input.description ?? null,
+    channel: input.channel ?? "email",
+    status: input.status ?? "draft",
+    metadata: input.metadata ?? {},
+  };
+  const { data, error } = await supabase
+    .from("lit_sequences")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as LitSequenceRow;
+}
+
+export async function updateSequence(
+  sequenceId: string,
+  patch: Partial<LitSequenceInput>,
+): Promise<LitSequenceRow> {
+  const updates: Record<string, unknown> = {};
+  if (patch.name !== undefined) updates.name = patch.name;
+  if (patch.description !== undefined) updates.description = patch.description;
+  if (patch.channel !== undefined) updates.channel = patch.channel;
+  if (patch.status !== undefined) updates.status = patch.status;
+  if (patch.metadata !== undefined) updates.metadata = patch.metadata;
+  const { data, error } = await supabase
+    .from("lit_sequences")
+    .update(updates)
+    .eq("id", sequenceId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as LitSequenceRow;
+}
+
+/**
+ * Upsert helper for the builder: if `id` is provided, update in place;
+ * otherwise insert. Returns the resulting row.
+ */
+export async function upsertSequence(
+  input: LitSequenceInput & { id?: string },
+): Promise<LitSequenceRow> {
+  if (input.id) {
+    return updateSequence(input.id, input);
+  }
+  return createSequence(input);
+}
+
+// ---------------- Campaign steps ----------------
+
+export async function listCampaignSteps(
+  campaignId: string,
+): Promise<LitCampaignStepRow[]> {
+  const { data, error } = await supabase
+    .from("lit_campaign_steps")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .order("step_order", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as LitCampaignStepRow[];
+}
+
+export async function upsertCampaignStep(
+  input: LitCampaignStepInput,
+): Promise<LitCampaignStepRow> {
+  const userId = await getCurrentUserIdOrThrow();
+  const payload: Record<string, unknown> = {
+    campaign_id: input.campaign_id,
+    sequence_id: input.sequence_id ?? null,
+    user_id: userId,
+    step_order: input.step_order,
+    channel: input.channel ?? "email",
+    step_type: input.step_type ?? "email",
+    subject: input.subject ?? null,
+    body: input.body ?? null,
+    delay_days: input.delay_days ?? 0,
+    delay_hours: input.delay_hours ?? 0,
+    metadata: input.metadata ?? {},
+  };
+  if (input.id) payload.id = input.id;
+
+  const { data, error } = await supabase
+    .from("lit_campaign_steps")
+    .upsert(payload, { onConflict: "campaign_id,step_order" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as LitCampaignStepRow;
+}
+
+export async function deleteCampaignStep(stepId: string): Promise<void> {
+  const { error } = await supabase
+    .from("lit_campaign_steps")
+    .delete()
+    .eq("id", stepId);
+  if (error) throw error;
+}
+
+// ---------------- Outreach history ----------------
+
+export async function listOutreachHistory(
+  opts: {
+    campaignId?: string;
+    campaignStepId?: string;
+    contactId?: string;
+    eventType?: string;
+    limit?: number;
+  } = {},
+): Promise<LitOutreachHistoryRow[]> {
+  let query = supabase
+    .from("lit_outreach_history")
+    .select("*")
+    .order("occurred_at", { ascending: false });
+  if (opts.campaignId) query = query.eq("campaign_id", opts.campaignId);
+  if (opts.campaignStepId) query = query.eq("campaign_step_id", opts.campaignStepId);
+  if (opts.contactId) query = query.eq("contact_id", opts.contactId);
+  if (opts.eventType) query = query.eq("event_type", opts.eventType);
+  if (opts.limit) query = query.limit(opts.limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as LitOutreachHistoryRow[];
+}
+
+// ---------------- Email accounts (metadata only; tokens are service-role) ----------------
+
+export async function listEmailAccounts(): Promise<LitEmailAccountRow[]> {
+  const { data, error } = await supabase
+    .from("lit_email_accounts")
+    .select("*")
+    .order("is_primary", { ascending: false })
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as LitEmailAccountRow[];
+}
+
+export async function getPrimaryEmailAccount(): Promise<LitEmailAccountRow | null> {
+  const { data, error } = await supabase
+    .from("lit_email_accounts")
+    .select("*")
+    .eq("is_primary", true)
+    .eq("status", "connected")
+    .maybeSingle();
+  if (error) throw error;
+  return (data as LitEmailAccountRow) ?? null;
+}
+
+// ---------------- Campaign readiness (computed) ----------------
+
+/**
+ * Readiness snapshot for the Outbound UI. Composed from three safe
+ * reads (campaign_companies count, campaign_steps count, primary email
+ * account). Does not launch, dispatch, or send anything — purely a
+ * read-only health-check the UI surfaces as a checklist.
+ */
+export async function getCampaignReadiness(
+  campaignId: string,
+): Promise<LitCampaignReadiness> {
+  const [recipientsRes, stepsRes, inboxRes] = await Promise.all([
+    supabase
+      .from("lit_campaign_companies")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", campaignId),
+    supabase
+      .from("lit_campaign_steps")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", campaignId),
+    supabase
+      .from("lit_email_accounts")
+      .select("email")
+      .eq("is_primary", true)
+      .eq("status", "connected")
+      .maybeSingle(),
+  ]);
+
+  if (recipientsRes.error) throw recipientsRes.error;
+  if (stepsRes.error) throw stepsRes.error;
+  // inboxRes.error is tolerated — RLS misconfig or missing table would
+  // still let readiness surface "no inbox" honestly.
+
+  const recipientCount = recipientsRes.count ?? 0;
+  const stepCount = stepsRes.count ?? 0;
+  const primaryEmail = (inboxRes.data as { email?: string } | null)?.email ?? null;
+
+  const blockers: string[] = [];
+  if (!recipientCount) blockers.push("Add at least one recipient company");
+  if (!stepCount) blockers.push("Add at least one sequence step");
+  if (!primaryEmail) blockers.push("Connect a primary email inbox");
+
+  return {
+    campaign_id: campaignId,
+    has_recipients: recipientCount > 0,
+    recipient_count: recipientCount,
+    has_steps: stepCount > 0,
+    step_count: stepCount,
+    has_connected_inbox: Boolean(primaryEmail),
+    primary_inbox_email: primaryEmail,
+    blockers,
+  };
+}
