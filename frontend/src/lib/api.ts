@@ -3785,17 +3785,25 @@ export async function getCrmCompanyDetail(company_id: string, signal?: AbortSign
   return res.json();
 }
 
-export async function getCrmCampaigns(signal?: AbortSignal) {
-  const url = withGatewayKey(`${API_BASE}/crm/campaigns`);
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { accept: "application/json" },
-    signal,
-  });
-  if (!res.ok) {
-    throw new Error(`getCrmCampaigns ${res.status}`);
+export async function getCrmCampaigns(_signal?: AbortSignal) {
+  // The CRM gateway endpoint `/crm/campaigns` is not currently deployed
+  // (returns 404). The canonical campaign source is the `lit_campaigns`
+  // table, which is owner-scoped via RLS (migration
+  // 20260115001224_create_lit_schema_part3.sql). Read directly via
+  // Supabase. Existing callers (`pages/Campaigns.jsx`,
+  // `components/command-center/AddToCampaignModal.tsx`,
+  // `pages/Dashboard.jsx`) already accept both `{rows: []}` and
+  // array-direct shapes, so we keep the `{rows}` envelope to match the
+  // legacy gateway response shape and avoid breaking any consumer.
+  const { data, error } = await supabase
+    .from("lit_campaigns")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) {
+    const code = error.code ? ` ${error.code}` : "";
+    throw new Error(`getCrmCampaigns${code}: ${error.message}`);
   }
-  return res.json();
+  return { rows: data ?? [] };
 }
 
 export async function createCrmCampaign(body: {
