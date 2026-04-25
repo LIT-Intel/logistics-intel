@@ -4725,3 +4725,75 @@ export async function getCampaignReadiness(
     blockers,
   };
 }
+
+// ---------------- Campaign drafts (Phase C, append-only) ----------------
+
+/**
+ * Create a draft campaign in `lit_campaigns`. The base table has no
+ * `description` column, so the description (when provided) lands in
+ * the `metrics` JSONB under the `description` key. RLS already
+ * scopes inserts to the authenticated user.
+ */
+export async function createCampaignDraft(input: {
+  name: string;
+  channel?: string;
+  description?: string | null;
+  metrics?: Record<string, unknown>;
+}): Promise<{
+  id: string;
+  name: string;
+  status: string;
+  channel: string | null;
+  metrics: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}> {
+  const userId = await getCurrentUserIdOrThrow();
+  const metrics: Record<string, unknown> = { ...(input.metrics ?? {}) };
+  if (input.description && input.description.trim()) {
+    metrics.description = input.description.trim();
+  }
+  const { data, error } = await supabase
+    .from("lit_campaigns")
+    .insert({
+      user_id: userId,
+      name: input.name,
+      channel: input.channel ?? "email",
+      status: "draft",
+      metrics,
+    })
+    .select("id, name, status, channel, metrics, created_at, updated_at")
+    .single();
+  if (error) {
+    const code = error.code ? ` ${error.code}` : "";
+    throw new Error(`createCampaignDraft${code}: ${error.message}`);
+  }
+  return data as any;
+}
+
+/**
+ * Bulk-attach saved companies to a campaign by upserting rows in
+ * `lit_campaign_companies`. UNIQUE(campaign_id, company_id) makes
+ * re-attaches idempotent. Returns the number of rows touched.
+ */
+export async function attachCompaniesToCampaign(
+  campaignId: string,
+  companyIds: string[],
+): Promise<number> {
+  if (!campaignId || !Array.isArray(companyIds) || companyIds.length === 0) {
+    return 0;
+  }
+  const rows = companyIds
+    .filter((id): id is string => typeof id === "string" && id.length > 0)
+    .map((company_id) => ({ campaign_id: campaignId, company_id }));
+  if (rows.length === 0) return 0;
+
+  const { error, count } = await supabase
+    .from("lit_campaign_companies")
+    .upsert(rows, { onConflict: "campaign_id,company_id", count: "exact" });
+  if (error) {
+    const code = error.code ? ` ${error.code}` : "";
+    throw new Error(`attachCompaniesToCampaign${code}: ${error.message}`);
+  }
+  return count ?? rows.length;
+}
