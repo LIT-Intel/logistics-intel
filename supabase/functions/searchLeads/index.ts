@@ -120,14 +120,19 @@ function validateEnrichInput(body: EnrichRequest): { valid: boolean; error: stri
   return { valid: true, error: null };
 }
 
-async function callApolloMixedCompanies(
+type ApolloCallResult = {
+  data: Record<string, unknown> | null;
+  error: string | null;
+  status: number | null;
+};
+
+async function callApolloEndpoint(
   config: ProviderConfig,
-  query: string,
-  page: number,
-  pageSize: number,
+  endpoint: string,
+  body: Record<string, unknown>,
   requestId: string,
-): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
-  const url = `${config.apiBase}/api/v1/mixed_companies/search`;
+): Promise<ApolloCallResult> {
+  const url = `${config.apiBase}${endpoint}`;
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -137,63 +142,93 @@ async function callApolloMixedCompanies(
         'X-Api-Key': config.apiKey,
         'X-Request-ID': requestId,
       },
-      body: JSON.stringify({
-        q_organization_name: query,
-        page,
-        per_page: pageSize,
-      }),
+      body: JSON.stringify(body),
     });
 
+    const status = response.status;
     if (!response.ok) {
       const text = await response.text();
-      console.error(`[${requestId}] Apollo mixed_companies failed:`, response.status, text);
-      return { data: null, error: `Apollo API returned ${response.status}` };
+      console.error(
+        `[${requestId}] Apollo ${endpoint} ${status}:`,
+        text.slice(0, 500),
+      );
+      return {
+        data: null,
+        error: `Apollo ${endpoint} returned ${status}`,
+        status,
+      };
     }
 
     const data = (await response.json()) as Record<string, unknown>;
-    return { data, error: null };
+    return { data, error: null, status };
   } catch (err) {
-    console.error(`[${requestId}] Apollo mixed_companies error:`, err);
-    return { data: null, error: `Failed to call Apollo: ${String(err)}` };
+    console.error(`[${requestId}] Apollo ${endpoint} network error:`, err);
+    return {
+      data: null,
+      error: `Failed to call Apollo ${endpoint}: ${String(err)}`,
+      status: null,
+    };
   }
 }
 
-async function callApolloMixedPeople(
+function callApolloMixedCompanies(
   config: ProviderConfig,
   query: string,
   page: number,
   pageSize: number,
   requestId: string,
-): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
-  const url = `${config.apiBase}/api/v1/mixed_people/search`;
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Cache-Control': 'no-cache',
-        'Content-Type': 'application/json',
-        'X-Api-Key': config.apiKey,
-        'X-Request-ID': requestId,
-      },
-      body: JSON.stringify({
-        q_keywords: query,
-        page,
-        per_page: pageSize,
-      }),
-    });
+): Promise<ApolloCallResult> {
+  return callApolloEndpoint(
+    config,
+    '/api/v1/mixed_companies/search',
+    { q_organization_name: query, page, per_page: pageSize },
+    requestId,
+  );
+}
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`[${requestId}] Apollo mixed_people failed:`, response.status, text);
-      return { data: null, error: `Apollo API returned ${response.status}` };
-    }
+function callApolloAccounts(
+  config: ProviderConfig,
+  query: string,
+  page: number,
+  pageSize: number,
+  requestId: string,
+): Promise<ApolloCallResult> {
+  return callApolloEndpoint(
+    config,
+    '/api/v1/accounts/search',
+    { q_keywords: query, page, per_page: pageSize },
+    requestId,
+  );
+}
 
-    const data = (await response.json()) as Record<string, unknown>;
-    return { data, error: null };
-  } catch (err) {
-    console.error(`[${requestId}] Apollo mixed_people error:`, err);
-    return { data: null, error: `Failed to call Apollo: ${String(err)}` };
-  }
+function callApolloMixedPeople(
+  config: ProviderConfig,
+  query: string,
+  page: number,
+  pageSize: number,
+  requestId: string,
+): Promise<ApolloCallResult> {
+  return callApolloEndpoint(
+    config,
+    '/api/v1/mixed_people/search',
+    { q_keywords: query, page, per_page: pageSize },
+    requestId,
+  );
+}
+
+function callApolloContacts(
+  config: ProviderConfig,
+  query: string,
+  page: number,
+  pageSize: number,
+  requestId: string,
+): Promise<ApolloCallResult> {
+  return callApolloEndpoint(
+    config,
+    '/api/v1/contacts/search',
+    { q_keywords: query, page, per_page: pageSize },
+    requestId,
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -224,7 +259,10 @@ function mapApolloCompany(orgRaw: unknown): Record<string, unknown> {
     id: asString(org.id),
     business_id: asString(org.id),
     name: asString(org.name),
-    domain: asString(org.primary_domain) || asString(org.website_url),
+    domain:
+      asString(org.primary_domain) ||
+      asString(org.domain) ||
+      asString(org.website_url),
     website: asString(org.website_url),
     linkedin_url: asString(org.linkedin_url),
     city: asString(org.city),
@@ -242,7 +280,7 @@ function mapApolloCompany(orgRaw: unknown): Record<string, unknown> {
 
 function mapApolloPerson(personRaw: unknown): Record<string, unknown> {
   const person = asRecord(personRaw) || {};
-  const orgRaw = person.organization;
+  const orgRaw = person.organization ?? person.account;
   const org = asRecord(orgRaw) || {};
   const departments = Array.isArray(person.departments)
     ? (person.departments.filter((d) => typeof d === 'string') as string[])
@@ -262,7 +300,10 @@ function mapApolloPerson(personRaw: unknown): Record<string, unknown> {
       id: asString(org.id),
       business_id: asString(org.id),
       name: asString(org.name),
-      domain: asString(org.primary_domain) || asString(org.website_url),
+      domain:
+        asString(org.primary_domain) ||
+        asString(org.domain) ||
+        asString(org.website_url),
       website: asString(org.website_url),
       city: asString(org.city) || asString(person.city),
       state: asString(org.state) || asString(person.state),
@@ -333,6 +374,139 @@ function buildSearchResponse(
   };
 }
 
+type ResolvedSearch = {
+  upstream: Record<string, unknown>;
+  items: unknown[];
+  endpointUsed: string;
+  fallbackUsed: boolean;
+};
+
+async function searchCompaniesWithFallback(
+  config: ProviderConfig,
+  query: string,
+  page: number,
+  pageSize: number,
+  requestId: string,
+  warnings: string[],
+  skipMixed: boolean,
+): Promise<{ resolved?: ResolvedSearch; error?: string }> {
+  const tryAccountsFallback = async (): Promise<{ resolved?: ResolvedSearch; error?: string }> => {
+    const fb = await callApolloAccounts(config, query, page, pageSize, requestId);
+    if (fb.error) {
+      if (fb.status === 403) {
+        return {
+          error:
+            'Provider permission issue: Apollo /api/v1/mixed_companies/search and /api/v1/accounts/search both returned 403. Apollo endpoint forbidden — check API key scopes/plan.',
+        };
+      }
+      return { error: fb.error };
+    }
+    warnings.push(
+      'Using Apollo CRM /api/v1/accounts/search fallback. Full Apollo prospect database requires mixed_companies/search access on the API key.',
+    );
+    const data = fb.data || {};
+    const accts = Array.isArray(data.accounts) ? data.accounts : [];
+    return {
+      resolved: {
+        upstream: data,
+        items: accts,
+        endpointUsed: '/api/v1/accounts/search',
+        fallbackUsed: true,
+      },
+    };
+  };
+
+  if (skipMixed) {
+    return tryAccountsFallback();
+  }
+
+  const primary = await callApolloMixedCompanies(config, query, page, pageSize, requestId);
+  if (!primary.error) {
+    const data = primary.data || {};
+    const orgs = Array.isArray(data.organizations) ? data.organizations : [];
+    return {
+      resolved: {
+        upstream: data,
+        items: orgs,
+        endpointUsed: '/api/v1/mixed_companies/search',
+        fallbackUsed: false,
+      },
+    };
+  }
+
+  if (primary.status === 403) {
+    warnings.push(
+      'Apollo /api/v1/mixed_companies/search returned 403 (forbidden). Falling back to /api/v1/accounts/search (Apollo CRM only).',
+    );
+    return tryAccountsFallback();
+  }
+
+  return { error: primary.error };
+}
+
+async function searchPeopleWithFallback(
+  config: ProviderConfig,
+  query: string,
+  page: number,
+  pageSize: number,
+  requestId: string,
+  warnings: string[],
+  skipMixed: boolean,
+): Promise<{ resolved?: ResolvedSearch; error?: string }> {
+  const tryContactsFallback = async (): Promise<{ resolved?: ResolvedSearch; error?: string }> => {
+    const fb = await callApolloContacts(config, query, page, pageSize, requestId);
+    if (fb.error) {
+      if (fb.status === 403) {
+        return {
+          error:
+            'Provider permission issue: Apollo /api/v1/mixed_people/search and /api/v1/contacts/search both returned 403. Apollo endpoint forbidden — check API key scopes/plan.',
+        };
+      }
+      return { error: fb.error };
+    }
+    warnings.push(
+      'Using Apollo CRM /api/v1/contacts/search fallback. Full Apollo prospect database requires mixed_people/search access on the API key.',
+    );
+    const data = fb.data || {};
+    const contacts = Array.isArray(data.contacts) ? data.contacts : [];
+    return {
+      resolved: {
+        upstream: data,
+        items: contacts,
+        endpointUsed: '/api/v1/contacts/search',
+        fallbackUsed: true,
+      },
+    };
+  };
+
+  if (skipMixed) {
+    return tryContactsFallback();
+  }
+
+  const primary = await callApolloMixedPeople(config, query, page, pageSize, requestId);
+  if (!primary.error) {
+    const data = primary.data || {};
+    const people = Array.isArray(data.people) ? data.people : [];
+    return {
+      resolved: {
+        upstream: data,
+        items: people,
+        endpointUsed: '/api/v1/mixed_people/search',
+        fallbackUsed: false,
+      },
+    };
+  }
+
+  if (primary.status === 403) {
+    warnings.push(
+      'Apollo /api/v1/mixed_people/search returned 403 (forbidden). Falling back to /api/v1/contacts/search (Apollo CRM only).',
+    );
+    return tryContactsFallback();
+  }
+
+  return { error: primary.error };
+}
+
 async function handleSearchAction(
   body: SearchRequest,
   _token: string,
@@ -354,9 +528,10 @@ async function handleSearchAction(
   const page = clampPage(body.page);
   const pageSize = clampPageSize(body.pageSize);
   const mode = resolveSearchMode(uiMode);
+  const skipMixed = Deno.env.get('APOLLO_DISABLE_MIXED') === 'true';
 
   console.log(
-    `[${requestId}] Apollo search: query="${query}", ui_mode="${uiMode}", mode="${mode}", page=${page}, per_page=${pageSize}`,
+    `[${requestId}] Apollo search: query="${query}", ui_mode="${uiMode}", mode="${mode}", page=${page}, per_page=${pageSize}, skipMixed=${skipMixed}`,
   );
 
   const warnings: string[] = [];
@@ -369,58 +544,34 @@ async function handleSearchAction(
     'Pulse passed your prompt to Apollo as a single keyword. Structured filter parsing ships in the next phase.',
   );
 
-  if (mode === 'people') {
-    const result = await callApolloMixedPeople(config, query, page, pageSize, requestId);
-    if (result.error) {
-      return { ok: false, error: result.error };
-    }
-    const upstream = result.data || {};
-    const peopleArr = Array.isArray(upstream.people) ? upstream.people : [];
-    if (peopleArr.length === 0) {
-      return buildEmptySearchResponse(query, 'people', warnings);
-    }
-    const mapped = peopleArr.map(mapApolloPerson);
-    const pag = readPagination(upstream);
-    if (pag.totalEntries > mapped.length) {
-      warnings.push(
-        `Showing first ${mapped.length} of ${pag.totalEntries} matches. Pagination ships in the next phase.`,
-      );
-    }
-    const partial =
-      Boolean(upstream.partial_results_only) || pag.totalEntries > mapped.length;
-    return buildSearchResponse(query, 'people', mapped, {
-      total: pag.totalEntries || mapped.length,
-      page: pag.page,
-      pageSize: mapped.length,
-      requestedLimit: pageSize,
-      estimatedMarketSize: pag.totalEntries || null,
-      provider: PROVIDER_NAME,
-      partial,
-      warnings,
-      classificationReasons: [],
-      matchedCompanyName: null,
-    });
+  const search =
+    mode === 'people'
+      ? await searchPeopleWithFallback(config, query, page, pageSize, requestId, warnings, skipMixed)
+      : await searchCompaniesWithFallback(config, query, page, pageSize, requestId, warnings, skipMixed);
+
+  if (search.error || !search.resolved) {
+    return { ok: false, error: search.error || 'Apollo search failed' };
   }
 
-  // mode === 'companies'
-  const result = await callApolloMixedCompanies(config, query, page, pageSize, requestId);
-  if (result.error) {
-    return { ok: false, error: result.error };
+  const { upstream, items, endpointUsed } = search.resolved;
+  const mapper = mode === 'people' ? mapApolloPerson : mapApolloCompany;
+  const responseMode: 'companies' | 'people' = mode === 'people' ? 'people' : 'companies';
+
+  if (items.length === 0) {
+    return buildEmptySearchResponse(query, responseMode, warnings);
   }
-  const upstream = result.data || {};
-  const orgs = Array.isArray(upstream.organizations) ? upstream.organizations : [];
-  if (orgs.length === 0) {
-    return buildEmptySearchResponse(query, 'companies', warnings);
-  }
-  const mapped = orgs.map(mapApolloCompany);
+
+  const mapped = items.map(mapper);
   const pag = readPagination(upstream);
   if (pag.totalEntries > mapped.length) {
     warnings.push(
-      `Showing first ${mapped.length} of ${pag.totalEntries} matches. Pagination ships in the next phase.`,
+      `Showing first ${mapped.length} of ${pag.totalEntries} matches via ${endpointUsed}. Pagination ships in the next phase.`,
     );
   }
-  const partial = Boolean(upstream.partial_results_only) || pag.totalEntries > mapped.length;
-  return buildSearchResponse(query, 'companies', mapped, {
+  const partial =
+    Boolean(upstream.partial_results_only) || pag.totalEntries > mapped.length;
+
+  return buildSearchResponse(query, responseMode, mapped, {
     total: pag.totalEntries || mapped.length,
     page: pag.page,
     pageSize: mapped.length,
