@@ -37,6 +37,12 @@ type ListRow = {
   record: CommandCenterRecord;
   key: string;
   companyId: string | null;
+  // companyUuid is the lit_companies.id primary key (FK target for
+  // lit_campaign_companies.company_id). companyId above stays as the
+  // human-readable source_company_key slug used everywhere else for
+  // display + KPI joins. Surfaced from getSavedCompanies's
+  // `record.company.id` after the Phase C unify fix.
+  companyUuid: string | null;
   companyName: string;
   stage: string;
   address: string | null;
@@ -157,6 +163,7 @@ function buildListRow(record: CommandCenterRecord): ListRow {
     record,
     key: recordKey(record),
     companyId: sourceCompanyKey,
+    companyUuid: ((company as any)?.id as string | null) ?? null,
     companyName: company?.name || (company as any)?.company_name || "Company",
     stage: String((record as any)?.stage || "prospect"),
     address: company?.address || null,
@@ -804,15 +811,16 @@ export default function CommandCenter() {
         )}
       </div>
 
-      {/* Phase E — Add-to-Campaign modal. Uses existing AddToCampaignModal
-          + addCompanyToCampaign flow; no new campaign API. Mounts only
-          when a row is targeted; closes on success or cancel. */}
+      {/* Add-to-Campaign modal. Pass the lit_companies.id UUID — the FK
+          target — not the source_company_key slug. The modal now uses
+          attachCompaniesToCampaign() which writes directly to
+          lit_campaign_companies via Supabase RLS. */}
       {campaignModalRow ? (
         <AddToCampaignModal
           open={Boolean(campaignModalRow)}
           onClose={() => setCampaignModalRow(null)}
           company={{
-            company_id: campaignModalRow.companyId,
+            company_id: campaignModalRow.companyUuid,
             name: campaignModalRow.companyName,
           }}
         />
