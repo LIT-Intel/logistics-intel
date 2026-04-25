@@ -4784,17 +4784,25 @@ export async function createCampaignDraft(input: {
  * Bulk-attach saved companies to a campaign. Writes to
  * `lit_campaign_companies` keyed on UNIQUE(campaign_id, company_id).
  *
- * Uses `ignoreDuplicates: true` so the conflict branch becomes
- * `INSERT ... ON CONFLICT DO NOTHING` instead of `... DO UPDATE`. RLS
- * on this table only registers SELECT / INSERT / DELETE policies (no
- * UPDATE) — without `ignoreDuplicates` the upsert fails with 42501
- * the moment PostgreSQL sees the UPDATE branch. DO NOTHING avoids
- * that path entirely while preserving idempotency: re-attaching the
- * same (campaign_id, company_id) pair is a no-op.
+ * RLS on this table only registers SELECT / INSERT / DELETE policies —
+ * there is no UPDATE policy. Even when called with ignoreDuplicates,
+ * supabase-js / PostgREST has been observed to require the UPDATE
+ * policy because of how `INSERT ... ON CONFLICT (cols) DO NOTHING`
+ * can still trip planner-level UPDATE evaluation, returning 42501
+ * "new row violates row-level security policy".
  *
- * Returns the count of rows reported by PostgREST. Note: with
- * ignoreDuplicates the count reflects rows actually inserted (so
- * re-runs may report 0 — that's the correct, idempotent answer).
+ * To dodge the conflict path entirely we run two simple, RLS-safe
+ * queries:
+ *   1. SELECT existing (campaign_id, company_id) rows for the inputs.
+ *   2. Plain INSERT only the missing pairs — no upsert, no ON CONFLICT.
+ *
+ * The INSERT therefore never touches the UPDATE policy. If the input
+ * is fully redundant we return 0 without issuing any write at all.
+ * A 23505 unique-violation from a concurrent writer (rare for this
+ * UI) is swallowed because the desired end state is already achieved.
+ *
+ * Returns the count of rows newly inserted. Re-runs with the same
+ * input return 0 — the correct, idempotent answer.
  */
 export async function attachCompaniesToCampaign(
   campaignId: string,
@@ -4803,21 +4811,59 @@ export async function attachCompaniesToCampaign(
   if (!campaignId || !Array.isArray(companyIds) || companyIds.length === 0) {
     return 0;
   }
-  const rows = companyIds
-    .filter((id): id is string => typeof id === "string" && id.length > 0)
-    .map((company_id) => ({ campaign_id: campaignId, company_id }));
-  if (rows.length === 0) return 0;
+  const cleanIds = Array.from(
+    new Set(
+      companyIds.filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      ),
+    ),
+  );
+  if (cleanIds.length === 0) return 0;
 
-  const { error, count } = await supabase
+  // Step 1: SELECT existing pairs. RLS allows SELECT for the parent
+  // campaign owner.
+  const { data: existingRows, error: selectError } = await supabase
     .from("lit_campaign_companies")
-    .upsert(rows, {
-      onConflict: "campaign_id,company_id",
-      ignoreDuplicates: true,
-      count: "exact",
-    });
-  if (error) {
-    const code = error.code ? ` ${error.code}` : "";
-    throw new Error(`attachCompaniesToCampaign${code}: ${error.message}`);
+    .select("company_id")
+    .eq("campaign_id", campaignId)
+    .in("company_id", cleanIds);
+  if (selectError) {
+    const code = selectError.code ? ` ${selectError.code}` : "";
+    throw new Error(
+      `attachCompaniesToCampaign select${code}: ${selectError.message}`,
+    );
+  }
+
+  const existing = new Set(
+    ((existingRows ?? []) as Array<{ company_id: string }>).map(
+      (r) => r.company_id,
+    ),
+  );
+  const toInsert = cleanIds.filter((id) => !existing.has(id));
+  if (toInsert.length === 0) {
+    return 0;
+  }
+
+  // Step 2: plain INSERT — no upsert, no ON CONFLICT. Only the INSERT
+  // policy is evaluated.
+  const rows = toInsert.map((company_id) => ({
+    campaign_id: campaignId,
+    company_id,
+  }));
+  const { error: insertError, count } = await supabase
+    .from("lit_campaign_companies")
+    .insert(rows, { count: "exact" });
+
+  if (insertError) {
+    // Race window between SELECT and INSERT: another writer just
+    // inserted the same pair. Desired state already achieved; no-op.
+    if (insertError.code === "23505") {
+      return 0;
+    }
+    const code = insertError.code ? ` ${insertError.code}` : "";
+    throw new Error(
+      `attachCompaniesToCampaign insert${code}: ${insertError.message}`,
+    );
   }
   return count ?? rows.length;
 }
