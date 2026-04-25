@@ -23,28 +23,23 @@ import {
   ExternalLink,
   Lock,
 } from "lucide-react";
+import { PLAN_LIMITS, normalizePlan as normalizePlanCode } from "@/lib/planLimits";
 
-// Phase F — 11-section nav approved by the user. Previous sections
-// "Email", "LinkedIn", "Company & Signature", "Workspace Credits", and
-// "Team Subscriptions" are folded:
-//   - Email + LinkedIn    → Integrations
-//   - email_signature     → Outreach Accounts
-//   - Company & Signature → Organization (renamed)
-//   - Billing & Plans     → Billing (renamed; Workspace Credits info
-//                          surfaces on the canonical /app/billing page)
-//   - Team Subscriptions  → Access & Roles (seat capacity rendered there)
+// User-facing /app/settings is narrowed to four sections. The other
+// Phase F sections (Security & API, Integrations beyond inboxes,
+// Outreach Accounts, Campaign Preferences, RFP & Pipeline, Affiliate
+// Program, Organization, Billing config) are admin-only and remain
+// exported for use by the admin route — only the visible nav is
+// reduced here.
+//
+//   - Access & Roles        → renamed Team (plan-gated invite UI)
+//   - Alerts & Notifications → renamed Preferences
+//   - Integrations          → narrowed to Email Accounts (Gmail/Outlook)
 export type SettingsSectionId =
   | "Profile"
-  | "Security & API"
-  | "Alerts & Notifications"
-  | "Access & Roles"
-  | "Integrations"
-  | "Outreach Accounts"
-  | "Campaign Preferences"
-  | "RFP & Pipeline"
-  | "Affiliate Program"
-  | "Organization"
-  | "Billing";
+  | "Preferences"
+  | "Email Accounts"
+  | "Team";
 
 export const SETTINGS_SECTIONS: Array<{
   id: SettingsSectionId;
@@ -52,16 +47,9 @@ export const SETTINGS_SECTIONS: Array<{
   icon: React.ComponentType<any>;
 }> = [
   { id: "Profile", title: "Profile", icon: User },
-  { id: "Security & API", title: "Security & API", icon: KeyRound },
-  { id: "Alerts & Notifications", title: "Alerts & Notifications", icon: Bell },
-  { id: "Access & Roles", title: "Access & Roles", icon: ShieldCheck },
-  { id: "Integrations", title: "Integrations", icon: Plug },
-  { id: "Outreach Accounts", title: "Outreach Accounts", icon: Send },
-  { id: "Campaign Preferences", title: "Campaign Preferences", icon: Megaphone },
-  { id: "RFP & Pipeline", title: "RFP & Pipeline", icon: FileText },
-  { id: "Affiliate Program", title: "Affiliate Program", icon: Gift },
-  { id: "Organization", title: "Organization", icon: Building2 },
-  { id: "Billing", title: "Billing", icon: CreditCard },
+  { id: "Preferences", title: "Preferences", icon: Bell },
+  { id: "Email Accounts", title: "Email Accounts", icon: Mail },
+  { id: "Team", title: "Team", icon: Users },
 ];
 
 function SectionShell({
@@ -1916,6 +1904,274 @@ export function AffiliateProgramSection() {
           <ExternalLink className="h-3 w-3" />
         </a>
       </div>
+    </SectionShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Email Accounts — user-facing inbox connection surface. Narrowed
+// version of IntegrationsSection: only Gmail + Outlook tiles. The rest
+// of the integrations catalog (PhantomBuster / Apollo / ImportYeti /
+// logo.dev) is admin-only and stays in IntegrationsSection for the
+// admin route. No fake connect flow — the OAuth handshake ships in a
+// future phase, so unconnected tiles say so honestly.
+// ─────────────────────────────────────────────────────────────────────────────
+const EMAIL_ACCOUNT_CATALOG = [
+  {
+    id: "gmail",
+    name: "Gmail",
+    description: "Send outbound directly from your Gmail account.",
+  },
+  {
+    id: "outlook",
+    name: "Outlook",
+    description: "Send outbound directly from Microsoft 365 / Outlook.",
+  },
+] as const;
+
+export function EmailAccountsSection({
+  integrations,
+  onDisconnect,
+}: {
+  integrations?: Array<{
+    id?: string;
+    integration_type?: string;
+    type?: string;
+    status?: string;
+    external_id?: string;
+  }>;
+  onDisconnect?: (id: string) => Promise<void> | void;
+}) {
+  const wired = Array.isArray(integrations) ? integrations : [];
+  const connectedByType = new Map<string, { id?: string; external_id?: string }>();
+  for (const row of wired) {
+    const key = String(row?.integration_type || row?.type || "").toLowerCase();
+    if (!key) continue;
+    connectedByType.set(key, { id: row?.id, external_id: row?.external_id });
+  }
+
+  return (
+    <SectionShell
+      title="Email Accounts"
+      description="Connect Gmail or Outlook so the Outbound Engine can send on your behalf."
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        {EMAIL_ACCOUNT_CATALOG.map((entry) => {
+          const connection = connectedByType.get(entry.id);
+          const isConnected = Boolean(connection);
+          return (
+            <div
+              key={entry.id}
+              className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
+                    <Mail className="h-4 w-4 text-slate-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900">{entry.name}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Inbox / Sending
+                    </div>
+                  </div>
+                </div>
+                {isConnected ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Connected
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                    Not connected
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">{entry.description}</p>
+              {isConnected ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="truncate text-xs text-slate-600">
+                    {connection?.external_id || "Active"}
+                  </div>
+                  {onDisconnect && connection?.id ? (
+                    <button
+                      type="button"
+                      onClick={() => onDisconnect(connection.id as string)}
+                      className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Disconnect
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-400">
+                  OAuth connect ships with the Outbound Engine launch flow.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </SectionShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Team — plan-gated wrapper around the existing AccessRolesSection.
+//   - Free Trial / Free / Starter: upgrade-required card. No invite UI
+//     rendered, so a misconfigured org_invites insert can't even reach
+//     the network from this surface.
+//   - Growth / Enterprise: full AccessRolesSection (members list,
+//     invite, revoke, change role) — backed by the real org_invites
+//     table + send-org-invite edge function that already exist.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Single source of truth: planLimits.PLAN_LIMITS[plan].features.seat_management.
+// normalizePlanCode handles aliases (free/standard/pro/unlimited) + the
+// canonical free_trial/starter/growth/enterprise codes the DB seeds use.
+function isInviteAllowedPlan(plan?: string | null): boolean {
+  return PLAN_LIMITS[normalizePlanCode(plan)].features.seat_management === true;
+}
+
+function planLabel(plan?: string | null): string {
+  return PLAN_LIMITS[normalizePlanCode(plan)].label;
+}
+
+function TeamUpgradeCard({
+  plan,
+  onUpgrade,
+}: {
+  plan?: string | null;
+  onUpgrade?: () => void;
+}) {
+  return (
+    <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 ring-1 ring-amber-200">
+          <Lock className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-700">
+            Upgrade required
+          </p>
+          <h3 className="mt-1 text-base font-semibold text-slate-900">
+            Team invites are on Growth and above
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Your current plan is <span className="font-semibold text-slate-900">{planLabel(plan)}</span>.
+            Upgrade to Growth or Enterprise to invite teammates, manage
+            roles, and share saved companies and campaigns.
+          </p>
+          <button
+            type="button"
+            onClick={onUpgrade}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700"
+          >
+            View plans
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function TeamSection(props: {
+  plan?: string | null;
+  members?: any[];
+  invites?: any[];
+  seatLimit?: number;
+  onInvite?: (email: string, role: string) => Promise<{ error?: string } | void>;
+  onRevoke?: (memberId: string) => Promise<{ error?: string } | void>;
+  onUpdateRole?: (memberId: string, role: string) => Promise<{ error?: string } | void>;
+  onRevokeInvite?: (inviteId: string) => Promise<{ error?: string } | void>;
+  isAdmin?: boolean;
+  onUpgrade?: () => void;
+  inviteBackendAvailable?: boolean;
+}) {
+  const allowed = isInviteAllowedPlan(props.plan);
+
+  if (!allowed) {
+    return (
+      <SectionShell
+        title="Team"
+        description="Invite teammates and assign roles for shared campaigns and saved companies."
+      >
+        <TeamUpgradeCard plan={props.plan} onUpgrade={props.onUpgrade} />
+      </SectionShell>
+    );
+  }
+
+  const backendDown = props.inviteBackendAvailable === false;
+  if (backendDown) {
+    return (
+      <SectionShell
+        title="Team"
+        description="Invite teammates and assign roles for shared campaigns and saved companies."
+      >
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-slate-500 ring-1 ring-slate-200">
+              <Lock className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">
+                Team invites unavailable
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Team invites require the invite endpoint to be enabled. Contact
+                support if your workspace should have access.
+              </p>
+            </div>
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
+
+  // Real invite flow — defers to the existing AccessRolesSection wired
+  // to org_invites + send-org-invite. The wrapper just adds a small
+  // header card with current plan + seat capacity context.
+  return (
+    <SectionShell
+      title="Team"
+      description="Invite teammates and assign roles for shared campaigns and saved companies."
+    >
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-indigo-600">
+              Plan · Team
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{planLabel(props.plan)}</span>
+              {props.seatLimit ? (
+                <>
+                  <span className="mx-2 text-slate-300">·</span>
+                  Up to {props.seatLimit} seat{props.seatLimit === 1 ? "" : "s"}
+                </>
+              ) : null}
+              <span className="mx-2 text-slate-300">·</span>
+              {(props.members?.length ?? 0)} active
+              {props.invites?.length
+                ? ` · ${props.invites.length} pending`
+                : ""}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <AccessRolesSection
+        members={props.members}
+        invites={props.invites}
+        seatLimit={props.seatLimit}
+        onInvite={props.onInvite}
+        onRevoke={props.onRevoke}
+        onUpdateRole={props.onUpdateRole}
+        onRevokeInvite={props.onRevokeInvite}
+        isAdmin={props.isAdmin}
+      />
     </SectionShell>
   );
 }

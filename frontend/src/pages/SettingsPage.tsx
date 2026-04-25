@@ -544,22 +544,53 @@ export default function SettingsPage() {
   };
 
   const onInviteMember = async (email: string, role: string) => {
-    if (!orgId) throw new Error("No organization found for this user");
+    if (!orgId) return { error: "No organization found for this user" };
 
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { error } = await supabase.from("org_invites").insert({
-      org_id: orgId,
-      email: email.trim().toLowerCase(),
-      role,
-      token,
-      status: "pending",
-      expires_at: expiresAt,
-    });
-    requireNoError(error, "Failed creating invite");
+    const { data: inserted, error: insertError } = await supabase
+      .from("org_invites")
+      .insert({
+        org_id: orgId,
+        email: email.trim().toLowerCase(),
+        role,
+        token,
+        status: "pending",
+        expires_at: expiresAt,
+        invited_by_user_id: user?.id ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      return { error: insertError.message || "Failed creating invite" };
+    }
+
+    // Backend exists — call send-org-invite so the email actually goes
+    // out. Don't claim success unless the edge function did its job.
+    let emailError: string | null = null;
+    try {
+      const { data: sendResult, error: sendError } = await supabase.functions.invoke(
+        "send-org-invite",
+        { body: { inviteId: inserted?.id } },
+      );
+      if (sendError) {
+        emailError = sendError.message || "Failed to send invite email";
+      } else if (sendResult && (sendResult as any).error) {
+        emailError = String((sendResult as any).error);
+      }
+    } catch (e: any) {
+      emailError = e?.message || "Failed to reach invite service";
+    }
 
     await loadAll();
+
+    if (emailError) {
+      return {
+        error: `Invite saved but email could not be sent: ${emailError}`,
+      };
+    }
   };
 
   const onRevokeMember = async (memberId: string) => {

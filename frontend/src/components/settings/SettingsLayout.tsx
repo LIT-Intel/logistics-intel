@@ -1,20 +1,26 @@
 import React from "react";
 import { ChevronRight } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   SETTINGS_SECTIONS,
   type SettingsSectionId,
   ProfileSection,
-  CompanySignatureSection,
-  AccessRolesSection,
-  BillingPlansSection,
-  RfpPipelineSection,
-  CampaignPreferencesSection,
   AlertsNotificationsSection,
-  SecurityApiSection,
-  IntegrationsSection,
-  OutreachAccountsSection,
-  AffiliateProgramSection,
+  EmailAccountsSection,
+  TeamSection,
 } from "./SettingsSections";
+
+// Accepts ?tab=team|profile|preferences|email-accounts (case/spacing
+// tolerant) so the sidebar "Team" deep-link lands on the Team tab.
+function tabParamToSectionId(value?: string | null): SettingsSectionId | null {
+  if (!value) return null;
+  const v = String(value).trim().toLowerCase().replace(/[-_\s]+/g, "");
+  if (v === "profile") return "Profile";
+  if (v === "preferences" || v === "alerts" || v === "notifications") return "Preferences";
+  if (v === "emailaccounts" || v === "email" || v === "inbox") return "Email Accounts";
+  if (v === "team" || v === "members" || v === "access" || v === "roles") return "Team";
+  return null;
+}
 
 type OrgMember = {
   id?: string;
@@ -151,55 +157,32 @@ export type SettingsLayoutProps = {
   onDisconnectIntegration?: (id: string) => Promise<void>;
 };
 
-// Map section → header kicker category, matching the LIT design PDF
-// (Account / Workspace / Outreach / Growth).
+// User-facing /app/settings is narrowed to four sections. Other
+// admin-only sections (Security & API, Integrations beyond inboxes,
+// Outreach Accounts, Campaign Preferences, RFP & Pipeline, Affiliate,
+// Organization config, Billing config) live on the admin route.
 const SECTION_KICKER: Record<SettingsSectionId, string> = {
   Profile: "Account · Settings",
-  "Security & API": "Account · Settings",
-  "Alerts & Notifications": "Account · Settings",
-  Billing: "Account · Settings",
-  "Access & Roles": "Workspace · Settings",
-  Organization: "Workspace · Settings",
-  Integrations: "Outreach · Settings",
-  "Outreach Accounts": "Outreach · Settings",
-  "Campaign Preferences": "Outreach · Settings",
-  "RFP & Pipeline": "Outreach · Settings",
-  "Affiliate Program": "Growth · Settings",
+  Preferences: "Account · Settings",
+  "Email Accounts": "Account · Settings",
+  Team: "Workspace · Settings",
 };
 
-// Sentence-cased page H1 per PDF (tab labels stay title-cased via SETTINGS_SECTIONS).
 const SECTION_TITLE: Record<SettingsSectionId, string> = {
   Profile: "Profile",
-  "Security & API": "Security & API",
-  "Alerts & Notifications": "Alerts & notifications",
-  "Access & Roles": "Access & roles",
-  Integrations: "Integrations",
-  "Outreach Accounts": "Outreach accounts",
-  "Campaign Preferences": "Campaign preferences",
-  "RFP & Pipeline": "RFP & pipeline",
-  "Affiliate Program": "Affiliate program",
-  Organization: "Organization",
-  Billing: "Billing",
+  Preferences: "Preferences",
+  "Email Accounts": "Email accounts",
+  Team: "Team",
 };
 
 const SECTION_DESCRIPTION: Partial<Record<SettingsSectionId, string>> = {
   Profile:
     "Your personal identity across Logistic Intel. Displayed on your outbound sends, comments, and teammate mentions.",
-  "Security & API": "Password, two-factor, active sessions, and developer API keys.",
-  "Alerts & Notifications":
+  Preferences:
     "Route the signals you care about to email, in-app, or Slack. Everything else stays quiet.",
-  "Access & Roles":
-    "Teammates, pending invites, and the permissions each role carries across the workspace.",
-  Integrations:
-    "Connect your inboxes, enrichment providers, and data sources. Inbox connections power the Outbound Engine.",
-  "Outreach Accounts":
-    "Sender identity, inbox configuration, and sending eligibility. What Outbound Engine reads when launching a campaign.",
-  "Campaign Preferences":
-    "Defaults that the Outbound Engine uses when you spin up a new campaign.",
-  "RFP & Pipeline": "How Command Center and Deal Builder behave for you by default.",
-  "Affiliate Program": "Your referral link, earnings, and referred workspaces.",
-  Organization: "Workspace branding, domain, and shared defaults.",
-  Billing: "Plan, payment method, invoices, and renewal schedule.",
+  "Email Accounts":
+    "Connect Gmail or Outlook so the Outbound Engine can send on your behalf.",
+  Team: "Invite teammates and assign roles for shared campaigns and saved companies.",
 };
 
 function WorkspaceChipBlock({ workspace }: { workspace?: WorkspaceChip }) {
@@ -224,7 +207,11 @@ function WorkspaceChipBlock({ workspace }: { workspace?: WorkspaceChip }) {
   );
 }
 
-function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
+function renderSection(
+  section: SettingsSectionId,
+  props: SettingsLayoutProps,
+  navigate: (to: string) => void,
+) {
   const messagingPrefs = props.preferences?.preferences?.messaging_preferences;
   const profileTimezone =
     props.profile?.timezone || props.preferences?.preferences?.profile_preferences?.timezone || "";
@@ -244,16 +231,7 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           isAdmin={props.isAdmin}
         />
       );
-    case "Security & API":
-      return (
-        <SecurityApiSection
-          apiKeys={props.apiKeys}
-          auditLog={props.auditLog}
-          onGenerateKey={props.onGenerateApiKey}
-          onRevokeKey={props.onRevokeApiKey}
-        />
-      );
-    case "Alerts & Notifications":
+    case "Preferences":
       return (
         <AlertsNotificationsSection
           preferences={props.preferences?.preferences?.alerts_notifications}
@@ -262,9 +240,17 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           }
         />
       );
-    case "Access & Roles":
+    case "Email Accounts":
       return (
-        <AccessRolesSection
+        <EmailAccountsSection
+          integrations={props.integrations}
+          onDisconnect={props.onDisconnectIntegration}
+        />
+      );
+    case "Team":
+      return (
+        <TeamSection
+          plan={props.subscription?.plan_code ?? props.profile?.plan ?? null}
           members={props.members}
           invites={props.invites}
           seatLimit={props.subscription?.seat_limit}
@@ -273,60 +259,7 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
           onUpdateRole={props.onUpdateMemberRole}
           onRevokeInvite={props.onRevokeInvite}
           isAdmin={props.isAdmin}
-        />
-      );
-    case "Integrations":
-      return (
-        <IntegrationsSection
-          integrations={props.integrations}
-          onDisconnect={props.onDisconnectIntegration}
-        />
-      );
-    case "Outreach Accounts":
-      return (
-        <OutreachAccountsSection
-          emailSignature={props.preferences?.email_signature}
-          onSaveSignature={async (sig: string) => {
-            await props.onSaveEmailSignature?.(sig);
-          }}
-        />
-      );
-    case "Campaign Preferences":
-      return (
-        <CampaignPreferencesSection
-          preferences={props.preferences?.preferences?.campaign_preferences}
-          onSavePreferences={(data: Record<string, unknown>) =>
-            props.onSavePreferences?.("campaign_preferences", data)
-          }
-        />
-      );
-    case "RFP & Pipeline":
-      return (
-        <RfpPipelineSection
-          preferences={props.preferences?.preferences?.rfp_pipeline}
-          onSavePreferences={(data: Record<string, unknown>) =>
-            props.onSavePreferences?.("rfp_pipeline", data)
-          }
-        />
-      );
-    case "Affiliate Program":
-      return <AffiliateProgramSection />;
-    case "Organization":
-      return (
-        <CompanySignatureSection
-          orgProfile={props.orgProfile}
-          emailSignature={props.preferences?.email_signature}
-          onSaveOrg={props.onSaveOrgProfile}
-          onSaveSignature={props.onSaveEmailSignature}
-          onUploadLogo={props.onUploadLogo}
-        />
-      );
-    case "Billing":
-      return (
-        <BillingPlansSection
-          subscription={props.subscription}
-          plans={props.plans}
-          isAdmin={props.isAdmin}
+          onUpgrade={() => navigate("/app/billing")}
         />
       );
     default:
@@ -347,7 +280,33 @@ function renderSection(section: SettingsSectionId, props: SettingsLayoutProps) {
 }
 
 export default function SettingsLayout(props: SettingsLayoutProps) {
-  const [activeSection, setActiveSection] = React.useState<SettingsSectionId>("Profile");
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = tabParamToSectionId(searchParams.get("tab")) ?? "Profile";
+  const [activeSection, setActiveSection] = React.useState<SettingsSectionId>(initialTab);
+
+  // Keep state in sync if the URL changes (e.g. sidebar nav while page is mounted).
+  React.useEffect(() => {
+    const fromUrl = tabParamToSectionId(searchParams.get("tab"));
+    if (fromUrl && fromUrl !== activeSection) {
+      setActiveSection(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const handleSelectSection = React.useCallback(
+    (id: SettingsSectionId) => {
+      setActiveSection(id);
+      const next = new URLSearchParams(searchParams);
+      if (id === "Profile") {
+        next.delete("tab");
+      } else {
+        next.set("tab", id.toLowerCase().replace(/\s+/g, "-"));
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   const kicker = SECTION_KICKER[activeSection] || "Account · Settings";
   const title = SECTION_TITLE[activeSection] || activeSection;
@@ -384,7 +343,7 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
               <button
                 key={section.id}
                 type="button"
-                onClick={() => setActiveSection(section.id)}
+                onClick={() => handleSelectSection(section.id)}
                 className={
                   "whitespace-nowrap border-b-2 px-4 py-3.5 text-sm transition " +
                   (isActive
@@ -407,7 +366,7 @@ export default function SettingsLayout(props: SettingsLayoutProps) {
             <p className="mt-1 text-sm text-slate-500">{description}</p>
           ) : null}
         </div>
-        {renderSection(activeSection, props)}
+        {renderSection(activeSection, props, navigate)}
       </main>
     </div>
   );
