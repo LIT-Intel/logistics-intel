@@ -62,17 +62,22 @@ function emptyStep() {
 }
 
 function flattenSavedCompany(row) {
-  const company = row?.lit_companies || row?.company || {};
+  // `getSavedCompanies()` returns rows shaped:
+  //   { saved_id, company: { id (UUID), company_id (slug), name, ... }, ... }
+  // We MUST use `company.id` (the lit_companies UUID) for the
+  // lit_campaign_companies FK insert. `company.company_id` is the
+  // human-readable slug used for display only.
+  const company = row?.company || {};
+  const addressParts = company?.address ? [company.address] : [];
+  if (company?.country_code) addressParts.push(company.country_code);
   return {
-    saved_id: row?.id,
-    company_id: company?.id ?? row?.company_id,
-    name: company?.name || row?.company_name || "Unnamed company",
+    saved_id: row?.saved_id,
+    company_id: company?.id ?? null,
+    company_key: company?.company_id ?? null,
+    name: company?.name || "Unnamed company",
     domain: company?.domain || company?.website || null,
-    location: [company?.city, company?.state, company?.country_code]
-      .filter(Boolean)
-      .join(", "),
+    location: addressParts.join(" · "),
     stage: row?.stage || null,
-    status: row?.status || null,
   };
 }
 

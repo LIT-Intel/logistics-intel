@@ -3232,7 +3232,14 @@ export async function getSavedCompanies(signal?: AbortSignal) {
 
 
     const rows = (data || []).map((item: any) => ({
+      // Phase C fix: surface the canonical lit_companies UUID + saved row
+      // id so consumers needing FK writes (e.g. Campaign Builder ->
+      // attachCompaniesToCampaign) can use the real primary key. Existing
+      // callers that read `company_id` (the source_company_key slug) keep
+      // working unchanged.
+      saved_id: item.id,
       company: {
+        id: item.lit_companies?.id ?? null,
         company_id: item.lit_companies?.source_company_key || item.lit_companies?.id,
         name: item.lit_companies?.name || 'Unknown Company',
         domain: item.lit_companies?.domain,
@@ -3386,38 +3393,40 @@ export async function saveCompanyToCrm(
     });
   }
 
-  const res = await fetch(
-    withGatewayKey(`${SEARCH_GATEWAY_BASE}/crm/saveCompany`),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        company_id: companyId,
-        stage: "prospect",
-        provider: "importyeti",
-        payload: company,
-      }),
-    },
-  );
+  // Phase: legacy `/crm/saveCompany` gateway is not deployed (4xx).
+  // Route through the canonical Supabase-direct path used by Search →
+  // Add to Command Center so saves from the company drawer (Workspace.tsx)
+  // land in the same `lit_companies` + `lit_saved_companies` tables that
+  // Command Center and Campaign Builder read.
+  const synthesizedShipper: IyShipperHit = {
+    key: companyId,
+    companyId,
+    companyKey: companyId,
+    name:
+      (company as any)?.name ||
+      (company as any)?.company_name ||
+      (company as any)?.title ||
+      companyId,
+    title:
+      (company as any)?.title ||
+      (company as any)?.name ||
+      (company as any)?.company_name ||
+      companyId,
+    domain: (company as any)?.domain ?? null,
+    website: (company as any)?.website ?? null,
+    address: (company as any)?.address ?? null,
+    city: (company as any)?.city ?? null,
+    state: (company as any)?.state ?? null,
+    countryCode: (company as any)?.country_code ?? (company as any)?.countryCode ?? null,
+  } as IyShipperHit;
 
-  if (!res.ok) {
-    let errorBody: any = null;
-    try {
-      errorBody = await res.json();
-    } catch {
-      // swallow parse error
-    }
-    if (typeof window !== "undefined") {
-      console.warn("[LIT] saveCompanyToCrm failed", {
-        status: res.status,
-        statusText: res.statusText,
-        errorBody,
-      });
-    }
-    throw new Error(`saveCompanyToCrm failed with status ${res.status}`);
-  }
-
-  return res.json();
+  return saveCompanyDirectToSupabase({
+    shipper: synthesizedShipper,
+    profile: null,
+    stage: "prospect",
+    provider: "importyeti",
+    source: (company as any)?.source || (input as any)?.source,
+  });
 }
 
 
