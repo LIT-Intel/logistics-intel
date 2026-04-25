@@ -4781,9 +4781,20 @@ export async function createCampaignDraft(input: {
 }
 
 /**
- * Bulk-attach saved companies to a campaign by upserting rows in
- * `lit_campaign_companies`. UNIQUE(campaign_id, company_id) makes
- * re-attaches idempotent. Returns the number of rows touched.
+ * Bulk-attach saved companies to a campaign. Writes to
+ * `lit_campaign_companies` keyed on UNIQUE(campaign_id, company_id).
+ *
+ * Uses `ignoreDuplicates: true` so the conflict branch becomes
+ * `INSERT ... ON CONFLICT DO NOTHING` instead of `... DO UPDATE`. RLS
+ * on this table only registers SELECT / INSERT / DELETE policies (no
+ * UPDATE) — without `ignoreDuplicates` the upsert fails with 42501
+ * the moment PostgreSQL sees the UPDATE branch. DO NOTHING avoids
+ * that path entirely while preserving idempotency: re-attaching the
+ * same (campaign_id, company_id) pair is a no-op.
+ *
+ * Returns the count of rows reported by PostgREST. Note: with
+ * ignoreDuplicates the count reflects rows actually inserted (so
+ * re-runs may report 0 — that's the correct, idempotent answer).
  */
 export async function attachCompaniesToCampaign(
   campaignId: string,
@@ -4799,7 +4810,11 @@ export async function attachCompaniesToCampaign(
 
   const { error, count } = await supabase
     .from("lit_campaign_companies")
-    .upsert(rows, { onConflict: "campaign_id,company_id", count: "exact" });
+    .upsert(rows, {
+      onConflict: "campaign_id,company_id",
+      ignoreDuplicates: true,
+      count: "exact",
+    });
   if (error) {
     const code = error.code ? ` ${error.code}` : "";
     throw new Error(`attachCompaniesToCampaign${code}: ${error.message}`);
