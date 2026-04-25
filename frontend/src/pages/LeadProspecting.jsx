@@ -18,6 +18,7 @@ import {
   Search,
   Send,
   Settings,
+  ShieldAlert,
   Ship,
   Sparkles,
   Target,
@@ -432,13 +433,48 @@ function ResultsSkeleton() {
   );
 }
 
-function isConfigurationError(message) {
-  if (!message) return false;
+function classifyPulseError(message) {
+  if (!message) return 'none';
   const lowered = String(message).toLowerCase();
+  if (
+    lowered.includes('provider permission issue') ||
+    lowered.includes('403') ||
+    lowered.includes('endpoint forbidden') ||
+    lowered.includes('check api key scopes/plan')
+  ) {
+    return 'permission';
+  }
+  if (lowered.includes('not configured') || lowered.includes('disabled')) {
+    return 'setup';
+  }
+  return 'generic';
+}
+
+function PermissionIssueState({ message }) {
   return (
-    lowered.includes('not configured') ||
-    lowered.includes('disabled') ||
-    lowered.includes('api key')
+    <section className='rounded-2xl border border-orange-200 bg-orange-50 p-6 shadow-sm'>
+      <div className='flex items-start gap-3'>
+        <div className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white'>
+          <ShieldAlert className='h-5 w-5 text-orange-600' />
+        </div>
+        <div className='min-w-0'>
+          <h3 className='text-sm font-semibold text-orange-900'>Apollo API permission issue</h3>
+          <p className='mt-1 text-sm leading-6 text-orange-800'>
+            Your API key exists, but Apollo rejected the endpoint. This usually means the current
+            Apollo plan or API scopes do not allow this search endpoint.
+          </p>
+          <p className='mt-2 text-sm leading-6 text-orange-800'>
+            Enable Apollo prospecting API access on the key (or upgrade the plan), or import data
+            into your Apollo CRM so the fallback CRM endpoints return results.
+          </p>
+          {message ? (
+            <pre className='mt-3 overflow-x-auto rounded-lg bg-white/70 p-3 font-mono text-[11px] text-orange-900'>
+              {message}
+            </pre>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -998,10 +1034,12 @@ export default function LeadProspecting() {
   const isCompanyMode =
     resultMode === 'companies' || resultMode === 'hybrid_people_over_company';
 
-  const isSetupError = useMemo(
-    () => isConfigurationError(errorMessage),
+  const errorClass = useMemo(
+    () => classifyPulseError(errorMessage),
     [errorMessage],
   );
+  const isSetupError = errorClass === 'setup';
+  const isPermissionError = errorClass === 'permission';
 
   const statusPill = useMemo(() => {
     if (apiStatus === 'connected') {
@@ -1014,16 +1052,32 @@ export default function LeadProspecting() {
     }
 
     if (apiStatus === 'error') {
+      if (isPermissionError) {
+        return (
+          <span className='inline-flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800'>
+            <ShieldAlert className='h-3 w-3' />
+            Provider permission issue
+          </span>
+        );
+      }
+      if (isSetupError) {
+        return (
+          <span className='inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700'>
+            <AlertCircle className='h-3 w-3' />
+            Setup required
+          </span>
+        );
+      }
       return (
         <span className='inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700'>
           <AlertCircle className='h-3 w-3' />
-          Setup required
+          Search error
         </span>
       );
     }
 
     return null;
-  }, [apiStatus]);
+  }, [apiStatus, isPermissionError, isSetupError]);
 
   async function handleSearch() {
     const trimmed = query.trim();
@@ -1286,7 +1340,7 @@ export default function LeadProspecting() {
 
       {statusPill ? <div className='flex justify-end'>{statusPill}</div> : null}
 
-      {errorMessage && !isSetupError ? (
+      {errorMessage && !isSetupError && !isPermissionError ? (
         <div className='flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700'>
           <AlertCircle className='mt-0.5 h-5 w-5 flex-shrink-0' />
           <div>{errorMessage}</div>
@@ -1295,6 +1349,11 @@ export default function LeadProspecting() {
 
       {isSearching ? (
         <ResultsSkeleton />
+      ) : searchPerformed && isPermissionError ? (
+        <div className='space-y-4'>
+          <PermissionIssueState message={errorMessage} />
+          <ProviderReadinessCard />
+        </div>
       ) : searchPerformed && isSetupError ? (
         <div className='space-y-4'>
           <EmptySetupState message={errorMessage} />
