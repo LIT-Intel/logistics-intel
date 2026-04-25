@@ -4867,3 +4867,101 @@ export async function attachCompaniesToCampaign(
   }
   return count ?? rows.length;
 }
+
+// ---------------- Campaign contact enrichment (Phase D-0b) ----------------
+
+/**
+ * Persona filter passed to the `enrich-campaign-contacts` Edge
+ * Function. All fields are optional — Apollo's people search accepts
+ * any subset.
+ */
+export interface EnrichCampaignContactsPersona {
+  departments?: string[];
+  seniorities?: string[];
+  titles?: string[];
+}
+
+export interface EnrichCampaignContactsOptions {
+  companyIds?: string[];
+  limitPerCompany?: number;
+  persona?: EnrichCampaignContactsPersona;
+  force?: boolean;
+}
+
+export interface EnrichCampaignContactsError {
+  company_id?: string;
+  stage: string;
+  message: string;
+}
+
+export interface EnrichCampaignContactsResult {
+  ok: true;
+  campaign_id: string;
+  companies_attempted: number;
+  companies_skipped_no_domain: number;
+  companies_skipped_already_enriched: number;
+  providers_used: { apollo: number; hunter: number; lusha: number };
+  contacts_inserted: number;
+  contacts_existing: number;
+  errors: EnrichCampaignContactsError[];
+  notes?: string[];
+}
+
+/**
+ * Invoke the `enrich-campaign-contacts` Edge Function (D-0a).
+ *
+ * Append-only helper. Not called from anywhere yet — the UI wiring
+ * (D-4) lands behind an explicit user click on the campaign detail
+ * page. Existing api.ts helpers are untouched.
+ *
+ * Throws when the function reports `ok: false` (including the daily
+ * guard `ALREADY_RAN_TODAY`) so the caller can surface a real error.
+ * On `ok: true` returns the typed summary so the caller can render
+ * inserted / existing / skipped counts.
+ */
+export async function enrichCampaignContacts(
+  campaignId: string,
+  opts: EnrichCampaignContactsOptions = {},
+): Promise<EnrichCampaignContactsResult> {
+  if (!campaignId || typeof campaignId !== "string") {
+    throw new Error("enrichCampaignContacts: campaign_id is required");
+  }
+
+  const { data, error } = await supabase.functions.invoke(
+    "enrich-campaign-contacts",
+    {
+      body: {
+        campaign_id: campaignId,
+        company_ids: opts.companyIds,
+        limit_per_company: opts.limitPerCompany,
+        persona: opts.persona,
+        force: opts.force,
+      },
+    },
+  );
+
+  if (error) {
+    // supabase.functions.invoke surfaces non-2xx responses as `error`.
+    // Read the underlying message verbatim so callers see the real
+    // 401 / 403 / 404 / 500 reason from the Edge Function.
+    const message = error?.message || "enrich-campaign-contacts failed";
+    throw new Error(`enrichCampaignContacts: ${message}`);
+  }
+
+  if (!data || typeof data !== "object") {
+    throw new Error("enrichCampaignContacts: empty response from Edge Function");
+  }
+
+  const payload = data as
+    | EnrichCampaignContactsResult
+    | { ok: false; error?: string; code?: string };
+
+  if (payload.ok !== true) {
+    const failure = payload as { ok: false; error?: string; code?: string };
+    const codePart = failure.code ? ` ${failure.code}` : "";
+    const messagePart = failure.error || "Unknown enrichment failure";
+    throw new Error(`enrichCampaignContacts${codePart}: ${messagePart}`);
+  }
+
+  return payload;
+}
