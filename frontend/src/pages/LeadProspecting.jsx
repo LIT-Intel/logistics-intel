@@ -1,29 +1,109 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUp,
   Bookmark,
   Building2,
-  Download,
+  CheckCircle2,
   ExternalLink,
   Eye,
+  Globe,
+  Info,
+  Layers,
+  Linkedin,
   Mail,
   Phone,
+  PlugZap,
+  Search,
+  Send,
+  Settings,
   Sparkles,
+  Target,
   UserRound,
+  Wand2,
   X,
+  Zap,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useAuth } from '@/auth/AuthProvider';
+import { Skeleton } from '@/components/ui/skeleton';
 import { searchPulse } from '@/api/pulse';
 import { supabase } from '@/lib/supabase';
+import AddToCampaignModal from '@/components/command-center/AddToCampaignModal';
 
 const TYPEWRITER_EXAMPLES = [
-  'Find logistics companies in Georgia with over $1B in revenue',
-  'Find 2 directors of supply chain at Apple',
-  'Find 5 VPs of Sales at freight forwarders in Atlanta',
-  'Show importers in Texas with 200 to 1000 employees',
-  'Build a list of 3PLs in Chicago and the operations leaders at each one',
+  'Find SaaS companies in Atlanta hiring sales leaders',
+  'Find Shopify brands selling pet products',
+  'Find importers of furniture in Georgia',
+  'Find operations managers at manufacturing companies in Alabama',
+  'Find commercial cleaning companies in Florida',
+];
+
+const PROVIDERS = [
+  {
+    key: 'apollo',
+    name: 'Apollo',
+    role: 'Broad company & contact search',
+    icon: Search,
+    tier: 'recommended',
+  },
+  {
+    key: 'tavily',
+    name: 'Tavily',
+    role: 'Web research & company context',
+    icon: Globe,
+    tier: 'recommended',
+  },
+  {
+    key: 'lusha',
+    name: 'Lusha',
+    role: 'Contact enrichment (email + phone)',
+    icon: UserRound,
+    tier: 'recommended',
+  },
+  {
+    key: 'hunter',
+    name: 'Hunter',
+    role: 'Email discovery & verification',
+    icon: Mail,
+    tier: 'recommended',
+  },
+  {
+    key: 'phantombuster',
+    name: 'PhantomBuster',
+    role: 'User-authorized LinkedIn workflows (rate-limited)',
+    icon: Linkedin,
+    tier: 'optional',
+  },
+  {
+    key: 'explorium',
+    name: 'Explorium',
+    role: 'Firmographic + prospect API',
+    icon: Layers,
+    tier: 'optional',
+  },
+];
+
+const TUTORIAL_STEPS = [
+  {
+    icon: Wand2,
+    title: 'Describe your ICP',
+    body: 'Type a plain-English prompt. Pulse parses geography, industry, role, seniority, size, and revenue signals.',
+  },
+  {
+    icon: Search,
+    title: 'Provider search',
+    body: 'Pulse queries connected providers (Apollo, Explorium, Tavily) for matching companies and people.',
+  },
+  {
+    icon: Sparkles,
+    title: 'Enrich on demand',
+    body: 'Resolve emails and phones with Hunter and Lusha when you click Enrich. No bulk credit burn.',
+  },
+  {
+    icon: Send,
+    title: 'Save & activate',
+    body: 'Push selected rows to Command Center, then attach them to a campaign for outbound.',
+  },
 ];
 
 function PulseLogo({ className = '' }) {
@@ -92,9 +172,9 @@ function TypewriterPlaceholder({ active }) {
 
 function ModeToggle({ value, onChange }) {
   const items = [
-    { id: 'auto', label: 'Auto', icon: Sparkles },
     { id: 'companies', label: 'Companies', icon: Building2 },
     { id: 'people', label: 'People', icon: UserRound },
+    { id: 'auto', label: 'Both', icon: Layers },
   ];
 
   return (
@@ -142,14 +222,186 @@ function StatusPill({ status }) {
   );
 }
 
-function CompactSearchBar({
-  query,
-  setQuery,
-  uiMode,
-  setUiMode,
-  onSearch,
-  isSearching,
-}) {
+function ProviderRow({ provider }) {
+  const Icon = provider.icon;
+  const tierLabel =
+    provider.tier === 'optional'
+      ? 'Optional'
+      : provider.tier === 'required'
+      ? 'Required'
+      : 'Recommended';
+
+  const tierClass =
+    provider.tier === 'optional'
+      ? 'border-slate-200 bg-slate-50 text-slate-600'
+      : provider.tier === 'required'
+      ? 'border-rose-200 bg-rose-50 text-rose-700'
+      : 'border-amber-200 bg-amber-50 text-amber-700';
+
+  return (
+    <div className='flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3'>
+      <div className='flex min-w-0 items-center gap-3'>
+        <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100'>
+          <Icon className='h-4 w-4 text-slate-600' />
+        </div>
+        <div className='min-w-0'>
+          <div className='flex items-center gap-2'>
+            <span className='truncate text-sm font-semibold text-[#17233C]'>{provider.name}</span>
+            <span
+              className={[
+                'inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                tierClass,
+              ].join(' ')}
+            >
+              {tierLabel}
+            </span>
+          </div>
+          <div className='mt-0.5 truncate text-xs text-slate-500'>{provider.role}</div>
+        </div>
+      </div>
+
+      <span
+        className='inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600'
+        title='Status cannot be checked from the browser. Configure provider secrets in Supabase to enable this connector.'
+      >
+        <span className='h-1.5 w-1.5 rounded-full bg-slate-400' />
+        Setup required
+      </span>
+    </div>
+  );
+}
+
+function ProviderReadinessCard({ compact = false }) {
+  return (
+    <section className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'>
+      <header className='mb-4 flex items-start gap-3'>
+        <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-[#EEF3FF]'>
+          <PlugZap className='h-4 w-4 text-[#4C6FFF]' />
+        </div>
+        <div className='min-w-0'>
+          <h3 className='text-sm font-semibold text-[#17233C]'>Provider readiness</h3>
+          <p className='mt-1 text-xs leading-5 text-slate-500'>
+            Pulse routes searches across these providers. Status cannot be verified from the
+            browser — configure secrets in Supabase to enable each connector.
+          </p>
+        </div>
+      </header>
+
+      <div className={compact ? 'space-y-2' : 'grid gap-2 md:grid-cols-2'}>
+        {PROVIDERS.map((p) => (
+          <ProviderRow key={p.key} provider={p} />
+        ))}
+      </div>
+
+      <div className='mt-4 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600'>
+        <Info className='mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-slate-400' />
+        <span>
+          PhantomBuster runs only when you authorize it and is rate-limited per LinkedIn ToS. Pulse
+          does not perform aggressive scraping.
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function TutorialCard() {
+  return (
+    <section className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'>
+      <header className='mb-4 flex items-start gap-3'>
+        <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-[#EEF3FF]'>
+          <Zap className='h-4 w-4 text-[#4C6FFF]' />
+        </div>
+        <div className='min-w-0'>
+          <h3 className='text-sm font-semibold text-[#17233C]'>How Pulse works</h3>
+          <p className='mt-1 text-xs leading-5 text-slate-500'>
+            One prompt, four steps. From ICP description to a saved, enriched, campaign-ready list.
+          </p>
+        </div>
+      </header>
+
+      <ol className='space-y-3'>
+        {TUTORIAL_STEPS.map((step, idx) => {
+          const Icon = step.icon;
+          return (
+            <li key={step.title} className='flex gap-3'>
+              <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white'>
+                {idx + 1}
+              </div>
+              <div className='min-w-0 flex-1'>
+                <div className='flex items-center gap-2 text-sm font-semibold text-[#17233C]'>
+                  <Icon className='h-3.5 w-3.5 text-[#4C6FFF]' />
+                  {step.title}
+                </div>
+                <p className='mt-1 text-xs leading-5 text-slate-500'>{step.body}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+function ResultsSkeleton() {
+  return (
+    <div className='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm'>
+      <div className='border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500'>
+        Searching live business and contact data
+      </div>
+      <div className='divide-y divide-slate-100'>
+        {Array.from({ length: 5 }).map((_, idx) => (
+          <div key={idx} className='flex items-center gap-4 px-4 py-4'>
+            <Skeleton className='h-10 w-10 rounded-lg' />
+            <div className='flex-1 space-y-2'>
+              <Skeleton className='h-3.5 w-1/3' />
+              <Skeleton className='h-3 w-1/2' />
+            </div>
+            <Skeleton className='h-3 w-20' />
+            <Skeleton className='h-3 w-16' />
+            <Skeleton className='h-7 w-7 rounded-full' />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function isConfigurationError(message) {
+  if (!message) return false;
+  const lowered = String(message).toLowerCase();
+  return (
+    lowered.includes('not configured') ||
+    lowered.includes('disabled') ||
+    lowered.includes('api key')
+  );
+}
+
+function EmptySetupState({ message }) {
+  return (
+    <section className='rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm'>
+      <div className='flex items-start gap-3'>
+        <div className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white'>
+          <Settings className='h-5 w-5 text-amber-600' />
+        </div>
+        <div className='min-w-0'>
+          <h3 className='text-sm font-semibold text-amber-900'>Pulse provider setup required</h3>
+          <p className='mt-1 text-sm leading-6 text-amber-800'>
+            Pulse received a configuration error from the search backend. Connect at least one
+            search provider (Apollo or Explorium) and one enrichment provider (Lusha or Hunter) in
+            Supabase project secrets, then retry.
+          </p>
+          {message ? (
+            <pre className='mt-3 overflow-x-auto rounded-lg bg-white/70 p-3 font-mono text-[11px] text-amber-900'>
+              {message}
+            </pre>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CompactSearchBar({ query, setQuery, uiMode, setUiMode, onSearch, isSearching }) {
   const showTypewriter = !query.trim();
 
   return (
@@ -188,21 +440,14 @@ function CompactSearchBar({
   );
 }
 
-function DesktopHero({
-  query,
-  setQuery,
-  uiMode,
-  setUiMode,
-  onSearch,
-  isSearching,
-}) {
+function DesktopHero({ query, setQuery, uiMode, setUiMode, onSearch, isSearching }) {
   const showTypewriter = !query.trim();
 
   return (
     <section className='hidden rounded-[32px] border border-slate-200 bg-white px-8 py-12 shadow-sm md:block'>
       <div className='mx-auto max-w-4xl text-center'>
         <p className='text-xs font-semibold uppercase tracking-[0.18em] text-slate-400'>
-          Lead Intelligence
+          AI Lead Intelligence
         </p>
 
         <div className='mt-4'>
@@ -212,9 +457,8 @@ function DesktopHero({
         </div>
 
         <p className='mx-auto mt-4 max-w-3xl text-base leading-7 text-slate-600'>
-          Describe your ideal account or buyer in plain English. Pulse searches live business
-          and contact data, qualifies the best matches, and gets them ready for outreach inside
-          Logistics Intel.
+          Describe your ideal account or buyer in plain English. Pulse searches connected provider
+          data, qualifies the best matches, and gets them ready for outreach inside Logistics Intel.
         </p>
 
         <div className='mt-8 flex justify-center'>
@@ -238,7 +482,8 @@ function DesktopHero({
 
               <div className='mt-3 flex items-center justify-between gap-4 border-t border-slate-200 pt-4'>
                 <p className='text-sm text-slate-500'>
-                  Examples: find shippers in Georgia over $1B revenue • find VPs of sales at 3PLs in Atlanta
+                  Examples: SaaS in Atlanta hiring sales leaders • Shopify brands selling pet
+                  products • furniture importers in Georgia
                 </p>
 
                 <button
@@ -271,14 +516,7 @@ function DesktopHero({
   );
 }
 
-function MobileSearchOnly({
-  query,
-  setQuery,
-  uiMode,
-  setUiMode,
-  onSearch,
-  isSearching,
-}) {
+function MobileSearchOnly({ query, setQuery, uiMode, setUiMode, onSearch, isSearching }) {
   const showTypewriter = !query.trim();
 
   return (
@@ -361,7 +599,9 @@ function ContactDetailDrawer({ contact, open, onClose, onEnrich, isEnriching }) 
           <div>
             <div className='text-xs font-semibold uppercase tracking-[0.14em] text-slate-400'>Location</div>
             <div className='mt-1 text-sm text-slate-700'>
-              {[contact.company?.city, contact.company?.state, contact.company?.country].filter(Boolean).join(', ') || '—'}
+              {[contact.company?.city, contact.company?.state, contact.company?.country]
+                .filter(Boolean)
+                .join(', ') || '—'}
             </div>
           </div>
 
@@ -396,7 +636,12 @@ function ContactDetailDrawer({ contact, open, onClose, onEnrich, isEnriching }) 
           <button
             type='button'
             onClick={() => onEnrich(contact)}
-            disabled={isEnriching}
+            disabled={isEnriching || !contact.prospect_id}
+            title={
+              !contact.prospect_id
+                ? 'Enrichment requires a prospect_id from a provider search result.'
+                : ''
+            }
             className='inline-flex items-center gap-2 rounded-full bg-[#17233C] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1D2C4A] disabled:opacity-50'
           >
             {isEnriching ? <Sparkles className='h-4 w-4 animate-pulse' /> : <Mail className='h-4 w-4' />}
@@ -408,11 +653,18 @@ function ContactDetailDrawer({ contact, open, onClose, onEnrich, isEnriching }) 
   );
 }
 
-function CompanyResultsTable({ rows, selectedIds, onToggleSelect, onOpenSearch, onSaveCompany }) {
+function CompanyResultsTable({
+  rows,
+  selectedIds,
+  onToggleSelect,
+  onOpenSearch,
+  onSaveCompany,
+  onAddToCampaign,
+}) {
   return (
     <div className='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm'>
       <div className='overflow-x-auto'>
-        <table className='w-full min-w-[980px]'>
+        <table className='w-full min-w-[1080px]'>
           <thead className='border-b border-slate-200 bg-slate-50'>
             <tr className='text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500'>
               <th className='px-4 py-4'></th>
@@ -429,7 +681,7 @@ function CompanyResultsTable({ rows, selectedIds, onToggleSelect, onOpenSearch, 
 
           <tbody>
             {rows.map((company) => (
-              <tr key={company.id} className='border-b border-slate-100 last:border-b-0'>
+              <tr key={company.id} className='border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50'>
                 <td className='px-4 py-4 align-top'>
                   <Checkbox
                     checked={selectedIds.includes(company.id)}
@@ -444,9 +696,7 @@ function CompanyResultsTable({ rows, selectedIds, onToggleSelect, onOpenSearch, 
                     </div>
                     <div>
                       <div className='font-semibold text-[#17233C]'>{company.name}</div>
-                      <div className='text-sm text-slate-500'>
-                        {company.industry || '—'}
-                      </div>
+                      <div className='text-sm text-slate-500'>{company.industry || '—'}</div>
                     </div>
                   </div>
                 </td>
@@ -500,9 +750,18 @@ function CompanyResultsTable({ rows, selectedIds, onToggleSelect, onOpenSearch, 
                       type='button'
                       onClick={() => onSaveCompany(company)}
                       className='hover:text-[#4C6FFF]'
-                      title='Save Company'
+                      title='Save to Command Center'
                     >
                       <Bookmark className='h-4 w-4' />
+                    </button>
+
+                    <button
+                      type='button'
+                      onClick={() => onAddToCampaign(company)}
+                      className='hover:text-[#4C6FFF]'
+                      title='Save and add to Campaign'
+                    >
+                      <Target className='h-4 w-4' />
                     </button>
                   </div>
                 </td>
@@ -522,11 +781,12 @@ function PeopleResultsTable({
   onSaveContact,
   onOpenCompanySearch,
   onViewContact,
+  onAddToCampaign,
 }) {
   return (
     <div className='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm'>
       <div className='overflow-x-auto'>
-        <table className='w-full min-w-[1200px]'>
+        <table className='w-full min-w-[1280px]'>
           <thead className='border-b border-slate-200 bg-slate-50'>
             <tr className='text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500'>
               <th className='px-4 py-4'></th>
@@ -542,7 +802,7 @@ function PeopleResultsTable({
 
           <tbody>
             {rows.map((person) => (
-              <tr key={person.id} className='border-b border-slate-100 last:border-b-0'>
+              <tr key={person.id} className='border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50'>
                 <td className='px-4 py-4 align-top'>
                   <Checkbox
                     checked={selectedIds.includes(person.id)}
@@ -570,17 +830,13 @@ function PeopleResultsTable({
                   </button>
                 </td>
 
-                <td className='px-4 py-4 align-top text-sm text-slate-700'>
-                  {person.title || '—'}
-                </td>
+                <td className='px-4 py-4 align-top text-sm text-slate-700'>{person.title || '—'}</td>
 
                 <td className='px-4 py-4 align-top'>
                   <div className='font-medium text-[#17233C]'>
                     {person.company?.name || 'Unknown Company'}
                   </div>
-                  <div className='text-sm text-slate-500'>
-                    {person.company?.industry || '—'}
-                  </div>
+                  <div className='text-sm text-slate-500'>{person.company?.industry || '—'}</div>
                 </td>
 
                 <td className='px-4 py-4 align-top text-sm text-slate-700'>
@@ -595,7 +851,11 @@ function PeopleResultsTable({
                       <Mail className='h-3 w-3' />
                       {person.email}
                     </span>
-                  ) : '—'}
+                  ) : (
+                    <span className='inline-flex items-center gap-1 rounded-full border border-dashed border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-400'>
+                      Not enriched
+                    </span>
+                  )}
                 </td>
 
                 <td className='px-4 py-4 align-top text-sm text-slate-700'>
@@ -613,7 +873,7 @@ function PeopleResultsTable({
                       type='button'
                       onClick={() => onSaveContact(person)}
                       className='hover:text-[#4C6FFF]'
-                      title='Save Contact'
+                      title='Save to Command Center'
                     >
                       <Bookmark className='h-4 w-4' />
                     </button>
@@ -625,6 +885,15 @@ function PeopleResultsTable({
                       title='Open Company in Search'
                     >
                       <Eye className='h-4 w-4' />
+                    </button>
+
+                    <button
+                      type='button'
+                      onClick={() => onAddToCampaign(person)}
+                      className='hover:text-[#4C6FFF]'
+                      title='Save company and add to Campaign'
+                    >
+                      <Target className='h-4 w-4' />
                     </button>
                   </div>
                 </td>
@@ -638,8 +907,6 @@ function PeopleResultsTable({
 }
 
 export default function LeadProspecting() {
-  const { user } = useAuth();
-
   const [uiMode, setUiMode] = useState('auto');
   const [query, setQuery] = useState('');
   const [resultMode, setResultMode] = useState(null);
@@ -653,17 +920,23 @@ export default function LeadProspecting() {
   const [meta, setMeta] = useState(null);
   const [apiStatus, setApiStatus] = useState('unknown');
   const [activeContact, setActiveContact] = useState(null);
+  const [campaignTarget, setCampaignTarget] = useState(null);
 
   const isPeopleMode = resultMode === 'people';
   const isCompanyMode =
     resultMode === 'companies' || resultMode === 'hybrid_people_over_company';
 
+  const isSetupError = useMemo(
+    () => isConfigurationError(errorMessage),
+    [errorMessage],
+  );
+
   const statusPill = useMemo(() => {
     if (apiStatus === 'connected') {
       return (
         <span className='inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700'>
-          <span className='h-1.5 w-1.5 rounded-full bg-green-500' />
-          Live API
+          <CheckCircle2 className='h-3 w-3' />
+          Provider response received
         </span>
       );
     }
@@ -671,8 +944,8 @@ export default function LeadProspecting() {
     if (apiStatus === 'error') {
       return (
         <span className='inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700'>
-          <span className='h-1.5 w-1.5 rounded-full bg-rose-500' />
-          API Error
+          <AlertCircle className='h-3 w-3' />
+          Setup required
         </span>
       );
     }
@@ -695,7 +968,7 @@ export default function LeadProspecting() {
         ui_mode: uiMode,
       });
 
-      setApiStatus(response?.ok ? 'connected' : 'error');
+      setApiStatus(response?.ok && !response?.error ? 'connected' : 'error');
       setResults(Array.isArray(response?.data?.results) ? response.data.results : []);
       setResultMode(response?.mode || 'companies');
       setMeta(response?.meta || null);
@@ -707,7 +980,7 @@ export default function LeadProspecting() {
         setErrorMessage(
           response?.mode === 'people'
             ? 'No matching contacts were found. Try a broader title, different department, or wider company set.'
-            : 'No companies matched this search. Try widening geography, lowering thresholds, or simplifying the prompt.'
+            : 'No companies matched this search. Try widening geography, lowering thresholds, or simplifying the prompt.',
         );
       }
     } catch (error) {
@@ -725,7 +998,7 @@ export default function LeadProspecting() {
 
   function toggleSelected(id, checked) {
     setSelectedIds((prev) =>
-      checked ? Array.from(new Set([...prev, id])) : prev.filter((item) => item !== id)
+      checked ? Array.from(new Set([...prev, id])) : prev.filter((item) => item !== id),
     );
   }
 
@@ -770,7 +1043,7 @@ export default function LeadProspecting() {
 
   async function handleSaveContact(person) {
     try {
-      const companyRow = await upsertCompanyFromResult(person.company);
+      const companyRow = await upsertCompanyFromResult(person.company || {});
 
       const { error } = await supabase
         .from('lit_contacts')
@@ -793,8 +1066,44 @@ export default function LeadProspecting() {
     }
   }
 
+  async function handleAddToCampaign(row) {
+    setErrorMessage('');
+    try {
+      const companyLike = row?.type === 'person' ? row.company || {} : row;
+      const saved = await upsertCompanyFromResult(companyLike);
+      if (!saved?.id) throw new Error('Failed to save company before campaign assignment.');
+
+      if (row?.type === 'person') {
+        // Persist the contact too so Command Center has a contact row alongside the company.
+        try {
+          await supabase.from('lit_contacts').insert({
+            company_id: saved.id,
+            full_name: row.full_name || null,
+            title: row.title || null,
+            dept: row.department || null,
+            email: row.email || null,
+            phone: row.phone || null,
+            linkedin: row.linkedin_url || null,
+            source: 'pulse',
+            verified: Boolean(row.email || row.phone),
+          });
+        } catch (contactErr) {
+          console.warn('[Pulse] save contact (during add-to-campaign) failed:', contactErr);
+        }
+      }
+
+      setCampaignTarget({ company_id: saved.id, name: saved.name });
+    } catch (error) {
+      console.error('[Pulse] add to campaign failed:', error);
+      setErrorMessage(error?.message || 'Failed to prepare row for campaign.');
+    }
+  }
+
   async function enrichContact(contact) {
-    if (!contact?.prospect_id) return;
+    if (!contact?.prospect_id) {
+      setErrorMessage('This contact does not have a prospect_id and cannot be enriched.');
+      return;
+    }
 
     setIsEnriching(true);
     setErrorMessage('');
@@ -820,9 +1129,7 @@ export default function LeadProspecting() {
       };
 
       setActiveContact(updated);
-      setResults((prev) =>
-        prev.map((item) => (item.id === contact.id ? updated : item))
-      );
+      setResults((prev) => prev.map((item) => (item.id === contact.id ? updated : item)));
     } catch (error) {
       console.error('[Pulse] enrich contact failed:', error);
       setErrorMessage(error?.message || 'Failed to enrich contact.');
@@ -886,6 +1193,11 @@ export default function LeadProspecting() {
             onSearch={handleSearch}
             isSearching={isSearching}
           />
+
+          <section className='grid gap-4 lg:grid-cols-2'>
+            <TutorialCard />
+            <ProviderReadinessCard />
+          </section>
         </>
       )}
 
@@ -902,7 +1214,7 @@ export default function LeadProspecting() {
 
       {statusPill ? <div className='flex justify-end'>{statusPill}</div> : null}
 
-      {errorMessage ? (
+      {errorMessage && !isSetupError ? (
         <div className='flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700'>
           <AlertCircle className='mt-0.5 h-5 w-5 flex-shrink-0' />
           <div>{errorMessage}</div>
@@ -910,11 +1222,11 @@ export default function LeadProspecting() {
       ) : null}
 
       {isSearching ? (
-        <div className='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm'>
-          <div className='p-8 text-center text-slate-500'>
-            <Sparkles className='mx-auto h-6 w-6 animate-pulse text-[#4C6FFF]' />
-            <div className='mt-3 text-sm font-medium'>Searching live business and contact data...</div>
-          </div>
+        <ResultsSkeleton />
+      ) : searchPerformed && isSetupError ? (
+        <div className='space-y-4'>
+          <EmptySetupState message={errorMessage} />
+          <ProviderReadinessCard />
         </div>
       ) : searchPerformed ? (
         <section className='space-y-4'>
@@ -927,6 +1239,7 @@ export default function LeadProspecting() {
                 Mode: {resultMode || 'unknown'}
                 {meta?.requestedLimit ? ` • Limit ${meta.requestedLimit}` : ''}
                 {meta?.matchedCompanyName ? ` • Match ${meta.matchedCompanyName}` : ''}
+                {meta?.provider ? ` • Provider ${meta.provider}` : ''}
               </div>
             </div>
 
@@ -936,8 +1249,8 @@ export default function LeadProspecting() {
               disabled={!selectedIds.length || isImporting}
               className='inline-flex items-center gap-2 rounded-full bg-[#17233C] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1D2C4A] disabled:cursor-not-allowed disabled:opacity-50'
             >
-              {isImporting ? <Sparkles className='h-4 w-4 animate-pulse' /> : <Download className='h-4 w-4' />}
-              Import Selected
+              {isImporting ? <Sparkles className='h-4 w-4 animate-pulse' /> : <Bookmark className='h-4 w-4' />}
+              Save Selected to Command Center
             </button>
           </div>
 
@@ -949,6 +1262,7 @@ export default function LeadProspecting() {
               onSaveContact={handleSaveContact}
               onOpenCompanySearch={openInSearch}
               onViewContact={setActiveContact}
+              onAddToCampaign={handleAddToCampaign}
             />
           ) : isCompanyMode ? (
             <CompanyResultsTable
@@ -957,6 +1271,7 @@ export default function LeadProspecting() {
               onToggleSelect={toggleSelected}
               onOpenSearch={openInSearch}
               onSaveCompany={handleSaveCompany}
+              onAddToCampaign={handleAddToCampaign}
             />
           ) : (
             <div className='rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm'>
@@ -972,6 +1287,12 @@ export default function LeadProspecting() {
         onClose={() => setActiveContact(null)}
         onEnrich={enrichContact}
         isEnriching={isEnriching}
+      />
+
+      <AddToCampaignModal
+        open={Boolean(campaignTarget)}
+        onClose={() => setCampaignTarget(null)}
+        company={campaignTarget || { name: '' }}
       />
     </div>
   );
