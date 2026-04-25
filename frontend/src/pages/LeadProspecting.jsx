@@ -10,13 +10,15 @@ import {
   Globe,
   Info,
   Layers,
-  Linkedin,
   Mail,
+  Network,
   Phone,
   PlugZap,
+  Radar,
   Search,
   Send,
   Settings,
+  Ship,
   Sparkles,
   Target,
   UserRound,
@@ -44,34 +46,34 @@ const PROVIDERS = [
     name: 'Apollo',
     role: 'Broad company & contact search',
     icon: Search,
-    tier: 'recommended',
+    tier: 'configured',
   },
   {
     key: 'tavily',
     name: 'Tavily',
     role: 'Web research & company context',
     icon: Globe,
-    tier: 'recommended',
-  },
-  {
-    key: 'lusha',
-    name: 'Lusha',
-    role: 'Contact enrichment (email + phone)',
-    icon: UserRound,
-    tier: 'recommended',
+    tier: 'configured',
   },
   {
     key: 'hunter',
     name: 'Hunter',
     role: 'Email discovery & verification',
     icon: Mail,
-    tier: 'recommended',
+    tier: 'configured',
+  },
+  {
+    key: 'lusha',
+    name: 'Lusha',
+    role: 'Contact enrichment (email + phone)',
+    icon: UserRound,
+    tier: 'optional',
   },
   {
     key: 'phantombuster',
     name: 'PhantomBuster',
     role: 'User-authorized LinkedIn workflows (rate-limited)',
-    icon: Linkedin,
+    icon: Network,
     tier: 'optional',
   },
   {
@@ -79,7 +81,7 @@ const PROVIDERS = [
     name: 'Explorium',
     role: 'Firmographic + prospect API',
     icon: Layers,
-    tier: 'optional',
+    tier: 'paused',
   },
 ];
 
@@ -91,13 +93,13 @@ const TUTORIAL_STEPS = [
   },
   {
     icon: Search,
-    title: 'Provider search',
-    body: 'Pulse queries connected providers (Apollo, Explorium, Tavily) for matching companies and people.',
+    title: 'Apollo + Tavily search',
+    body: 'Pulse queries Apollo for companies and people, and Tavily for web research and company context.',
   },
   {
     icon: Sparkles,
-    title: 'Enrich on demand',
-    body: 'Resolve emails and phones with Hunter and Lusha when you click Enrich. No bulk credit burn.',
+    title: 'Verify and enrich',
+    body: 'Resolve and verify emails with Hunter (and Lusha when configured) only on the rows you act on. No bulk credit burn.',
   },
   {
     icon: Send,
@@ -172,34 +174,68 @@ function TypewriterPlaceholder({ active }) {
 
 function ModeToggle({ value, onChange }) {
   const items = [
-    { id: 'companies', label: 'Companies', icon: Building2 },
-    { id: 'people', label: 'People', icon: UserRound },
-    { id: 'auto', label: 'Both', icon: Layers },
+    { id: 'companies', label: 'Companies', icon: Building2, disabled: false },
+    { id: 'people', label: 'People', icon: UserRound, disabled: false },
+    { id: 'auto', label: 'Both', icon: Layers, disabled: false },
+    {
+      id: 'web',
+      label: 'Web signals',
+      icon: Radar,
+      disabled: true,
+      hint: 'Tavily web signals routing ships in the next Pulse phase.',
+    },
   ];
 
   return (
-    <div className='inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm'>
+    <div className='inline-flex flex-wrap gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm'>
       {items.map((item) => {
         const Icon = item.icon;
         const active = value === item.id;
+        const disabled = Boolean(item.disabled);
+
+        const stateClass = disabled
+          ? 'cursor-not-allowed text-slate-400'
+          : active
+          ? 'bg-[#4C6FFF] text-white shadow-sm'
+          : 'text-slate-600 hover:bg-[#EEF3FF] hover:text-[#17233C]';
 
         return (
           <button
             key={item.id}
             type='button'
-            onClick={() => onChange(item.id)}
+            onClick={() => (disabled ? undefined : onChange(item.id))}
+            disabled={disabled}
+            title={item.hint || ''}
             className={[
               'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-all',
-              active
-                ? 'bg-[#4C6FFF] text-white shadow-sm'
-                : 'text-slate-600 hover:bg-[#EEF3FF] hover:text-[#17233C]',
+              stateClass,
             ].join(' ')}
           >
             <Icon className='h-4 w-4' />
             {item.label}
+            {disabled ? (
+              <span className='ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500'>
+                Soon
+              </span>
+            ) : null}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function FreightOverlaySwitch() {
+  return (
+    <div
+      className='inline-flex items-center gap-2 rounded-full border border-dashed border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-500'
+      title='ImportYeti and LIT shipment overlay ships in the next Pulse phase.'
+    >
+      <Ship className='h-3.5 w-3.5 text-slate-400' />
+      <span>Freight / import overlay</span>
+      <span className='rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500'>
+        Soon
+      </span>
     </div>
   );
 }
@@ -222,27 +258,54 @@ function StatusPill({ status }) {
   );
 }
 
+const TIER_PRESENTATION = {
+  configured: {
+    badge: 'Configured',
+    badgeClass: 'border-blue-200 bg-blue-50 text-blue-700',
+    statusLabel: 'Verified at search time',
+    statusClass: 'border-blue-200 bg-blue-50 text-blue-700',
+    dotClass: 'bg-[#4C6FFF]',
+    iconWrapClass: 'bg-[#EEF3FF]',
+    iconClass: 'text-[#4C6FFF]',
+    title:
+      'Frontend cannot read backend secrets. The function reports an error if a key is missing when a search runs.',
+  },
+  optional: {
+    badge: 'Optional',
+    badgeClass: 'border-slate-200 bg-slate-50 text-slate-600',
+    statusLabel: 'Connect later',
+    statusClass: 'border-slate-200 bg-slate-50 text-slate-600',
+    dotClass: 'bg-slate-400',
+    iconWrapClass: 'bg-slate-100',
+    iconClass: 'text-slate-600',
+    title: 'Optional provider. Pulse works without it; add the key later to enable this surface.',
+  },
+  paused: {
+    badge: 'Paused',
+    badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
+    statusLabel: 'Paused',
+    statusClass: 'border-amber-200 bg-amber-50 text-amber-700',
+    dotClass: 'bg-amber-500',
+    iconWrapClass: 'bg-amber-50',
+    iconClass: 'text-amber-700',
+    title: 'Currently paused. Pulse will not call this provider in this phase.',
+  },
+};
+
 function ProviderRow({ provider }) {
   const Icon = provider.icon;
-  const tierLabel =
-    provider.tier === 'optional'
-      ? 'Optional'
-      : provider.tier === 'required'
-      ? 'Required'
-      : 'Recommended';
-
-  const tierClass =
-    provider.tier === 'optional'
-      ? 'border-slate-200 bg-slate-50 text-slate-600'
-      : provider.tier === 'required'
-      ? 'border-rose-200 bg-rose-50 text-rose-700'
-      : 'border-amber-200 bg-amber-50 text-amber-700';
+  const presentation = TIER_PRESENTATION[provider.tier] || TIER_PRESENTATION.optional;
 
   return (
     <div className='flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3'>
       <div className='flex min-w-0 items-center gap-3'>
-        <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100'>
-          <Icon className='h-4 w-4 text-slate-600' />
+        <div
+          className={[
+            'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg',
+            presentation.iconWrapClass,
+          ].join(' ')}
+        >
+          <Icon className={['h-4 w-4', presentation.iconClass].join(' ')} />
         </div>
         <div className='min-w-0'>
           <div className='flex items-center gap-2'>
@@ -250,10 +313,10 @@ function ProviderRow({ provider }) {
             <span
               className={[
                 'inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]',
-                tierClass,
+                presentation.badgeClass,
               ].join(' ')}
             >
-              {tierLabel}
+              {presentation.badge}
             </span>
           </div>
           <div className='mt-0.5 truncate text-xs text-slate-500'>{provider.role}</div>
@@ -261,11 +324,14 @@ function ProviderRow({ provider }) {
       </div>
 
       <span
-        className='inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600'
-        title='Status cannot be checked from the browser. Configure provider secrets in Supabase to enable this connector.'
+        className={[
+          'inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold',
+          presentation.statusClass,
+        ].join(' ')}
+        title={presentation.title}
       >
-        <span className='h-1.5 w-1.5 rounded-full bg-slate-400' />
-        Setup required
+        <span className={['h-1.5 w-1.5 rounded-full', presentation.dotClass].join(' ')} />
+        {presentation.statusLabel}
       </span>
     </div>
   );
@@ -281,8 +347,8 @@ function ProviderReadinessCard({ compact = false }) {
         <div className='min-w-0'>
           <h3 className='text-sm font-semibold text-[#17233C]'>Provider readiness</h3>
           <p className='mt-1 text-xs leading-5 text-slate-500'>
-            Pulse routes searches across these providers. Status cannot be verified from the
-            browser — configure secrets in Supabase to enable each connector.
+            Setup status is checked server-side when a search runs — the browser cannot read backend
+            secrets. If a key is missing the search response will surface the exact provider error.
           </p>
         </div>
       </header>
@@ -296,8 +362,8 @@ function ProviderReadinessCard({ compact = false }) {
       <div className='mt-4 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600'>
         <Info className='mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-slate-400' />
         <span>
-          PhantomBuster runs only when you authorize it and is rate-limited per LinkedIn ToS. Pulse
-          does not perform aggressive scraping.
+          PhantomBuster, when added, runs only on user authorization and is rate-limited per
+          LinkedIn ToS. Pulse does not perform aggressive scraping.
         </span>
       </div>
     </section>
@@ -386,9 +452,11 @@ function EmptySetupState({ message }) {
         <div className='min-w-0'>
           <h3 className='text-sm font-semibold text-amber-900'>Pulse provider setup required</h3>
           <p className='mt-1 text-sm leading-6 text-amber-800'>
-            Pulse received a configuration error from the search backend. Connect at least one
-            search provider (Apollo or Explorium) and one enrichment provider (Lusha or Hunter) in
-            Supabase project secrets, then retry.
+            The search backend reported a configuration error. Confirm that
+            <span className='mx-1 font-mono text-[12px]'>APOLLO_API_KEY</span>,
+            <span className='mx-1 font-mono text-[12px]'>TAVILY_API_KEY</span>, and
+            <span className='mx-1 font-mono text-[12px]'>HUNTER_API_KEY</span> are set in your
+            Supabase project secrets, redeploy the searchLeads function if needed, then retry.
           </p>
           {message ? (
             <pre className='mt-3 overflow-x-auto rounded-lg bg-white/70 p-3 font-mono text-[11px] text-amber-900'>
@@ -411,8 +479,9 @@ function CompactSearchBar({ query, setQuery, uiMode, setUiMode, onSearch, isSear
           <PulseLogo className='mt-1 h-10 w-10 p-2' />
 
           <div className='min-w-0 flex-1'>
-            <div className='mb-2'>
+            <div className='mb-2 flex flex-wrap items-center gap-2'>
               <ModeToggle value={uiMode} onChange={setUiMode} />
+              <FreightOverlaySwitch />
             </div>
 
             <div className='relative'>
@@ -447,22 +516,24 @@ function DesktopHero({ query, setQuery, uiMode, setUiMode, onSearch, isSearching
     <section className='hidden rounded-[32px] border border-slate-200 bg-white px-8 py-12 shadow-sm md:block'>
       <div className='mx-auto max-w-4xl text-center'>
         <p className='text-xs font-semibold uppercase tracking-[0.18em] text-slate-400'>
-          AI Lead Intelligence
+          Pulse · AI Prospecting Workspace
         </p>
 
         <div className='mt-4'>
           <h1 className='text-5xl font-semibold leading-tight tracking-[-0.04em] text-[#17233C]'>
-            Find the right companies and the right contacts in one search.
+            One prompt. Companies, people, and web signals — ready to enrich.
           </h1>
         </div>
 
         <p className='mx-auto mt-4 max-w-3xl text-base leading-7 text-slate-600'>
-          Describe your ideal account or buyer in plain English. Pulse searches connected provider
-          data, qualifies the best matches, and gets them ready for outreach inside Logistics Intel.
+          Describe your ideal account or buyer in plain English. Pulse searches across companies,
+          people, web signals, and — when configured — freight and import intelligence, then gets
+          the best matches ready for outreach inside Logistics Intel.
         </p>
 
-        <div className='mt-8 flex justify-center'>
+        <div className='mt-8 flex flex-col items-center gap-3'>
           <ModeToggle value={uiMode} onChange={setUiMode} />
+          <FreightOverlaySwitch />
         </div>
 
         <div className='mx-auto mt-8 max-w-4xl rounded-[28px] border border-slate-200 bg-[#FAFBFF] p-5 shadow-sm'>
@@ -529,8 +600,9 @@ function MobileSearchOnly({ query, setQuery, uiMode, setUiMode, onSearch, isSear
         </div>
       </div>
 
-      <div className='mb-3'>
+      <div className='mb-3 flex flex-col gap-2'>
         <ModeToggle value={uiMode} onChange={setUiMode} />
+        <FreightOverlaySwitch />
       </div>
 
       <div className='relative rounded-2xl border border-slate-200 bg-[#FAFBFF] p-4'>
