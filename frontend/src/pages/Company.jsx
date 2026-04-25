@@ -172,20 +172,27 @@ function buildShellCompany(companyId, stored) {
 
 function HeroKpiCard({ icon: Icon, label, value, tone = "default" }) {
   const toneMap = {
-    default: "text-slate-300",
-    emerald: "text-emerald-300",
-    cyan: "text-cyan-300",
-    violet: "text-violet-300",
-    amber: "text-amber-300",
+    default: { text: "text-slate-500", ring: "ring-slate-200", bg: "bg-slate-50" },
+    emerald: { text: "text-emerald-600", ring: "ring-emerald-100", bg: "bg-emerald-50" },
+    cyan: { text: "text-cyan-600", ring: "ring-cyan-100", bg: "bg-cyan-50" },
+    violet: { text: "text-violet-600", ring: "ring-violet-100", bg: "bg-violet-50" },
+    amber: { text: "text-amber-600", ring: "ring-amber-100", bg: "bg-amber-50" },
   };
+  const t = toneMap[tone] || toneMap.default;
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-      <div className="flex items-center gap-2" style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif" }}>
-        <Icon className={`h-3.5 w-3.5 ${toneMap[tone] || toneMap.default}`} />
-        {label}
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${t.bg} ${t.ring}`}>
+        <Icon className={`h-4 w-4 ${t.text}`} />
       </div>
-      <div className="mt-2" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>{value}</div>
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          {label}
+        </div>
+        <div className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-950" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+          {value}
+        </div>
+      </div>
     </div>
   );
 }
@@ -414,56 +421,67 @@ export default function Company() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200 p-5 text-white shadow-xl md:p-7 xl:p-8" style={{ background: 'linear-gradient(160deg,#132344 0%,#0F1D38 100%)' }}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(0,240,255,0.08),transparent_28%)]" />
-
+      <section
+        className="relative overflow-hidden rounded-[28px] border border-slate-200 p-5 shadow-sm md:p-7 xl:p-8"
+        style={{
+          background:
+            "radial-gradient(circle at 0% 0%, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0) 42%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 60%, #EEF2FF 100%)",
+        }}
+      >
         <div className="relative flex flex-col gap-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 items-start gap-4">
               <CompanyAvatar
-  name={companyName}
-  logoUrl={
-    getCompanyLogoUrl(
-      companyDomain ||
-        companyWebsite ||
-        activeProfile?.domain ||
-        activeProfile?.website ||
-        shellCompany?.domain ||
-        shellCompany?.website ||
-        undefined
-    ) || undefined
-  }
-  size="lg"
-  className="shrink-0"
-/>
+                name={companyName}
+                logoUrl={
+                  getCompanyLogoUrl(
+                    companyDomain ||
+                      companyWebsite ||
+                      activeProfile?.domain ||
+                      activeProfile?.website ||
+                      shellCompany?.domain ||
+                      shellCompany?.website ||
+                      undefined
+                  ) || undefined
+                }
+                size="lg"
+                className="shrink-0"
+              />
 
               <div className="min-w-0">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-200">
+                <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
                   <Building2 className="h-3.5 w-3.5" />
                   Company Intelligence
                 </div>
 
-                <h1 className="mt-4 truncate text-2xl md:text-4xl" style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: '#fff', letterSpacing: '-0.025em' }}>
+                <h1
+                  className="mt-4 truncate text-2xl text-slate-950 md:text-4xl"
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontWeight: 700,
+                    letterSpacing: "-0.025em",
+                  }}
+                >
                   {companyName}
                 </h1>
 
-                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-300">
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
                   {companyAddress ? (
                     <span className="inline-flex items-center gap-1.5">
-                      <MapPin className="h-4 w-4" />
+                      <MapPin className="h-4 w-4 text-slate-400" />
                       {companyAddress}
                     </span>
                   ) : null}
 
                   {companyDomain ? (
                     <span className="inline-flex items-center gap-1.5">
-                      <Globe className="h-4 w-4" />
+                      <Globe className="h-4 w-4 text-slate-400" />
                       {companyDomain}
                     </span>
                   ) : null}
 
                   {companyCountryCode ? (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-200">
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
                       {companyCountryCode}
                     </span>
                   ) : null}
@@ -475,22 +493,22 @@ export default function Company() {
               <button
                 type="button"
                 onClick={() => navigate("/app/command-center")}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back to Command Center
               </button>
 
               {years.length > 0 ? (
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <CalendarClock className="h-4 w-4 text-slate-300" />
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
+                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <CalendarClock className="h-4 w-4 text-slate-500" />
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                     Year
                   </label>
                   <select
                     value={selectedYear}
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="bg-transparent text-sm font-medium text-white outline-none"
+                    className="bg-transparent text-sm font-medium text-slate-900 outline-none"
                   >
                     {years.map((year) => (
                       <option key={year} value={year} className="text-slate-900">
@@ -500,7 +518,7 @@ export default function Company() {
                   </select>
                 </div>
               ) : loading ? (
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 shadow-sm">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading
                 </div>
@@ -536,27 +554,39 @@ export default function Company() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif" }}>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div
+                className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
                 Top route
               </div>
-              <div className="mt-2 truncate" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#fff' }}>
+              <div
+                className="mt-1.5 truncate text-sm font-semibold text-slate-900"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
                 {headerKpis.topRoute || (loading ? "Loading…" : "—")}
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#94a3b8', fontFamily: "'Space Grotesk', sans-serif" }}>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div
+                className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
                 Recent route
               </div>
-              <div className="mt-2 truncate" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#fff' }}>
+              <div
+                className="mt-1.5 truncate text-sm font-semibold text-slate-900"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
                 {headerKpis.recentRoute || (loading ? "Loading…" : "—")}
               </div>
             </div>
           </div>
 
           {loading ? (
-            <div className="rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 backdrop-blur-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading company intelligence…
