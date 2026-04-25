@@ -5,11 +5,16 @@ const corsHeaders = {
     'Content-Type, Authorization, X-Client-Info, apikey',
 };
 
+const APOLLO_API_BASE_DEFAULT = 'https://api.apollo.io';
 const MIN_QUERY_LENGTH = 3;
 const MAX_QUERY_LENGTH = 500;
 const ALLOWED_UI_MODES = ['auto', 'companies', 'people'];
+const RESULT_MODES = ['companies', 'people', 'hybrid_people_over_company'];
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 100;
+const PROVIDER_NAME = 'apollo';
+const APOLLO_LOCKED_EMAIL_MARKER = 'email_not_unlocked@';
 
-// Types
 interface SearchRequest {
   query?: string;
   ui_mode?: string;
@@ -22,25 +27,25 @@ interface EnrichRequest {
   prospect_id?: string;
 }
 
+interface SearchMeta {
+  total: number;
+  page: number;
+  pageSize: number;
+  requestedLimit: number | null;
+  estimatedMarketSize: number | null;
+  provider: string;
+  partial: boolean;
+  warnings: string[];
+  classificationReasons: string[];
+  matchedCompanyName: string | null;
+}
+
 interface SearchResponse {
   ok: boolean;
   mode?: string;
   query?: string;
-  meta?: {
-    total: number;
-    page: number;
-    pageSize: number;
-    requestedLimit: number | null;
-    estimatedMarketSize: number | null;
-    provider: string;
-    partial: boolean;
-    warnings: string[];
-    classificationReasons: string[];
-    matchedCompanyName: string | null;
-  };
-  data?: {
-    results: unknown[];
-  };
+  meta?: SearchMeta;
+  data?: { results: unknown[] };
   error?: string;
 }
 
@@ -58,34 +63,34 @@ interface EnrichResponse {
 
 interface ProviderConfig {
   apiKey: string;
-  searchUrl: string;
-  enrichUrl: string;
+  apiBase: string;
 }
 
-// Helpers
 function generateRequestId(): string {
   return `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 }
 
 function getProviderConfig(): { config: ProviderConfig | null; error: string | null } {
-  const apiKey = Deno.env.get('EXPLORIUM_API_KEY');
-  const searchUrl = Deno.env.get('EXPLORIUM_SEARCH_URL');
-  const enrichUrl = Deno.env.get('EXPLORIUM_ENRICH_URL');
-
+  const apiKey = Deno.env.get('APOLLO_API_KEY');
   if (!apiKey) {
-    return { config: null, error: 'EXPLORIUM_API_KEY not configured' };
+    return { config: null, error: 'APOLLO_API_KEY not configured' };
   }
-  if (!searchUrl) {
-    return { config: null, error: 'EXPLORIUM_SEARCH_URL not configured' };
-  }
-  if (!enrichUrl) {
-    return { config: null, error: 'EXPLORIUM_ENRICH_URL not configured' };
-  }
+  const apiBase = (Deno.env.get('APOLLO_API_BASE') || APOLLO_API_BASE_DEFAULT).replace(/\/$/, '');
+  return { config: { apiKey, apiBase }, error: null };
+}
 
-  return {
-    config: { apiKey, searchUrl, enrichUrl },
-    error: null,
-  };
+function clampPageSize(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_PAGE_SIZE;
+  const rounded = Math.floor(value);
+  if (rounded < 1) return DEFAULT_PAGE_SIZE;
+  if (rounded > MAX_PAGE_SIZE) return MAX_PAGE_SIZE;
+  return rounded;
+}
+
+function clampPage(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  const rounded = Math.floor(value);
+  return rounded < 1 ? 1 : rounded;
 }
 
 function validateSearchInput(body: SearchRequest): { valid: boolean; error: string | null } {
@@ -95,232 +100,236 @@ function validateSearchInput(body: SearchRequest): { valid: boolean; error: stri
   if (!query || typeof query !== 'string') {
     return { valid: false, error: 'query is required and must be a string' };
   }
-
   if (query.trim().length < MIN_QUERY_LENGTH) {
-    return {
-      valid: false,
-      error: `query must be at least ${MIN_QUERY_LENGTH} characters`,
-    };
+    return { valid: false, error: `query must be at least ${MIN_QUERY_LENGTH} characters` };
   }
-
   if (query.length > MAX_QUERY_LENGTH) {
-    return {
-      valid: false,
-      error: `query must not exceed ${MAX_QUERY_LENGTH} characters`,
-    };
+    return { valid: false, error: `query must not exceed ${MAX_QUERY_LENGTH} characters` };
   }
-
   if (!ALLOWED_UI_MODES.includes(ui_mode)) {
-    return {
-      valid: false,
-      error: `ui_mode must be one of: ${ALLOWED_UI_MODES.join(', ')}`,
-    };
+    return { valid: false, error: `ui_mode must be one of: ${ALLOWED_UI_MODES.join(', ')}` };
   }
-
   return { valid: true, error: null };
 }
 
 function validateEnrichInput(body: EnrichRequest): { valid: boolean; error: string | null } {
   const prospectId = body?.prospect_id;
-
   if (!prospectId || typeof prospectId !== 'string') {
     return { valid: false, error: 'prospect_id is required and must be a string' };
   }
-
   return { valid: true, error: null };
 }
 
-async function callExploriumSearch(
+async function callApolloMixedCompanies(
   config: ProviderConfig,
   query: string,
-  mode: string,
+  page: number,
+  pageSize: number,
   requestId: string,
-): Promise<{ data: unknown | null; error: string | null }> {
+): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
+  const url = `${config.apiBase}/api/v1/mixed_companies/search`;
   try {
-    const response = await fetch(config.searchUrl, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
+        'Cache-Control': 'no-cache',
         'Content-Type': 'application/json',
+        'X-Api-Key': config.apiKey,
         'X-Request-ID': requestId,
       },
       body: JSON.stringify({
-        query,
-        mode,
+        q_organization_name: query,
+        page,
+        per_page: pageSize,
       }),
     });
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(
-        `[${requestId}] Explorium search failed:`,
-        response.status,
-        text,
-      );
-      return {
-        data: null,
-        error: `Explorium API returned ${response.status}`,
-      };
+      console.error(`[${requestId}] Apollo mixed_companies failed:`, response.status, text);
+      return { data: null, error: `Apollo API returned ${response.status}` };
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, unknown>;
     return { data, error: null };
   } catch (err) {
-    console.error(`[${requestId}] Explorium search error:`, err);
-    return {
-      data: null,
-      error: `Failed to call Explorium: ${String(err)}`,
-    };
+    console.error(`[${requestId}] Apollo mixed_companies error:`, err);
+    return { data: null, error: `Failed to call Apollo: ${String(err)}` };
   }
 }
 
-async function callExploriumEnrich(
+async function callApolloMixedPeople(
   config: ProviderConfig,
-  prospectId: string,
+  query: string,
+  page: number,
+  pageSize: number,
   requestId: string,
-): Promise<{ data: unknown | null; error: string | null }> {
+): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
+  const url = `${config.apiBase}/api/v1/mixed_people/search`;
   try {
-    const response = await fetch(config.enrichUrl, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
+        'Cache-Control': 'no-cache',
         'Content-Type': 'application/json',
+        'X-Api-Key': config.apiKey,
         'X-Request-ID': requestId,
       },
       body: JSON.stringify({
-        prospect_id: prospectId,
+        q_keywords: query,
+        page,
+        per_page: pageSize,
       }),
     });
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(
-        `[${requestId}] Explorium enrich failed:`,
-        response.status,
-        text,
-      );
-      return {
-        data: null,
-        error: `Explorium API returned ${response.status}`,
-      };
+      console.error(`[${requestId}] Apollo mixed_people failed:`, response.status, text);
+      return { data: null, error: `Apollo API returned ${response.status}` };
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, unknown>;
     return { data, error: null };
   } catch (err) {
-    console.error(`[${requestId}] Explorium enrich error:`, err);
-    return {
-      data: null,
-      error: `Failed to call Explorium: ${String(err)}`,
-    };
+    console.error(`[${requestId}] Apollo mixed_people error:`, err);
+    return { data: null, error: `Failed to call Apollo: ${String(err)}` };
   }
 }
 
-const RESULT_MODES = ['companies', 'people', 'hybrid_people_over_company'];
-
-function resolveResultMode(upstreamMode: unknown, uiMode: string): string {
-  if (typeof upstreamMode === 'string' && RESULT_MODES.includes(upstreamMode)) {
-    return upstreamMode;
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
   }
-  if (uiMode === 'people') return 'people';
-  return 'companies';
+  return null;
 }
 
-function mapSearchResults(
-  upstreamData: unknown,
-  query: string,
-  uiMode: string,
-): SearchResponse {
-  // If upstream data is null or not an object, return empty results
-  if (!upstreamData || typeof upstreamData !== 'object') {
-    return {
-      ok: true,
-      mode: resolveResultMode(undefined, uiMode),
-      query,
-      meta: {
-        total: 0,
-        page: 1,
-        pageSize: 0,
-        requestedLimit: null,
-        estimatedMarketSize: null,
-        provider: 'explorium',
-        partial: false,
-        warnings: [],
-        classificationReasons: [],
-        matchedCompanyName: null,
-      },
-      data: {
-        results: [],
-      },
-    };
-  }
+function asString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
 
-  const upstream = upstreamData as Record<string, unknown>;
-  const warnings = Array.isArray(upstream.warnings)
-    ? upstream.warnings.filter((w): w is string => typeof w === 'string')
-    : [];
-  const classificationReasons = Array.isArray(upstream.classificationReasons)
-    ? upstream.classificationReasons.filter((r): r is string => typeof r === 'string')
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function unlockedEmail(value: unknown): string | null {
+  const email = asString(value);
+  if (!email) return null;
+  if (email.startsWith(APOLLO_LOCKED_EMAIL_MARKER)) return null;
+  return email;
+}
+
+function mapApolloCompany(orgRaw: unknown): Record<string, unknown> {
+  const org = asRecord(orgRaw) || {};
+  return {
+    id: asString(org.id),
+    business_id: asString(org.id),
+    name: asString(org.name),
+    domain: asString(org.primary_domain) || asString(org.website_url),
+    website: asString(org.website_url),
+    linkedin_url: asString(org.linkedin_url),
+    city: asString(org.city),
+    state: asString(org.state),
+    country: asString(org.country),
+    industry: asString(org.industry),
+    employee_count: asNumber(org.estimated_num_employees),
+    annual_revenue: asNumber(org.annual_revenue),
+    summary: asString(org.short_description),
+    status: 'Prospect',
+    contacts_count: 0,
+    contacts: [],
+  };
+}
+
+function mapApolloPerson(personRaw: unknown): Record<string, unknown> {
+  const person = asRecord(personRaw) || {};
+  const orgRaw = person.organization;
+  const org = asRecord(orgRaw) || {};
+  const departments = Array.isArray(person.departments)
+    ? (person.departments.filter((d) => typeof d === 'string') as string[])
     : [];
 
   return {
-    ok: true,
-    mode: resolveResultMode(upstream.mode, uiMode),
-    query,
-    meta: {
-      total: typeof upstream.total === 'number' ? upstream.total : 0,
-      page: typeof upstream.page === 'number' ? upstream.page : 1,
-      pageSize: typeof upstream.pageSize === 'number' ? upstream.pageSize : 0,
-      requestedLimit: typeof upstream.requestedLimit === 'number'
-        ? upstream.requestedLimit
-        : null,
-      estimatedMarketSize: typeof upstream.estimatedMarketSize === 'number'
-        ? upstream.estimatedMarketSize
-        : null,
-      provider: 'explorium',
-      partial: Boolean(upstream.partial),
-      warnings,
-      classificationReasons,
-      matchedCompanyName: typeof upstream.matchedCompanyName === 'string'
-        ? upstream.matchedCompanyName
-        : null,
-    },
-    data: {
-      results: Array.isArray(upstream.results) ? upstream.results : [],
+    id: asString(person.id),
+    prospect_id: asString(person.id),
+    full_name: asString(person.name),
+    title: asString(person.title) || asString(person.headline),
+    department: departments[0] || null,
+    seniority: asString(person.seniority),
+    email: unlockedEmail(person.email),
+    phone: asString(person.phone_number) || asString(person.phone),
+    linkedin_url: asString(person.linkedin_url),
+    company: {
+      id: asString(org.id),
+      business_id: asString(org.id),
+      name: asString(org.name),
+      domain: asString(org.primary_domain) || asString(org.website_url),
+      website: asString(org.website_url),
+      city: asString(org.city) || asString(person.city),
+      state: asString(org.state) || asString(person.state),
+      country: asString(org.country) || asString(person.country),
+      industry: asString(org.industry),
+      employee_count: asNumber(org.estimated_num_employees),
+      annual_revenue: asNumber(org.annual_revenue),
+      status: 'Prospect',
     },
   };
 }
 
-function mapEnrichResult(
-  upstreamData: unknown,
-): EnrichResponse {
-  if (!upstreamData || typeof upstreamData !== 'object') {
-    return {
-      ok: true,
-      data: {
-        contact: {},
-      },
-    };
-  }
+function readPagination(upstream: Record<string, unknown>): {
+  page: number;
+  pageSize: number;
+  totalEntries: number;
+} {
+  const pagination = asRecord(upstream.pagination) || {};
+  const page = asNumber(pagination.page) ?? 1;
+  const pageSize = asNumber(pagination.per_page) ?? DEFAULT_PAGE_SIZE;
+  const totalEntries = asNumber(pagination.total_entries) ?? 0;
+  return { page, pageSize, totalEntries };
+}
 
-  const upstream = upstreamData as Record<string, unknown>;
-  const rawContact = upstream.contact;
-  const contact: Record<string, unknown> =
-    rawContact && typeof rawContact === 'object'
-      ? (rawContact as Record<string, unknown>)
-      : {};
+function resolveSearchMode(uiMode: string): 'companies' | 'people' {
+  if (uiMode === 'people') return 'people';
+  return 'companies';
+}
 
+function buildEmptySearchResponse(
+  query: string,
+  mode: string,
+  warnings: string[],
+): SearchResponse {
   return {
     ok: true,
-    data: {
-      contact: {
-        email: typeof contact.email === 'string' ? contact.email : undefined,
-        phone: typeof contact.phone === 'string' ? contact.phone : undefined,
-        linkedin_url: typeof contact.linkedin_url === 'string'
-          ? contact.linkedin_url
-          : undefined,
-      },
+    mode,
+    query,
+    meta: {
+      total: 0,
+      page: 1,
+      pageSize: 0,
+      requestedLimit: null,
+      estimatedMarketSize: 0,
+      provider: PROVIDER_NAME,
+      partial: false,
+      warnings,
+      classificationReasons: [],
+      matchedCompanyName: null,
     },
+    data: { results: [] },
+  };
+}
+
+function buildSearchResponse(
+  query: string,
+  mode: string,
+  results: unknown[],
+  meta: SearchMeta,
+): SearchResponse {
+  const safeMode = RESULT_MODES.includes(mode) ? mode : 'companies';
+  return {
+    ok: true,
+    mode: safeMode,
+    query,
+    meta: { ...meta, provider: PROVIDER_NAME },
+    data: { results },
   };
 }
 
@@ -329,41 +338,100 @@ async function handleSearchAction(
   _token: string,
   requestId: string,
 ): Promise<SearchResponse> {
-  // Validate input
   const validation = validateSearchInput(body);
   if (!validation.valid) {
-    return {
-      ok: false,
-      error: validation.error || 'Invalid search request',
-    };
+    return { ok: false, error: validation.error || 'Invalid search request' };
   }
 
-  // Get provider config
   const configResult = getProviderConfig();
-  if (configResult.error) {
-    return {
-      ok: false,
-      error: configResult.error,
-    };
+  if (configResult.error || !configResult.config) {
+    return { ok: false, error: configResult.error || 'Provider config error' };
   }
 
-  const config = configResult.config!;
+  const config = configResult.config;
   const query = body.query!.trim();
-  const ui_mode = body.ui_mode || 'auto';
+  const uiMode = body.ui_mode || 'auto';
+  const page = clampPage(body.page);
+  const pageSize = clampPageSize(body.pageSize);
+  const mode = resolveSearchMode(uiMode);
 
-  console.log(`[${requestId}] Search: query="${query}", mode="${ui_mode}"`);
+  console.log(
+    `[${requestId}] Apollo search: query="${query}", ui_mode="${uiMode}", mode="${mode}", page=${page}, per_page=${pageSize}`,
+  );
 
-  // Call provider
-  const result = await callExploriumSearch(config, query, ui_mode, requestId);
-  if (result.error) {
-    return {
-      ok: false,
-      error: result.error,
-    };
+  const warnings: string[] = [];
+  if (uiMode === 'auto') {
+    warnings.push(
+      'auto/both currently routes to Apollo company search; specify People to search contacts directly.',
+    );
+  }
+  warnings.push(
+    'Pulse passed your prompt to Apollo as a single keyword. Structured filter parsing ships in the next phase.',
+  );
+
+  if (mode === 'people') {
+    const result = await callApolloMixedPeople(config, query, page, pageSize, requestId);
+    if (result.error) {
+      return { ok: false, error: result.error };
+    }
+    const upstream = result.data || {};
+    const peopleArr = Array.isArray(upstream.people) ? upstream.people : [];
+    if (peopleArr.length === 0) {
+      return buildEmptySearchResponse(query, 'people', warnings);
+    }
+    const mapped = peopleArr.map(mapApolloPerson);
+    const pag = readPagination(upstream);
+    if (pag.totalEntries > mapped.length) {
+      warnings.push(
+        `Showing first ${mapped.length} of ${pag.totalEntries} matches. Pagination ships in the next phase.`,
+      );
+    }
+    const partial =
+      Boolean(upstream.partial_results_only) || pag.totalEntries > mapped.length;
+    return buildSearchResponse(query, 'people', mapped, {
+      total: pag.totalEntries || mapped.length,
+      page: pag.page,
+      pageSize: mapped.length,
+      requestedLimit: pageSize,
+      estimatedMarketSize: pag.totalEntries || null,
+      provider: PROVIDER_NAME,
+      partial,
+      warnings,
+      classificationReasons: [],
+      matchedCompanyName: null,
+    });
   }
 
-  // Map results
-  return mapSearchResults(result.data, query, ui_mode);
+  // mode === 'companies'
+  const result = await callApolloMixedCompanies(config, query, page, pageSize, requestId);
+  if (result.error) {
+    return { ok: false, error: result.error };
+  }
+  const upstream = result.data || {};
+  const orgs = Array.isArray(upstream.organizations) ? upstream.organizations : [];
+  if (orgs.length === 0) {
+    return buildEmptySearchResponse(query, 'companies', warnings);
+  }
+  const mapped = orgs.map(mapApolloCompany);
+  const pag = readPagination(upstream);
+  if (pag.totalEntries > mapped.length) {
+    warnings.push(
+      `Showing first ${mapped.length} of ${pag.totalEntries} matches. Pagination ships in the next phase.`,
+    );
+  }
+  const partial = Boolean(upstream.partial_results_only) || pag.totalEntries > mapped.length;
+  return buildSearchResponse(query, 'companies', mapped, {
+    total: pag.totalEntries || mapped.length,
+    page: pag.page,
+    pageSize: mapped.length,
+    requestedLimit: pageSize,
+    estimatedMarketSize: pag.totalEntries || null,
+    provider: PROVIDER_NAME,
+    partial,
+    warnings,
+    classificationReasons: [],
+    matchedCompanyName: null,
+  });
 }
 
 async function handleEnrichAction(
@@ -371,63 +439,31 @@ async function handleEnrichAction(
   _token: string,
   requestId: string,
 ): Promise<EnrichResponse> {
-  // Validate input
   const validation = validateEnrichInput(body);
   if (!validation.valid) {
-    return {
-      ok: false,
-      error: validation.error || 'Invalid enrich request',
-    };
+    return { ok: false, error: validation.error || 'Invalid enrich request' };
   }
-
-  // Get provider config
-  const configResult = getProviderConfig();
-  if (configResult.error) {
-    return {
-      ok: false,
-      error: configResult.error,
-    };
-  }
-
-  const config = configResult.config!;
-  const prospectId = body.prospect_id!;
-
-  console.log(`[${requestId}] Enrich: prospect_id="${prospectId}"`);
-
-  // Call provider
-  const result = await callExploriumEnrich(config, prospectId, requestId);
-  if (result.error) {
-    return {
-      ok: false,
-      error: result.error,
-    };
-  }
-
-  // Map results
-  return mapEnrichResult(result.data);
+  console.log(
+    `[${requestId}] Enrich: prospect_id="${body.prospect_id}" — Apollo enrichment not implemented yet`,
+  );
+  return { ok: false, error: 'Apollo contact enrichment not implemented yet' };
 }
 
 Deno.serve(async (req: Request) => {
   const requestId = generateRequestId();
 
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  // Only allow POST
   if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ ok: false, error: 'Method not allowed' }),
-      {
-        status: 405,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
+      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 
   try {
-    // Parse request body
     let body: SearchRequest | EnrichRequest = {};
     try {
       body = await req.json();
@@ -435,32 +471,20 @@ Deno.serve(async (req: Request) => {
       console.error(`[${requestId}] JSON parse error:`, err);
       return new Response(
         JSON.stringify({ ok: false, error: 'Invalid JSON' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    // Extract and validate auth token
     const authHeader = req.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       console.log(`[${requestId}] Missing or invalid authorization header`);
       return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'Missing or invalid authorization',
-        }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        JSON.stringify({ ok: false, error: 'Missing or invalid authorization' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
     const token = authHeader.substring('Bearer '.length);
-
-    // Dispatch based on action
     const action = (body as Record<string, unknown>).action || 'search';
 
     let response: unknown;
@@ -472,16 +496,11 @@ Deno.serve(async (req: Request) => {
       console.log(`[${requestId}] Unknown action: ${action}`);
       return new Response(
         JSON.stringify({ ok: false, error: `Unknown action: ${action}` }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    console.log(
-      `[${requestId}] Response: ok=${(response as Record<string, unknown>).ok}`,
-    );
+    console.log(`[${requestId}] Response: ok=${(response as Record<string, unknown>).ok}`);
 
     return new Response(JSON.stringify(response), {
       status: 200,
@@ -490,14 +509,8 @@ Deno.serve(async (req: Request) => {
   } catch (err) {
     console.error(`[${requestId}] Unhandled error:`, err);
     return new Response(
-      JSON.stringify({
-        ok: false,
-        error: 'Internal server error',
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
+      JSON.stringify({ ok: false, error: 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 });
