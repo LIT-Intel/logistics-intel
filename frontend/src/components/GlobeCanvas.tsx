@@ -38,10 +38,63 @@ export type GlobeLane = {
   toMeta?: GlobeLaneEndpointMeta;
 };
 
+type GlobePalette = {
+  oceanInner: string;
+  oceanOuter: string;
+  sphereStroke: string;
+  graticule: string;
+  landFill: string;
+  landStroke: string;
+  highlightFill: string;
+  arcGlow: string;
+  arcStroke: string;
+  dotFill: string;
+  dotStroke: string;
+  pulseStroke: (alpha: number) => string;
+};
+
+const LIGHT_PALETTE: GlobePalette = {
+  oceanInner: "#F0F7FF",
+  oceanOuter: "#DBEAFE",
+  sphereStroke: "#BFDBFE",
+  graticule: "rgba(59,130,246,0.07)",
+  landFill: "#E2E8F0",
+  landStroke: "#FFFFFF",
+  highlightFill: "rgba(59,130,246,0.48)",
+  arcGlow: "rgba(59,130,246,0.2)",
+  arcStroke: "#3B82F6",
+  dotFill: "#3B82F6",
+  dotStroke: "#FFFFFF",
+  pulseStroke: (alpha) => `rgba(59,130,246,${alpha})`,
+};
+
+// Higher-contrast variant used by the Company Detail trade-lane card. The
+// Dashboard trade-lanes consumer keeps the legacy "light" palette by default.
+const DARK_PALETTE: GlobePalette = {
+  oceanInner: "#1E293B",
+  oceanOuter: "#0F172A",
+  sphereStroke: "#1E293B",
+  graticule: "rgba(148,163,184,0.18)",
+  landFill: "#3B82F6",
+  landStroke: "#0F172A",
+  highlightFill: "rgba(99,102,241,0.85)",
+  arcGlow: "rgba(99,102,241,0.35)",
+  arcStroke: "#A5B4FC",
+  dotFill: "#A5B4FC",
+  dotStroke: "#0F172A",
+  pulseStroke: (alpha) => `rgba(165,180,252,${alpha})`,
+};
+
 type Props = {
   lanes: GlobeLane[];
   selectedLane: string | null;
   size?: number;
+  /**
+   * "light" (default, used by dashboard) renders the legacy pale-blue ocean.
+   * "dark" renders a higher-contrast navy ocean with brighter land/arcs so
+   *  the globe reads clearly against a light premium background.
+   */
+  theme?: "light" | "dark";
 };
 
 type GlobeState = {
@@ -54,7 +107,13 @@ type GlobeState = {
   loaded: boolean;
 };
 
-export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) {
+export default function GlobeCanvas({
+  lanes,
+  selectedLane,
+  size = 268,
+  theme = "light",
+}: Props) {
+  const palette: GlobePalette = theme === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GlobeState>({
     world: null,
@@ -151,20 +210,20 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
         size * 0.42, size * 0.38, size * 0.05,
         size / 2, size / 2, size / 2 - 6
       );
-      grad.addColorStop(0, "#F0F7FF");
-      grad.addColorStop(1, "#DBEAFE");
+      grad.addColorStop(0, palette.oceanInner);
+      grad.addColorStop(1, palette.oceanOuter);
       ctx.beginPath();
       pathGen({ type: "Sphere" } as any);
       ctx.fillStyle = grad;
       ctx.fill();
-      ctx.strokeStyle = "#BFDBFE";
+      ctx.strokeStyle = palette.sphereStroke;
       ctx.lineWidth = 1;
       ctx.stroke();
 
       // Graticule
       ctx.beginPath();
       pathGen(geoGraticule().step([30, 30])() as any);
-      ctx.strokeStyle = "rgba(59,130,246,0.07)";
+      ctx.strokeStyle = palette.graticule;
       ctx.lineWidth = 0.5;
       ctx.stroke();
 
@@ -177,9 +236,9 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
         features.forEach((f: any) => {
           ctx.beginPath();
           pathGen(f);
-          ctx.fillStyle = "#E2E8F0";
+          ctx.fillStyle = palette.landFill;
           ctx.fill();
-          ctx.strokeStyle = "#fff";
+          ctx.strokeStyle = palette.landStroke;
           ctx.lineWidth = 0.4;
           ctx.stroke();
         });
@@ -193,7 +252,7 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
                 fromMatch.includes(name) || toMatch.includes(name)) {
               ctx.beginPath();
               pathGen(f);
-              ctx.fillStyle = "rgba(59,130,246,0.48)";
+              ctx.fillStyle = palette.highlightFill;
               ctx.fill();
             }
           });
@@ -209,14 +268,14 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
           // Glow
           ctx.beginPath();
           pathGen(arc as any);
-          ctx.strokeStyle = "rgba(59,130,246,0.2)";
+          ctx.strokeStyle = palette.arcGlow;
           ctx.lineWidth = 7;
           ctx.setLineDash([]);
           ctx.stroke();
           // Animated dash
           ctx.beginPath();
           pathGen(arc as any);
-          ctx.strokeStyle = "#3B82F6";
+          ctx.strokeStyle = palette.arcStroke;
           ctx.lineWidth = 2.5;
           ctx.setLineDash([8, 4]);
           ctx.lineDashOffset = -s.dashOffset;
@@ -239,15 +298,15 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
             const alpha = Math.max(0, 0.45 - (s.dashOffset % 12) / 26);
             ctx.beginPath();
             ctx.arc(px, py, pr, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(59,130,246,${alpha})`;
+            ctx.strokeStyle = palette.pulseStroke(alpha);
             ctx.lineWidth = 1.5;
             ctx.stroke();
             // Dot
             ctx.beginPath();
             ctx.arc(px, py, 5, 0, Math.PI * 2);
-            ctx.fillStyle = "#3B82F6";
+            ctx.fillStyle = palette.dotFill;
             ctx.fill();
-            ctx.strokeStyle = "#fff";
+            ctx.strokeStyle = palette.dotStroke;
             ctx.lineWidth = 2;
             ctx.stroke();
           });
@@ -259,7 +318,11 @@ export default function GlobeCanvas({ lanes, selectedLane, size = 268 }: Props) 
     return () => {
       if (s.animFrame) cancelAnimationFrame(s.animFrame);
     };
-  }, [loaded, size]);
+    // palette is read inside the rAF tick; including it in deps means a theme
+    // change will rebuild the loop with the new colours rather than retain
+    // the stale closure from mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, size, theme]);
 
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>

@@ -8,14 +8,38 @@ import {
   Loader2,
   MapPin,
   Package,
+  Plus,
   Ship,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
+import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import { getSavedCompanyDetail, buildYearScopedProfile } from "@/lib/api";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
+import { resolveEndpoint, flagFromCode } from "@/lib/laneGlobe";
+
+// Sidebar navy from docs/design-specs/lit-design-system/colors_and_type.css
+// (--color-sidebar-bg). Used as an *accent* on the hero — never a takeover.
+const SIDEBAR_NAVY = "#081225";
+
+function buildRouteFlagPair(routeLabel) {
+  if (!routeLabel) return null;
+  const cleaned = String(routeLabel).trim();
+  if (!cleaned || cleaned === "—") return null;
+  const parts = cleaned.split(/→|->|>/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const fromMeta = resolveEndpoint(parts[0]);
+  const toMeta = resolveEndpoint(parts[1]);
+  return {
+    from: parts[0],
+    to: parts[1],
+    fromFlag: fromMeta?.flag || "",
+    toFlag: toMeta?.flag || "",
+    label: cleaned,
+  };
+}
 
 function formatNumber(value, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
@@ -181,17 +205,64 @@ function HeroKpiCard({ icon: Icon, label, value, tone = "default" }) {
   const t = toneMap[tone] || toneMap.default;
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${t.bg} ${t.ring}`}>
-        <Icon className={`h-4 w-4 ${t.text}`} />
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+      <div
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${t.bg} ${t.ring}`}
+      >
+        <Icon className={`h-5 w-5 ${t.text}`} />
       </div>
       <div className="min-w-0">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+        <div
+          className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500"
+          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+        >
           {label}
         </div>
-        <div className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-950" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+        <div
+          className="mt-1 truncate text-xl font-bold tracking-tight text-slate-950 md:text-2xl"
+          style={{ fontFamily: "'JetBrains Mono', monospace" }}
+        >
           {value}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function HeroRoutePill({ kind, routeLabel, loading }) {
+  const flagPair = buildRouteFlagPair(routeLabel);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2">
+        <div
+          className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-600"
+          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+        >
+          {kind === "top" ? "Top route · 12m" : "Most recent route"}
+        </div>
+      </div>
+      <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+        {flagPair ? (
+          <>
+            <span aria-hidden className="text-base leading-none">
+              {flagPair.fromFlag || "🌐"}
+            </span>
+            <span className="truncate" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              {flagPair.from}
+            </span>
+            <span className="shrink-0 text-slate-400">→</span>
+            <span aria-hidden className="text-base leading-none">
+              {flagPair.toFlag || "🌐"}
+            </span>
+            <span className="truncate" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              {flagPair.to}
+            </span>
+          </>
+        ) : (
+          <span className="truncate text-slate-500" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+            {loading ? "Loading…" : "—"}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -217,6 +288,7 @@ export default function Company() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [campaignModalOpen, setCampaignModalOpen] = useState(false);
 
   const shellCompany = useMemo(
     () => buildShellCompany(companyId, storedSelectedCompany),
@@ -419,18 +491,45 @@ export default function Company() {
     );
   }
 
+  const countryFlag = companyCountryCode ? flagFromCode(companyCountryCode) : "";
+  const countryDisplay =
+    activeProfile?.country ||
+    activeProfile?.country_name ||
+    shellCompany?.country ||
+    null;
+
   return (
     <div className="space-y-6">
       <section
-        className="relative overflow-hidden rounded-[28px] border border-slate-200 p-5 shadow-sm md:p-7 xl:p-8"
+        className="relative overflow-hidden rounded-[28px] border border-slate-200 shadow-sm"
         style={{
           background:
             "radial-gradient(circle at 0% 0%, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0) 42%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 60%, #EEF2FF 100%)",
         }}
       >
-        <div className="relative flex flex-col gap-6">
+        {/* Dark navy accent strip — pure left vertical band, full hero height,
+            uses sidebar-bg navy as a featured-banner cue without taking over
+            the light premium surface. */}
+        <div
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-2"
+          style={{ backgroundColor: SIDEBAR_NAVY }}
+        />
+
+        {/* Subtle radial wash anchored at the avatar zone — visually rhymes
+            with the navy strip without darkening the body of the hero. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-10 -top-10 h-48 w-48 rounded-full"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(8,18,37,0.14) 0%, rgba(8,18,37,0) 70%)",
+          }}
+        />
+
+        <div className="relative flex flex-col gap-6 p-5 pl-6 md:p-7 md:pl-8 xl:p-8 xl:pl-10">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex min-w-0 items-start gap-4">
+            <div className="flex min-w-0 items-start gap-5">
               <CompanyAvatar
                 name={companyName}
                 logoUrl={
@@ -445,17 +544,24 @@ export default function Company() {
                   ) || undefined
                 }
                 size="lg"
-                className="shrink-0"
+                className="shrink-0 ring-2 ring-white"
               />
 
               <div className="min-w-0">
-                <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+                <div
+                  className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em]"
+                  style={{
+                    color: SIDEBAR_NAVY,
+                    borderColor: "rgba(8,18,37,0.18)",
+                    backgroundColor: "rgba(8,18,37,0.05)",
+                  }}
+                >
                   <Building2 className="h-3.5 w-3.5" />
                   Company Intelligence
                 </div>
 
                 <h1
-                  className="mt-4 truncate text-2xl text-slate-950 md:text-4xl"
+                  className="mt-3 break-words text-3xl text-slate-950 md:text-4xl xl:text-5xl"
                   style={{
                     fontFamily: "'Space Grotesk', sans-serif",
                     fontWeight: 700,
@@ -465,31 +571,50 @@ export default function Company() {
                   {companyName}
                 </h1>
 
-                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
-                  {companyAddress ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <MapPin className="h-4 w-4 text-slate-400" />
-                      {companyAddress}
+                {/* Metadata chip row — flag + country + domain + address +
+                    saved badge. Each renders only when the data exists. */}
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                  {(countryFlag || countryDisplay || companyCountryCode) ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm">
+                      {countryFlag ? (
+                        <span aria-hidden className="text-sm leading-none">
+                          {countryFlag}
+                        </span>
+                      ) : null}
+                      <span>{countryDisplay || companyCountryCode}</span>
+                      {companyCountryCode && countryDisplay ? (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-500">
+                          {companyCountryCode}
+                        </span>
+                      ) : null}
                     </span>
                   ) : null}
 
                   {companyDomain ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Globe className="h-4 w-4 text-slate-400" />
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm">
+                      <Globe className="h-3.5 w-3.5 text-slate-400" />
                       {companyDomain}
                     </span>
                   ) : null}
 
-                  {companyCountryCode ? (
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
-                      {companyCountryCode}
+                  {companyAddress ? (
+                    <span className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 shadow-sm">
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate">{companyAddress}</span>
                     </span>
                   ) : null}
+
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 font-semibold uppercase tracking-[0.16em] text-white shadow-sm"
+                    style={{ backgroundColor: SIDEBAR_NAVY }}
+                  >
+                    Saved
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap sm:justify-end xl:flex-nowrap">
               <button
                 type="button"
                 onClick={() => navigate("/app/command-center")}
@@ -500,15 +625,15 @@ export default function Company() {
               </button>
 
               {years.length > 0 ? (
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm">
                   <CalendarClock className="h-4 w-4 text-slate-500" />
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Year
                   </label>
                   <select
                     value={selectedYear}
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="bg-transparent text-sm font-medium text-slate-900 outline-none"
+                    className="bg-transparent text-sm font-semibold text-slate-900 outline-none"
                   >
                     {years.map((year) => (
                       <option key={year} value={year} className="text-slate-900">
@@ -518,10 +643,25 @@ export default function Company() {
                   </select>
                 </div>
               ) : loading ? (
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 shadow-sm">
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 shadow-sm">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading
                 </div>
+              ) : null}
+
+              {companyId ? (
+                <button
+                  type="button"
+                  onClick={() => setCampaignModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
+                  style={{
+                    backgroundColor: SIDEBAR_NAVY,
+                    boxShadow: "0 6px 16px rgba(8,18,37,0.18)",
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add to Campaign
+                </button>
               ) : null}
             </div>
           </div>
@@ -548,41 +688,24 @@ export default function Company() {
             <HeroKpiCard
               icon={Sparkles}
               label="Latest shipment"
-              value={formatDate(headerKpis.latestShipment)}
+              value={formatDate(capDateAtToday(headerKpis.latestShipment))}
               tone="amber"
             />
           </div>
 
+          {/* Lane intelligence pills inside the hero — share the same
+              `resolveEndpoint` data that the Trade Lanes table consumes. */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <div
-                className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-              >
-                Top route
-              </div>
-              <div
-                className="mt-1.5 truncate text-sm font-semibold text-slate-900"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
-                {headerKpis.topRoute || (loading ? "Loading…" : "—")}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <div
-                className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-              >
-                Recent route
-              </div>
-              <div
-                className="mt-1.5 truncate text-sm font-semibold text-slate-900"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
-                {headerKpis.recentRoute || (loading ? "Loading…" : "—")}
-              </div>
-            </div>
+            <HeroRoutePill
+              kind="top"
+              routeLabel={headerKpis.topRoute}
+              loading={loading}
+            />
+            <HeroRoutePill
+              kind="recent"
+              routeLabel={headerKpis.recentRoute}
+              loading={loading}
+            />
           </div>
 
           {loading ? (
@@ -606,6 +729,14 @@ export default function Company() {
         onGenerateBrief={() => {}}
         onExportPDF={() => window.print()}
       />
+
+      {campaignModalOpen && companyId ? (
+        <AddToCampaignModal
+          open={campaignModalOpen}
+          onClose={() => setCampaignModalOpen(false)}
+          company={{ company_id: String(companyId), name: companyName }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -15,7 +15,6 @@ import {
   Briefcase,
   Building2,
   ArrowUpRight,
-  Waves,
   BarChart3,
   Container,
   Search,
@@ -1294,6 +1293,181 @@ const aggregateCarrierRows = (shipments: NormalizedShipment[]) => {
     .slice(0, 10);
 };
 
+/**
+ * Canonical lane row consumed by both the Trade Lanes table/globe and the
+ * hero's Top/Recent route pills.
+ *
+ * `resolvable` = both endpoints resolve through `resolveEndpoint`. Only
+ * resolvable rows feed the globe arc array. Non-resolvable real-name rows
+ * (e.g. "Chengalpattu district, India → United States of America") still
+ * render in the table — they're not "Unknown".
+ */
+type SafeLane = {
+  lane: string;
+  shipments: number;
+  teu: number;
+  spend: number | null;
+  resolvable: boolean;
+};
+
+const looksLikeRealLane = (label: string) => {
+  if (!label) return false;
+  const cleaned = label.trim();
+  if (!cleaned || cleaned === "—") return false;
+  if (isUnknownRoute(cleaned)) return false;
+  // Reject if either side is the literal "Unknown".
+  const parts = cleaned.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return false;
+  return !parts.some((part) => /^unknown$/i.test(part));
+};
+
+const dedupeLanes = (rows: SafeLane[]): SafeLane[] => {
+  const map = new Map<string, SafeLane>();
+  rows.forEach((row) => {
+    const key = row.lane.toLowerCase();
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, row);
+      return;
+    }
+    map.set(key, {
+      lane: existing.lane,
+      shipments: Math.max(existing.shipments, row.shipments),
+      teu: Math.max(existing.teu, row.teu),
+      spend: existing.spend ?? row.spend,
+      resolvable: existing.resolvable || row.resolvable,
+    });
+  });
+  return [...map.values()];
+};
+
+/**
+ * Build a single canonical lane list for the Trade Lanes panel + the hero
+ * pills. Priority chain: detail.topRoutes → routeKpis.topRoutesLast12m →
+ * synthesised single rows from KPI fields → profile fallbacks → BOL
+ * aggregation. Each row is filtered through `looksLikeRealLane`. Resolvable
+ * rows are surfaced first so the globe arc still picks the strongest
+ * resolvable lane even when raw-name lanes outrank it numerically.
+ */
+const safeRouteList = (
+  detail: { topRoutes: Array<{ lane: string; shipments: number; teu: number; spend: number | null }> },
+  routeKpis: any,
+  profile: any,
+  normalizedShipments: NormalizedShipment[],
+): SafeLane[] => {
+  const collected: SafeLane[] = [];
+
+  const pushLane = (
+    rawLane: string | null | undefined,
+    stats?: { shipments?: number; teu?: number; spend?: number | null },
+  ) => {
+    const lane = buildRouteLabel(rawLane);
+    if (!looksLikeRealLane(lane)) return;
+    const parts = lane.split(/→|->|>/).map((s) => s.trim());
+    const fromMeta = resolveEndpoint(parts[0]);
+    const toMeta = resolveEndpoint(parts[1]);
+    collected.push({
+      lane,
+      shipments: Math.max(0, Number(stats?.shipments ?? 0) || 0),
+      teu: Math.max(0, Number(stats?.teu ?? 0) || 0),
+      spend: stats?.spend ?? null,
+      resolvable: Boolean(fromMeta && toMeta),
+    });
+  };
+
+  // 1. Already-built detail.topRoutes from buildDetailModel.
+  detail.topRoutes.forEach((row) =>
+    pushLane(row.lane, { shipments: row.shipments, teu: row.teu, spend: row.spend }),
+  );
+
+  // 2. routeKpis.topRoutesLast12m raw rows.
+  safeArray(routeKpis?.topRoutesLast12m).forEach((row: any) =>
+    pushLane(row?.route || row?.lane, {
+      shipments: toNumber(row?.shipments),
+      teu: toNumber(row?.teu),
+      spend: toNumber(pickFirst(row?.estSpendUsd, row?.estSpendUsd12m)) || null,
+    }),
+  );
+
+  // 3. Synthesised single-row from `topRouteLast12m` / `mostRecentRoute`.
+  pushLane(routeKpis?.topRouteLast12m);
+  pushLane(routeKpis?.mostRecentRoute);
+
+  // 4. Profile-level fallbacks.
+  pushLane(profile?.topRouteLast12m);
+  pushLane(profile?.top_route);
+  pushLane(profile?.kpis?.top_route_12m);
+  pushLane(profile?.mostRecentRoute);
+  pushLane(profile?.recent_route);
+  pushLane(profile?.kpis?.recent_route);
+
+  safeArray(profile?.topRoutes).forEach((row: any) =>
+    pushLane(row?.label || row?.route, {
+      shipments: toNumber(row?.shipments),
+      teu: toNumber(row?.teu),
+      spend: toNumber(row?.estSpendUsd) || null,
+    }),
+  );
+
+  // 5. Aggregate from raw recent_bols (origin + destination pairs).
+  const bolRows = safeArray(
+    profile?.recent_bols || profile?.recentBols || profile?.bols,
+  );
+  const bolMap = new Map<string, { shipments: number; teu: number }>();
+  bolRows.forEach((shipment: any) => {
+    const origin = pickFirst(
+      shipment?.origin,
+      shipment?.port_of_lading,
+      shipment?.portOfLading,
+      shipment?.port_of_origin,
+      shipment?.shipper_country,
+    );
+    const dest = pickFirst(
+      shipment?.destination,
+      shipment?.port_of_unlading,
+      shipment?.portOfUnlading,
+      shipment?.port_of_destination,
+      shipment?.consignee_country,
+    );
+    const lane = buildCleanRoute(
+      typeof origin === "string" ? origin : null,
+      typeof dest === "string" ? dest : null,
+    );
+    if (!looksLikeRealLane(lane)) return;
+    const current = bolMap.get(lane) || { shipments: 0, teu: 0 };
+    current.shipments += 1;
+    current.teu += toNumber(pickFirst(shipment?.teu, shipment?.TEU));
+    bolMap.set(lane, current);
+  });
+  bolMap.forEach((stats, lane) =>
+    pushLane(lane, { shipments: stats.shipments, teu: stats.teu }),
+  );
+
+  // 6. Aggregate from normalisedShipments (origin/destination strings).
+  const shipMap = new Map<string, { shipments: number; teu: number }>();
+  normalizedShipments.forEach((shipment) => {
+    if (!looksLikeRealLane(shipment.route)) return;
+    const current = shipMap.get(shipment.route) || { shipments: 0, teu: 0 };
+    current.shipments += 1;
+    current.teu += shipment.teu;
+    shipMap.set(shipment.route, current);
+  });
+  shipMap.forEach((stats, lane) =>
+    pushLane(lane, { shipments: stats.shipments, teu: stats.teu }),
+  );
+
+  const deduped = dedupeLanes(collected);
+
+  // Resolvable lanes win the sort tiebreak so the globe-eligible lane
+  // ranks first when shipment counts are equal. Non-resolvable real-name
+  // lanes still surface (they go to the table even if not the globe).
+  return deduped.sort((a, b) => {
+    if (a.resolvable !== b.resolvable) return a.resolvable ? -1 : 1;
+    if (b.shipments !== a.shipments) return b.shipments - a.shipments;
+    return b.teu - a.teu;
+  });
+};
+
 const aggregateRouteRows = (shipments: NormalizedShipment[]) => {
   const map = new Map<string, { shipments: number; teu: number; spend: number }>();
   shipments.forEach((shipment) => {
@@ -2301,21 +2475,25 @@ export default function CompanyDetailPanel({
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "equipment" | "shipments" | "suppliers" | "contacts" | "credit"
+    "overview" | "trade-lanes" | "equipment" | "shipments" | "suppliers" | "contacts" | "credit"
   >("overview");
   const [suppliersPage, setSuppliersPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
 
-  // Resolve every top route into globe-ready endpoint metadata once, so the
-  // table, the globe, and the flag pills all read from the same source of
-  // truth. Lanes whose endpoints both fail to resolve are still kept in the
-  // table list (they remain visible as "unresolved") but excluded from the
-  // globe arc array via `globeLanes` below.
+  // Build the canonical lane list once. The hero pills, the Trade Lanes
+  // table, the globe arc array, and the Overview lane preview ALL consume
+  // this same source — no more divergent fallback chains where the hero
+  // shows a real label and the panel shows "Unknown".
+  const canonicalLanes = useMemo(
+    () => safeRouteList(detail, rawRouteKpis, rawProfile, normalizedShipments),
+    [detail, rawRouteKpis, rawProfile, normalizedShipments],
+  );
+
   const resolvedRoutes = useMemo(
     () =>
-      detail.topRoutes.map((route) => {
+      canonicalLanes.map((route) => {
         const parts = (route.lane || "").split(/→|->|>/).map((p) => p.trim());
         const fromMeta = resolveEndpoint(parts[0]);
         const toMeta = resolveEndpoint(parts[1]);
@@ -2323,10 +2501,9 @@ export default function CompanyDetailPanel({
           ...route,
           fromMeta,
           toMeta,
-          resolvable: Boolean(fromMeta && toMeta),
         };
       }),
-    [detail.topRoutes],
+    [canonicalLanes],
   );
 
   const firstResolvableLane = useMemo(
@@ -2384,6 +2561,11 @@ export default function CompanyDetailPanel({
   const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "lusha" | null>(null);
   const [contactMessage, setContactMessage] = useState<string | null>(null);
   const [contactDebug, setContactDebug] = useState<any | null>(null);
+  // Phase B.2 G — when the enrich-contacts edge function returns a 5xx
+  // / non-2xx (rate limited, provider down, etc.) we store the raw error
+  // here and render the friendly "Contact enrichment unavailable" copy.
+  // The raw text only shows up inside a collapsed `<details>` toggle.
+  const [contactError, setContactError] = useState<string | null>(null);
   const [savedContactKeys, setSavedContactKeys] = useState<Set<string>>(new Set());
   const [contactSearchQuery, setContactSearchQuery] = useState("");
 
@@ -2430,6 +2612,7 @@ if (!companyDomain && companyName) {
 
     const run = async () => {
       setContactsLoading(true);
+      setContactError(null);
 
       try {
         if (companyId) {
@@ -2499,14 +2682,20 @@ if (!cancelled) {
   console.error("Contact preview fetch error", err);
 
   if (!cancelled) {
-    const message =
+    const rawMessage =
       err instanceof Error
         ? err.message
+        : typeof err === "string"
+        ? err
         : "Contact enrichment failed.";
 
     setPhantomContacts((current) => current);
     setContactPreviewSource((current) => current);
-    setContactMessage(message);
+    // Phase B.2 G — never leak raw "Edge Function returned a non-2xx
+    // status code." into the primary UI copy. We store the raw error
+    // separately so it can be expanded inside a collapsed `<details>`.
+    setContactError(rawMessage);
+    setContactMessage(null);
   }
 } finally {
         if (!cancelled) {
@@ -2581,7 +2770,14 @@ if (!cancelled) {
     (rawProfile as any)?.top_suppliers ||
     (rawProfile as any)?.topSuppliers ||
     [];
-  const suppliersRawCount = safeArray(rawSuppliersSource).length;
+  // Mirror the same filter the render sites apply so the diversity score
+  // doesn't include empty / "—" rows.
+  const suppliersRawCount = safeArray(rawSuppliersSource).filter((sup: any) => {
+    const candidate = String(sup?.supplier_name || sup?.name || "").trim();
+    if (!candidate) return false;
+    const lower = candidate.toLowerCase();
+    return !(lower === "—" || lower === "unknown" || lower === "n/a" || lower === "na");
+  }).length;
   const diversityScore =
     suppliersRawCount === 0
       ? null
@@ -2752,12 +2948,26 @@ if (!cancelled) {
   // and Overview mini card both render real rows from top_suppliers
   // when suppliers_table is absent (which is the case for every real
   // company today per the proxy output).
-  const suppliersRaw: any[] = safeArray(
+  //
+  // Phase B.2 F — drop rows that have no usable name AT ALL. Previously
+  // suppliers with neither `supplier_name` nor `name` rendered as
+  // "— / 0", which read as a real row but carried zero signal. The
+  // canonical filter is: trim → reject empty / "—" / "unknown".
+  const suppliersRawAll: any[] = safeArray(
     (rawProfile as any)?.suppliers_table ||
       (rawProfile as any)?.top_suppliers ||
       (rawProfile as any)?.topSuppliers ||
       [],
   );
+  const suppliersRaw: any[] = suppliersRawAll.filter((sup: any) => {
+    const candidate = String(sup?.supplier_name || sup?.name || "").trim();
+    if (!candidate) return false;
+    const lower = candidate.toLowerCase();
+    if (lower === "—" || lower === "unknown" || lower === "n/a" || lower === "na") {
+      return false;
+    }
+    return true;
+  });
   const supplierPageSize = 25;
   const suppliersPageCount = Math.ceil(suppliersRaw.length / supplierPageSize);
   const suppliersSlice = suppliersRaw.slice(
@@ -2881,6 +3091,13 @@ if (!cancelled) {
             Overview
           </TabsTrigger>
           <TabsTrigger
+            value="trade-lanes"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+          >
+            Trade Lanes
+          </TabsTrigger>
+          <TabsTrigger
             value="equipment"
             className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
@@ -2913,7 +3130,7 @@ if (!cancelled) {
             className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
-            Credit &amp; Company Health
+            Credit &amp; Health
           </TabsTrigger>
         </TabsList>
 
@@ -2966,293 +3183,109 @@ if (!cancelled) {
               </div>
             </div>
 
-            {freightosBenchmark ? (
-              <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
+            {/* Phase B.2 E — single compact "Market benchmark" card. The
+                old branch that loaded a Freightos iframe is gone; we now
+                only surface honest empty-state copy until a verified
+                benchmark backend lands. */}
+            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
+                    <BarChart3 className="h-4 w-4 text-slate-500" />
+                  </div>
+                  <div className="min-w-0">
                     <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                      {freightosBenchmark.title || "Market Rate Benchmark"}
+                      Market benchmark
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
-                      Matched to the company’s primary trade lane
+                      Lane-aligned rate context
                     </p>
                   </div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                    <Waves className="h-3.5 w-3.5 text-indigo-500" />
-                    Freightos
-                  </div>
                 </div>
-
-                <div className="mt-5 space-y-4">
-                  <div className="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
-                      Benchmark matched
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-                      {freightosBenchmark.code}
-                    </div>
-                    <div className="mt-2 text-sm font-medium text-slate-700">
-                      {freightosBenchmark.lane}
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      <Ship className="h-3.5 w-3.5 text-cyan-500" />
-                      Why this index
-                    </div>
-                    <div className="mt-2 text-sm text-slate-700">
-                      The company’s route intelligence aligns best to {freightosBenchmark.code}. Use this as market
-                      benchmark context beside shipment activity and lane concentration.
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Live rate chart — {freightosBenchmark.code}
-                    </div>
-                    <iframe
-                      src={`https://fbx.freightos.com/widget/?index=${freightosBenchmark.code}`}
-                      title={`${freightosBenchmark.code} Freightos Rate Index`}
-                      className="w-full rounded-2xl border-0"
-                      style={{ height: 240 }}
-                      loading="lazy"
-                      sandbox="allow-scripts allow-same-origin"
-                    />
-                    <div className="mt-2 text-xs text-slate-500">
-                      Spot rate for 40 ft containers · Freightos Baltic Exchange · not company-specific pricing
-                    </div>
-                  </div>
-                </div>
+                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                  Needs verified rate source
+                </span>
               </div>
-            ) : (
-              <div
-                className="flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                style={{ minHeight: 140, maxHeight: 180 }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
-                      <BarChart3 className="h-4 w-4 text-slate-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900">
-                        Market benchmark
-                      </div>
-                      <p className="mt-0.5 text-[11px] text-slate-500">
-                        Lane-aligned rate context
-                      </p>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                    Needs verified rate source
-                  </span>
-                </div>
-                <p className="mt-3 text-xs leading-relaxed text-slate-600">
+              <div className="mt-5 flex-1 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5">
+                <p className="text-xs leading-relaxed text-slate-600">
                   No verified benchmark rate is available for this lane yet. Benchmarking will use verified rate APIs or reviewed web-sourced market signals when enabled.
                 </p>
+                {freightosBenchmark ? (
+                  <p className="mt-3 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                    Detected lane match: {freightosBenchmark.lane}
+                  </p>
+                ) : null}
               </div>
-            )}
+            </div>
           </div>
 
+          {/* Phase B.2 H — Trade lanes preview lives in Overview, full
+              table + globe lives in the dedicated Trade Lanes tab. The
+              preview reads the same `canonicalLanes` source so hero pill /
+              preview row / tab content / globe arc all agree. */}
           <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex h-full min-h-[260px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                     Trade lane intelligence
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    Strongest lanes by shipment count, TEU, and estimated spend
+                    Top {Math.min(3, canonicalLanes.length || 0)} of {canonicalLanes.length}{" "}
+                    {canonicalLanes.length === 1 ? "lane" : "lanes"} — open the full tab for the table and globe
                   </p>
                 </div>
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {resolvedRoutes.filter((r) => r.resolvable).length} lanes
-                </div>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
-                        <th className="px-3 py-2 font-semibold">#</th>
-                        <th className="px-3 py-2 font-semibold">Lane</th>
-                        <th className="px-3 py-2 text-right font-semibold">Shipments</th>
-                        <th className="px-3 py-2 text-right font-semibold">TEU</th>
-                        <th className="px-3 py-2 text-right font-semibold">Est. Spend</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.topRoutes.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
-                            No trade lane data available yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        resolvedRoutes.map((route, i) => (
-                          <tr
-                            key={i}
-                            onClick={() => setSelectedLane(route.lane)}
-                            className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
-                              route.lane === activeLane
-                                ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
-                                : "hover:bg-slate-50/70"
-                            }`}
-                          >
-                            <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
-                            <td className="px-3 py-3">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={{
-  backgroundColor:
-    route.lane === activeLane
-      ? TEU_BAR_PRIMARY
-      : CHART_COLORS[i % CHART_COLORS.length],
-}}
-                                />
-                                <span className="max-w-[260px] truncate font-semibold text-slate-900">
-                                  {route.lane}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 text-right font-semibold text-indigo-600">
-                              {formatNumber(route.shipments)}
-                            </td>
-                            <td className="px-3 py-3 text-right text-slate-700">
-                              {formatNumber(route.teu, 1)}
-                            </td>
-                            <td className="px-3 py-3 text-right text-slate-700">
-                              {formatCurrency(route.spend)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div
-                  style={{
-                    background:
-                      "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
-                    borderRadius: 24,
-                    border: "1px solid #E2E8F0",
-                    padding: 16,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 10,
-                    minWidth: 0,
-                  }}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("trade-lanes")}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
                 >
-                  {(() => {
-                    const globeLanes: GlobeLane[] = resolvedRoutes
-                      .filter((r) => r.resolvable)
-                      .slice(0, 6)
-                      .map((r, i) => laneStringToGlobeLane(r.lane, i))
-                      .filter((l): l is GlobeLane => l !== null);
-                    const selectedGlobeLane = activeLane ?? null;
-                    const hasResolvable = globeLanes.length > 0;
-                    const noTopRoutes = detail.topRoutes.length === 0;
-
-                    if (!hasResolvable && noTopRoutes) {
-                      return (
-                        <div
-                          className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
-                          style={{ minHeight: 200 }}
-                        >
-                          <Globe className="mb-2 h-6 w-6 text-slate-300" />
-                          Route map unavailable because this shipment data does not include resolvable origin/destination locations.
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <>
-                        {(activeFromMeta || activeToMeta) && (
-                          <div className="flex w-full flex-wrap items-center justify-center gap-2">
-                            {activeFromMeta ? (
-                              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                                <span aria-hidden>{activeFromMeta.flag || "🌐"}</span>
-                                <span>{activeFromMeta.countryName}</span>
-                                {activeFromMeta.countryCode ? (
-                                  <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
-                                    {activeFromMeta.countryCode}
-                                  </span>
-                                ) : null}
-                              </span>
-                            ) : null}
-                            <span className="text-xs text-slate-400">→</span>
-                            {activeToMeta ? (
-                              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                                <span aria-hidden>{activeToMeta.flag || "🌐"}</span>
-                                <span>{activeToMeta.countryName}</span>
-                                {activeToMeta.countryCode ? (
-                                  <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
-                                    {activeToMeta.countryCode}
-                                  </span>
-                                ) : null}
-                              </span>
-                            ) : null}
-                          </div>
-                        )}
-                        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                          {hasResolvable ? (
-                            <GlobeCanvas
-                              lanes={globeLanes}
-                              selectedLane={selectedGlobeLane}
-                              size={globeSize}
-                            />
-                          ) : (
-                            <div
-                              className="flex w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
-                              style={{ minHeight: 200 }}
-                            >
-                              <Globe className="mb-2 h-6 w-6 text-slate-300" />
-                              Route map unavailable because this shipment data does not include resolvable origin/destination locations.
-                            </div>
-                          )}
-                        </div>
-                        {selectedGlobeLane && hasResolvable ? (
-                          <div
-                            style={{
-                              alignSelf: "stretch",
-                              background: "#EFF6FF",
-                              border: "1px solid #BFDBFE",
-                              borderRadius: 8,
-                              padding: "7px 12px",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: 8,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontFamily: "'JetBrains Mono', monospace",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: "#1d4ed8",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {selectedGlobeLane}
-                            </span>
-                          </div>
-                        ) : null}
-                      </>
-                    );
-                  })()}
-                </div>
+                  View Trade Lanes <ArrowUpRight className="h-3 w-3" />
+                </button>
               </div>
+
+              {canonicalLanes.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                  No trade lane data available yet.
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {resolvedRoutes.slice(0, 3).map((route, i) => (
+                    <li
+                      key={`overview-lane-${i}`}
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2.5"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-400">{i + 1}</span>
+                        {route.fromMeta?.flag ? (
+                          <span aria-hidden className="text-base leading-none">
+                            {route.fromMeta.flag}
+                          </span>
+                        ) : null}
+                        <span className="truncate text-sm font-semibold text-slate-900">
+                          {route.lane}
+                        </span>
+                        {route.toMeta?.flag ? (
+                          <span aria-hidden className="ml-auto text-base leading-none">
+                            {route.toMeta.flag}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Shipments
+                        </div>
+                        <div className="text-sm font-semibold text-indigo-600">
+                          {formatNumber(route.shipments)}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex h-full min-h-[260px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -3464,7 +3497,7 @@ if (!cancelled) {
                               {s.route || "—"}
                             </div>
                             <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-slate-500">
-                              <span>{formatDate(s.date)}</span>
+                              <span>{formatDate(capDateAtToday(s.date))}</span>
                               {s.containerTypes && s.containerTypes !== "—" ? (
                                 <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                                   {s.containerTypes}
@@ -3541,18 +3574,53 @@ if (!cancelled) {
                 ))}
               </div>
             ) : contactOverviewRows.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                <p className="text-sm text-slate-500">
-                  {contactMessage || "No supply chain or logistics contacts found yet."}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setContactFetchTrigger((n) => n + 1)}
-                  className="mt-3 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
-                >
-                  Search more contacts
-                </button>
-              </div>
+              contactError ? (
+                <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-amber-200">
+                      <Users className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-amber-900">
+                        Contact enrichment unavailable
+                      </div>
+                      <p className="mt-1 text-xs text-amber-800">
+                        The contact provider did not return contacts for this company. Try again or connect a provider in Admin.
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setContactFetchTrigger((n) => n + 1)}
+                          className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+                        >
+                          Try again
+                        </button>
+                        <details className="text-[11px] text-amber-700">
+                          <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-amber-100">
+                            Details
+                          </summary>
+                          <pre className="mt-2 max-w-full overflow-auto rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-[10px] text-amber-800">
+                            {contactError}
+                          </pre>
+                        </details>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                  <p className="text-sm text-slate-500">
+                    {contactMessage || "No contacts enriched yet."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setContactFetchTrigger((n) => n + 1)}
+                    className="mt-3 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                  >
+                    Search more contacts
+                  </button>
+                </div>
+              )
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {contactOverviewRows.map((contact: any, index: number) => {
@@ -3814,6 +3882,204 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
           )}
         </TabsContent>
 
+        <TabsContent value="trade-lanes" className="space-y-4">
+          <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  Trade lane intelligence
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Strongest lanes by shipment count, TEU, and estimated spend
+                </p>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                {canonicalLanes.length} {canonicalLanes.length === 1 ? "lane" : "lanes"}
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                      <th className="px-3 py-2 font-semibold">#</th>
+                      <th className="px-3 py-2 font-semibold">Lane</th>
+                      <th className="px-3 py-2 text-right font-semibold">Shipments</th>
+                      <th className="px-3 py-2 text-right font-semibold">TEU</th>
+                      <th className="px-3 py-2 text-right font-semibold">Est. Spend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {canonicalLanes.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
+                          No trade lane data available yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      resolvedRoutes.map((route, i) => (
+                        <tr
+                          key={i}
+                          onClick={() => setSelectedLane(route.lane)}
+                          className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
+                            route.lane === activeLane
+                              ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
+                              : "hover:bg-slate-50/70"
+                          }`}
+                        >
+                          <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                                style={{
+                                  backgroundColor:
+                                    route.lane === activeLane
+                                      ? TEU_BAR_PRIMARY
+                                      : CHART_COLORS[i % CHART_COLORS.length],
+                                }}
+                              />
+                              {route.fromMeta?.flag ? (
+                                <span aria-hidden className="text-base leading-none">
+                                  {route.fromMeta.flag}
+                                </span>
+                              ) : null}
+                              <span className="max-w-[260px] truncate font-semibold text-slate-900">
+                                {route.lane}
+                              </span>
+                              {route.toMeta?.flag ? (
+                                <span aria-hidden className="text-base leading-none">
+                                  {route.toMeta.flag}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-right font-semibold text-indigo-600">
+                            {formatNumber(route.shipments)}
+                          </td>
+                          <td className="px-3 py-3 text-right text-slate-700">
+                            {formatNumber(route.teu, 1)}
+                          </td>
+                          <td className="px-3 py-3 text-right text-slate-700">
+                            {formatCurrency(route.spend)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                style={{
+                  background:
+                    "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
+                  borderRadius: 24,
+                  border: "1px solid #E2E8F0",
+                  padding: 16,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 10,
+                  minWidth: 0,
+                }}
+              >
+                {(() => {
+                  const globeLanes: GlobeLane[] = resolvedRoutes
+                    .filter((r) => r.resolvable)
+                    .slice(0, 6)
+                    .map((r, i) => laneStringToGlobeLane(r.lane, i))
+                    .filter((l): l is GlobeLane => l !== null);
+                  const selectedGlobeLane = activeLane ?? null;
+                  const hasResolvable = globeLanes.length > 0;
+
+                  if (!hasResolvable) {
+                    return (
+                      <div
+                        className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
+                        style={{ minHeight: 200 }}
+                      >
+                        <Globe className="mb-2 h-6 w-6 text-slate-300" />
+                        Route map unavailable because this shipment data does not include resolvable origin/destination locations.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <>
+                      {(activeFromMeta || activeToMeta) && (
+                        <div className="flex w-full flex-wrap items-center justify-center gap-2">
+                          {activeFromMeta ? (
+                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                              <span aria-hidden>{activeFromMeta.flag || "🌐"}</span>
+                              <span>{activeFromMeta.countryName}</span>
+                              {activeFromMeta.countryCode ? (
+                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
+                                  {activeFromMeta.countryCode}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                          <span className="text-xs text-slate-400">→</span>
+                          {activeToMeta ? (
+                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                              <span aria-hidden>{activeToMeta.flag || "🌐"}</span>
+                              <span>{activeToMeta.countryName}</span>
+                              {activeToMeta.countryCode ? (
+                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
+                                  {activeToMeta.countryCode}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                      <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                        <GlobeCanvas
+                          lanes={globeLanes}
+                          selectedLane={selectedGlobeLane}
+                          size={globeSize}
+                          theme="dark"
+                        />
+                      </div>
+                      {selectedGlobeLane ? (
+                        <div
+                          style={{
+                            alignSelf: "stretch",
+                            background: "#EFF6FF",
+                            border: "1px solid #BFDBFE",
+                            borderRadius: 8,
+                            padding: "7px 12px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 8,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: "#1d4ed8",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {selectedGlobeLane}
+                          </span>
+                        </div>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
         <TabsContent value="equipment" className="space-y-4">
           {(() => {
             // Canonical mix derived from detail.filteredShipments (BOL-backed).
@@ -4048,7 +4314,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                             {formatNumber(teu, 1)}
                           </td>
                           <td className="px-3 py-3 align-top text-xs text-slate-500">
-                            {mostRecent ? formatDate(mostRecent) : "—"}
+                            {mostRecent ? formatDate(capDateAtToday(mostRecent)) : "—"}
                           </td>
                           <td className="px-3 py-3 align-top text-xs text-slate-500">
                             {sup.business_length || "—"}
@@ -4362,9 +4628,28 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                 Loading contacts…
               </div>
             ) : filteredContacts.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                {contactMessage || "No contacts found yet. If Lusha is rate-limited, cached contacts will appear here when available."}
-              </div>
+              contactError ? (
+                <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
+                  <div className="text-sm font-semibold text-amber-900">
+                    Contact enrichment unavailable
+                  </div>
+                  <p className="mt-1 text-xs text-amber-800">
+                    The contact provider did not return contacts for this company. Try again or connect a provider in Admin.
+                  </p>
+                  <details className="mt-3 text-[11px] text-amber-700">
+                    <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-amber-100">
+                      Details
+                    </summary>
+                    <pre className="mt-2 max-w-full overflow-auto rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-[10px] text-amber-800">
+                      {contactError}
+                    </pre>
+                  </details>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                  {contactMessage || "No contacts enriched yet."}
+                </div>
+              )
             ) : (
               <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
                 <div className="space-y-2">

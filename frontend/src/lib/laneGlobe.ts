@@ -172,6 +172,61 @@ export const ENDPOINT_ALIAS_MAP: Record<string, string> = {
   jakarta: "indonesia",
   "tanjung priok": "indonesia",
   surabaya: "indonesia",
+
+  // Country-name variants — full / formal / informal aliases that show up in
+  // raw `parsed_summary` strings. These ensure that an endpoint label like
+  // "United States of America" or "PR China" still resolves through the same
+  // chain that handles short codes and city names.
+  "united states of america": "usa",
+  "u.s.": "usa",
+  "u.s.a.": "usa",
+  "us of a": "usa",
+  america: "usa",
+  "people's republic of china": "china",
+  "peoples republic of china": "china",
+  "pr china": "china",
+  prc: "china",
+  "mainland china": "china",
+  "republic of korea": "south korea",
+  rok: "south korea",
+  "south korea": "south korea",
+  sokorea: "south korea",
+  "great britain": "united kingdom",
+  england: "united kingdom",
+  deutschland: "germany",
+  méxico: "mexico",
+  "mexico city": "mexico",
+
+  // Indian states / regions / districts that surface in parsed_summary
+  "chengalpattu district": "india",
+  "tamil nadu": "india",
+  kerala: "india",
+  maharashtra: "india",
+  karnataka: "india",
+  gujarat: "india",
+  haryana: "india",
+  punjab: "india",
+  "uttar pradesh": "india",
+  "west bengal": "india",
+
+  // Chinese provinces
+  guangdong: "china",
+  zhejiang: "china",
+  jiangsu: "china",
+  fujian: "china",
+  shandong: "china",
+
+  // US states (avoid `new york` — already mapped to USA via city alias)
+  california: "usa",
+  texas: "usa",
+  georgia: "usa",
+  florida: "usa",
+  "new york state": "usa",
+  illinois: "usa",
+  "washington state": "usa",
+  virginia: "usa",
+  "south carolina": "usa",
+  "north carolina": "usa",
 };
 
 /**
@@ -362,7 +417,9 @@ export function resolveEndpoint(
   }
 
   // 5. "City, CC" pattern — split on comma, try alias for first part, then
-  //    LOCODE prefix for last part.
+  //    LOCODE prefix for last part. Also supports "City, FullCountryName"
+  //    by trying alias / coord lookup on the trailing token after the
+  //    LOCODE-prefix attempt fails.
   if (lower.includes(",")) {
     const parts = lower.split(",").map((part) => part.trim()).filter(Boolean);
     if (parts.length >= 2) {
@@ -383,6 +440,13 @@ export function resolveEndpoint(
       }
       if (COUNTRY_COORDS[last]) {
         return buildResult(last);
+      }
+      // Try every interior token (e.g. "Chengalpattu district, Tamil Nadu, India")
+      // so the country segment in the middle still resolves.
+      for (let i = parts.length - 2; i >= 0; i--) {
+        const seg = parts[i];
+        if (ENDPOINT_ALIAS_MAP[seg]) return buildResult(ENDPOINT_ALIAS_MAP[seg]);
+        if (COUNTRY_COORDS[seg]) return buildResult(seg);
       }
     }
   }

@@ -58,6 +58,13 @@ const ADMIN_MOBILE_SECTION = {
 };
 
 const PAGE_META = [
+  // Company profile routes — Company.jsx renders into AppLayout via the
+  // `/company/:id` and `/app/companies/:id` routes. Keep these checks above
+  // the broader `/app/companies` index match so the detail-page header text
+  // wins over the listing-page text.
+  { match: /^\/company\/[^/]+/, title: "Company Intelligence", subtitle: "Shipment profile and trade activity" },
+  { match: /^\/app\/companies\/[^/]+/, title: "Company Intelligence", subtitle: "Shipment profile and trade activity" },
+  { match: /^\/app\/companies\/?$/, title: "Companies", subtitle: "Saved accounts and trade intelligence" },
   { match: /^\/app\/dashboard/, title: "Dashboard", subtitle: "Trade Intelligence overview" },
   { match: /^\/app\/search/, title: "Search", subtitle: "Find companies and shipment intelligence" },
   { match: /^\/app\/command-center/, title: "Command Center", subtitle: "Your saved accounts and CRM workspace" },
