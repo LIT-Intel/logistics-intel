@@ -485,3 +485,214 @@ export function laneStringToGlobeLane(
     toMeta: toResolved,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Phase B.3 — canonical lane grouping
+// ---------------------------------------------------------------------------
+
+/**
+ * Short-form display names used by `canonicalizeLanes` so the rendered label
+ * matches the validated design source: "🇨🇳 China → 🇺🇸 USA" instead of
+ * "China → United States". All other canonical keys fall through to the
+ * `COUNTRY_DISPLAY[key].name` value.
+ */
+const SHORT_COUNTRY_NAME: Record<string, string> = {
+  usa: "USA",
+  "united states": "USA",
+  "united kingdom": "UK",
+  uk: "UK",
+  "south korea": "South Korea",
+  "hong kong": "Hong Kong",
+};
+
+const shortNameFor = (meta: ResolvedEndpoint): string =>
+  SHORT_COUNTRY_NAME[meta.canonicalKey] ?? meta.countryName;
+
+/**
+ * Strip a redundant trailing 2-letter country-code token from an endpoint
+ * label when the rest of the label resolves to that country. E.g.
+ * `"United States of America US"` → `"United States of America"`. Leaves
+ * the input untouched when no trailing 2-letter token is present, when the
+ * trailing token does not match the resolved country, or when the input
+ * has no resolvable country.
+ */
+function stripTrailingCountryCode(raw: string): string {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return trimmed;
+  const tokens = trimmed.split(/\s+/);
+  if (tokens.length < 2) return trimmed;
+  const last = tokens[tokens.length - 1];
+  if (!/^[A-Za-z]{2}$/.test(last)) return trimmed;
+  const codeUpper = last.toUpperCase();
+  if (!LOCODE_PREFIX_MAP[codeUpper]) return trimmed;
+  const head = tokens.slice(0, -1).join(" ").trim();
+  if (!head) return trimmed;
+  const headResolved = resolveEndpoint(head);
+  if (!headResolved) return trimmed;
+  if (headResolved.countryCode === codeUpper) return head;
+  return trimmed;
+}
+
+export type CanonicalLane = {
+  /** Resolved country pair key, e.g. "italy::usa". Group key. */
+  pairKey: string;
+  /** Display label: "🇮🇹 Italy → 🇺🇸 USA". */
+  displayLabel: string;
+  fromMeta: ResolvedEndpoint;
+  toMeta: ResolvedEndpoint;
+  shipments: number;
+  teu: number;
+  spend: number | null;
+  /** Raw lane labels merged into this canonical row. */
+  aliases: string[];
+  /** Iff both endpoints resolved (drives globe rendering). */
+  resolvable: true;
+};
+
+export type NonCanonicalLane = {
+  pairKey: null;
+  /** Raw label cleaned of trailing country-code suffix. */
+  displayLabel: string;
+  shipments: number;
+  teu: number;
+  spend: number | null;
+  aliases: string[];
+  resolvable: false;
+};
+
+/**
+ * Group raw lane rows into canonical country-pair rows. The same Italy → USA
+ * shipments are merged regardless of whether the upstream label was
+ * "Italy → United States of America US", "Italy → USA", or
+ * "Genoa, IT → Long Beach, US". Rows where either endpoint cannot be
+ * resolved are surfaced as `NonCanonicalLane` entries so they still show in
+ * the table — they just don't render an arc on the globe.
+ */
+export function canonicalizeLanes(
+  rawLanes: Array<{
+    lane: string;
+    shipments?: number;
+    teu?: number;
+    spend?: number | null;
+  }>,
+): { canonical: CanonicalLane[]; nonCanonical: NonCanonicalLane[] } {
+  type CanonicalDraft = {
+    pairKey: string;
+    fromMeta: ResolvedEndpoint;
+    toMeta: ResolvedEndpoint;
+    shipments: number;
+    teu: number;
+    spendSum: number;
+    spendContributors: number;
+    aliasSet: Set<string>;
+  };
+  type NonCanonicalDraft = {
+    displayLabel: string;
+    shipments: number;
+    teu: number;
+    spendSum: number;
+    spendContributors: number;
+    aliasSet: Set<string>;
+  };
+
+  const canonicalMap = new Map<string, CanonicalDraft>();
+  const nonCanonicalMap = new Map<string, NonCanonicalDraft>();
+
+  for (const row of rawLanes || []) {
+    const rawLane = String(row?.lane || "").trim();
+    if (!rawLane) continue;
+
+    const parts = rawLane.split(/→|->|>/).map((s) => s.trim()).filter(Boolean);
+    const fromRaw = parts[0] || "";
+    const toRaw = parts.length > 1 ? parts[1] : "";
+
+    const cleanedFrom = stripTrailingCountryCode(fromRaw);
+    const cleanedTo = stripTrailingCountryCode(toRaw);
+    const cleanedLabel =
+      cleanedFrom && cleanedTo
+        ? `${cleanedFrom} → ${cleanedTo}`
+        : cleanedFrom || cleanedTo || rawLane;
+
+    const fromMeta = cleanedFrom ? resolveEndpoint(cleanedFrom) : null;
+    const toMeta = cleanedTo ? resolveEndpoint(cleanedTo) : null;
+
+    const shipments = Math.max(0, Number(row?.shipments ?? 0) || 0);
+    const teu = Math.max(0, Number(row?.teu ?? 0) || 0);
+    const spend =
+      row?.spend == null || Number.isNaN(Number(row.spend))
+        ? null
+        : Number(row.spend);
+
+    if (fromMeta && toMeta) {
+      const pairKey = `${fromMeta.canonicalKey}::${toMeta.canonicalKey}`;
+      const draft =
+        canonicalMap.get(pairKey) ||
+        ({
+          pairKey,
+          fromMeta,
+          toMeta,
+          shipments: 0,
+          teu: 0,
+          spendSum: 0,
+          spendContributors: 0,
+          aliasSet: new Set<string>(),
+        } as CanonicalDraft);
+      draft.shipments += shipments;
+      draft.teu += teu;
+      if (spend != null) {
+        draft.spendSum += spend;
+        draft.spendContributors += 1;
+      }
+      draft.aliasSet.add(cleanedLabel);
+      canonicalMap.set(pairKey, draft);
+    } else {
+      const key = cleanedLabel || rawLane;
+      const draft =
+        nonCanonicalMap.get(key) ||
+        ({
+          displayLabel: key,
+          shipments: 0,
+          teu: 0,
+          spendSum: 0,
+          spendContributors: 0,
+          aliasSet: new Set<string>(),
+        } as NonCanonicalDraft);
+      draft.shipments += shipments;
+      draft.teu += teu;
+      if (spend != null) {
+        draft.spendSum += spend;
+        draft.spendContributors += 1;
+      }
+      draft.aliasSet.add(key);
+      nonCanonicalMap.set(key, draft);
+    }
+  }
+
+  const canonical: CanonicalLane[] = [...canonicalMap.values()]
+    .map((draft) => ({
+      pairKey: draft.pairKey,
+      displayLabel: `${draft.fromMeta.flag} ${shortNameFor(draft.fromMeta)} → ${draft.toMeta.flag} ${shortNameFor(draft.toMeta)}`,
+      fromMeta: draft.fromMeta,
+      toMeta: draft.toMeta,
+      shipments: draft.shipments,
+      teu: draft.teu,
+      spend: draft.spendContributors > 0 ? draft.spendSum : null,
+      aliases: [...draft.aliasSet],
+      resolvable: true as const,
+    }))
+    .sort((a, b) => b.shipments - a.shipments || b.teu - a.teu);
+
+  const nonCanonical: NonCanonicalLane[] = [...nonCanonicalMap.values()]
+    .map((draft) => ({
+      pairKey: null as null,
+      displayLabel: draft.displayLabel,
+      shipments: draft.shipments,
+      teu: draft.teu,
+      spend: draft.spendContributors > 0 ? draft.spendSum : null,
+      aliases: [...draft.aliasSet],
+      resolvable: false as const,
+    }))
+    .sort((a, b) => b.shipments - a.shipments || b.teu - a.teu);
+
+  return { canonical, nonCanonical };
+}

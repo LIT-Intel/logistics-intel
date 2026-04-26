@@ -70,19 +70,29 @@ const LIGHT_PALETTE: GlobePalette = {
 
 // Higher-contrast variant used by the Company Detail trade-lane card. The
 // Dashboard trade-lanes consumer keeps the legacy "light" palette by default.
+//
+// Phase B.3 — palette retuned per the validated design source. Previous tones
+// (#0F172A ocean / #3B82F6 land / #A5B4FC arc) read too dark over the panel's
+// light surface and washed out the arcs. New tokens:
+// - Ocean: #1E3A8A (soft navy, brighter than slate-900).
+// - Land: #60A5FA (medium blue, friendlier on navy).
+// - Graticule: #475569 at low opacity.
+// - Arc stroke: #818CF8 (indigo-400, visible against medium-blue land).
+// - Endpoint dots: #22D3EE (cyan-400) with #0E7490 outer ring at low opacity.
+// - Selected lane glow: #A78BFA (violet-400) for clear contrast vs unselected.
 const DARK_PALETTE: GlobePalette = {
-  oceanInner: "#1E293B",
-  oceanOuter: "#0F172A",
-  sphereStroke: "#1E293B",
-  graticule: "rgba(148,163,184,0.18)",
-  landFill: "#3B82F6",
-  landStroke: "#0F172A",
-  highlightFill: "rgba(99,102,241,0.85)",
-  arcGlow: "rgba(99,102,241,0.35)",
-  arcStroke: "#A5B4FC",
-  dotFill: "#A5B4FC",
-  dotStroke: "#0F172A",
-  pulseStroke: (alpha) => `rgba(165,180,252,${alpha})`,
+  oceanInner: "#1E3A8A",
+  oceanOuter: "#1E3A8A",
+  sphereStroke: "#1E3A8A",
+  graticule: "rgba(71,85,105,0.32)",
+  landFill: "#60A5FA",
+  landStroke: "#1E3A8A",
+  highlightFill: "rgba(167,139,250,0.78)",
+  arcGlow: "rgba(167,139,250,0.40)",
+  arcStroke: "#818CF8",
+  dotFill: "#22D3EE",
+  dotStroke: "rgba(14,116,144,0.55)",
+  pulseStroke: (alpha) => `rgba(34,211,238,${alpha})`,
 };
 
 type Props = {

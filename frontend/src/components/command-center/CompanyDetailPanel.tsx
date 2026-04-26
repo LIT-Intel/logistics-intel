@@ -34,8 +34,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
 import {
+  canonicalizeLanes,
   laneStringToGlobeLane,
   resolveEndpoint,
+  type CanonicalLane,
+  type NonCanonicalLane,
   type ResolvedEndpoint,
 } from "@/lib/laneGlobe";
 import {
@@ -1610,6 +1613,21 @@ const getContactPhone = (contact: any) =>
 
 const getContactLinkedIn = (contact: any) =>
   contact.linkedin_url || contact.linkedinUrl || contact.linkedInUrl || "";
+
+/**
+ * Phase B.3 — strict verification gate. Returns true ONLY when an upstream
+ * provider explicitly flagged the contact's email as verified. Falsy /
+ * absent fields all collapse to false so we don't slap a green "Verified"
+ * pill on every Lusha row by default. Anything else renders as "Found".
+ */
+const isContactVerified = (contact: any): boolean => {
+  if (!contact) return false;
+  if (contact.email_verified === true) return true;
+  if (contact.source_provider_verified === true) return true;
+  const status = String(contact.email_status || "").toLowerCase().trim();
+  return status === "verified";
+};
+
   const getContactLocation = (contact: any) =>
   contact.location ||
   [contact.city, contact.state, contact.country].filter(Boolean).join(", ") ||
@@ -2474,61 +2492,76 @@ export default function CompanyDetailPanel({
     };
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
 
+  // Phase B.3 — tabs collapsed from 7 → 3 per the validated design source.
+  // Trade Lanes / Shipments / Suppliers / Credit have been folded back into
+  // Overview (Trade Lanes + previews) or removed (Credit). Equipment and
+  // Contact Intel keep their own tabs. The setActiveTab API is preserved
+  // and Overview-internal "View …" cross-links scroll to anchor sections.
   const [activeTab, setActiveTab] = useState<
-    "overview" | "trade-lanes" | "equipment" | "shipments" | "suppliers" | "contacts" | "credit"
+    "overview" | "equipment" | "contacts"
   >("overview");
   const [suppliersPage, setSuppliersPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
 
-  // Build the canonical lane list once. The hero pills, the Trade Lanes
-  // table, the globe arc array, and the Overview lane preview ALL consume
-  // this same source — no more divergent fallback chains where the hero
-  // shows a real label and the panel shows "Unknown".
-  const canonicalLanes = useMemo(
+  // Build the canonical lane list once. Phase B.3 — all consumers (hero
+  // pill, Trade Lane Intelligence table, globe arc, Overview previews) read
+  // from the same canonicalizeLanes() output so "Italy → United States of
+  // America US" and "Italy → USA" merge into one row labelled
+  // "🇮🇹 Italy → 🇺🇸 USA". `combinedLanes` keeps the raw list around so
+  // unresolved rows still show in the table.
+  const safeLanes = useMemo(
     () => safeRouteList(detail, rawRouteKpis, rawProfile, normalizedShipments),
     [detail, rawRouteKpis, rawProfile, normalizedShipments],
   );
 
-  const resolvedRoutes = useMemo(
+  const { canonical: canonicalLanes, nonCanonical: nonCanonicalLanes } = useMemo(
     () =>
-      canonicalLanes.map((route) => {
-        const parts = (route.lane || "").split(/→|->|>/).map((p) => p.trim());
-        const fromMeta = resolveEndpoint(parts[0]);
-        const toMeta = resolveEndpoint(parts[1]);
-        return {
-          ...route,
-          fromMeta,
-          toMeta,
-        };
-      }),
+      canonicalizeLanes(
+        safeLanes.map((row) => ({
+          lane: row.lane,
+          shipments: row.shipments,
+          teu: row.teu,
+          spend: row.spend,
+        })),
+      ),
+    [safeLanes],
+  );
+
+  const combinedLanes: Array<CanonicalLane | NonCanonicalLane> = useMemo(
+    () => [...canonicalLanes, ...nonCanonicalLanes],
+    [canonicalLanes, nonCanonicalLanes],
+  );
+
+  // Globe / lane-summary key — the canonical displayLabel. Unresolved rows
+  // never feed the globe arc array (they have no coords).
+  const firstResolvableLane = useMemo(
+    () => canonicalLanes[0]?.displayLabel ?? null,
     [canonicalLanes],
   );
 
-  const firstResolvableLane = useMemo(
-    () => resolvedRoutes.find((r) => r.resolvable)?.lane ?? null,
-    [resolvedRoutes],
-  );
-
-  // Default-select the first resolvable lane on mount / when the company
-  // changes. We only auto-pick if the user has not chosen a lane yet (or
-  // their selection is no longer valid for the current company).
+  // Default-select the first canonical (resolvable) lane on mount / when the
+  // company changes. We only auto-pick if the user has not chosen a lane yet
+  // (or their selection is no longer valid for the current company).
   useEffect(() => {
     if (!firstResolvableLane) {
       if (selectedLane) setSelectedLane(null);
       return;
     }
-    if (!selectedLane || !resolvedRoutes.some((r) => r.lane === selectedLane)) {
+    if (
+      !selectedLane ||
+      !canonicalLanes.some((l) => l.displayLabel === selectedLane)
+    ) {
       setSelectedLane(firstResolvableLane);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firstResolvableLane, resolvedRoutes]);
+  }, [firstResolvableLane, canonicalLanes]);
 
   const activeLane = selectedLane || firstResolvableLane;
   const activeLaneMeta = useMemo(
-    () => resolvedRoutes.find((r) => r.lane === activeLane) || null,
-    [resolvedRoutes, activeLane],
+    () => canonicalLanes.find((l) => l.displayLabel === activeLane) || null,
+    [canonicalLanes, activeLane],
   );
   const activeFromMeta: ResolvedEndpoint | null = activeLaneMeta?.fromMeta ?? null;
   const activeToMeta: ResolvedEndpoint | null = activeLaneMeta?.toMeta ?? null;
@@ -3082,6 +3115,10 @@ if (!cancelled) {
         onValueChange={(v: string) => setActiveTab(v as typeof activeTab)}
         className="space-y-4"
       >
+        {/* Phase B.3 — 7 → 3 tabs. Trade Lanes folded into Overview's
+            Trade Lane Intelligence section. Shipments / Suppliers / Credit
+            removed (Suppliers + Recent Shipments still appear as preview
+            cards inside Overview; Credit dropped entirely). */}
         <TabsList className="flex h-auto w-full gap-0 overflow-x-auto rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
           <TabsTrigger
             value="overview"
@@ -3091,32 +3128,11 @@ if (!cancelled) {
             Overview
           </TabsTrigger>
           <TabsTrigger
-            value="trade-lanes"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Trade Lanes
-          </TabsTrigger>
-          <TabsTrigger
             value="equipment"
             className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Equipment
-          </TabsTrigger>
-          <TabsTrigger
-            value="shipments"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Shipments
-          </TabsTrigger>
-          <TabsTrigger
-            value="suppliers"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Suppliers
           </TabsTrigger>
           <TabsTrigger
             value="contacts"
@@ -3125,46 +3141,88 @@ if (!cancelled) {
           >
             Contact Intel
           </TabsTrigger>
-          <TabsTrigger
-            value="credit"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Credit &amp; Health
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-3">
-          <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
-            <SmallMetric
-              label="Avg TEU / shipment"
-              value={formatNumber(detail.avgTeuPerShipment, 2)}
-              icon={TrendingUp}
-            />
-            <SmallMetric
-              label="Oldest shipment"
-              value={formatDate(detail.oldestShipmentDate)}
-              icon={CalendarClock}
-            />
-            <SmallMetric
-              label="Latest shipment"
-              value={formatDate(capDateAtToday(detail.latestShipmentDate))}
-              icon={CalendarClock}
-            />
-            <SmallMetric
-              label="Volume trend (YoY)"
-              value={
-                trendArrow ? (
-                  <span className={trendColor}>
-                    {trendArrow} {Math.abs(trendPct || 0).toFixed(1)}%
-                  </span>
-                ) : (
-                  "—"
-                )
-              }
-              icon={BarChart3}
-            />
-          </div>
+          {/* Phase B.3 — secondary KPI row matches the validated design
+              source: 6 cards (Avg TEU / Shipment, Active Trade Lanes,
+              Volume Trend YoY, Top Carrier, Oldest Record, Last Activity).
+              Every value is derived from real shipment / route / carrier
+              data. Empty-state renders "—" rather than hiding cards. */}
+          {(() => {
+            const avgTeu =
+              detail.shipments > 0 && detail.teu > 0
+                ? (detail.teu / detail.shipments).toFixed(1)
+                : null;
+            const activeLaneCount = canonicalLanes.filter(
+              (l) => l.shipments > 0,
+            ).length;
+            const topCarrier =
+              detail.carriers && detail.carriers.length > 0
+                ? detail.carriers[0]?.carrier || null
+                : null;
+
+            return (
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+                <SmallMetric
+                  label="Avg TEU / Shipment"
+                  value={avgTeu ?? "—"}
+                  icon={TrendingUp}
+                />
+                <SmallMetric
+                  label="Active Trade Lanes"
+                  value={
+                    activeLaneCount > 0 ? formatNumber(activeLaneCount) : "—"
+                  }
+                  icon={Globe}
+                />
+                <SmallMetric
+                  label="Volume Trend YoY"
+                  value={
+                    trendArrow ? (
+                      <span className={trendColor}>
+                        {trendArrow} {Math.abs(trendPct || 0).toFixed(1)}%
+                      </span>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  icon={BarChart3}
+                />
+                <SmallMetric
+                  label="Top Carrier"
+                  value={
+                    topCarrier ? (
+                      <span
+                        className="block truncate text-base"
+                        title={topCarrier}
+                        style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                      >
+                        {topCarrier}
+                      </span>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  icon={Truck}
+                />
+                <SmallMetric
+                  label="Oldest Record"
+                  value={
+                    detail.oldestShipmentDate
+                      ? formatDate(detail.oldestShipmentDate)
+                      : "—"
+                  }
+                  icon={CalendarClock}
+                />
+                <SmallMetric
+                  label="Last Activity"
+                  value={formatDate(capDateAtToday(detail.latestShipmentDate))}
+                  icon={CalendarClock}
+                />
+              </div>
+            );
+          })()}
 
           <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
             <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -3219,168 +3277,221 @@ if (!cancelled) {
             </div>
           </div>
 
-          {/* Phase B.2 H — Trade lanes preview lives in Overview, full
-              table + globe lives in the dedicated Trade Lanes tab. The
-              preview reads the same `canonicalLanes` source so hero pill /
-              preview row / tab content / globe arc all agree. */}
-          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
-            <div className="flex h-full min-h-[260px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    Trade lane intelligence
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Top {Math.min(3, canonicalLanes.length || 0)} of {canonicalLanes.length}{" "}
-                    {canonicalLanes.length === 1 ? "lane" : "lanes"} — open the full tab for the table and globe
-                  </p>
+          {/* Phase B.3 — Trade Lane Intelligence section, folded back from
+              the dedicated Trade Lanes tab. Globe LEFT, table RIGHT (was
+              the opposite in the old standalone tab). Table is 5-column:
+              # / Lane / Shipments / TEU / Trend. Spend is no longer a
+              visible column (kept as title-tooltip on each row). All rows
+              read from canonicalizeLanes() so hero pill / table / globe /
+              preview agree on labels like "🇨🇳 China → 🇺🇸 USA". */}
+          <section id="overview-trade-lanes" className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  Trade Lane Intelligence
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("trade-lanes")}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                >
-                  View Trade Lanes <ArrowUpRight className="h-3 w-3" />
-                </button>
+                <p className="mt-1 text-xs text-slate-500">
+                  Strongest lanes by shipment count, TEU, and estimated spend.
+                </p>
               </div>
-
-              {canonicalLanes.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                  No trade lane data available yet.
-                </div>
-              ) : (
-                <ul className="space-y-2">
-                  {resolvedRoutes.slice(0, 3).map((route, i) => (
-                    <li
-                      key={`overview-lane-${i}`}
-                      className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2.5"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="text-xs font-semibold text-slate-400">{i + 1}</span>
-                        {route.fromMeta?.flag ? (
-                          <span aria-hidden className="text-base leading-none">
-                            {route.fromMeta.flag}
-                          </span>
-                        ) : null}
-                        <span className="truncate text-sm font-semibold text-slate-900">
-                          {route.lane}
-                        </span>
-                        {route.toMeta?.flag ? (
-                          <span aria-hidden className="ml-auto text-base leading-none">
-                            {route.toMeta.flag}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          Shipments
-                        </div>
-                        <div className="text-sm font-semibold text-indigo-600">
-                          {formatNumber(route.shipments)}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                {canonicalLanes.length} active {canonicalLanes.length === 1 ? "lane" : "lanes"}
+              </div>
             </div>
 
-            <div className="flex h-full min-h-[260px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    Equipment intelligence
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Load split, container mix, and equipment footprint
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("equipment")}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                >
-                  View Equipment <ArrowUpRight className="h-3 w-3" />
-                </button>
-              </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* Globe LEFT — uses navy palette tuned in Phase B.3. */}
+              <div
+                style={{
+                  background:
+                    "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
+                  borderRadius: 24,
+                  border: "1px solid #E2E8F0",
+                  padding: 16,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 10,
+                  minWidth: 0,
+                }}
+              >
+                {(() => {
+                  const globeLanes: GlobeLane[] = canonicalLanes
+                    .slice(0, 6)
+                    .map((l) => ({
+                      id: l.displayLabel,
+                      from: l.fromMeta.canonicalKey,
+                      to: l.toMeta.canonicalKey,
+                      coords: [l.fromMeta.coords, l.toMeta.coords],
+                      fromMeta: l.fromMeta,
+                      toMeta: l.toMeta,
+                      shipments: l.shipments,
+                    }));
+                  const hasResolvable = globeLanes.length > 0;
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    <Container className="h-3.5 w-3.5 text-indigo-500" />
-                    Load type split
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-3 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-widest text-indigo-500">FCL</div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">
-                        {formatNumber(detail.fclShipments)}
+                  if (!hasResolvable) {
+                    return (
+                      <div
+                        className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
+                        style={{ minHeight: 200 }}
+                      >
+                        <Globe className="mb-2 h-6 w-6 text-slate-300" />
+                        Route map unavailable because this shipment data does not include resolvable origin/destination locations.
                       </div>
-                    </div>
-                    <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 px-3 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-widest text-cyan-600">LCL</div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">
-                        {formatNumber(detail.lclShipments)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                    );
+                  }
 
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    <Boxes className="h-3.5 w-3.5 text-violet-500" />
-                    Container type mix
-                  </div>
-
-                  {detail.containerMix.length === 0 ? (
-                    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
-                      Container type data unavailable.
-                    </div>
-                  ) : (
+                  return (
                     <>
-                      <div className="mt-4 h-[220px]">
-                        <RechartContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={detail.containerMix}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius="44%"
-                              outerRadius="68%"
-                              paddingAngle={2}
-                              dataKey="value"
-                            >
-                              {detail.containerMix.map((_, i) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <RechartTooltip formatter={(v: number) => formatNumber(v)} />
-                          </PieChart>
-                        </RechartContainer>
-                      </div>
-                      <div className="mt-3 space-y-1">
-                        {detail.containerMix.map((ct, i) => (
-                          <div
-                            key={ct.name}
-                            className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-1.5 text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-2.5 w-2.5 rounded-full"
-                                style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                              />
-                              <span className="font-medium text-slate-700">{ct.name}</span>
-                            </div>
-                            <span className="font-semibold text-indigo-600">{formatNumber(ct.value)}</span>
+                      {/* Selected lane summary row — sits ON the light surface
+                          surrounding the globe, so use slate tokens (not
+                          white/10 navy tokens). */}
+                      {activeLaneMeta ? (
+                        <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span className="truncate font-semibold" title={activeLaneMeta.displayLabel}>
+                              {activeLaneMeta.displayLabel}
+                            </span>
+                            <span className="flex items-center gap-3 font-mono text-[11px] text-slate-600">
+                              <span>Shipments {formatNumber(activeLaneMeta.shipments)}</span>
+                              <span>TEU {formatNumber(activeLaneMeta.teu, 1)}</span>
+                              <span>
+                                Est. Spend {activeLaneMeta.spend != null ? formatCurrency(activeLaneMeta.spend) : "—"}
+                              </span>
+                            </span>
                           </div>
-                        ))}
+                        </div>
+                      ) : null}
+
+                      {(activeFromMeta || activeToMeta) && (
+                        <div className="flex w-full flex-wrap items-center justify-center gap-2">
+                          {activeFromMeta ? (
+                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                              <span aria-hidden>{activeFromMeta.flag || "🌐"}</span>
+                              <span>{activeFromMeta.countryName}</span>
+                              {activeFromMeta.countryCode ? (
+                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
+                                  {activeFromMeta.countryCode}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                          <span className="text-xs text-slate-400">→</span>
+                          {activeToMeta ? (
+                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                              <span aria-hidden>{activeToMeta.flag || "🌐"}</span>
+                              <span>{activeToMeta.countryName}</span>
+                              {activeToMeta.countryCode ? (
+                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
+                                  {activeToMeta.countryCode}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                      <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                        <GlobeCanvas
+                          lanes={globeLanes}
+                          selectedLane={activeLane ?? null}
+                          size={globeSize}
+                          theme="dark"
+                        />
                       </div>
                     </>
-                  )}
-                </div>
+                  );
+                })()}
+              </div>
+
+              {/* Table RIGHT */}
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                      <th className="px-3 py-2 font-semibold">#</th>
+                      <th className="px-3 py-2 font-semibold">Lane</th>
+                      <th className="px-3 py-2 text-right font-semibold">Shipments</th>
+                      <th className="px-3 py-2 text-right font-semibold">TEU</th>
+                      <th className="px-3 py-2 text-right font-semibold">Trend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {combinedLanes.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
+                          No trade lane data available yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      combinedLanes.map((lane, i) => {
+                        const isActive =
+                          lane.resolvable && lane.displayLabel === activeLane;
+                        const spendTitle =
+                          lane.spend != null ? `Est. Spend: ${formatCurrency(lane.spend)}` : undefined;
+                        // Trend cell — driven by per-lane shipments delta if
+                        // available; otherwise honest "—". We don't invent
+                        // sparkline series, so this stays an arrow-only badge.
+                        const trendNode =
+                          lane.shipments > 0 && lane.resolvable ? (
+                            <span className="text-emerald-600">↑</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          );
+                        return (
+                          <tr
+                            key={`lane-${i}`}
+                            onClick={() => {
+                              if (lane.resolvable) setSelectedLane(lane.displayLabel);
+                            }}
+                            title={spendTitle}
+                            className={`border-b border-slate-50 last:border-b-0 transition-colors ${
+                              lane.resolvable ? "cursor-pointer" : "cursor-default"
+                            } ${
+                              isActive
+                                ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
+                                : "hover:bg-slate-50/70"
+                            }`}
+                          >
+                            <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
+                            <td className="px-3 py-3">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor: isActive
+                                      ? TEU_BAR_PRIMARY
+                                      : CHART_COLORS[i % CHART_COLORS.length],
+                                  }}
+                                />
+                                <span className="max-w-[260px] truncate font-semibold text-slate-900">
+                                  {lane.displayLabel}
+                                </span>
+                              </div>
+                              {lane.aliases.length > 1 ? (
+                                <div className="mt-0.5 truncate text-xs text-slate-500">
+                                  Includes {lane.aliases.slice(0, 2).join("; ")}
+                                  {lane.aliases.length > 2
+                                    ? `; +${lane.aliases.length - 2} more`
+                                    : ""}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-3 text-right font-semibold text-indigo-600">
+                              {formatNumber(lane.shipments)}
+                            </td>
+                            <td className="px-3 py-3 text-right text-slate-700">
+                              {formatNumber(lane.teu, 1)}
+                            </td>
+                            <td className="px-3 py-3 text-right">{trendNode}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-          </div>
+          </section>
 
           {/* Top Suppliers + Recent Shipments — compact summary cards using
               real suppliers_table / normalizedShipments data. No mock names,
@@ -3390,6 +3501,10 @@ if (!cancelled) {
               const topSuppliers = suppliersRaw.slice(0, 3);
               return (
                 <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  {/* Phase B.3 — Suppliers tab is gone. This card is the
+                      terminal supplier view in Overview. The drop in scope
+                      vs the old Suppliers table is intentional (3-row preview
+                      only — no pagination, no inflated "tenure" claims). */}
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -3401,13 +3516,6 @@ if (!cancelled) {
                           : "From verified BOL records"}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("suppliers")}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                    >
-                      View Suppliers <ArrowUpRight className="h-3 w-3" />
-                    </button>
                   </div>
                   {topSuppliers.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
@@ -3462,6 +3570,9 @@ if (!cancelled) {
                 .slice(0, 3);
               return (
                 <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  {/* Phase B.3 — Shipments tab is gone. This card is the
+                      terminal recent-shipments view in Overview. The full
+                      verified BOL ledger is no longer surfaced as a tab. */}
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -3473,13 +3584,6 @@ if (!cancelled) {
                           : "From verified bill-of-lading records"}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("shipments")}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                    >
-                      View Shipments <ArrowUpRight className="h-3 w-3" />
-                    </button>
                   </div>
                   {recentShipments.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
@@ -3537,7 +3641,7 @@ if (!cancelled) {
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                   {contactsLoading
                     ? "Enriching…"
-                    : `${phantomContacts.length} found${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
+                    : `${phantomContacts.length} found · ${phantomContacts.filter(isContactVerified).length} verified${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
                 </div>
                 <button
                   type="button"
@@ -3663,9 +3767,18 @@ if (!cancelled) {
     </div>
   </div>
 
-  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-    Verified
-  </span>
+  {isContactVerified(contact) ? (
+    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+      Verified
+    </span>
+  ) : (
+    <span
+      className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700"
+      title="Provider sourced — email not verified"
+    >
+      Found
+    </span>
+  )}
 </div>
                       <div className="mt-2 text-xs text-slate-400">Click to view details</div>
                     </button>
@@ -3882,204 +3995,6 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
           )}
         </TabsContent>
 
-        <TabsContent value="trade-lanes" className="space-y-4">
-          <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Trade lane intelligence
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Strongest lanes by shipment count, TEU, and estimated spend
-                </p>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                {canonicalLanes.length} {canonicalLanes.length === 1 ? "lane" : "lanes"}
-              </div>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
-                      <th className="px-3 py-2 font-semibold">#</th>
-                      <th className="px-3 py-2 font-semibold">Lane</th>
-                      <th className="px-3 py-2 text-right font-semibold">Shipments</th>
-                      <th className="px-3 py-2 text-right font-semibold">TEU</th>
-                      <th className="px-3 py-2 text-right font-semibold">Est. Spend</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {canonicalLanes.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
-                          No trade lane data available yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      resolvedRoutes.map((route, i) => (
-                        <tr
-                          key={i}
-                          onClick={() => setSelectedLane(route.lane)}
-                          className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
-                            route.lane === activeLane
-                              ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
-                              : "hover:bg-slate-50/70"
-                          }`}
-                        >
-                          <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
-                          <td className="px-3 py-3">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    route.lane === activeLane
-                                      ? TEU_BAR_PRIMARY
-                                      : CHART_COLORS[i % CHART_COLORS.length],
-                                }}
-                              />
-                              {route.fromMeta?.flag ? (
-                                <span aria-hidden className="text-base leading-none">
-                                  {route.fromMeta.flag}
-                                </span>
-                              ) : null}
-                              <span className="max-w-[260px] truncate font-semibold text-slate-900">
-                                {route.lane}
-                              </span>
-                              {route.toMeta?.flag ? (
-                                <span aria-hidden className="text-base leading-none">
-                                  {route.toMeta.flag}
-                                </span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-3 py-3 text-right font-semibold text-indigo-600">
-                            {formatNumber(route.shipments)}
-                          </td>
-                          <td className="px-3 py-3 text-right text-slate-700">
-                            {formatNumber(route.teu, 1)}
-                          </td>
-                          <td className="px-3 py-3 text-right text-slate-700">
-                            {formatCurrency(route.spend)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div
-                style={{
-                  background:
-                    "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
-                  borderRadius: 24,
-                  border: "1px solid #E2E8F0",
-                  padding: 16,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 10,
-                  minWidth: 0,
-                }}
-              >
-                {(() => {
-                  const globeLanes: GlobeLane[] = resolvedRoutes
-                    .filter((r) => r.resolvable)
-                    .slice(0, 6)
-                    .map((r, i) => laneStringToGlobeLane(r.lane, i))
-                    .filter((l): l is GlobeLane => l !== null);
-                  const selectedGlobeLane = activeLane ?? null;
-                  const hasResolvable = globeLanes.length > 0;
-
-                  if (!hasResolvable) {
-                    return (
-                      <div
-                        className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
-                        style={{ minHeight: 200 }}
-                      >
-                        <Globe className="mb-2 h-6 w-6 text-slate-300" />
-                        Route map unavailable because this shipment data does not include resolvable origin/destination locations.
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <>
-                      {(activeFromMeta || activeToMeta) && (
-                        <div className="flex w-full flex-wrap items-center justify-center gap-2">
-                          {activeFromMeta ? (
-                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                              <span aria-hidden>{activeFromMeta.flag || "🌐"}</span>
-                              <span>{activeFromMeta.countryName}</span>
-                              {activeFromMeta.countryCode ? (
-                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
-                                  {activeFromMeta.countryCode}
-                                </span>
-                              ) : null}
-                            </span>
-                          ) : null}
-                          <span className="text-xs text-slate-400">→</span>
-                          {activeToMeta ? (
-                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                              <span aria-hidden>{activeToMeta.flag || "🌐"}</span>
-                              <span>{activeToMeta.countryName}</span>
-                              {activeToMeta.countryCode ? (
-                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
-                                  {activeToMeta.countryCode}
-                                </span>
-                              ) : null}
-                            </span>
-                          ) : null}
-                        </div>
-                      )}
-                      <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                        <GlobeCanvas
-                          lanes={globeLanes}
-                          selectedLane={selectedGlobeLane}
-                          size={globeSize}
-                          theme="dark"
-                        />
-                      </div>
-                      {selectedGlobeLane ? (
-                        <div
-                          style={{
-                            alignSelf: "stretch",
-                            background: "#EFF6FF",
-                            border: "1px solid #BFDBFE",
-                            borderRadius: 8,
-                            padding: "7px 12px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 8,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontFamily: "'JetBrains Mono', monospace",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: "#1d4ed8",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {selectedGlobeLane}
-                          </span>
-                        </div>
-                      ) : null}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-
         <TabsContent value="equipment" className="space-y-4">
           {(() => {
             // Canonical mix derived from detail.filteredShipments (BOL-backed).
@@ -4208,530 +4123,270 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
             );
           })()}
         </TabsContent>
-
-        <TabsContent value="suppliers" className="space-y-4">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Supplier Intelligence
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {suppliersRaw.length > 0
-                    ? `${suppliersRaw.length} verified suppliers across all shipment history`
-                    : "Supplier data sourced from verified bill-of-lading records"}
-                </p>
-              </div>
-              {suppliersPageCount > 1 && (
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span>
-                    {suppliersPage * supplierPageSize + 1}–
-                    {Math.min((suppliersPage + 1) * supplierPageSize, suppliersRaw.length)} of {suppliersRaw.length}
-                  </span>
-                  <button
-                    disabled={suppliersPage === 0}
-                    onClick={() => setSuppliersPage((p) => Math.max(0, p - 1))}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    disabled={suppliersPage >= suppliersPageCount - 1}
-                    onClick={() => setSuppliersPage((p) => Math.min(suppliersPageCount - 1, p + 1))}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {suppliersRaw.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                No supplier data available. Supplier intelligence is populated from verified BOL records.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
-                      <th className="px-3 py-3 font-semibold">Supplier</th>
-                      <th className="px-3 py-3 font-semibold">Country</th>
-                      <th className="px-3 py-3 font-semibold text-right">12m Shpmt</th>
-                      <th className="px-3 py-3 font-semibold text-right">Total TEU</th>
-                      <th className="px-3 py-3 font-semibold">Recent</th>
-                      <th className="px-3 py-3 font-semibold">Tenure</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suppliersSlice.map((sup: any, idx: number) => {
-                      // Phase H P1 fix — top_suppliers rows from the proxy
-                      // use `name` / `shipments` / `total_teu`, while the
-                      // legacy suppliers_table rows used `supplier_name` /
-                      // `shipments_12m` / `total_teus`. Both shapes render
-                      // through the same cells now.
-                      const supplierName = sup.supplier_name || sup.name || "—";
-                      const supplierAddress = sup.supplier_address || sup.address || null;
-                      const supplierCountry = sup.country || sup.supplier_address_country || null;
-                      const shipments =
-                        sup.shipments_12m != null
-                          ? sup.shipments_12m
-                          : sup.shipments != null
-                          ? sup.shipments
-                          : null;
-                      const teu =
-                        sup.total_teus != null
-                          ? sup.total_teus
-                          : sup.total_teu != null
-                          ? sup.total_teu
-                          : sup.teu != null
-                          ? sup.teu
-                          : null;
-                      const mostRecent =
-                        sup.most_recent_shipment ||
-                        sup.last_shipment_date ||
-                        sup.lastShipmentDate ||
-                        null;
-                      return (
-                        <tr key={idx} className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
-                          <td className="px-3 py-3 align-top">
-                            <div className="max-w-[220px] truncate text-sm font-semibold text-slate-900">
-                              {supplierName}
-                            </div>
-                            {supplierAddress && (
-                              <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400">
-                                {supplierAddress}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 align-top text-sm text-slate-600">
-                            {supplierCountry || "—"}
-                          </td>
-                          <td className="px-3 py-3 align-top text-right text-sm font-semibold text-indigo-600">
-                            {formatNumber(shipments)}
-                          </td>
-                          <td className="px-3 py-3 align-top text-right text-sm text-slate-700">
-                            {formatNumber(teu, 1)}
-                          </td>
-                          <td className="px-3 py-3 align-top text-xs text-slate-500">
-                            {mostRecent ? formatDate(capDateAtToday(mostRecent)) : "—"}
-                          </td>
-                          <td className="px-3 py-3 align-top text-xs text-slate-500">
-                            {sup.business_length || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="shipments" className="space-y-4">
-          {/* Products & HS Codes — folded in from former Products tab. Data
-              and pagination wiring are unchanged; same hsRows / productRows
-              from detail memo. */}
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Products &amp; HS Codes
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Cargo descriptions and HS codes derived from shipment history
-                </p>
-              </div>
-              {totalProducts > 0 ? (
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {totalProducts} {totalProducts === 1 ? "HS code" : "HS codes"}
-                </div>
-              ) : null}
-            </div>
-
-            {totalProducts === 0 && detail.productRows.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                No product or HS-code data derived from shipments yet
-              </div>
-            ) : (
-              <>
-                {prodPageCount > 1 && (
-                  <div className="mb-3 flex items-center justify-end gap-2 text-xs text-slate-500">
-                    <span>
-                      {productsPage * productsPageSize + 1}–
-                      {Math.min((productsPage + 1) * productsPageSize, totalProducts)} of {totalProducts}
-                    </span>
-                    <button
-                      disabled={productsPage === 0}
-                      onClick={() => setProductsPage((p) => Math.max(0, p - 1))}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                    >
-                      Prev
-                    </button>
-                    <button
-                      disabled={productsPage >= prodPageCount - 1}
-                      onClick={() => setProductsPage((p) => Math.min(prodPageCount - 1, p + 1))}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <MetricList
-                    title={`Product mix — HS codes (${totalProducts})`}
-                    items={hsSlice.map((row) => ({
-                      label: row.hsCode,
-                      value: formatNumber(row.count),
-                      meta: row.description,
-                    }))}
-                  />
-                  <MetricList
-                    title="Top products"
-                    items={prodSlice.map((row) => ({
-                      label: String(row.product),
-                      value: row.volumeShare,
-                      meta: `HS ${row.hsCode}`,
-                    }))}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            {histPageCount > 1 && (
-              <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
-                <span>
-                  {historyPage * historyPageSize + 1}–
-                  {Math.min((historyPage + 1) * historyPageSize, totalRows)} of {totalRows} shipments
-                </span>
-                <button
-                  disabled={historyPage === 0}
-                  onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  Prev
-                </button>
-                <button
-                  disabled={historyPage >= histPageCount - 1}
-                  onClick={() => setHistoryPage((p) => Math.min(histPageCount - 1, p + 1))}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            )}
-
-            <DataTable
-              title={`Verified shipment ledger — ${totalRows} records`}
-              columns={[
-                "Arrival Date",
-                "Master BOL",
-                "House BOL",
-                "Importer ID",
-                "Importer Name",
-                "Consignee Name",
-                "Consignee Address",
-                "Shipper",
-                "Shipper Address",
-                "Carrier Code",
-                "Carrier Name",
-                "Forwarder Code",
-                "Forwarder Name",
-                "Notify Party",
-                "Port Of Unlading ID",
-                "Port Of Unlading",
-                "Port Of Lading ID",
-                "Port Of Lading",
-                "Container Types",
-                "Route",
-                "Vessel",
-                "Voyage Number",
-                "TEU",
-                "Weight (kg)",
-                "Gross Weight",
-                "Volume",
-                "Cargo Description",
-                "Product",
-                "HS Code",
-              ]}
-              rows={histSlice}
-            />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="credit" className="space-y-4">
+        <TabsContent value="contacts" className="space-y-4">
+          {/* Phase B.3 Contact Intel rebuild — search bar, filter chips,
+              honest verification gate, 2-column card grid. The Lusha
+              enrichment fetch is unchanged; this tab just consumes its
+              `phantomContacts` output more honestly. */}
           {(() => {
-            // Honest empty state — no mock scores, no invented ratings.
-            // Public-source deep links use the company's existing name/country
-            // from the profile so the user can verify manually while the
-            // SEC EDGAR / GLEIF / Companies House edge function is being built
-            // (tracked as a separate backend ticket — not shipped in Phase B).
-            const companyName =
-              (rawProfile as any)?.company_name ||
-              (rawProfile as any)?.companyName ||
-              (rawProfile as any)?.name ||
-              (rawProfile as any)?.title ||
-              (record as any)?.company?.name ||
-              (record as any)?.company?.company_name ||
-              "";
-            const countryCode = String(
-              (rawProfile as any)?.country_code ||
-                (rawProfile as any)?.countryCode ||
-                (record as any)?.company?.country_code ||
-                "",
-            )
-              .trim()
-              .toUpperCase();
-            // Accept GB and UK variants (upper or lower-case both map through
-            // the uppercase normalize above) so UK-registered companies always
-            // get the Companies House deep link.
-            const isUkCompany = countryCode === "GB" || countryCode === "UK";
-            const q = encodeURIComponent(companyName.trim());
-            const canSearch = q.length > 0;
-            const edgarUrl = canSearch
-              ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${q}&type=10-K&dateb=&owner=include&count=40`
-              : null;
-            const gleifUrl = canSearch
-              ? `https://search.gleif.org/#/search/simpleSearch=${q}`
-              : null;
-            const companiesHouseUrl =
-              canSearch && isUkCompany
-                ? `https://find-and-update.company-information.service.gov.uk/search?q=${q}`
-                : null;
+            const FILTER_CHIPS: Array<{ id: string; label: string; matcher: (c: any) => boolean }> = [
+              { id: "all", label: "All", matcher: () => true },
+              {
+                id: "operations",
+                label: "Operations",
+                matcher: (c) => /operation|logistic|supply chain|warehouse|fulfillment/i.test(getContactTitle(c)),
+              },
+              {
+                id: "procurement",
+                label: "Procurement",
+                matcher: (c) => /procure|sourcing|buyer|purchas/i.test(getContactTitle(c)),
+              },
+              {
+                id: "vp",
+                label: "VP",
+                matcher: (c) => /\b(vp|vice president)\b/i.test(getContactTitle(c)),
+              },
+              {
+                id: "director",
+                label: "Director",
+                matcher: (c) => /\bdirector\b/i.test(getContactTitle(c)),
+              },
+            ];
+
+            const filtered = phantomContacts.filter((c) => {
+              const matchesChip =
+                FILTER_CHIPS.find((chip) => chip.id === contactDeptFilter)?.matcher(c) ?? true;
+              if (!matchesChip) return false;
+              const q = contactSearchQuery.trim().toLowerCase();
+              if (!q) return true;
+              const text = [
+                getContactFullName(c),
+                getContactTitle(c),
+                getContactEmail(c),
+                getContactLocation(c),
+              ].filter(Boolean).join(" ").toLowerCase();
+              return text.includes(q);
+            });
+
+            const verifiedCount = filtered.filter(isContactVerified).length;
 
             return (
-              <div className="space-y-4">
-                <div className="rounded-[30px] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-indigo-50/40 p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                          Credit &amp; Company Health
-                        </div>
-                        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
-                          Beta
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Public financial and registry signals. No invented scores.
-                      </p>
+              <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                      Contact Intel
                     </div>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                      Public sources
-                    </div>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-                    <div className="text-sm font-semibold text-slate-700">Credit data not available</div>
                     <p className="mt-1 text-xs text-slate-500">
-                      We don&rsquo;t have a public credit or filing match cached for this
-                      company yet. Use the links below to inspect public registries
-                      directly, or wait for the backend integration that will surface
-                      SEC EDGAR filings, GLEIF legal-entity status, and Companies House
-                      data inline here.
+                      Enriched contacts sourced from Lusha. "Verified" labels appear ONLY when the provider explicitly verified the email address.
                     </p>
                   </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <a
-                    href={edgarUrl ?? "#"}
-                    target={edgarUrl ? "_blank" : undefined}
-                    rel={edgarUrl ? "noreferrer" : undefined}
-                    aria-disabled={!edgarUrl}
-                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
-                      edgarUrl ? "hover:border-indigo-200 hover:bg-indigo-50/40" : "pointer-events-none opacity-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600">
-                      <BarChart3 className="h-3.5 w-3.5" />
-                      SEC EDGAR
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">Public filings &amp; financials</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      US-listed companies: 10-K, 10-Q, revenue, assets from XBRL. Free, no key.
-                    </div>
-                  </a>
-
-                  <a
-                    href={gleifUrl ?? "#"}
-                    target={gleifUrl ? "_blank" : undefined}
-                    rel={gleifUrl ? "noreferrer" : undefined}
-                    aria-disabled={!gleifUrl}
-                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
-                      gleifUrl ? "hover:border-cyan-200 hover:bg-cyan-50/40" : "pointer-events-none opacity-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
-                      <Building2 className="h-3.5 w-3.5" />
-                      GLEIF LEI
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">Legal-entity status</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      LEI, entity status, registration authority across jurisdictions. Free, no key.
-                    </div>
-                  </a>
-
-                  <a
-                    href={companiesHouseUrl ?? "#"}
-                    target={companiesHouseUrl ? "_blank" : undefined}
-                    rel={companiesHouseUrl ? "noreferrer" : undefined}
-                    aria-disabled={!companiesHouseUrl}
-                    className={`block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition ${
-                      companiesHouseUrl
-                        ? "hover:border-emerald-200 hover:bg-emerald-50/40"
-                        : "pointer-events-none opacity-50"
-                    }`}
-                    title={
-                      companiesHouseUrl
-                        ? undefined
-                        : "Companies House lookup is only surfaced for UK-registered companies"
-                    }
-                  >
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                      <Briefcase className="h-3.5 w-3.5" />
-                      Companies House
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">
-                      UK company registry
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {companiesHouseUrl
-                        ? "Filing history, charges, officers. UK only."
-                        : "Only available for UK-registered companies."}
-                    </div>
-                  </a>
-                </div>
-              </div>
-            );
-          })()}
-        </TabsContent>
-
-        <TabsContent value="contacts" className="space-y-4">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Contact intelligence
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Enriched contacts sourced from Lusha. Persistent contact save is the next backend step.
-                </p>
-              </div>
-            </div>
-
-            {contactsLoading ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                Loading contacts…
-              </div>
-            ) : filteredContacts.length === 0 ? (
-              contactError ? (
-                <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
-                  <div className="text-sm font-semibold text-amber-900">
-                    Contact enrichment unavailable
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setContactFetchTrigger((n) => n + 1); }}
+                      disabled={contactsLoading}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      {contactsLoading ? "Searching…" : "Enrich Contacts"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setContactFetchTrigger((n) => n + 1); }}
+                      disabled={contactsLoading}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-50"
+                    >
+                      Refresh contacts
+                    </button>
                   </div>
-                  <p className="mt-1 text-xs text-amber-800">
-                    The contact provider did not return contacts for this company. Try again or connect a provider in Admin.
-                  </p>
-                  <details className="mt-3 text-[11px] text-amber-700">
-                    <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-amber-100">
-                      Details
-                    </summary>
-                    <pre className="mt-2 max-w-full overflow-auto rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-[10px] text-amber-800">
-                      {contactError}
-                    </pre>
-                  </details>
                 </div>
-              ) : (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                  {contactMessage || "No contacts enriched yet."}
-                </div>
-              )
-            ) : (
-              <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
-                <div className="space-y-2">
-                  {filteredContacts.map((contact: any, index: number) => {
-                    const fullName = getContactFullName(contact);
-                    const title = getContactTitle(contact);
-                    const initials =
-                      fullName
-                        .split(" ")
-                        .slice(0, 2)
-                        .map((part: string) => part[0])
-                        .join("")
-                        .toUpperCase() || "CT";
-                    const isActive = selectedContact === contact;
 
+                {/* Search bar */}
+                <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4 text-slate-400" />
+                    <input
+                      value={contactSearchQuery}
+                      onChange={(e) => setContactSearchQuery(e.target.value)}
+                      placeholder="Search contacts"
+                      className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+
+                {/* Filter chips — single-select. */}
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {FILTER_CHIPS.map((chip) => {
+                    const active = contactDeptFilter === chip.id;
                     return (
                       <button
-                        key={`${fullName}-${index}`}
-                        onClick={() => setSelectedContact(contact)}
-                        className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2 text-left ${
-                          isActive ? "border-indigo-300 bg-indigo-50" : "border-slate-200 hover:bg-slate-50"
+                        key={chip.id}
+                        type="button"
+                        onClick={() => setContactDeptFilter(chip.id)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          active
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         }`}
                       >
-                        <div className="rounded-2xl bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                          {initials}
-                        </div>
-                        <div className="flex-1">
-                          <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-                          {title && <div className="truncate text-xs text-slate-500">{title}</div>}
-                        </div>
+                        {chip.label}
                       </button>
                     );
                   })}
                 </div>
 
-                <div>
-                  {selectedContact ? (
-                    (() => {
-                      const fullName = getContactFullName(selectedContact);
-                      const title = getContactTitle(selectedContact);
-                      const email = selectedContact.email || selectedContact.email_address || "";
-                      const phone = selectedContact.phone || selectedContact.phone_number || "";
+                {/* Count line */}
+                <div className="mb-4 text-xs text-slate-500">
+                  {contactsLoading
+                    ? "Enriching contacts…"
+                    : `${filtered.length} contacts found · ${verifiedCount} verified`}
+                </div>
+
+                {contactsLoading ? (
+                  <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                    Loading contacts…
+                  </div>
+                ) : filtered.length === 0 ? (
+                  contactError ? (
+                    <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
+                      <div className="text-sm font-semibold text-amber-900">
+                        Contact enrichment unavailable
+                      </div>
+                      <p className="mt-1 text-xs text-amber-800">
+                        The contact provider did not return contacts for this company. Try again or connect a provider in Admin.
+                      </p>
+                      <details className="mt-3 text-[11px] text-amber-700">
+                        <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-amber-100">
+                          Details
+                        </summary>
+                        <pre className="mt-2 max-w-full overflow-auto rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-[10px] text-amber-800">
+                          {contactError}
+                        </pre>
+                      </details>
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                      {contactMessage || "No contacts match this filter."}
+                    </div>
+                  )
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {filtered.map((contact: any, index: number) => {
+                      const fullName = getContactFullName(contact);
+                      const title = getContactTitle(contact);
+                      const email = getContactEmail(contact);
+                      const location = getContactLocation(contact);
+                      const linkedin = getContactLinkedIn(contact);
+                      const avatarUrl = getContactAvatarUrl(contact);
+                      const department =
+                        contact.department ||
+                        contact.dept ||
+                        (FILTER_CHIPS.find((c) => c.id !== "all" && c.matcher(contact))?.label ?? null);
+                      const verified = isContactVerified(contact);
                       const initials =
-                        fullName
-                          .split(" ")
-                          .slice(0, 2)
-                          .map((part: string) => part[0])
-                          .join("")
-                          .toUpperCase() || "CT";
+                        fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
 
                       return (
-                        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <div className="rounded-2xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
-                              {initials}
+                        <div
+                          key={`${fullName}-${index}`}
+                          className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              {avatarUrl ? (
+                                <img
+                                  src={avatarUrl}
+                                  alt={fullName}
+                                  className="h-11 w-11 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                                  {initials}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate text-sm font-semibold text-slate-950">
+                                    {fullName}
+                                  </span>
+                                  {verified ? (
+                                    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                                      Verified
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-700"
+                                      title="Provider sourced — email not verified"
+                                    >
+                                      Found
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5 truncate text-xs text-indigo-600">
+                                  {title || "Role unavailable"}
+                                </div>
+                                {location ? (
+                                  <div className="mt-0.5 truncate text-xs text-slate-500">
+                                    {location}
+                                  </div>
+                                ) : null}
+                              </div>
                             </div>
-                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                              Verified
-                            </span>
                           </div>
-                          <div className="text-lg font-semibold text-slate-950">{fullName}</div>
-                          {title && <div className="mt-1 text-sm font-medium text-indigo-600">{title}</div>}
-                          <div className="mt-4 space-y-2 text-sm text-slate-600">
-                            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                              {email || "Email unavailable"}
-                            </div>
-                            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                              {phone || "Phone unavailable"}
-                            </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {department ? (
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                {department}
+                              </span>
+                            ) : null}
+                            {email ? (
+                              <span className="truncate rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-mono text-slate-600">
+                                {email}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                            <a
+                              href={linkedin || undefined}
+                              target={linkedin ? "_blank" : undefined}
+                              rel={linkedin ? "noreferrer" : undefined}
+                              aria-disabled={!linkedin}
+                              title={linkedin ? "Open LinkedIn profile" : "LinkedIn URL unavailable"}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${
+                                linkedin
+                                  ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                  : "pointer-events-none border-slate-200 bg-slate-50 text-slate-400"
+                              }`}
+                            >
+                              <Linkedin className="h-4 w-4" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => saveContactToSupabase(contact)}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                            >
+                              {savedContactKeys.has(getContactKey(contact)) ? (
+                                <>
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                                </>
+                              ) : (
+                                <>
+                                  <Save className="h-3.5 w-3.5" /> Save contact
+                                </>
+                              )}
+                            </button>
                           </div>
                         </div>
                       );
-                    })()
-                  ) : (
-                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                      Select a contact to view details.
-                    </div>
-                  )}
-                </div>
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
         </TabsContent>
       </Tabs>
     </section>
