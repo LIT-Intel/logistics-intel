@@ -409,17 +409,37 @@ export default function SettingsPage() {
 
   const onUploadAvatar = async (file: File) => {
     const uid = user?.id;
-    if (!uid) throw new Error("No authenticated user");
+    if (!uid) return { error: "No authenticated user" };
 
-    const result = await UploadFile({ file });
-    if (!result?.file_url) throw new Error("Avatar upload failed");
+    // base44.integrations.Core is stubbed in this build, so UploadFile
+    // is undefined. Surface that honestly instead of throwing
+    // "UploadFile is not a function" (minified to "Ae is not a function"
+    // in production).
+    if (typeof UploadFile !== "function") {
+      return {
+        error:
+          "Avatar upload is not available in this environment yet. The file storage integration ships with the Outbound Engine launch.",
+      };
+    }
+
+    let result: { file_url?: string } | null = null;
+    try {
+      result = (await UploadFile({ file })) as { file_url?: string } | null;
+    } catch (e: any) {
+      return { error: e?.message || "Avatar upload failed" };
+    }
+    if (!result?.file_url) {
+      return { error: "Avatar upload failed" };
+    }
 
     const avatarUrl = result.file_url;
 
     const { error: baseProfileAvatarError } = await supabase
       .from("profiles")
       .upsert({ id: uid, avatar_url: avatarUrl }, { onConflict: "id" });
-    requireNoError(baseProfileAvatarError, "Failed saving avatar");
+    if (baseProfileAvatarError) {
+      return { error: baseProfileAvatarError.message || "Failed saving avatar" };
+    }
 
     await updateProfile({ avatar_url: avatarUrl });
     setProfile((prev) => ({ ...prev, avatar_url: avatarUrl }));
@@ -491,18 +511,30 @@ export default function SettingsPage() {
   };
 
   const onUploadLogo = async (file: File) => {
-    if (!orgId) throw new Error("No organization found for this user");
+    if (!orgId) return { error: "No organization found for this user" };
 
-    const result = await UploadFile({ file });
-    if (!result?.file_url) throw new Error("Logo upload failed");
+    if (typeof UploadFile !== "function") {
+      return {
+        error:
+          "Logo upload is not available in this environment yet. The file storage integration ships with the Outbound Engine launch.",
+      };
+    }
+
+    let result: { file_url?: string } | null = null;
+    try {
+      result = (await UploadFile({ file })) as { file_url?: string } | null;
+    } catch (e: any) {
+      return { error: e?.message || "Logo upload failed" };
+    }
+    if (!result?.file_url) return { error: "Logo upload failed" };
 
     const { error } = await supabase
       .from("organizations")
       .update({ logo_url: result.file_url })
       .eq("id", orgId);
-    requireNoError(error, "Failed saving logo");
+    if (error) return { error: error.message || "Failed saving logo" };
 
-    setOrgProfile((prev) => ({ ...prev, logo_url: result.file_url }));
+    setOrgProfile((prev) => ({ ...prev, logo_url: result?.file_url }));
   };
 
   const onSavePreferences = async (section: string, data: Record<string, unknown>) => {

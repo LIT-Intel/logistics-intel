@@ -619,7 +619,9 @@ export function ProfileSection({
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-black/[0.02]">
         <h3 className="text-base font-semibold text-slate-900">Account</h3>
         <p className="mt-1 text-sm text-slate-500">
-          Session, password, and two-factor security live under Security & API.
+          Session, password reset, and two-factor security are managed
+          through your account email — sign-in flow handles all of those
+          today.
         </p>
       </div>
     </div>
