@@ -178,10 +178,13 @@ export const ENDPOINT_ALIAS_MAP: Record<string, string> = {
   // "United States of America" or "PR China" still resolves through the same
   // chain that handles short codes and city names.
   "united states of america": "usa",
+  "united states": "usa",
   "u.s.": "usa",
   "u.s.a.": "usa",
+  "u s a": "usa",
   "us of a": "usa",
   america: "usa",
+  usa: "usa",
   "people's republic of china": "china",
   "peoples republic of china": "china",
   "pr china": "china",
@@ -393,14 +396,18 @@ export function resolveEndpoint(
     };
   };
 
-  // 1. Direct match in COUNTRY_COORDS.
-  if (COUNTRY_COORDS[lower]) {
-    return buildResult(lower);
-  }
-
-  // 2. Alias match.
+  // 1. Alias match takes precedence over direct COUNTRY_COORDS hit so
+  //    canonical aliases (e.g. "united states" → "usa") win the lookup
+  //    and downstream metadata (countryCode, flag) is correct. Without
+  //    this, "united states" would resolve to canonicalKey "united
+  //    states" which has no entry in COUNTRY_KEY_TO_CODE → empty flag.
   if (ENDPOINT_ALIAS_MAP[lower]) {
     return buildResult(ENDPOINT_ALIAS_MAP[lower]);
+  }
+
+  // 2. Direct match in COUNTRY_COORDS.
+  if (COUNTRY_COORDS[lower]) {
+    return buildResult(lower);
   }
 
   // 3. LOCODE check — five letters total, e.g. "cnsha".
@@ -509,28 +516,104 @@ const shortNameFor = (meta: ResolvedEndpoint): string =>
   SHORT_COUNTRY_NAME[meta.canonicalKey] ?? meta.countryName;
 
 /**
- * Strip a redundant trailing 2-letter country-code token from an endpoint
- * label when the rest of the label resolves to that country. E.g.
- * `"United States of America US"` → `"United States of America"`. Leaves
- * the input untouched when no trailing 2-letter token is present, when the
- * trailing token does not match the resolved country, or when the input
- * has no resolvable country.
+ * Known 3-letter ISO-style country codes that appear in raw `parsed_summary`
+ * labels alongside 2-letter ISO codes (e.g. "USA US"). Mapped to the same
+ * canonical key as the 2-letter equivalent so the strip logic can match
+ * them without a full ISO-3 lookup table.
+ */
+const ALPHA3_CODE_MAP: Record<string, string> = {
+  USA: "usa",
+  CHN: "china",
+  GBR: "united kingdom",
+  MEX: "mexico",
+  CAN: "canada",
+  VNM: "vietnam",
+  IND: "india",
+  DEU: "germany",
+  NLD: "netherlands",
+  KOR: "south korea",
+  JPN: "japan",
+  TWN: "taiwan",
+  THA: "thailand",
+  MYS: "malaysia",
+  IDN: "indonesia",
+  BRA: "brazil",
+  AUS: "australia",
+  ITA: "italy",
+  FRA: "france",
+  BEL: "belgium",
+  ESP: "spain",
+  POL: "poland",
+  SGP: "singapore",
+  HKG: "hong kong",
+  BGD: "bangladesh",
+  PAK: "pakistan",
+  TUR: "turkey",
+};
+
+/**
+ * Strip redundant trailing country-code tokens from an endpoint label. Handles:
+ *  - Trailing 2-letter ISO code:  "United States of America US" → "United States of America"
+ *  - Trailing 2-letter ISO code:  "United States US"            → "United States"
+ *  - Trailing 3-letter ISO code:  "USA US"                      → "USA" (drops the 2-letter)
+ *  - Multiple trailing dupes:     "US USA"                      → "USA" (keep the longer canonical token)
+ *  - Trailing both forms:         "United States USA"           → "United States"
+ * Leaves the input untouched when no trailing code-like token resolves to the
+ * same country as the head, or when the head has no resolvable country.
+ *
+ * Phase B.4 — runs iteratively (max 3 passes) to peel multiple trailing
+ * codes (e.g. "United States of America USA US"). Each pass strips at most
+ * one trailing token; the loop terminates as soon as no further token can
+ * be safely stripped.
  */
 function stripTrailingCountryCode(raw: string): string {
-  const trimmed = String(raw || "").trim();
-  if (!trimmed) return trimmed;
-  const tokens = trimmed.split(/\s+/);
-  if (tokens.length < 2) return trimmed;
-  const last = tokens[tokens.length - 1];
-  if (!/^[A-Za-z]{2}$/.test(last)) return trimmed;
-  const codeUpper = last.toUpperCase();
-  if (!LOCODE_PREFIX_MAP[codeUpper]) return trimmed;
-  const head = tokens.slice(0, -1).join(" ").trim();
-  if (!head) return trimmed;
-  const headResolved = resolveEndpoint(head);
-  if (!headResolved) return trimmed;
-  if (headResolved.countryCode === codeUpper) return head;
-  return trimmed;
+  let current = String(raw || "").trim();
+  if (!current) return current;
+
+  for (let pass = 0; pass < 3; pass++) {
+    const tokens = current.split(/\s+/);
+    if (tokens.length < 2) return current;
+    const last = tokens[tokens.length - 1];
+    const lastUpper = last.toUpperCase();
+    const head = tokens.slice(0, -1).join(" ").trim();
+    if (!head) return current;
+
+    // 2-letter ISO trailing token.
+    if (/^[A-Z]{2}$/.test(lastUpper) && LOCODE_PREFIX_MAP[lastUpper]) {
+      const headResolved = resolveEndpoint(head);
+      if (!headResolved) return current;
+      const codeKey = LOCODE_PREFIX_MAP[lastUpper];
+      // Same country → safe to drop the trailing 2-letter code.
+      if (headResolved.canonicalKey === codeKey) {
+        current = head;
+        continue;
+      }
+      return current;
+    }
+
+    // 3-letter ISO-style trailing token (e.g. "USA").
+    if (/^[A-Z]{3}$/.test(lastUpper) && ALPHA3_CODE_MAP[lastUpper]) {
+      const codeKey = ALPHA3_CODE_MAP[lastUpper];
+      const headResolved = resolveEndpoint(head);
+      if (headResolved && headResolved.canonicalKey === codeKey) {
+        // Special case "US USA" — head is shorter ISO-2, but the
+        // 3-letter token is the canonical we want to keep. Drop the
+        // shorter 2-letter head, keep "USA" as the surviving label.
+        if (/^[A-Z]{2}$/.test(head.toUpperCase()) && LOCODE_PREFIX_MAP[head.toUpperCase()]) {
+          // Replace with the canonical short name from the alpha-3.
+          current = COUNTRY_DISPLAY_NAMES[codeKey] || last;
+          continue;
+        }
+        current = head;
+        continue;
+      }
+      return current;
+    }
+
+    return current;
+  }
+
+  return current;
 }
 
 export type CanonicalLane = {

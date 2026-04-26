@@ -15,6 +15,7 @@ import {
   Briefcase,
   Building2,
   ArrowUpRight,
+  ArrowRight,
   BarChart3,
   Container,
   Search,
@@ -1824,23 +1825,44 @@ const InfoChip = ({
   </span>
 );
 
+/**
+ * Phase B.4 — SmallMetric now supports an `emptyHint`. When set AND the
+ * passed `value` is null/undefined/empty/em-dash, the card renders the hint
+ * as a small italic explanatory line ("Not enough history") instead of a
+ * bare em-dash. Card chrome is unchanged so the row never shifts.
+ */
 const SmallMetric = ({
   label,
   value,
   icon: Icon,
+  emptyHint,
 }: {
   label: string;
   value: React.ReactNode;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-}) => (
-  <div className="min-h-[96px] rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-      <Icon className="h-3.5 w-3.5 text-indigo-500" />
-      <span>{label}</span>
+  emptyHint?: string;
+}) => {
+  const isEmpty =
+    value == null ||
+    value === "" ||
+    value === "—" ||
+    (typeof value === "string" && value.trim() === "—");
+  return (
+    <div className="min-h-[96px] rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <Icon className="h-3.5 w-3.5 text-indigo-500" />
+        <span>{label}</span>
+      </div>
+      {isEmpty && emptyHint ? (
+        <div className="mt-2 text-sm italic text-slate-500">{emptyHint}</div>
+      ) : (
+        <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
+          {isEmpty ? "—" : value}
+        </div>
+      )}
     </div>
-    <div className="mt-2 text-lg font-semibold tracking-tight text-slate-950">{value}</div>
-  </div>
-);
+  );
+};
 
 const MetricList = ({
   title,
@@ -2762,7 +2784,11 @@ if (!cancelled) {
   // Trade lane signal, Recency risk, and Volume profile cards removed per UX cleanup.
   // Only Contact Intelligence remains in the bottom overview section.
 
-  const trendPct = (() => {
+  // Phase B.4 — track BOTH the trend % AND whether prior-year data exists
+  // separately. The KPI card uses `priorYearMissing` to show the
+  // "Not enough history" hint instead of a bare em-dash when the prior
+  // year has zero shipments.
+  const { trendPct, priorYearMissing } = (() => {
     const activeYear = effectiveSelectedYear || new Date().getFullYear();
     const series = safeArray(rawProfile?.timeSeries);
     const byYear = new Map<number, number>();
@@ -2784,8 +2810,14 @@ if (!cancelled) {
 
     const thisYear = byYear.get(activeYear) ?? null;
     const priorYear = byYear.get(activeYear - 1) ?? null;
-    if (!thisYear || !priorYear || priorYear === 0) return null;
-    return ((thisYear - priorYear) / priorYear) * 100;
+    const missing = !priorYear || priorYear === 0;
+    if (!thisYear || missing) {
+      return { trendPct: null as number | null, priorYearMissing: missing };
+    }
+    return {
+      trendPct: ((thisYear - (priorYear as number)) / (priorYear as number)) * 100,
+      priorYearMissing: false,
+    };
   })();
   const trendArrow = trendPct == null ? null : trendPct > 5 ? "↑" : trendPct < -5 ? "↓" : "→";
   const trendColor =
@@ -3148,11 +3180,11 @@ if (!cancelled) {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-3">
-          {/* Phase B.3 — secondary KPI row matches the validated design
-              source: 6 cards (Avg TEU / Shipment, Active Trade Lanes,
-              Volume Trend YoY, Top Carrier, Oldest Record, Last Activity).
-              Every value is derived from real shipment / route / carrier
-              data. Empty-state renders "—" rather than hiding cards. */}
+          {/* Phase B.4 — secondary KPI row. Every value derives from real
+              shipment / route / carrier data. Empty cells render an italic
+              `emptyHint` line rather than a bare em-dash so the row never
+              feels broken. The Top Carrier card auto-substitutes an
+              honest replacement KPI when no carrier data exists at all. */}
           {(() => {
             const avgTeu =
               detail.shipments > 0 && detail.teu > 0
@@ -3161,24 +3193,123 @@ if (!cancelled) {
             const activeLaneCount = canonicalLanes.filter(
               (l) => l.shipments > 0,
             ).length;
-            const topCarrier =
-              detail.carriers && detail.carriers.length > 0
-                ? detail.carriers[0]?.carrier || null
-                : null;
+
+            // Top Carrier with fallback through the carrier list. Pick the
+            // first non-empty carrier name; if NONE of detail.carriers has
+            // a usable name, mark it absent so the substitute KPI takes
+            // over.
+            const carriersList = Array.isArray(detail.carriers) ? detail.carriers : [];
+            let topCarrier: string | null = null;
+            for (const c of carriersList) {
+              const name = cleanDisplayText((c as any)?.carrier ?? (c as any)?.name);
+              if (name && name !== "—") {
+                topCarrier = name;
+                break;
+              }
+            }
+            const carrierKpiAvailable = topCarrier != null;
+
+            // Phase B.4 — substitute KPI when carrier data is fully empty.
+            // Pick the first replacement that has REAL data, deterministic
+            // order: Most Active Origin → Most Active Destination →
+            // FCL/LCL Split → Active Months. Each computed only from data
+            // already present in the model — no invention.
+            type SubstituteKpi = {
+              label: string;
+              value: React.ReactNode;
+              icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+            };
+            const computeSubstituteKpi = (): SubstituteKpi | null => {
+              // Most Active Origin / Destination from canonicalLanes.
+              const originCounts = new Map<string, { count: number; meta: ResolvedEndpoint }>();
+              const destCounts = new Map<string, { count: number; meta: ResolvedEndpoint }>();
+              for (const lane of canonicalLanes) {
+                const fk = lane.fromMeta.canonicalKey;
+                const tk = lane.toMeta.canonicalKey;
+                const fEntry = originCounts.get(fk) ?? { count: 0, meta: lane.fromMeta };
+                fEntry.count += lane.shipments || 0;
+                originCounts.set(fk, fEntry);
+                const tEntry = destCounts.get(tk) ?? { count: 0, meta: lane.toMeta };
+                tEntry.count += lane.shipments || 0;
+                destCounts.set(tk, tEntry);
+              }
+              const topOrigin = [...originCounts.values()]
+                .filter((e) => e.count > 0)
+                .sort((a, b) => b.count - a.count)[0];
+              if (topOrigin) {
+                return {
+                  label: "Most Active Origin",
+                  icon: MapPin,
+                  value: (
+                    <span className="block truncate text-base" title={topOrigin.meta.countryName}>
+                      <span aria-hidden className="mr-1">{topOrigin.meta.flag || "🌐"}</span>
+                      {topOrigin.meta.countryName}
+                    </span>
+                  ),
+                };
+              }
+              const topDest = [...destCounts.values()]
+                .filter((e) => e.count > 0)
+                .sort((a, b) => b.count - a.count)[0];
+              if (topDest) {
+                return {
+                  label: "Most Active Destination",
+                  icon: MapPin,
+                  value: (
+                    <span className="block truncate text-base" title={topDest.meta.countryName}>
+                      <span aria-hidden className="mr-1">{topDest.meta.flag || "🌐"}</span>
+                      {topDest.meta.countryName}
+                    </span>
+                  ),
+                };
+              }
+              // FCL / LCL Split — only when at least one bucket > 0.
+              const fclN = Number(detail.fclShipments) || 0;
+              const lclN = Number(detail.lclShipments) || 0;
+              if (fclN > 0 || lclN > 0) {
+                return {
+                  label: "FCL / LCL Split",
+                  icon: Container,
+                  value: (
+                    <span className="block truncate text-base">
+                      {`${formatNumber(fclN)} FCL / ${formatNumber(lclN)} LCL`}
+                    </span>
+                  ),
+                };
+              }
+              // Active Months — distinct monthKey count across valid
+              // shipments. Skip the "Unknown" sentinel that monthKey()
+              // returns for null/invalid dates so we don't fake activity.
+              const months = new Set<string>();
+              for (const s of normalizedShipments) {
+                if (!(s as any)?.date) continue;
+                const mk = monthKey((s as any).date);
+                if (mk && mk !== "Unknown") months.add(mk);
+              }
+              if (months.size > 0) {
+                return {
+                  label: "Active Months",
+                  icon: CalendarClock,
+                  value: formatNumber(months.size),
+                };
+              }
+              return null;
+            };
+            const substituteKpi = !carrierKpiAvailable ? computeSubstituteKpi() : null;
 
             return (
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
                 <SmallMetric
                   label="Avg TEU / Shipment"
-                  value={avgTeu ?? "—"}
+                  value={avgTeu}
                   icon={TrendingUp}
+                  emptyHint="No TEU recorded yet"
                 />
                 <SmallMetric
                   label="Active Trade Lanes"
-                  value={
-                    activeLaneCount > 0 ? formatNumber(activeLaneCount) : "—"
-                  }
+                  value={activeLaneCount > 0 ? formatNumber(activeLaneCount) : null}
                   icon={Globe}
+                  emptyHint="No resolvable lanes"
                 />
                 <SmallMetric
                   label="Volume Trend YoY"
@@ -3187,96 +3318,113 @@ if (!cancelled) {
                       <span className={trendColor}>
                         {trendArrow} {Math.abs(trendPct || 0).toFixed(1)}%
                       </span>
-                    ) : (
-                      "—"
-                    )
+                    ) : null
                   }
                   icon={BarChart3}
+                  emptyHint={priorYearMissing ? "Not enough history" : "Not enough history"}
                 />
-                <SmallMetric
-                  label="Top Carrier"
-                  value={
-                    topCarrier ? (
+                {carrierKpiAvailable ? (
+                  <SmallMetric
+                    label="Top Carrier"
+                    value={
                       <span
                         className="block truncate text-base"
-                        title={topCarrier}
+                        title={topCarrier ?? undefined}
                         style={{ fontFamily: "'JetBrains Mono', monospace" }}
                       >
                         {topCarrier}
                       </span>
-                    ) : (
-                      "—"
-                    )
-                  }
-                  icon={Truck}
-                />
+                    }
+                    icon={Truck}
+                  />
+                ) : substituteKpi ? (
+                  <SmallMetric
+                    label={substituteKpi.label}
+                    value={substituteKpi.value}
+                    icon={substituteKpi.icon}
+                  />
+                ) : (
+                  <SmallMetric
+                    label="Top Carrier"
+                    value={null}
+                    icon={Truck}
+                    emptyHint="No carrier names recorded"
+                  />
+                )}
                 <SmallMetric
                   label="Oldest Record"
                   value={
                     detail.oldestShipmentDate
                       ? formatDate(detail.oldestShipmentDate)
-                      : "—"
+                      : null
                   }
                   icon={CalendarClock}
+                  emptyHint="No first-shipment date"
                 />
                 <SmallMetric
                   label="Last Activity"
-                  value={formatDate(capDateAtToday(detail.latestShipmentDate))}
+                  value={
+                    detail.latestShipmentDate
+                      ? formatDate(capDateAtToday(detail.latestShipmentDate))
+                      : null
+                  }
                   icon={CalendarClock}
+                  emptyHint="No recent shipments"
                 />
               </div>
             );
           })()}
 
-          <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]">
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                Peak seasonality index
-              </div>
-              <p className="mb-4 text-xs text-slate-500">
-                Monthly shipment profile for actual active months in {effectiveSelectedYear ?? "the selected year"}.
-              </p>
-              <div className="flex-1 min-h-[320px]">
-                <CompanyActivityChart data={detail.monthlySeries} />
-              </div>
-              <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                <span className="font-semibold text-indigo-600">Observation:</span>{" "}
-                This chart only renders real active months from the selected year. No future-month placeholders.
-              </div>
+          {/* Phase B.4 — Peak Seasonality is now full-width. The Market
+              Benchmark card collapses to a single-row horizontal banner
+              when no verified benchmark rate is available (the common
+              case today), avoiding the 420px tall empty card we used to
+              ship. When a benchmark IS populated we still expose the
+              detected lane label below the seasonality chart. */}
+          <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+              Peak seasonality index
             </div>
+            <p className="mb-4 text-xs text-slate-500">
+              Monthly shipment profile for actual active months in {effectiveSelectedYear ?? "the selected year"}.
+            </p>
+            <div className="flex-1 min-h-[320px]">
+              <CompanyActivityChart data={detail.monthlySeries} />
+            </div>
+            <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <span className="font-semibold text-indigo-600">Observation:</span>{" "}
+              This chart only renders real active months from the selected year. No future-month placeholders.
+            </div>
+          </div>
 
-            {/* Phase B.2 E — single compact "Market benchmark" card. The
-                old branch that loaded a Freightos iframe is gone; we now
-                only surface honest empty-state copy until a verified
-                benchmark backend lands. */}
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
-                    <BarChart3 className="h-4 w-4 text-slate-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                      Market benchmark
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Lane-aligned rate context
-                    </p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                  Needs verified rate source
-                </span>
+          {/* Phase B.4 — Market benchmark compact horizontal banner.
+              Single row, ~96px tall: icon left, title/subtitle middle,
+              amber badge + microcopy right. */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
+                <BarChart3 className="h-4 w-4 text-slate-500" />
               </div>
-              <div className="mt-5 flex-1 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5">
-                <p className="text-xs leading-relaxed text-slate-600">
-                  No verified benchmark rate is available for this lane yet. Benchmarking will use verified rate APIs or reviewed web-sourced market signals when enabled.
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-slate-900">
+                  Market benchmark
+                </div>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  No verified benchmark rate is available for this lane yet.
                 </p>
                 {freightosBenchmark ? (
-                  <p className="mt-3 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
                     Detected lane match: {freightosBenchmark.lane}
                   </p>
                 ) : null}
+              </div>
+              <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end sm:text-right">
+                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                  Needs rate source
+                </span>
+                <p className="max-w-[240px] text-xs text-slate-400">
+                  Connect a verified rate source or enable reviewed market signals later.
+                </p>
               </div>
             </div>
           </div>
@@ -3367,31 +3515,48 @@ if (!cancelled) {
                         </div>
                       ) : null}
 
+                      {/* Phase B.4 — origin/destination flag cards. On
+                          desktop: a single row with the cards either side
+                          of an arrow icon. On mobile: a 2-column grid so
+                          the cards never squeeze. Empty state (no
+                          activeFromMeta && no activeToMeta) skips the
+                          block entirely — the lane-unavailable empty
+                          state above already covers that. */}
                       {(activeFromMeta || activeToMeta) && (
-                        <div className="flex w-full flex-wrap items-center justify-center gap-2">
+                        <div className="grid w-full grid-cols-2 items-stretch gap-2 sm:flex sm:flex-row sm:items-center sm:justify-center sm:gap-3">
                           {activeFromMeta ? (
-                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                              <span aria-hidden>{activeFromMeta.flag || "🌐"}</span>
-                              <span>{activeFromMeta.countryName}</span>
-                              {activeFromMeta.countryCode ? (
-                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
-                                  {activeFromMeta.countryCode}
-                                </span>
-                              ) : null}
-                            </span>
-                          ) : null}
-                          <span className="text-xs text-slate-400">→</span>
+                            <div className="flex flex-1 max-w-[200px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <span aria-hidden className="text-3xl leading-none">
+                                {activeFromMeta.flag || "🌐"}
+                              </span>
+                              <span className="truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
+                                {activeFromMeta.countryName}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                                Origin
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="hidden sm:block" />
+                          )}
+                          <div className="hidden items-center justify-center sm:flex">
+                            <ArrowRight className="h-4 w-4 text-slate-400" aria-hidden />
+                          </div>
                           {activeToMeta ? (
-                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                              <span aria-hidden>{activeToMeta.flag || "🌐"}</span>
-                              <span>{activeToMeta.countryName}</span>
-                              {activeToMeta.countryCode ? (
-                                <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
-                                  {activeToMeta.countryCode}
-                                </span>
-                              ) : null}
-                            </span>
-                          ) : null}
+                            <div className="flex flex-1 max-w-[200px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <span aria-hidden className="text-3xl leading-none">
+                                {activeToMeta.flag || "🌐"}
+                              </span>
+                              <span className="truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
+                                {activeToMeta.countryName}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                                Destination
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="hidden sm:block" />
+                          )}
                         </div>
                       )}
                       <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>

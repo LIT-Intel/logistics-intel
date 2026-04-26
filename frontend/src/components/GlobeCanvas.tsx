@@ -51,6 +51,10 @@ type GlobePalette = {
   dotFill: string;
   dotStroke: string;
   pulseStroke: (alpha: number) => string;
+  /** Soft atmosphere ring drawn behind the sphere. */
+  atmosphere: string;
+  /** Floating-globe drop shadow ellipse below the sphere. */
+  dropShadow: string;
 };
 
 const LIGHT_PALETTE: GlobePalette = {
@@ -66,6 +70,8 @@ const LIGHT_PALETTE: GlobePalette = {
   dotFill: "#3B82F6",
   dotStroke: "#FFFFFF",
   pulseStroke: (alpha) => `rgba(59,130,246,${alpha})`,
+  atmosphere: "rgba(96, 165, 250, 0.18)",
+  dropShadow: "rgba(15, 23, 42, 0.18)",
 };
 
 // Higher-contrast variant used by the Company Detail trade-lane card. The
@@ -80,19 +86,27 @@ const LIGHT_PALETTE: GlobePalette = {
 // - Arc stroke: #818CF8 (indigo-400, visible against medium-blue land).
 // - Endpoint dots: #22D3EE (cyan-400) with #0E7490 outer ring at low opacity.
 // - Selected lane glow: #A78BFA (violet-400) for clear contrast vs unselected.
+// Phase B.4 — globe realism palette. Sphere now uses a true center-light /
+// edge-dark gradient (cyan-blue → navy) rather than a flat ocean fill, plus
+// an atmosphere halo ring behind the sphere and a soft drop shadow below
+// for depth. Land keeps the medium-blue fill but the stroke now reads at a
+// low opacity for natural shading rather than flat outlines. Graticule
+// drops to 0.18 opacity so it whispers behind the land, not over it.
 const DARK_PALETTE: GlobePalette = {
-  oceanInner: "#1E3A8A",
+  oceanInner: "#60A5FA",
   oceanOuter: "#1E3A8A",
-  sphereStroke: "#1E3A8A",
-  graticule: "rgba(71,85,105,0.32)",
+  sphereStroke: "rgba(30,58,138,0.65)",
+  graticule: "rgba(148,163,184,0.18)",
   landFill: "#60A5FA",
-  landStroke: "#1E3A8A",
+  landStroke: "rgba(30,58,138,0.35)",
   highlightFill: "rgba(167,139,250,0.78)",
   arcGlow: "rgba(167,139,250,0.40)",
   arcStroke: "#818CF8",
   dotFill: "#22D3EE",
   dotStroke: "rgba(14,116,144,0.55)",
   pulseStroke: (alpha) => `rgba(34,211,238,${alpha})`,
+  atmosphere: "rgba(96, 165, 250, 0.18)",
+  dropShadow: "rgba(15, 23, 42, 0.25)",
 };
 
 type Props = {
@@ -206,19 +220,51 @@ export default function GlobeCanvas({
       }
       s.dashOffset = (s.dashOffset + 0.4) % 24;
 
+      // Phase B.4 — leave 16px between sphere edge and canvas edge so the
+      // atmosphere halo and drop shadow can render without being clipped.
+      const sphereRadius = size / 2 - 16;
+      const cx = size / 2;
+      const cy = size / 2;
+
       const proj: GeoProjection = geoOrthographic()
-        .scale(size / 2 - 6)
-        .translate([size / 2, size / 2])
+        .scale(sphereRadius)
+        .translate([cx, cy])
         .rotate([s.rotation[0], s.rotation[1], 0])
         .clipAngle(90);
 
       const pathGen = geoPath(proj, ctx);
       ctx.clearRect(0, 0, size, size);
 
-      // Sphere background gradient
+      // Phase B.4 — drop shadow ellipse beneath the sphere. Drawn first so
+      // every later layer paints over it. Soft blur via shadowBlur on a
+      // transparent fill stroke approximates SVG feGaussianBlur.
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + sphereRadius - 4, sphereRadius * 0.78, sphereRadius * 0.16, 0, 0, Math.PI * 2);
+      ctx.fillStyle = palette.dropShadow;
+      ctx.filter = "blur(6px)";
+      ctx.fill();
+      ctx.restore();
+
+      // Phase B.4 — atmosphere halo ring. A radial gradient from soft blue
+      // at the sphere edge fading to transparent ~16px outside the sphere.
+      const atmosGrad = ctx.createRadialGradient(
+        cx, cy, sphereRadius * 0.92,
+        cx, cy, sphereRadius + 14
+      );
+      atmosGrad.addColorStop(0, palette.atmosphere);
+      atmosGrad.addColorStop(1, "rgba(96,165,250,0)");
+      ctx.beginPath();
+      ctx.arc(cx, cy, sphereRadius + 14, 0, Math.PI * 2);
+      ctx.fillStyle = atmosGrad;
+      ctx.fill();
+
+      // Sphere background gradient — center light, edge dark for a true
+      // 3D-globe highlight. The bright spot sits up-and-left of center,
+      // matching the conventional sun-from-upper-left lighting.
       const grad = ctx.createRadialGradient(
-        size * 0.42, size * 0.38, size * 0.05,
-        size / 2, size / 2, size / 2 - 6
+        cx - sphereRadius * 0.18, cy - sphereRadius * 0.22, sphereRadius * 0.05,
+        cx, cy, sphereRadius
       );
       grad.addColorStop(0, palette.oceanInner);
       grad.addColorStop(1, palette.oceanOuter);
@@ -230,7 +276,7 @@ export default function GlobeCanvas({
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Graticule
+      // Graticule — softer opacity so it whispers behind the land masses.
       ctx.beginPath();
       pathGen(geoGraticule().step([30, 30])() as any);
       ctx.strokeStyle = palette.graticule;
@@ -275,21 +321,29 @@ export default function GlobeCanvas({
         const lane = lanesRef.current.find((l) => l.id === sel);
         if (lane) {
           const arc = { type: "LineString", coordinates: [lane.coords[0], lane.coords[1]] };
-          // Glow
+          // Phase B.4 — soft glow on the arc, then animated dashed stroke.
+          // shadowBlur gives the indigo arc a subtle aura without needing
+          // SVG filters.
+          ctx.save();
           ctx.beginPath();
           pathGen(arc as any);
           ctx.strokeStyle = palette.arcGlow;
           ctx.lineWidth = 7;
           ctx.setLineDash([]);
           ctx.stroke();
-          // Animated dash
+          ctx.restore();
+          // Animated dash with subtle shadow halo for depth.
+          ctx.save();
           ctx.beginPath();
           pathGen(arc as any);
           ctx.strokeStyle = palette.arcStroke;
           ctx.lineWidth = 2.5;
           ctx.setLineDash([8, 4]);
           ctx.lineDashOffset = -s.dashOffset;
+          ctx.shadowColor = palette.arcGlow;
+          ctx.shadowBlur = 6;
           ctx.stroke();
+          ctx.restore();
           ctx.setLineDash([]);
 
           // Endpoint pulse dots
@@ -336,7 +390,11 @@ export default function GlobeCanvas({
 
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <canvas ref={canvasRef} style={{ display: "block", borderRadius: "50%" }} />
+      {/* Phase B.4 — no `borderRadius: 50%` clip on the canvas: the
+          atmosphere halo and drop shadow paint outside the sphere edge
+          and need the full canvas square to render. The sphere itself
+          stays a perfect circle via `pathGen({type:"Sphere"})`. */}
+      <canvas ref={canvasRef} style={{ display: "block" }} />
       {!loaded && (
         <div
           style={{
