@@ -1,19 +1,29 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Hourglass,
   ArrowLeft,
   ArrowRight,
   Send,
   XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { T, Btn } from './tokens';
 import { Badge, Card } from './primitives';
 
-function Field({ label, placeholder, multiline, value, onChange, disabled }) {
+function Field({
+  label,
+  placeholder,
+  multiline,
+  value,
+  onChange,
+  disabled,
+  error,
+  required,
+}) {
   const base = {
     width: '100%',
     background: T.bgSubtle,
-    border: `1.5px solid ${T.border}`,
+    border: `1.5px solid ${error ? T.red : T.border}`,
     borderRadius: 8,
     padding: '10px 12px',
     fontSize: 13.5,
@@ -28,15 +38,17 @@ function Field({ label, placeholder, multiline, value, onChange, disabled }) {
         style={{
           fontSize: 12, fontWeight: 600, fontFamily: T.ffDisplay,
           color: T.inkMuted, marginBottom: 6,
+          display: 'flex', alignItems: 'center', gap: 6,
         }}
       >
-        {label}
+        <span>{label}</span>
+        {required && <span style={{ color: T.red, fontWeight: 700 }}>*</span>}
       </div>
       {multiline ? (
         <textarea
           rows={3}
           placeholder={placeholder}
-          value={value}
+          value={value ?? ''}
           onChange={onChange}
           disabled={disabled}
           style={{ ...base, resize: 'vertical', minHeight: 76 }}
@@ -44,15 +56,40 @@ function Field({ label, placeholder, multiline, value, onChange, disabled }) {
       ) : (
         <input
           placeholder={placeholder}
-          value={value}
+          value={value ?? ''}
           onChange={onChange}
           disabled={disabled}
           style={base}
         />
       )}
+      {error && (
+        <div
+          style={{
+            fontSize: 11.5, color: T.red, marginTop: 4,
+            fontFamily: T.ffDisplay, fontWeight: 500,
+          }}
+        >
+          {error}
+        </div>
+      )}
     </div>
   );
 }
+
+const VOLUME_OPTIONS = ['< 5 / mo', '5–20 / mo', '20+ / mo', 'Not sure yet'];
+
+const INITIAL_FORM = {
+  full_name: '',
+  company_or_brand: '',
+  website_or_linkedin: '',
+  country: '',
+  audience_description: '',
+  audience_size: '',
+  primary_channels: '',
+  expected_referral_volume: '',
+  accepted_partner_terms: false,
+  accepted_stripe_ack: false,
+};
 
 export default function AffiliateApplication({
   state = 'form',
@@ -63,6 +100,86 @@ export default function AffiliateApplication({
   backendUnavailable = false,
 }) {
   const [step, setStep] = useState(1);
+  const [form, setForm] = useState(INITIAL_FORM);
+  const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const update = (key) => (e) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+  const toggle = (key) => (e) =>
+    setForm((f) => ({ ...f, [key]: e.target.checked }));
+
+  function validateStep(s) {
+    const e = {};
+    if (s === 1) {
+      if (!form.full_name.trim()) e.full_name = 'Required';
+      if (!form.company_or_brand.trim()) e.company_or_brand = 'Required';
+    }
+    if (s === 2) {
+      if (!form.audience_description.trim()) e.audience_description = 'Required';
+      if (!form.primary_channels.trim()) e.primary_channels = 'Required';
+    }
+    if (s === 3) {
+      if (!form.accepted_partner_terms)
+        e.accepted_partner_terms = 'Must accept partner terms';
+      if (!form.accepted_stripe_ack)
+        e.accepted_stripe_ack = 'Must acknowledge Stripe payouts';
+    }
+    return e;
+  }
+
+  function goNext() {
+    const e = validateStep(step);
+    setErrors(e);
+    if (Object.keys(e).length > 0) return;
+    setStep((s) => Math.min(3, s + 1));
+  }
+
+  async function handleSubmit() {
+    setSubmitError(null);
+    const all = { ...validateStep(1), ...validateStep(2), ...validateStep(3) };
+    setErrors(all);
+    if (Object.keys(all).length > 0) {
+      // Jump back to first step that has errors.
+      if (validateStep(1) && Object.keys(validateStep(1)).length) setStep(1);
+      else if (Object.keys(validateStep(2)).length) setStep(2);
+      else setStep(3);
+      return;
+    }
+    if (!onSubmit) return;
+    setSubmitting(true);
+    try {
+      const result = await onSubmit({
+        full_name: form.full_name.trim(),
+        company_or_brand: form.company_or_brand.trim(),
+        website_or_linkedin: form.website_or_linkedin.trim() || null,
+        country: form.country.trim() || null,
+        audience_description: form.audience_description.trim(),
+        audience_size: form.audience_size.trim() || null,
+        primary_channels: form.primary_channels.trim(),
+        expected_referral_volume: form.expected_referral_volume.trim() || null,
+        accepted_partner_terms: form.accepted_partner_terms,
+        accepted_stripe_ack: form.accepted_stripe_ack,
+      });
+      if (result && result.ok === false) {
+        setSubmitError(
+          result.code === 'ALREADY_PARTNER'
+            ? 'You are already an approved partner.'
+            : result.code === 'VALIDATION_FAILED'
+              ? 'Please fix the highlighted fields.'
+              : result.error || 'Submission failed.'
+        );
+        if (result.errors) setErrors(result.errors);
+      }
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : 'Unexpected error submitting application.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   if (state === 'pending') {
     return (
@@ -258,6 +375,29 @@ export default function AffiliateApplication({
           </div>
         )}
 
+        {submitError && !backendUnavailable && (
+          <div
+            style={{
+              background: T.redBg,
+              border: `1px solid ${T.redBorder}`,
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 18,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+            }}
+          >
+            <AlertTriangle size={16} color={T.red} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ fontSize: 12.5, color: T.inkMuted, lineHeight: 1.5 }}>
+              <strong style={{ color: T.red, fontFamily: T.ffDisplay }}>
+                Couldn&apos;t submit application.
+              </strong>{' '}
+              {submitError}
+            </div>
+          </div>
+        )}
+
         {/* Stepper */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
           {['You', 'Audience', 'Agreement'].map((s, i) => (
@@ -274,10 +414,38 @@ export default function AffiliateApplication({
         <Card style={{ padding: 28 }}>
           {step === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <Field label="Full name" placeholder="Jordan Davis" disabled={backendUnavailable} />
-              <Field label="Company or brand" placeholder="Nordic Freight Advisory" disabled={backendUnavailable} />
-              <Field label="Website or LinkedIn" placeholder="https://" disabled={backendUnavailable} />
-              <Field label="Country" placeholder="United States" disabled={backendUnavailable} />
+              <Field
+                label="Full name"
+                placeholder="Jordan Davis"
+                value={form.full_name}
+                onChange={update('full_name')}
+                disabled={backendUnavailable || submitting}
+                error={errors.full_name}
+                required
+              />
+              <Field
+                label="Company or brand"
+                placeholder="Nordic Freight Advisory"
+                value={form.company_or_brand}
+                onChange={update('company_or_brand')}
+                disabled={backendUnavailable || submitting}
+                error={errors.company_or_brand}
+                required
+              />
+              <Field
+                label="Website or LinkedIn"
+                placeholder="https://"
+                value={form.website_or_linkedin}
+                onChange={update('website_or_linkedin')}
+                disabled={backendUnavailable || submitting}
+              />
+              <Field
+                label="Country"
+                placeholder="United States"
+                value={form.country}
+                onChange={update('country')}
+                disabled={backendUnavailable || submitting}
+              />
             </div>
           )}
           {step === 2 && (
@@ -286,17 +454,27 @@ export default function AffiliateApplication({
                 label="Describe your audience"
                 multiline
                 placeholder="Who follows you, reads your newsletter, or hires you?"
-                disabled={backendUnavailable}
+                value={form.audience_description}
+                onChange={update('audience_description')}
+                disabled={backendUnavailable || submitting}
+                error={errors.audience_description}
+                required
               />
               <Field
                 label="Audience size"
                 placeholder="e.g. 4,200 newsletter subscribers"
-                disabled={backendUnavailable}
+                value={form.audience_size}
+                onChange={update('audience_size')}
+                disabled={backendUnavailable || submitting}
               />
               <Field
                 label="Primary channels"
                 placeholder="Newsletter, LinkedIn, podcast, direct advisory…"
-                disabled={backendUnavailable}
+                value={form.primary_channels}
+                onChange={update('primary_channels')}
+                disabled={backendUnavailable || submitting}
+                error={errors.primary_channels}
+                required
               />
               <div>
                 <div
@@ -308,24 +486,37 @@ export default function AffiliateApplication({
                   Expected referral volume
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {['< 5 / mo', '5–20 / mo', '20+ / mo', 'Not sure yet'].map((o) => (
-                    <label
-                      key={o}
-                      style={{
-                        ...Btn.ghost, padding: '8px 12px', fontSize: 12,
-                        cursor: backendUnavailable ? 'not-allowed' : 'pointer',
-                        fontWeight: 500, opacity: backendUnavailable ? 0.6 : 1,
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="vol"
-                        disabled={backendUnavailable}
-                        style={{ marginRight: 6 }}
-                      />
-                      {o}
-                    </label>
-                  ))}
+                  {VOLUME_OPTIONS.map((o) => {
+                    const selected = form.expected_referral_volume === o;
+                    return (
+                      <label
+                        key={o}
+                        style={{
+                          ...Btn.ghost,
+                          padding: '8px 12px',
+                          fontSize: 12,
+                          cursor: backendUnavailable || submitting ? 'not-allowed' : 'pointer',
+                          fontWeight: 500,
+                          opacity: backendUnavailable || submitting ? 0.6 : 1,
+                          borderColor: selected ? T.brand : T.border,
+                          color: selected ? T.brand : T.inkMuted,
+                          background: selected ? T.brandSoft : '#FFFFFF',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="vol"
+                          checked={selected}
+                          onChange={() =>
+                            setForm((f) => ({ ...f, expected_referral_volume: o }))
+                          }
+                          disabled={backendUnavailable || submitting}
+                          style={{ marginRight: 6 }}
+                        />
+                        {o}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -372,19 +563,33 @@ export default function AffiliateApplication({
               >
                 <input
                   type="checkbox"
-                  disabled={backendUnavailable}
+                  checked={form.accepted_partner_terms}
+                  onChange={toggle('accepted_partner_terms')}
+                  disabled={backendUnavailable || submitting}
                   style={{ marginTop: 3 }}
                 />
-                I agree to the{' '}
-                <a href="#" style={{ color: T.brand, textDecoration: 'underline' }}>
-                  Partner Agreement
-                </a>{' '}
-                and{' '}
-                <a href="#" style={{ color: T.brand, textDecoration: 'underline' }}>
-                  Brand Guidelines
-                </a>
-                . Final rate set at approval.
+                <span>
+                  I agree to the{' '}
+                  <a href="#" style={{ color: T.brand, textDecoration: 'underline' }}>
+                    Partner Agreement
+                  </a>{' '}
+                  and{' '}
+                  <a href="#" style={{ color: T.brand, textDecoration: 'underline' }}>
+                    Brand Guidelines
+                  </a>
+                  . Final rate set at approval.
+                </span>
               </label>
+              {errors.accepted_partner_terms && (
+                <div
+                  style={{
+                    fontSize: 11.5, color: T.red, marginLeft: 26,
+                    fontFamily: T.ffDisplay, fontWeight: 500,
+                  }}
+                >
+                  {errors.accepted_partner_terms}
+                </div>
+              )}
               <label
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 9,
@@ -393,11 +598,25 @@ export default function AffiliateApplication({
               >
                 <input
                   type="checkbox"
-                  disabled={backendUnavailable}
+                  checked={form.accepted_stripe_ack}
+                  onChange={toggle('accepted_stripe_ack')}
+                  disabled={backendUnavailable || submitting}
                   style={{ marginTop: 3 }}
                 />
-                I understand payouts are made via Stripe Connect Express and require identity verification.
+                <span>
+                  I understand payouts are made via Stripe Connect Express and require identity verification.
+                </span>
               </label>
+              {errors.accepted_stripe_ack && (
+                <div
+                  style={{
+                    fontSize: 11.5, color: T.red, marginLeft: 26,
+                    fontFamily: T.ffDisplay, fontWeight: 500,
+                  }}
+                >
+                  {errors.accepted_stripe_ack}
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -414,6 +633,7 @@ export default function AffiliateApplication({
               visibility: step > 1 ? 'visible' : 'hidden',
             }}
             onClick={() => setStep((s) => Math.max(1, s - 1))}
+            disabled={submitting}
           >
             <ArrowLeft size={13} /> Back
           </button>
@@ -421,7 +641,8 @@ export default function AffiliateApplication({
             <button
               type="button"
               style={Btn.primary}
-              onClick={() => setStep((s) => s + 1)}
+              onClick={goNext}
+              disabled={submitting}
             >
               Continue <ArrowRight size={13} />
             </button>
@@ -430,20 +651,22 @@ export default function AffiliateApplication({
               type="button"
               style={{
                 ...Btn.primary,
-                opacity: backendUnavailable ? 0.55 : 1,
-                cursor: backendUnavailable ? 'not-allowed' : 'pointer',
+                opacity: backendUnavailable || submitting ? 0.55 : 1,
+                cursor: backendUnavailable || submitting ? 'not-allowed' : 'pointer',
               }}
-              disabled={backendUnavailable}
+              disabled={backendUnavailable || submitting}
               title={
                 backendUnavailable
                   ? 'Application backend not enabled yet'
                   : undefined
               }
-              onClick={onSubmit}
+              onClick={handleSubmit}
             >
               {backendUnavailable
                 ? 'Submissions disabled'
-                : 'Submit application'}{' '}
+                : submitting
+                  ? 'Submitting…'
+                  : 'Submit application'}{' '}
               <Send size={13} />
             </button>
           )}
