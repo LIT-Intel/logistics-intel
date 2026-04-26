@@ -116,59 +116,61 @@ export default function SettingsPage() {
       return;
     }
 
-    // Phase H Step 3.1 — SSoT split:
-    //   * `profiles.full_name` + `profiles.avatar_url` are canonical (read by
-    //     app sidebar, invites, other surfaces) so they stay in `profiles`.
-    //   * Extended profile fields (`title`, `phone`, `location`, `bio`) live
-    //     only in `user_profiles` — the `profiles` table doesn't carry those
-    //     columns and we can't migrate here. Writes no longer duplicate the
-    //     shared fields across both tables.
+    // Schema reality (verified against migrations):
+    //   * `profiles` columns: id, full_name, company_name,
+    //     organization_name. NO avatar_url. (20260403_005)
+    //   * `user_profiles` columns: user_id, full_name, title, phone,
+    //     avatar_url, bio, location. (20260126215600 + 20260421_005)
+    //   * Onboarding Step 5 writes profiles.full_name +
+    //     user_profiles.{full_name, title} + auth.users.user_metadata.
+    // Hydration order (each field independently): user_profiles >
+    // profiles > auth.users.user_metadata > email-derived fallback.
     const { data: baseProfileData, error: baseProfileError } = await supabase
       .from("profiles")
-      .select("id, full_name, company_name, organization_name, avatar_url")
+      .select("id, full_name, company_name, organization_name")
       .eq("id", uid)
       .maybeSingle();
     requireNoError(baseProfileError, "Failed loading base profile");
 
     const { data: userProfileData, error: userProfileError } = await supabase
       .from("user_profiles")
-      .select("user_id, title, phone, location, bio")
+      .select("user_id, full_name, title, phone, location, bio, avatar_url")
       .eq("user_id", uid)
       .maybeSingle();
     requireNoError(userProfileError, "Failed loading user profile");
 
+    const meta = (user?.user_metadata ?? {}) as Record<string, any>;
     const authFullName =
-      user?.user_metadata?.full_name ||
-      user?.user_metadata?.display_name ||
+      meta.full_name ||
+      meta.display_name ||
       user?.email?.split("@")[0] ||
       "User";
-    const profileName = baseProfileData?.full_name || authFullName;
+
+    // Prefer the canonical profile rows; only fall back to onboarding
+    // metadata when the table value is empty.
+    const profileName =
+      baseProfileData?.full_name || userProfileData?.full_name || authFullName;
+    const profileTitle = userProfileData?.title || meta.role || "";
+    const profilePhone = userProfileData?.phone || meta.phone || "";
+    const profileLocation = userProfileData?.location || meta.location || "";
+    const profileBio = userProfileData?.bio || meta.bio || "";
+    const profileAvatar = userProfileData?.avatar_url || meta.avatar_url || "";
 
     if (!baseProfileData) {
       const { error: upsertError } = await supabase
         .from("profiles")
-        .upsert(
-          {
-            id: uid,
-            full_name: profileName,
-            avatar_url: user?.user_metadata?.avatar_url || null,
-          },
-          { onConflict: "id" },
-        );
+        .upsert({ id: uid, full_name: profileName }, { onConflict: "id" });
       if (upsertError) console.warn("[SettingsPage] Upsert profiles warning:", upsertError);
     }
 
     safeSet(() => {
       setProfile({
         name: profileName,
-        title: userProfileData?.title || "",
-        phone: userProfileData?.phone || "",
-        location: userProfileData?.location || "",
-        bio: userProfileData?.bio || "",
-        avatar_url:
-          baseProfileData?.avatar_url ||
-          user?.user_metadata?.avatar_url ||
-          "",
+        title: profileTitle,
+        phone: profilePhone,
+        location: profileLocation,
+        bio: profileBio,
+        avatar_url: profileAvatar,
         email: user?.email || "",
         plan: plan ?? "free_trial",
         isAdmin,
@@ -434,11 +436,13 @@ export default function SettingsPage() {
 
     const avatarUrl = result.file_url;
 
-    const { error: baseProfileAvatarError } = await supabase
-      .from("profiles")
-      .upsert({ id: uid, avatar_url: avatarUrl }, { onConflict: "id" });
-    if (baseProfileAvatarError) {
-      return { error: baseProfileAvatarError.message || "Failed saving avatar" };
+    // avatar_url lives on user_profiles (not profiles) per the actual
+    // schema. profiles only has id/full_name/company_name/organization_name.
+    const { error: avatarSaveError } = await supabase
+      .from("user_profiles")
+      .upsert({ user_id: uid, avatar_url: avatarUrl }, { onConflict: "user_id" });
+    if (avatarSaveError) {
+      return { error: avatarSaveError.message || "Failed saving avatar" };
     }
 
     await updateProfile({ avatar_url: avatarUrl });

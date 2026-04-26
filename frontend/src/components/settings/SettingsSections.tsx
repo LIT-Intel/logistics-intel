@@ -441,35 +441,28 @@ export function ProfileSection({
 
         <div className="grid gap-6 md:grid-cols-[160px_minmax(0,1fr)]">
           <div className="flex flex-col items-center">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploading}
-              aria-label="Change profile image"
-              className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-3xl font-bold text-white shadow transition hover:brightness-110 disabled:cursor-wait"
+            <div
+              aria-label={avatarUrl ? "Profile image" : `Initials avatar ${initials}`}
+              className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-3xl font-bold text-white shadow"
             >
               {avatarUrl ? (
                 <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
               ) : (
                 <span>{initials}</span>
               )}
-            </button>
+            </div>
+            {/* No file storage backend wired yet — surface an honest
+                disabled affordance rather than a button that throws when
+                clicked. Re-enable once UploadFile is wired. */}
             <button
               type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploading}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+              disabled
+              title="Photo upload ships with the storage integration"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-400"
             >
               <Upload className="h-3 w-3" />
-              {uploading ? "Uploading…" : "Change photo"}
+              Change photo · soon
             </button>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleAvatarChange(e.target.files?.[0])}
-            />
           </div>
 
           <div className="space-y-4">
