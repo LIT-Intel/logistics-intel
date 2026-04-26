@@ -586,7 +586,8 @@ export default function CommandCenter() {
             <div style={{ fontSize: 13, color: '#64748b', fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}>Try changing your filters or save more companies from Search.</div>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 960 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
                 {TABLE_COLS.map((col) => {
@@ -655,35 +656,35 @@ export default function CommandCenter() {
                     </td>
 
                     {/* Shipments 12m */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>
                         {formatNumber(row.shipments12m)}
                       </span>
                     </td>
 
                     {/* TEU 12m */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
                         {formatNumber(row.teu12m, 1)}
                       </span>
                     </td>
 
                     {/* Est. Spend */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
                         {formatCurrency(row.estSpend12m)}
                       </span>
                     </td>
 
                     {/* Top Route */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#64748b', background: '#F1F5F9', padding: '2px 7px', borderRadius: 4 }}>
                         {row.topRoute12m || row.recentRoute || '—'}
                       </span>
                     </td>
 
                     {/* Stage — read-only pill, backed by existing row.stage field */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       {(() => {
                         const ss = stageStyleFor(row.stage);
                         return (
@@ -709,7 +710,7 @@ export default function CommandCenter() {
                     </td>
 
                     {/* Contacts — bulk-loaded from lit_contacts keyed on company_id. "—" on silent fail. */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       {(() => {
                         const count = row.companyId ? contactCounts[row.companyId] : 0;
                         if (!count) {
@@ -739,7 +740,7 @@ export default function CommandCenter() {
                     </td>
 
                     {/* Activity */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{
                         fontSize: 11, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
                         padding: '2px 7px', borderRadius: 9999,
@@ -752,7 +753,7 @@ export default function CommandCenter() {
                     </td>
 
                     {/* Status */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999,
@@ -765,7 +766,7 @@ export default function CommandCenter() {
                     </td>
 
                     {/* Actions */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
@@ -808,6 +809,7 @@ export default function CommandCenter() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

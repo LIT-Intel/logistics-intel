@@ -9,6 +9,20 @@ import {
 import { feature } from "topojson-client";
 import type { Topology } from "topojson-specification";
 
+/**
+ * Display metadata attached to a resolved lane endpoint. Mirrors the
+ * `ResolvedEndpoint` shape from `@/lib/laneGlobe` without forcing an import
+ * cycle (consumers populate it; this canvas just reads optional fields).
+ */
+export type GlobeLaneEndpointMeta = {
+  label: string;
+  canonicalKey: string;
+  countryName: string;
+  countryCode: string;
+  flag: string;
+  coords: [number, number];
+};
+
 export type GlobeLane = {
   id: string;
   from: string;
@@ -18,6 +32,10 @@ export type GlobeLane = {
   teu?: string;
   trend?: string;
   up?: boolean;
+  /** Optional resolved metadata for the origin endpoint. */
+  fromMeta?: GlobeLaneEndpointMeta;
+  /** Optional resolved metadata for the destination endpoint. */
+  toMeta?: GlobeLaneEndpointMeta;
 };
 
 type Props = {

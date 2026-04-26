@@ -34,7 +34,11 @@ import type { CommandCenterRecord } from "@/types/importyeti";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyActivityChart from "./CompanyActivityChart";
 import GlobeCanvas, { type GlobeLane } from "@/components/GlobeCanvas";
-import { laneStringToGlobeLane } from "@/lib/laneGlobe";
+import {
+  laneStringToGlobeLane,
+  resolveEndpoint,
+  type ResolvedEndpoint,
+} from "@/lib/laneGlobe";
 import {
   CANONICAL_CONTAINER_CODES,
   canonicalContainerLabel,
@@ -217,6 +221,19 @@ const isValidPastOrCurrentDate = (value?: string | null) => {
   const maxAllowed = new Date();
   maxAllowed.setDate(maxAllowed.getDate() + FUTURE_DATE_TOLERANCE_DAYS);
   return parsed.getTime() <= maxAllowed.getTime();
+};
+
+/**
+ * Stricter clamp used at KPI display points only. Returns the original
+ * value when it parses as a date at or before "now"; otherwise returns
+ * null so the caller can render "—". Does not mutate any source data.
+ */
+const capDateAtToday = (value?: string | null): string | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const now = new Date();
+  return parsed.getTime() <= now.getTime() ? value : null;
 };
 
 const getDateTime = (value?: string | null) => {
@@ -2290,7 +2307,73 @@ export default function CompanyDetailPanel({
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
-  const activeLane = selectedLane || detail.topRoutes[0]?.lane || null;
+
+  // Resolve every top route into globe-ready endpoint metadata once, so the
+  // table, the globe, and the flag pills all read from the same source of
+  // truth. Lanes whose endpoints both fail to resolve are still kept in the
+  // table list (they remain visible as "unresolved") but excluded from the
+  // globe arc array via `globeLanes` below.
+  const resolvedRoutes = useMemo(
+    () =>
+      detail.topRoutes.map((route) => {
+        const parts = (route.lane || "").split(/→|->|>/).map((p) => p.trim());
+        const fromMeta = resolveEndpoint(parts[0]);
+        const toMeta = resolveEndpoint(parts[1]);
+        return {
+          ...route,
+          fromMeta,
+          toMeta,
+          resolvable: Boolean(fromMeta && toMeta),
+        };
+      }),
+    [detail.topRoutes],
+  );
+
+  const firstResolvableLane = useMemo(
+    () => resolvedRoutes.find((r) => r.resolvable)?.lane ?? null,
+    [resolvedRoutes],
+  );
+
+  // Default-select the first resolvable lane on mount / when the company
+  // changes. We only auto-pick if the user has not chosen a lane yet (or
+  // their selection is no longer valid for the current company).
+  useEffect(() => {
+    if (!firstResolvableLane) {
+      if (selectedLane) setSelectedLane(null);
+      return;
+    }
+    if (!selectedLane || !resolvedRoutes.some((r) => r.lane === selectedLane)) {
+      setSelectedLane(firstResolvableLane);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstResolvableLane, resolvedRoutes]);
+
+  const activeLane = selectedLane || firstResolvableLane;
+  const activeLaneMeta = useMemo(
+    () => resolvedRoutes.find((r) => r.lane === activeLane) || null,
+    [resolvedRoutes, activeLane],
+  );
+  const activeFromMeta: ResolvedEndpoint | null = activeLaneMeta?.fromMeta ?? null;
+  const activeToMeta: ResolvedEndpoint | null = activeLaneMeta?.toMeta ?? null;
+
+  // Responsive globe size — clamp to viewport width minus ~64px of horizontal
+  // padding so the canvas never overflows on a 390px mobile viewport.
+  const [globeSize, setGlobeSize] = useState<number>(268);
+  useEffect(() => {
+    const update = () => {
+      if (typeof window === "undefined") return;
+      const w = window.innerWidth || 0;
+      // Container padding ≈ 32px (panel) + 32px (card) + 16px (block) ≈ 80px.
+      const next = Math.max(180, Math.min(268, w - 80));
+      setGlobeSize(next);
+    };
+    update();
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+    return undefined;
+  }, []);
 
   const [phantomContacts, setPhantomContacts] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
@@ -2757,7 +2840,7 @@ if (!cancelled) {
             },
             {
               label: "Latest Shipment",
-              value: formatDate(detail.latestShipmentDate),
+              value: formatDate(capDateAtToday(detail.latestShipmentDate)),
               icon: CalendarClock,
               tintBg: "bg-emerald-50",
               tintText: "text-emerald-600",
@@ -2848,7 +2931,7 @@ if (!cancelled) {
             />
             <SmallMetric
               label="Latest shipment"
-              value={formatDate(detail.latestShipmentDate)}
+              value={formatDate(capDateAtToday(detail.latestShipmentDate))}
               icon={CalendarClock}
             />
             <SmallMetric
@@ -2883,23 +2966,23 @@ if (!cancelled) {
               </div>
             </div>
 
-            <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    {freightosBenchmark?.title || "Market Rate Benchmark"}
+            {freightosBenchmark ? (
+              <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                      {freightosBenchmark.title || "Market Rate Benchmark"}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Matched to the company’s primary trade lane
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Matched to the company’s primary trade lane
-                  </p>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                    <Waves className="h-3.5 w-3.5 text-indigo-500" />
+                    Freightos
+                  </div>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                  <Waves className="h-3.5 w-3.5 text-indigo-500" />
-                  Freightos
-                </div>
-              </div>
 
-              {freightosBenchmark ? (
                 <div className="mt-5 space-y-4">
                   <div className="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-4">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
@@ -2941,12 +3024,35 @@ if (!cancelled) {
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="mt-5 flex flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-                  No high-confidence Freightos benchmark match found from current route intelligence.
+              </div>
+            ) : (
+              <div
+                className="flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                style={{ minHeight: 140, maxHeight: 180 }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
+                      <BarChart3 className="h-4 w-4 text-slate-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Market benchmark
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Lane-aligned rate context
+                      </p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                    Needs verified rate source
+                  </span>
                 </div>
-              )}
-            </div>
+                <p className="mt-3 text-xs leading-relaxed text-slate-600">
+                  No verified benchmark rate is available for this lane yet. Benchmarking will use verified rate APIs or reviewed web-sourced market signals when enabled.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 items-stretch xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
@@ -2961,7 +3067,7 @@ if (!cancelled) {
                   </p>
                 </div>
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {detail.topRoutes.length} lanes
+                  {resolvedRoutes.filter((r) => r.resolvable).length} lanes
                 </div>
               </div>
 
@@ -2985,14 +3091,14 @@ if (!cancelled) {
                           </td>
                         </tr>
                       ) : (
-                        detail.topRoutes.map((route, i) => (
+                        resolvedRoutes.map((route, i) => (
                           <tr
                             key={i}
-                            onClick={() => setSelectedLane(selectedLane === route.lane ? null : route.lane)}
+                            onClick={() => setSelectedLane(route.lane)}
                             className={`cursor-pointer border-b border-slate-50 last:border-b-0 transition-colors ${
                               route.lane === activeLane
-  ? "bg-indigo-50 ring-1 ring-indigo-200"
-  : "hover:bg-slate-50/70"
+                                ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
+                                : "hover:bg-slate-50/70"
                             }`}
                           >
                             <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
@@ -3028,22 +3134,117 @@ if (!cancelled) {
                   </table>
                 </div>
 
-                <div style={{ background: '#F8FAFC', borderRadius: 24, border: '1px solid #F1F5F9', padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    background:
+                      "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
+                    borderRadius: 24,
+                    border: "1px solid #E2E8F0",
+                    padding: 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 10,
+                    minWidth: 0,
+                  }}
+                >
                   {(() => {
-                    const globeLanes: GlobeLane[] = detail.topRoutes
+                    const globeLanes: GlobeLane[] = resolvedRoutes
+                      .filter((r) => r.resolvable)
                       .slice(0, 6)
                       .map((r, i) => laneStringToGlobeLane(r.lane, i))
                       .filter((l): l is GlobeLane => l !== null);
-                    const selectedGlobeLane = selectedLane ?? null;
+                    const selectedGlobeLane = activeLane ?? null;
+                    const hasResolvable = globeLanes.length > 0;
+                    const noTopRoutes = detail.topRoutes.length === 0;
+
+                    if (!hasResolvable && noTopRoutes) {
+                      return (
+                        <div
+                          className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
+                          style={{ minHeight: 200 }}
+                        >
+                          <Globe className="mb-2 h-6 w-6 text-slate-300" />
+                          Route map unavailable because this shipment data does not include resolvable origin/destination locations.
+                        </div>
+                      );
+                    }
+
                     return (
                       <>
-                        <GlobeCanvas lanes={globeLanes} selectedLane={selectedGlobeLane} size={268} />
-                        {selectedGlobeLane && (
-                          <div style={{ alignSelf: 'stretch', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8, padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{selectedGlobeLane}</span>
-                            <button onClick={() => setSelectedLane(null)} style={{ fontSize: 10, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif" }}>✕</button>
+                        {(activeFromMeta || activeToMeta) && (
+                          <div className="flex w-full flex-wrap items-center justify-center gap-2">
+                            {activeFromMeta ? (
+                              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                                <span aria-hidden>{activeFromMeta.flag || "🌐"}</span>
+                                <span>{activeFromMeta.countryName}</span>
+                                {activeFromMeta.countryCode ? (
+                                  <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
+                                    {activeFromMeta.countryCode}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
+                            <span className="text-xs text-slate-400">→</span>
+                            {activeToMeta ? (
+                              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                                <span aria-hidden>{activeToMeta.flag || "🌐"}</span>
+                                <span>{activeToMeta.countryName}</span>
+                                {activeToMeta.countryCode ? (
+                                  <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500">
+                                    {activeToMeta.countryCode}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
                           </div>
                         )}
+                        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                          {hasResolvable ? (
+                            <GlobeCanvas
+                              lanes={globeLanes}
+                              selectedLane={selectedGlobeLane}
+                              size={globeSize}
+                            />
+                          ) : (
+                            <div
+                              className="flex w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
+                              style={{ minHeight: 200 }}
+                            >
+                              <Globe className="mb-2 h-6 w-6 text-slate-300" />
+                              Route map unavailable because this shipment data does not include resolvable origin/destination locations.
+                            </div>
+                          )}
+                        </div>
+                        {selectedGlobeLane && hasResolvable ? (
+                          <div
+                            style={{
+                              alignSelf: "stretch",
+                              background: "#EFF6FF",
+                              border: "1px solid #BFDBFE",
+                              borderRadius: 8,
+                              padding: "7px 12px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 8,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: "#1d4ed8",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {selectedGlobeLane}
+                            </span>
+                          </div>
+                        ) : null}
                       </>
                     );
                   })()}
