@@ -2601,6 +2601,10 @@ export default function CompanyDetailPanel({
   const [contactError, setContactError] = useState<string | null>(null);
   const [savedContactKeys, setSavedContactKeys] = useState<Set<string>>(new Set());
   const [contactSearchQuery, setContactSearchQuery] = useState("");
+  // Phase B.3 Contact Intel: department/role filter chip state. Default "all"
+  // matches the leading FILTER_CHIPS entry. The chip's `matcher` runs against
+  // each contact's title; the helper handles missing titles safely.
+  const [contactDeptFilter, setContactDeptFilter] = useState<string>("all");
 
   useEffect(() => {
     const companyId =
