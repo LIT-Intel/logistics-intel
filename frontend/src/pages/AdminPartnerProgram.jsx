@@ -8,7 +8,7 @@
 // 5 tabs: Applications, Partners, Commissions, Payout runs, Tiers.
 // All data is real. No fake rows. Empty states everywhere there's no data.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Inbox,
   Users,
@@ -21,15 +21,30 @@ import {
   Play,
   CheckCircle2,
   XCircle,
+  UserPlus,
+  MoreVertical,
+  Mail,
+  Ban,
+  RotateCcw,
+  Trash2,
+  Copy,
 } from 'lucide-react';
 import {
   fetchAdminKpis,
   fetchAdminApplications,
+  fetchAdminInvites,
   fetchAdminPartners,
   fetchAdminCommissions,
   fetchAdminPayouts,
   fetchAdminTiers,
   reviewApplication,
+  createAffiliateInvite,
+  resendInvite,
+  revokeInvite,
+  deactivatePartner,
+  reactivatePartner,
+  softDeletePartner,
+  resendStripeOnboarding,
 } from '@/lib/affiliateAdmin';
 import { T, Btn } from '@/components/affiliate/tokens';
 import { Badge, Card, StatCell } from '@/components/affiliate/primitives';
@@ -168,28 +183,62 @@ const TD_BASE = { padding: '12px 16px' };
 function AdminApplications({ onChange }) {
   const [kpis, setKpis] = useState(null);
   const [rows, setRows] = useState([]);
+  const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [confirmReject, setConfirmReject] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [search, setSearch] = useState('');
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [kpiRes, appRes] = await Promise.all([
+    const [kpiRes, appRes, invRes] = await Promise.all([
       fetchAdminKpis(),
       fetchAdminApplications(),
+      fetchAdminInvites(),
     ]);
     if (kpiRes.ok) setKpis(kpiRes);
     else setError(kpiRes.error || 'Failed to load KPIs');
     if (appRes.ok) setRows(appRes.applications || []);
     else if (!error) setError(appRes.error || 'Failed to load applications');
+    if (invRes.ok) setInvites(invRes.invites || []);
     setLoading(false);
   }, [error]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleResendInvite(invite) {
+    if (busyId) return;
+    setBusyId(invite.id);
+    const result = await resendInvite(invite.id);
+    setBusyId(null);
+    if (result.ok) {
+      await load();
+    } else {
+      setError(result.error || `Failed to resend invite (${result.code || ''})`.trim());
+    }
+  }
+  async function handleRevokeInvite(invite) {
+    if (busyId) return;
+    if (!window.confirm(`Revoke invitation to ${invite.email}? They won't be able to claim it.`)) return;
+    setBusyId(invite.id);
+    const result = await revokeInvite(invite.id);
+    setBusyId(null);
+    if (result.ok) {
+      await load();
+      onChange?.();
+    } else {
+      setError(result.error || 'Failed to revoke invite');
+    }
+  }
+  async function handleInviteCreated() {
+    setShowInviteModal(false);
+    await load();
+    onChange?.();
+  }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -235,12 +284,128 @@ function AdminApplications({ onChange }) {
   return (
     <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <ErrorBanner onRetry={load}>{error}</ErrorBanner>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="button"
+          style={Btn.primary}
+          onClick={() => setShowInviteModal(true)}
+        >
+          <UserPlus size={13} /> Invite affiliate
+        </button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
         <Card><StatCell label="Pending review"  value={kpis ? String(kpis.applications_pending) : '—'} /></Card>
+        <Card><StatCell label="Open invites"    value={kpis ? String(kpis.invites_open) : '—'} /></Card>
         <Card><StatCell label="Approved (30d)"  value={kpis ? String(kpis.applications_approved_30d) : '—'} /></Card>
-        <Card><StatCell label="Rejected (30d)"  value={kpis ? String(kpis.applications_rejected_30d) : '—'} /></Card>
         <Card><StatCell label="Active partners" value={kpis ? String(kpis.partners_active) : '—'} /></Card>
       </div>
+
+      {/* Invites */}
+      <Card padded={false}>
+        <div
+          style={{
+            padding: '16px 20px',
+            borderBottom: `1px solid ${T.borderSoft}`,
+            fontFamily: T.ffDisplay, fontSize: 13, fontWeight: 700, color: T.ink,
+          }}
+        >
+          Invites · {invites.length}
+        </div>
+        {loading ? (
+          <Spinner />
+        ) : invites.length === 0 ? (
+          <EmptyRow label="No invites sent yet. Use the Invite affiliate button to invite a new partner by email." />
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ background: T.bgSubtle, textAlign: 'left' }}>
+                {['Recipient','Tier','Sent','Expires','State','Sent by',''].map((h) => (
+                  <th key={h} style={TH_STYLE}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map((iv, i, arr) => (
+                <tr
+                  key={iv.id}
+                  style={{ borderBottom: i < arr.length - 1 ? `1px solid ${T.borderSoft}` : 'none' }}
+                >
+                  <td style={TD_BASE}>
+                    <div style={{ fontFamily: T.ffDisplay, fontWeight: 600, color: T.ink }}>
+                      {iv.name || iv.email}
+                    </div>
+                    <div style={{ fontFamily: T.ffMono, fontSize: 11.5, color: T.inkFaint }}>
+                      {iv.email}
+                    </div>
+                    {iv.company && (
+                      <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>
+                        {iv.company}
+                      </div>
+                    )}
+                  </td>
+                  <td style={TD_BASE}>
+                    {iv.tier_code ? <Badge tone="brand">{iv.tier_code}</Badge> : <span style={{ color: T.inkFaint }}>—</span>}
+                  </td>
+                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.inkSoft }}>
+                    {fmtRelative(iv.last_sent_at)}
+                    {iv.send_count > 1 && (
+                      <span style={{ fontSize: 11, color: T.inkFaint, marginLeft: 6 }}>
+                        ×{iv.send_count}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.inkSoft }}>
+                    {fmtDateShort(iv.expires_at)}
+                  </td>
+                  <td style={TD_BASE}>
+                    <Badge
+                      tone={
+                        iv.state === 'pending' ? 'warn' :
+                        iv.state === 'claimed' ? 'success' :
+                        iv.state === 'revoked' ? 'danger' :
+                        iv.state === 'expired' ? 'neutral' : 'neutral'
+                      }
+                      dot
+                    >
+                      {iv.state}
+                    </Badge>
+                  </td>
+                  <td style={{ ...TD_BASE, fontSize: 11.5, color: T.inkFaint }}>
+                    {iv.invited_by_email || '—'}
+                  </td>
+                  <td style={TD_BASE}>
+                    {iv.state === 'pending' || iv.state === 'expired' ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          style={{ ...Btn.ghost, padding: '5px 10px', fontSize: 11.5 }}
+                          onClick={() => handleRevokeInvite(iv)}
+                          disabled={busyId === iv.id}
+                          title="Revoke invitation"
+                        >
+                          <Ban size={11} /> Revoke
+                        </button>
+                        <button
+                          type="button"
+                          style={{ ...Btn.primary, padding: '5px 10px', fontSize: 11.5 }}
+                          onClick={() => handleResendInvite(iv)}
+                          disabled={busyId === iv.id}
+                          title={iv.state === 'expired' ? 'Generates a new token + extends expiry' : 'Resends the email with the existing token'}
+                        >
+                          <Mail size={11} /> {busyId === iv.id ? '…' : 'Resend'}
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11.5, color: T.inkFaint }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
       <Card padded={false}>
         <div
           style={{
@@ -362,6 +527,219 @@ function AdminApplications({ onChange }) {
           busy={busyId === confirmReject.id}
         />
       )}
+      {showInviteModal && (
+        <InviteModal
+          onCancel={() => setShowInviteModal(false)}
+          onSuccess={handleInviteCreated}
+        />
+      )}
+    </div>
+  );
+}
+
+function InviteModal({ onCancel, onSuccess }) {
+  const [form, setForm] = useState({
+    email: '',
+    name: '',
+    company: '',
+    note: '',
+    tier_code: 'starter',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  async function submit(e) {
+    e?.preventDefault?.();
+    setError(null);
+    const email = form.email.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setError('Enter a valid email.');
+      return;
+    }
+    setBusy(true);
+    const result = await createAffiliateInvite({
+      email,
+      name: form.name.trim() || null,
+      company: form.company.trim() || null,
+      note: form.note.trim() || null,
+      tier_code: form.tier_code || null,
+    });
+    setBusy(false);
+    if (result.ok) {
+      if (result.mode === 'created_email_failed') {
+        setError(`Invite created but email failed to send: ${result.error || 'unknown error'}. You can resend from the Invites table.`);
+        // Still close after a beat so they see the row.
+        setTimeout(onSuccess, 1500);
+        return;
+      }
+      onSuccess?.();
+    } else {
+      if (result.code === 'RESEND_NOT_CONFIGURED') {
+        setError('Email sender (Resend) is not configured. Contact engineering — RESEND_API_KEY / RESEND_FROM_EMAIL must be set.');
+      } else {
+        setError(result.error || 'Failed to create invite.');
+      }
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24, fontFamily: T.ffBody,
+      }}
+      onClick={onCancel}
+    >
+      <Card
+        style={{ width: '100%', maxWidth: 520, padding: 24 }}
+        onClick={(e) => e.stopPropagation?.()}
+      >
+        <form onSubmit={submit} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Badge tone="brand">Invite affiliate</Badge>
+          </div>
+          <div
+            style={{
+              fontFamily: T.ffDisplay, fontSize: 18, fontWeight: 700,
+              color: T.ink, letterSpacing: '-0.01em',
+            }}
+          >
+            Send a partner invitation
+          </div>
+          <div
+            style={{
+              fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.55,
+            }}
+          >
+            They'll receive a Resend email with a secure invite link. The link
+            expires in 14 days and can only be claimed once. Approval happens
+            automatically on first claim — they go straight to Stripe Connect
+            onboarding.
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 18 }}>
+            <Field label="Email" required>
+              <input
+                type="email"
+                value={form.email}
+                onChange={update('email')}
+                disabled={busy}
+                placeholder="partner@example.com"
+                style={inputStyle}
+                autoFocus
+              />
+            </Field>
+            <Field label="Name (optional)">
+              <input
+                value={form.name}
+                onChange={update('name')}
+                disabled={busy}
+                placeholder="Jordan Davis"
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="Company / brand (optional)">
+              <input
+                value={form.company}
+                onChange={update('company')}
+                disabled={busy}
+                placeholder="Nordic Freight Advisory"
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="Tier">
+              <select
+                value={form.tier_code}
+                onChange={update('tier_code')}
+                disabled={busy}
+                style={inputStyle}
+              >
+                <option value="starter">Starter (30% / 12mo)</option>
+                <option value="launch_promo">Launch Promo (40% / 12mo)</option>
+                <option value="partner">Partner (custom)</option>
+              </select>
+            </Field>
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <Field label="Personal note (optional, included in the email)">
+              <textarea
+                value={form.note}
+                onChange={update('note')}
+                disabled={busy}
+                rows={3}
+                placeholder="Hey Jordan, big fan of your newsletter — would love to have you in the program."
+                style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }}
+              />
+            </Field>
+          </div>
+
+          {error && (
+            <div
+              style={{
+                background: T.redBg,
+                border: `1px solid ${T.redBorder}`,
+                borderRadius: 8,
+                padding: '10px 12px',
+                marginTop: 12,
+                fontSize: 12.5,
+                color: T.inkMuted,
+                lineHeight: 1.5,
+              }}
+            >
+              <strong style={{ color: T.red, fontFamily: T.ffDisplay }}>Error:</strong>{' '}
+              {error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+            <button type="button" style={Btn.ghost} onClick={onCancel} disabled={busy}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              style={{ ...Btn.primary, opacity: busy ? 0.7 : 1 }}
+              disabled={busy}
+            >
+              <Mail size={13} /> {busy ? 'Sending…' : 'Send invitation'}
+            </button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+const inputStyle = {
+  width: '100%',
+  background: T.bgSubtle,
+  border: `1.5px solid ${T.border}`,
+  borderRadius: 8,
+  padding: '8px 10px',
+  fontSize: 13,
+  fontFamily: T.ffBody,
+  color: T.ink,
+  outline: 'none',
+};
+
+function Field({ label, required, children }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 11.5, fontWeight: 600, fontFamily: T.ffDisplay,
+          color: T.inkMuted, marginBottom: 5,
+          display: 'flex', alignItems: 'center', gap: 5,
+        }}
+      >
+        <span>{label}</span>
+        {required && <span style={{ color: T.red, fontWeight: 700 }}>*</span>}
+      </div>
+      {children}
     </div>
   );
 }
@@ -430,26 +808,196 @@ function RejectModal({ row, reason, onChange, onCancel, onConfirm, busy }) {
 }
 
 /* ── Partners tab ───────────────────────────────────────── */
+
+// Per-partner referral-link truth check, mirroring the rule used in the
+// partner-facing app: only "real" when status='active' AND not deactivated
+// AND not deleted AND ref code present AND referral_link_status='active'.
+function partnerReferralLink(p, baseUrl) {
+  if (!p) return null;
+  if (p.deleted_at) return null;
+  if (p.deactivated_at) return null;
+  if (p.status !== 'active') return null;
+  if (p.referral_link_status !== 'active') return null;
+  if (!p.ref_code) return null;
+  return `${baseUrl}/?ref=${p.ref_code}`;
+}
+
+function PartnerActionsMenu({ partner, busy, onAction }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const items = [];
+  if (partner.status === 'invited' || partner.status === 'active') {
+    items.push({ key: 'stripe', label: 'Resend Stripe onboarding link', icon: Mail });
+  }
+  if (partner.status === 'active' || partner.status === 'invited') {
+    items.push({ key: 'deactivate', label: 'Deactivate partner', icon: Ban, danger: true });
+  }
+  if (partner.status === 'deactivated' || partner.status === 'suspended') {
+    items.push({ key: 'reactivate', label: 'Reactivate partner', icon: RotateCcw });
+  }
+  items.push({ key: 'delete', label: 'Delete partner (soft)', icon: Trash2, danger: true });
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        style={{ ...Btn.ghost, padding: '5px 8px', fontSize: 11.5 }}
+        onClick={() => setOpen((o) => !o)}
+        disabled={busy}
+        aria-label="Partner actions"
+      >
+        <MoreVertical size={13} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: 4,
+            background: '#fff', border: `1px solid ${T.border}`,
+            borderRadius: 8, boxShadow: T.shadowMd,
+            minWidth: 240, zIndex: 5, overflow: 'hidden',
+          }}
+        >
+          {items.map((it, i) => {
+            const ItIcon = it.icon;
+            return (
+              <button
+                key={it.key}
+                type="button"
+                onClick={() => { setOpen(false); onAction(it.key); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  width: '100%', textAlign: 'left',
+                  padding: '9px 12px',
+                  fontFamily: T.ffDisplay, fontSize: 12.5, fontWeight: 500,
+                  background: 'transparent', border: 'none',
+                  color: it.danger ? T.red : T.inkMuted,
+                  cursor: 'pointer',
+                  borderTop: i > 0 ? `1px solid ${T.borderSoft}` : 'none',
+                }}
+              >
+                <ItIcon size={13} />
+                {it.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminPartners() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const res = await fetchAdminPartners();
-      if (cancelled) return;
-      if (res.ok) setRows(res.partners || []);
-      else setError(res.error || 'Failed to load partners');
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
+  const baseUrl = useMemo(
+    () => (import.meta.env.VITE_PUBLIC_APP_URL || 'https://logisticintel.com').replace(/\/$/, ''),
+    [],
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const res = await fetchAdminPartners();
+    if (res.ok) setRows(res.partners || []);
+    else setError(res.error || 'Failed to load partners');
+    setLoading(false);
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
+  async function handleAction(partner, action) {
+    if (busyId) return;
+    let result;
+    setBusyId(partner.id);
+    if (action === 'stripe') {
+      result = await resendStripeOnboarding(partner.id, true);
+      if (result.ok) {
+        if (result.email_sent) {
+          setNotice({ tone: 'success', text: `Sent fresh Stripe link to ${result.partner_email || partner.email}.` });
+        } else {
+          setNotice({ tone: 'info', text: `Stripe link generated. Email send was skipped or failed; copy from logs if needed.` });
+        }
+      } else if (result.code === 'STRIPE_NOT_CONFIGURED') {
+        setNotice({ tone: 'warn', text: 'Stripe Connect is not configured.' });
+      } else {
+        setNotice({ tone: 'danger', text: result.error || 'Failed to generate Stripe link.' });
+      }
+    } else if (action === 'deactivate') {
+      if (!window.confirm(`Deactivate ${partner.email || partner.ref_code}? Their referral link will be paused; commission history is preserved.`)) {
+        setBusyId(null);
+        return;
+      }
+      result = await deactivatePartner(partner.id);
+      if (result.ok) setNotice({ tone: 'success', text: 'Partner deactivated.' });
+      else setNotice({ tone: 'danger', text: result.error || 'Failed to deactivate.' });
+    } else if (action === 'reactivate') {
+      result = await reactivatePartner(partner.id);
+      if (result.ok) setNotice({ tone: 'success', text: 'Partner reactivated.' });
+      else setNotice({ tone: 'danger', text: result.error || 'Failed to reactivate.' });
+    } else if (action === 'delete') {
+      if (!window.confirm(`Soft-delete ${partner.email || partner.ref_code}? Their referral link is removed and they lose access to active partner features. Commission history is preserved. This is reversible only by engineering.`)) {
+        setBusyId(null);
+        return;
+      }
+      result = await softDeletePartner(partner.id);
+      if (result.ok) setNotice({ tone: 'success', text: 'Partner deleted (soft).' });
+      else setNotice({ tone: 'danger', text: result.error || 'Failed to delete.' });
+    }
+    setBusyId(null);
+    if (result?.ok) await load();
+  }
+
+  async function copyReferral(partner) {
+    const url = partnerReferralLink(partner, baseUrl);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(partner.id);
+      setTimeout(() => setCopiedId((id) => (id === partner.id ? null : id)), 1500);
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
-    <div style={{ maxWidth: 1240, margin: '0 auto' }}>
-      <ErrorBanner>{error}</ErrorBanner>
+    <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <ErrorBanner onRetry={load}>{error}</ErrorBanner>
+      {notice && (
+        <div
+          style={{
+            background:
+              notice.tone === 'success' ? T.greenBg :
+              notice.tone === 'danger'  ? T.redBg :
+              notice.tone === 'warn'    ? T.amberBg : T.brandSoft,
+            border: `1px solid ${
+              notice.tone === 'success' ? T.greenBorder :
+              notice.tone === 'danger'  ? T.redBorder :
+              notice.tone === 'warn'    ? T.amberBorder : T.brandBorder
+            }`,
+            borderRadius: 10,
+            padding: '10px 14px',
+            display: 'flex', alignItems: 'center', gap: 10,
+            fontSize: 12.5, color: T.inkMuted,
+          }}
+        >
+          <div style={{ flex: 1 }}>{notice.text}</div>
+          <button type="button" style={Btn.quiet} onClick={() => setNotice(null)}>Dismiss</button>
+        </div>
+      )}
       <Card padded={false}>
         <div
           style={{
@@ -463,58 +1011,93 @@ function AdminPartners() {
         {loading ? (
           <Spinner />
         ) : rows.length === 0 ? (
-          <EmptyRow label="No partners yet. Approve an application to create the first partner." />
+          <EmptyRow label="No partners yet. Invite an affiliate or approve an application to create the first partner." />
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: T.bgSubtle, textAlign: 'left' }}>
-                {['Partner','Tier','Ref code','Stripe','Referrals','Lifetime','Available','Status'].map((h) => (
+                {['Partner','Tier','Referral link','Stripe','Referrals','Lifetime','Status',''].map((h) => (
                   <th key={h} style={TH_STYLE}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i, arr) => (
-                <tr
-                  key={r.id}
-                  style={{ borderBottom: i < arr.length - 1 ? `1px solid ${T.borderSoft}` : 'none' }}
-                >
-                  <td style={TD_BASE}>
-                    <div style={{ fontFamily: T.ffDisplay, fontWeight: 600, color: T.ink }}>
-                      {r.email || r.user_id}
-                    </div>
-                    <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>
-                      Joined {fmtRelative(r.joined_at)}
-                    </div>
-                  </td>
-                  <td style={TD_BASE}>
-                    <Badge tone="brand">{r.tier}</Badge>
-                    <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>
-                      {r.commission_pct}% / {r.commission_months} mo
-                    </div>
-                  </td>
-                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.ink }}>
-                    {r.ref_code}
-                  </td>
-                  <td style={TD_BASE}>
-                    <Badge tone={r.stripe_status === 'payouts_enabled' ? 'success' : 'warn'} dot>
-                      {r.stripe_status.replace(/_/g, ' ')}
-                    </Badge>
-                  </td>
-                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.ink }}>
-                    {r.referrals_count}
-                  </td>
-                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.brandDeep, fontWeight: 600 }}>
-                    {fmtCurrency(r.lifetime_earnings_cents)}
-                  </td>
-                  <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.ink }}>
-                    {fmtCurrency(r.available_cents)}
-                  </td>
-                  <td style={TD_BASE}>
-                    <Badge tone={statusTone(r.status)} dot>{r.status}</Badge>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r, i, arr) => {
+                const refUrl = partnerReferralLink(r, baseUrl);
+                const linkLabel = (r.referral_link_status || 'inactive').replace(/_/g, ' ');
+                return (
+                  <tr
+                    key={r.id}
+                    style={{ borderBottom: i < arr.length - 1 ? `1px solid ${T.borderSoft}` : 'none' }}
+                  >
+                    <td style={TD_BASE}>
+                      <div style={{ fontFamily: T.ffDisplay, fontWeight: 600, color: T.ink }}>
+                        {r.email || r.user_id}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>
+                        Joined {fmtRelative(r.joined_at)}
+                      </div>
+                    </td>
+                    <td style={TD_BASE}>
+                      <Badge tone="brand">{r.tier}</Badge>
+                      <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>
+                        {r.commission_pct}% / {r.commission_months} mo
+                      </div>
+                    </td>
+                    <td style={TD_BASE}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Badge
+                          tone={
+                            r.referral_link_status === 'active' ? 'success' :
+                            r.referral_link_status === 'paused' ? 'warn' :
+                            r.referral_link_status === 'deleted' ? 'danger' : 'neutral'
+                          }
+                          dot
+                        >
+                          {linkLabel}
+                        </Badge>
+                        {refUrl ? (
+                          <button
+                            type="button"
+                            style={{ ...Btn.ghost, padding: '4px 8px', fontSize: 11 }}
+                            onClick={() => copyReferral(r)}
+                            title={refUrl}
+                          >
+                            {copiedId === r.id ? <CheckCircle2 size={11} /> : <Copy size={11} />}
+                            {copiedId === r.id ? 'Copied' : 'Copy'}
+                          </button>
+                        ) : null}
+                      </div>
+                      {r.ref_code && (
+                        <div style={{ fontFamily: T.ffMono, fontSize: 11, color: T.inkFaint, marginTop: 3 }}>
+                          {r.ref_code}
+                        </div>
+                      )}
+                    </td>
+                    <td style={TD_BASE}>
+                      <Badge tone={r.stripe_status === 'payouts_enabled' ? 'success' : 'warn'} dot>
+                        {(r.stripe_status || 'not_connected').replace(/_/g, ' ')}
+                      </Badge>
+                    </td>
+                    <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.ink }}>
+                      {r.referrals_count}
+                    </td>
+                    <td style={{ ...TD_BASE, fontFamily: T.ffMono, color: T.brandDeep, fontWeight: 600 }}>
+                      {fmtCurrency(r.lifetime_earnings_cents)}
+                    </td>
+                    <td style={TD_BASE}>
+                      <Badge tone={statusTone(r.status)} dot>{r.status}</Badge>
+                    </td>
+                    <td style={TD_BASE}>
+                      <PartnerActionsMenu
+                        partner={r}
+                        busy={busyId === r.id}
+                        onAction={(key) => handleAction(r, key)}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

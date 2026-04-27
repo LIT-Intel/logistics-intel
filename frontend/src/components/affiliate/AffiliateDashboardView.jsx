@@ -42,9 +42,11 @@ const TABS = [
 ];
 
 const STATUS_BADGE = {
-  pending:   { tone: 'warn',    l: 'Pending review' },
-  active:    { tone: 'success', l: 'Active' },
-  suspended: { tone: 'danger',  l: 'Suspended' },
+  pending:     { tone: 'warn',    l: 'Pending review' },
+  invited:     { tone: 'warn',    l: 'Invited · finish onboarding' },
+  active:      { tone: 'success', l: 'Active' },
+  suspended:   { tone: 'danger',  l: 'Suspended' },
+  deactivated: { tone: 'danger',  l: 'Deactivated' },
 };
 
 function StatusBadgeAff({ status }) {
@@ -89,7 +91,10 @@ export default function AffiliateDashboardView({
   onConnectStripe,
 }) {
   const [tab, setTab] = useState('overview');
-  const readOnly = affiliateStatus === 'suspended';
+  // Suspended OR deactivated partners see the dashboard read-only.
+  const readOnly =
+    affiliateStatus === 'suspended' || affiliateStatus === 'deactivated';
+  const isInvited = affiliateStatus === 'invited';
 
   return (
     <div
@@ -197,6 +202,7 @@ export default function AffiliateDashboardView({
         {tab === 'overview' && (
           <OverviewTab
             readOnly={readOnly}
+            isInvited={isInvited}
             stripeStatus={stripeStatus}
             stats={stats}
             activity={activity}
@@ -207,7 +213,7 @@ export default function AffiliateDashboardView({
         )}
         {tab === 'referrals' && (
           <ReferralsTab
-            readOnly={readOnly}
+            readOnly={readOnly || isInvited}
             referralLink={referralLink}
             referrals={referrals}
           />
@@ -219,7 +225,7 @@ export default function AffiliateDashboardView({
             payouts={payouts}
           />
         )}
-        {tab === 'tools' && <ToolsTab readOnly={readOnly} partner={partner} />}
+        {tab === 'tools' && <ToolsTab readOnly={readOnly || isInvited} partner={partner} />}
       </div>
     </div>
   );
@@ -293,8 +299,51 @@ function StripeConnectBanner({ status, onConnectStripe }) {
   );
 }
 
+function InvitedWelcomeCard({ stripeStatus, onConnectStripe }) {
+  const isStripeStarted = stripeStatus === 'onboarding_started';
+  return (
+    <Card style={{ padding: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 4 }}>
+        <Badge tone="brand" dot>Welcome to the Partner Program</Badge>
+      </div>
+      <div
+        style={{
+          fontFamily: T.ffDisplay, fontSize: 22, fontWeight: 700,
+          color: T.ink, letterSpacing: '-0.02em', marginTop: 8,
+        }}
+      >
+        One last step — connect Stripe to activate your partnership.
+      </div>
+      <div
+        style={{
+          fontSize: 14, color: T.inkSoft, marginTop: 10, lineHeight: 1.55,
+          maxWidth: 640,
+        }}
+      >
+        Your invite is claimed. Connect Stripe Connect Express below so we can pay
+        out monthly commissions. Stripe handles identity, tax, and bank verification —
+        Logistic Intel never sees your details. Your referral link goes live as soon
+        as Stripe payouts are enabled.
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 22 }}>
+        <button type="button" style={Btn.primary} onClick={onConnectStripe}>
+          {isStripeStarted ? 'Resume Stripe onboarding' : 'Connect Stripe'}
+          <ArrowRight size={13} />
+        </button>
+        <a
+          href="mailto:partnerships@logisticintel.com"
+          style={{ ...Btn.ghost, textDecoration: 'none' }}
+        >
+          Email partnerships
+        </a>
+      </div>
+    </Card>
+  );
+}
+
 function OverviewTab({
   readOnly,
+  isInvited,
   stripeStatus,
   stats,
   activity,
@@ -302,6 +351,25 @@ function OverviewTab({
   commissionBreakdown,
   onConnectStripe,
 }) {
+  // For invited partners, show only the welcome card. KPIs/charts/activity
+  // would all be zeros — empty zeros aren't helpful at this stage and the
+  // user just needs the Stripe CTA front and centre.
+  if (isInvited) {
+    return (
+      <div
+        style={{
+          display: 'flex', flexDirection: 'column', gap: 16,
+          maxWidth: 1240, margin: '0 auto',
+        }}
+      >
+        <InvitedWelcomeCard
+          stripeStatus={stripeStatus}
+          onConnectStripe={onConnectStripe}
+        />
+      </div>
+    );
+  }
+
   const needsStripe = stripeStatus !== 'payouts_enabled';
   const safeStats = stats || {
     lifetimeEarnings: '$0',

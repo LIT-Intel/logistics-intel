@@ -175,3 +175,67 @@ export async function reviewApplication(
     ...(options ?? {}),
   });
 }
+
+export interface AdminInviteRow {
+  id: string;
+  email: string;
+  name: string | null;
+  company: string | null;
+  note: string | null;
+  tier_code: string | null;
+  expires_at: string;
+  claimed_at: string | null;
+  claimed_by_user_id: string | null;
+  partner_id: string | null;
+  revoked_at: string | null;
+  last_sent_at: string;
+  send_count: number;
+  invited_by_email: string | null;
+  created_at: string;
+  state: 'pending' | 'claimed' | 'expired' | 'revoked';
+}
+
+export async function fetchAdminInvites() {
+  return callFn('affiliate-admin', { action: 'list_invites' });
+}
+
+export interface CreateInviteBody {
+  email: string;
+  name?: string | null;
+  company?: string | null;
+  note?: string | null;
+  tier_code?: string | null;
+  expires_in_days?: number;
+}
+
+export async function createAffiliateInvite(body: CreateInviteBody) {
+  return callFn('send-affiliate-invite', body);
+}
+
+export async function resendInvite(inviteId: string) {
+  return callFn('affiliate-admin', { action: 'resend_invite', invite_id: inviteId });
+}
+
+export async function revokeInvite(inviteId: string) {
+  return callFn('affiliate-admin', { action: 'revoke_invite', invite_id: inviteId });
+}
+
+export async function deactivatePartner(partnerId: string) {
+  return callFn('affiliate-admin', { action: 'deactivate_partner', partner_id: partnerId });
+}
+
+export async function reactivatePartner(partnerId: string) {
+  return callFn('affiliate-admin', { action: 'reactivate_partner', partner_id: partnerId });
+}
+
+export async function softDeletePartner(partnerId: string) {
+  return callFn('affiliate-admin', { action: 'soft_delete_partner', partner_id: partnerId });
+}
+
+export async function resendStripeOnboarding(partnerId: string, sendEmail = true) {
+  return callFn('affiliate-admin', {
+    action: 'resend_stripe_onboarding',
+    partner_id: partnerId,
+    send_email: sendEmail,
+  });
+}

@@ -260,8 +260,10 @@ export default function AffiliateDashboard() {
         />,
       );
 
+    case 'invited':
     case 'active':
     case 'suspended':
+    case 'deactivated':
       return wrapWithNotice(
         <AffiliateDashboardView
           affiliateStatus={aff.status}

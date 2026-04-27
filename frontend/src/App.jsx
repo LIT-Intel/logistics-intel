@@ -24,6 +24,7 @@ const RFPStudio = lazy(() => import("@/pages/RFPStudio"));
 const Settings = lazy(() => import("@/pages/SettingsPage"));
 const Billing = lazy(() => import("@/pages/BillingNew"));
 const AffiliateDash = lazy(() => import("@/pages/AffiliateDashboard"));
+const AffiliateInvite = lazy(() => import("@/pages/AffiliateInvite"));
 const AdminPartnerProgram = lazy(() => import("@/pages/AdminPartnerProgram"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminSettings = lazy(() => import("@/pages/AdminSettings"));
@@ -389,6 +390,15 @@ export default function App() {
                 <AffiliateDash />
               </LITPage>
             </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/app/affiliate/invite"
+          element={
+            <LITPage>
+              <AffiliateInvite />
+            </LITPage>
           }
         />
 

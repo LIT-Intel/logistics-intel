@@ -17,7 +17,9 @@ export type AffiliateStatus =
   | 'no_backend'
   | 'not_applied'
   | 'pending'
+  | 'invited'
   | 'active'
+  | 'deactivated'
   | 'rejected'
   | 'suspended';
 
@@ -28,11 +30,13 @@ export type StripeConnectStatus =
   | 'restricted'
   | 'payouts_enabled';
 
+export type ReferralLinkStatus = 'inactive' | 'active' | 'paused' | 'deleted';
+
 export interface AffiliatePartner {
   id: string;
   refCode: string | null;
   tier: string | null;
-  status: 'active' | 'suspended' | 'terminated';
+  status: 'invited' | 'active' | 'deactivated' | 'suspended' | 'terminated';
   commissionPct: number | null;
   commissionMonths: number | null;
   attributionDays: number | null;
@@ -45,6 +49,10 @@ export interface AffiliatePartner {
   stripeDetailsSubmitted: boolean;
   accountManagerEmail: string | null;
   joinedAt: string | null;
+  deactivatedAt: string | null;
+  deletedAt: string | null;
+  referralLinkStatus: ReferralLinkStatus;
+  inviteId: string | null;
 }
 
 export interface AffiliateApplication {
@@ -195,7 +203,9 @@ function rowToPartner(p: Record<string, unknown>): AffiliatePartner {
     id: String(p.id),
     refCode: (p.ref_code as string) ?? null,
     tier: (p.tier as string) ?? null,
-    status: (p.status as 'active' | 'suspended' | 'terminated') ?? 'active',
+    status:
+      (p.status as 'invited' | 'active' | 'deactivated' | 'suspended' | 'terminated') ??
+      'active',
     commissionPct: (p.commission_pct as number) ?? null,
     commissionMonths: (p.commission_months as number) ?? null,
     attributionDays: (p.attribution_days as number) ?? null,
@@ -208,7 +218,22 @@ function rowToPartner(p: Record<string, unknown>): AffiliatePartner {
     stripeDetailsSubmitted: Boolean(p.stripe_details_submitted),
     accountManagerEmail: (p.account_manager_email as string) ?? null,
     joinedAt: (p.joined_at as string) ?? null,
+    deactivatedAt: (p.deactivated_at as string) ?? null,
+    deletedAt: (p.deleted_at as string) ?? null,
+    referralLinkStatus: ((p.referral_link_status as ReferralLinkStatus) ?? 'inactive'),
+    inviteId: (p.invite_id as string) ?? null,
   };
+}
+
+// Referral link is "real" only when ALL truth criteria pass.
+export function buildReferralLink(partner: AffiliatePartner | null): string | null {
+  if (!partner) return null;
+  if (partner.deletedAt) return null;
+  if (partner.deactivatedAt) return null;
+  if (partner.status !== 'active') return null;
+  if (partner.referralLinkStatus !== 'active') return null;
+  if (!partner.refCode) return null;
+  return `${REFERRAL_BASE_URL}/?ref=${partner.refCode}`;
 }
 
 function rowToReferral(
@@ -272,13 +297,15 @@ export function useAffiliateState(userId: string | null | undefined): AffiliateS
       return;
     }
 
-    // 1. Probe partner.
+    // 1. Probe partner. Soft-deleted rows are excluded so the user can be
+    //    re-invited without the old row blocking their dashboard.
     const partnerQ = await supabase
       .from('affiliate_partners')
       .select(
-        'id, ref_code, tier, status, commission_pct, commission_months, attribution_days, min_payout_cents, payout_currency, stripe_account_id, stripe_status, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, account_manager_email, joined_at',
+        'id, ref_code, tier, status, commission_pct, commission_months, attribution_days, min_payout_cents, payout_currency, stripe_account_id, stripe_status, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, account_manager_email, joined_at, deactivated_at, deleted_at, referral_link_status, invite_id',
       )
       .eq('user_id', userId)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (partnerQ.error && isMissingTableError(partnerQ.error)) {
@@ -289,9 +316,9 @@ export function useAffiliateState(userId: string | null | undefined): AffiliateS
     if (partnerQ.data) {
       const partner = rowToPartner(partnerQ.data as Record<string, unknown>);
       const currency = partner.payoutCurrency || 'usd';
-      const referralLink = partner.refCode
-        ? `${REFERRAL_BASE_URL}/?ref=${partner.refCode}`
-        : null;
+      // Truth-checked: only returns a link when status='active' AND link
+      // is active AND not deactivated/deleted AND ref_code present.
+      const referralLink = buildReferralLink(partner);
 
       // Fetch dependent data in parallel.
       const [refsQ, comsQ, paysQ] = await Promise.all([
@@ -470,9 +497,19 @@ export function useAffiliateState(userId: string | null | undefined): AffiliateS
         }
       }
 
+      // Map the canonical partner.status (DB enum) to the AffiliateStatus
+      // the orchestrator switches on. 'terminated' (legacy) maps to
+      // 'deactivated' for read-only display.
+      const partnerStatusToAffiliate: Record<string, AffiliateStatus> = {
+        invited: 'invited',
+        active: 'active',
+        deactivated: 'deactivated',
+        suspended: 'suspended',
+        terminated: 'deactivated',
+      };
       setState({
         loading: false,
-        status: partner.status === 'suspended' ? 'suspended' : 'active',
+        status: partnerStatusToAffiliate[partner.status] ?? 'active',
         backendAvailable: true,
         partner,
         application: null,
