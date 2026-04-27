@@ -424,113 +424,105 @@ export default function Company() {
             hero's own layout. The glow is opacity-0 by default and only
             becomes visible on `group-hover`, with a 700ms transition so
             it feels intentional rather than reactive. */}
-        <div className="group relative">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -inset-px rounded-[2.1rem] bg-gradient-to-r from-indigo-300/0 via-blue-400/40 to-indigo-300/0 opacity-0 blur-md transition-opacity duration-700 group-hover:opacity-100"
-          />
-        <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-          {/* Phase B.12 — Abstract vector surface header. Replaces the
-              flat blue/cyan glass panel from B.9–B.11 with a layered
-              dark indigo→violet surface (base gradient + two
-              animated radial blobs + an inline SVG curve set + a
-              left-side vignette). The animation is wrapped in a
-              `prefers-reduced-motion: no-preference` media query so
-              users with reduced-motion preferences see the still
-              composition. Only renders on `lg:` because the identity
-              column owns the full width on smaller breakpoints. */}
+        {/* Phase B.13 — Hybrid premium vector surface header.
+            Single unified dark surface (no per-side seam). Three
+            angled SVG curves drift left → right on a slow 30s loop;
+            an indigo glow sits behind the right action zone; a
+            faint radial dot grid adds intelligence-data texture; the
+            right action zone is now an embedded glass panel
+            (backdrop-blur-xl, white/5 fill, white/10 border) so it
+            no longer reads as a separate floating card. All motion
+            is gated behind `prefers-reduced-motion: no-preference`
+            so reduced-motion users see a clean static composition. */}
+        <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 hover:[animation:b13_borderGlow_3s_ease-in-out]">
           <style>{`
             @media (prefers-reduced-motion: no-preference) {
-              @keyframes b12_pulseSlow {
-                0%, 100% { opacity: 0.35; transform: scale(1); }
-                50% { opacity: 0.7; transform: scale(1.06); }
+              @keyframes b13_flow {
+                0%   { transform: translateX(0px); }
+                50%  { transform: translateX(-40px); }
+                100% { transform: translateX(0px); }
               }
-              @keyframes b12_float {
-                0%, 100% { transform: translate(0, 0) rotate(0deg); }
-                33% { transform: translate(20px, -15px) rotate(2deg); }
-                66% { transform: translate(-15px, 10px) rotate(-1deg); }
+              @keyframes b13_borderGlow {
+                0%   { box-shadow: 0 0 0px rgba(99,102,241,0); }
+                50%  { box-shadow: 0 0 20px rgba(99,102,241,0.15); }
+                100% { box-shadow: 0 0 0px rgba(99,102,241,0); }
               }
-              @keyframes b12_wave {
-                0%, 100% { transform: translateX(0); opacity: 0.4; }
-                50% { transform: translateX(-12px); opacity: 0.55; }
-              }
-              .b12-blob-pulse { animation: b12_pulseSlow 12s ease-in-out infinite; }
-              .b12-blob-float { animation: b12_float 18s ease-in-out infinite; }
-              .b12-wave-svg { animation: b12_wave 22s ease-in-out infinite; }
+              .b13-flow { animation: b13_flow 30s ease-in-out infinite; will-change: transform; }
             }
           `}</style>
-          {/* Layer 1 — base dark indigo gradient surface */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 lg:block"
-          />
-          {/* Layer 2 — indigo radial blob (animated pulse) */}
-          <div
-            aria-hidden
-            className="b12-blob-pulse pointer-events-none absolute right-[10%] top-[15%] hidden h-72 w-72 rounded-full bg-indigo-500/30 blur-3xl lg:block"
-          />
-          {/* Layer 3 — violet drifting blob */}
-          <div
-            aria-hidden
-            className="b12-blob-float pointer-events-none absolute bottom-[10%] right-[35%] hidden h-56 w-56 rounded-full bg-violet-500/25 blur-3xl lg:block"
-          />
-          {/* Layer 4 — soft blue accent */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute right-[18%] top-[55%] hidden h-40 w-40 rounded-full bg-blue-600/20 blur-3xl lg:block"
-          />
-          {/* Layer 5 — inline SVG vector curves (cyan stroke accent) */}
+
+          {/* Layer 2 — Vector flow SVG (3 angled curves, drifting). */}
           <svg
             aria-hidden
-            viewBox="0 0 600 400"
+            viewBox="0 0 1200 400"
             preserveAspectRatio="none"
-            className="b12-wave-svg pointer-events-none absolute right-0 top-0 hidden h-full w-[42%] opacity-40 lg:block"
+            className="b13-flow pointer-events-none absolute inset-0 h-full w-full opacity-20"
           >
+            <defs>
+              <linearGradient id="b13_grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#22d3ee" stopOpacity="0.1" />
+              </linearGradient>
+              <linearGradient id="b13_grad2" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.35" />
+                <stop offset="100%" stopColor="#6366f1" stopOpacity="0.05" />
+              </linearGradient>
+              <linearGradient id="b13_grad3" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.18" />
+                <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.05" />
+              </linearGradient>
+            </defs>
             <path
-              d="M0,80 C150,160 300,0 600,90 L600,0 L0,0 Z"
-              fill="rgba(99,102,241,0.08)"
+              d="M0,200 C300,100 600,300 1200,150"
+              stroke="url(#b13_grad1)"
+              strokeWidth="2"
+              fill="none"
             />
             <path
-              d="M0,200 C200,140 400,260 600,180"
-              fill="none"
-              stroke="rgba(34,211,238,0.18)"
+              d="M0,280 C320,200 620,360 1200,240"
+              stroke="url(#b13_grad2)"
               strokeWidth="1.5"
+              fill="none"
             />
             <path
-              d="M0,310 C180,260 380,360 600,290"
-              fill="none"
-              stroke="rgba(139,92,246,0.20)"
+              d="M0,120 C260,60 540,200 1200,90"
+              stroke="url(#b13_grad3)"
               strokeWidth="1"
-            />
-            <path
-              d="M0,360 C160,320 360,400 600,340"
               fill="none"
-              stroke="rgba(99,102,241,0.15)"
-              strokeWidth="1"
             />
           </svg>
-          {/* Layer 6 — left-side vignette so the dark surface fades
-              cleanly into the identity column rather than showing a
-              hard 42% seam */}
+
+          {/* Layer 3 — Soft glow behind the right action zone. */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-gradient-to-l from-slate-950/40 via-transparent to-transparent lg:block"
+            className="pointer-events-none absolute right-0 top-0 h-[400px] w-[400px] bg-indigo-500/10 blur-[120px]"
           />
 
-          <div className="relative grid gap-8 p-6 lg:grid-cols-[1.45fr_0.85fr] lg:p-8">
-            {/* LEFT — company identity */}
-            <div className="flex min-w-0 flex-col gap-5">
+          {/* Layer 4 — Subtle radial dot grid for intelligence/data feel. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 opacity-[0.05]"
+            style={{
+              backgroundImage: "radial-gradient(#fff 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          />
+
+          {/* Layer 5 — Content. Identity left, glass action panel right. */}
+          <div className="relative z-10 flex flex-col gap-8 p-6 lg:flex-row lg:items-start lg:justify-between lg:p-8">
+            {/* LEFT — company identity (white text on dark). */}
+            <div className="flex min-w-0 flex-1 flex-col gap-5">
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => navigate("/app/command-center")}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 backdrop-blur-md transition hover:bg-white/10"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
                   Back to Command Center
                 </button>
 
-                <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+                <span className="inline-flex items-center gap-2 rounded-full border border-indigo-300/40 bg-indigo-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-200">
                   <Sparkles className="h-3 w-3" />
                   Company Intelligence
                 </span>
@@ -551,12 +543,12 @@ export default function Company() {
                     ) || undefined
                   }
                   size="lg"
-                  className="shrink-0 ring-2 ring-slate-100"
+                  className="shrink-0 ring-2 ring-white/20"
                 />
 
                 <div className="min-w-0">
                   <h1
-                    className="break-words text-3xl font-bold tracking-[-0.025em] text-slate-950 md:text-4xl xl:text-5xl"
+                    className="break-words text-3xl font-bold tracking-[-0.025em] text-white md:text-4xl xl:text-5xl"
                     style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                   >
                     {companyName}
@@ -564,7 +556,7 @@ export default function Company() {
 
                   {/* Metadata row — flag + country + 2-letter code · domain
                       · Saved. Address rendered as muted text below. */}
-                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-slate-600">
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-slate-300">
                     {(countryFlag || countryDisplay || companyCountryCode) ? (
                       <span className="inline-flex items-center gap-1.5">
                         {countryFlag ? (
@@ -572,11 +564,11 @@ export default function Company() {
                             {countryFlag}
                           </span>
                         ) : null}
-                        <span className="font-medium text-slate-800">
+                        <span className="font-medium text-slate-100">
                           {countryDisplay || companyCountryCode}
                         </span>
                         {companyCountryCode ? (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-600">
+                          <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-300 ring-1 ring-white/10">
                             {companyCountryCode}
                           </span>
                         ) : null}
@@ -585,22 +577,22 @@ export default function Company() {
 
                     {companyDomain ? (
                       <>
-                        <span aria-hidden className="text-slate-300">·</span>
-                        <span className="inline-flex items-center gap-1.5 text-slate-600">
+                        <span aria-hidden className="text-slate-500">·</span>
+                        <span className="inline-flex items-center gap-1.5 text-slate-300">
                           <Globe className="h-3.5 w-3.5 text-slate-400" />
                           {companyDomain}
                         </span>
                       </>
                     ) : null}
 
-                    <span aria-hidden className="text-slate-300">·</span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                    <span aria-hidden className="text-slate-500">·</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
                       Saved
                     </span>
                   </div>
 
                   {companyAddress ? (
-                    <div className="mt-2 text-sm text-slate-500">
+                    <div className="mt-2 text-sm text-slate-400">
                       {companyAddress}
                     </div>
                   ) : null}
@@ -608,40 +600,38 @@ export default function Company() {
               </div>
 
               {loading ? (
-                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-slate-200 backdrop-blur-md">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading company intelligence…
                 </div>
               ) : null}
             </div>
 
-            {/* RIGHT — Action Zone (glossy translucent panel). Year selector
-                + Start Outreach + In Command Center. All click handlers
-                preserved: Start Outreach opens AddToCampaignModal; In
-                Command Center navigates to /app/command-center; the year
-                selector still rebinds `selectedYear` (which downstream
-                rebinds `effectiveSelectedYear` inside the panel). */}
-            <div className="relative flex flex-col gap-3 self-start rounded-2xl border border-white/40 bg-white/60 p-5 shadow-sm backdrop-blur-md">
+            {/* RIGHT — Embedded glass action panel. Backdrop-blur on
+                white/5 fill so the panel reads as embedded in the
+                surface, not a separate floating card. All click
+                handlers preserved verbatim. */}
+            <div className="relative flex flex-col gap-3 self-start rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl lg:w-[380px] lg:flex-shrink-0">
               {years.length > 0 ? (
-                <div className="inline-flex items-center gap-2 self-start rounded-full border border-slate-200 bg-white/80 px-3 py-1.5">
-                  <CalendarClock className="h-3.5 w-3.5 text-slate-500" />
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <div className="inline-flex items-center gap-2 self-start rounded-full border border-white/15 bg-white/5 px-3 py-1.5">
+                  <CalendarClock className="h-3.5 w-3.5 text-slate-300" />
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
                     Year
                   </label>
                   <select
                     value={selectedYear}
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="bg-transparent text-xs font-semibold text-slate-800 outline-none"
+                    className="bg-transparent text-xs font-semibold text-white outline-none"
                   >
                     {years.map((year) => (
-                      <option key={year} value={year} className="text-slate-900">
+                      <option key={year} value={year} className="bg-slate-900 text-white">
                         {year}
                       </option>
                     ))}
                   </select>
                 </div>
               ) : loading ? (
-                <div className="inline-flex items-center gap-2 self-start rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs text-slate-600">
+                <div className="inline-flex items-center gap-2 self-start rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-slate-200">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading
                 </div>
@@ -659,7 +649,7 @@ export default function Company() {
                     ? "Add this company to an outreach campaign"
                     : "Save company first to enable outreach"
                 }
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
                 Start Outreach
@@ -668,7 +658,7 @@ export default function Company() {
               <button
                 type="button"
                 onClick={() => navigate("/app/command-center")}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
               >
                 <LayoutGrid className="h-4 w-4" />
                 In Command Center
@@ -680,20 +670,14 @@ export default function Company() {
               <button
                 type="button"
                 onClick={() => setPulseModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-violet-300/60 bg-gradient-to-br from-violet-500/15 to-indigo-500/15 px-4 py-2 text-sm font-semibold text-violet-800 backdrop-blur-md transition hover:from-violet-500/25 hover:to-indigo-500/25"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-violet-300/40 bg-gradient-to-br from-violet-500/20 to-indigo-500/20 px-4 py-2 text-sm font-semibold text-violet-100 backdrop-blur-md transition hover:from-violet-500/30 hover:to-indigo-500/30"
               >
                 <Sparkles className="h-4 w-4" />
                 Pulse
               </button>
 
-              {/* Phase B.12 — Share HTML / Export PDF. No
-                  export-company-profile Edge Function exists yet, so:
-                  • Share HTML copies the canonical page URL to the
-                    clipboard (non-deceptive temporary share). Inline
-                    confirmation appears for ~2s.
-                  • Export PDF stays disabled with an honest tooltip
-                    pointing at the missing backend. */}
-              <div className="flex flex-col gap-2 border-t border-white/60 pt-3">
+              {/* Phase B.12 — Share HTML / Export PDF (glass restyle). */}
+              <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -717,7 +701,7 @@ export default function Company() {
                       }
                     }}
                     title="Copies this page's link. Branded HTML share requires the export-company-profile Edge Function (not deployed)."
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-indigo-200/70 bg-white/80 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
                   >
                     <Share2 className="h-3.5 w-3.5" />
                     Share HTML
@@ -726,30 +710,28 @@ export default function Company() {
                     type="button"
                     disabled
                     title="PDF export requires the export-company-profile Edge Function (not deployed)."
-                    className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-semibold text-slate-400"
+                    className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-400"
                   >
                     <Download className="h-3.5 w-3.5" />
                     Export PDF
                   </button>
                 </div>
                 {shareCopied ? (
-                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-center text-[11px] font-semibold text-emerald-700">
+                  <div className="rounded-md border border-emerald-300/30 bg-emerald-500/15 px-2 py-1 text-center text-[11px] font-semibold text-emerald-200">
                     Link copied to clipboard
                   </div>
                 ) : null}
               </div>
 
               {/* Phase B.9 — Refresh Intel + Watchlist are NOT functional
-                  today, so per the brief's honesty rule we render them
-                  disabled with `title="Coming soon"` rather than ship a
-                  fake CTA. They're tucked into a small footer row so the
-                  primary actions stay dominant. */}
-              <div className="mt-1 flex flex-wrap gap-2 border-t border-white/60 pt-3">
+                  today, so per the brief's honesty rule they render
+                  disabled with `title="Coming soon"`. */}
+              <div className="mt-1 flex flex-wrap gap-2 border-t border-white/10 pt-3">
                 <button
                   type="button"
                   disabled
                   title="Coming soon"
-                  className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-400"
+                  className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-slate-400"
                 >
                   Refresh Intel
                 </button>
@@ -757,7 +739,7 @@ export default function Company() {
                   type="button"
                   disabled
                   title="Coming soon"
-                  className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-400"
+                  className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-slate-400"
                 >
                   Watchlist
                 </button>
@@ -765,7 +747,6 @@ export default function Company() {
             </div>
           </div>
         </section>
-        </div>
 
         <CompanyDetailPanel
           record={headerRecord}
