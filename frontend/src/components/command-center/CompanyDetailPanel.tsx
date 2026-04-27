@@ -2557,17 +2557,20 @@ export default function CompanyDetailPanel({
     };
   }, [normalizedShipments, effectiveSelectedYear, rawProfile, rawRouteKpis, availableYears, profile, routeKpis]);
 
-  // Phase B.3 — tabs collapsed from 7 → 3 per the validated design source.
-  // Trade Lanes / Shipments / Suppliers / Credit have been folded back into
-  // Overview (Trade Lanes + previews) or removed (Credit). Equipment and
-  // Contact Intel keep their own tabs. The setActiveTab API is preserved
-  // and Overview-internal "View …" cross-links scroll to anchor sections.
+  // Phase B.8 — tabs restored to 5 per the executive Company Profile rework.
+  // Trade Lane Intelligence pulled out of Overview into its own tab so the
+  // globe + canonical lane table get the full panel width (and the
+  // origin/destination flag pills stop overflowing on 1024-1280 viewports).
+  // Shipments tab restored as a real BOL ledger view backed by the same
+  // normalizedShipments memo that already powers Overview previews — no new
+  // fetches.
   const [activeTab, setActiveTab] = useState<
-    "overview" | "equipment" | "contacts"
+    "overview" | "shipments" | "trade-lanes" | "equipment" | "contacts"
   >("overview");
   const [suppliersPage, setSuppliersPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
+  const [shipmentsPage, setShipmentsPage] = useState(0);
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
 
   // Build the canonical lane list once. Phase B.3 — all consumers (hero
@@ -3199,10 +3202,11 @@ if (!cancelled) {
         onValueChange={(v: string) => setActiveTab(v as typeof activeTab)}
         className="space-y-4"
       >
-        {/* Phase B.3 — 7 → 3 tabs. Trade Lanes folded into Overview's
-            Trade Lane Intelligence section. Shipments / Suppliers / Credit
-            removed (Suppliers + Recent Shipments still appear as preview
-            cards inside Overview; Credit dropped entirely). */}
+        {/* Phase B.8 — 3 → 5 tabs. Shipments restored as a real BOL ledger
+            (no new fetches; reads normalizedShipments). Trade Lanes pulled
+            back out of Overview so the globe + canonical lane table get
+            full panel width and the flag pills stop overflowing on
+            1024-1280 viewports. */}
         <TabsList className="flex h-auto w-full gap-0 overflow-x-auto rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
           <TabsTrigger
             value="overview"
@@ -3210,6 +3214,20 @@ if (!cancelled) {
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Overview
+          </TabsTrigger>
+          <TabsTrigger
+            value="shipments"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+          >
+            Shipments
+          </TabsTrigger>
+          <TabsTrigger
+            value="trade-lanes"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+          >
+            Trade Lanes
           </TabsTrigger>
           <TabsTrigger
             value="equipment"
@@ -3538,6 +3556,164 @@ if (!cancelled) {
             );
           })()}
 
+          {/* Phase B.8 — executive 60/40 row.
+              LEFT (60%): Strategic Brief — templated 12-month profile
+              prose built ONLY from real values (no LLM, no fake claims).
+              RIGHT (40%): Action Panel with Contacts / Campaign Status /
+              Engagement History sections. Engagement History is an
+              honest empty state because no outreach event log exists
+              yet (Phase B.7 audit confirmed this). */}
+          {(() => {
+            const companyDisplayName: string =
+              ((record as any)?.company?.name as string | undefined) ||
+              ((record as any)?.company?.company_name as string | undefined) ||
+              ((rawProfile as any)?.companyName as string | undefined) ||
+              ((rawProfile as any)?.company_name as string | undefined) ||
+              "This company";
+
+            const shipmentsCount = Number(detail.shipments) || 0;
+            const teuCount = Number(detail.teu) || 0;
+            const spend = detail.spend;
+            const topRouteLabelClause = (() => {
+              const top = canonicalLanes[0];
+              if (!top || !top.displayLabel) return "";
+              return `, with ${top.displayLabel} as the strongest lane`;
+            })();
+            const spendClause =
+              spend != null && spend > 0
+                ? `, valued at an estimated ${formatCurrency(spend)} in market spend`
+                : "";
+
+            const laneCount = canonicalLanes.filter((l) => l.shipments > 0).length;
+
+            // Distinct origin countries across canonical lanes.
+            const countrySet = new Set<string>();
+            for (const lane of canonicalLanes) {
+              if (lane.fromMeta?.canonicalKey) countrySet.add(lane.fromMeta.canonicalKey);
+              if (lane.toMeta?.canonicalKey) countrySet.add(lane.toMeta.canonicalKey);
+            }
+            const countryCount = countrySet.size;
+
+            const verifiedContactCount = phantomContacts.filter(isContactVerified).length;
+            const contactStatement = (() => {
+              if (phantomContacts.length === 0) return "";
+              return ` ${formatNumber(phantomContacts.length)} contact${
+                phantomContacts.length === 1 ? "" : "s"
+              } loaded${
+                verifiedContactCount > 0
+                  ? ` (${formatNumber(verifiedContactCount)} verified)`
+                  : ""
+              }.`;
+            })();
+
+            const hasShipmentSignal = shipmentsCount > 0 || teuCount > 0;
+
+            // Build the prose. If no shipment volume at all → honest fallback.
+            const briefBody = !hasShipmentSignal ? (
+              <p className="text-sm leading-relaxed text-indigo-50">
+                This snapshot does not yet have shipment volume data. Run an ImportYeti refresh to populate the brief.
+              </p>
+            ) : (
+              <p className="text-sm leading-relaxed text-indigo-50">
+                {`${companyDisplayName} ran ${formatNumber(shipmentsCount)} shipment${
+                  shipmentsCount === 1 ? "" : "s"
+                } over the trailing 12 months${
+                  teuCount > 0 ? `, totaling ${formatNumber(teuCount, 1)} TEU` : ""
+                }${topRouteLabelClause}${spendClause}.`}
+                {laneCount > 0
+                  ? ` ${formatNumber(laneCount)} resolvable trade lane${
+                      laneCount === 1 ? "" : "s"
+                    }${
+                      countryCount > 0
+                        ? ` across ${formatNumber(countryCount)} ${
+                            countryCount === 1 ? "country" : "countries"
+                          }`
+                        : ""
+                    }.`
+                  : ""}
+                {contactStatement}
+              </p>
+            );
+
+            return (
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+                {/* Strategic Brief — 60% */}
+                <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-900 via-indigo-800 to-indigo-950 text-white p-6 shadow-lg lg:col-span-3">
+                  <div className="text-cyan-300 tracking-[0.2em] text-[10px] font-semibold uppercase">
+                    Strategic Brief
+                  </div>
+                  <h3 className="mt-2 mb-3 text-xl font-bold text-white">
+                    {`${companyDisplayName} · 12-month profile`}
+                  </h3>
+                  {briefBody}
+                </div>
+
+                {/* Action Panel — 40% */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+                  <div className="space-y-4">
+                    {/* Contacts */}
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Contacts
+                      </div>
+                      {phantomContacts.length > 0 ? (
+                        <div className="mt-1.5 text-sm text-slate-700">
+                          <span className="font-semibold text-slate-900">
+                            {formatNumber(phantomContacts.length)}
+                          </span>{" "}
+                          found ·{" "}
+                          <span className="font-semibold text-emerald-700">
+                            {formatNumber(verifiedContactCount)}
+                          </span>{" "}
+                          verified
+                        </div>
+                      ) : (
+                        <div className="mt-1.5 text-sm text-slate-500">
+                          No contacts loaded yet
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("contacts")}
+                        className="mt-2 inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                      >
+                        View all contacts
+                        <ArrowUpRight className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    <div className="border-t border-slate-100" aria-hidden />
+
+                    {/* Campaign Status */}
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Campaign Status
+                      </div>
+                      <p className="mt-1.5 text-sm text-slate-600">
+                        Add to a campaign from the hero or from Command Center.
+                      </p>
+                    </div>
+
+                    <div className="border-t border-slate-100" aria-hidden />
+
+                    {/* Engagement History */}
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Engagement History
+                      </div>
+                      <p className="mt-1.5 text-sm text-slate-500">
+                        No outreach activity recorded yet.
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        Outreach history will appear here once the engagement log lands.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Phase B.4 — Peak Seasonality is now full-width. The Market
               Benchmark card collapses to a single-row horizontal banner
               when no verified benchmark rate is available (the common
@@ -3664,257 +3840,11 @@ if (!cancelled) {
             </div>
           </div>
 
-          {/* Phase B.3 — Trade Lane Intelligence section, folded back from
-              the dedicated Trade Lanes tab. Globe LEFT, table RIGHT (was
-              the opposite in the old standalone tab). Table is 5-column:
-              # / Lane / Shipments / TEU / Trend. Spend is no longer a
-              visible column (kept as title-tooltip on each row). All rows
-              read from canonicalizeLanes() so hero pill / table / globe /
-              preview agree on labels like "🇨🇳 China → 🇺🇸 USA". */}
-          <section id="overview-trade-lanes" className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Trade Lane Intelligence
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Strongest lanes by shipment count, TEU, and estimated spend.
-                </p>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                {canonicalLanes.length} active {canonicalLanes.length === 1 ? "lane" : "lanes"}
-              </div>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              {/* Globe LEFT — uses navy palette tuned in Phase B.3. */}
-              <div
-                style={{
-                  background:
-                    "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
-                  borderRadius: 24,
-                  border: "1px solid #E2E8F0",
-                  padding: 16,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 10,
-                  minWidth: 0,
-                }}
-              >
-                {(() => {
-                  const globeLanes: GlobeLane[] = canonicalLanes
-                    .slice(0, 6)
-                    .map((l) => ({
-                      id: l.displayLabel,
-                      from: l.fromMeta.canonicalKey,
-                      to: l.toMeta.canonicalKey,
-                      coords: [l.fromMeta.coords, l.toMeta.coords],
-                      fromMeta: l.fromMeta,
-                      toMeta: l.toMeta,
-                      shipments: l.shipments,
-                    }));
-                  const hasResolvable = globeLanes.length > 0;
-
-                  if (!hasResolvable) {
-                    return (
-                      <div
-                        className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
-                        style={{ minHeight: 200 }}
-                      >
-                        <Globe className="mb-2 h-6 w-6 text-slate-300" />
-                        Route map unavailable because this shipment data does not include resolvable origin/destination locations.
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <>
-                      {/* Selected lane summary row — sits ON the light surface
-                          surrounding the globe, so use slate tokens (not
-                          white/10 navy tokens). */}
-                      {activeLaneMeta ? (
-                        <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900">
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                            <span className="truncate font-semibold" title={activeLaneMeta.displayLabel}>
-                              {activeLaneMeta.displayLabel}
-                            </span>
-                            <span className="flex items-center gap-3 font-mono text-[11px] text-slate-600">
-                              <span>Shipments {formatNumber(activeLaneMeta.shipments)}</span>
-                              <span>TEU {formatNumber(activeLaneMeta.teu, 1)}</span>
-                              <span>
-                                Est. Spend {activeLaneMeta.spend != null ? formatCurrency(activeLaneMeta.spend) : "—"}
-                              </span>
-                            </span>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {/* Phase B.4 — origin/destination flag cards.
-                          Phase B.6 — desktop visibility fix. The B.5
-                          structure used `sm:flex sm:flex-row` (≥ 640px)
-                          which fired the row layout in tight side-panel
-                          contexts where the cards squeezed and the arrow
-                          collapsed. Bumped to `md:` (≥ 768px) so the row
-                          activates only when there's actually room, and
-                          stays as a 2-column grid below that. Flag emoji
-                          steps text-4xl → xl:text-5xl so it reads as a
-                          real country marker on a 1440 viewport, not a
-                          faint glyph. role="img" + aria-label exposes
-                          the country name to screen readers and provides
-                          a fallback when a system can't render the flag
-                          emoji (Windows tofu). Cards skip rendering when
-                          their endpoint has no flag — the lane-unavailable
-                          empty state above already covers the no-data
-                          case. Cards keep min-w-[140px] so they don't
-                          collapse to a thin sliver in narrow desktops. */}
-                      {((activeFromMeta && activeFromMeta.flag) || (activeToMeta && activeToMeta.flag)) && (
-                        <div className="grid w-full grid-cols-2 items-stretch gap-2 md:flex md:flex-row md:items-center md:justify-center md:gap-4">
-                          {activeFromMeta && activeFromMeta.flag ? (
-                            <div className="flex flex-1 max-w-[220px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                              <span
-                                role="img"
-                                aria-label={activeFromMeta.countryName || "Origin country flag"}
-                                className="text-4xl leading-none xl:text-5xl"
-                              >
-                                {activeFromMeta.flag}
-                              </span>
-                              <span className="truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
-                                {activeFromMeta.countryName}
-                              </span>
-                              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                                Origin
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="hidden md:block" />
-                          )}
-                          <div className="hidden items-center justify-center md:flex">
-                            <ArrowRight className="h-5 w-5 text-slate-400" aria-hidden />
-                          </div>
-                          {activeToMeta && activeToMeta.flag ? (
-                            <div className="flex flex-1 max-w-[220px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                              <span
-                                role="img"
-                                aria-label={activeToMeta.countryName || "Destination country flag"}
-                                className="text-4xl leading-none xl:text-5xl"
-                              >
-                                {activeToMeta.flag}
-                              </span>
-                              <span className="truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
-                                {activeToMeta.countryName}
-                              </span>
-                              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                                Destination
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="hidden md:block" />
-                          )}
-                        </div>
-                      )}
-                      <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                        <GlobeCanvas
-                          lanes={globeLanes}
-                          selectedLane={activeLane ?? null}
-                          size={globeSize}
-                          theme="dark"
-                        />
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Table RIGHT */}
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
-                      <th className="px-3 py-2 font-semibold">#</th>
-                      <th className="px-3 py-2 font-semibold">Lane</th>
-                      <th className="px-3 py-2 text-right font-semibold">Shipments</th>
-                      <th className="px-3 py-2 text-right font-semibold">TEU</th>
-                      <th className="px-3 py-2 text-right font-semibold">Trend</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {combinedLanes.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
-                          No trade lane data available yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      combinedLanes.map((lane, i) => {
-                        const isActive =
-                          lane.resolvable && lane.displayLabel === activeLane;
-                        const spendTitle =
-                          lane.spend != null ? `Est. Spend: ${formatCurrency(lane.spend)}` : undefined;
-                        // Trend cell — driven by per-lane shipments delta if
-                        // available; otherwise honest "—". We don't invent
-                        // sparkline series, so this stays an arrow-only badge.
-                        const trendNode =
-                          lane.shipments > 0 && lane.resolvable ? (
-                            <span className="text-emerald-600">↑</span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          );
-                        return (
-                          <tr
-                            key={`lane-${i}`}
-                            onClick={() => {
-                              if (lane.resolvable) setSelectedLane(lane.displayLabel);
-                            }}
-                            title={spendTitle}
-                            className={`border-b border-slate-50 last:border-b-0 transition-colors ${
-                              lane.resolvable ? "cursor-pointer" : "cursor-default"
-                            } ${
-                              isActive
-                                ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
-                                : "hover:bg-slate-50/70"
-                            }`}
-                          >
-                            <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
-                            <td className="px-3 py-3">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={{
-                                    backgroundColor: isActive
-                                      ? TEU_BAR_PRIMARY
-                                      : CHART_COLORS[i % CHART_COLORS.length],
-                                  }}
-                                />
-                                <span className="max-w-[260px] truncate font-semibold text-slate-900">
-                                  {lane.displayLabel}
-                                </span>
-                              </div>
-                              {lane.aliases.length > 1 ? (
-                                <div className="mt-0.5 truncate text-xs text-slate-500">
-                                  Includes {lane.aliases.slice(0, 2).join("; ")}
-                                  {lane.aliases.length > 2
-                                    ? `; +${lane.aliases.length - 2} more`
-                                    : ""}
-                                </div>
-                              ) : null}
-                            </td>
-                            <td className="px-3 py-3 text-right font-semibold text-indigo-600">
-                              {formatNumber(lane.shipments)}
-                            </td>
-                            <td className="px-3 py-3 text-right text-slate-700">
-                              {formatNumber(lane.teu, 1)}
-                            </td>
-                            <td className="px-3 py-3 text-right">{trendNode}</td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
+          {/* Phase B.8 — Trade Lane Intelligence moved out of Overview to
+              its own dedicated tab so the globe + canonical lane table get
+              full panel width and the origin/destination flag pills stop
+              overflowing on 1024-1280 viewports. See <TabsContent
+              value="trade-lanes"> below. */}
 
           {/* Top Suppliers + Recent Shipments — compact summary cards using
               real suppliers_table / normalizedShipments data. No mock names,
@@ -3993,9 +3923,9 @@ if (!cancelled) {
                 .slice(0, 3);
               return (
                 <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                  {/* Phase B.3 — Shipments tab is gone. This card is the
-                      terminal recent-shipments view in Overview. The full
-                      verified BOL ledger is no longer surfaced as a tab. */}
+                  {/* Phase B.8 — Shipments tab restored. Recent shipments
+                      remains a 3-row preview here; full BOL ledger lives
+                      under the new Shipments tab. */}
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -4007,6 +3937,15 @@ if (!cancelled) {
                           : "From verified bill-of-lading records"}
                       </p>
                     </div>
+                    {normalizedShipments.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("shipments")}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
+                      >
+                        View all <ArrowUpRight className="h-3 w-3" />
+                      </button>
+                    ) : null}
                   </div>
                   {recentShipments.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
@@ -4444,6 +4383,485 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
               </div>
             </>
           )}
+        </TabsContent>
+
+        {/* Phase B.8 — Shipments tab. Real BOL ledger sourced from the
+            already-computed normalizedShipments memo. No new fetches.
+            Summary cards on top + paginated ledger below. */}
+        <TabsContent value="shipments" className="space-y-4">
+          {(() => {
+            const totalShipments = normalizedShipments.length;
+            const totalTeu = normalizedShipments.reduce(
+              (sum, row) => sum + (Number(row.teu) || 0),
+              0,
+            );
+            const hasTeu = normalizedShipments.some(
+              (row) => Number(row.teu) > 0,
+            );
+            const fclCount = normalizedShipments.filter(
+              (row) => row.loadType === "FCL",
+            ).length;
+            const lclCount = normalizedShipments.filter(
+              (row) => row.loadType === "LCL",
+            ).length;
+
+            // Date range — from valid past-or-current shipments only.
+            const datedShipments = normalizedShipments
+              .filter((row) => row.date && isValidPastOrCurrentDate(row.date))
+              .map((row) => ({
+                ...row,
+                _t: new Date(row.date as string).getTime(),
+              }))
+              .sort((a, b) => a._t - b._t);
+            const oldestDate = datedShipments[0]?.date ?? null;
+            const newestDate =
+              datedShipments[datedShipments.length - 1]?.date ?? null;
+
+            const pageSize = 25;
+            const pageCount = Math.max(1, Math.ceil(totalShipments / pageSize));
+            const safePage = Math.min(shipmentsPage, pageCount - 1);
+            // Sort newest-first for display ledger.
+            const sortedForLedger = [...normalizedShipments].sort((a, b) => {
+              const da = a.date ? new Date(a.date).getTime() : 0;
+              const db = b.date ? new Date(b.date).getTime() : 0;
+              return db - da;
+            });
+            const slice = sortedForLedger.slice(
+              safePage * pageSize,
+              (safePage + 1) * pageSize,
+            );
+
+            if (totalShipments === 0) {
+              return (
+                <div className="rounded-[30px] border border-dashed border-slate-200 bg-white p-10 text-center">
+                  <Ship className="mx-auto mb-3 h-8 w-8 text-slate-300" />
+                  <p className="text-sm text-slate-600">
+                    No shipment ledger rows are available for this company snapshot.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <>
+                {/* Top summary card row */}
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Total Shipments
+                    </div>
+                    <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                      {formatNumber(totalShipments)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Total TEU
+                    </div>
+                    <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                      {hasTeu ? formatNumber(totalTeu, 1) : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      FCL / LCL Split
+                    </div>
+                    <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                      {fclCount > 0 || lclCount > 0
+                        ? `${formatNumber(fclCount)} FCL / ${formatNumber(lclCount)} LCL`
+                        : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Date Range
+                    </div>
+                    <div className="mt-1 text-xs font-semibold text-slate-900">
+                      {oldestDate && newestDate ? (
+                        <>
+                          {formatDate(capDateAtToday(oldestDate))}
+                          <span className="mx-1 text-slate-400">→</span>
+                          {formatDate(capDateAtToday(newestDate))}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ledger */}
+                <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                        Shipment ledger
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Verified bill-of-lading records from this snapshot.
+                      </p>
+                    </div>
+                    <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                      {formatNumber(totalShipments)} {totalShipments === 1 ? "row" : "rows"}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table
+                      className="w-full text-left text-sm"
+                      style={{ minWidth: 1024 }}
+                    >
+                      <thead>
+                        <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                          <th className="px-3 py-2 font-semibold">Date</th>
+                          <th className="px-3 py-2 font-semibold">Origin</th>
+                          <th className="px-3 py-2 font-semibold">Destination</th>
+                          <th className="px-3 py-2 font-semibold">Supplier</th>
+                          <th className="px-3 py-2 font-semibold">Consignee</th>
+                          <th className="px-3 py-2 text-right font-semibold">TEU</th>
+                          <th className="px-3 py-2 font-semibold">Load</th>
+                          <th className="px-3 py-2 font-semibold">BOL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {slice.map((row, i) => {
+                          const supplier =
+                            row.shipper && row.shipper !== "—"
+                              ? row.shipper
+                              : row.importerName && row.importerName !== "—"
+                              ? row.importerName
+                              : "—";
+                          const consignee =
+                            row.consigneeName && row.consigneeName !== "—"
+                              ? row.consigneeName
+                              : "—";
+                          const bol =
+                            row.masterBol && row.masterBol !== "—"
+                              ? row.masterBol
+                              : row.houseBol && row.houseBol !== "—"
+                              ? row.houseBol
+                              : "—";
+                          const cappedDate = capDateAtToday(row.date ?? null);
+                          return (
+                            <tr
+                              key={row.id || `ship-${i}`}
+                              className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/70"
+                            >
+                              <td className="px-3 py-3 text-slate-700">
+                                {cappedDate ? formatDate(cappedDate) : "—"}
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[200px] truncate" title={row.origin || undefined}>
+                                  {row.origin && row.origin !== "—" ? row.origin : "—"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[200px] truncate" title={row.destination || undefined}>
+                                  {row.destination && row.destination !== "—" ? row.destination : "—"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[180px] truncate" title={supplier}>
+                                  {supplier}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <span className="block max-w-[180px] truncate" title={consignee}>
+                                  {consignee}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono text-xs text-slate-700">
+                                {Number(row.teu) > 0 ? formatNumber(row.teu, 1) : "—"}
+                              </td>
+                              <td className="px-3 py-3">
+                                {row.loadType === "FCL" ? (
+                                  <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                    FCL
+                                  </span>
+                                ) : row.loadType === "LCL" ? (
+                                  <span className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+                                    LCL
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 font-mono text-xs text-slate-600">
+                                <span className="block max-w-[140px] truncate" title={bol}>
+                                  {bol}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {pageCount > 1 ? (
+                    <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+                      <div>
+                        Page {safePage + 1} of {pageCount}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={safePage === 0}
+                          onClick={() => setShipmentsPage((p) => Math.max(0, p - 1))}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          disabled={safePage >= pageCount - 1}
+                          onClick={() =>
+                            setShipmentsPage((p) => Math.min(pageCount - 1, p + 1))
+                          }
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            );
+          })()}
+        </TabsContent>
+
+        {/* Phase B.8 — Trade Lanes tab. Pulled out of Overview so the
+            globe + canonical lane table get the full panel width and the
+            origin/destination flag pills sit ABOVE the lg:grid-cols-2
+            row (no longer nested inside the globe column → no more
+            overflow on 1024-1280 viewports). */}
+        <TabsContent value="trade-lanes" className="space-y-4">
+          <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                  Trade Lane Intelligence
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Strongest lanes by shipment count, TEU, and estimated spend.
+                </p>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                {canonicalLanes.length} active {canonicalLanes.length === 1 ? "lane" : "lanes"}
+              </div>
+            </div>
+
+            {(() => {
+              const globeLanes: GlobeLane[] = canonicalLanes
+                .slice(0, 6)
+                .map((l) => ({
+                  id: l.displayLabel,
+                  from: l.fromMeta.canonicalKey,
+                  to: l.toMeta.canonicalKey,
+                  coords: [l.fromMeta.coords, l.toMeta.coords],
+                  fromMeta: l.fromMeta,
+                  toMeta: l.toMeta,
+                  shipments: l.shipments,
+                }));
+              const hasResolvable = globeLanes.length > 0;
+
+              return (
+                <>
+                  {/* Phase B.8 — flag pills moved ABOVE the lg:grid-cols-2
+                      row so they get full panel width. md+ shows the row
+                      with ArrowRight between origin and destination; below
+                      md the cards stack as a 2-col grid. */}
+                  {hasResolvable && ((activeFromMeta && activeFromMeta.flag) || (activeToMeta && activeToMeta.flag)) && (
+                    <div className="mb-4 grid w-full grid-cols-2 items-stretch gap-2 md:flex md:flex-row md:items-center md:justify-center md:gap-4">
+                      {activeFromMeta && activeFromMeta.flag ? (
+                        <div className="flex flex-1 max-w-[260px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                          <span
+                            role="img"
+                            aria-label={activeFromMeta.countryName || "Origin country flag"}
+                            className="text-4xl leading-none xl:text-5xl"
+                          >
+                            {activeFromMeta.flag}
+                          </span>
+                          <span className="truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
+                            {activeFromMeta.countryName}
+                          </span>
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                            Origin
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="hidden md:block" />
+                      )}
+                      <div className="hidden items-center justify-center md:flex">
+                        <ArrowRight className="h-5 w-5 text-slate-400" aria-hidden />
+                      </div>
+                      {activeToMeta && activeToMeta.flag ? (
+                        <div className="flex flex-1 max-w-[260px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                          <span
+                            role="img"
+                            aria-label={activeToMeta.countryName || "Destination country flag"}
+                            className="text-4xl leading-none xl:text-5xl"
+                          >
+                            {activeToMeta.flag}
+                          </span>
+                          <span className="truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
+                            {activeToMeta.countryName}
+                          </span>
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                            Destination
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="hidden md:block" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Selected lane summary row — sits above the globe-table
+                      grid so it spans the panel width. */}
+                  {hasResolvable && activeLaneMeta ? (
+                    <div className="mb-4 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-semibold" title={activeLaneMeta.displayLabel}>
+                          {activeLaneMeta.displayLabel}
+                        </span>
+                        <span className="flex items-center gap-3 font-mono text-[11px] text-slate-600">
+                          <span>Shipments {formatNumber(activeLaneMeta.shipments)}</span>
+                          <span>TEU {formatNumber(activeLaneMeta.teu, 1)}</span>
+                          <span>
+                            Est. Spend {activeLaneMeta.spend != null ? formatCurrency(activeLaneMeta.spend) : "—"}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {/* Globe LEFT */}
+                    <div
+                      style={{
+                        background:
+                          "linear-gradient(180deg, #EEF2FF 0%, #F8FAFC 60%, #F1F5F9 100%)",
+                        borderRadius: 24,
+                        border: "1px solid #E2E8F0",
+                        padding: 16,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 10,
+                        minWidth: 0,
+                      }}
+                    >
+                      {hasResolvable ? (
+                        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                          <GlobeCanvas
+                            lanes={globeLanes}
+                            selectedLane={activeLane ?? null}
+                            size={globeSize}
+                            theme="dark"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="flex h-full w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500"
+                          style={{ minHeight: 200 }}
+                        >
+                          <Globe className="mb-2 h-6 w-6 text-slate-300" />
+                          Route map unavailable because this shipment data does not include resolvable origin/destination locations.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Table RIGHT */}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-xs uppercase tracking-[0.18em] text-slate-500">
+                            <th className="px-3 py-2 font-semibold">#</th>
+                            <th className="px-3 py-2 font-semibold">Lane</th>
+                            <th className="px-3 py-2 text-right font-semibold">Shipments</th>
+                            <th className="px-3 py-2 text-right font-semibold">TEU</th>
+                            <th className="px-3 py-2 text-right font-semibold">Trend</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {combinedLanes.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500">
+                                No trade lane data available yet.
+                              </td>
+                            </tr>
+                          ) : (
+                            combinedLanes.map((lane, i) => {
+                              const isActive =
+                                lane.resolvable && lane.displayLabel === activeLane;
+                              const spendTitle =
+                                lane.spend != null ? `Est. Spend: ${formatCurrency(lane.spend)}` : undefined;
+                              const trendNode =
+                                lane.shipments > 0 && lane.resolvable ? (
+                                  <span className="text-emerald-600">↑</span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                );
+                              return (
+                                <tr
+                                  key={`lane-${i}`}
+                                  onClick={() => {
+                                    if (lane.resolvable) setSelectedLane(lane.displayLabel);
+                                  }}
+                                  title={spendTitle}
+                                  className={`border-b border-slate-50 last:border-b-0 transition-colors ${
+                                    lane.resolvable ? "cursor-pointer" : "cursor-default"
+                                  } ${
+                                    isActive
+                                      ? "bg-indigo-50 border-l-2 border-l-indigo-500 ring-1 ring-inset ring-indigo-200"
+                                      : "hover:bg-slate-50/70"
+                                  }`}
+                                >
+                                  <td className="px-3 py-3 text-xs font-semibold text-slate-400">{i + 1}</td>
+                                  <td className="px-3 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                                        style={{
+                                          backgroundColor: isActive
+                                            ? TEU_BAR_PRIMARY
+                                            : CHART_COLORS[i % CHART_COLORS.length],
+                                        }}
+                                      />
+                                      <span className="max-w-[260px] truncate font-semibold text-slate-900">
+                                        {lane.displayLabel}
+                                      </span>
+                                    </div>
+                                    {lane.aliases.length > 1 ? (
+                                      <div className="mt-0.5 truncate text-xs text-slate-500">
+                                        Includes {lane.aliases.slice(0, 2).join("; ")}
+                                        {lane.aliases.length > 2
+                                          ? `; +${lane.aliases.length - 2} more`
+                                          : ""}
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-3 py-3 text-right font-semibold text-indigo-600">
+                                    {formatNumber(lane.shipments)}
+                                  </td>
+                                  <td className="px-3 py-3 text-right text-slate-700">
+                                    {formatNumber(lane.teu, 1)}
+                                  </td>
+                                  <td className="px-3 py-3 text-right">{trendNode}</td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </section>
         </TabsContent>
 
         <TabsContent value="equipment" className="space-y-4">
