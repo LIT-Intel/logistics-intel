@@ -1613,14 +1613,49 @@ const getContactFullName = (contact: any) => {
 const getContactTitle = (contact: any) =>
   contact.title || contact.role || contact.position || contact.jobTitle || "";
 
+// Phase B.6 — broaden field mappers to cover every Lusha / generic
+// provider response shape we've observed. Previously we only checked
+// `email` / `email_address`, which left valid emails (e.g. `work_email`,
+// `emails: [...]` arrays) reading as missing on the UI.
 const getContactEmail = (contact: any) =>
-  contact.email || contact.email_address || contact.emailAddress || "";
+  contact?.email ||
+  contact?.email_address ||
+  contact?.emailAddress ||
+  contact?.work_email ||
+  contact?.businessEmail ||
+  (Array.isArray(contact?.emails) ? contact.emails[0] : "") ||
+  "";
 
 const getContactPhone = (contact: any) =>
-  contact.phone || contact.phone_number || contact.phoneNumber || "";
+  contact?.phone ||
+  contact?.phone_number ||
+  contact?.phoneNumber ||
+  contact?.directDial ||
+  contact?.work_phone ||
+  contact?.mobile_phone ||
+  (Array.isArray(contact?.phones) ? contact.phones[0] : "") ||
+  "";
 
 const getContactLinkedIn = (contact: any) =>
-  contact.linkedin_url || contact.linkedinUrl || contact.linkedInUrl || "";
+  contact?.linkedin ||
+  contact?.linkedinUrl ||
+  contact?.linkedin_url ||
+  contact?.linkedInUrl ||
+  contact?.profileUrl ||
+  contact?.url ||
+  contact?.social?.linkedin ||
+  "";
+
+/**
+ * Phase B.6 — explicit predicate for "this contact has zero contact-method
+ * fields". Used to render the "Details require enrichment." copy under the
+ * title for shallow-Lusha records where only name+title made it through.
+ * Honest signal: the user can see we found a person but not their reach
+ * details, and we don't pretend with empty <a> tags or empty pills.
+ */
+const contactHasNoDetails = (contact: any): boolean => {
+  return !getContactEmail(contact) && !getContactPhone(contact) && !getContactLinkedIn(contact);
+};
 
 /**
  * Phase B.3 — strict verification gate. Returns true ONLY when an upstream
@@ -2953,47 +2988,111 @@ if (!cancelled) {
     return [linkedin, name, title].join("|").toLowerCase();
   };
 
+  // Phase B.6 — schema-true save. The pre-B.6 payload sent five columns
+  // that don't exist on `lit_contacts` (company_name, company_domain,
+  // source_provider, raw_contact, updated_at) plus an `onConflict` against
+  // a unique index that doesn't exist (company_id,linkedin_url). The
+  // confirmed live schema (supabase/migrations/20260115001208_create_lit
+  // _schema_part2.sql lines 66–97) is:
+  //   id (uuid, default), source (NOT NULL, default 'lusha'),
+  //   source_contact_key, company_id (uuid FK lit_companies.id),
+  //   full_name (NOT NULL), first_name, last_name, title, department,
+  //   seniority, email, phone, linkedin_url, avatar_url, city, state,
+  //   country_code, buying_intent, raw_payload, created_at, updated_at.
+  // Unique constraint: (source, source_contact_key) — NOT
+  // (company_id, linkedin_url).
+  //
+  // RLS: only a SELECT policy ("Contacts are viewable by authenticated
+  // users") is granted. There is no INSERT policy for `authenticated`,
+  // so this insert will be denied with code 42501 until a follow-up
+  // migration adds one. We surface the user-facing copy
+  //   "Contact saving is not enabled for your account yet."
+  // exactly as briefed and never expose raw RLS / schema wording.
+  //
+  // We also resolve the lit_companies UUID (record.company.id) rather
+  // than the source_company_key slug (record.company.company_id) so the
+  // FK to lit_companies(id) holds. Slug-as-UUID was producing 23503 FK
+  // violations on the few companies that were seeded into lit_companies
+  // with a real UUID.
   const saveContactToSupabase = async (contact: any) => {
-    const companyId =
-      (record as any)?.company?.company_id ||
+    const companyUuid =
       (record as any)?.company?.id ||
-      (rawProfile as any)?.company_id ||
+      (rawProfile as any)?.id ||
       null;
-    const companyName =
-      (record as any)?.company?.name ||
-      (record as any)?.company?.company_name ||
-      (rawProfile as any)?.companyName ||
-      (rawProfile as any)?.company_name ||
+
+    if (!companyUuid) {
+      setContactMessage(
+        "Save needs a saved company UUID. Add this company to Command Center first.",
+      );
+      return;
+    }
+
+    const linkedinUrl =
+      contact?.linkedin ||
+      contact?.linkedinUrl ||
+      contact?.linkedin_url ||
+      contact?.profileUrl ||
+      contact?.url ||
       null;
-    const companyDomain =
-      (record as any)?.company?.domain ||
-      (rawProfile as any)?.domain ||
-      (rawProfile as any)?.companyDomain ||
+
+    const sourceContactKey =
+      contact?.id ||
+      contact?.contactId ||
+      contact?.contact_id ||
+      contact?.lushaId ||
+      contact?.lusha_id ||
+      // Fall back to the linkedin URL as a stable per-(source,key) handle so
+      // the (source, source_contact_key) unique index still triggers a
+      // 23505 on duplicates instead of letting the row sneak in twice.
+      linkedinUrl ||
       null;
 
     const payload = {
-      company_id: companyId,
-      company_name: companyName,
-      company_domain: companyDomain,
-      full_name: getContactFullName(contact),
+      source: "lusha",
+      source_contact_key: sourceContactKey,
+      company_id: companyUuid,
+      full_name: getContactFullName(contact) || "Unknown",
+      first_name: contact?.firstName || contact?.first_name || null,
+      last_name: contact?.lastName || contact?.last_name || null,
       title: getContactTitle(contact) || null,
-      email: contact.email || contact.email_address || null,
-      phone: contact.phone || contact.phone_number || null,
-      linkedin_url:
-        contact.linkedin || contact.linkedinUrl || contact.profileUrl || contact.url || null,
-      source_provider: "lusha",
-      raw_contact: contact,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      department: contact?.department || contact?.dept || null,
+      seniority: contact?.seniority || contact?.seniorityLevel || null,
+      email: getContactEmail(contact) || null,
+      phone: getContactPhone(contact) || null,
+      linkedin_url: linkedinUrl,
     };
 
-    const { error } = await supabase
-      .from("lit_contacts")
-      .upsert(payload, { onConflict: "company_id,linkedin_url" });
+    // Plain insert (no upsert) — the live unique index is on
+    // (source, source_contact_key), so any duplicate raises 23505 and we
+    // surface the friendly "Contact already saved." copy below.
+    const { error } = await supabase.from("lit_contacts").insert(payload);
 
     if (error) {
       console.error("Save contact error", error);
-      setContactMessage("Could not save contact yet. Check lit_contacts schema/RLS.");
+      // Honest, non-technical error mapping by Postgres SQLSTATE code.
+      if ((error as any)?.code === "23505") {
+        setContactMessage("Contact already saved.");
+        // Treat as locally-saved so the row stops re-prompting the save.
+        setSavedContactKeys((prev) => {
+          const next = new Set(prev);
+          next.add(getContactKey(contact));
+          return next;
+        });
+        return;
+      }
+      if ((error as any)?.code === "42501") {
+        // RLS denial — no INSERT policy on lit_contacts for authenticated.
+        setContactMessage("Contact saving is not enabled for your account yet.");
+        return;
+      }
+      if ((error as any)?.code === "23503") {
+        // FK violation — companyUuid not in lit_companies.
+        setContactMessage(
+          "Save needs a saved company. Add this company to Command Center first.",
+        );
+        return;
+      }
+      setContactMessage("Could not save contact. Try again or contact support.");
       return;
     }
 
@@ -3649,19 +3748,34 @@ if (!cancelled) {
                         </div>
                       ) : null}
 
-                      {/* Phase B.4 — origin/destination flag cards. On
-                          desktop: a single row with the cards either side
-                          of an arrow icon. On mobile: a 2-column grid so
-                          the cards never squeeze. Empty state (no
-                          activeFromMeta && no activeToMeta) skips the
-                          block entirely — the lane-unavailable empty
-                          state above already covers that. */}
-                      {(activeFromMeta || activeToMeta) && (
-                        <div className="grid w-full grid-cols-2 items-stretch gap-2 sm:flex sm:flex-row sm:items-center sm:justify-center sm:gap-3">
-                          {activeFromMeta ? (
-                            <div className="flex flex-1 max-w-[200px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                              <span aria-hidden className="text-3xl leading-none">
-                                {activeFromMeta.flag || "🌐"}
+                      {/* Phase B.4 — origin/destination flag cards.
+                          Phase B.6 — desktop visibility fix. The B.5
+                          structure used `sm:flex sm:flex-row` (≥ 640px)
+                          which fired the row layout in tight side-panel
+                          contexts where the cards squeezed and the arrow
+                          collapsed. Bumped to `md:` (≥ 768px) so the row
+                          activates only when there's actually room, and
+                          stays as a 2-column grid below that. Flag emoji
+                          steps text-4xl → xl:text-5xl so it reads as a
+                          real country marker on a 1440 viewport, not a
+                          faint glyph. role="img" + aria-label exposes
+                          the country name to screen readers and provides
+                          a fallback when a system can't render the flag
+                          emoji (Windows tofu). Cards skip rendering when
+                          their endpoint has no flag — the lane-unavailable
+                          empty state above already covers the no-data
+                          case. Cards keep min-w-[140px] so they don't
+                          collapse to a thin sliver in narrow desktops. */}
+                      {((activeFromMeta && activeFromMeta.flag) || (activeToMeta && activeToMeta.flag)) && (
+                        <div className="grid w-full grid-cols-2 items-stretch gap-2 md:flex md:flex-row md:items-center md:justify-center md:gap-4">
+                          {activeFromMeta && activeFromMeta.flag ? (
+                            <div className="flex flex-1 max-w-[220px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <span
+                                role="img"
+                                aria-label={activeFromMeta.countryName || "Origin country flag"}
+                                className="text-4xl leading-none xl:text-5xl"
+                              >
+                                {activeFromMeta.flag}
                               </span>
                               <span className="truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
                                 {activeFromMeta.countryName}
@@ -3671,15 +3785,19 @@ if (!cancelled) {
                               </span>
                             </div>
                           ) : (
-                            <div className="hidden sm:block" />
+                            <div className="hidden md:block" />
                           )}
-                          <div className="hidden items-center justify-center sm:flex">
-                            <ArrowRight className="h-4 w-4 text-slate-400" aria-hidden />
+                          <div className="hidden items-center justify-center md:flex">
+                            <ArrowRight className="h-5 w-5 text-slate-400" aria-hidden />
                           </div>
-                          {activeToMeta ? (
-                            <div className="flex flex-1 max-w-[200px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                              <span aria-hidden className="text-3xl leading-none">
-                                {activeToMeta.flag || "🌐"}
+                          {activeToMeta && activeToMeta.flag ? (
+                            <div className="flex flex-1 max-w-[220px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <span
+                                role="img"
+                                aria-label={activeToMeta.countryName || "Destination country flag"}
+                                className="text-4xl leading-none xl:text-5xl"
+                              >
+                                {activeToMeta.flag}
                               </span>
                               <span className="truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
                                 {activeToMeta.countryName}
@@ -3689,7 +3807,7 @@ if (!cancelled) {
                               </span>
                             </div>
                           ) : (
-                            <div className="hidden sm:block" />
+                            <div className="hidden md:block" />
                           )}
                         </div>
                       )}
@@ -4067,6 +4185,16 @@ if (!cancelled) {
     <div className="min-w-0">
       <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
       <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
+      {/* Phase B.6 — honest enrichment-depth signal. The Lusha
+          Prospecting Search endpoint returns only name+title for the
+          first-pass response; email/phone/linkedin require a separate
+          enrichment call (not implemented). Show this once per card so
+          the user knows we found the person but not their channels. */}
+      {contactHasNoDetails(contact) ? (
+        <div className="mt-1 truncate text-xs italic text-slate-500">
+          Contact found · Details require enrichment.
+        </div>
+      ) : null}
     </div>
   </div>
 
@@ -4200,28 +4328,46 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
   <div className="min-w-0">
     <div className="truncate text-lg font-semibold text-slate-950">{fullName}</div>
     {title && <div className="text-sm text-indigo-600">{title}</div>}
+    {/* Phase B.6 — same enrichment-depth signal as the small card. */}
+    {contactHasNoDetails(slideContact) ? (
+      <div className="mt-1 text-xs italic text-slate-500">
+        Contact found · Details require enrichment.
+      </div>
+    ) : null}
   </div>
 </div>
-                          <div className="space-y-3">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
-                              <div className="mt-1 text-sm text-slate-900">{email || "Email unavailable"}</div>
+                          {/* Phase B.6 — only render channel rows that
+                              actually have a value. Empty rows previously
+                              read as "Email unavailable" / "LinkedIn
+                              unavailable" and felt like broken UI; the
+                              "Details require enrichment" copy above the
+                              fold now carries that signal honestly. */}
+                          {(email || phone || linkedin) ? (
+                            <div className="space-y-3">
+                              {email ? (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
+                                  <div className="mt-1 text-sm text-slate-900">{email}</div>
+                                </div>
+                              ) : null}
+                              {phone ? (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
+                                  <div className="mt-1 text-sm text-slate-900">{phone}</div>
+                                </div>
+                              ) : null}
+                              {linkedin ? (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">LinkedIn</div>
+                                  <div className="mt-1 truncate text-sm text-slate-900">
+                                    <a href={linkedin} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                                      {linkedin}
+                                    </a>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
-                              <div className="mt-1 text-sm text-slate-900">{phone || "Phone unavailable"}</div>
-                            </div>
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">LinkedIn</div>
-                              <div className="mt-1 truncate text-sm text-slate-900">
-                                {linkedin ? (
-                                  <a href={linkedin} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-                                    {linkedin}
-                                  </a>
-                                ) : "LinkedIn unavailable"}
-                              </div>
-                            </div>
-                          </div>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => saveContactToSupabase(slideContact)}

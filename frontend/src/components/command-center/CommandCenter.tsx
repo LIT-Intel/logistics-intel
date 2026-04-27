@@ -64,16 +64,21 @@ type SortableKey = keyof Pick<ListRow, 'companyName' | 'lastActivity' | 'shipmen
 // to avoid breaking server contracts; we just stop rendering it. Contact
 // counts are still loaded and stored in `contactCounts` so we never break
 // the upstream lit_contacts probe.
+//
+// Phase B.6 — column widths re-tuned. The B.3 split squeezed Top Route into
+// 11% which overlapped Activity/Status/View on common 1280–1440 viewports.
+// New split (sums to 100%) gives Top Route a comfortable 15% with explicit
+// truncation, while clamping the right-hand badges/actions to 9% each.
 const TABLE_COLS: Array<{ key: SortableKey | 'activity' | 'status' | 'actions'; label: string; width: string; sortable: boolean }> = [
-  { key: 'companyName',  label: 'Company',       width: '24%', sortable: true },
-  { key: 'lastActivity', label: 'Last Shipment', width: '11%', sortable: true },
-  { key: 'shipments12m', label: 'Shipments 12M', width: '11%', sortable: true },
-  { key: 'teu12m',       label: 'TEU 12M',       width: '9%',  sortable: true },
-  { key: 'estSpend12m',  label: 'Est. Spend',    width: '10%', sortable: true },
-  { key: 'topRoute12m',  label: 'Top Route',     width: '11%', sortable: true },
-  { key: 'activity',     label: 'Activity',      width: '8%',  sortable: false },
-  { key: 'status',       label: 'Status',        width: '8%',  sortable: false },
-  { key: 'actions',      label: 'View',          width: '8%',  sortable: false },
+  { key: 'companyName',  label: 'Company',       width: '22%', sortable: true },
+  { key: 'lastActivity', label: 'Last Shipment', width: '10%', sortable: true },
+  { key: 'shipments12m', label: 'Shipments 12M', width: '9%',  sortable: true },
+  { key: 'teu12m',       label: 'TEU 12M',       width: '8%',  sortable: true },
+  { key: 'estSpend12m',  label: 'Est. Spend',    width: '9%',  sortable: true },
+  { key: 'topRoute12m',  label: 'Top Route',     width: '15%', sortable: true },
+  { key: 'activity',     label: 'Activity',      width: '9%',  sortable: false },
+  { key: 'status',       label: 'Status',        width: '9%',  sortable: false },
+  { key: 'actions',      label: 'View',          width: '9%',  sortable: false },
 ];
 
 const STATUS_STYLE = {
@@ -458,7 +463,12 @@ export default function CommandCenter() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 960 }}>
+          {/* Phase B.6 — table sets a min-width: 1200px floor; the wrapper
+              above carries the horizontal scroll. Below that viewport the
+              fixed-% column widths would otherwise compress into overlapping
+              text; horizontal scroll keeps every column honest at the cost
+              of a scroll bar on narrow screens. */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1200 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
                 {TABLE_COLS.map((col) => {
@@ -547,18 +557,42 @@ export default function CommandCenter() {
                       </span>
                     </td>
 
-                    {/* Top Route */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#64748b', background: '#F1F5F9', padding: '2px 7px', borderRadius: 4 }}>
+                    {/* Top Route — Phase B.6: truncate inside the fixed
+                        column width so long lane labels don't bleed into the
+                        Activity column. The <span> wraps on its container so
+                        the chip background sizes to text up to the column
+                        edge, then ellipses; full label surfaces via title. */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', overflow: 'hidden' }}>
+                      <span
+                        title={row.topRoute12m || row.recentRoute || ''}
+                        style={{
+                          display: 'block',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: 11,
+                          color: '#64748b',
+                          background: '#F1F5F9',
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                        }}
+                      >
                         {row.topRoute12m || row.recentRoute || '—'}
                       </span>
                     </td>
 
-                    {/* Activity */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    {/* Activity — Phase B.6: td gets overflow:hidden + nowrap
+                        and an explicit minWidth: 84 so the badge sizes to its
+                        content within the 9% column width without ever
+                        pushing into Status/View, and never collapses below
+                        legibility on narrow viewports. */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 84 }}>
                       <span style={{
+                        display: 'inline-flex', alignItems: 'center',
                         fontSize: 11, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
-                        padding: '2px 7px', borderRadius: 9999,
+                        padding: '2px 7px', borderRadius: 9999, whiteSpace: 'nowrap',
                         ...(hasActivity
                           ? { color: '#15803d', background: 'rgba(34,197,94,0.1)' }
                           : { color: '#94A3B8', background: '#F1F5F9' }),
@@ -567,8 +601,10 @@ export default function CommandCenter() {
                       </span>
                     </td>
 
-                    {/* Status */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    {/* Status — Phase B.6: minWidth 96 floors the column
+                        so the dot+label pill always renders in full at any
+                        viewport above the 1200px table min-width. */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 96 }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999,
@@ -580,9 +616,11 @@ export default function CommandCenter() {
                       </span>
                     </td>
 
-                    {/* View action */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {/* View action — Phase B.6: minWidth 80 keeps the
+                        "View →" + Add buttons on a single line at narrow
+                        viewports. */}
+                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 80 }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
                           style={{

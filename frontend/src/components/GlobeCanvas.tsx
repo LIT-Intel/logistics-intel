@@ -57,6 +57,14 @@ type GlobePalette = {
   dropShadow: string;
 };
 
+// Phase B.6 — 4-tone earth palette used by the dark theme to break the
+// flat sage-green of the B.5 landFill. Tones are intentionally close in
+// luminance and saturation to avoid a comic-book look — only the hue
+// shifts. Hashed by `feature.id % 4` so every render of the same
+// country uses the same tone. Sand-grass-forest-tundra approximation,
+// not biome-correct, but enough to register as varied terrain.
+const LAND_TONE_PALETTE = ["#C9B98E", "#8FA371", "#6B8364", "#9DA388"];
+
 const LIGHT_PALETTE: GlobePalette = {
   oceanInner: "#F0F7FF",
   oceanOuter: "#DBEAFE",
@@ -86,13 +94,23 @@ const LIGHT_PALETTE: GlobePalette = {
 // "selected country" highlight is intentionally a slightly lighter
 // shade of the land fill (rather than a saturated violet) so picking a
 // lane produces a subtle land-tint rather than a colour bomb.
+// Phase B.6 — realism evaluation. After the B.5 sage-land + navy-ocean
+// pass the user still reads the sphere as stylised. A second pass within
+// the canvas budget tightens it: land stroke drops to alpha 0.25 (less
+// cell-shaded outline), a softer land base, and the atmosphere ring is
+// supplemented by a fainter outer halo. Anything beyond that (per-country
+// topography sampling, painted height bands, real Earth imagery) requires
+// either a static texture asset or a three.js dependency — both flagged in
+// the parent agent report and intentionally not done here.
 const DARK_PALETTE: GlobePalette = {
   oceanInner: "#4A7BB7",
   oceanOuter: "#1E3A6A",
   sphereStroke: "rgba(30,58,138,0.65)",
   graticule: "rgba(148,163,184,0.18)",
   landFill: "#A8B89A",
-  landStroke: "rgba(101, 122, 88, 0.45)",
+  // Phase B.6 — drop alpha from 0.45 to 0.25 so country outlines whisper
+  // rather than chunk the sphere into cell-shaded patches.
+  landStroke: "rgba(101, 122, 88, 0.25)",
   highlightFill: "#C5D5B5",
   arcGlow: "rgba(167,139,250,0.40)",
   arcStroke: "#818CF8",
@@ -214,9 +232,11 @@ export default function GlobeCanvas({
       }
       s.dashOffset = (s.dashOffset + 0.4) % 24;
 
-      // Phase B.4 — leave 16px between sphere edge and canvas edge so the
+      // Phase B.4 — leave room between sphere edge and canvas edge so the
       // atmosphere halo and drop shadow can render without being clipped.
-      const sphereRadius = size / 2 - 16;
+      // Phase B.6 — bumped from 16 → 24 to fit the secondary outer halo
+      // ring at sphereRadius + 22 without clipping at the canvas edge.
+      const sphereRadius = size / 2 - 24;
       const cx = size / 2;
       const cy = size / 2;
 
@@ -253,6 +273,23 @@ export default function GlobeCanvas({
       ctx.fillStyle = atmosGrad;
       ctx.fill();
 
+      // Phase B.6 — secondary outer halo at sphereRadius+22 with very low
+      // alpha. Reads as the bloom past the inner atmosphere, suggesting
+      // depth rather than a hard sphere edge. Alpha 0.10 keeps it well
+      // below the inner ring so it doesn't compete visually.
+      if (theme === "dark") {
+        const outerHaloGrad = ctx.createRadialGradient(
+          cx, cy, sphereRadius + 14,
+          cx, cy, sphereRadius + 22
+        );
+        outerHaloGrad.addColorStop(0, "rgba(180,215,255,0.10)");
+        outerHaloGrad.addColorStop(1, "rgba(180,215,255,0)");
+        ctx.beginPath();
+        ctx.arc(cx, cy, sphereRadius + 22, 0, Math.PI * 2);
+        ctx.fillStyle = outerHaloGrad;
+        ctx.fill();
+      }
+
       // Sphere background gradient — center light, edge dark for a true
       // 3D-globe highlight. The bright spot sits up-and-left of center,
       // matching the conventional sun-from-upper-left lighting.
@@ -286,7 +323,23 @@ export default function GlobeCanvas({
         features.forEach((f: any) => {
           ctx.beginPath();
           pathGen(f);
-          ctx.fillStyle = palette.landFill;
+          // Phase B.6 — light per-country tone variation. Without a real
+          // Earth texture (would require a static image asset) or a
+          // three.js globe (would require a new dependency), the canvas
+          // approach can only suggest realism. Hashing each feature's
+          // numeric ISO id into one of 4 muted earth tones breaks the
+          // monotone-sage look of B.5 without introducing colour bombs.
+          // Tones are kept perceptually close to the base #A8B89A so the
+          // sphere still reads as a coherent landmass rather than a
+          // patchwork of saturated hues. Highlight pass below still wins
+          // because it paints in a second loop.
+          if (theme === "dark") {
+            const fid = Number(f?.id) || 0;
+            const tone = LAND_TONE_PALETTE[fid % LAND_TONE_PALETTE.length];
+            ctx.fillStyle = tone;
+          } else {
+            ctx.fillStyle = palette.landFill;
+          }
           ctx.fill();
           ctx.strokeStyle = palette.landStroke;
           ctx.lineWidth = 0.4;

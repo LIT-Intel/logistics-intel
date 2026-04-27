@@ -213,14 +213,26 @@ function parseShipmentDate(value: string | Date | null | undefined): Date | null
 
 /**
  * Returns the original ISO/string value if the date is parseable AND not
- * in the future; otherwise null. The original string is preserved
- * (rather than re-serialised) so downstream `formatDate` calls render the
- * same characters the row arrived with.
+ * meaningfully in the future; otherwise null. The original string is
+ * preserved (rather than re-serialised) so downstream `formatDate` calls
+ * render the same characters the row arrived with.
+ *
+ * Phase B.6 — timezone-tolerant cap. Previously the cap was a hard
+ * `parsed > Date.now()` comparison. Postgres `last_shipment_date`
+ * timestamps frequently arrive as midnight UTC (e.g. "2026-04-26
+ * 00:00:00+00"), which a viewer in a UTC- timezone (e.g. PT/ET evening
+ * the day before) would read as "tomorrow" and silently drop. The fix
+ * is a 24-hour tolerance window: a date is only considered "future" if
+ * it's more than one calendar day past now. This absorbs the
+ * midnight-stamped row drift without re-introducing the original bug
+ * of multi-day-future fictional activity slipping through.
  */
+const FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+
 export function capFutureDate(value: string | Date | null | undefined): string | null {
   const parsed = parseShipmentDate(value);
   if (!parsed) return null;
-  if (parsed.getTime() > Date.now()) return null;
+  if (parsed.getTime() > Date.now() + FUTURE_TOLERANCE_MS) return null;
   if (value instanceof Date) {
     return parsed.toISOString();
   }
@@ -252,11 +264,14 @@ export function latestValidPastDate(
   dates: Array<string | Date | null | undefined>
 ): string | null {
   let best: { ms: number; iso: string } | null = null;
+  // Phase B.6 — same 24-hour tolerance as capFutureDate so a midnight-UTC
+  // "today" row in a US timezone evening still qualifies.
+  const futureCutoff = Date.now() + FUTURE_TOLERANCE_MS;
   for (const candidate of dates) {
     const parsed = parseShipmentDate(candidate);
     if (!parsed) continue;
     const ms = parsed.getTime();
-    if (ms > Date.now()) continue;
+    if (ms > futureCutoff) continue;
     if (!best || ms > best.ms) {
       best = { ms, iso: parsed.toISOString() };
     }
