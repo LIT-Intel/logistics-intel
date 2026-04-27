@@ -5,12 +5,14 @@ import {
   CalendarClock,
   DollarSign,
   Globe,
+  Layers,
   Package,
   Phone,
   Ship,
   TrendingUp,
   MapPin,
   Truck,
+  UserRound,
   Users,
   Briefcase,
   Building2,
@@ -3175,8 +3177,136 @@ if (!cancelled) {
     (historyPage + 1) * historyPageSize,
   );
 
+  // Phase B.9 — floating KPI bridge values. The page-shell hero no longer
+  // renders a KPI strip (the dark navy 4-up was demoted in favor of a
+  // light hero with a glossy blue action zone). KPIs now sit in a
+  // standalone bridge row between the hero and the tabs panel. We compute
+  // the values here because `detail`, `canonicalLanes`, `phantomContacts`,
+  // and `isContactVerified` already live in this panel's scope — no new
+  // data fetches, no fake values.
+  const bridgeShipments = Number(detail.shipments) || 0;
+  const bridgeTeu = Number(detail.teu) || 0;
+  const bridgeSpend = detail.spend;
+  const bridgeActiveLaneCount = canonicalLanes.filter(
+    (l) => l.shipments > 0,
+  ).length;
+  const bridgeContactCount = phantomContacts.length;
+  const bridgeVerifiedContactCount = phantomContacts.filter(
+    isContactVerified,
+  ).length;
+
   return (
-    <section className="w-full rounded-[30px] border border-slate-200 bg-slate-50 p-4 shadow-sm">
+    <div className="space-y-6">
+      {/* Phase B.9 — floating KPI bridge row. Sits between the hero and
+          the tabs section so the page reads as three distinct executive
+          zones: identity hero → snapshot KPIs → deep tabs. Real values
+          only — anything missing renders as "—" with an honest helper. */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Shipments 12M
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+              <Package className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeShipments > 0 ? formatNumber(bridgeShipments) : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeShipments > 0
+              ? "Trailing 12-month BOL count"
+              : "No verified data yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              TEU 12M
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 ring-1 ring-cyan-100">
+              <Layers className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeTeu > 0 ? formatNumber(bridgeTeu, 1) : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeTeu > 0
+              ? "Twenty-foot equivalents"
+              : "No verified data yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Est. Freight Spend
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+              <DollarSign className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeSpend != null && bridgeSpend > 0
+              ? formatCurrency(bridgeSpend)
+              : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeSpend != null && bridgeSpend > 0
+              ? "Modeled from FCL/LCL mix"
+              : "No verified data yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Active Trade Lanes
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+              <Globe className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeActiveLaneCount > 0
+              ? formatNumber(bridgeActiveLaneCount)
+              : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeActiveLaneCount > 0
+              ? "Resolvable canonical lanes"
+              : "No resolvable lanes yet"}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Contacts
+            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-violet-100">
+              <UserRound className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
+            {bridgeContactCount > 0
+              ? `${formatNumber(bridgeContactCount)} found · ${formatNumber(
+                  bridgeVerifiedContactCount,
+                )} verified`
+              : "—"}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {bridgeContactCount > 0
+              ? "Lusha enrichment scope"
+              : "No verified data yet"}
+          </div>
+        </div>
+      </section>
+
+      <section className="w-full rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       {loading ? (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
           Loading company profile…
@@ -3189,12 +3319,11 @@ if (!cancelled) {
         </div>
       ) : null}
 
-      {/* Phase B.5 — the panel-local "Company Intelligence · 12-month
-          window" KPI strip was removed. The dark hero on Company.jsx is
-          now the single source of truth for the four 12-month KPIs
-          (Shipments / TEU / Est. Spend / Latest Shipment), so we drop
-          the duplicate render here and let the tabs sit directly under
-          the hero with a thin divider for visual breath. */}
+      {/* Phase B.9 — the panel-local "Company Intelligence · 12-month
+          window" KPI strip was removed in B.5 and the floating KPI bridge
+          row above (rendered as a sibling section) is the single source of
+          truth for the snapshot KPIs. The thin divider below preserves
+          breathing room before the tabs. */}
       <div className="mb-3 border-b border-slate-200" aria-hidden />
 
       <Tabs
@@ -3245,624 +3374,371 @@ if (!cancelled) {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-3">
-          {/* Phase B.5 — secondary KPI row, slimmed.
-              Removed: Volume Trend YoY (always "Not enough history" today),
-              Last Activity (duplicate of hero's Latest Shipment), and any
-              Latest-Shipment alias outside the hero. The grid now auto-
-              sizes to whatever count of REAL cards survives, capped at 6
-              and clamped to ≥3 to keep a sensible row at narrow widths.
-              The substitution chain (Top Carrier → Most Active Origin →
-              Most Active Destination → FCL/LCL Split → Active Months)
-              is preserved unchanged. */}
-          {(() => {
-            const avgTeu =
-              detail.shipments > 0 && detail.teu > 0
-                ? (detail.teu / detail.shipments).toFixed(1)
-                : null;
-            const activeLaneCount = canonicalLanes.filter(
-              (l) => l.shipments > 0,
-            ).length;
+        <TabsContent value="overview" className="space-y-6">
+          {/* Phase B.9 — executive 60/40 Overview. The Phase B.5 secondary
+              KPI grid was removed because the floating KPI bridge above
+              now owns those numbers (Shipments / TEU / Spend / Active
+              Lanes / Contacts). Overview leads with a Strategic Brief +
+              Trade Intelligence Summary + Peak Seasonality on the LEFT
+              and a polished honest Action Panel (Top Contacts / Campaign
+              Status / Engagement History) on the RIGHT. The duplicate
+              full Contact Intelligence block was removed — Contacts has
+              its own tab and the Top Contacts card on the right links
+              there. */}
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.48fr)_minmax(360px,0.9fr)]">
+            <div className="space-y-6">
+              {/* Strategic Brief — visual anchor. Templated assembly from
+                  real fields only. Forbidden language ("savings",
+                  "AI-generated", "risk index", etc.) is NOT used. */}
+              {(() => {
+                const companyDisplayName: string =
+                  ((record as any)?.company?.name as string | undefined) ||
+                  ((record as any)?.company?.company_name as string | undefined) ||
+                  ((rawProfile as any)?.companyName as string | undefined) ||
+                  ((rawProfile as any)?.company_name as string | undefined) ||
+                  "This company";
 
-            // Top Carrier with fallback through the carrier list. Pick the
-            // first non-empty carrier name; if NONE of detail.carriers has
-            // a usable name, mark it absent so the substitute KPI takes
-            // over.
-            const carriersList = Array.isArray(detail.carriers) ? detail.carriers : [];
-            let topCarrier: string | null = null;
-            for (const c of carriersList) {
-              const name = cleanDisplayText((c as any)?.carrier ?? (c as any)?.name);
-              if (name && name !== "—") {
-                topCarrier = name;
-                break;
-              }
-            }
-            const carrierKpiAvailable = topCarrier != null;
+                const shipmentsCount = Number(detail.shipments) || 0;
+                const teuCount = Number(detail.teu) || 0;
+                const spend = detail.spend;
+                const topLane = canonicalLanes[0];
+                const topRouteLabelClause = (() => {
+                  if (!topLane || !topLane.displayLabel) return "";
+                  return `, with ${topLane.displayLabel} as the strongest lane`;
+                })();
+                const spendClause =
+                  spend != null && spend > 0
+                    ? `, valued at an estimated ${formatCurrency(spend)} in market spend`
+                    : "";
 
-            // Phase B.4 — substitute KPI when carrier data is fully empty.
-            // Pick the first replacement that has REAL data, deterministic
-            // order: Most Active Origin → Most Active Destination →
-            // FCL/LCL Split → Active Months. Each computed only from data
-            // already present in the model — no invention.
-            type SubstituteKpi = {
-              label: string;
-              value: React.ReactNode;
-              icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-            };
-            const computeSubstituteKpi = (): SubstituteKpi | null => {
-              // Most Active Origin / Destination from canonicalLanes.
-              const originCounts = new Map<string, { count: number; meta: ResolvedEndpoint }>();
-              const destCounts = new Map<string, { count: number; meta: ResolvedEndpoint }>();
-              for (const lane of canonicalLanes) {
-                const fk = lane.fromMeta.canonicalKey;
-                const tk = lane.toMeta.canonicalKey;
-                const fEntry = originCounts.get(fk) ?? { count: 0, meta: lane.fromMeta };
-                fEntry.count += lane.shipments || 0;
-                originCounts.set(fk, fEntry);
-                const tEntry = destCounts.get(tk) ?? { count: 0, meta: lane.toMeta };
-                tEntry.count += lane.shipments || 0;
-                destCounts.set(tk, tEntry);
-              }
-              const topOrigin = [...originCounts.values()]
-                .filter((e) => e.count > 0)
-                .sort((a, b) => b.count - a.count)[0];
-              if (topOrigin) {
-                return {
-                  label: "Most Active Origin",
-                  icon: MapPin,
-                  value: (
-                    <span className="block truncate text-base" title={topOrigin.meta.countryName}>
-                      <span aria-hidden className="mr-1">{topOrigin.meta.flag || "🌐"}</span>
-                      {topOrigin.meta.countryName}
-                    </span>
-                  ),
-                };
-              }
-              const topDest = [...destCounts.values()]
-                .filter((e) => e.count > 0)
-                .sort((a, b) => b.count - a.count)[0];
-              if (topDest) {
-                return {
-                  label: "Most Active Destination",
-                  icon: MapPin,
-                  value: (
-                    <span className="block truncate text-base" title={topDest.meta.countryName}>
-                      <span aria-hidden className="mr-1">{topDest.meta.flag || "🌐"}</span>
-                      {topDest.meta.countryName}
-                    </span>
-                  ),
-                };
-              }
-              // FCL / LCL Split — only when at least one bucket > 0.
-              const fclN = Number(detail.fclShipments) || 0;
-              const lclN = Number(detail.lclShipments) || 0;
-              if (fclN > 0 || lclN > 0) {
-                return {
-                  label: "FCL / LCL Split",
-                  icon: Container,
-                  value: (
-                    <span className="block truncate text-base">
-                      {`${formatNumber(fclN)} FCL / ${formatNumber(lclN)} LCL`}
-                    </span>
-                  ),
-                };
-              }
-              // Active Months — distinct monthKey count across valid
-              // shipments. Skip the "Unknown" sentinel that monthKey()
-              // returns for null/invalid dates so we don't fake activity.
-              const months = new Set<string>();
-              for (const s of normalizedShipments) {
-                if (!(s as any)?.date) continue;
-                const mk = monthKey((s as any).date);
-                if (mk && mk !== "Unknown") months.add(mk);
-              }
-              if (months.size > 0) {
-                return {
-                  label: "Active Months",
-                  icon: CalendarClock,
-                  value: formatNumber(months.size),
-                };
-              }
-              return null;
-            };
-            const substituteKpi = !carrierKpiAvailable ? computeSubstituteKpi() : null;
+                const laneCount = canonicalLanes.filter((l) => l.shipments > 0).length;
+                const countrySet = new Set<string>();
+                for (const lane of canonicalLanes) {
+                  if (lane.fromMeta?.canonicalKey) countrySet.add(lane.fromMeta.canonicalKey);
+                  if (lane.toMeta?.canonicalKey) countrySet.add(lane.toMeta.canonicalKey);
+                }
+                const countryCount = countrySet.size;
 
-            // Phase B.5 — build the card list, keeping only entries with a
-            // real non-null value. Each entry is rendered as a SmallMetric
-            // and the surrounding grid auto-sizes to the survivor count.
-            type CardEntry = {
-              key: string;
-              node: React.ReactNode;
-            };
-            const cards: CardEntry[] = [];
+                const verifiedContactCount = phantomContacts.filter(isContactVerified).length;
+                const contactStatement = (() => {
+                  if (phantomContacts.length === 0) return "";
+                  return ` ${formatNumber(phantomContacts.length)} contact${
+                    phantomContacts.length === 1 ? "" : "s"
+                  } loaded${
+                    verifiedContactCount > 0
+                      ? ` (${formatNumber(verifiedContactCount)} verified)`
+                      : ""
+                  }.`;
+                })();
 
-            if (avgTeu != null) {
-              cards.push({
-                key: "avg-teu",
-                node: (
-                  <SmallMetric
-                    label="Avg TEU / Shipment"
-                    value={avgTeu}
-                    icon={TrendingUp}
-                  />
-                ),
-              });
-            }
+                const hasShipmentSignal = shipmentsCount > 0 || teuCount > 0;
 
-            if (activeLaneCount > 0) {
-              cards.push({
-                key: "active-lanes",
-                node: (
-                  <SmallMetric
-                    label="Active Trade Lanes"
-                    value={formatNumber(activeLaneCount)}
-                    icon={Globe}
-                  />
-                ),
-              });
-            }
+                const headline = (() => {
+                  if (topLane && topLane.displayLabel) {
+                    return `${topLane.displayLabel} is the strongest visible lane`;
+                  }
+                  if (shipmentsCount > 0) {
+                    return `${companyDisplayName} · 12-month shipment profile`;
+                  }
+                  return `${companyDisplayName} · Snapshot in progress`;
+                })();
 
-            if (carrierKpiAvailable) {
-              cards.push({
-                key: "top-carrier",
-                node: (
-                  <SmallMetric
-                    label="Top Carrier"
-                    value={
-                      <span
-                        className="block truncate text-base"
-                        title={topCarrier ?? undefined}
-                        style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                      >
-                        {topCarrier}
-                      </span>
-                    }
-                    icon={Truck}
-                  />
-                ),
-              });
-            } else if (substituteKpi) {
-              cards.push({
-                key: "substitute-kpi",
-                node: (
-                  <SmallMetric
-                    label={substituteKpi.label}
-                    value={substituteKpi.value}
-                    icon={substituteKpi.icon}
-                  />
-                ),
-              });
-            }
-
-            // Most Active Origin / Destination, FCL/LCL Split, Active
-            // Months as STANDALONE cards too (when not already serving as
-            // the substitute) — only when each has real data.
-            const originCountsAll = new Map<string, { count: number; meta: ResolvedEndpoint }>();
-            const destCountsAll = new Map<string, { count: number; meta: ResolvedEndpoint }>();
-            for (const lane of canonicalLanes) {
-              const fk = lane.fromMeta.canonicalKey;
-              const tk = lane.toMeta.canonicalKey;
-              const fEntry = originCountsAll.get(fk) ?? { count: 0, meta: lane.fromMeta };
-              fEntry.count += lane.shipments || 0;
-              originCountsAll.set(fk, fEntry);
-              const tEntry = destCountsAll.get(tk) ?? { count: 0, meta: lane.toMeta };
-              tEntry.count += lane.shipments || 0;
-              destCountsAll.set(tk, tEntry);
-            }
-            const topOriginAll = [...originCountsAll.values()]
-              .filter((e) => e.count > 0)
-              .sort((a, b) => b.count - a.count)[0];
-            const topDestAll = [...destCountsAll.values()]
-              .filter((e) => e.count > 0)
-              .sort((a, b) => b.count - a.count)[0];
-
-            if (
-              topOriginAll &&
-              substituteKpi?.label !== "Most Active Origin" &&
-              cards.length < 6
-            ) {
-              cards.push({
-                key: "most-active-origin",
-                node: (
-                  <SmallMetric
-                    label="Most Active Origin"
-                    value={
-                      <span
-                        className="block truncate text-base"
-                        title={topOriginAll.meta.countryName}
-                      >
-                        <span aria-hidden className="mr-1">
-                          {topOriginAll.meta.flag || "🌐"}
-                        </span>
-                        {topOriginAll.meta.countryName}
-                      </span>
-                    }
-                    icon={MapPin}
-                  />
-                ),
-              });
-            }
-
-            if (
-              topDestAll &&
-              substituteKpi?.label !== "Most Active Destination" &&
-              cards.length < 6
-            ) {
-              cards.push({
-                key: "most-active-destination",
-                node: (
-                  <SmallMetric
-                    label="Most Active Destination"
-                    value={
-                      <span
-                        className="block truncate text-base"
-                        title={topDestAll.meta.countryName}
-                      >
-                        <span aria-hidden className="mr-1">
-                          {topDestAll.meta.flag || "🌐"}
-                        </span>
-                        {topDestAll.meta.countryName}
-                      </span>
-                    }
-                    icon={MapPin}
-                  />
-                ),
-              });
-            }
-
-            const oldestCapped = capDateAtToday(detail.oldestShipmentDate);
-            if (oldestCapped && cards.length < 6) {
-              cards.push({
-                key: "oldest-record",
-                node: (
-                  <SmallMetric
-                    label="Oldest Record"
-                    value={formatDate(oldestCapped)}
-                    icon={CalendarClock}
-                  />
-                ),
-              });
-            }
-
-            if (cards.length === 0) {
-              // Defensive: render a single empty-state hint rather than an
-              // invisible row when nothing qualifies.
-              return (
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-                  No supporting KPIs available yet for this company.
-                </div>
-              );
-            }
-
-            const xlCols = Math.min(Math.max(cards.length, 3), 6);
-            const xlClass = ([
-              "",
-              "",
-              "xl:grid-cols-2",
-              "xl:grid-cols-3",
-              "xl:grid-cols-4",
-              "xl:grid-cols-5",
-              "xl:grid-cols-6",
-            ] as const)[xlCols] ?? "xl:grid-cols-3";
-
-            return (
-              <div
-                className={`grid grid-cols-2 gap-2.5 sm:grid-cols-3 ${xlClass}`}
-              >
-                {cards.map((c) => (
-                  <React.Fragment key={c.key}>{c.node}</React.Fragment>
-                ))}
-              </div>
-            );
-          })()}
-
-          {/* Phase B.8 — executive 60/40 row.
-              LEFT (60%): Strategic Brief — templated 12-month profile
-              prose built ONLY from real values (no LLM, no fake claims).
-              RIGHT (40%): Action Panel with Contacts / Campaign Status /
-              Engagement History sections. Engagement History is an
-              honest empty state because no outreach event log exists
-              yet (Phase B.7 audit confirmed this). */}
-          {(() => {
-            const companyDisplayName: string =
-              ((record as any)?.company?.name as string | undefined) ||
-              ((record as any)?.company?.company_name as string | undefined) ||
-              ((rawProfile as any)?.companyName as string | undefined) ||
-              ((rawProfile as any)?.company_name as string | undefined) ||
-              "This company";
-
-            const shipmentsCount = Number(detail.shipments) || 0;
-            const teuCount = Number(detail.teu) || 0;
-            const spend = detail.spend;
-            const topRouteLabelClause = (() => {
-              const top = canonicalLanes[0];
-              if (!top || !top.displayLabel) return "";
-              return `, with ${top.displayLabel} as the strongest lane`;
-            })();
-            const spendClause =
-              spend != null && spend > 0
-                ? `, valued at an estimated ${formatCurrency(spend)} in market spend`
-                : "";
-
-            const laneCount = canonicalLanes.filter((l) => l.shipments > 0).length;
-
-            // Distinct origin countries across canonical lanes.
-            const countrySet = new Set<string>();
-            for (const lane of canonicalLanes) {
-              if (lane.fromMeta?.canonicalKey) countrySet.add(lane.fromMeta.canonicalKey);
-              if (lane.toMeta?.canonicalKey) countrySet.add(lane.toMeta.canonicalKey);
-            }
-            const countryCount = countrySet.size;
-
-            const verifiedContactCount = phantomContacts.filter(isContactVerified).length;
-            const contactStatement = (() => {
-              if (phantomContacts.length === 0) return "";
-              return ` ${formatNumber(phantomContacts.length)} contact${
-                phantomContacts.length === 1 ? "" : "s"
-              } loaded${
-                verifiedContactCount > 0
-                  ? ` (${formatNumber(verifiedContactCount)} verified)`
-                  : ""
-              }.`;
-            })();
-
-            const hasShipmentSignal = shipmentsCount > 0 || teuCount > 0;
-
-            // Build the prose. If no shipment volume at all → honest fallback.
-            const briefBody = !hasShipmentSignal ? (
-              <p className="text-sm leading-relaxed text-indigo-50">
-                This snapshot does not yet have shipment volume data. Run an ImportYeti refresh to populate the brief.
-              </p>
-            ) : (
-              <p className="text-sm leading-relaxed text-indigo-50">
-                {`${companyDisplayName} ran ${formatNumber(shipmentsCount)} shipment${
-                  shipmentsCount === 1 ? "" : "s"
-                } over the trailing 12 months${
-                  teuCount > 0 ? `, totaling ${formatNumber(teuCount, 1)} TEU` : ""
-                }${topRouteLabelClause}${spendClause}.`}
-                {laneCount > 0
-                  ? ` ${formatNumber(laneCount)} resolvable trade lane${
-                      laneCount === 1 ? "" : "s"
-                    }${
-                      countryCount > 0
-                        ? ` across ${formatNumber(countryCount)} ${
-                            countryCount === 1 ? "country" : "countries"
-                          }`
-                        : ""
-                    }.`
-                  : ""}
-                {contactStatement}
-              </p>
-            );
-
-            return (
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
-                {/* Strategic Brief — 60% */}
-                <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-900 via-indigo-800 to-indigo-950 text-white p-6 shadow-lg lg:col-span-3">
-                  <div className="text-cyan-300 tracking-[0.2em] text-[10px] font-semibold uppercase">
-                    Strategic Brief
-                  </div>
-                  <h3 className="mt-2 mb-3 text-xl font-bold text-white">
-                    {`${companyDisplayName} · 12-month profile`}
-                  </h3>
-                  {briefBody}
-                </div>
-
-                {/* Action Panel — 40% */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
-                  <div className="space-y-4">
-                    {/* Contacts */}
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Contacts
-                      </div>
-                      {phantomContacts.length > 0 ? (
-                        <div className="mt-1.5 text-sm text-slate-700">
-                          <span className="font-semibold text-slate-900">
-                            {formatNumber(phantomContacts.length)}
-                          </span>{" "}
-                          found ·{" "}
-                          <span className="font-semibold text-emerald-700">
-                            {formatNumber(verifiedContactCount)}
-                          </span>{" "}
-                          verified
-                        </div>
-                      ) : (
-                        <div className="mt-1.5 text-sm text-slate-500">
-                          No contacts loaded yet
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("contacts")}
-                        className="mt-2 inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
-                      >
-                        View all contacts
-                        <ArrowUpRight className="h-3 w-3" />
-                      </button>
-                    </div>
-
-                    <div className="border-t border-slate-100" aria-hidden />
-
-                    {/* Campaign Status */}
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Campaign Status
-                      </div>
-                      <p className="mt-1.5 text-sm text-slate-600">
-                        Add to a campaign from the hero or from Command Center.
-                      </p>
-                    </div>
-
-                    <div className="border-t border-slate-100" aria-hidden />
-
-                    {/* Engagement History */}
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Engagement History
-                      </div>
-                      <p className="mt-1.5 text-sm text-slate-500">
-                        No outreach activity recorded yet.
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        Outreach history will appear here once the engagement log lands.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Phase B.4 — Peak Seasonality is now full-width. The Market
-              Benchmark card collapses to a single-row horizontal banner
-              when no verified benchmark rate is available (the common
-              case today), avoiding the 420px tall empty card we used to
-              ship. When a benchmark IS populated we still expose the
-              detected lane label below the seasonality chart.
-              Phase B.5 — when the user is viewing the current calendar
-              year, the chart and labelling switch to a YTD framing:
-              subtitle / badge name "year-to-date" and the bars are
-              clipped at the current month so we never paint placeholder
-              future bars. Past years keep the existing per-month-active
-              behaviour. */}
-          {(() => {
-            const now = new Date();
-            const currentYear = now.getFullYear();
-            const currentMonth = now.getMonth(); // 0..11
-            const isYtd =
-              effectiveSelectedYear != null &&
-              effectiveSelectedYear === currentYear;
-
-            // Map period label ("Jan", "Feb", …) back to month index so we
-            // can clip future months for YTD without changing data shape.
-            const PERIOD_TO_MONTH: Record<string, number> = {};
-            for (let m = 0; m < 12; m++) {
-              const label = new Date(2000, m, 1).toLocaleDateString(undefined, {
-                month: "short",
-              });
-              PERIOD_TO_MONTH[label] = m;
-            }
-
-            const seasonalitySeries = isYtd
-              ? detail.monthlySeries.filter((p) => {
-                  const idx = PERIOD_TO_MONTH[p.period];
-                  return typeof idx === "number" && idx <= currentMonth;
-                })
-              : detail.monthlySeries;
-
-            const subtitle = isYtd
-              ? `${currentYear} year-to-date · Monthly shipment profile for active months year-to-date.`
-              : `Monthly shipment profile for active months in ${effectiveSelectedYear ?? "the selected year"}.`;
-
-            const badgeLabel = isYtd
-              ? `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"} YTD`
-              : `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"}`;
-
-            return (
-              <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    Peak Seasonality Index
-                  </div>
-                  {seasonalitySeries.length > 0 ? (
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                      {badgeLabel}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mb-4 text-xs text-slate-500">{subtitle}</p>
-                <div className="flex-1 min-h-[320px]">
-                  <CompanyActivityChart data={seasonalitySeries} />
-                </div>
-                <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  <span className="font-semibold text-indigo-600">Observation:</span>{" "}
-                  {isYtd
-                    ? "Only active months through today are rendered — no future-month placeholders."
-                    : "This chart only renders real active months from the selected year. No future-month placeholders."}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Phase B.4 — Market benchmark compact horizontal banner.
-              Single row, ~96px tall: icon left, title/subtitle middle,
-              amber badge + microcopy right. */}
-          {/**
-           * AI Market Signal — future plan (do NOT implement in this phase).
-           *
-           * Inputs:
-           *   - origin country/port, destination country/port
-           *   - mode (FCL / LCL / air)
-           *   - equipment (20'/40'/40HC)
-           *   - selected year/month
-           *
-           * Sources (in order of preference):
-           *   1. Internal quote history (when present)
-           *   2. Approved search provider (Tavily) for reviewed web-sourced rate signals
-           *   3. Future verified rate APIs (Freightos / Xeneta / SONAR) when licensed
-           *
-           * Output shape:
-           *   - estimated range (low/high USD)
-           *   - confidence (low/medium/high)
-           *   - source URLs / citations
-           *   - assumptions (lane, mode, equipment, snapshot date)
-           *   - last checked timestamp
-           *
-           * Output is labeled "AI Market Signal" — never "verified benchmark."
-           */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
-                <BarChart3 className="h-4 w-4 text-slate-500" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-slate-900">
-                  Market benchmark
-                </div>
-                <p className="mt-0.5 text-sm text-slate-500">
-                  No verified benchmark rate is available for this lane yet.
-                </p>
-                {freightosBenchmark ? (
-                  <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
-                    Detected lane match: {freightosBenchmark.lane}
+                const briefBody = !hasShipmentSignal ? (
+                  <p className="text-sm leading-relaxed text-indigo-50">
+                    This snapshot does not yet have shipment volume data. Run an ImportYeti refresh to populate the brief.
                   </p>
-                ) : null}
+                ) : (
+                  <p className="text-sm leading-relaxed text-indigo-50">
+                    {`${companyDisplayName} ran ${formatNumber(shipmentsCount)} shipment${
+                      shipmentsCount === 1 ? "" : "s"
+                    } over the trailing 12 months${
+                      teuCount > 0 ? `, totaling ${formatNumber(teuCount, 1)} TEU` : ""
+                    }${topRouteLabelClause}${spendClause}.`}
+                    {laneCount > 0
+                      ? ` ${formatNumber(laneCount)} resolvable trade lane${
+                          laneCount === 1 ? "" : "s"
+                        }${
+                          countryCount > 0
+                            ? ` across ${formatNumber(countryCount)} ${
+                                countryCount === 1 ? "country" : "countries"
+                              }`
+                            : ""
+                        }.`
+                      : ""}
+                    {contactStatement}
+                  </p>
+                );
+
+                return (
+                  <div className="overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-950 via-slate-950 to-blue-950 p-6 text-white shadow-lg">
+                    <div className="text-cyan-300 tracking-[0.22em] text-[10px] font-semibold uppercase">
+                      STRATEGIC BRIEF
+                    </div>
+                    <h3 className="mt-2 text-2xl font-bold tracking-[-0.02em] text-white">
+                      {headline}
+                    </h3>
+                    <div className="mt-3">{briefBody}</div>
+                    <div className="mt-4">
+                      <span className="inline-flex items-center rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200/70">
+                        Based on current snapshot fields only
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Trade Intelligence Summary — top 3 lanes only, no globe.
+                  Globe lives in the Trade Lanes tab. */}
+              {(() => {
+                const topLanes = canonicalLanes.slice(0, 3);
+                const topShipments = topLanes[0]?.shipments || 0;
+                const activeLaneCount = canonicalLanes.filter(
+                  (l) => l.shipments > 0,
+                ).length;
+                return (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          TOP VISIBLE LANES
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Trade Intelligence Summary
+                        </h3>
+                      </div>
+                      <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
+                        {activeLaneCount} active
+                      </span>
+                    </div>
+                    {topLanes.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No resolvable trade lanes yet.
+                      </div>
+                    ) : (
+                      <ul className="space-y-3">
+                        {topLanes.map((lane) => {
+                          const shipPct = topShipments > 0
+                            ? Math.max(6, Math.round((lane.shipments / topShipments) * 100))
+                            : 0;
+                          return (
+                            <li key={lane.displayLabel}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                                  {lane.displayLabel}
+                                </div>
+                                <div className="shrink-0 text-xs text-slate-500">
+                                  <span className="font-semibold text-slate-700">
+                                    {formatNumber(lane.shipments)}
+                                  </span>{" "}
+                                  ship · TEU{" "}
+                                  <span className="font-semibold text-slate-700">
+                                    {Number(lane.teu) > 0 ? formatNumber(lane.teu, 1) : "—"}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100">
+                                <div
+                                  className="h-1.5 rounded-full bg-indigo-500/70"
+                                  style={{ width: `${shipPct}%` }}
+                                />
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {canonicalLanes.length > 0 ? (
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("trade-lanes")}
+                          className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                          View all trade lanes <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
+
+              {/* Peak Seasonality — kept on the LEFT column. YTD framing
+                  for the current calendar year, per Phase B.5. */}
+              {(() => {
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth();
+                const isYtd =
+                  effectiveSelectedYear != null &&
+                  effectiveSelectedYear === currentYear;
+
+                const PERIOD_TO_MONTH: Record<string, number> = {};
+                for (let m = 0; m < 12; m++) {
+                  const label = new Date(2000, m, 1).toLocaleDateString(undefined, {
+                    month: "short",
+                  });
+                  PERIOD_TO_MONTH[label] = m;
+                }
+
+                const seasonalitySeries = isYtd
+                  ? detail.monthlySeries.filter((p) => {
+                      const idx = PERIOD_TO_MONTH[p.period];
+                      return typeof idx === "number" && idx <= currentMonth;
+                    })
+                  : detail.monthlySeries;
+
+                const subtitle = isYtd
+                  ? `${currentYear} year-to-date · Monthly shipment profile for active months year-to-date.`
+                  : `Monthly shipment profile for active months in ${effectiveSelectedYear ?? "the selected year"}.`;
+
+                const badgeLabel = isYtd
+                  ? `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"} YTD`
+                  : `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"}`;
+
+                return (
+                  <div className="flex h-full min-h-[360px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          PEAK SEASONALITY INDEX
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Monthly shipment cadence
+                        </h3>
+                      </div>
+                      {seasonalitySeries.length > 0 ? (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                          {badgeLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mb-4 text-xs text-slate-500">{subtitle}</p>
+                    <div className="flex-1 min-h-[260px]">
+                      <CompanyActivityChart data={seasonalitySeries} />
+                    </div>
+                    <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                      <span className="font-semibold text-indigo-600">Observation:</span>{" "}
+                      {isYtd
+                        ? "Only active months through today are rendered — no future-month placeholders."
+                        : "This chart only renders real active months from the selected year. No future-month placeholders."}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <aside className="space-y-6">
+              {/* Right Action Panel — three honest cards. */}
+
+              {/* Top Contacts */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                  TOP CONTACTS
+                </div>
+                {phantomContacts.length > 0 ? (
+                  <h3 className="mt-1 text-base font-bold text-slate-950">
+                    {formatNumber(phantomContacts.length)} found ·{" "}
+                    {formatNumber(bridgeVerifiedContactCount)} verified
+                  </h3>
+                ) : (
+                  <h3 className="mt-1 text-base font-bold text-slate-950">
+                    No verified contacts yet
+                  </h3>
+                )}
+                {phantomContacts.length > 0 ? (
+                  <ul className="mt-3 space-y-2">
+                    {phantomContacts.slice(0, 3).map((c, idx) => {
+                      const fullName = getContactFullName(c) || "—";
+                      const title = getContactTitle(c);
+                      const initials =
+                        fullName
+                          .split(" ")
+                          .slice(0, 2)
+                          .map((p: string) => p[0])
+                          .join("")
+                          .toUpperCase() || "CT";
+                      return (
+                        <li
+                          key={`${fullName}-${idx}`}
+                          className="flex items-center gap-2.5"
+                        >
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                            {initials}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                              {fullName}
+                            </div>
+                            {title ? (
+                              <div className="truncate text-xs text-slate-500">
+                                {title}
+                              </div>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    Run enrichment or add a contact to begin outreach.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("contacts")}
+                  className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                >
+                  View Contact Intel <ArrowUpRight className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end sm:text-right">
-                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                  Needs rate source
-                </span>
-                <p className="max-w-[240px] text-xs text-slate-400">
-                  Enable AI Market Signal or connect a verified rate source.
+
+              {/* Campaign Status */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                  CAMPAIGN STATUS
+                </div>
+                <h3 className="mt-1 text-base font-bold text-slate-950">
+                  Not in campaign
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Add this company to a campaign after contact enrichment is complete.
                 </p>
               </div>
-            </div>
+
+              {/* Engagement History */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                  ENGAGEMENT HISTORY
+                </div>
+                <h3 className="mt-1 text-base font-bold text-slate-950">
+                  No activity yet
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Outreach history will appear here once engagement logging is available.
+                </p>
+              </div>
+            </aside>
           </div>
 
-          {/* Phase B.8 — Trade Lane Intelligence moved out of Overview to
-              its own dedicated tab so the globe + canonical lane table get
-              full panel width and the origin/destination flag pills stop
-              overflowing on 1024-1280 viewports. See <TabsContent
-              value="trade-lanes"> below. */}
-
-          {/* Top Suppliers + Recent Shipments — compact summary cards using
-              real suppliers_table / normalizedShipments data. No mock names,
-              no mock rows. Each card cross-links to its dedicated tab. */}
-          <div className="grid gap-3 md:grid-cols-2">
+          {/* Demoted blocks — Top Suppliers + Recent Shipments + Market
+              Benchmark sit BELOW the 60/40 grid. The full Contact
+              Intelligence overview block from Phase B.8 was removed; a
+              right-column Top Contacts card and the Contact Intel tab
+              cover that surface honestly. */}
+          <div className="grid gap-6 md:grid-cols-2">
             {(() => {
               const topSuppliers = suppliersRaw.slice(0, 3);
               return (
-                <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                  {/* Phase B.3 — Suppliers tab is gone. This card is the
-                      terminal supplier view in Overview. The drop in scope
-                      vs the old Suppliers table is intentional (3-row preview
-                      only — no pagination, no inflated "tenure" claims). */}
+                <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                        Top suppliers
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        TOP SUPPLIERS
                       </div>
+                      <h3 className="mt-1 text-base font-bold text-slate-950">
+                        Verified BOL counterparties
+                      </h3>
                       <p className="mt-1 text-xs text-slate-500">
                         {suppliersRaw.length > 0
                           ? `Top 3 of ${suppliersRaw.length} verified suppliers`
@@ -3871,7 +3747,7 @@ if (!cancelled) {
                     </div>
                   </div>
                   {topSuppliers.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
                       No supplier data yet
                     </div>
                   ) : (
@@ -3884,7 +3760,7 @@ if (!cancelled) {
                         return (
                           <li
                             key={`${name}-${idx}`}
-                            className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2"
+                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2"
                           >
                             <div className="min-w-0">
                               <div className="truncate text-sm font-semibold text-slate-900">
@@ -3922,15 +3798,15 @@ if (!cancelled) {
                 })
                 .slice(0, 3);
               return (
-                <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                  {/* Phase B.8 — Shipments tab restored. Recent shipments
-                      remains a 3-row preview here; full BOL ledger lives
-                      under the new Shipments tab. */}
+                <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                        Recent shipments
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        RECENT SHIPMENTS
                       </div>
+                      <h3 className="mt-1 text-base font-bold text-slate-950">
+                        Latest BOL records
+                      </h3>
                       <p className="mt-1 text-xs text-slate-500">
                         {normalizedShipments.length > 0
                           ? `Latest 3 of ${normalizedShipments.length} BOL records`
@@ -3948,7 +3824,7 @@ if (!cancelled) {
                     ) : null}
                   </div>
                   {recentShipments.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
                       No shipment records yet
                     </div>
                   ) : (
@@ -3956,7 +3832,7 @@ if (!cancelled) {
                       {recentShipments.map((s, idx) => (
                         <li
                           key={s.id || idx}
-                          className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2"
+                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2"
                         >
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-slate-900">
@@ -3988,401 +3864,35 @@ if (!cancelled) {
             })()}
           </div>
 
-          {/* Contact Intelligence — full-width bottom section */}
-          <div className="flex flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Contact Intelligence
+          {/* Market Benchmark — compact horizontal banner kept from B.5. */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
+                <BarChart3 className="h-4 w-4 text-slate-500" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-slate-900">
+                  Market benchmark
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Auto-enriched supply chain and logistics decision makers
+                <p className="mt-0.5 text-sm text-slate-500">
+                  No verified benchmark rate is available for this lane yet.
+                </p>
+                {freightosBenchmark ? (
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                    Detected lane match: {freightosBenchmark.lane}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end sm:text-right">
+                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                  Needs rate source
+                </span>
+                <p className="max-w-[240px] text-xs text-slate-400">
+                  Enable AI Market Signal or connect a verified rate source.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {contactsLoading
-                    ? "Enriching…"
-                    : `${phantomContacts.length} found · ${phantomContacts.filter(isContactVerified).length} verified${contactPreviewSource ? ` · ${contactPreviewSource}` : ""}`}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setContactFetchTrigger((n) => n + 1)}
-                  disabled={contactsLoading}
-                  className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
-                >
-                  {contactsLoading ? "Searching…" : "Refresh contacts"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setSlideContact(null); setContactSlideOpen(true); }}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                >
-                  Open panel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("contacts")}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
-                >
-                  View all <ArrowUpRight className="h-3 w-3" />
-                </button>
-              </div>
             </div>
-
-            {contactsLoading ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {[0, 1, 2].map((idx) => (
-                  <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                    <div className="h-4 w-1/3 rounded bg-slate-200" />
-                    <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
-                  </div>
-                ))}
-              </div>
-            ) : contactOverviewRows.length === 0 ? (
-              contactError ? (
-                <div className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-amber-200">
-                      <Users className="h-4 w-4 text-amber-600" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-amber-900">
-                        Contact enrichment unavailable
-                      </div>
-                      <p className="mt-1 text-xs text-amber-800">
-                        The contact provider did not return contacts for this company. Try again or connect a provider in Admin.
-                      </p>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setContactFetchTrigger((n) => n + 1)}
-                          className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
-                        >
-                          Try again
-                        </button>
-                        <details className="text-[11px] text-amber-700">
-                          <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-amber-100">
-                            Details
-                          </summary>
-                          <pre className="mt-2 max-w-full overflow-auto rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-[10px] text-amber-800">
-                            {contactError}
-                          </pre>
-                        </details>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                  <p className="text-sm text-slate-500">
-                    {contactMessage || "No contacts enriched yet."}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setContactFetchTrigger((n) => n + 1)}
-                    className="mt-3 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
-                  >
-                    Search more contacts
-                  </button>
-                </div>
-              )
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {contactOverviewRows.map((contact: any, index: number) => {
-  const fullName = getContactFullName(contact);
-  const title = getContactTitle(contact);
-  const avatarUrl = getContactAvatarUrl(contact);
-  const initials =
-    fullName
-      .split(" ")
-      .slice(0, 2)
-      .map((part: string) => part[0])
-      .join("")
-      .toUpperCase() || "CT";
-
-  return (
-                    <button
-                      key={`${fullName}-${index}`}
-                      type="button"
-                      onClick={() => { setSlideContact(contact); setContactSlideOpen(true); }}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50/60"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-  <div className="flex min-w-0 items-start gap-3">
-    {avatarUrl ? (
-      <img
-        src={avatarUrl}
-        alt={fullName}
-        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
-        loading="lazy"
-      />
-    ) : (
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
-        {initials}
-      </div>
-    )}
-
-    <div className="min-w-0">
-      <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-      <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
-      {/* Phase B.6 — honest enrichment-depth signal. The Lusha
-          Prospecting Search endpoint returns only name+title for the
-          first-pass response; email/phone/linkedin require a separate
-          enrichment call (not implemented). Show this once per card so
-          the user knows we found the person but not their channels. */}
-      {contactHasNoDetails(contact) ? (
-        <div className="mt-1 truncate text-xs italic text-slate-500">
-          Contact found · Details require enrichment.
-        </div>
-      ) : null}
-    </div>
-  </div>
-
-  {isContactVerified(contact) ? (
-    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-      Verified
-    </span>
-  ) : (
-    <span
-      className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700"
-      title="Provider sourced — email not verified"
-    >
-      Found
-    </span>
-  )}
-</div>
-                      <div className="mt-2 text-xs text-slate-400">Click to view details</div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
-
-          {/* Contact slide-over panel */}
-          {contactSlideOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-40 bg-black/30"
-                onClick={() => setContactSlideOpen(false)}
-              />
-              <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                  <div>
-                    <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
-                      Contact Intelligence
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {contactPreviewSource ? `Source: ${contactPreviewSource}` : "Source: Lusha"}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setContactSlideOpen(false)}
-                    className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div className="border-b border-slate-100 px-5 py-4">
-                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-  <div className="flex items-center gap-2">
-    <Search className="h-4 w-4 text-slate-400" />
-    <input
-      value={contactSearchQuery}
-      onChange={(event) => {
-        setContactSearchQuery(event.target.value);
-        setSlideContact(null);
-      }}
-      placeholder="Search by name, title, email, phone, city, country..."
-      className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-    />
-  </div>
-</div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { setSlideContact(null); setContactFetchTrigger((n) => n + 1); }}
-                      disabled={contactsLoading}
-                      className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
-                    >
-                      {contactsLoading ? "Searching…" : "Search more contacts"}
-                    </button>
-                    {slideContact && (
-                      <button
-                        type="button"
-                        onClick={() => setSlideContact(null)}
-                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                      >
-                        Back to all contacts
-                      </button>
-                    )}
-                  </div>
-                  {contactMessage && (
-                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                      {contactMessage}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-5">
-                  {contactsLoading ? (
-                    <div className="space-y-3">
-                      {[0, 1, 2].map((idx) => (
-                        <div key={idx} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                          <div className="h-4 w-1/3 rounded bg-slate-200" />
-                          <div className="mt-3 h-3 w-1/2 rounded bg-slate-200" />
-                        </div>
-                      ))}
-                    </div>
-                  ) : slideContact ? (
-                    (() => {
-                      const fullName = getContactFullName(slideContact);
-const title = getContactTitle(slideContact);
-const email = getContactEmail(slideContact);
-const phone = getContactPhone(slideContact);
-const avatarUrl = getContactAvatarUrl(slideContact);
-const linkedin =
-  slideContact.linkedin || slideContact.linkedinUrl ||
-  slideContact.profileUrl || slideContact.url || "";
-const initials =
-  fullName.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase() || "CT";
-const saved = savedContactKeys.has(getContactKey(slideContact));
-                      return (
-                        <div className="space-y-5">
-                          <div className="flex items-center gap-3">
-  {avatarUrl ? (
-    <img
-      src={avatarUrl}
-      alt={fullName}
-      className="h-14 w-14 shrink-0 rounded-2xl object-cover ring-1 ring-slate-200"
-      loading="lazy"
-    />
-  ) : (
-    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-lg font-semibold text-indigo-700 ring-1 ring-indigo-200">
-      {initials}
-    </div>
-  )}
-
-  <div className="min-w-0">
-    <div className="truncate text-lg font-semibold text-slate-950">{fullName}</div>
-    {title && <div className="text-sm text-indigo-600">{title}</div>}
-    {/* Phase B.6 — same enrichment-depth signal as the small card. */}
-    {contactHasNoDetails(slideContact) ? (
-      <div className="mt-1 text-xs italic text-slate-500">
-        Contact found · Details require enrichment.
-      </div>
-    ) : null}
-  </div>
-</div>
-                          {/* Phase B.6 — only render channel rows that
-                              actually have a value. Empty rows previously
-                              read as "Email unavailable" / "LinkedIn
-                              unavailable" and felt like broken UI; the
-                              "Details require enrichment" copy above the
-                              fold now carries that signal honestly. */}
-                          {(email || phone || linkedin) ? (
-                            <div className="space-y-3">
-                              {email ? (
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Email</div>
-                                  <div className="mt-1 text-sm text-slate-900">{email}</div>
-                                </div>
-                              ) : null}
-                              {phone ? (
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Phone</div>
-                                  <div className="mt-1 text-sm text-slate-900">{phone}</div>
-                                </div>
-                              ) : null}
-                              {linkedin ? (
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">LinkedIn</div>
-                                  <div className="mt-1 truncate text-sm text-slate-900">
-                                    <a href={linkedin} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-                                      {linkedin}
-                                    </a>
-                                  </div>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => saveContactToSupabase(slideContact)}
-                            className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                          >
-                            {saved ? "Saved ✓" : "Save contact"}
-                          </button>
-                        </div>
-                      );
-                    })()
-                  ) : filteredContacts.length === 0 ? (
-                    <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                      <p className="text-sm text-slate-500">
-                        {contactMessage || "No contacts found yet. Try Search more contacts."}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {filteredContacts.map((contact: any, index: number) => {
-  const fullName = getContactFullName(contact);
-  const title = getContactTitle(contact);
-  const avatarUrl = getContactAvatarUrl(contact);
-  const saved = savedContactKeys.has(getContactKey(contact));
-  const initials =
-    fullName
-      .split(" ")
-      .slice(0, 2)
-      .map((part: string) => part[0])
-      .join("")
-      .toUpperCase() || "CT";
-
-  return (
-                          <div key={`${fullName}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <button
-  type="button"
-  onClick={() => setSlideContact(contact)}
-  className="flex min-w-0 flex-1 items-center gap-3 text-left"
->
-  {avatarUrl ? (
-    <img
-      src={avatarUrl}
-      alt={fullName}
-      className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
-      loading="lazy"
-    />
-  ) : (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
-      {initials}
-    </div>
-  )}
-
-  <div className="min-w-0">
-    <div className="truncate text-sm font-semibold text-slate-950">{fullName}</div>
-    <div className="mt-1 truncate text-xs text-indigo-600">{title || "Role unavailable"}</div>
-  </div>
-</button>
-                              <button
-                                type="button"
-                                onClick={() => saveContactToSupabase(contact)}
-                                className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 hover:bg-emerald-100"
-                              >
-                                {saved ? "Saved" : "Save"}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
         </TabsContent>
 
         {/* Phase B.8 — Shipments tab. Real BOL ledger sourced from the
@@ -4433,7 +3943,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
 
             if (totalShipments === 0) {
               return (
-                <div className="rounded-[30px] border border-dashed border-slate-200 bg-white p-10 text-center">
+                <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-10 text-center">
                   <Ship className="mx-auto mb-3 h-8 w-8 text-slate-300" />
                   <p className="text-sm text-slate-600">
                     No shipment ledger rows are available for this company snapshot.
@@ -4443,40 +3953,82 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
             }
 
             return (
-              <>
-                {/* Top summary card row */}
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+                {/* Phase B.9 — Shipments tab polish: outer rounded-[2rem]
+                    wrap + executive header (uppercase tracking + h3 +
+                    subtitle), summary cards reuse the floating-bridge KPI
+                    chrome for consistency, table rows breathe with py-3
+                    and `hover:bg-slate-50`. */}
+                <div className="mb-5 flex items-start justify-between gap-3">
+                  <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Total Shipments
+                      SHIPMENT LEDGER
                     </div>
-                    <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                    <h3 className="mt-1 text-base font-bold text-slate-950">
+                      Bill-of-lading history
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Verified bill-of-lading records from this snapshot.
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                    {formatNumber(totalShipments)} {totalShipments === 1 ? "row" : "rows"}
+                  </div>
+                </div>
+
+                {/* Top summary card row — chrome matches floating KPI bridge. */}
+                <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Total Shipments
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+                        <Package className="h-4 w-4" />
+                      </div>
+                    </div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
                       {formatNumber(totalShipments)}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Total TEU
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Total TEU
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 ring-1 ring-cyan-100">
+                        <Layers className="h-4 w-4" />
+                      </div>
                     </div>
-                    <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
                       {hasTeu ? formatNumber(totalTeu, 1) : "—"}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      FCL / LCL Split
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        FCL / LCL Split
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+                        <Container className="h-4 w-4" />
+                      </div>
                     </div>
-                    <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                    <div className="mt-2 text-base font-bold tracking-tight text-slate-950">
                       {fclCount > 0 || lclCount > 0
                         ? `${formatNumber(fclCount)} FCL / ${formatNumber(lclCount)} LCL`
                         : "—"}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Date Range
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Date Range
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                        <CalendarClock className="h-4 w-4" />
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs font-semibold text-slate-900">
+                    <div className="mt-2 text-xs font-semibold text-slate-900">
                       {oldestDate && newestDate ? (
                         <>
                           {formatDate(capDateAtToday(oldestDate))}
@@ -4491,20 +4043,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                 </div>
 
                 {/* Ledger */}
-                <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                        Shipment ledger
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Verified bill-of-lading records from this snapshot.
-                      </p>
-                    </div>
-                    <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                      {formatNumber(totalShipments)} {totalShipments === 1 ? "row" : "rows"}
-                    </div>
-                  </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 
                   <div className="overflow-x-auto">
                     <table
@@ -4545,7 +4084,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                           return (
                             <tr
                               key={row.id || `ship-${i}`}
-                              className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/70"
+                              className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50"
                             >
                               <td className="px-3 py-3 text-slate-700">
                                 {cappedDate ? formatDate(cappedDate) : "—"}
@@ -4626,7 +4165,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
                     </div>
                   ) : null}
                 </div>
-              </>
+              </section>
             );
           })()}
         </TabsContent>
@@ -4637,12 +4176,19 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
             row (no longer nested inside the globe column → no more
             overflow on 1024-1280 viewports). */}
         <TabsContent value="trade-lanes" className="space-y-4">
-          <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+          {/* Phase B.9 — outer wrap upgraded to `rounded-[2rem]` to match
+              the unified visual language across the executive workspace.
+              Globe LEFT / lane table RIGHT (lg:grid-cols-2) and full-width
+              flag pills above were already correct from Phase B.8. */}
+          <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Trade Lane Intelligence
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  TRADE LANE INTELLIGENCE
                 </div>
+                <h3 className="mt-1 text-base font-bold text-slate-950">
+                  Strongest visible lanes
+                </h3>
                 <p className="mt-1 text-xs text-slate-500">
                   Strongest lanes by shipment count, TEU, and estimated spend.
                 </p>
@@ -5258,6 +4804,7 @@ const saved = savedContactKeys.has(getContactKey(slideContact));
           })()}
         </TabsContent>
       </Tabs>
-    </section>
+      </section>
+    </div>
   );
 }

@@ -9,6 +9,13 @@ import {
   Send,
   Sparkles,
 } from "lucide-react";
+// Phase B.9 — the hero no longer renders the dark KPI strip, so the
+// `formatNumber` / `formatCurrency` / `formatDate` display helpers and
+// `HeroKpiTile` are gone. The KPI row lives inside `CompanyDetailPanel`
+// (approach 1) and reads `detail.shipments` / `detail.teu` / `detail.spend`
+// / `canonicalLanes` / `phantomContacts` / `isContactVerified` directly
+// from the panel's own scope. Date helpers stay because `headerKpis`
+// still feeds `headerRecord` (panel reads it via `record.company.kpis`).
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
 import { getSavedCompanyDetail, buildYearScopedProfile } from "@/lib/api";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
@@ -16,33 +23,6 @@ import { getCompanyLogoUrl } from "@/lib/logo";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
 import { flagFromCode } from "@/lib/laneGlobe";
 import { capFutureDate } from "@/lib/dateUtils";
-
-function formatNumber(value, digits = 0) {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  return Number(value).toLocaleString(undefined, {
-    maximumFractionDigits: digits,
-  });
-}
-
-function formatCurrency(value) {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  return Number(value).toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
-}
-
-function formatDate(value) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
   const total = Number(teu);
@@ -172,30 +152,14 @@ function buildShellCompany(companyId, stored) {
 }
 
 /**
- * Phase B.3 — embedded dark KPI tile. The hero now owns the 12m KPI strip
- * (it was previously rendered both in the hero and inside the panel; the
- * panel keeps its own 4-up but reads the same `detail` source — both now
- * agree). White value text + cyan/indigo monospace numerals on the navy
- * gradient match the validated design source.
+ * Phase B.9 — the dark navy hero KPI strip is GONE. KPIs now live in a
+ * floating bridge row rendered inside `CompanyDetailPanel` (approach 1
+ * from the Phase B.9 brief: the panel already owns `detail.shipments`,
+ * `detail.teu`, `canonicalLanes`, `phantomContacts`, `isContactVerified`,
+ * so we keep the KPI row close to its data source rather than re-lifting
+ * everything to Company.jsx). The hero is now light (`bg-white`) with a
+ * glossy translucent blue right-zone action panel.
  */
-function HeroKpiTile({ label, value }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-      <div
-        className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400"
-        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-      >
-        {label}
-      </div>
-      <div
-        className="mt-1.5 truncate text-2xl font-bold tracking-tight text-white xl:text-3xl"
-        style={{ fontFamily: "'JetBrains Mono', monospace" }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
 
 export default function Company() {
   const navigate = useNavigate();
@@ -403,18 +367,20 @@ export default function Company() {
 
   if (error || !companyId) {
     return (
-      <div className="space-y-4">
-        <button
-          type="button"
-          onClick={() => navigate("/app/command-center")}
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Command Center
-        </button>
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <button
+            type="button"
+            onClick={() => navigate("/app/command-center")}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Command Center
+          </button>
 
-        <div className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-          {error || "Company unavailable"}
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+            {error || "Company unavailable"}
+          </div>
         </div>
       </div>
     );
@@ -428,152 +394,159 @@ export default function Company() {
     null;
 
   return (
-    <div className="space-y-6">
-      {/* Phase B.3 hero — dark navy gradient per the validated design source.
-          The previous Phase B.2 light-premium hero with an 8-px navy strip
-          was a workaround when the hero body was light. The whole hero is
-          navy now, so the strip is gone. Subtle indigo radial wash anchors
-          the top-left avatar zone. The KPI strip lives INSIDE the hero
-          (white-on-navy tiles), not below it. */}
-      <section
-        className="relative overflow-hidden rounded-[28px] border border-slate-200 shadow-sm"
-        style={{
-          background: "linear-gradient(160deg, #132344 0%, #0F1D38 100%)",
-        }}
-      >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(circle at 0% 0%, rgba(59,130,246,0.18) 0%, rgba(0,0,0,0) 35%)",
-          }}
-        />
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        {/* Phase B.9 — premium light hero with a glossy translucent blue
+            right-zone action panel. The previous Phase B.3 dark navy
+            gradient `linear-gradient(160deg, #132344 0%, #0F1D38 100%)` is
+            gone — the user's brief explicitly directs to soften the hero
+            so the page stops feeling like stacked dashboard cards and
+            starts reading as an executive intelligence workspace. The
+            embedded 4-up KPI strip has moved to the floating KPI bridge
+            row (rendered inside `CompanyDetailPanel`, approach 1) so the
+            hero stays clean: identity left, actions right. */}
+        <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+          {/* Glossy translucent blue right-zone — only on lg+ so the
+              identity column owns the full width on tablet/mobile. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-gradient-to-br from-blue-500/20 via-cyan-400/20 to-indigo-500/25 backdrop-blur-xl lg:block"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute right-12 top-10 hidden h-52 w-52 rounded-full bg-blue-400/20 blur-3xl lg:block"
+          />
 
-        <div className="relative flex flex-col gap-6 p-5 md:p-7 xl:p-8">
-          {/* Header row inside hero: Back button + Company Intelligence
-              badge + Year selector. All restyled for dark navy backdrop. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => navigate("/app/command-center")}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to Command Center
-            </button>
-
-            <span className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-200">
-              <Sparkles className="h-3 w-3" />
-              Company Intelligence
-            </span>
-
-            {years.length > 0 ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5">
-                <CalendarClock className="h-3.5 w-3.5 text-slate-300" />
-                <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-                  Year
-                </label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-transparent text-xs font-semibold text-white outline-none"
+          <div className="relative grid gap-8 p-6 lg:grid-cols-[1.45fr_0.85fr] lg:p-8">
+            {/* LEFT — company identity */}
+            <div className="flex min-w-0 flex-col gap-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate("/app/command-center")}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
                 >
-                  {years.map((year) => (
-                    <option key={year} value={year} className="text-slate-900">
-                      {year}
-                    </option>
-                  ))}
-                </select>
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to Command Center
+                </button>
+
+                <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+                  <Sparkles className="h-3 w-3" />
+                  Company Intelligence
+                </span>
               </div>
-            ) : loading ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading
-              </div>
-            ) : null}
-          </div>
 
-          {/* Identity row + actions */}
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex min-w-0 items-start gap-5">
-              <CompanyAvatar
-                name={companyName}
-                logoUrl={
-                  getCompanyLogoUrl(
-                    companyDomain ||
-                      companyWebsite ||
-                      activeProfile?.domain ||
-                      activeProfile?.website ||
-                      shellCompany?.domain ||
-                      shellCompany?.website ||
-                      undefined,
-                  ) || undefined
-                }
-                size="lg"
-                className="shrink-0 ring-2 ring-white/30"
-              />
+              <div className="flex min-w-0 items-start gap-5">
+                <CompanyAvatar
+                  name={companyName}
+                  logoUrl={
+                    getCompanyLogoUrl(
+                      companyDomain ||
+                        companyWebsite ||
+                        activeProfile?.domain ||
+                        activeProfile?.website ||
+                        shellCompany?.domain ||
+                        shellCompany?.website ||
+                        undefined,
+                    ) || undefined
+                  }
+                  size="lg"
+                  className="shrink-0 ring-2 ring-slate-100"
+                />
 
-              <div className="min-w-0">
-                <h1
-                  className="break-words text-3xl text-white md:text-4xl xl:text-5xl"
-                  style={{
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    fontWeight: 700,
-                    letterSpacing: "-0.025em",
-                  }}
-                >
-                  {companyName}
-                </h1>
+                <div className="min-w-0">
+                  <h1
+                    className="break-words text-3xl font-bold tracking-[-0.025em] text-slate-950 md:text-4xl xl:text-5xl"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                  >
+                    {companyName}
+                  </h1>
 
-                {/* Metadata row — flag + country + 2-letter code · domain · Saved.
-                    Address moved out of the chip cluster and rendered as
-                    muted text below to cut visual noise per the design
-                    source. */}
-                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-slate-300">
-                  {(countryFlag || countryDisplay || companyCountryCode) ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      {countryFlag ? (
-                        <span aria-hidden className="text-base leading-none">
-                          {countryFlag}
+                  {/* Metadata row — flag + country + 2-letter code · domain
+                      · Saved. Address rendered as muted text below. */}
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-slate-600">
+                    {(countryFlag || countryDisplay || companyCountryCode) ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {countryFlag ? (
+                          <span aria-hidden className="text-base leading-none">
+                            {countryFlag}
+                          </span>
+                        ) : null}
+                        <span className="font-medium text-slate-800">
+                          {countryDisplay || companyCountryCode}
                         </span>
-                      ) : null}
-                      <span className="font-medium text-slate-200">
-                        {countryDisplay || companyCountryCode}
+                        {companyCountryCode ? (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-600">
+                            {companyCountryCode}
+                          </span>
+                        ) : null}
                       </span>
-                      {companyCountryCode ? (
-                        <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-300">
-                          {companyCountryCode}
+                    ) : null}
+
+                    {companyDomain ? (
+                      <>
+                        <span aria-hidden className="text-slate-300">·</span>
+                        <span className="inline-flex items-center gap-1.5 text-slate-600">
+                          <Globe className="h-3.5 w-3.5 text-slate-400" />
+                          {companyDomain}
                         </span>
-                      ) : null}
+                      </>
+                    ) : null}
+
+                    <span aria-hidden className="text-slate-300">·</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                      Saved
                     </span>
-                  ) : null}
-
-                  {companyDomain ? (
-                    <>
-                      <span aria-hidden className="text-slate-500">·</span>
-                      <span className="inline-flex items-center gap-1.5 text-slate-300">
-                        <Globe className="h-3.5 w-3.5 text-slate-400" />
-                        {companyDomain}
-                      </span>
-                    </>
-                  ) : null}
-
-                  <span aria-hidden className="text-slate-500">·</span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200">
-                    Saved
-                  </span>
-                </div>
-
-                {companyAddress ? (
-                  <div className="mt-2 text-sm text-slate-400">
-                    {companyAddress}
                   </div>
-                ) : null}
+
+                  {companyAddress ? (
+                    <div className="mt-2 text-sm text-slate-500">
+                      {companyAddress}
+                    </div>
+                  ) : null}
+                </div>
               </div>
+
+              {loading ? (
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading company intelligence…
+                </div>
+              ) : null}
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            {/* RIGHT — Action Zone (glossy translucent panel). Year selector
+                + Start Outreach + In Command Center. All click handlers
+                preserved: Start Outreach opens AddToCampaignModal; In
+                Command Center navigates to /app/command-center; the year
+                selector still rebinds `selectedYear` (which downstream
+                rebinds `effectiveSelectedYear` inside the panel). */}
+            <div className="relative flex flex-col gap-3 self-start rounded-2xl border border-white/40 bg-white/60 p-5 shadow-sm backdrop-blur-md">
+              {years.length > 0 ? (
+                <div className="inline-flex items-center gap-2 self-start rounded-full border border-slate-200 bg-white/80 px-3 py-1.5">
+                  <CalendarClock className="h-3.5 w-3.5 text-slate-500" />
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Year
+                  </label>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="bg-transparent text-xs font-semibold text-slate-800 outline-none"
+                  >
+                    {years.map((year) => (
+                      <option key={year} value={year} className="text-slate-900">
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : loading ? (
+                <div className="inline-flex items-center gap-2 self-start rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs text-slate-600">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading
+                </div>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => {
@@ -586,7 +559,7 @@ export default function Company() {
                     ? "Add this company to an outreach campaign"
                     : "Save company first to enable outreach"
                 }
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
                 Start Outreach
@@ -595,65 +568,58 @@ export default function Company() {
               <button
                 type="button"
                 onClick={() => navigate("/app/command-center")}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
               >
                 <LayoutGrid className="h-4 w-4" />
                 In Command Center
               </button>
+
+              {/* Phase B.9 — Refresh Intel + Watchlist are NOT functional
+                  today, so per the brief's honesty rule we render them
+                  disabled with `title="Coming soon"` rather than ship a
+                  fake CTA. They're tucked into a small footer row so the
+                  primary actions stay dominant. */}
+              <div className="mt-1 flex flex-wrap gap-2 border-t border-white/60 pt-3">
+                <button
+                  type="button"
+                  disabled
+                  title="Coming soon"
+                  className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-400"
+                >
+                  Refresh Intel
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="Coming soon"
+                  className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-400"
+                >
+                  Watchlist
+                </button>
+              </div>
             </div>
           </div>
+        </section>
 
-          {/* Embedded dark KPI strip — Phase B.3 design-source alignment.
-              Real values only: Shipments 12M, TEU 12M, Est. Market Spend,
-              Latest Shipment. Renders "—" honestly when null. */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <HeroKpiTile
-              label="Shipments 12M"
-              value={formatNumber(headerKpis.shipments)}
-            />
-            <HeroKpiTile
-              label="TEU 12M"
-              value={formatNumber(headerKpis.teu, 1)}
-            />
-            <HeroKpiTile
-              label="Est. Market Spend"
-              value={formatCurrency(headerKpis.spend)}
-            />
-            <HeroKpiTile
-              label="Latest Shipment"
-              value={formatDate(capDateAtToday(headerKpis.latestShipment))}
-            />
-          </div>
-
-          {loading ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading company intelligence…
-              </span>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <CompanyDetailPanel
-        record={headerRecord}
-        profile={activeProfile}
-        routeKpis={activeRouteKpis}
-        loading={loading}
-        error={null}
-        selectedYear={selectedYear}
-        onGenerateBrief={() => {}}
-        onExportPDF={() => window.print()}
-      />
-
-      {campaignModalOpen && companyId ? (
-        <AddToCampaignModal
-          open={campaignModalOpen}
-          onClose={() => setCampaignModalOpen(false)}
-          company={{ company_id: String(companyId), name: companyName }}
+        <CompanyDetailPanel
+          record={headerRecord}
+          profile={activeProfile}
+          routeKpis={activeRouteKpis}
+          loading={loading}
+          error={null}
+          selectedYear={selectedYear}
+          onGenerateBrief={() => {}}
+          onExportPDF={() => window.print()}
         />
-      ) : null}
+
+        {campaignModalOpen && companyId ? (
+          <AddToCampaignModal
+            open={campaignModalOpen}
+            onClose={() => setCampaignModalOpen(false)}
+            company={{ company_id: String(companyId), name: companyName }}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
