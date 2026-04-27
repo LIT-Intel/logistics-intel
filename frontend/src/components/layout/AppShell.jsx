@@ -255,6 +255,13 @@ export default function AppShell({ currentPageName, children }) {
               <SectionLabel collapsed={collapsed}>Admin</SectionLabel>
               <nav className="mb-6">
                 <SideLink to="/app/admin" icon={Shield} label={collapsed ? "" : "Admin Dashboard"} />
+                {isSuperAdmin && (
+                  <SideLink
+                    to="/app/admin/partner-program"
+                    icon={Users2}
+                    label={collapsed ? "" : "Partner program"}
+                  />
+                )}
                 <SideLink to="/app/cms" icon={Database} label={collapsed ? "" : "CMS"} />
                 <SideLink to="/app/diagnostic" icon={Bug} label={collapsed ? "" : "Debug Agent"} />
               </nav>
@@ -383,6 +390,9 @@ export default function AppShell({ currentPageName, children }) {
               {showAdminSection && (
                 <>
                   <SideLink to="/app/admin" icon={Shield} label="Admin Dashboard" />
+                  {isSuperAdmin && (
+                    <SideLink to="/app/admin/partner-program" icon={Users2} label="Partner program" />
+                  )}
                   <SideLink to="/app/cms" icon={Database} label="CMS" />
                   <SideLink to="/app/diagnostic" icon={Bug} label="Debug Agent" />
                 </>

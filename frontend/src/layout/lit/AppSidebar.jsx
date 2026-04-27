@@ -91,6 +91,7 @@ const AppSidebar = ({ sidebarOpen, setSidebarOpen }) => {
             title: "Admin",
             items: [
               { label: "Admin Dashboard", href: "/app/admin", icon: Shield },
+              { label: "Partner program", href: "/app/admin/partner-program", icon: Users },
               { label: "CMS", href: "/app/cms", icon: Database },
               { label: "Debug Agent", href: "/app/agent", icon: Bug },
               { label: "Team", href: "/app/settings?tab=team", icon: Users },
