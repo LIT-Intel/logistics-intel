@@ -462,12 +462,11 @@ export default function CommandCenter() {
             <div style={{ fontSize: 13, color: '#64748b', fontFamily: "'DM Sans', sans-serif", marginTop: 4 }}>Try changing your search, or add a new company.</div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          {/* Phase B.6 — table sets a min-width: 1200px floor; the wrapper
-              above carries the horizontal scroll. Below that viewport the
-              fixed-% column widths would otherwise compress into overlapping
-              text; horizontal scroll keeps every column honest at the cost
-              of a scroll bar on narrow screens. */}
+          <>
+          {/* Phase B.7 — desktop renders the 9-column table (≥md). Mobile
+              renders compact cards instead so narrow viewports don't have to
+              horizontally scroll a 1200px table. */}
+          <div className="hidden md:block" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1200 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
@@ -510,7 +509,7 @@ export default function CommandCenter() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = '')}
                   >
                     {/* Company */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                         <CompanyAvatar
                           name={row.companyName}
@@ -530,28 +529,28 @@ export default function CommandCenter() {
                     </td>
 
                     {/* Last Shipment */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
                       <span style={{ fontSize: 12, color: '#64748b', fontFamily: "'DM Sans', sans-serif" }}>
                         {formatDate(row.lastActivity)}
                       </span>
                     </td>
 
                     {/* Shipments 12M */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>
                         {formatNumber(row.shipments12m)}
                       </span>
                     </td>
 
                     {/* TEU 12M */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
                         {formatNumber(row.teu12m, 1)}
                       </span>
                     </td>
 
                     {/* Est. Spend */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#374151' }}>
                         {formatCurrency(row.estSpend12m)}
                       </span>
@@ -562,7 +561,7 @@ export default function CommandCenter() {
                         Activity column. The <span> wraps on its container so
                         the chip background sizes to text up to the column
                         edge, then ellipses; full label surfaces via title. */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', overflow: 'hidden' }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', overflow: 'hidden' }}>
                       <span
                         title={row.topRoute12m || row.recentRoute || ''}
                         style={{
@@ -588,7 +587,7 @@ export default function CommandCenter() {
                         content within the 9% column width without ever
                         pushing into Status/View, and never collapses below
                         legibility on narrow viewports. */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 84 }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 84 }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center',
                         fontSize: 11, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
@@ -604,7 +603,7 @@ export default function CommandCenter() {
                     {/* Status — Phase B.6: minWidth 96 floors the column
                         so the dot+label pill always renders in full at any
                         viewport above the 1200px table min-width. */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 96 }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 96 }}>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999,
@@ -619,7 +618,7 @@ export default function CommandCenter() {
                     {/* View action — Phase B.6: minWidth 80 keeps the
                         "View →" + Add buttons on a single line at narrow
                         viewports. */}
-                    <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 80 }}>
+                    <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', minWidth: 80 }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenCompany(row); }}
@@ -663,6 +662,89 @@ export default function CommandCenter() {
             </tbody>
           </table>
           </div>
+
+          {/* Phase B.7 — mobile card view (<md). Each card mirrors the table
+              row's data: company identity, last shipment, shipments 12M, TEU
+              12M, top route, status pill, and View affordance. Tapping the
+              card opens the company; the small Add icon stops propagation
+              and opens the Add-to-Campaign modal. */}
+          <div className="block md:hidden p-3 space-y-2">
+            {paginatedRows.map((row) => {
+              const st = STATUS_STYLE[statusForRow(row)];
+              return (
+                <div
+                  key={`m-${row.key}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleOpenCompany(row)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenCompany(row); } }}
+                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <div className="flex items-start gap-3">
+                    <CompanyAvatar
+                      name={row.companyName}
+                      domain={row.domain || row.website || undefined}
+                      size="sm"
+                      className="shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        {row.companyName}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                        {row.address || row.countryCode || row.domain || '—'}
+                      </div>
+                    </div>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 9999,
+                      background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+                      fontFamily: "'Space Grotesk', sans-serif", whiteSpace: 'nowrap', flexShrink: 0,
+                    }}>
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+                      {st.label}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Last Shipment</div>
+                      <div className="text-slate-700">{formatSafeShipmentDate(row.lastActivity, '—')}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Shipments 12M</div>
+                      <div className="font-mono text-blue-700 font-semibold">{formatNumber(row.shipments12m)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">TEU 12M</div>
+                      <div className="font-mono text-slate-900">{formatNumber(row.teu12m, 1)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Top Route</div>
+                      <div className="truncate text-slate-700" title={row.topRoute12m || row.recentRoute || ''}>
+                        {row.topRoute12m || row.recentRoute || '—'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-blue-600">View →</span>
+                    {row.companyId ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setCampaignModalRow(row); }}
+                        title="Add to Campaign"
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                      >
+                        <Send className="h-3 w-3" />
+                        Add
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
       </div>
 

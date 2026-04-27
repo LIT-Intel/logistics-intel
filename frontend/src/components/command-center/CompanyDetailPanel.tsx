@@ -28,6 +28,7 @@ import {
   buildCommandCenterDetailModel,
   buildYearScopedProfile,
   getCommandCenterAvailableYears,
+  resolveLitCompanyUuid,
 } from "@/lib/api";
 import type { IyCompanyProfile, IyRouteKpis } from "@/lib/api";
 import type { CommandCenterRecord } from "@/types/importyeti";
@@ -3015,14 +3016,15 @@ if (!cancelled) {
   // violations on the few companies that were seeded into lit_companies
   // with a real UUID.
   const saveContactToSupabase = async (contact: any) => {
-    const companyUuid =
-      (record as any)?.company?.id ||
-      (rawProfile as any)?.id ||
-      null;
+    // Phase B.7: resolve the lit_companies UUID via the shared helper. When
+    // opened from Command Center the UUID is already on record.company.id;
+    // when opened via deep-link/Search we only have the slug, so the helper
+    // queries lit_companies by source_company_key to fetch the UUID.
+    const companyUuid = await resolveLitCompanyUuid({ record, rawProfile });
 
     if (!companyUuid) {
       setContactMessage(
-        "Save needs a saved company UUID. Add this company to Command Center first.",
+        "Save needs a saved company. Add this company to Command Center first.",
       );
       return;
     }

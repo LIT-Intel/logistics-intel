@@ -2936,6 +2936,44 @@ export async function getIyRouteKpisForCompany(
 
 export const getIyRouteKpis = getIyRouteKpisForCompany;
 
+const LIT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+
+/**
+ * Resolves the canonical `lit_companies.id` UUID for a saved company.
+ *
+ * Phase B.7: contact save broke when the page was reached via deep link
+ * (`/company/:slug`) because `record.company.id` was never hydrated.
+ * Returns null when nothing resolves to a UUID.
+ */
+export async function resolveLitCompanyUuid(input: {
+  record?: any;
+  rawProfile?: any;
+  sourceCompanyKey?: string | null;
+}): Promise<string | null> {
+  const direct =
+    input?.record?.company?.id ||
+    input?.rawProfile?.id ||
+    null;
+  if (direct && LIT_UUID_RE.test(String(direct))) return String(direct);
+
+  const slug =
+    input?.sourceCompanyKey ||
+    input?.record?.company?.company_id ||
+    input?.record?.company?.source_company_key ||
+    input?.rawProfile?.company_id ||
+    input?.rawProfile?.source_company_key ||
+    null;
+  if (!slug) return null;
+
+  const { data, error } = await supabase
+    .from("lit_companies")
+    .select("id")
+    .eq("source_company_key", String(slug))
+    .maybeSingle();
+  if (error || !data?.id) return null;
+  return String(data.id);
+}
+
 export async function getSavedCompanyDetail(
   companyKey: string,
   signal?: AbortSignal,
