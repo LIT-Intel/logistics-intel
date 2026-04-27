@@ -404,7 +404,19 @@ export default function Company() {
             starts reading as an executive intelligence workspace. The
             embedded 4-up KPI strip has moved to the floating KPI bridge
             row (rendered inside `CompanyDetailPanel`, approach 1) so the
-            hero stays clean: identity left, actions right. */}
+            hero stays clean: identity left, actions right.
+
+            Phase B.11 — wrap the hero in a `group relative` shell so a
+            sibling glow div (positioned BEHIND the hero via `-inset-px`
+            and `blur-md`) can bloom in on hover without affecting the
+            hero's own layout. The glow is opacity-0 by default and only
+            becomes visible on `group-hover`, with a 700ms transition so
+            it feels intentional rather than reactive. */}
+        <div className="group relative">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -inset-px rounded-[2.1rem] bg-gradient-to-r from-indigo-300/0 via-blue-400/40 to-indigo-300/0 opacity-0 blur-md transition-opacity duration-700 group-hover:opacity-100"
+          />
         <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
           {/* Glossy translucent blue right-zone — only on lg+ so the
               identity column owns the full width on tablet/mobile. */}
@@ -600,6 +612,7 @@ export default function Company() {
             </div>
           </div>
         </section>
+        </div>
 
         <CompanyDetailPanel
           record={headerRecord}

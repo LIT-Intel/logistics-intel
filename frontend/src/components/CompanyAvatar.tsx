@@ -85,6 +85,16 @@ export const CompanyAvatar: React.FC<CompanyAvatarProps> = ({
         loading="eager"
         decoding="sync"
         onError={() => {
+          // Phase B.11 — debug-only console hint when a candidate fails.
+          // Browser <img> fires `onerror` for any non-2xx (including 401
+          // / 403 / 404), so this signals which provider rejected the
+          // request. Especially useful when img.logo.dev returns 401
+          // because the deploying Vercel domain is not in the Logo.dev
+          // dashboard's allowed-origins list. The cascade behavior is
+          // unchanged — we still walk to the next candidate immediately.
+          if (typeof console !== "undefined" && typeof console.debug === "function") {
+            console.debug("[CompanyAvatar] logo candidate failed:", currentUrl);
+          }
           if (attempt + 1 < candidates.length) {
             setAttempt(attempt + 1);
           } else {

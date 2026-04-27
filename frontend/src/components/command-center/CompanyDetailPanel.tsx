@@ -51,6 +51,7 @@ import {
   normalizeContainerTypeLabel,
 } from "@/lib/containerUtils";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/auth/AuthProvider";
 import {
   capFutureDate,
   formatSafeShipmentDate,
@@ -2404,6 +2405,17 @@ export default function CompanyDetailPanel({
   error,
   selectedYear,
 }: CompanyDetailPanelProps) {
+  // Phase B.11 — Market Benchmark tab is gated to super-admins only until
+  // a reliable paid rate source is confirmed. We consume the existing
+  // `useAuth()` helper from `@/auth/AuthProvider` (the SAME hook used for
+  // every other admin-only surface in the app, e.g. AdminDashboard /
+  // AppHeader / AppSidebar). No auth state is mutated here. While
+  // `loading` is true (auth not yet resolved) we treat the user as
+  // non-admin so a deep-linked URL cannot flash the iframe before role
+  // resolves. If a future build breaks the import, the gate fails
+  // CLOSED — the tab simply hides — which is the safer default.
+  const { isSuperAdmin, loading: authLoading } = useAuth();
+  const isBenchmarkAdmin = Boolean(isSuperAdmin) && !authLoading;
   const key = getRecordKey(record);
   const rawProfile = profile as any;
   const rawRouteKpis = routeKpis as any;
@@ -3213,14 +3225,17 @@ if (!cancelled) {
 
   return (
     <div className="space-y-6">
-      {/* Phase B.9 — floating KPI bridge row. Sits between the hero and
-          the tabs section so the page reads as three distinct executive
-          zones: identity hero → snapshot KPIs → deep tabs. Real values
-          only — anything missing renders as "—" with an honest helper. */}
+      {/* Phase B.11 — KPI bridge polish. Each tile body now picks up a
+          very faint tint matching its icon badge (Gemini-style: never
+          plain white, never saturated). Border softened to
+          `border-slate-200/80` and uppercase label tracking bumped to
+          `tracking-[0.2em]` so the typography reads as premium. The
+          values, helpers, and underlying data plumbing are unchanged —
+          purely visual. */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-indigo-50/40 p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Shipments 12M
             </div>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
@@ -3237,9 +3252,9 @@ if (!cancelled) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-cyan-50/40 p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               TEU 12M
             </div>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 ring-1 ring-cyan-100">
@@ -3256,9 +3271,9 @@ if (!cancelled) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-emerald-50/40 p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Est. Freight Spend
             </div>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
@@ -3277,9 +3292,9 @@ if (!cancelled) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-blue-50/40 p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Active Trade Lanes
             </div>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100">
@@ -3298,9 +3313,9 @@ if (!cancelled) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-violet-50/40 p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Contacts
             </div>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-violet-100">
@@ -3388,13 +3403,20 @@ if (!cancelled) {
           >
             Contact Intel
           </TabsTrigger>
-          <TabsTrigger
-            value="market-benchmark"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Market Benchmark
-          </TabsTrigger>
+          {/* Phase B.11 — Market Benchmark trigger is gated to super-admins
+              only. Hidden for everyone else (and during the auth-resolving
+              window) so the embedded Domo iframe never flashes for a
+              regular user. The TabsContent block below is gated with the
+              same predicate to prevent URL deep-link bypass. */}
+          {isBenchmarkAdmin ? (
+            <TabsTrigger
+              value="market-benchmark"
+              className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Market Benchmark
+            </TabsTrigger>
+          ) : null}
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -3519,10 +3541,10 @@ if (!cancelled) {
                   (l) => l.shipments > 0,
                 ).length;
                 return (
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
                     <div className="mb-4 flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                           TOP VISIBLE LANES
                         </div>
                         <h3 className="mt-1 text-base font-bold text-slate-950">
@@ -3619,10 +3641,10 @@ if (!cancelled) {
                   : `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"}`;
 
                 return (
-                  <div className="flex h-full min-h-[360px] flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex h-full min-h-[360px] flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
                     <div className="mb-2 flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                           PEAK SEASONALITY INDEX
                         </div>
                         <h3 className="mt-1 text-base font-bold text-slate-950">
@@ -3648,14 +3670,88 @@ if (!cancelled) {
                   </div>
                 );
               })()}
+
+              {/* Phase B.11 — Top Suppliers MOVED from below the 60/40 grid
+                  into the LEFT column under Peak Seasonality. The card chrome
+                  matches the other left-column cards (rounded-2xl border
+                  shadow-sm), with a faint slate gradient added by Gemini
+                  polish so it doesn't read as a flat white panel. The
+                  underlying data (suppliersRaw.slice(0, 3)) is unchanged. */}
+              {(() => {
+                const topSuppliers = suppliersRaw.slice(0, 3);
+                return (
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          TOP SUPPLIERS
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Verified BOL counterparties
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {suppliersRaw.length > 0
+                            ? `Top 3 of ${suppliersRaw.length} verified suppliers`
+                            : "From verified BOL records"}
+                        </p>
+                      </div>
+                    </div>
+                    {topSuppliers.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No supplier data yet
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {topSuppliers.map((sup: any, idx: number) => {
+                          const name = sup.supplier_name || sup.name || "—";
+                          const shipments =
+                            Number(sup.shipments_12m ?? sup.shipments ?? 0) || 0;
+                          const country = sup.supplier_country || sup.country || null;
+                          return (
+                            <li
+                              key={`${name}-${idx}`}
+                              className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white/70 px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                  {name}
+                                </div>
+                                {country ? (
+                                  <div className="mt-0.5 truncate text-xs text-slate-500">
+                                    {country}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  12m
+                                </div>
+                                <div className="text-sm font-semibold text-indigo-600">
+                                  {formatNumber(shipments)}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             <aside className="space-y-6">
-              {/* Right Action Panel — three honest cards. */}
+              {/* Right Action Panel — Phase B.11 expands to four cards.
+                  Top Contacts / Campaign Status / Engagement History stay
+                  here from Phase B.9; Recent Shipments preview is moved
+                  in from the demoted below-grid block so the right rail
+                  reads as a single contiguous action column. Gemini polish:
+                  a very faint slate gradient replaces flat `bg-white` so
+                  the cards don't read as identical white panels. */}
 
               {/* Top Contacts */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+              <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
                   TOP CONTACTS
                 </div>
                 {phantomContacts.length > 0 ? (
@@ -3717,8 +3813,8 @@ if (!cancelled) {
               </div>
 
               {/* Campaign Status */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+              <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
                   CAMPAIGN STATUS
                 </div>
                 <h3 className="mt-1 text-base font-bold text-slate-950">
@@ -3730,8 +3826,8 @@ if (!cancelled) {
               </div>
 
               {/* Engagement History */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+              <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
                   ENGAGEMENT HISTORY
                 </div>
                 <h3 className="mt-1 text-base font-bold text-slate-950">
@@ -3741,158 +3837,93 @@ if (!cancelled) {
                   Outreach history will appear here once engagement logging is available.
                 </p>
               </div>
-            </aside>
-          </div>
 
-          {/* Demoted blocks — Top Suppliers + Recent Shipments + Market
-              Benchmark sit BELOW the 60/40 grid. The full Contact
-              Intelligence overview block from Phase B.8 was removed; a
-              right-column Top Contacts card and the Contact Intel tab
-              cover that surface honestly. */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {(() => {
-              const topSuppliers = suppliersRaw.slice(0, 3);
-              return (
-                <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-3 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        TOP SUPPLIERS
+              {/* Phase B.11 — Recent Shipments MOVED from below the 60/40
+                  grid into the right rail under Engagement History. Compact
+                  3-row preview with a "View all" link to the Shipments tab.
+                  Source data (normalizedShipments) and sort logic are
+                  unchanged. */}
+              {(() => {
+                const recentShipments = [...normalizedShipments]
+                  .sort((a, b) => {
+                    const da = a.date ? new Date(a.date).getTime() : 0;
+                    const db = b.date ? new Date(b.date).getTime() : 0;
+                    return db - da;
+                  })
+                  .slice(0, 3);
+                return (
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+                          RECENT SHIPMENTS
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Latest BOL records
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {normalizedShipments.length > 0
+                            ? `Latest 3 of ${normalizedShipments.length} BOL records`
+                            : "From verified bill-of-lading records"}
+                        </p>
                       </div>
-                      <h3 className="mt-1 text-base font-bold text-slate-950">
-                        Verified BOL counterparties
-                      </h3>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {suppliersRaw.length > 0
-                          ? `Top 3 of ${suppliersRaw.length} verified suppliers`
-                          : "From verified BOL records"}
-                      </p>
                     </div>
-                  </div>
-                  {topSuppliers.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
-                      No supplier data yet
-                    </div>
-                  ) : (
-                    <ul className="space-y-2">
-                      {topSuppliers.map((sup: any, idx: number) => {
-                        const name = sup.supplier_name || sup.name || "—";
-                        const shipments =
-                          Number(sup.shipments_12m ?? sup.shipments ?? 0) || 0;
-                        const country = sup.supplier_country || sup.country || null;
-                        return (
+                    {recentShipments.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No shipment records yet
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {recentShipments.map((s, idx) => (
                           <li
-                            key={`${name}-${idx}`}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2"
+                            key={s.id || idx}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white/70 px-3 py-2"
                           >
                             <div className="min-w-0">
                               <div className="truncate text-sm font-semibold text-slate-900">
-                                {name}
+                                {s.route || "—"}
                               </div>
-                              {country ? (
-                                <div className="mt-0.5 truncate text-xs text-slate-500">
-                                  {country}
-                                </div>
-                              ) : null}
+                              <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-slate-500">
+                                <span>{formatDate(capDateAtToday(s.date))}</span>
+                                {s.containerTypes && s.containerTypes !== "—" ? (
+                                  <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                    {s.containerTypes}
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                             <div className="shrink-0 text-right">
                               <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                12m
+                                TEU
                               </div>
-                              <div className="text-sm font-semibold text-indigo-600">
-                                {formatNumber(shipments)}
+                              <div className="text-sm font-semibold text-cyan-700">
+                                {formatNumber(s.teu, 1)}
                               </div>
                             </div>
                           </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              );
-            })()}
-
-            {(() => {
-              const recentShipments = [...normalizedShipments]
-                .sort((a, b) => {
-                  const da = a.date ? new Date(a.date).getTime() : 0;
-                  const db = b.date ? new Date(b.date).getTime() : 0;
-                  return db - da;
-                })
-                .slice(0, 3);
-              return (
-                <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-3 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        RECENT SHIPMENTS
-                      </div>
-                      <h3 className="mt-1 text-base font-bold text-slate-950">
-                        Latest BOL records
-                      </h3>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {normalizedShipments.length > 0
-                          ? `Latest 3 of ${normalizedShipments.length} BOL records`
-                          : "From verified bill-of-lading records"}
-                      </p>
-                    </div>
+                        ))}
+                      </ul>
+                    )}
                     {normalizedShipments.length > 0 ? (
                       <button
                         type="button"
                         onClick={() => setActiveTab("shipments")}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/40 hover:text-indigo-700"
+                        className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
                       >
-                        View all <ArrowUpRight className="h-3 w-3" />
+                        View all shipments <ArrowUpRight className="h-3.5 w-3.5" />
                       </button>
                     ) : null}
                   </div>
-                  {recentShipments.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
-                      No shipment records yet
-                    </div>
-                  ) : (
-                    <ul className="space-y-2">
-                      {recentShipments.map((s, idx) => (
-                        <li
-                          key={s.id || idx}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2"
-                        >
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-slate-900">
-                              {s.route || "—"}
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-slate-500">
-                              <span>{formatDate(capDateAtToday(s.date))}</span>
-                              {s.containerTypes && s.containerTypes !== "—" ? (
-                                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                  {s.containerTypes}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                              TEU
-                            </div>
-                            <div className="text-sm font-semibold text-cyan-700">
-                              {formatNumber(s.teu, 1)}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })()}
+                );
+              })()}
+            </aside>
           </div>
 
-          {/* Phase B.10 — the compact "Market benchmark / Needs rate source"
-              banner that lived here since Phase B.5 has been removed. The
-              full benchmark experience now lives in its own dedicated
-              "Market Benchmark" tab (Freight Right Rate Index iframe). The
-              `pb-8` keeps a clean breathing-room gutter at the bottom of
-              Overview after Top Suppliers + Recent Shipments. */}
+          {/* Phase B.11 — Top Suppliers and Recent Shipments are NO LONGER
+              rendered below the 60/40 grid. They were moved into the
+              left/right columns above. Only a `pb-8` gutter remains so
+              the Overview tab still has breathing room before the next
+              section. */}
           <div className="pb-8" aria-hidden="true" />
         </TabsContent>
 
@@ -4215,26 +4246,37 @@ if (!cancelled) {
 
               return (
                 <>
-                  {/* Phase B.10 — Origin / Destination flag pills.
-                      Diagnosis of the desktop-flags-missing report: in
-                      B.9 the container used a base `grid grid-cols-2`
-                      that switched to `md:flex md:flex-row` at md+. The
-                      flag pills WERE in the DOM at all viewports; the
-                      regression was visual rather than structural —
-                      empty `hidden md:block` placeholder slots, plain
-                      white cards that blended into the white panel
-                      background, and an inconsistent `display` cascade
-                      on some Tailwind builds. The fix is layout-stable:
-                      `flex` from the base breakpoint with `flex-wrap`
-                      so two cards stack on narrow viewports without a
-                      grid → flex breakpoint flip, paired with the new
-                      gradient card treatment from Task 5. The block
-                      sits ABOVE the `lg:grid-cols-2` globe + lane-table
-                      grid so it spans the full panel width. */}
+                  {/* Phase B.11 — Origin / Destination flag pills, fixed.
+                      Root cause of the desktop-flags-missing report (with
+                      file refs):
+                        - Container at the previous Phase B.10 line ~4235
+                          used `flex w-full flex-wrap … md:flex-nowrap` with
+                          children sized `flex-1 min-w-[140px] max-w-[260px]`.
+                        - On narrow desktop viewports (1024-1280) the
+                          `flex-1` grow factor competes with `min-w-[140px]`
+                          and `max-w-[260px]`, and on certain Chromium
+                          builds the cards collapsed to their 0-content
+                          width before flex-grow could re-expand them
+                          (the centered ArrowRight (`hidden md:flex`) and
+                          the inner `<span className="truncate">` for the
+                          country name compounded this — `truncate` on a
+                          flex child with min-w-0 produces a 0px width).
+                        - There was NO ancestor with `overflow-hidden`
+                          (verified across the trade-lanes section card
+                          and TabsContent — see grep for "overflow-hidden"
+                          below), so the issue was layout, not clipping.
+                      Fix: drop the flex grow/cap dance entirely. Use a
+                      deterministic 3-column grid at md+ (origin · arrow ·
+                      destination), each card with explicit `min-h` so it
+                      always has visible vertical mass even when content is
+                      sparse. On <md the pills stack vertically.
+                      The block still sits ABOVE the `lg:grid-cols-2`
+                      globe + lane-table grid so it spans the full panel
+                      width with no parent that could clip it. */}
                   {hasResolvable && ((activeFromMeta && activeFromMeta.flag) || (activeToMeta && activeToMeta.flag)) && (
-                    <div className="mb-4 flex w-full flex-wrap items-stretch justify-center gap-3 md:flex-nowrap md:items-center md:gap-4">
+                    <div className="mb-4 grid w-full grid-cols-1 items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-4">
                       {activeFromMeta && activeFromMeta.flag ? (
-                        <div className="relative flex flex-1 min-w-[140px] max-w-[260px] flex-col items-center justify-center gap-2 rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-blue-50 p-4 shadow-sm">
+                        <div className="relative flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-blue-50 p-4 shadow-sm">
                           <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-indigo-300 to-transparent" />
                           <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-600">
                             ORIGIN
@@ -4246,7 +4288,7 @@ if (!cancelled) {
                           >
                             {activeFromMeta.flag}
                           </span>
-                          <span className="truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
+                          <span className="max-w-full truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
                             {activeFromMeta.countryName}
                           </span>
                           {activeFromMeta.countryCode ? (
@@ -4255,12 +4297,14 @@ if (!cancelled) {
                             </span>
                           ) : null}
                         </div>
-                      ) : null}
-                      <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-base font-semibold text-slate-400 shadow-sm md:flex">
+                      ) : (
+                        <div aria-hidden />
+                      )}
+                      <div className="hidden h-10 w-10 shrink-0 items-center justify-center self-center rounded-full border border-slate-200 bg-white text-base font-semibold text-slate-400 shadow-sm md:flex">
                         <ArrowRight className="h-5 w-5" aria-hidden />
                       </div>
                       {activeToMeta && activeToMeta.flag ? (
-                        <div className="relative flex flex-1 min-w-[140px] max-w-[260px] flex-col items-center justify-center gap-2 rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50 p-4 shadow-sm">
+                        <div className="relative flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50 p-4 shadow-sm">
                           <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-blue-300 to-transparent" />
                           <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600">
                             DESTINATION
@@ -4272,7 +4316,7 @@ if (!cancelled) {
                           >
                             {activeToMeta.flag}
                           </span>
-                          <span className="truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
+                          <span className="max-w-full truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
                             {activeToMeta.countryName}
                           </span>
                           {activeToMeta.countryCode ? (
@@ -4281,7 +4325,9 @@ if (!cancelled) {
                             </span>
                           ) : null}
                         </div>
-                      ) : null}
+                      ) : (
+                        <div aria-hidden />
+                      )}
                     </div>
                   )}
 
@@ -4835,7 +4881,17 @@ if (!cancelled) {
             so iframe rendering depends on Domo's runtime
             X-Frame-Options policy — verify in the browser after
             deploy. */}
+        {isBenchmarkAdmin ? (
         <TabsContent value="market-benchmark" className="space-y-4">
+          {/* Phase B.11 — LOCKED · TESTING banner. The Freight Right Rate
+              Index iframe below is not yet validated as a production
+              freight-cost benchmark. Visible to super-admins only (the
+              parent <TabsContent> is gated above) so non-admin users
+              never see the embed. Banner copy is intentionally explicit
+              about the restriction. */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <strong>Locked &mdash; internal testing.</strong> This benchmark source is not yet validated for production. Hidden from non-admin users.
+          </div>
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="border-b border-slate-200 px-6 py-4">
               <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">
@@ -4894,6 +4950,7 @@ if (!cancelled) {
             </div>
           </div>
         </TabsContent>
+        ) : null}
       </Tabs>
       </section>
     </div>
