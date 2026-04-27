@@ -2567,8 +2567,24 @@ export default function CompanyDetailPanel({
   // normalizedShipments memo that already powers Overview previews — no new
   // fetches.
   const [activeTab, setActiveTab] = useState<
-    "overview" | "shipments" | "trade-lanes" | "equipment" | "contacts"
+    "overview" | "shipments" | "trade-lanes" | "equipment" | "contacts" | "market-benchmark"
   >("overview");
+  // Phase B.10 — Market Benchmark tab uses an iframe to embed the Freight
+  // Right Rate Index. The native <iframe> does not fire `onError` for
+  // CSP / X-Frame-Options blocks, so we run a 6s onLoad watchdog: if the
+  // iframe never reports `load`, we assume it is blocked at the
+  // browser/CDN layer and render a clean honest fallback card.
+  const [benchmarkIframeStatus, setBenchmarkIframeStatus] = useState<
+    "pending" | "loaded" | "blocked"
+  >("pending");
+  useEffect(() => {
+    if (activeTab !== "market-benchmark") return;
+    if (benchmarkIframeStatus !== "pending") return;
+    const t = window.setTimeout(() => {
+      setBenchmarkIframeStatus((s) => (s === "pending" ? "blocked" : s));
+    }, 6000);
+    return () => window.clearTimeout(t);
+  }, [activeTab, benchmarkIframeStatus]);
   const [suppliersPage, setSuppliersPage] = useState(0);
   const [historyPage, setHistoryPage] = useState(0);
   const [productsPage, setProductsPage] = useState(0);
@@ -3372,6 +3388,13 @@ if (!cancelled) {
           >
             Contact Intel
           </TabsTrigger>
+          <TabsTrigger
+            value="market-benchmark"
+            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+          >
+            Market Benchmark
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -3864,35 +3887,13 @@ if (!cancelled) {
             })()}
           </div>
 
-          {/* Market Benchmark — compact horizontal banner kept from B.5. */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
-                <BarChart3 className="h-4 w-4 text-slate-500" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-slate-900">
-                  Market benchmark
-                </div>
-                <p className="mt-0.5 text-sm text-slate-500">
-                  No verified benchmark rate is available for this lane yet.
-                </p>
-                {freightosBenchmark ? (
-                  <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
-                    Detected lane match: {freightosBenchmark.lane}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end sm:text-right">
-                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                  Needs rate source
-                </span>
-                <p className="max-w-[240px] text-xs text-slate-400">
-                  Enable AI Market Signal or connect a verified rate source.
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* Phase B.10 — the compact "Market benchmark / Needs rate source"
+              banner that lived here since Phase B.5 has been removed. The
+              full benchmark experience now lives in its own dedicated
+              "Market Benchmark" tab (Freight Right Rate Index iframe). The
+              `pb-8` keeps a clean breathing-room gutter at the bottom of
+              Overview after Top Suppliers + Recent Shipments. */}
+          <div className="pb-8" aria-hidden="true" />
         </TabsContent>
 
         {/* Phase B.8 — Shipments tab. Real BOL ledger sourced from the
@@ -4214,14 +4215,30 @@ if (!cancelled) {
 
               return (
                 <>
-                  {/* Phase B.8 — flag pills moved ABOVE the lg:grid-cols-2
-                      row so they get full panel width. md+ shows the row
-                      with ArrowRight between origin and destination; below
-                      md the cards stack as a 2-col grid. */}
+                  {/* Phase B.10 — Origin / Destination flag pills.
+                      Diagnosis of the desktop-flags-missing report: in
+                      B.9 the container used a base `grid grid-cols-2`
+                      that switched to `md:flex md:flex-row` at md+. The
+                      flag pills WERE in the DOM at all viewports; the
+                      regression was visual rather than structural —
+                      empty `hidden md:block` placeholder slots, plain
+                      white cards that blended into the white panel
+                      background, and an inconsistent `display` cascade
+                      on some Tailwind builds. The fix is layout-stable:
+                      `flex` from the base breakpoint with `flex-wrap`
+                      so two cards stack on narrow viewports without a
+                      grid → flex breakpoint flip, paired with the new
+                      gradient card treatment from Task 5. The block
+                      sits ABOVE the `lg:grid-cols-2` globe + lane-table
+                      grid so it spans the full panel width. */}
                   {hasResolvable && ((activeFromMeta && activeFromMeta.flag) || (activeToMeta && activeToMeta.flag)) && (
-                    <div className="mb-4 grid w-full grid-cols-2 items-stretch gap-2 md:flex md:flex-row md:items-center md:justify-center md:gap-4">
+                    <div className="mb-4 flex w-full flex-wrap items-stretch justify-center gap-3 md:flex-nowrap md:items-center md:gap-4">
                       {activeFromMeta && activeFromMeta.flag ? (
-                        <div className="flex flex-1 max-w-[260px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                        <div className="relative flex flex-1 min-w-[140px] max-w-[260px] flex-col items-center justify-center gap-2 rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-blue-50 p-4 shadow-sm">
+                          <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-indigo-300 to-transparent" />
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-600">
+                            ORIGIN
+                          </span>
                           <span
                             role="img"
                             aria-label={activeFromMeta.countryName || "Origin country flag"}
@@ -4232,18 +4249,22 @@ if (!cancelled) {
                           <span className="truncate text-base font-semibold text-slate-900" title={activeFromMeta.countryName}>
                             {activeFromMeta.countryName}
                           </span>
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                            Origin
-                          </span>
+                          {activeFromMeta.countryCode ? (
+                            <span className="rounded-full bg-white/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600 ring-1 ring-slate-200">
+                              {activeFromMeta.countryCode}
+                            </span>
+                          ) : null}
                         </div>
-                      ) : (
-                        <div className="hidden md:block" />
-                      )}
-                      <div className="hidden items-center justify-center md:flex">
-                        <ArrowRight className="h-5 w-5 text-slate-400" aria-hidden />
+                      ) : null}
+                      <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-base font-semibold text-slate-400 shadow-sm md:flex">
+                        <ArrowRight className="h-5 w-5" aria-hidden />
                       </div>
                       {activeToMeta && activeToMeta.flag ? (
-                        <div className="flex flex-1 max-w-[260px] min-w-[140px] flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                        <div className="relative flex flex-1 min-w-[140px] max-w-[260px] flex-col items-center justify-center gap-2 rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50 p-4 shadow-sm">
+                          <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-blue-300 to-transparent" />
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-600">
+                            DESTINATION
+                          </span>
                           <span
                             role="img"
                             aria-label={activeToMeta.countryName || "Destination country flag"}
@@ -4254,30 +4275,30 @@ if (!cancelled) {
                           <span className="truncate text-base font-semibold text-slate-900" title={activeToMeta.countryName}>
                             {activeToMeta.countryName}
                           </span>
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                            Destination
-                          </span>
+                          {activeToMeta.countryCode ? (
+                            <span className="rounded-full bg-white/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600 ring-1 ring-slate-200">
+                              {activeToMeta.countryCode}
+                            </span>
+                          ) : null}
                         </div>
-                      ) : (
-                        <div className="hidden md:block" />
-                      )}
+                      ) : null}
                     </div>
                   )}
 
-                  {/* Selected lane summary row — sits above the globe-table
-                      grid so it spans the panel width. */}
+                  {/* Selected lane summary strip — sits above the globe +
+                      lane-table grid so it spans the full panel width.
+                      Phase B.10: backdrop-blur slate tint replaces the
+                      flat slate-50 banner. */}
                   {hasResolvable && activeLaneMeta ? (
-                    <div className="mb-4 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-900">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span className="truncate font-semibold" title={activeLaneMeta.displayLabel}>
-                          {activeLaneMeta.displayLabel}
-                        </span>
-                        <span className="flex items-center gap-3 font-mono text-[11px] text-slate-600">
-                          <span>Shipments {formatNumber(activeLaneMeta.shipments)}</span>
-                          <span>TEU {formatNumber(activeLaneMeta.teu, 1)}</span>
-                          <span>
-                            Est. Spend {activeLaneMeta.spend != null ? formatCurrency(activeLaneMeta.spend) : "—"}
-                          </span>
+                    <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-semibold text-slate-900">
+                        {activeLaneMeta.displayLabel}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate-600">
+                        <span>Shipments {formatNumber(activeLaneMeta.shipments)}</span>
+                        <span>TEU {formatNumber(activeLaneMeta.teu, 1)}</span>
+                        <span>
+                          Est. Spend {activeLaneMeta.spend != null ? formatCurrency(activeLaneMeta.spend) : "—"}
                         </span>
                       </div>
                     </div>
@@ -4802,6 +4823,76 @@ if (!cancelled) {
               </div>
             );
           })()}
+        </TabsContent>
+
+        {/* Phase B.10 — Market Benchmark tab. Embeds Freight Right's
+            public Rate Index dashboard via Domo. The native <iframe>
+            does not fire `onError` for CSP / X-Frame-Options blocks,
+            so we run a 6-second `onLoad` watchdog (in the parent
+            component scope) and flip into a clean honest fallback
+            card if the embed never reports `load`. No app-side CSP
+            was found in `frontend/index.html` or `frontend/vercel.json`,
+            so iframe rendering depends on Domo's runtime
+            X-Frame-Options policy — verify in the browser after
+            deploy. */}
+        <TabsContent value="market-benchmark" className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-slate-200 px-6 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">
+                Market Benchmark
+              </p>
+              <h3 className="mt-2 text-xl font-black text-slate-950">
+                Freight Right Rate Index
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                External market index for freight rate context.
+              </p>
+            </div>
+            <div className="relative h-[720px] w-full overflow-hidden bg-slate-50">
+              {benchmarkIframeStatus === "blocked" ? (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm">
+                    <Globe className="h-5 w-5" aria-hidden />
+                  </div>
+                  <h4 className="text-base font-semibold text-slate-900">
+                    Benchmark embed unavailable
+                  </h4>
+                  <p className="max-w-md text-sm text-slate-500">
+                    Freight Right rate index could not load. This may be due to a CSP frame-src restriction or the embed being unavailable.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setBenchmarkIframeStatus("pending")}
+                    className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <iframe
+                  src="https://embed.domo.com/embed/pages/XroQm"
+                  title="Freight Right Rate Index"
+                  width="100%"
+                  height="1620"
+                  frameBorder="0"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  className="block h-[1620px] w-full border-0"
+                  onLoad={() => setBenchmarkIframeStatus("loaded")}
+                />
+              )}
+            </div>
+            <div className="border-t border-slate-200 px-6 py-3 text-center text-sm text-slate-500">
+              <a
+                href="https://www.freightright.com/freight-right-rate-index"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-blue-600 hover:text-blue-700"
+              >
+                Powered by Freight Right
+              </a>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
       </section>
