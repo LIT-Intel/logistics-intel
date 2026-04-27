@@ -77,36 +77,30 @@ const LIGHT_PALETTE: GlobePalette = {
 // Higher-contrast variant used by the Company Detail trade-lane card. The
 // Dashboard trade-lanes consumer keeps the legacy "light" palette by default.
 //
-// Phase B.3 — palette retuned per the validated design source. Previous tones
-// (#0F172A ocean / #3B82F6 land / #A5B4FC arc) read too dark over the panel's
-// light surface and washed out the arcs. New tokens:
-// - Ocean: #1E3A8A (soft navy, brighter than slate-900).
-// - Land: #60A5FA (medium blue, friendlier on navy).
-// - Graticule: #475569 at low opacity.
-// - Arc stroke: #818CF8 (indigo-400, visible against medium-blue land).
-// - Endpoint dots: #22D3EE (cyan-400) with #0E7490 outer ring at low opacity.
-// - Selected lane glow: #A78BFA (violet-400) for clear contrast vs unselected.
-// Phase B.4 — globe realism palette. Sphere now uses a true center-light /
-// edge-dark gradient (cyan-blue → navy) rather than a flat ocean fill, plus
-// an atmosphere halo ring behind the sphere and a soft drop shadow below
-// for depth. Land keeps the medium-blue fill but the stroke now reads at a
-// low opacity for natural shading rather than flat outlines. Graticule
-// drops to 0.18 opacity so it whispers behind the land, not over it.
+// Phase B.5 — globe realism upgrade. The B.4 palette painted both land
+// and ocean in shades of blue, so the sphere read as a stylised blue
+// ball rather than an Earth. Land now uses a muted sage-green base
+// (#A8B89A) with deeper olive borders, the ocean retunes to a more
+// saturated medium → deep navy gradient, and the atmosphere halo drops
+// alpha so it reads as a soft cloud haze instead of a neon ring. The
+// "selected country" highlight is intentionally a slightly lighter
+// shade of the land fill (rather than a saturated violet) so picking a
+// lane produces a subtle land-tint rather than a colour bomb.
 const DARK_PALETTE: GlobePalette = {
-  oceanInner: "#60A5FA",
-  oceanOuter: "#1E3A8A",
+  oceanInner: "#4A7BB7",
+  oceanOuter: "#1E3A6A",
   sphereStroke: "rgba(30,58,138,0.65)",
   graticule: "rgba(148,163,184,0.18)",
-  landFill: "#60A5FA",
-  landStroke: "rgba(30,58,138,0.35)",
-  highlightFill: "rgba(167,139,250,0.78)",
+  landFill: "#A8B89A",
+  landStroke: "rgba(101, 122, 88, 0.45)",
+  highlightFill: "#C5D5B5",
   arcGlow: "rgba(167,139,250,0.40)",
   arcStroke: "#818CF8",
   dotFill: "#22D3EE",
   dotStroke: "rgba(14,116,144,0.55)",
   pulseStroke: (alpha) => `rgba(34,211,238,${alpha})`,
-  atmosphere: "rgba(96, 165, 250, 0.18)",
-  dropShadow: "rgba(15, 23, 42, 0.25)",
+  atmosphere: "rgba(180, 215, 255, 0.22)",
+  dropShadow: "rgba(15, 23, 42, 0.18)",
 };
 
 type Props = {

@@ -41,6 +41,8 @@ import {
   parseImportYetiDate,
   formatUserFriendlyDate,
   getDateBadgeInfo,
+  formatSafeShipmentDate,
+  capFutureDate,
 } from "@/lib/dateUtils";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
@@ -1197,7 +1199,8 @@ export default function SearchPage() {
                               Last Ship
                             </div>
                             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600, color: '#374151' }}>
-                              {formatUserFriendlyDate(company.last_shipment, { fallback: "—" })}
+                              {/* Phase B.5 — cap future-dated shipment values so a stale row never paints "Dec 26, 2027" on a card. */}
+                              {formatSafeShipmentDate(company.last_shipment, "—")}
                             </div>
                           </div>
                         </div>
@@ -1356,10 +1359,14 @@ export default function SearchPage() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-1.5">
                               <div className="text-sm text-slate-900">
-                                {formatUserFriendlyDate(company.last_shipment, { fallback: "—" })}
+                                {/* Phase B.5 — cap future dates and only show recency badges when the date is actually in the past. */}
+                                {formatSafeShipmentDate(company.last_shipment, "—")}
                               </div>
                               {(() => {
-                                const badgeInfo = getDateBadgeInfo(company.last_shipment);
+                                const cappedForBadge = capFutureDate(company.last_shipment);
+                                const badgeInfo = cappedForBadge
+                                  ? getDateBadgeInfo(cappedForBadge)
+                                  : null;
                                 if (!badgeInfo) return null;
                                 return (
                                   <Badge

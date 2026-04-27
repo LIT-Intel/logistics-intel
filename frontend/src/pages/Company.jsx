@@ -15,6 +15,7 @@ import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
 import { flagFromCode } from "@/lib/laneGlobe";
+import { capFutureDate } from "@/lib/dateUtils";
 
 function formatNumber(value, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
@@ -54,11 +55,12 @@ function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
   return Math.round(inferredFcl * 1850 + inferredLcl * 850);
 }
 
+// Phase B.5 — delegate to the shared cap-future-date helper so the
+// hero's "Latest Shipment" KPI never out-runs the wall clock. Local
+// helper name retained because multiple call sites in this file already
+// reference `capDateAtToday`.
 function capDateAtToday(value) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed <= new Date() ? value : null;
+  return capFutureDate(value);
 }
 
 function normalizeDateValue(value) {

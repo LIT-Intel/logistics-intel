@@ -48,6 +48,11 @@ import {
   normalizeContainerTypeLabel,
 } from "@/lib/containerUtils";
 import { supabase } from "@/lib/supabase";
+import {
+  capFutureDate,
+  formatSafeShipmentDate,
+  latestValidPastDate,
+} from "@/lib/dateUtils";
 import CommandCenterEmptyState from "./CommandCenterEmptyState";
 import {
   PieChart,
@@ -230,14 +235,16 @@ const isValidPastOrCurrentDate = (value?: string | null) => {
  * Stricter clamp used at KPI display points only. Returns the original
  * value when it parses as a date at or before "now"; otherwise returns
  * null so the caller can render "—". Does not mutate any source data.
+ *
+ * Phase B.5 — delegates to the shared `capFutureDate` helper from
+ * `@/lib/dateUtils` so every shipment-date render path (Search cards,
+ * Command Center table, Company hero, this panel) shares one cap rule.
+ * Kept as a local symbol so existing imports inside this file (which
+ * already reference `capDateAtToday` at multiple points) continue to
+ * work without a sweeping rename.
  */
-const capDateAtToday = (value?: string | null): string | null => {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  const now = new Date();
-  return parsed.getTime() <= now.getTime() ? value : null;
-};
+const capDateAtToday = (value?: string | null): string | null =>
+  capFutureDate(value ?? null);
 
 const getDateTime = (value?: string | null) => {
   if (!value) return 0;
@@ -3078,73 +3085,13 @@ if (!cancelled) {
         </div>
       ) : null}
 
-      {/* Hero KPI strip — light-premium (no dark navy). Values come from the
-          already-normalized `detail` memo, which resolves each field through
-          the canonical parsed_summary / companyProfile fallback chain. */}
-      <div
-        className="mb-4 rounded-[30px] border border-slate-200 p-4 shadow-sm"
-        style={{
-          background:
-            "radial-gradient(circle at 0% 0%, rgba(99,102,241,0.08) 0%, rgba(99,102,241,0) 42%), linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 60%, #EEF2FF 100%)",
-        }}
-      >
-        <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-500">
-          Company Intelligence · 12-month window
-        </div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {[
-            {
-              label: "Shipments 12m",
-              value: formatNumber(detail.shipments),
-              icon: Package,
-              tintBg: "bg-indigo-50",
-              tintText: "text-indigo-600",
-              tintRing: "ring-indigo-100",
-            },
-            {
-              label: "TEU 12m",
-              value: formatNumber(detail.teu, 1),
-              icon: Container,
-              tintBg: "bg-cyan-50",
-              tintText: "text-cyan-600",
-              tintRing: "ring-cyan-100",
-            },
-            {
-              label: "Est Spend 12m",
-              value: formatCurrency(detail.spend),
-              icon: DollarSign,
-              tintBg: "bg-amber-50",
-              tintText: "text-amber-600",
-              tintRing: "ring-amber-100",
-            },
-            {
-              label: "Latest Shipment",
-              value: formatDate(capDateAtToday(detail.latestShipmentDate)),
-              icon: CalendarClock,
-              tintBg: "bg-emerald-50",
-              tintText: "text-emerald-600",
-              tintRing: "ring-emerald-100",
-            },
-          ].map((k) => (
-            <div
-              key={k.label}
-              className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-            >
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${k.tintBg} ${k.tintRing}`}>
-                <k.icon className={`h-4 w-4 ${k.tintText}`} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  {k.label}
-                </div>
-                <div className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-950">
-                  {k.value}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Phase B.5 — the panel-local "Company Intelligence · 12-month
+          window" KPI strip was removed. The dark hero on Company.jsx is
+          now the single source of truth for the four 12-month KPIs
+          (Shipments / TEU / Est. Spend / Latest Shipment), so we drop
+          the duplicate render here and let the tabs sit directly under
+          the hero with a thin divider for visual breath. */}
+      <div className="mb-3 border-b border-slate-200" aria-hidden />
 
       <Tabs
         value={activeTab}
@@ -3180,11 +3127,15 @@ if (!cancelled) {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-3">
-          {/* Phase B.4 — secondary KPI row. Every value derives from real
-              shipment / route / carrier data. Empty cells render an italic
-              `emptyHint` line rather than a bare em-dash so the row never
-              feels broken. The Top Carrier card auto-substitutes an
-              honest replacement KPI when no carrier data exists at all. */}
+          {/* Phase B.5 — secondary KPI row, slimmed.
+              Removed: Volume Trend YoY (always "Not enough history" today),
+              Last Activity (duplicate of hero's Latest Shipment), and any
+              Latest-Shipment alias outside the hero. The grid now auto-
+              sizes to whatever count of REAL cards survives, capped at 6
+              and clamped to ≥3 to keep a sensible row at narrow widths.
+              The substitution chain (Top Carrier → Most Active Origin →
+              Most Active Destination → FCL/LCL Split → Active Months)
+              is preserved unchanged. */}
           {(() => {
             const avgTeu =
               detail.shipments > 0 && detail.teu > 0
@@ -3297,33 +3248,45 @@ if (!cancelled) {
             };
             const substituteKpi = !carrierKpiAvailable ? computeSubstituteKpi() : null;
 
-            return (
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
-                <SmallMetric
-                  label="Avg TEU / Shipment"
-                  value={avgTeu}
-                  icon={TrendingUp}
-                  emptyHint="No TEU recorded yet"
-                />
-                <SmallMetric
-                  label="Active Trade Lanes"
-                  value={activeLaneCount > 0 ? formatNumber(activeLaneCount) : null}
-                  icon={Globe}
-                  emptyHint="No resolvable lanes"
-                />
-                <SmallMetric
-                  label="Volume Trend YoY"
-                  value={
-                    trendArrow ? (
-                      <span className={trendColor}>
-                        {trendArrow} {Math.abs(trendPct || 0).toFixed(1)}%
-                      </span>
-                    ) : null
-                  }
-                  icon={BarChart3}
-                  emptyHint={priorYearMissing ? "Not enough history" : "Not enough history"}
-                />
-                {carrierKpiAvailable ? (
+            // Phase B.5 — build the card list, keeping only entries with a
+            // real non-null value. Each entry is rendered as a SmallMetric
+            // and the surrounding grid auto-sizes to the survivor count.
+            type CardEntry = {
+              key: string;
+              node: React.ReactNode;
+            };
+            const cards: CardEntry[] = [];
+
+            if (avgTeu != null) {
+              cards.push({
+                key: "avg-teu",
+                node: (
+                  <SmallMetric
+                    label="Avg TEU / Shipment"
+                    value={avgTeu}
+                    icon={TrendingUp}
+                  />
+                ),
+              });
+            }
+
+            if (activeLaneCount > 0) {
+              cards.push({
+                key: "active-lanes",
+                node: (
+                  <SmallMetric
+                    label="Active Trade Lanes"
+                    value={formatNumber(activeLaneCount)}
+                    icon={Globe}
+                  />
+                ),
+              });
+            }
+
+            if (carrierKpiAvailable) {
+              cards.push({
+                key: "top-carrier",
+                node: (
                   <SmallMetric
                     label="Top Carrier"
                     value={
@@ -3337,40 +3300,139 @@ if (!cancelled) {
                     }
                     icon={Truck}
                   />
-                ) : substituteKpi ? (
+                ),
+              });
+            } else if (substituteKpi) {
+              cards.push({
+                key: "substitute-kpi",
+                node: (
                   <SmallMetric
                     label={substituteKpi.label}
                     value={substituteKpi.value}
                     icon={substituteKpi.icon}
                   />
-                ) : (
+                ),
+              });
+            }
+
+            // Most Active Origin / Destination, FCL/LCL Split, Active
+            // Months as STANDALONE cards too (when not already serving as
+            // the substitute) — only when each has real data.
+            const originCountsAll = new Map<string, { count: number; meta: ResolvedEndpoint }>();
+            const destCountsAll = new Map<string, { count: number; meta: ResolvedEndpoint }>();
+            for (const lane of canonicalLanes) {
+              const fk = lane.fromMeta.canonicalKey;
+              const tk = lane.toMeta.canonicalKey;
+              const fEntry = originCountsAll.get(fk) ?? { count: 0, meta: lane.fromMeta };
+              fEntry.count += lane.shipments || 0;
+              originCountsAll.set(fk, fEntry);
+              const tEntry = destCountsAll.get(tk) ?? { count: 0, meta: lane.toMeta };
+              tEntry.count += lane.shipments || 0;
+              destCountsAll.set(tk, tEntry);
+            }
+            const topOriginAll = [...originCountsAll.values()]
+              .filter((e) => e.count > 0)
+              .sort((a, b) => b.count - a.count)[0];
+            const topDestAll = [...destCountsAll.values()]
+              .filter((e) => e.count > 0)
+              .sort((a, b) => b.count - a.count)[0];
+
+            if (
+              topOriginAll &&
+              substituteKpi?.label !== "Most Active Origin" &&
+              cards.length < 6
+            ) {
+              cards.push({
+                key: "most-active-origin",
+                node: (
                   <SmallMetric
-                    label="Top Carrier"
-                    value={null}
-                    icon={Truck}
-                    emptyHint="No carrier names recorded"
+                    label="Most Active Origin"
+                    value={
+                      <span
+                        className="block truncate text-base"
+                        title={topOriginAll.meta.countryName}
+                      >
+                        <span aria-hidden className="mr-1">
+                          {topOriginAll.meta.flag || "🌐"}
+                        </span>
+                        {topOriginAll.meta.countryName}
+                      </span>
+                    }
+                    icon={MapPin}
                   />
-                )}
-                <SmallMetric
-                  label="Oldest Record"
-                  value={
-                    detail.oldestShipmentDate
-                      ? formatDate(detail.oldestShipmentDate)
-                      : null
-                  }
-                  icon={CalendarClock}
-                  emptyHint="No first-shipment date"
-                />
-                <SmallMetric
-                  label="Last Activity"
-                  value={
-                    detail.latestShipmentDate
-                      ? formatDate(capDateAtToday(detail.latestShipmentDate))
-                      : null
-                  }
-                  icon={CalendarClock}
-                  emptyHint="No recent shipments"
-                />
+                ),
+              });
+            }
+
+            if (
+              topDestAll &&
+              substituteKpi?.label !== "Most Active Destination" &&
+              cards.length < 6
+            ) {
+              cards.push({
+                key: "most-active-destination",
+                node: (
+                  <SmallMetric
+                    label="Most Active Destination"
+                    value={
+                      <span
+                        className="block truncate text-base"
+                        title={topDestAll.meta.countryName}
+                      >
+                        <span aria-hidden className="mr-1">
+                          {topDestAll.meta.flag || "🌐"}
+                        </span>
+                        {topDestAll.meta.countryName}
+                      </span>
+                    }
+                    icon={MapPin}
+                  />
+                ),
+              });
+            }
+
+            const oldestCapped = capDateAtToday(detail.oldestShipmentDate);
+            if (oldestCapped && cards.length < 6) {
+              cards.push({
+                key: "oldest-record",
+                node: (
+                  <SmallMetric
+                    label="Oldest Record"
+                    value={formatDate(oldestCapped)}
+                    icon={CalendarClock}
+                  />
+                ),
+              });
+            }
+
+            if (cards.length === 0) {
+              // Defensive: render a single empty-state hint rather than an
+              // invisible row when nothing qualifies.
+              return (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                  No supporting KPIs available yet for this company.
+                </div>
+              );
+            }
+
+            const xlCols = Math.min(Math.max(cards.length, 3), 6);
+            const xlClass = ([
+              "",
+              "",
+              "xl:grid-cols-2",
+              "xl:grid-cols-3",
+              "xl:grid-cols-4",
+              "xl:grid-cols-5",
+              "xl:grid-cols-6",
+            ] as const)[xlCols] ?? "xl:grid-cols-3";
+
+            return (
+              <div
+                className={`grid grid-cols-2 gap-2.5 sm:grid-cols-3 ${xlClass}`}
+              >
+                {cards.map((c) => (
+                  <React.Fragment key={c.key}>{c.node}</React.Fragment>
+                ))}
               </div>
             );
           })()}
@@ -3380,26 +3442,98 @@ if (!cancelled) {
               when no verified benchmark rate is available (the common
               case today), avoiding the 420px tall empty card we used to
               ship. When a benchmark IS populated we still expose the
-              detected lane label below the seasonality chart. */}
-          <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-              Peak seasonality index
-            </div>
-            <p className="mb-4 text-xs text-slate-500">
-              Monthly shipment profile for actual active months in {effectiveSelectedYear ?? "the selected year"}.
-            </p>
-            <div className="flex-1 min-h-[320px]">
-              <CompanyActivityChart data={detail.monthlySeries} />
-            </div>
-            <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <span className="font-semibold text-indigo-600">Observation:</span>{" "}
-              This chart only renders real active months from the selected year. No future-month placeholders.
-            </div>
-          </div>
+              detected lane label below the seasonality chart.
+              Phase B.5 — when the user is viewing the current calendar
+              year, the chart and labelling switch to a YTD framing:
+              subtitle / badge name "year-to-date" and the bars are
+              clipped at the current month so we never paint placeholder
+              future bars. Past years keep the existing per-month-active
+              behaviour. */}
+          {(() => {
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth(); // 0..11
+            const isYtd =
+              effectiveSelectedYear != null &&
+              effectiveSelectedYear === currentYear;
+
+            // Map period label ("Jan", "Feb", …) back to month index so we
+            // can clip future months for YTD without changing data shape.
+            const PERIOD_TO_MONTH: Record<string, number> = {};
+            for (let m = 0; m < 12; m++) {
+              const label = new Date(2000, m, 1).toLocaleDateString(undefined, {
+                month: "short",
+              });
+              PERIOD_TO_MONTH[label] = m;
+            }
+
+            const seasonalitySeries = isYtd
+              ? detail.monthlySeries.filter((p) => {
+                  const idx = PERIOD_TO_MONTH[p.period];
+                  return typeof idx === "number" && idx <= currentMonth;
+                })
+              : detail.monthlySeries;
+
+            const subtitle = isYtd
+              ? `${currentYear} year-to-date · Monthly shipment profile for active months year-to-date.`
+              : `Monthly shipment profile for active months in ${effectiveSelectedYear ?? "the selected year"}.`;
+
+            const badgeLabel = isYtd
+              ? `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"} YTD`
+              : `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"}`;
+
+            return (
+              <div className="flex h-full min-h-[420px] flex-col rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                    Peak Seasonality Index
+                  </div>
+                  {seasonalitySeries.length > 0 ? (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      {badgeLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mb-4 text-xs text-slate-500">{subtitle}</p>
+                <div className="flex-1 min-h-[320px]">
+                  <CompanyActivityChart data={seasonalitySeries} />
+                </div>
+                <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <span className="font-semibold text-indigo-600">Observation:</span>{" "}
+                  {isYtd
+                    ? "Only active months through today are rendered — no future-month placeholders."
+                    : "This chart only renders real active months from the selected year. No future-month placeholders."}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Phase B.4 — Market benchmark compact horizontal banner.
               Single row, ~96px tall: icon left, title/subtitle middle,
               amber badge + microcopy right. */}
+          {/**
+           * AI Market Signal — future plan (do NOT implement in this phase).
+           *
+           * Inputs:
+           *   - origin country/port, destination country/port
+           *   - mode (FCL / LCL / air)
+           *   - equipment (20'/40'/40HC)
+           *   - selected year/month
+           *
+           * Sources (in order of preference):
+           *   1. Internal quote history (when present)
+           *   2. Approved search provider (Tavily) for reviewed web-sourced rate signals
+           *   3. Future verified rate APIs (Freightos / Xeneta / SONAR) when licensed
+           *
+           * Output shape:
+           *   - estimated range (low/high USD)
+           *   - confidence (low/medium/high)
+           *   - source URLs / citations
+           *   - assumptions (lane, mode, equipment, snapshot date)
+           *   - last checked timestamp
+           *
+           * Output is labeled "AI Market Signal" — never "verified benchmark."
+           */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
@@ -3423,7 +3557,7 @@ if (!cancelled) {
                   Needs rate source
                 </span>
                 <p className="max-w-[240px] text-xs text-slate-400">
-                  Connect a verified rate source or enable reviewed market signals later.
+                  Enable AI Market Signal or connect a verified rate source.
                 </p>
               </div>
             </div>

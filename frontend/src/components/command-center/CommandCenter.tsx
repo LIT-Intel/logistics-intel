@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { listSavedCompanies, enrichCompaniesFromKpis } from "@/lib/api";
+import { formatSafeShipmentDate } from "@/lib/dateUtils";
 import type { CommandCenterRecord } from "@/types/importyeti";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { supabase } from "@/lib/supabase";
@@ -113,11 +114,12 @@ function formatCurrency(value: number | null | undefined) {
   return `$${n.toLocaleString()}`;
 }
 
+// Phase B.5 — delegate to the shared safe-shipment-date helper so a
+// future-dated `last_shipment_date` (an artefact of bad source data) no
+// longer leaks into the Command Center "Last Shipment" column. The
+// helper returns "—" for null / unparseable / future inputs.
 function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return formatSafeShipmentDate(value, "—");
 }
 
 
