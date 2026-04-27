@@ -3641,7 +3641,16 @@ if (!cancelled) {
                   : `${seasonalitySeries.length} active month${seasonalitySeries.length === 1 ? "" : "s"}`;
 
                 return (
-                  <div className="flex h-full min-h-[360px] flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                  // Phase B.12 — Peak Seasonality card height tightened.
+                  // Was `flex h-full min-h-[360px]` with a flex-1 chart
+                  // pane that, combined with `CompanyActivityChart`'s
+                  // own `h-[240px]` inner box, pushed the card body to
+                  // ~400px on wide displays. We drop the min-height
+                  // floor and the flex-1 pane: the chart now self-sizes
+                  // at 240px (its internal contract) and the card
+                  // settles at ~310px (header ~58 + subtitle ~24 +
+                  // chart 240 + observation footer ~46 + p-4 padding).
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm">
                     <div className="mb-2 flex items-start justify-between gap-3">
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -3657,10 +3666,8 @@ if (!cancelled) {
                         </span>
                       ) : null}
                     </div>
-                    <p className="mb-4 text-xs text-slate-500">{subtitle}</p>
-                    <div className="flex-1 min-h-[260px]">
-                      <CompanyActivityChart data={seasonalitySeries} />
-                    </div>
+                    <p className="mb-3 text-xs text-slate-500">{subtitle}</p>
+                    <CompanyActivityChart data={seasonalitySeries} />
                     <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-600">
                       <span className="font-semibold text-indigo-600">Observation:</span>{" "}
                       {isYtd
@@ -3733,6 +3740,119 @@ if (!cancelled) {
                             </li>
                           );
                         })}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Phase B.12 — Notify Parties / BOL Counterparties.
+                  Source: profile.notify_party_table (camelCase profile
+                  field) ←  raw `notify_party_table` from the
+                  ImportYeti snapshot. Each row has a free-form name
+                  field (`name` / `notify_party_name` / `company_name`)
+                  plus an optional `total_shipments` count. We render
+                  the top 5 with non-empty names. No extra fetches —
+                  the array is already on the loaded profile. */}
+              {(() => {
+                const rawNotifyParties: any[] = Array.isArray(
+                  (rawProfile as any)?.notify_party_table,
+                )
+                  ? (rawProfile as any).notify_party_table
+                  : Array.isArray((rawProfile as any)?.notifyParties)
+                    ? (rawProfile as any).notifyParties
+                    : Array.isArray((rawProfile as any)?.notify_parties)
+                      ? (rawProfile as any).notify_parties
+                      : [];
+
+                const cleanedNotifyParties = rawNotifyParties
+                  .map((row: any) => {
+                    const name = String(
+                      row?.notify_party_name ||
+                        row?.notify_party ||
+                        row?.name ||
+                        row?.company_name ||
+                        "",
+                    ).trim();
+                    const lower = name.toLowerCase();
+                    if (
+                      !name ||
+                      lower === "—" ||
+                      lower === "unknown" ||
+                      lower === "n/a" ||
+                      lower === "na"
+                    ) {
+                      return null;
+                    }
+                    const shipments =
+                      Number(
+                        row?.total_shipments ??
+                          row?.shipments ??
+                          row?.shipments_12m ??
+                          0,
+                      ) || 0;
+                    const country = String(
+                      row?.country || row?.country_code || "",
+                    ).trim();
+                    return { name, shipments, country };
+                  })
+                  .filter(Boolean) as Array<{
+                  name: string;
+                  shipments: number;
+                  country: string;
+                }>;
+
+                const topNotify = cleanedNotifyParties.slice(0, 5);
+                return (
+                  <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          BOL COUNTERPARTIES
+                        </div>
+                        <h3 className="mt-1 text-base font-bold text-slate-950">
+                          Notify parties on file
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {cleanedNotifyParties.length > 0
+                            ? `Top ${topNotify.length} of ${cleanedNotifyParties.length} verified notify parties`
+                            : "From verified bill-of-lading records"}
+                        </p>
+                      </div>
+                    </div>
+                    {topNotify.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        No BOL counterparties available in this snapshot.
+                      </div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {topNotify.map((np, idx) => (
+                          <li
+                            key={`${np.name}-${idx}`}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white/70 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-900">
+                                {np.name}
+                              </div>
+                              {np.country ? (
+                                <div className="mt-0.5 truncate text-xs text-slate-500">
+                                  {np.country}
+                                </div>
+                              ) : null}
+                            </div>
+                            {np.shipments > 0 ? (
+                              <div className="shrink-0 text-right">
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  Shipments
+                                </div>
+                                <div className="text-sm font-semibold text-indigo-600">
+                                  {formatNumber(np.shipments)}
+                                </div>
+                              </div>
+                            ) : null}
+                          </li>
+                        ))}
                       </ul>
                     )}
                   </div>

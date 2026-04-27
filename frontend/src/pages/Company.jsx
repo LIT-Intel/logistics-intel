@@ -3,11 +3,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   CalendarClock,
+  Download,
   Globe,
   LayoutGrid,
   Loader2,
   Send,
+  Share2,
   Sparkles,
+  X,
 } from "lucide-react";
 // Phase B.9 — the hero no longer renders the dark KPI strip, so the
 // `formatNumber` / `formatCurrency` / `formatDate` display helpers and
@@ -182,6 +185,15 @@ export default function Company() {
   const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+  // Phase B.12 — Pulse brief modal state. Tavily / pulse-brief Edge
+  // Function is not deployed (verified against supabase/functions
+  // listing on 2026-04-27), so the modal renders an honest stub.
+  const [pulseModalOpen, setPulseModalOpen] = useState(false);
+  // Share-link affordance. No export-company-profile Edge Function
+  // exists, so "Share HTML" copies the canonical page URL to the
+  // clipboard as a non-deceptive temporary share and shows a
+  // transient inline confirmation. PDF export remains disabled.
+  const [shareCopied, setShareCopied] = useState(false);
 
   const shellCompany = useMemo(
     () => buildShellCompany(companyId, storedSelectedCompany),
@@ -418,15 +430,91 @@ export default function Company() {
             className="pointer-events-none absolute -inset-px rounded-[2.1rem] bg-gradient-to-r from-indigo-300/0 via-blue-400/40 to-indigo-300/0 opacity-0 blur-md transition-opacity duration-700 group-hover:opacity-100"
           />
         <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-          {/* Glossy translucent blue right-zone — only on lg+ so the
-              identity column owns the full width on tablet/mobile. */}
+          {/* Phase B.12 — Abstract vector surface header. Replaces the
+              flat blue/cyan glass panel from B.9–B.11 with a layered
+              dark indigo→violet surface (base gradient + two
+              animated radial blobs + an inline SVG curve set + a
+              left-side vignette). The animation is wrapped in a
+              `prefers-reduced-motion: no-preference` media query so
+              users with reduced-motion preferences see the still
+              composition. Only renders on `lg:` because the identity
+              column owns the full width on smaller breakpoints. */}
+          <style>{`
+            @media (prefers-reduced-motion: no-preference) {
+              @keyframes b12_pulseSlow {
+                0%, 100% { opacity: 0.35; transform: scale(1); }
+                50% { opacity: 0.7; transform: scale(1.06); }
+              }
+              @keyframes b12_float {
+                0%, 100% { transform: translate(0, 0) rotate(0deg); }
+                33% { transform: translate(20px, -15px) rotate(2deg); }
+                66% { transform: translate(-15px, 10px) rotate(-1deg); }
+              }
+              @keyframes b12_wave {
+                0%, 100% { transform: translateX(0); opacity: 0.4; }
+                50% { transform: translateX(-12px); opacity: 0.55; }
+              }
+              .b12-blob-pulse { animation: b12_pulseSlow 12s ease-in-out infinite; }
+              .b12-blob-float { animation: b12_float 18s ease-in-out infinite; }
+              .b12-wave-svg { animation: b12_wave 22s ease-in-out infinite; }
+            }
+          `}</style>
+          {/* Layer 1 — base dark indigo gradient surface */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-gradient-to-br from-blue-500/20 via-cyan-400/20 to-indigo-500/25 backdrop-blur-xl lg:block"
+            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 lg:block"
           />
+          {/* Layer 2 — indigo radial blob (animated pulse) */}
           <div
             aria-hidden
-            className="pointer-events-none absolute right-12 top-10 hidden h-52 w-52 rounded-full bg-blue-400/20 blur-3xl lg:block"
+            className="b12-blob-pulse pointer-events-none absolute right-[10%] top-[15%] hidden h-72 w-72 rounded-full bg-indigo-500/30 blur-3xl lg:block"
+          />
+          {/* Layer 3 — violet drifting blob */}
+          <div
+            aria-hidden
+            className="b12-blob-float pointer-events-none absolute bottom-[10%] right-[35%] hidden h-56 w-56 rounded-full bg-violet-500/25 blur-3xl lg:block"
+          />
+          {/* Layer 4 — soft blue accent */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute right-[18%] top-[55%] hidden h-40 w-40 rounded-full bg-blue-600/20 blur-3xl lg:block"
+          />
+          {/* Layer 5 — inline SVG vector curves (cyan stroke accent) */}
+          <svg
+            aria-hidden
+            viewBox="0 0 600 400"
+            preserveAspectRatio="none"
+            className="b12-wave-svg pointer-events-none absolute right-0 top-0 hidden h-full w-[42%] opacity-40 lg:block"
+          >
+            <path
+              d="M0,80 C150,160 300,0 600,90 L600,0 L0,0 Z"
+              fill="rgba(99,102,241,0.08)"
+            />
+            <path
+              d="M0,200 C200,140 400,260 600,180"
+              fill="none"
+              stroke="rgba(34,211,238,0.18)"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M0,310 C180,260 380,360 600,290"
+              fill="none"
+              stroke="rgba(139,92,246,0.20)"
+              strokeWidth="1"
+            />
+            <path
+              d="M0,360 C160,320 360,400 600,340"
+              fill="none"
+              stroke="rgba(99,102,241,0.15)"
+              strokeWidth="1"
+            />
+          </svg>
+          {/* Layer 6 — left-side vignette so the dark surface fades
+              cleanly into the identity column rather than showing a
+              hard 42% seam */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-gradient-to-l from-slate-950/40 via-transparent to-transparent lg:block"
           />
 
           <div className="relative grid gap-8 p-6 lg:grid-cols-[1.45fr_0.85fr] lg:p-8">
@@ -586,6 +674,71 @@ export default function Company() {
                 In Command Center
               </button>
 
+              {/* Phase B.12 — Pulse brief CTA. Opens a stub modal until
+                  the Tavily / pulse-brief Edge Function is deployed.
+                  No fake brief content is rendered. */}
+              <button
+                type="button"
+                onClick={() => setPulseModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-violet-300/60 bg-gradient-to-br from-violet-500/15 to-indigo-500/15 px-4 py-2 text-sm font-semibold text-violet-800 backdrop-blur-md transition hover:from-violet-500/25 hover:to-indigo-500/25"
+              >
+                <Sparkles className="h-4 w-4" />
+                Pulse
+              </button>
+
+              {/* Phase B.12 — Share HTML / Export PDF. No
+                  export-company-profile Edge Function exists yet, so:
+                  • Share HTML copies the canonical page URL to the
+                    clipboard (non-deceptive temporary share). Inline
+                    confirmation appears for ~2s.
+                  • Export PDF stays disabled with an honest tooltip
+                    pointing at the missing backend. */}
+              <div className="flex flex-col gap-2 border-t border-white/60 pt-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const url =
+                          typeof window !== "undefined"
+                            ? window.location.href
+                            : "";
+                        if (
+                          url &&
+                          typeof navigator !== "undefined" &&
+                          navigator.clipboard?.writeText
+                        ) {
+                          await navigator.clipboard.writeText(url);
+                          setShareCopied(true);
+                          setTimeout(() => setShareCopied(false), 2000);
+                        }
+                      } catch {
+                        // ignore — clipboard may be blocked by browser
+                      }
+                    }}
+                    title="Copies this page's link. Branded HTML share requires the export-company-profile Edge Function (not deployed)."
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-indigo-200/70 bg-white/80 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    Share HTML
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    title="PDF export requires the export-company-profile Edge Function (not deployed)."
+                    className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/60 px-3 py-1.5 text-xs font-semibold text-slate-400"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export PDF
+                  </button>
+                </div>
+                {shareCopied ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-center text-[11px] font-semibold text-emerald-700">
+                    Link copied to clipboard
+                  </div>
+                ) : null}
+              </div>
+
               {/* Phase B.9 — Refresh Intel + Watchlist are NOT functional
                   today, so per the brief's honesty rule we render them
                   disabled with `title="Coming soon"` rather than ship a
@@ -631,6 +784,93 @@ export default function Company() {
             onClose={() => setCampaignModalOpen(false)}
             company={{ company_id: String(companyId), name: companyName }}
           />
+        ) : null}
+
+        {/* Phase B.12 — Pulse brief modal stub. Tavily / pulse-brief
+            Edge Function is not deployed (verified against
+            supabase/functions listing on 2026-04-27). The modal
+            renders an honest empty state describing the seven brief
+            sections that will populate once the backend is wired,
+            rather than fabricating placeholder content. */}
+        {pulseModalOpen ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pulse-brief-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+            onClick={() => setPulseModalOpen(false)}
+          >
+            <div
+              className="w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-6 text-white">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute right-[10%] top-[20%] h-40 w-40 rounded-full bg-indigo-500/30 blur-3xl"
+                />
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute bottom-[10%] right-[35%] h-28 w-28 rounded-full bg-violet-500/25 blur-3xl"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPulseModalOpen(false)}
+                  className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/80 backdrop-blur-md transition hover:bg-white/20"
+                  aria-label="Close Pulse brief"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <div className="relative inline-flex items-center gap-2 rounded-full border border-violet-300/40 bg-violet-500/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-100">
+                  <Sparkles className="h-3 w-3" />
+                  Pulse Brief
+                </div>
+                <h3
+                  id="pulse-brief-title"
+                  className="relative mt-3 text-2xl font-bold tracking-tight"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  {companyName}
+                </h3>
+                <p className="relative mt-1 text-sm text-slate-300">
+                  AI-generated company intelligence brief
+                </p>
+              </div>
+              <div className="space-y-4 p-6">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+                  <strong className="font-semibold">
+                    Pulse brief generation is not configured yet.
+                  </strong>
+                  <p className="mt-1 text-amber-800">
+                    The Tavily / pulse-brief Edge Function is not deployed.
+                    Once the backend is wired, clicking Pulse will generate:
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
+                    <li>Executive Summary</li>
+                    <li>Shipment Signal</li>
+                    <li>Public Web Context</li>
+                    <li>Opportunity Angle</li>
+                    <li>Suggested Outreach Angle</li>
+                    <li>Risks / Watchouts</li>
+                    <li>Sources</li>
+                  </ul>
+                </div>
+                <p className="text-xs text-slate-500">
+                  No placeholder content is shown here intentionally — Pulse
+                  will only render real Tavily-grounded intelligence.
+                </p>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setPulseModalOpen(false)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>
