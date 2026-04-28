@@ -2691,6 +2691,13 @@ export default function CompanyDetailPanel({
   const [contactFetchTrigger, setContactFetchTrigger] = useState(0);
   const [contactPreviewSource, setContactPreviewSource] = useState<"cache" | "lusha" | null>(null);
   const [contactMessage, setContactMessage] = useState<string | null>(null);
+  // Phase B.17 — toast tone for the contact save banner. Promoted from a
+  // buried empty-state line into a sticky banner at the top of the
+  // Contact Intel tab so users actually see save outcomes (success,
+  // already-saved, RLS denied, FK missing). `null` hides the banner.
+  const [contactMessageTone, setContactMessageTone] = useState<
+    "info" | "success" | "warning" | "error" | null
+  >(null);
   const [contactDebug, setContactDebug] = useState<any | null>(null);
   // Phase B.2 G — when the enrich-contacts edge function returns a 5xx
   // / non-2xx (rate limited, provider down, etc.) we store the raw error
@@ -3059,6 +3066,7 @@ if (!cancelled) {
       setContactMessage(
         "Save needs a saved company. Add this company to Command Center first.",
       );
+      setContactMessageTone("warning");
       return;
     }
 
@@ -3107,6 +3115,7 @@ if (!cancelled) {
       // Honest, non-technical error mapping by Postgres SQLSTATE code.
       if ((error as any)?.code === "23505") {
         setContactMessage("Contact already saved.");
+        setContactMessageTone("info");
         // Treat as locally-saved so the row stops re-prompting the save.
         setSavedContactKeys((prev) => {
           const next = new Set(prev);
@@ -3117,7 +3126,15 @@ if (!cancelled) {
       }
       if ((error as any)?.code === "42501") {
         // RLS denial — no INSERT policy on lit_contacts for authenticated.
-        setContactMessage("Contact saving is not enabled for your account yet.");
+        // Phase B.17 — be explicit: this almost always means the
+        // 20260426000000_lit_contacts_save_rls.sql migration has not been
+        // applied to the live Supabase database. The frontend cannot fix
+        // this — surface honest copy and tone so the user (or admin)
+        // can act.
+        setContactMessage(
+          "Contact saving is not enabled for your account yet. Database policy migration may be pending.",
+        );
+        setContactMessageTone("error");
         return;
       }
       if ((error as any)?.code === "23503") {
@@ -3125,9 +3142,11 @@ if (!cancelled) {
         setContactMessage(
           "Save needs a saved company. Add this company to Command Center first.",
         );
+        setContactMessageTone("warning");
         return;
       }
       setContactMessage("Could not save contact. Try again or contact support.");
+      setContactMessageTone("error");
       return;
     }
 
@@ -3136,7 +3155,46 @@ if (!cancelled) {
       next.add(getContactKey(contact));
       return next;
     });
+
+    // Phase B.17 — verify the row actually persisted. Some RLS configs
+    // (notably WITH CHECK without USING) let the insert "succeed" but
+    // make the row invisible to subsequent SELECTs. Catch that silent
+    // failure honestly instead of leaving the user with a green tick
+    // that doesn't match reality.
+    try {
+      let verifyQuery = supabase
+        .from("lit_contacts")
+        .select("id")
+        .eq("source", "lusha")
+        .eq("company_id", companyUuid)
+        .limit(1);
+      if (sourceContactKey) {
+        verifyQuery = verifyQuery.eq("source_contact_key", sourceContactKey);
+      } else {
+        verifyQuery = verifyQuery.is("source_contact_key", null);
+      }
+      const { data: verifyRows, error: verifyError } = await verifyQuery;
+      if (verifyError) {
+        console.warn("Save verify select error", verifyError);
+        setContactMessage(
+          "Contact saved, but we couldn't confirm the row is readable. RLS migration may need to be applied.",
+        );
+        setContactMessageTone("warning");
+        return;
+      }
+      if (!Array.isArray(verifyRows) || verifyRows.length === 0) {
+        setContactMessage(
+          "Save reported success but the row is not visible. RLS migration may need to be applied to the live database.",
+        );
+        setContactMessageTone("warning");
+        return;
+      }
+    } catch (verifyErr) {
+      console.warn("Save verify threw", verifyErr);
+    }
+
     setContactMessage("Contact saved.");
+    setContactMessageTone("success");
   };
 
   const contactOverviewRows = phantomContacts.slice(0, CONTACT_PREVIEW_LIMIT);
@@ -3367,57 +3425,67 @@ if (!cancelled) {
             back out of Overview so the globe + canonical lane table get
             full panel width and the flag pills stop overflowing on
             1024-1280 viewports. */}
-        <TabsList className="flex h-auto w-full gap-0 overflow-x-auto rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
-          <TabsTrigger
-            value="overview"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Overview
-          </TabsTrigger>
-          <TabsTrigger
-            value="shipments"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Shipments
-          </TabsTrigger>
-          <TabsTrigger
-            value="trade-lanes"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Trade Lanes
-          </TabsTrigger>
-          <TabsTrigger
-            value="equipment"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Equipment
-          </TabsTrigger>
-          <TabsTrigger
-            value="contacts"
-            className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
-            Contact Intel
-          </TabsTrigger>
-          {/* Phase B.11 — Market Benchmark trigger is gated to super-admins
-              only. Hidden for everyone else (and during the auth-resolving
-              window) so the embedded Domo iframe never flashes for a
-              regular user. The TabsContent block below is gated with the
-              same predicate to prevent URL deep-link bypass. */}
-          {isBenchmarkAdmin ? (
+        {/* Phase B.17 — mobile-first tab bar. Wrapped in a `-mx-4 md:mx-0`
+            container so on mobile tabs flow edge-to-edge (no internal
+            gutter eats the scroll runway). `snap-x snap-mandatory` +
+            `snap-start` on triggers locks each tab to a snap point so
+            the user never lands on a half-cut label. Padding is reduced
+            on mobile (px-3 py-1.5 text-xs) and restored at md (px-4 py-2.5
+            text-sm). `whitespace-nowrap` retained inline so labels never
+            wrap regardless of viewport. */}
+        <div className="-mx-4 md:mx-0">
+          <TabsList className="flex h-auto w-full gap-0 overflow-x-auto snap-x snap-mandatory scroll-smooth rounded-none border-0 border-b border-slate-200 bg-white p-0 shadow-none">
             <TabsTrigger
-              value="market-benchmark"
-              className="h-auto rounded-none border-b-2 border-transparent px-4 py-2.5 text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+              value="overview"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
             >
-              Market Benchmark
+              Overview
             </TabsTrigger>
-          ) : null}
-        </TabsList>
+            <TabsTrigger
+              value="shipments"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Shipments
+            </TabsTrigger>
+            <TabsTrigger
+              value="trade-lanes"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Trade Lanes
+            </TabsTrigger>
+            <TabsTrigger
+              value="equipment"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Equipment
+            </TabsTrigger>
+            <TabsTrigger
+              value="contacts"
+              className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Contact Intel
+            </TabsTrigger>
+            {/* Phase B.11 — Market Benchmark trigger is gated to super-admins
+                only. Hidden for everyone else (and during the auth-resolving
+                window) so the embedded Domo iframe never flashes for a
+                regular user. The TabsContent block below is gated with the
+                same predicate to prevent URL deep-link bypass. */}
+            {isBenchmarkAdmin ? (
+              <TabsTrigger
+                value="market-benchmark"
+                className="snap-start h-auto rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs md:px-4 md:py-2.5 md:text-sm text-slate-500 transition-all data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+                style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, whiteSpace: 'nowrap' }}
+              >
+                Market Benchmark
+              </TabsTrigger>
+            ) : null}
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-6">
           {/* Phase B.9 — executive 60/40 Overview. The Phase B.5 secondary
@@ -4774,6 +4842,39 @@ if (!cancelled) {
 
             return (
               <div className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+                {/* Phase B.17 — sticky save-result banner. Renders ONLY when
+                    contactMessageTone is set (success / info / warning /
+                    error). Lifted from the buried empty-state line so users
+                    actually see the outcome of `saveContactToSupabase`. */}
+                {contactMessage && contactMessageTone ? (
+                  <div
+                    role={contactMessageTone === "error" ? "alert" : "status"}
+                    aria-live="polite"
+                    className={
+                      "mb-4 flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold " +
+                      (contactMessageTone === "success"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : contactMessageTone === "warning"
+                          ? "border-amber-200 bg-amber-50 text-amber-900"
+                          : contactMessageTone === "error"
+                            ? "border-rose-200 bg-rose-50 text-rose-800"
+                            : "border-slate-200 bg-slate-50 text-slate-700")
+                    }
+                  >
+                    <span className="flex-1">{contactMessage}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContactMessage(null);
+                        setContactMessageTone(null);
+                      }}
+                      className="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold opacity-70 hover:opacity-100"
+                      aria-label="Dismiss"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : null}
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">

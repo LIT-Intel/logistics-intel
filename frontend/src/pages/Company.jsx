@@ -8,10 +8,11 @@ import {
   Globe,
   LayoutGrid,
   Loader2,
+  MoreHorizontal,
+  RefreshCw,
   Route,
   Send,
   Share2,
-  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
@@ -252,6 +253,12 @@ export default function Company() {
   const [shareLoading, setShareLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [shareToast, setShareToast] = useState(null);
+  // Phase B.17 — mobile "More" bottom sheet. Toggled by the compact mobile
+  // action row's More button. Declared at the top of the component (above
+  // the early-return guard below) to satisfy the Rules-of-Hooks fix from
+  // Phase B.13 (React error #300 was caused by hooks moving across an
+  // early-return boundary).
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
 
   const shellCompany = useMemo(
     () => buildShellCompany(companyId, storedSelectedCompany),
@@ -742,12 +749,10 @@ export default function Company() {
     return `${fmt(ships)} shipments / ${fmt(teu)} TEU`;
   }, [headerKpis?.shipments, headerKpis?.teu]);
 
-  // Intel status: "Snapshot verified" only when activeProfile resolved AND
-  // at least one volume metric is real. Otherwise "Snapshot pending". Not
-  // a hook, but kept with its siblings for grouping.
-  const snapshotPillVerified = Boolean(
-    activeProfile && ((Number(headerKpis?.shipments) || 0) > 0 || (Number(headerKpis?.teu) || 0) > 0),
-  );
+  // Phase B.17 — `snapshotPillVerified` removed alongside the third Intel
+  // status pill. Snapshot freshness/honesty is already conveyed by the
+  // "Snapshot {date}" label and the Refreshing intel pill in the metadata
+  // row, so the third pill was decorative weight.
 
   if (error || !companyId) {
     return (
@@ -1006,58 +1011,40 @@ export default function Company() {
                 </div>
               </div>
 
-              {/* Phase B.13.1 — Company Snapshot strip. Three compact glass
-                  fact pills under the address row: primary lane, volume
-                  signal, intel status. Each pill hides individually when
-                  its underlying data is missing (no fake fallback). On
-                  mobile the strip stacks vertically; at sm+ it flows
-                  horizontally with wrap. */}
-              <div className="flex flex-wrap items-stretch gap-2">
+              {/* Phase B.17 — simplified Snapshot strip. The third Intel
+                  status pill is gone (it duplicated information already
+                  surfaced by the "Snapshot {date}" / "Refreshing intel"
+                  labels in the metadata row above). The remaining two
+                  pills (primary lane, volume signal) are stripped down:
+                  no colored icon-tile container, transparent fill,
+                  rounded-full, py-1.5. The icon glyph itself carries the
+                  color tint inline; the label is muted/uppercase; the
+                  value is white-bold. Each pill still hides when its
+                  underlying data is null (no fake fallback). */}
+              <div className="flex flex-wrap items-center gap-2">
                 {snapshotPillLane ? (
-                  <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/8 px-3 py-2 backdrop-blur-md" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 ring-1 ring-indigo-300/20">
-                      <Route className="h-4 w-4 text-indigo-200" />
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs">
+                    <Route className="h-3.5 w-3.5 text-indigo-300" />
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Primary lane
                     </span>
-                    <span className="flex flex-col">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        Primary lane
-                      </span>
-                      <span className="text-sm font-semibold text-white">
-                        {snapshotPillLane}
-                      </span>
+                    <span className="font-semibold text-white">
+                      {snapshotPillLane}
                     </span>
                   </div>
                 ) : null}
 
                 {snapshotPillVolume ? (
-                  <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 px-3 py-2 backdrop-blur-md" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 ring-1 ring-cyan-300/20">
-                      <BarChart3 className="h-4 w-4 text-cyan-200" />
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs">
+                    <BarChart3 className="h-3.5 w-3.5 text-cyan-300" />
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Volume signal
                     </span>
-                    <span className="flex flex-col">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        Volume signal
-                      </span>
-                      <span className="text-sm font-semibold text-white">
-                        {snapshotPillVolume}
-                      </span>
+                    <span className="font-semibold text-white">
+                      {snapshotPillVolume}
                     </span>
                   </div>
                 ) : null}
-
-                <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 px-3 py-2 backdrop-blur-md" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 ring-1 ring-emerald-300/20">
-                    <ShieldCheck className="h-4 w-4 text-emerald-200" />
-                  </span>
-                  <span className="flex flex-col">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Intel status
-                    </span>
-                    <span className="text-sm font-semibold text-white">
-                      {snapshotPillVerified ? "Snapshot verified" : "Snapshot pending"}
-                    </span>
-                  </span>
-                </div>
               </div>
 
               {/* Phase B.15 — only show the full-row "Loading…" pill when
@@ -1072,11 +1059,56 @@ export default function Company() {
               ) : null}
             </div>
 
+            {/* Phase B.17 — compact mobile action row. Visible only at
+                <lg, where the full glass action panel is hidden. Three
+                primary actions: Start Outreach (CTA), Pulse (modal), and
+                More (bottom sheet with Command Center / Share / Export /
+                Refresh / Year). Click handlers reused verbatim from the
+                desktop panel. */}
+            <div className="flex flex-wrap items-center gap-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!companyId) return;
+                  setCampaignModalOpen(true);
+                }}
+                disabled={!companyId}
+                className="inline-flex flex-1 min-w-[140px] items-center justify-center gap-2 rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+                Start Outreach
+              </button>
+              <button
+                type="button"
+                onClick={handlePulseClick}
+                disabled={!companyId}
+                className="inline-flex flex-1 min-w-[100px] items-center justify-center gap-2 rounded-full border border-violet-300/40 bg-gradient-to-br from-violet-500/20 to-indigo-500/20 px-4 py-2 text-sm font-semibold text-violet-100 backdrop-blur-md disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pulseLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                Pulse
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileMoreOpen(true)}
+                className="inline-flex items-center justify-center gap-1 rounded-full border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200"
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+                More
+              </button>
+            </div>
+
             {/* RIGHT — Embedded glass action panel. Backdrop-blur on
                 white/5 fill so the panel reads as embedded in the
                 surface, not a separate floating card. All click
-                handlers preserved verbatim. */}
-            <div className="relative flex flex-col gap-3 self-start rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl lg:w-[380px] lg:flex-shrink-0">
+                handlers preserved verbatim. Phase B.17 — `hidden lg:flex`
+                so the panel ONLY renders at ≥lg; mobile uses the compact
+                action row above + bottom sheet below. */}
+            <div className="relative hidden lg:flex flex-col gap-3 self-start rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl lg:w-[380px] lg:flex-shrink-0">
               {years.length > 0 ? (
                 <div className="inline-flex items-center gap-2 self-start rounded-full border border-white/15 bg-white/5 px-3 py-1.5">
                   <CalendarClock className="h-3.5 w-3.5 text-slate-300" />
@@ -1250,6 +1282,125 @@ export default function Company() {
             onClose={() => setCampaignModalOpen(false)}
             company={{ company_id: String(companyId), name: companyName }}
           />
+        ) : null}
+
+        {/* Phase B.17 — mobile "More" bottom sheet. Visible only when
+            mobileMoreOpen is true (toggled by the compact mobile action
+            row's More button). Hosts secondary actions that don't fit on
+            a 3-button row: In Command Center, Share HTML, Export PDF,
+            Refresh Intel, and a Year selector. Each action delegates to
+            the same handlers used by the desktop glass panel — no
+            duplicated logic, just a different surface. Tapping the
+            backdrop or the explicit Close button dismisses. */}
+        {mobileMoreOpen ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="More actions"
+            className="fixed inset-0 z-50 flex items-end lg:hidden"
+            onClick={() => setMobileMoreOpen(false)}
+          >
+            <div
+              aria-hidden
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            <div
+              className="relative z-10 w-full rounded-t-3xl border-t border-white/10 bg-slate-900 p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
+              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                More actions
+              </div>
+              <div className="space-y-2">
+                {years.length > 0 ? (
+                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <CalendarClock className="h-4 w-4 text-slate-300" />
+                      <span className="text-sm font-semibold text-white">Year</span>
+                    </div>
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => setSelectedYear(Number(e.target.value))}
+                      className="rounded-md bg-white/10 px-2 py-1 text-sm font-semibold text-white outline-none"
+                    >
+                      {years.map((year) => (
+                        <option key={year} value={year} className="bg-slate-900 text-white">
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMoreOpen(false);
+                    navigate("/app/command-center");
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  In Command Center
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMoreOpen(false);
+                    handleShareHtmlClick();
+                  }}
+                  disabled={!companyId || shareLoading}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {shareLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Share2 className="h-4 w-4" />
+                  )}
+                  Share HTML
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMoreOpen(false);
+                    handleExportPdfClick();
+                  }}
+                  disabled={!companyId || exportLoading}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Export PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMoreOpen(false);
+                    handleManualRefreshClick();
+                  }}
+                  disabled={!companyId || manualRefreshing || refreshing}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {manualRefreshing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Refresh Intel
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMoreOpen(false)}
+                className="mt-4 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {/* Phase B.16 — Pulse brief modal. Renders three states:
