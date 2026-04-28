@@ -577,39 +577,19 @@ export default function Company() {
     }
   }
 
-  if (error || !companyId) {
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <button
-            type="button"
-            onClick={() => navigate("/app/command-center")}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Command Center
-          </button>
-
-          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-            {error || "Company unavailable"}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const countryFlag = companyCountryCode ? flagFromCode(companyCountryCode) : "";
-  const countryDisplay =
-    activeProfile?.country ||
-    activeProfile?.country_name ||
-    shellCompany?.country ||
-    null;
-
   // Phase B.13.1 — Snapshot strip pills.
-  // Primary lane: parse headerKpis.topRoute via resolveEndpoint so each side
-  // reads as `{countryCode} {countryName}` (e.g. "CN China → US USA"). If
-  // the lane string has only one resolvable side or is missing, the pill
-  // hides (no fake fallback).
+  // Hook ordering rule (Rules of Hooks): all useMemo / useState / useEffect
+  // calls MUST run BEFORE any early `return`. Phase B.13.1 originally
+  // placed these three derivations after the `if (error || !companyId)`
+  // early-return guard below, which intermittently skipped the hooks on
+  // error / no-company-id render paths and surfaced as React error #300
+  // ("Rendered more hooks than during the previous render"). Moving them
+  // above the early return restores stable hook count across all renders.
+  //
+  // Primary lane: parse headerKpis.topRoute via resolveEndpoint so each
+  // side reads as `{countryCode} {countryName}` (e.g. "CN China → US USA").
+  // If the lane string has only one resolvable side or is missing, the
+  // pill hides (no fake fallback).
   const snapshotPillLane = useMemo(() => {
     const raw = headerKpis?.topRoute || headerKpis?.recentRoute || null;
     if (!raw || typeof raw !== "string") return null;
@@ -637,10 +617,39 @@ export default function Company() {
   }, [headerKpis?.shipments, headerKpis?.teu]);
 
   // Intel status: "Snapshot verified" only when activeProfile resolved AND
-  // at least one volume metric is real. Otherwise "Snapshot pending".
+  // at least one volume metric is real. Otherwise "Snapshot pending". Not
+  // a hook, but kept with its siblings for grouping.
   const snapshotPillVerified = Boolean(
     activeProfile && ((Number(headerKpis?.shipments) || 0) > 0 || (Number(headerKpis?.teu) || 0) > 0),
   );
+
+  if (error || !companyId) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <button
+            type="button"
+            onClick={() => navigate("/app/command-center")}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Command Center
+          </button>
+
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+            {error || "Company unavailable"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const countryFlag = companyCountryCode ? flagFromCode(companyCountryCode) : "";
+  const countryDisplay =
+    activeProfile?.country ||
+    activeProfile?.country_name ||
+    shellCompany?.country ||
+    null;
 
   return (
     <div className="min-h-screen bg-slate-50">
