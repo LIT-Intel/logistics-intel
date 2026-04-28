@@ -1813,8 +1813,6 @@ export default function LITDashboard() {
             />
           </section>
 
-          <TradeMapPanel regionSummary={regionSummary} />
-
           {/* Phase B.18 — Trade Lane Intelligence row.
               Left 1/4: top aggregated lanes from saved companies.
               Center 2/4: compact GlobeCanvas of those lanes.
@@ -1854,31 +1852,42 @@ export default function LITDashboard() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2 flex items-center justify-center min-h-[260px]">
               {globeLanesB18.length > 0 ? (
                 <GlobeCanvas size={220} lanes={globeLanesB18} />
-              ) : (
-                <div className="text-center text-sm text-slate-500">
-                  <div className="font-semibold text-slate-700">
-                    No globe data
+              ) : topAggregatedLanes.length > 0 ? (
+                <div className="text-center text-sm">
+                  <div className="font-semibold text-slate-800">Route map pending</div>
+                  <div className="mt-1 text-slate-500">
+                    Saved lanes are available, but map coordinates are still being resolved.
                   </div>
-                  <div className="mt-1">
-                    Save companies with shipment lanes to see the map.
+                </div>
+              ) : (
+                <div className="text-center text-sm">
+                  <div className="font-semibold text-slate-800">No saved trade map yet</div>
+                  <div className="mt-1 text-slate-500">
+                    Save companies with shipment lanes to see your trade map.
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-blue-50 p-5 shadow-sm">
-              <div className="font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-700 mb-3">
+            {/* AI Trade Insights — dark premium card. Bullets are deterministic
+                templates from real saved-company aggregates (strongest lane,
+                account/contact gap, recommended action). No external AI call,
+                no fake percentages. */}
+            <div className="relative overflow-hidden rounded-2xl border border-indigo-300/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-blue-950 p-5 text-white shadow-lg">
+              <div className="absolute -right-6 -top-6 h-32 w-32 rounded-full bg-indigo-500/20 blur-3xl pointer-events-none" />
+              <div className="relative font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300 mb-3">
                 AI Trade Insights
               </div>
               {tradeInsights.length === 0 ? (
-                <div className="text-sm text-slate-500">
+                <div className="relative text-sm text-slate-300">
                   Save companies to unlock trade insights.
                 </div>
               ) : (
-                <ul className="space-y-2 text-sm text-slate-700">
+                <ul className="relative space-y-3 text-sm text-slate-100">
                   {tradeInsights.map((insight, i) => (
-                    <li key={i} className="leading-relaxed">
-                      {insight}
+                    <li key={i} className="flex items-start gap-2 leading-relaxed">
+                      <span aria-hidden className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400" />
+                      <span>{insight}</span>
                     </li>
                   ))}
                 </ul>
@@ -1943,6 +1952,17 @@ export default function LITDashboard() {
                       kpis?.recent_route ||
                       co?.top_route_12m ||
                       "—";
+                    // Phase B.19 — contextual row action. All three labels
+                    // navigate to the company profile; the label signals the
+                    // most useful next step. No fake state changes.
+                    const rowContactsCount = Number(
+                      kpis?.contacts_count || kpis?.contacts_loaded || 0,
+                    );
+                    const rowActionLabel = !companyId
+                      ? "Open profile"
+                      : rowContactsCount === 0
+                      ? "Enrich contacts"
+                      : "Start outreach";
                     return (
                       <tr
                         key={companyId || idx}
@@ -1987,7 +2007,7 @@ export default function LITDashboard() {
                             }
                             className="text-indigo-600 hover:text-indigo-700 font-semibold"
                           >
-                            View
+                            {rowActionLabel} →
                           </button>
                         </td>
                       </tr>
