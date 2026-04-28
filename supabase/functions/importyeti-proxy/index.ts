@@ -1541,12 +1541,20 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    let userId: string | null = null;
     try {
-      await supabase.auth.getUser(token);
+      const { data: userData } = await supabase.auth.getUser(token);
+      userId = userData?.user?.id ?? null;
     } catch (authError: any) {
       console.error("❌ Auth validation failed:", { requestId, error: authError?.message || authError });
       return jsonResponse(
         { ok: false, error: "Invalid authorization token", code: "UNAUTHORIZED" },
+        401,
+      );
+    }
+    if (!userId) {
+      return jsonResponse(
+        { ok: false, error: "Unauthorized", code: "UNAUTHORIZED" },
         401,
       );
     }
@@ -1570,8 +1578,52 @@ Deno.serve(async (req: Request) => {
       q: typeof q === "string" ? q : null,
     });
 
+    // ── Usage gate (search only) ────────────────────────────────────────
+    // Profile views are not gated in this iteration — cache-aware gating
+    // is a follow-up. Search is the primary credit-bearing action.
+    let orgIdForUsage: string | null = null;
     if (resolvedAction === "search") {
-      return await handleSearchAction(supabase, q, page, pageSize, requestId);
+      try {
+        const { data: orgRow } = await supabase
+          .from("org_members")
+          .select("org_id")
+          .eq("user_id", userId)
+          .order("joined_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        orgIdForUsage = orgRow?.org_id ?? null;
+      } catch { /* ignore */ }
+
+      const { data: gateData, error: gateError } = await supabase.rpc("check_usage_limit", {
+        p_org_id: orgIdForUsage,
+        p_user_id: userId,
+        p_feature_key: "company_search",
+        p_quantity: 1,
+      });
+      if (gateError) {
+        console.error("[importyeti-proxy] gate rpc failed", gateError);
+      } else if (gateData && gateData.ok === false) {
+        return jsonResponse(gateData, 403);
+      }
+    }
+
+    if (resolvedAction === "search") {
+      const searchResp = await handleSearchAction(supabase, q, page, pageSize, requestId);
+      // Consume only on a successful upstream call.
+      if (searchResp.status >= 200 && searchResp.status < 300) {
+        try {
+          await supabase.rpc("consume_usage", {
+            p_org_id: orgIdForUsage,
+            p_user_id: userId,
+            p_feature_key: "company_search",
+            p_quantity: 1,
+            p_metadata: { q: typeof q === "string" ? q : null, page: page ?? null },
+          });
+        } catch (consumeErr) {
+          console.error("[importyeti-proxy] consume_usage failed", consumeErr);
+        }
+      }
+      return searchResp;
     }
 
     if (!requestedCompanyId) {

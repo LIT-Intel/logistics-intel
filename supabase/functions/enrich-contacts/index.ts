@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 
 /*
  * Supabase Edge Function: enrich-contacts
@@ -32,6 +33,67 @@ serve(async (req) => {
   try {
     if (req.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
+    }
+
+    // ── Auth + usage gate ────────────────────────────────────────────────
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Supabase env not configured" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Missing Authorization header", code: "UNAUTHORIZED" }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey);
+    const { data: userData, error: authError } = await userClient.auth.getUser();
+    if (authError || !userData?.user) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Unauthorized", code: "UNAUTHORIZED" }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const userId = userData.user.id;
+
+    // Resolve org
+    let orgId: string | null = null;
+    try {
+      const { data: orgRow } = await adminClient
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", userId)
+        .order("joined_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      orgId = orgRow?.org_id ?? null;
+    } catch { /* ignore */ }
+
+    // Pre-flight gate: blocks free users (limit=0) before we hit Lusha.
+    const { data: gateData, error: gateError } = await adminClient.rpc("check_usage_limit", {
+      p_org_id: orgId,
+      p_user_id: userId,
+      p_feature_key: "contact_enrichment",
+      p_quantity: 1,
+    });
+    if (gateError) {
+      console.error("[enrich-contacts] gate rpc failed", gateError);
+    } else if (gateData && gateData.ok === false) {
+      return new Response(JSON.stringify(gateData), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const LUSHA_API_KEY = Deno.env.get("LUSHA_API_KEY");
@@ -155,6 +217,22 @@ serve(async (req) => {
       }
     } catch (err) {
       debug.similarError = String(err);
+    }
+
+    // Consume usage only when Lusha returned something useful — failed
+    // calls (Lusha 5xx, no companyMatch, empty contacts) do not deduct.
+    if ((contacts && contacts.length > 0) || companyMatch) {
+      try {
+        await adminClient.rpc("consume_usage", {
+          p_org_id: orgId,
+          p_user_id: userId,
+          p_feature_key: "contact_enrichment",
+          p_quantity: 1,
+          p_metadata: { contacts_returned: contacts?.length ?? 0 },
+        });
+      } catch (consumeErr) {
+        console.error("[enrich-contacts] consume_usage failed", consumeErr);
+      }
     }
 
     return new Response(
