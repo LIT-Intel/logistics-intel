@@ -29,6 +29,31 @@ import { getCompanyLogoUrl } from "@/lib/logo";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
 import { flagFromCode, resolveEndpoint } from "@/lib/laneGlobe";
 import { capFutureDate } from "@/lib/dateUtils";
+import { supabase } from "@/lib/supabase";
+
+// Phase B.14 — friendly copy for pulse-brief / export-company-profile
+// error codes returned by the new Edge Functions. Anything not in this
+// map falls back to the raw `error` string so we never silently swallow
+// an upstream message.
+const PULSE_ERROR_COPY = {
+  TAVILY_NOT_CONFIGURED:
+    "Pulse needs the TAVILY_API_KEY secret in Supabase. Ask your admin to add it and try again.",
+  TAVILY_FAILED:
+    "Tavily search failed. Try again in a moment, or check Tavily's status page.",
+  INVALID_INPUT: "We couldn't read this company's identity to build a brief.",
+  UNAUTHORIZED: "Sign in again to generate a Pulse brief.",
+  SUPABASE_NOT_CONFIGURED:
+    "Pulse Edge Function is missing core Supabase secrets. Contact support.",
+};
+
+const EXPORT_ERROR_COPY = {
+  STORAGE_NOT_PROVISIONED:
+    "Storage bucket not configured. Page link copied instead.",
+  PDF_NOT_AVAILABLE: "PDF render not available — open HTML version?",
+  COMPANY_NOT_FOUND: "We couldn't find this company in the database.",
+  INVALID_INPUT: "Export request was malformed.",
+  UNAUTHORIZED: "Sign in again to export this profile.",
+};
 
 function estimateMarketSpend(teu, fclTeu = null, lclTeu = null) {
   const total = Number(teu);
@@ -188,15 +213,19 @@ export default function Company() {
   const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
-  // Phase B.12 — Pulse brief modal state. Tavily / pulse-brief Edge
-  // Function is not deployed (verified against supabase/functions
-  // listing on 2026-04-27), so the modal renders an honest stub.
+  // Phase B.14 — Pulse brief modal state. The pulse-brief Edge Function
+  // calls Tavily (and optionally Gemini) and returns 7 brief sections.
+  // We cache the response in component state so closing/reopening the
+  // modal does not re-bill Tavily; the function itself also caches into
+  // lit_saved_companies.gemini_brief.
   const [pulseModalOpen, setPulseModalOpen] = useState(false);
-  // Share-link affordance. No export-company-profile Edge Function
-  // exists, so "Share HTML" copies the canonical page URL to the
-  // clipboard as a non-deceptive temporary share and shows a
-  // transient inline confirmation. PDF export remains disabled.
-  const [shareCopied, setShareCopied] = useState(false);
+  const [pulseLoading, setPulseLoading] = useState(false);
+  const [pulseBrief, setPulseBrief] = useState(null);
+  const [pulseError, setPulseError] = useState(null);
+  // Share / Export PDF wiring — both call export-company-profile.
+  const [shareLoading, setShareLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [shareToast, setShareToast] = useState(null);
 
   const shellCompany = useMemo(
     () => buildShellCompany(companyId, storedSelectedCompany),
@@ -379,6 +408,174 @@ export default function Company() {
     headerKpis.topRoute,
     headerKpis.recentRoute,
   ]);
+
+  // Phase B.14 — Pulse handler. Opens the modal, then (only if no brief is
+  // already cached in component state) calls the pulse-brief Edge Function
+  // with the same snapshot KPIs we already render in the hero. Errors are
+  // mapped through PULSE_ERROR_COPY for user-friendly copy; the raw error
+  // string is preserved as a fallback.
+  async function handlePulseClick() {
+    setPulseModalOpen(true);
+    if (pulseBrief || pulseLoading) return;
+    setPulseLoading(true);
+    setPulseError(null);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "pulse-brief",
+        {
+          body: {
+            company_id: companyId,
+            source_company_key:
+              storedSelectedCompany?.source_company_key || null,
+            company_name: companyName,
+            domain: companyDomain,
+            snapshot_summary: {
+              shipments_12m: headerKpis?.shipments ?? null,
+              teu_12m: headerKpis?.teu ?? null,
+              est_spend_12m: headerKpis?.spend ?? null,
+              top_lane: headerKpis?.topRoute ?? null,
+              last_shipment_date: headerKpis?.latestShipment ?? null,
+            },
+          },
+        },
+      );
+      if (invokeError) throw invokeError;
+      if (!data?.ok) {
+        const code = data?.code || "UNKNOWN";
+        const friendly =
+          PULSE_ERROR_COPY[code] || data?.error || "Pulse brief failed.";
+        setPulseError({ code, message: friendly });
+      } else {
+        setPulseBrief({
+          generatedAt: data.generated_at,
+          cached: Boolean(data.cached),
+          sections: data.sections || {},
+        });
+      }
+    } catch (err) {
+      setPulseError({
+        code: "NETWORK",
+        message: err?.message || "Pulse network error.",
+      });
+    } finally {
+      setPulseLoading(false);
+    }
+  }
+
+  function showShareToast(message, tone = "info") {
+    setShareToast({ message, tone });
+    setTimeout(() => setShareToast(null), 3500);
+  }
+
+  async function copyToClipboardSafe(text) {
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard?.writeText
+      ) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // ignore — browser may block clipboard
+    }
+    return false;
+  }
+
+  // Phase B.14 — Share HTML. Calls export-company-profile, copies the
+  // signed URL to clipboard. On STORAGE_NOT_PROVISIONED falls back to the
+  // canonical page URL so the user still walks away with something
+  // shareable.
+  async function handleShareHtmlClick() {
+    if (!companyId || shareLoading) return;
+    setShareLoading(true);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "export-company-profile",
+        {
+          body: {
+            company_id: companyId,
+            format: "html",
+            include_pulse_brief: Boolean(pulseBrief),
+          },
+        },
+      );
+      if (invokeError) throw invokeError;
+      if (data?.ok && data.url) {
+        const ok = await copyToClipboardSafe(data.url);
+        showShareToast(
+          ok ? "Branded share link copied" : "Branded share link generated (copy failed — open console)",
+          "success",
+        );
+        if (!ok) {
+          // surface URL via console so the user still has access
+          console.info("export-company-profile signed URL:", data.url);
+        }
+      } else if (data?.code === "STORAGE_NOT_PROVISIONED") {
+        const url =
+          typeof window !== "undefined" ? window.location.href : "";
+        await copyToClipboardSafe(url);
+        showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
+      } else {
+        const friendly =
+          EXPORT_ERROR_COPY[data?.code] ||
+          data?.error ||
+          "Share export failed.";
+        showShareToast(friendly, "error");
+      }
+    } catch (err) {
+      showShareToast(err?.message || "Share export error.", "error");
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  // Phase B.14 — Export PDF. Edge Function returns PDF_NOT_AVAILABLE today
+  // (Deno can't run Chromium); we offer the HTML fallback URL when the
+  // function provides one.
+  async function handleExportPdfClick() {
+    if (!companyId || exportLoading) return;
+    setExportLoading(true);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "export-company-profile",
+        {
+          body: {
+            company_id: companyId,
+            format: "pdf",
+            include_pulse_brief: Boolean(pulseBrief),
+          },
+        },
+      );
+      if (invokeError) throw invokeError;
+      if (data?.ok && data.url) {
+        if (typeof window !== "undefined") window.open(data.url, "_blank");
+      } else if (data?.code === "PDF_NOT_AVAILABLE" && data?.fallback?.url) {
+        const open =
+          typeof window !== "undefined" &&
+          window.confirm(
+            "PDF render not available — open the branded HTML version instead?",
+          );
+        if (open) window.open(data.fallback.url, "_blank");
+        else showShareToast("PDF export not available yet", "warning");
+      } else if (data?.code === "STORAGE_NOT_PROVISIONED") {
+        const url =
+          typeof window !== "undefined" ? window.location.href : "";
+        await copyToClipboardSafe(url);
+        showShareToast(EXPORT_ERROR_COPY.STORAGE_NOT_PROVISIONED, "warning");
+      } else {
+        const friendly =
+          EXPORT_ERROR_COPY[data?.code] ||
+          data?.error ||
+          "PDF export failed.";
+        showShareToast(friendly, "error");
+      }
+    } catch (err) {
+      showShareToast(err?.message || "PDF export error.", "error");
+    } finally {
+      setExportLoading(false);
+    }
+  }
 
   if (error || !companyId) {
     return (
@@ -758,61 +955,70 @@ export default function Company() {
                 In Command Center
               </button>
 
-              {/* Phase B.12 — Pulse brief CTA. Opens a stub modal until
-                  the Tavily / pulse-brief Edge Function is deployed.
-                  No fake brief content is rendered. */}
+              {/* Phase B.14 — Pulse brief CTA wired to pulse-brief Edge
+                  Function. Opens the modal which then triggers the
+                  Tavily-grounded fetch. */}
               <button
                 type="button"
-                onClick={() => setPulseModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-violet-300/40 bg-gradient-to-br from-violet-500/20 to-indigo-500/20 px-4 py-2 text-sm font-semibold text-violet-100 backdrop-blur-md transition hover:from-violet-500/30 hover:to-indigo-500/30"
+                onClick={handlePulseClick}
+                disabled={!companyId}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-violet-300/40 bg-gradient-to-br from-violet-500/20 to-indigo-500/20 px-4 py-2 text-sm font-semibold text-violet-100 backdrop-blur-md transition hover:from-violet-500/30 hover:to-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Sparkles className="h-4 w-4" />
+                {pulseLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
                 Pulse
               </button>
 
-              {/* Phase B.12 — Share HTML / Export PDF (glass restyle). */}
+              {/* Phase B.14 — Share HTML / Export PDF wired to
+                  export-company-profile Edge Function. */}
               <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={async () => {
-                      try {
-                        const url =
-                          typeof window !== "undefined"
-                            ? window.location.href
-                            : "";
-                        if (
-                          url &&
-                          typeof navigator !== "undefined" &&
-                          navigator.clipboard?.writeText
-                        ) {
-                          await navigator.clipboard.writeText(url);
-                          setShareCopied(true);
-                          setTimeout(() => setShareCopied(false), 2000);
-                        }
-                      } catch {
-                        // ignore — clipboard may be blocked by browser
-                      }
-                    }}
-                    title="Copies this page's link. Branded HTML share requires the export-company-profile Edge Function (not deployed)."
-                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+                    onClick={handleShareHtmlClick}
+                    disabled={!companyId || shareLoading}
+                    title="Generates a branded HTML company profile via export-company-profile and copies the signed URL."
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Share2 className="h-3.5 w-3.5" />
+                    {shareLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Share2 className="h-3.5 w-3.5" />
+                    )}
                     Share HTML
                   </button>
                   <button
                     type="button"
-                    disabled
-                    title="PDF export requires the export-company-profile Edge Function (not deployed)."
-                    className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-400"
+                    onClick={handleExportPdfClick}
+                    disabled={!companyId || exportLoading}
+                    title="Requests a PDF export via export-company-profile (currently returns PDF_NOT_AVAILABLE with HTML fallback)."
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Download className="h-3.5 w-3.5" />
+                    {exportLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
                     Export PDF
                   </button>
                 </div>
-                {shareCopied ? (
-                  <div className="rounded-md border border-emerald-300/30 bg-emerald-500/15 px-2 py-1 text-center text-[11px] font-semibold text-emerald-200">
-                    Link copied to clipboard
+                {shareToast ? (
+                  <div
+                    className={
+                      "rounded-md px-2 py-1 text-center text-[11px] font-semibold " +
+                      (shareToast.tone === "success"
+                        ? "border border-emerald-300/30 bg-emerald-500/15 text-emerald-200"
+                        : shareToast.tone === "warning"
+                          ? "border border-amber-300/30 bg-amber-500/15 text-amber-200"
+                          : shareToast.tone === "error"
+                            ? "border border-rose-300/30 bg-rose-500/15 text-rose-200"
+                            : "border border-white/15 bg-white/5 text-slate-200")
+                    }
+                  >
+                    {shareToast.message}
                   </div>
                 ) : null}
               </div>
@@ -861,12 +1067,10 @@ export default function Company() {
           />
         ) : null}
 
-        {/* Phase B.12 — Pulse brief modal stub. Tavily / pulse-brief
-            Edge Function is not deployed (verified against
-            supabase/functions listing on 2026-04-27). The modal
-            renders an honest empty state describing the seven brief
-            sections that will populate once the backend is wired,
-            rather than fabricating placeholder content. */}
+        {/* Phase B.14 — Pulse brief modal. Renders three states:
+            (1) loading skeleton, (2) error card mapped through
+            PULSE_ERROR_COPY, (3) seven brief sections from the
+            pulse-brief Edge Function (Tavily + optional Gemini). */}
         {pulseModalOpen ? (
           <div
             role="dialog"
@@ -876,7 +1080,7 @@ export default function Company() {
             onClick={() => setPulseModalOpen(false)}
           >
             <div
-              className="w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+              className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-6 text-white">
@@ -899,6 +1103,11 @@ export default function Company() {
                 <div className="relative inline-flex items-center gap-2 rounded-full border border-violet-300/40 bg-violet-500/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-100">
                   <Sparkles className="h-3 w-3" />
                   Pulse Brief
+                  {pulseBrief?.cached ? (
+                    <span className="ml-1 rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/80">
+                      Cached
+                    </span>
+                  ) : null}
                 </div>
                 <h3
                   id="pulse-brief-title"
@@ -908,32 +1117,37 @@ export default function Company() {
                   {companyName}
                 </h3>
                 <p className="relative mt-1 text-sm text-slate-300">
-                  AI-generated company intelligence brief
+                  Pre-call intelligence — Tavily-grounded
+                  {pulseBrief?.generatedAt
+                    ? ` · ${new Date(pulseBrief.generatedAt).toLocaleString()}`
+                    : ""}
                 </p>
               </div>
-              <div className="space-y-4 p-6">
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-                  <strong className="font-semibold">
-                    Pulse brief generation is not configured yet.
-                  </strong>
-                  <p className="mt-1 text-amber-800">
-                    The Tavily / pulse-brief Edge Function is not deployed.
-                    Once the backend is wired, clicking Pulse will generate:
+              <div className="max-h-[60vh] space-y-4 overflow-y-auto p-6">
+                {pulseLoading ? (
+                  <div className="flex flex-col items-center gap-3 py-12 text-slate-500">
+                    <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                    <p className="text-sm">
+                      Searching the public web and assembling brief…
+                    </p>
+                  </div>
+                ) : pulseError ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900">
+                    <strong className="font-semibold">
+                      Pulse brief unavailable
+                    </strong>
+                    <p className="mt-1 text-rose-800">{pulseError.message}</p>
+                    <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-rose-700">
+                      Code: {pulseError.code}
+                    </p>
+                  </div>
+                ) : pulseBrief ? (
+                  <PulseBriefBody sections={pulseBrief.sections} />
+                ) : (
+                  <p className="py-8 text-center text-sm text-slate-500">
+                    Click Pulse again to load the brief.
                   </p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
-                    <li>Executive Summary</li>
-                    <li>Shipment Signal</li>
-                    <li>Public Web Context</li>
-                    <li>Opportunity Angle</li>
-                    <li>Suggested Outreach Angle</li>
-                    <li>Risks / Watchouts</li>
-                    <li>Sources</li>
-                  </ul>
-                </div>
-                <p className="text-xs text-slate-500">
-                  No placeholder content is shown here intentionally — Pulse
-                  will only render real Tavily-grounded intelligence.
-                </p>
+                )}
               </div>
               <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
                 <button
@@ -948,6 +1162,73 @@ export default function Company() {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+// Phase B.14 — render the seven Pulse brief sections returned by
+// pulse-brief Edge Function. Sections with empty/null text are hidden
+// rather than rendering "—" prose; sources collapse when the array is
+// empty. No fallback / placeholder copy is rendered.
+function PulseBriefBody({ sections }) {
+  if (!sections || typeof sections !== "object") return null;
+  const blocks = [
+    { key: "executive_summary", label: "Executive Summary" },
+    { key: "shipment_signal", label: "Shipment Signal" },
+    { key: "public_web_context", label: "Public Web Context" },
+    { key: "opportunity_angle", label: "Opportunity Angle" },
+    { key: "suggested_outreach_angle", label: "Suggested Outreach Angle" },
+    { key: "risks_watchouts", label: "Risks / Watchouts" },
+  ];
+  const sources = Array.isArray(sections.sources) ? sections.sources : [];
+  return (
+    <div className="space-y-4">
+      {blocks.map(({ key, label }) => {
+        const value = sections[key];
+        if (typeof value !== "string" || !value.trim()) return null;
+        return (
+          <section
+            key={key}
+            className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
+          >
+            <h4 className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-600">
+              {label}
+            </h4>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+              {value}
+            </p>
+          </section>
+        );
+      })}
+      {sources.length ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h4 className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-600">
+            Sources
+          </h4>
+          <ul className="mt-2 space-y-2">
+            {sources.map((src, idx) => (
+              <li
+                key={`${src?.url || idx}-${idx}`}
+                className="text-sm text-slate-700"
+              >
+                <a
+                  href={src?.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-indigo-600 hover:underline"
+                >
+                  {src?.title || src?.url}
+                </a>
+                {src?.snippet ? (
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    {src.snippet}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }
