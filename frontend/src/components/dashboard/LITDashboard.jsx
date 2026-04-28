@@ -1623,18 +1623,34 @@ export default function LITDashboard() {
   // address, country_code, kpis}`.
   const realSavedCompanies = savedCompaniesLive;
 
-  // Aggregate `kpis.top_route_12m` across saved companies. Empty array
-  // when the user hasn't saved any companies — never a fabricated lane.
+  // Aggregate `kpis.top_route_12m` across saved companies and sum
+  // shipments_12m + teu_12m per lane. Empty array when the user hasn't
+  // saved any companies — never a fabricated lane.
   const topAggregatedLanes = useMemo(() => {
-    const counts = new Map();
+    const map = new Map();
     for (const row of realSavedCompanies) {
-      const lane = row?.company?.kpis?.top_route_12m;
+      const kpis = row?.company?.kpis;
+      const lane = kpis?.top_route_12m;
       if (!lane || typeof lane !== "string") continue;
-      counts.set(lane, (counts.get(lane) || 0) + 1);
+      const ships = Number(kpis?.shipments_12m) || 0;
+      const teu = Number(kpis?.teu_12m) || 0;
+      const existing = map.get(lane) || {
+        label: lane,
+        count: 0,
+        shipments: 0,
+        teu: 0,
+      };
+      existing.count += 1;
+      existing.shipments += ships;
+      existing.teu += teu;
+      map.set(lane, existing);
     }
-    return Array.from(counts.entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count);
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        b.shipments - a.shipments ||
+        b.teu - a.teu ||
+        b.count - a.count,
+    );
   }, [realSavedCompanies]);
 
   // Convert the aggregated lane list into globe arcs. canonicalizeLanes
@@ -1813,68 +1829,123 @@ export default function LITDashboard() {
             />
           </section>
 
-          {/* Phase B.18 — Trade Lane Intelligence row.
-              Left 1/4: top aggregated lanes from saved companies.
-              Center 2/4: compact GlobeCanvas of those lanes.
-              Right 1/4: templated AI Trade Insights (no external AI call).
-              All three blocks render honest empty-state copy when the user
-              has no saved companies — never fake data. */}
-          <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 mb-3">
-                Top Active Lanes
+          {/* Phase B.20 — single premium Trade Lane Intelligence card +
+              dark AI Trade Insights side card. Mirrors the Company Profile
+              Trade Lanes tab visual language: one card with globe LEFT and
+              ranked lane list RIGHT, no fragmented mini-cards. The previous
+              3-card row (small lanes / "Route map pending" / insights) is
+              gone. AI Trade Insights stays on the right as its own dark
+              card with matching height. All data is real saved-company
+              aggregates — no fake percentages. */}
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {/* LEFT — Trade Lane Intelligence (large premium card, lg:col-span-2). */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+              <div className="mb-5">
+                <div className="font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Trade Lane Intelligence
+                </div>
+                <h3 className="mt-1 text-lg font-bold text-slate-950">
+                  Top saved-account lanes by shipment activity
+                </h3>
+                {topAggregatedLanes.length > 0 ? (
+                  <div className="mt-1 text-xs text-slate-500">
+                    {topAggregatedLanes.length} active lane{topAggregatedLanes.length === 1 ? "" : "s"} across saved accounts
+                  </div>
+                ) : null}
               </div>
-              {topAggregatedLanes.length === 0 ? (
-                <div className="text-sm text-slate-500">
-                  {realSavedCompanies.length === 0
-                    ? "Save companies to surface top lanes."
-                    : "No lane data yet — pending refresh."}
+
+              {realSavedCompanies.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                  <div className="text-base font-semibold text-slate-900">
+                    Save companies to unlock trade lane intelligence
+                  </div>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Your saved accounts will power lane rankings, shipment signals, and route insights here.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/app/search")}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+                  >
+                    Discover Companies
+                  </button>
+                </div>
+              ) : topAggregatedLanes.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                  <div className="text-base font-semibold text-slate-900">
+                    No lane data yet
+                  </div>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Saved-account lanes will appear after the next snapshot refresh.
+                  </p>
                 </div>
               ) : (
-                <ul className="space-y-2">
-                  {topAggregatedLanes.slice(0, 5).map((lane) => (
-                    <li
-                      key={lane.label}
-                      className="flex items-center justify-between gap-2 text-sm"
-                    >
-                      <span className="truncate font-medium text-slate-900">
-                        {lane.label}
-                      </span>
-                      <span className="font-mono text-xs text-slate-500">
-                        {lane.count}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                  {/* Globe LEFT — same GlobeCanvas component used by the
+                      Company Profile Trade Lanes tab. When the canonicalized
+                      lane list resolves to no globe-renderable arcs, render
+                      a subtle helper line rather than a big placeholder. */}
+                  <div className="flex min-h-[260px] items-center justify-center rounded-xl bg-slate-50/60 p-4">
+                    {globeLanesB18.length > 0 ? (
+                      <GlobeCanvas size={220} lanes={globeLanesB18} />
+                    ) : (
+                      <div className="text-center">
+                        <div className="text-sm font-semibold text-slate-700">
+                          Lane data ready
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Map coordinates pending for some lanes
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ranked lane list RIGHT — max 5 rows. Each row: rank pill,
+                      lane label, account count, shipments + TEU. */}
+                  <div>
+                    <ol className="space-y-2">
+                      {topAggregatedLanes.slice(0, 5).map((lane, i) => (
+                        <li
+                          key={lane.label}
+                          className="flex items-center gap-3 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 transition hover:bg-slate-50"
+                        >
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-700">
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold text-slate-900" title={lane.label}>
+                              {lane.label}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-slate-500">
+                              {lane.count} {lane.count === 1 ? "account" : "accounts"}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-mono text-sm font-bold text-slate-900">
+                              {Number(lane.shipments) > 0 ? Number(lane.shipments).toLocaleString() : "—"}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {Number(lane.teu) > 0 ? `${Math.round(Number(lane.teu)).toLocaleString()} TEU` : "shipments"}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    {topAggregatedLanes.length > 5 ? (
+                      <div className="mt-3 text-center text-xs text-slate-500">
+                        {topAggregatedLanes.length - 5} more lane{topAggregatedLanes.length - 5 === 1 ? "" : "s"} — open a saved company to drill in
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               )}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2 flex items-center justify-center min-h-[260px]">
-              {globeLanesB18.length > 0 ? (
-                <GlobeCanvas size={220} lanes={globeLanesB18} />
-              ) : topAggregatedLanes.length > 0 ? (
-                <div className="text-center text-sm">
-                  <div className="font-semibold text-slate-800">Route map pending</div>
-                  <div className="mt-1 text-slate-500">
-                    Saved lanes are available, but map coordinates are still being resolved.
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center text-sm">
-                  <div className="font-semibold text-slate-800">No saved trade map yet</div>
-                  <div className="mt-1 text-slate-500">
-                    Save companies with shipment lanes to see your trade map.
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* AI Trade Insights — dark premium card. Bullets are deterministic
-                templates from real saved-company aggregates (strongest lane,
-                account/contact gap, recommended action). No external AI call,
-                no fake percentages. */}
-            <div className="relative overflow-hidden rounded-2xl border border-indigo-300/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-blue-950 p-5 text-white shadow-lg">
-              <div className="absolute -right-6 -top-6 h-32 w-32 rounded-full bg-indigo-500/20 blur-3xl pointer-events-none" />
+            {/* RIGHT — AI Trade Insights (dark premium card, lg:col-span-1).
+                Bullets are deterministic templates from real saved-company
+                aggregates. No external AI call, no fake percentages. */}
+            <div className="relative overflow-hidden rounded-2xl border border-indigo-300/30 bg-gradient-to-br from-indigo-950 via-slate-950 to-blue-950 p-6 text-white shadow-lg">
+              <div className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 rounded-full bg-indigo-500/20 blur-3xl" />
               <div className="relative font-display text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300 mb-3">
                 AI Trade Insights
               </div>
