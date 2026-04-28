@@ -16,14 +16,69 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-import {
-  corsHeaders,
-  escapeHtml,
-  formatCurrencyOrDash,
-  formatDateOrDash,
-  formatNumberOrDash,
-  jsonResponse,
-} from "../_shared/companyBriefHelpers.ts";
+// Phase B.15 — helpers inlined from _shared/companyBriefHelpers.ts so
+// `supabase functions deploy <name>` doesn't fail on missing _shared
+// bundle. Keep in sync with the canonical _shared file when changes
+// are made.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, apikey",
+};
+
+function jsonResponse(
+  status: number,
+  body: Record<string, unknown>,
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function escapeHtml(value: unknown): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatNumberOrDash(
+  value: number | null | undefined,
+  options: { keepZero?: boolean } = {},
+): string {
+  if (value == null) return "—";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  if (num === 0 && !options.keepZero) return "—";
+  return Math.round(num).toLocaleString();
+}
+
+function formatCurrencyOrDash(value: number | null | undefined): string {
+  if (value == null) return "—";
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return "—";
+  return `$${Math.round(num).toLocaleString()}`;
+}
+
+function formatDateOrDash(value: string | null | undefined): string {
+  if (!value) return "—";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return "—";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// End of inlined helpers — original imports below have been removed.
+// ---------------------------------------------------------------------------
 
 const BUCKET_NAME = "company-exports";
 const SIGNED_URL_EXPIRY_SECONDS = 86_400; // 24 hours

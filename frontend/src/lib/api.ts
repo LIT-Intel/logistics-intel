@@ -2994,6 +2994,100 @@ export async function getSavedCompanyDetail(
   };
 }
 
+/**
+ * Phase B.15 — cached-first company profile read.
+ *
+ * Reads ONLY the cached snapshot stored in `lit_importyeti_company_snapshot`
+ * (system of record, populated by the importyeti-proxy Edge Function). Never
+ * triggers a fresh ImportYeti fetch — the caller is responsible for deciding
+ * whether to follow up with `getSavedCompanyDetail` based on `isStale`.
+ *
+ * Schema source: supabase/migrations/20260119195457_create_importyeti_snapshot_tables.sql
+ *   - lit_importyeti_company_snapshot (company_id, raw_payload jsonb,
+ *     parsed_summary jsonb, updated_at)
+ *
+ * The snapshot's `parsed_summary` jsonb is reshaped through
+ * `normalizeIyCompanyProfile`, which already handles every flavour of cached
+ * snapshot the proxy has emitted across phases.
+ *
+ * Returns null fields when no cache row exists — callers must treat that as
+ * "no data yet" and decide whether to surface an error or fall back to a
+ * shell render from localStorage.
+ */
+export async function getSavedCompanyShellOnly(
+  companyKey: string,
+): Promise<{
+  profile: IyCompanyProfile | null;
+  routeKpis: IyRouteKpis | null;
+  snapshotUpdatedAt: string | null;
+  isStale: boolean;
+}> {
+  const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  const normalizedSlug = normalizeCompanyIdToSlug(companyKey);
+  if (!normalizedSlug) {
+    return {
+      profile: null,
+      routeKpis: null,
+      snapshotUpdatedAt: null,
+      isStale: true,
+    };
+  }
+
+  // System of record — `lit_importyeti_company_snapshot` keys on the slug
+  // form (e.g. "samsung-electronics"), not the prefixed key form. The
+  // importyeti-proxy writes the same slug shape on each refresh.
+  let snapshotUpdatedAt: string | null = null;
+  let parsedProfile: IyCompanyProfile | null = null;
+  let parsedRouteKpis: IyRouteKpis | null = null;
+
+  try {
+    const { data: snapshotRow, error: snapshotErr } = await supabase
+      .from("lit_importyeti_company_snapshot")
+      .select("company_id, parsed_summary, raw_payload, updated_at")
+      .eq("company_id", normalizedSlug)
+      .maybeSingle();
+
+    if (snapshotErr) {
+      console.warn("getSavedCompanyShellOnly snapshot lookup failed:", snapshotErr);
+    } else if (snapshotRow) {
+      snapshotUpdatedAt =
+        typeof snapshotRow.updated_at === "string"
+          ? snapshotRow.updated_at
+          : null;
+
+      const cachedSnapshot =
+        snapshotRow.parsed_summary ?? snapshotRow.raw_payload ?? null;
+      if (cachedSnapshot && typeof cachedSnapshot === "object") {
+        try {
+          parsedProfile = normalizeIyCompanyProfile(
+            cachedSnapshot,
+            normalizedSlug,
+          );
+          parsedRouteKpis = parsedProfile?.routeKpis ?? null;
+        } catch (normErr) {
+          console.warn(
+            "getSavedCompanyShellOnly: failed to normalize cached snapshot",
+            normErr,
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("getSavedCompanyShellOnly: snapshot table query threw", err);
+  }
+
+  const isStale =
+    !snapshotUpdatedAt ||
+    Date.now() - new Date(snapshotUpdatedAt).getTime() > STALE_AFTER_MS;
+
+  return {
+    profile: parsedProfile,
+    routeKpis: parsedRouteKpis,
+    snapshotUpdatedAt,
+    isStale,
+  };
+}
+
 
 function deriveYearRouteHints(points: IyTimeSeriesPoint[]): {
   topRouteLast12m: string | null;

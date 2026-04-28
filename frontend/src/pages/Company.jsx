@@ -23,7 +23,11 @@ import {
 // from the panel's own scope. Date helpers stay because `headerKpis`
 // still feeds `headerRecord` (panel reads it via `record.company.kpis`).
 import AddToCampaignModal from "@/components/command-center/AddToCampaignModal";
-import { getSavedCompanyDetail, buildYearScopedProfile } from "@/lib/api";
+import {
+  getSavedCompanyDetail,
+  getSavedCompanyShellOnly,
+  buildYearScopedProfile,
+} from "@/lib/api";
 import { CompanyAvatar } from "@/components/CompanyAvatar";
 import { getCompanyLogoUrl } from "@/lib/logo";
 import CompanyDetailPanel from "@/components/command-center/CompanyDetailPanel";
@@ -213,6 +217,17 @@ export default function Company() {
   const [error, setError] = useState("");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [campaignModalOpen, setCampaignModalOpen] = useState(false);
+  // Phase B.15 — cached-first profile load. `refreshing` is true while a
+  // background ImportYeti fetch is running on top of cached data, so the
+  // page can render the snapshot instantly and surface a subtle pill that
+  // says we're sharpening the data. `snapshotUpdatedAt` is the cache row's
+  // own timestamp from `lit_importyeti_company_snapshot.updated_at` — used
+  // by the staleness check (>7 days triggers a background refresh) and
+  // also rendered for honesty if the user wants to know how fresh this is.
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+  const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   // Phase B.14 — Pulse brief modal state. The pulse-brief Edge Function
   // calls Tavily (and optionally Gemini) and returns 7 brief sections.
   // We cache the response in component state so closing/reopening the
@@ -232,6 +247,19 @@ export default function Company() {
     [companyId, storedSelectedCompany],
   );
 
+  // Phase B.15 — cached-first load strategy. The previous Phase B.9-onward
+  // implementation called `getSavedCompanyDetail` directly, which fans out
+  // to two `importyeti-proxy` invocations and blocks the page render for
+  // ~5 seconds while the proxy refreshes ImportYeti. The new strategy:
+  //   1. Render the cached snapshot from `lit_importyeti_company_snapshot`
+  //      immediately via `getSavedCompanyShellOnly` (Supabase select, no
+  //      proxy call).
+  //   2. If the cached row is missing OR older than 7 days, kick off the
+  //      original `getSavedCompanyDetail` refresh in the background and
+  //      surface a small "Refreshing intel…" badge. Errors here are
+  //      non-blocking — the cached data stays visible.
+  //   3. If neither cache nor live fetch yields data, show the empty-state
+  //      error path.
   useEffect(() => {
     if (!companyId) {
       setError("Missing company id");
@@ -240,40 +268,102 @@ export default function Company() {
     }
 
     let cancelled = false;
+    const ctrl = new AbortController();
+
     setLoading(true);
     setError("");
+    setRefreshing(false);
+    setRefreshError(null);
 
-    getSavedCompanyDetail(companyId)
-      .then(({ profile: nextProfile, routeKpis: nextRouteKpis }) => {
+    function applyYearFromProfile(nextProfile) {
+      const years = Array.from(
+        new Set(
+          (nextProfile?.timeSeries || [])
+            .map((point) => Number(point?.year))
+            .filter((year) => Number.isFinite(year) && year > 2000),
+        ),
+      ).sort((a, b) => b - a);
+      if (years.length) {
+        setSelectedYear(years[0]);
+      }
+    }
+
+    (async () => {
+      // Phase 1 (instant): cached-first read — no proxy call.
+      let cached = {
+        profile: null,
+        routeKpis: null,
+        snapshotUpdatedAt: null,
+        isStale: true,
+      };
+      try {
+        cached = await getSavedCompanyShellOnly(companyId);
+      } catch (cacheErr) {
+        // Cache miss or unavailable — treat as fully stale and continue
+        // to the live refresh below.
+        console.warn("Company.jsx: cached snapshot read failed", cacheErr);
+      }
+      if (cancelled) return;
+
+      const haveCached = Boolean(cached.profile || cached.routeKpis);
+      if (haveCached) {
+        setProfile(cached.profile || null);
+        setRouteKpis(cached.routeKpis || null);
+        setSnapshotUpdatedAt(cached.snapshotUpdatedAt || null);
+        if (cached.profile) applyYearFromProfile(cached.profile);
+        // Page renders now from cached data — drop the full-row loading
+        // pill so the user sees content, not a spinner.
+        setLoading(false);
+      }
+
+      // Phase 2 (background): refresh from ImportYeti only when cached
+      // data is missing or older than 7 days. Errors are non-blocking
+      // when cached data is already on screen; they replace `error` only
+      // if there is no cache and no live data.
+      const needsRefresh = cached.isStale || !haveCached;
+      if (!needsRefresh) {
+        return;
+      }
+
+      if (haveCached) {
+        setRefreshing(true);
+      }
+      try {
+        const fresh = await getSavedCompanyDetail(companyId, ctrl.signal);
         if (cancelled) return;
-
-        setProfile(nextProfile || null);
-        setRouteKpis(nextRouteKpis || null);
-
-        const years = Array.from(
-          new Set(
-            (nextProfile?.timeSeries || [])
-              .map((point) => Number(point?.year))
-              .filter((year) => Number.isFinite(year) && year > 2000),
-          ),
-        ).sort((a, b) => b - a);
-
-        if (years.length) {
-          setSelectedYear(years[0]);
+        if (fresh) {
+          setProfile(fresh.profile || null);
+          setRouteKpis(fresh.routeKpis || null);
+          setSnapshotUpdatedAt(new Date().toISOString());
+          if (fresh.profile) applyYearFromProfile(fresh.profile);
         }
-      })
-      .catch((err) => {
+        if (!haveCached) {
+          // We rendered nothing in phase 1 — turn off the initial loading
+          // state once the live fetch lands (success or empty).
+          setLoading(false);
+        }
+      } catch (refreshErr) {
         if (cancelled) return;
-        setError(err?.message || "Failed to load company profile");
-        setProfile(null);
-        setRouteKpis(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+        if (haveCached) {
+          // Non-blocking: cached data stays visible; surface a soft warning.
+          setRefreshError(
+            refreshErr?.message || "Refresh failed; showing cached snapshot.",
+          );
+        } else {
+          // No cache AND live fetch failed — the page has nothing to render.
+          setError(refreshErr?.message || "Failed to load company profile");
+          setProfile(null);
+          setRouteKpis(null);
+          setLoading(false);
+        }
+      } finally {
+        if (!cancelled) setRefreshing(false);
+      }
+    })();
 
     return () => {
       cancelled = true;
+      ctrl.abort();
     };
   }, [companyId]);
 
@@ -459,6 +549,31 @@ export default function Company() {
       });
     } finally {
       setPulseLoading(false);
+    }
+  }
+
+  // Phase B.15 — manual force-refresh handler. Bypasses the staleness
+  // gate in the cached-first useEffect so users can pull fresh
+  // ImportYeti data on demand. Cached data stays visible while the
+  // fetch is in flight; on failure we surface a toast and keep the
+  // existing snapshot rendered.
+  async function handleManualRefreshClick() {
+    if (!companyId || manualRefreshing) return;
+    setManualRefreshing(true);
+    setRefreshError(null);
+    try {
+      const fresh = await getSavedCompanyDetail(companyId);
+      if (fresh) {
+        setProfile(fresh.profile || null);
+        setRouteKpis(fresh.routeKpis || null);
+        setSnapshotUpdatedAt(new Date().toISOString());
+        showShareToast("Snapshot refreshed", "success");
+      }
+    } catch (err) {
+      setRefreshError(err?.message || "Refresh failed");
+      showShareToast(err?.message || "Refresh failed", "error");
+    } finally {
+      setManualRefreshing(false);
     }
   }
 
@@ -835,6 +950,41 @@ export default function Company() {
                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
                       Saved
                     </span>
+
+                    {/* Phase B.15 — Refreshing intel badge. Visible only
+                        while a background ImportYeti refresh is in
+                        flight on top of an already-rendered cached
+                        snapshot (so the user knows the page is sharpening,
+                        not stuck). Hidden once the refresh resolves. */}
+                    {refreshing || manualRefreshing ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Refreshing intel…
+                      </span>
+                    ) : null}
+
+                    {/* Phase B.15 — Soft refresh-error pill. Cached data
+                        stays visible; this is non-blocking telemetry so
+                        the user knows the live refresh failed but the
+                        snapshot they're reading is still legit. */}
+                    {refreshError ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-300/30 bg-amber-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-200"
+                        title={refreshError}
+                      >
+                        Refresh failed
+                      </span>
+                    ) : null}
+
+                    {/* Phase B.15 — Snapshot freshness label. Honest age
+                        readout so users can tell at a glance how stale
+                        the cached snapshot is. Hidden when no cache
+                        timestamp is available. */}
+                    {snapshotUpdatedAt ? (
+                      <span className="text-[10px] text-slate-400">
+                        Snapshot {new Date(snapshotUpdatedAt).toISOString().slice(0, 10)}
+                      </span>
+                    ) : null}
                   </div>
 
                   {companyAddress ? (
@@ -899,7 +1049,11 @@ export default function Company() {
                 </div>
               </div>
 
-              {loading ? (
+              {/* Phase B.15 — only show the full-row "Loading…" pill when
+                  there is no cached snapshot yet to render. If the cache
+                  hit fired and we already have a profile, the smaller
+                  cyan "Refreshing intel…" pill above is enough. */}
+              {loading && !profile ? (
                 <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-slate-200 backdrop-blur-md">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading company intelligence…
@@ -1032,16 +1186,27 @@ export default function Company() {
                 ) : null}
               </div>
 
-              {/* Phase B.9 — Refresh Intel + Watchlist are NOT functional
-                  today, so per the brief's honesty rule they render
-                  disabled with `title="Coming soon"`. */}
+              {/* Phase B.15 — Refresh Intel is now functional. It calls
+                  `getSavedCompanyDetail` (which fans out to the
+                  importyeti-proxy), bypassing the staleness check so the
+                  user can pull fresh data on demand. The Watchlist
+                  button stays disabled — it's a separate Phase deliverable
+                  and there's no honest UI for it yet. */}
               <div className="mt-1 flex flex-wrap gap-2 border-t border-white/10 pt-3">
                 <button
                   type="button"
-                  disabled
-                  title="Coming soon"
-                  className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-slate-400"
+                  onClick={handleManualRefreshClick}
+                  disabled={!companyId || manualRefreshing || refreshing}
+                  title={
+                    companyId
+                      ? "Force refresh ImportYeti snapshot for this company"
+                      : "Save company first to enable refresh"
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
+                  {manualRefreshing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : null}
                   Refresh Intel
                 </button>
                 <button
